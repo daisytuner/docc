@@ -48,6 +48,8 @@ void CPPCodeGenerator::dispatch_header_includes(PrettyPrinter& out) {
     out << "#include <cstdint>" << std::endl;
 
     out << "#include <daisy_rtl/daisy_rtl.h>" << std::endl;
+
+    out << complex_support_preamble(false);
 }
 
 void CPPCodeGenerator::dispatch_header_structures(PrettyPrinter& out) {

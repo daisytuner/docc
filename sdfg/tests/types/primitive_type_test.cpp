@@ -24,6 +24,11 @@ TEST(PrimitiveTypeTest, Enum) {
     EXPECT_EQ(types::PrimitiveType::X86_FP80, 16);
     EXPECT_EQ(types::PrimitiveType::FP128, 17);
     EXPECT_EQ(types::PrimitiveType::PPC_FP128, 18);
+    EXPECT_EQ(types::PrimitiveType::CHalf, 19);
+    EXPECT_EQ(types::PrimitiveType::CBFloat, 20);
+    EXPECT_EQ(types::PrimitiveType::CFloat, 21);
+    EXPECT_EQ(types::PrimitiveType::CDouble, 22);
+    EXPECT_EQ(types::PrimitiveType::CFP128, 23);
 }
 
 TEST(PrimitiveTypeTest, ToString) {
@@ -46,6 +51,11 @@ TEST(PrimitiveTypeTest, ToString) {
     EXPECT_EQ(types::primitive_type_to_string(types::PrimitiveType::X86_FP80), "X86_FP80");
     EXPECT_EQ(types::primitive_type_to_string(types::PrimitiveType::FP128), "FP128");
     EXPECT_EQ(types::primitive_type_to_string(types::PrimitiveType::PPC_FP128), "PPC_FP128");
+    EXPECT_EQ(types::primitive_type_to_string(types::PrimitiveType::CHalf), "CHalf");
+    EXPECT_EQ(types::primitive_type_to_string(types::PrimitiveType::CBFloat), "CBFloat");
+    EXPECT_EQ(types::primitive_type_to_string(types::PrimitiveType::CFloat), "CFloat");
+    EXPECT_EQ(types::primitive_type_to_string(types::PrimitiveType::CDouble), "CDouble");
+    EXPECT_EQ(types::primitive_type_to_string(types::PrimitiveType::CFP128), "CFP128");
 }
 
 TEST(PrimitiveTypeTest, FromString) {
@@ -68,6 +78,11 @@ TEST(PrimitiveTypeTest, FromString) {
     EXPECT_EQ(types::primitive_type_from_string("X86_FP80"), types::PrimitiveType::X86_FP80);
     EXPECT_EQ(types::primitive_type_from_string("FP128"), types::PrimitiveType::FP128);
     EXPECT_EQ(types::primitive_type_from_string("PPC_FP128"), types::PrimitiveType::PPC_FP128);
+    EXPECT_EQ(types::primitive_type_from_string("CHalf"), types::PrimitiveType::CHalf);
+    EXPECT_EQ(types::primitive_type_from_string("CBFloat"), types::PrimitiveType::CBFloat);
+    EXPECT_EQ(types::primitive_type_from_string("CFloat"), types::PrimitiveType::CFloat);
+    EXPECT_EQ(types::primitive_type_from_string("CDouble"), types::PrimitiveType::CDouble);
+    EXPECT_EQ(types::primitive_type_from_string("CFP128"), types::PrimitiveType::CFP128);
 }
 
 TEST(PrimitiveTypeTest, BitWidth) {
@@ -90,6 +105,11 @@ TEST(PrimitiveTypeTest, BitWidth) {
     EXPECT_EQ(types::bit_width(types::PrimitiveType::X86_FP80), 80);
     EXPECT_EQ(types::bit_width(types::PrimitiveType::FP128), 128);
     EXPECT_EQ(types::bit_width(types::PrimitiveType::PPC_FP128), 128);
+    EXPECT_EQ(types::bit_width(types::PrimitiveType::CHalf), 32);
+    EXPECT_EQ(types::bit_width(types::PrimitiveType::CBFloat), 32);
+    EXPECT_EQ(types::bit_width(types::PrimitiveType::CFloat), 64);
+    EXPECT_EQ(types::bit_width(types::PrimitiveType::CDouble), 128);
+    EXPECT_EQ(types::bit_width(types::PrimitiveType::CFP128), 256);
 }
 
 TEST(PrimitiveTypeTest, FloatingPoint) {
@@ -100,6 +120,11 @@ TEST(PrimitiveTypeTest, FloatingPoint) {
     EXPECT_TRUE(types::is_floating_point(types::PrimitiveType::X86_FP80));
     EXPECT_TRUE(types::is_floating_point(types::PrimitiveType::FP128));
     EXPECT_TRUE(types::is_floating_point(types::PrimitiveType::PPC_FP128));
+    EXPECT_TRUE(types::is_floating_point(types::PrimitiveType::CHalf));
+    EXPECT_TRUE(types::is_floating_point(types::PrimitiveType::CBFloat));
+    EXPECT_TRUE(types::is_floating_point(types::PrimitiveType::CFloat));
+    EXPECT_TRUE(types::is_floating_point(types::PrimitiveType::CDouble));
+    EXPECT_TRUE(types::is_floating_point(types::PrimitiveType::CFP128));
     EXPECT_FALSE(types::is_floating_point(types::PrimitiveType::Void));
     EXPECT_FALSE(types::is_floating_point(types::PrimitiveType::Bool));
     EXPECT_FALSE(types::is_floating_point(types::PrimitiveType::Int8));
@@ -132,6 +157,11 @@ TEST(PrimitiveTypeTest, Integer) {
     EXPECT_FALSE(types::is_integer(types::PrimitiveType::X86_FP80));
     EXPECT_FALSE(types::is_integer(types::PrimitiveType::FP128));
     EXPECT_FALSE(types::is_integer(types::PrimitiveType::PPC_FP128));
+    EXPECT_FALSE(types::is_integer(types::PrimitiveType::CHalf));
+    EXPECT_FALSE(types::is_integer(types::PrimitiveType::CBFloat));
+    EXPECT_FALSE(types::is_integer(types::PrimitiveType::CFloat));
+    EXPECT_FALSE(types::is_integer(types::PrimitiveType::CDouble));
+    EXPECT_FALSE(types::is_integer(types::PrimitiveType::CFP128));
 }
 
 TEST(PrimitiveTypeTest, Signed) {
@@ -154,6 +184,11 @@ TEST(PrimitiveTypeTest, Signed) {
     EXPECT_FALSE(types::is_signed(types::PrimitiveType::X86_FP80));
     EXPECT_FALSE(types::is_signed(types::PrimitiveType::FP128));
     EXPECT_FALSE(types::is_signed(types::PrimitiveType::PPC_FP128));
+    EXPECT_FALSE(types::is_signed(types::PrimitiveType::CHalf));
+    EXPECT_FALSE(types::is_signed(types::PrimitiveType::CBFloat));
+    EXPECT_FALSE(types::is_signed(types::PrimitiveType::CFloat));
+    EXPECT_FALSE(types::is_signed(types::PrimitiveType::CDouble));
+    EXPECT_FALSE(types::is_signed(types::PrimitiveType::CFP128));
 }
 
 TEST(PrimitiveTypeTest, Unsigned) {
@@ -176,6 +211,38 @@ TEST(PrimitiveTypeTest, Unsigned) {
     EXPECT_FALSE(types::is_unsigned(types::PrimitiveType::X86_FP80));
     EXPECT_FALSE(types::is_unsigned(types::PrimitiveType::FP128));
     EXPECT_FALSE(types::is_unsigned(types::PrimitiveType::PPC_FP128));
+    EXPECT_FALSE(types::is_unsigned(types::PrimitiveType::CHalf));
+    EXPECT_FALSE(types::is_unsigned(types::PrimitiveType::CBFloat));
+    EXPECT_FALSE(types::is_unsigned(types::PrimitiveType::CFloat));
+    EXPECT_FALSE(types::is_unsigned(types::PrimitiveType::CDouble));
+    EXPECT_FALSE(types::is_unsigned(types::PrimitiveType::CFP128));
+}
+
+TEST(PrimitiveTypeTest, Complex) {
+    EXPECT_TRUE(types::is_complex(types::PrimitiveType::CHalf));
+    EXPECT_TRUE(types::is_complex(types::PrimitiveType::CBFloat));
+    EXPECT_TRUE(types::is_complex(types::PrimitiveType::CFloat));
+    EXPECT_TRUE(types::is_complex(types::PrimitiveType::CDouble));
+    EXPECT_TRUE(types::is_complex(types::PrimitiveType::CFP128));
+    EXPECT_FALSE(types::is_complex(types::PrimitiveType::Void));
+    EXPECT_FALSE(types::is_complex(types::PrimitiveType::Bool));
+    EXPECT_FALSE(types::is_complex(types::PrimitiveType::Int8));
+    EXPECT_FALSE(types::is_complex(types::PrimitiveType::Int16));
+    EXPECT_FALSE(types::is_complex(types::PrimitiveType::Int32));
+    EXPECT_FALSE(types::is_complex(types::PrimitiveType::Int64));
+    EXPECT_FALSE(types::is_complex(types::PrimitiveType::Int128));
+    EXPECT_FALSE(types::is_complex(types::PrimitiveType::UInt8));
+    EXPECT_FALSE(types::is_complex(types::PrimitiveType::UInt16));
+    EXPECT_FALSE(types::is_complex(types::PrimitiveType::UInt32));
+    EXPECT_FALSE(types::is_complex(types::PrimitiveType::UInt64));
+    EXPECT_FALSE(types::is_complex(types::PrimitiveType::UInt128));
+    EXPECT_FALSE(types::is_complex(types::PrimitiveType::Half));
+    EXPECT_FALSE(types::is_complex(types::PrimitiveType::BFloat));
+    EXPECT_FALSE(types::is_complex(types::PrimitiveType::Float));
+    EXPECT_FALSE(types::is_complex(types::PrimitiveType::Double));
+    EXPECT_FALSE(types::is_complex(types::PrimitiveType::X86_FP80));
+    EXPECT_FALSE(types::is_complex(types::PrimitiveType::FP128));
+    EXPECT_FALSE(types::is_complex(types::PrimitiveType::PPC_FP128));
 }
 
 TEST(PrimitiveTypeTest, AsUnsigned) {
@@ -198,6 +265,11 @@ TEST(PrimitiveTypeTest, AsUnsigned) {
     EXPECT_EQ(types::as_unsigned(types::PrimitiveType::X86_FP80), types::PrimitiveType::X86_FP80);
     EXPECT_EQ(types::as_unsigned(types::PrimitiveType::FP128), types::PrimitiveType::FP128);
     EXPECT_EQ(types::as_unsigned(types::PrimitiveType::PPC_FP128), types::PrimitiveType::PPC_FP128);
+    EXPECT_EQ(types::as_unsigned(types::PrimitiveType::CHalf), types::PrimitiveType::CHalf);
+    EXPECT_EQ(types::as_unsigned(types::PrimitiveType::CBFloat), types::PrimitiveType::CBFloat);
+    EXPECT_EQ(types::as_unsigned(types::PrimitiveType::CFloat), types::PrimitiveType::CFloat);
+    EXPECT_EQ(types::as_unsigned(types::PrimitiveType::CDouble), types::PrimitiveType::CDouble);
+    EXPECT_EQ(types::as_unsigned(types::PrimitiveType::CFP128), types::PrimitiveType::CFP128);
 }
 
 TEST(PrimitiveTypeTest, AsSigned) {
@@ -220,4 +292,9 @@ TEST(PrimitiveTypeTest, AsSigned) {
     EXPECT_EQ(types::as_signed(types::PrimitiveType::X86_FP80), types::PrimitiveType::X86_FP80);
     EXPECT_EQ(types::as_signed(types::PrimitiveType::FP128), types::PrimitiveType::FP128);
     EXPECT_EQ(types::as_signed(types::PrimitiveType::PPC_FP128), types::PrimitiveType::PPC_FP128);
+    EXPECT_EQ(types::as_signed(types::PrimitiveType::CHalf), types::PrimitiveType::CHalf);
+    EXPECT_EQ(types::as_signed(types::PrimitiveType::CBFloat), types::PrimitiveType::CBFloat);
+    EXPECT_EQ(types::as_signed(types::PrimitiveType::CFloat), types::PrimitiveType::CFloat);
+    EXPECT_EQ(types::as_signed(types::PrimitiveType::CDouble), types::PrimitiveType::CDouble);
+    EXPECT_EQ(types::as_signed(types::PrimitiveType::CFP128), types::PrimitiveType::CFP128);
 }

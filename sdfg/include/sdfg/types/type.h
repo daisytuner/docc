@@ -51,7 +51,12 @@ enum PrimitiveType {
     Double, ///< 64-bit floating-point (IEEE 754 double precision)
     X86_FP80, ///< 80-bit extended precision floating-point (x86)
     FP128, ///< 128-bit floating-point (IEEE 754 quadruple precision)
-    PPC_FP128 ///< 128-bit floating-point (PowerPC double-double)
+    PPC_FP128, ///< 128-bit floating-point (PowerPC double-double)
+    CHalf, ///< 16-bit complex floating-point (2x half)
+    CBFloat, ///< 16-bit complex brain floating-point (2x bfloat)
+    CFloat, ///< 32-bit complex floating-point (2x float)
+    CDouble, ///< 64-bit complex floating-point (2x double)
+    CFP128, ///< 128-bit complex floating-point (2x fp128)
 };
 
 /**
@@ -276,6 +281,16 @@ constexpr const char* primitive_type_to_string(PrimitiveType e) {
             return "FP128";
         case PrimitiveType::PPC_FP128:
             return "PPC_FP128";
+        case PrimitiveType::CHalf:
+            return "CHalf";
+        case PrimitiveType::CBFloat:
+            return "CBFloat";
+        case PrimitiveType::CFloat:
+            return "CFloat";
+        case PrimitiveType::CDouble:
+            return "CDouble";
+        case PrimitiveType::CFP128:
+            return "CFP128";
     }
     throw std::invalid_argument("Invalid primitive type");
 };
@@ -325,6 +340,16 @@ constexpr PrimitiveType primitive_type_from_string(std::string_view e) {
         return PrimitiveType::FP128;
     } else if (e == "PPC_FP128") {
         return PrimitiveType::PPC_FP128;
+    } else if (e == "CHalf") {
+        return PrimitiveType::CHalf;
+    } else if (e == "CBFloat") {
+        return PrimitiveType::CBFloat;
+    } else if (e == "CFloat") {
+        return PrimitiveType::CFloat;
+    } else if (e == "CDouble") {
+        return PrimitiveType::CDouble;
+    } else if (e == "CFP128") {
+        return PrimitiveType::CFP128;
     }
     throw std::invalid_argument("Invalid primitive type");
 };
@@ -375,6 +400,16 @@ constexpr size_t bit_width(PrimitiveType e) {
             return 128;
         case PrimitiveType::PPC_FP128:
             return 128;
+        case PrimitiveType::CHalf:
+            return 32; // 2x half
+        case PrimitiveType::CBFloat:
+            return 32; // 2x bfloat
+        case PrimitiveType::CFloat:
+            return 64; // 2x float
+        case PrimitiveType::CDouble:
+            return 128; // 2x double
+        case PrimitiveType::CFP128:
+            return 256; // 2x fp128
     }
     throw std::invalid_argument("Invalid primitive type");
 };
@@ -393,6 +428,11 @@ constexpr bool is_floating_point(PrimitiveType e) noexcept {
         case PrimitiveType::X86_FP80:
         case PrimitiveType::FP128:
         case PrimitiveType::PPC_FP128:
+        case PrimitiveType::CHalf:
+        case PrimitiveType::CBFloat:
+        case PrimitiveType::CFloat:
+        case PrimitiveType::CDouble:
+        case PrimitiveType::CFP128:
             return true;
         default:
             return false;
@@ -417,6 +457,24 @@ constexpr bool is_integer(PrimitiveType e) noexcept {
         case PrimitiveType::UInt32:
         case PrimitiveType::UInt64:
         case PrimitiveType::UInt128:
+            return true;
+        default:
+            return false;
+    }
+};
+
+/**
+ * @brief Checks if a PrimitiveType is a complex type
+ * @param e The PrimitiveType to check
+ * @return true if the type is a complex type, false otherwise
+ */
+constexpr bool is_complex(PrimitiveType e) noexcept {
+    switch (e) {
+        case PrimitiveType::CHalf:
+        case PrimitiveType::CBFloat:
+        case PrimitiveType::CFloat:
+        case PrimitiveType::CDouble:
+        case PrimitiveType::CFP128:
             return true;
         default:
             return false;

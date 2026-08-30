@@ -48,6 +48,12 @@ std::string CUDALanguageExtension::primitive_type(const types::PrimitiveType pri
             return "__float128";
         case types::PrimitiveType::PPC_FP128:
             return "__float128";
+        case types::PrimitiveType::CHalf:
+        case types::PrimitiveType::CBFloat:
+        case types::PrimitiveType::CFloat:
+        case types::PrimitiveType::CDouble:
+        case types::PrimitiveType::CFP128:
+            return complex_type_name(prim_type);
     }
 
     throw std::runtime_error("Unknown primitive type");
@@ -320,6 +326,16 @@ std::string CUDALanguageExtension::tasklet(const data_flow::Tasklet& tasklet) {
             return tasklet.inputs().at(0) + " < " + tasklet.inputs().at(1);
         case data_flow::TaskletCode::int_ule:
             return tasklet.inputs().at(0) + " <= " + tasklet.inputs().at(1);
+        case data_flow::TaskletCode::complex_neg:
+        case data_flow::TaskletCode::complex_real:
+        case data_flow::TaskletCode::complex_imag:
+        case data_flow::TaskletCode::complex_add:
+        case data_flow::TaskletCode::complex_sub:
+        case data_flow::TaskletCode::complex_mul:
+        case data_flow::TaskletCode::complex_div:
+        case data_flow::TaskletCode::complex_eq:
+        case data_flow::TaskletCode::complex_ne:
+            return complex_computation(tasklet, this->function_);
     };
     throw std::invalid_argument("Invalid tasklet code");
 };
@@ -364,6 +380,12 @@ std::string CUDALanguageExtension::zero(const types::PrimitiveType prim_type) {
             return "0.0";
         case types::PPC_FP128:
             return "0.0";
+        case types::CHalf:
+        case types::CBFloat:
+        case types::CFloat:
+        case types::CDouble:
+        case types::CFP128:
+            return complex_type_name(prim_type) + "{0, 0}";
     }
 }
 
