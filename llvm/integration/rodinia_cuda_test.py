@@ -212,8 +212,8 @@ def test_backprop(compiler="clang-21"):
             "Malloc": 5,
             "CUDA_Offload": 14,
             "CUDAOffloading": 14,
-            "MAP": 32,
-            "SEQUENTIAL": 55,
+            "MAP": 40,
+            "SEQUENTIAL": 63,
         },
     )
     runner = TestRunner(
@@ -371,8 +371,8 @@ def test_cfd(compiler="clang++-21"):
             "sdfgs": 6,
             "ExternalOffloading": 0,
             "CUDAOffloading": 18,
-            "MAP": 17,
-            "SEQUENTIAL": 24,
+            "MAP": 19,
+            "SEQUENTIAL": 26,
             "FOR": 13,
             "CUDA_Offload": 6,
         },
@@ -1032,8 +1032,8 @@ def test_particlefilter(compiler="clang-21"):
             "CUDA_Offload": 22,
             "WHILE": 12,
             "CUDAOffloading": 34,
-            "MAP": 32,
-            "SEQUENTIAL": 40,
+            "MAP": 33,
+            "SEQUENTIAL": 41,
             "FOR": 29,
         }
     )

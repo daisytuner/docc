@@ -278,8 +278,8 @@ def test_gemver(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
             "sdfgs": 8,
             "REDUCE": 4,
             "MAP": 8,
-            "SEQUENTIAL": 5,
-            "ROCM_Offload": 8,
+            "SEQUENTIAL": 6,
+            "ROCM_Offload": 7,
         },
     )
     test_case = benchmark_path / "gemver.c"
@@ -335,8 +335,8 @@ def test_gesummv(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
             "sdfgs": 8,
             "REDUCE": 4,
             "MAP": 7,
-            "ROCM_Offload": 8,
-            "SEQUENTIAL": 3,
+            "ROCM_Offload": 7,
+            "SEQUENTIAL": 4,
         },
     )
     test_case = benchmark_path / "gesummv.c"
@@ -924,8 +924,8 @@ def test_mvt(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
             "sdfgs": 8,
             "REDUCE": 4,
             "MAP": 4,
-            "SEQUENTIAL": 5,
-            "ROCM_Offload": 4,
+            "SEQUENTIAL": 6,
+            "ROCM_Offload": 3,
         },
     )
     test_case = benchmark_path / "mvt.c"

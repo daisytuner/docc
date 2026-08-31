@@ -112,8 +112,8 @@ def test_correlation(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
             "REDUCE": 4,
             "SEQUENTIAL": 9,
             "CUDAOffloading": 26,
-            "MAP": 22,
-            "CUDA_Offload": 19,
+            "MAP": 23,
+            "CUDA_Offload": 20,
             "FOR": 2,
         },
     )
@@ -164,8 +164,8 @@ def test_covariance(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "CUDAOffloading": 18,
-            "MAP": 15,
-            "CUDA_Offload": 13,
+            "MAP": 16,
+            "CUDA_Offload": 14,
             "FOR": 2,
             "SEQUENTIAL": 7,
             "REDUCE": 3,
@@ -225,8 +225,8 @@ def test_gemm(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
             "FOR": 4,
             "SEQUENTIAL": 5,
             "CUDAOffloading": 14,
-            "MAP": 10,
-            "CUDA_Offload": 9,
+            "MAP": 11,
+            "CUDA_Offload": 10,
         },
     )
     test_case = benchmark_path / "gemm.c"
@@ -282,10 +282,10 @@ def test_gemver(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
             "sdfgs": 8,
             "REDUCE": 4,
             "CUDAOffloading": 38,
-            "MAP": 8,
+            "MAP": 9,
             "CUDA_Offload": 8,
             "FOR": 1,
-            "SEQUENTIAL": 5,
+            "SEQUENTIAL": 6,
         },
     )
     test_case = benchmark_path / "gemver.c"
@@ -341,9 +341,9 @@ def test_gesummv(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
             "sdfgs": 8,
             "REDUCE": 4,
             "CUDAOffloading": 24,
-            "MAP": 7,
+            "MAP": 8,
             "CUDA_Offload": 8,
-            "SEQUENTIAL": 3,
+            "SEQUENTIAL": 4,
             "FOR": 0,
         },
     )
@@ -935,9 +935,9 @@ def test_mvt(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
             "sdfgs": 8,
             "REDUCE": 4,
             "CUDAOffloading": 16,
-            "MAP": 4,
+            "MAP": 5,
             "CUDA_Offload": 4,
-            "SEQUENTIAL": 5,
+            "SEQUENTIAL": 6,
             "FOR": 1,
         },
     )
@@ -1344,9 +1344,11 @@ def test_deriche(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "CUDAOffloading": 30,
-            "MAP": 10,
+            "MAP": 14,
             "FOR": 4,
-            "CUDA_Offload": 10,
+            "CUDA_Offload": 14,
+            "SEQUENTIAL": 7,
+            "REDUCE": 3,
         },
     )
     test_case = benchmark_path / "deriche.c"
@@ -1481,8 +1483,10 @@ def test_adi(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
             "sdfgs": 8,
             "FOR": 5,
             "CUDAOffloading": 42,
-            "MAP": 14,
-            "CUDA_Offload": 14,
+            "MAP": 18,
+            "CUDA_Offload": 18,
+            "SEQUENTIAL": 8,
+            "REDUCE": 3,
         },
     )
     test_case = benchmark_path / "adi.c"
