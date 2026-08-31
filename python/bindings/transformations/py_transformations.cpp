@@ -25,6 +25,7 @@
 #include <sdfg/transformations/out_local_storage.h>
 #include <sdfg/transformations/recorder.h>
 #include <sdfg/transformations/software_pipelining.h>
+#include <sdfg/transformations/stream_k.h>
 #include <sdfg/transformations/tile_fusion.h>
 #include <sdfg/transformations/transformation.h>
 #include <sdfg/transformations/unroll_transform.h>
@@ -420,6 +421,29 @@ void register_transformations(py::module& m) {
         .def("__repr__", [](const SoftwarePipelining& t) {
             std::ostringstream oss;
             oss << "<SoftwarePipelining name='" << t.name() << "'>";
+            return oss.str();
+        });
+
+    // StreamK transformation
+    py::class_<StreamK, Transformation>(m, "StreamK")
+        .def(
+            py::init<StructuredLoop&, size_t>(),
+            py::arg("grid_loop"),
+            py::arg("num_blocks") = 336,
+            "Stream-K work decomposition: replace a static output-tile grid with a\n"
+            "FIXED persistent grid whose blocks walk equal contiguous slices of the\n"
+            "flattened (tile x k-panel) space, merging partial tiles via the\n"
+            "reduction's atomic add.\n\n"
+            "Args:\n"
+            "    grid_loop: Grid-level Map tile band containing a Reduce{Add} axis\n"
+            "        as a direct child.\n"
+            "    num_blocks: Fixed persistent grid size (absolute). Pick a multiple\n"
+            "        of the device multiprocessor/CU count (e.g. 336 = 84*4 on an\n"
+            "        RTX 5080).\n"
+        )
+        .def("__repr__", [](const StreamK& t) {
+            std::ostringstream oss;
+            oss << "<StreamK name='" << t.name() << "'>";
             return oss.str();
         });
 

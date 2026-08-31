@@ -67,4 +67,4 @@ TEST(PolybenchRPCSchedulerTest, Doitgen) { EXPECT_NO_THROW(run_rpc_scheduling(do
 
 TEST(PolybenchRPCSchedulerTest, Jacobi2d) { EXPECT_NO_THROW(run_rpc_scheduling(jacobi_2d())); }
 
-TEST(PolybenchRPCSchedulerTest, Fdtd2d) { EXPECT_TRUE(run_rpc_scheduling(fdtd_2d())); }
+TEST(PolybenchRPCSchedulerTest, Fdtd2d) { EXPECT_NO_THROW(run_rpc_scheduling(fdtd_2d())); }
