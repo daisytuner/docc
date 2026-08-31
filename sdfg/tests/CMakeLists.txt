@@ -48,9 +48,9 @@ set(TEST_FILES
     data_flow/code_node_test.cpp
     data_flow/data_flow_graph_test.cpp
     data_flow/data_flow_node_test.cpp
-    data_flow/library_nodes/load_const_node_test.cpp
-    data_flow/library_nodes/atomic_node_test.cpp
     data_flow/library_nodes/async_copy_node_test.cpp
+    data_flow/library_nodes/atomic_node_test.cpp
+    data_flow/library_nodes/load_const_node_test.cpp
     data_flow/library_nodes/math/blas/blas_test.cpp
     data_flow/library_nodes/math/cmath/cmath_node_test.cpp
     data_flow/library_nodes/math/tensor/arange_node_test.cpp
@@ -58,6 +58,7 @@ set(TEST_FILES
     data_flow/library_nodes/math/tensor/cmath_node_test.cpp
     data_flow/library_nodes/math/tensor/concat_node_test.cpp
     data_flow/library_nodes/math/tensor/conditional_copy_node_test.cpp
+    data_flow/library_nodes/math/tensor/const_padding_node_test.cpp
     data_flow/library_nodes/math/tensor/conv_test.cpp
     data_flow/library_nodes/math/tensor/copy_node_test.cpp
     data_flow/library_nodes/math/tensor/einsum_test.cpp

@@ -40,6 +40,7 @@ import docc.pytorch.graph_parser.creation
 import docc.pytorch.graph_parser.elementwise
 import docc.pytorch.graph_parser.nonlinear_activation
 import docc.pytorch.graph_parser.normalization
+import docc.pytorch.graph_parser.padding
 import docc.pytorch.graph_parser.pooling
 import docc.pytorch.graph_parser.reduction
 import docc.pytorch.graph_parser.reshaping

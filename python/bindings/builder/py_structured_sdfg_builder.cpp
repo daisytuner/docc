@@ -1904,6 +1904,30 @@ void PyStructuredSDFGBuilder::add_concat_op(
     builder_.add_computational_memlet(block, result_access, libnode, "Y", {}, result_type, debug_info);
 }
 
+void PyStructuredSDFGBuilder::add_const_padding_op(
+    const std::string& Y,
+    const sdfg::types::Tensor& Y_type,
+    const std::string& X,
+    const sdfg::types::Tensor& X_type,
+    const std::string& Val,
+    const sdfg::types::Scalar& Val_type,
+    const std::vector<std::string>& pads_str,
+    const sdfg::DebugInfo& debug_info
+) {
+    auto pads = parse_and_expand(pads_str);
+    auto& block = builder_.add_block(current_sequence(), debug_info);
+    auto& Y_access = builder_.add_access(block, Y, debug_info);
+    auto& X_access = builder_.add_access(block, X, debug_info);
+    auto& Val_access =
+        (builder_.subject().exists(Val) ? builder_.add_access(block, Val, debug_info)
+                                        : builder_.add_constant(block, Val, Val_type));
+    auto& libnode = builder_.add_library_node<
+        sdfg::math::tensor::ConstPaddingNode>(block, debug_info, pads, Y_type.layout(), X_type.layout());
+    builder_.add_computational_memlet(block, Y_access, libnode, "_y", {}, Y_type, debug_info);
+    builder_.add_computational_memlet(block, X_access, libnode, "_x", {}, X_type, debug_info);
+    builder_.add_computational_memlet(block, Val_access, libnode, "_val", {}, Val_type, debug_info);
+}
+
 void PyStructuredSDFGBuilder::add_embedding_op(
     const std::string& W,
     const sdfg::types::Tensor& W_type,

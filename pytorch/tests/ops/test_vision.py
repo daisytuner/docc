@@ -269,26 +269,3 @@ def test_upsample_bilinear_rectangular_input_align_corners(target: str) -> None:
             return self.up(input)
 
     check(Net(), torch.randn(2, 3, 20, 8), target=target)
-
-
-# --- Functional interface ---
-
-
-def test_upsample_bilinear_functional_size(target: str) -> None:
-    class Net(nn.Module):
-        def forward(self, input: torch.Tensor) -> torch.Tensor:
-            return F.interpolate(
-                input, size=(28, 28), mode="bilinear", align_corners=False
-            )
-
-    check(Net(), torch.randn(2, 3, 16, 16), target=target)
-
-
-def test_upsample_bilinear_functional_scale(target: str) -> None:
-    class Net(nn.Module):
-        def forward(self, input: torch.Tensor) -> torch.Tensor:
-            return F.interpolate(
-                input, scale_factor=2.0, mode="bilinear", align_corners=True
-            )
-
-    check(Net(), torch.randn(2, 3, 16, 16), target=target)

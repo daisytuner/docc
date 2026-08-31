@@ -429,6 +429,17 @@ public:
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
 
+    void add_const_padding_op(
+        const std::string& Y,
+        const sdfg::types::Tensor& Y_type,
+        const std::string& X,
+        const sdfg::types::Tensor& X_type,
+        const std::string& Val,
+        const sdfg::types::Scalar& Val_type,
+        const std::vector<std::string>& pads,
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+
     void add_embedding_op(
         const std::string& W,
         const sdfg::types::Tensor& W_type,

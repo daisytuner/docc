@@ -763,6 +763,18 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("debug_info") = sdfg::DebugInfo()
         )
         .def(
+            "add_const_padding_op",
+            &PyStructuredSDFGBuilder::add_const_padding_op,
+            py::arg("Y"),
+            py::arg("Y_type"),
+            py::arg("X"),
+            py::arg("X_type"),
+            py::arg("Val"),
+            py::arg("Val_type"),
+            py::arg("pads"),
+            py::arg("debug_info") = sdfg::DebugInfo()
+        )
+        .def(
             "add_embedding_op",
             &PyStructuredSDFGBuilder::add_embedding_op,
             py::arg("W"),
