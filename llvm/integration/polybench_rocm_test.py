@@ -110,9 +110,9 @@ def test_correlation(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 4,
-            "MAP": 22,
+            "MAP": 23,
             "SEQUENTIAL": 9,
-            "ROCM_Offload": 19,
+            "ROCM_Offload": 20,
         },
     )
     test_case = benchmark_path / "correlation.c"
@@ -163,9 +163,9 @@ def test_covariance(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
             "sdfgs": 8,
             "FOR": 2,
             "REDUCE": 3,
-            "MAP": 15,
+            "MAP": 16,
             "SEQUENTIAL": 7,
-            "ROCM_Offload": 13,
+            "ROCM_Offload": 14,
         },
     )
     test_case = benchmark_path / "covariance.c"
@@ -221,8 +221,8 @@ def test_gemm(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
             "sdfgs": 8,
             "FOR": 4,
             "SEQUENTIAL": 5,
-            "MAP": 10,
-            "ROCM": 0,
+            "MAP": 11,
+            "ROCM_Offload": 10,
         },
     )
     test_case = benchmark_path / "gemm.c"
@@ -277,9 +277,9 @@ def test_gemver(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 4,
-            "MAP": 8,
+            "MAP": 9,
             "SEQUENTIAL": 6,
-            "ROCM_Offload": 7,
+            "ROCM_Offload": 8,
         },
     )
     test_case = benchmark_path / "gemver.c"
@@ -334,8 +334,8 @@ def test_gesummv(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 4,
-            "MAP": 7,
-            "ROCM_Offload": 7,
+            "MAP": 8,
+            "ROCM_Offload": 8,
             "SEQUENTIAL": 4,
         },
     )
@@ -923,9 +923,9 @@ def test_mvt(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 4,
-            "MAP": 4,
+            "MAP": 5,
             "SEQUENTIAL": 6,
-            "ROCM_Offload": 3,
+            "ROCM_Offload": 4,
         },
     )
     test_case = benchmark_path / "mvt.c"
@@ -1325,8 +1325,8 @@ def test_deriche(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "ROCMOffloading": 30,
-            "MAP": 10,
-            "ROCM_Offload": 10,
+            "MAP": 14,
+            "ROCM_Offload": 14,
         },
     )
     test_case = benchmark_path / "deriche.c"
@@ -1458,8 +1458,8 @@ def test_adi(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
             "sdfgs": 8,
             "FOR": 5,
             "REDUCE": 3,
-            "MAP": 14,
-            "ROCM_Offload": 14,
+            "MAP": 18,
+            "ROCM_Offload": 18,
         },
     )
     test_case = benchmark_path / "adi.c"

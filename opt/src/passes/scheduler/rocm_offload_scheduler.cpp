@@ -11,6 +11,7 @@
 #include "sdfg/passes/tiling_pass.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/symbolic/symbolic.h"
+#include "sdfg/targets/gpu/gpu_map_utils.h"
 #include "sdfg/transformations/offloading/rocm_offload_transform.h"
 
 namespace sdfg {
@@ -105,13 +106,11 @@ void ROCMOffloadScheduler::pre_schedule(
         return;
     }
 
-    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
-
-    // Split loops by maximum nesting depth: single loop vs. 2 or more loops.
+    // Split loops by number of perfectly nested loops: single loop vs. 2 or more loops.
     std::vector<structured_control_flow::StructuredLoop*> single_loops;
     std::vector<structured_control_flow::StructuredLoop*> nested_loops;
     for (auto* loop : applicable_loops) {
-        if (loop_analysis.loop_info(loop).max_depth <= 1) {
+        if (gpu::perfectly_nested_depth(loop) <= 1) {
             single_loops.push_back(loop);
         } else {
             nested_loops.push_back(loop);
