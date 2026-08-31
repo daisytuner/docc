@@ -7,6 +7,7 @@
 #include "sdfg/analysis/assumptions_analysis.h"
 #include "sdfg/analysis/loop_analysis.h"
 #include "sdfg/analysis/users.h"
+#include "sdfg/structured_control_flow/reduce.h"
 #include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/cuda/cuda.h"
@@ -356,6 +357,28 @@ bool is_block_level(TargetLevel target_level) {
 }
 
 bool is_warp_level(TargetLevel target_level) { return target_level == TargetLevel::WARP; }
+
+size_t perfectly_nested_depth(structured_control_flow::StructuredLoop* loop) {
+    size_t depth = 0;
+    structured_control_flow::StructuredLoop* current = loop;
+    while (current != nullptr) {
+        ++depth;
+        auto& body = current->root();
+        if (body.size() != 1) {
+            break;
+        }
+
+        auto& child = body.at(0);
+        if (auto* map = dyn_cast<structured_control_flow::Map*>(&child)) {
+            current = map;
+        } else if (auto* reduce = dyn_cast<structured_control_flow::Reduce*>(&child)) {
+            current = reduce;
+        } else {
+            break;
+        }
+    }
+    return depth;
+}
 
 symbolic::SymbolSet target_level_indvars(
     structured_control_flow::StructuredLoop& node, analysis::AnalysisManager& analysis_manager, TargetLevel target_level

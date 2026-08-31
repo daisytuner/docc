@@ -8,6 +8,7 @@
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/cuda/cuda.h"
+#include "sdfg/targets/gpu/gpu_map_utils.h"
 #include "sdfg/targets/gpu/gpu_offload_schedule_type.h"
 #include "sdfg/targets/rocm/rocm.h"
 #include "sdfg/transformations/offloading/gpu_offload_nested_loop.h"
@@ -103,7 +104,7 @@ bool GPUNestedOffloadPass::run_pass(builder::StructuredSDFGBuilder& builder, ana
     std::vector<PlannedOffload> plan;
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
     for (auto* outer : loops_) {
-        size_t depth = loop_analysis.loop_info(outer).max_depth;
+        size_t depth = gpu::perfectly_nested_depth(outer);
         if (depth < 2) {
             continue;
         }

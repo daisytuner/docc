@@ -184,6 +184,11 @@ structured_control_flow::StructuredLoop* find_x_block_owning_warp_level(
     structured_control_flow::StructuredLoop& node, analysis::AnalysisManager& analysis_manager
 );
 
+// Counts the depth of the perfectly nested loop chain starting at `loop`.
+// A loop is perfectly nested when its body sequence has exactly one child and
+// that child is another map or reduce node.
+size_t perfectly_nested_depth(structured_control_flow::StructuredLoop* loop);
+
 // Extern template declarations to prevent implicit instantiation
 extern template symbolic::Expression find_nested_gpu_blocksize<
     cuda::ScheduleType_CUDA>(structured_control_flow::Map&, analysis::AnalysisManager&, GPUDimension);
