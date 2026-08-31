@@ -150,6 +150,8 @@ void GPUOffloadMapDispatcher::dispatch_node(
 
         std::unordered_map<TargetLevel, ScheduleType> nested_schedule_types;
         get_nested_schedule_types(node_, analysis_manager, nested_schedule_types);
+        std::unordered_map<TargetLevel, structured_control_flow::StructuredLoop*> nested_level_maps;
+        get_nested_level_maps(node_, analysis_manager, nested_level_maps);
 
         symbolic::Expression block_size_x = symbolic::one();
         symbolic::Expression block_size_y = symbolic::one();
@@ -167,16 +169,36 @@ void GPUOffloadMapDispatcher::dispatch_node(
         if (nested_schedule_types.find(TargetLevel::Z_BLOCK) != nested_schedule_types.end()) {
             block_size_z = gpu::ScheduleType_GPU_Offload::parallel_size(nested_schedule_types.at(TargetLevel::Z_BLOCK));
         }
+        // Grid launch dimension: the actual number of block-tiles (the grid map's
+        // num_iterations), capped at the schedule's parallel_size (the hardware
+        // grid-dim limit). The in-kernel grid-stride coverage loop makes any grid
+        // size correct, so a dynamic-size offload stores the cap as parallel_size;
+        // launching that cap literally would spawn billions of empty blocks.
+        auto grid_launch = [&](TargetLevel level) -> symbolic::Expression {
+            symbolic::Integer cap = gpu::ScheduleType_GPU_Offload::parallel_size(nested_schedule_types.at(level));
+            auto it = nested_level_maps.find(level);
+            if (it == nested_level_maps.end()) {
+                return cap;
+            }
+            // A launch dimension must be kernel-invariant. An offloader whose trip
+            // depends on an enclosing sequential loop (e.g. a Stream-K reduction
+            // folded into the persistent worker walk) is not a real grid axis --
+            // fall back to its parallel_size cap so the host launch stays valid.
+            auto trip = it->second->num_iterations();
+            if (!SymEngine::is_a<SymEngine::Integer>(*trip)) {
+                return cap;
+            }
+            return symbolic::min(cap, trip);
+        };
         if (nested_schedule_types.find(TargetLevel::X_GRID) != nested_schedule_types.end()) {
-            grid_size_x = gpu::ScheduleType_GPU_Offload::parallel_size(nested_schedule_types.at(TargetLevel::X_GRID));
+            grid_size_x = grid_launch(TargetLevel::X_GRID);
         }
         if (nested_schedule_types.find(TargetLevel::Y_GRID) != nested_schedule_types.end()) {
-            grid_size_y = gpu::ScheduleType_GPU_Offload::parallel_size(nested_schedule_types.at(TargetLevel::Y_GRID));
+            grid_size_y = grid_launch(TargetLevel::Y_GRID);
         }
         if (nested_schedule_types.find(TargetLevel::Z_GRID) != nested_schedule_types.end()) {
-            grid_size_z = gpu::ScheduleType_GPU_Offload::parallel_size(nested_schedule_types.at(TargetLevel::Z_GRID));
+            grid_size_z = grid_launch(TargetLevel::Z_GRID);
         }
-
 
         std::string kernel_name = "kernel_" + sdfg_.name() + "_" + std::to_string(node_.element_id());
 
