@@ -27,7 +27,7 @@
 using namespace sdfg;
 
 template<typename NodeType, typename... Args>
-void TestUnary(std::vector<size_t> shape_dims, Args&&... args) {
+void TestUnary(std::vector<size_t> shape_dims, types::PrimitiveType expected_indvar_type, Args&&... args) {
     builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -73,6 +73,8 @@ void TestUnary(std::vector<size_t> shape_dims, Args&&... args) {
     for (size_t i = 0; i < shape_dims.size(); ++i) {
         auto map_loop = dyn_cast<structured_control_flow::Map*>(&current_scope->at(0));
         ASSERT_NE(map_loop, nullptr);
+        EXPECT_EQ(sdfg.type(map_loop->indvar()->get_name()).primitive_type(), expected_indvar_type)
+            << "Expect indvar to have type fitting dimension";
         current_scope = &map_loop->root();
     }
 
@@ -123,7 +125,7 @@ void TestUnary(std::vector<size_t> shape_dims, Args&&... args) {
 }
 
 template<typename NodeType>
-void TestBinary(std::vector<size_t> shape_dims) {
+void TestBinary(std::vector<size_t> shape_dims, types::PrimitiveType expected_indvar_type) {
     builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -165,6 +167,8 @@ void TestBinary(std::vector<size_t> shape_dims) {
     for (size_t i = 0; i < shape_dims.size(); ++i) {
         auto map_loop = dyn_cast<structured_control_flow::Map*>(&current_scope->at(0));
         ASSERT_NE(map_loop, nullptr);
+        EXPECT_EQ(sdfg.type(map_loop->indvar()->get_name()).primitive_type(), expected_indvar_type)
+            << "Expect indvar to have type fitting dimension";
         current_scope = &map_loop->root();
     }
 
@@ -202,25 +206,25 @@ void TestBinary(std::vector<size_t> shape_dims) {
     }
 }
 
-#define REGISTER_UNARY_TEST(NodeType, Dim)                \
-    TEST(ElementWiseTest, NodeType##_##Dim##D) {          \
-        std::vector<size_t> dims;                         \
-        for (int i = 0; i < Dim; ++i) dims.push_back(32); \
-        TestUnary<math::tensor::NodeType>(dims);          \
+#define REGISTER_UNARY_TEST(NodeType, Dim)                                    \
+    TEST(ElementWiseTest, NodeType##_##Dim##D) {                              \
+        std::vector<size_t> dims;                                             \
+        for (int i = 0; i < Dim; ++i) dims.push_back(32);                     \
+        TestUnary<math::tensor::NodeType>(dims, types::PrimitiveType::Int32); \
     }
 
-#define REGISTER_UNARY_TEST_OPT(NodeType, Dim, Opt)       \
-    TEST(ElementWiseTest, NodeType##_##Dim##D) {          \
-        std::vector<size_t> dims;                         \
-        for (int i = 0; i < Dim; ++i) dims.push_back(32); \
-        TestUnary<math::tensor::NodeType>(dims, Opt);     \
+#define REGISTER_UNARY_TEST_OPT(NodeType, Dim, Opt)                                \
+    TEST(ElementWiseTest, NodeType##_##Dim##D) {                                   \
+        std::vector<size_t> dims;                                                  \
+        for (int i = 0; i < Dim; ++i) dims.push_back(32);                          \
+        TestUnary<math::tensor::NodeType>(dims, types::PrimitiveType::Int32, Opt); \
     }
 
-#define REGISTER_BINARY_TEST(NodeType, Dim)               \
-    TEST(ElementWiseTest, NodeType##_##Dim##D) {          \
-        std::vector<size_t> dims;                         \
-        for (int i = 0; i < Dim; ++i) dims.push_back(32); \
-        TestBinary<math::tensor::NodeType>(dims);         \
+#define REGISTER_BINARY_TEST(NodeType, Dim)                                    \
+    TEST(ElementWiseTest, NodeType##_##Dim##D) {                               \
+        std::vector<size_t> dims;                                              \
+        for (int i = 0; i < Dim; ++i) dims.push_back(32);                      \
+        TestBinary<math::tensor::NodeType>(dims, types::PrimitiveType::Int32); \
     }
 
 // Unary Tests

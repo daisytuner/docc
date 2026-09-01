@@ -4,6 +4,7 @@
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/tasklet.h"
 #include "sdfg/types/type.h"
+#include "sdfg/types/utils.h"
 
 namespace sdfg {
 namespace math {
@@ -175,12 +176,13 @@ std::pair<structured_control_flow::Sequence*, std::vector<symbolic::Expression>>
 
     for (size_t i = 0; i < shape.size(); i++) {
         std::string indvar_str = builder.find_new_name("_i");
-        builder.add_container(indvar_str, types::Scalar(types::PrimitiveType::UInt64));
+        auto& dim_end = shape.at(i);
+        builder.add_container(indvar_str, types::Scalar(types::get_primitive_type_to_hold_expression(dim_end)));
 
         auto indvar = symbolic::symbol(indvar_str);
         auto init = symbolic::zero();
         auto update = symbolic::add(indvar, symbolic::one());
-        auto condition = symbolic::Lt(indvar, shape.at(i));
+        auto condition = symbolic::Lt(indvar, dim_end);
         last_map = &builder.add_map(
             *last_scope,
             indvar,
