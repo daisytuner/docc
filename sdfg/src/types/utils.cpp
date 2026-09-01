@@ -253,7 +253,7 @@ bool is_contiguous_type(const types::IType& base_type, StructuredSDFG& sdfg) {
     return true;
 }
 
-PrimitiveType get_primitive_type_to_hold_expression(const symbolic::Expression& expr) {
+PrimitiveType get_primitive_type_to_hold_upper_bound(const symbolic::Expression& expr) {
     static auto int32_bound = symbolic::integer(INT32_MAX);
 
     if (symbolic::is_true(symbolic::Le(expr, int32_bound))) {
@@ -261,6 +261,78 @@ PrimitiveType get_primitive_type_to_hold_expression(const symbolic::Expression& 
     } else {
         return Int64;
     }
+}
+
+PrimitiveType get_primitive_type_to_hold_lower_bound(const symbolic::Expression& expr) {
+    static auto int32_bound = symbolic::integer(INT32_MIN);
+
+    if (symbolic::is_true(symbolic::Ge(expr, int32_bound))) {
+        return Int32;
+    } else {
+        return Int64;
+    }
+}
+
+PrimitiveType get_primitive_type_to_hold(PrimitiveType a, PrimitiveType b) {
+    // Describe each supported integer type by its bit width and signedness.
+    auto bit_width = [](types::PrimitiveType t) -> int {
+        switch (t) {
+            case types::PrimitiveType::Int32:
+            case types::PrimitiveType::UInt32:
+                return 32;
+            case types::PrimitiveType::Int64:
+            case types::PrimitiveType::UInt64:
+                return 64;
+            default:
+                throw std::invalid_argument("Cannot handle " + std::string(types::primitive_type_to_string(t)));
+        }
+    };
+    auto is_signed = [](types::PrimitiveType t) -> bool {
+        switch (t) {
+            case types::PrimitiveType::Int32:
+            case types::PrimitiveType::Int64:
+                return true;
+            case types::PrimitiveType::UInt32:
+            case types::PrimitiveType::UInt64:
+                return false;
+            default:
+                throw std::invalid_argument("Cannot handle " + std::string(types::primitive_type_to_string(t)));
+        }
+    };
+
+    // Can every value of `src` be extended into `dst` without any loss?
+    auto fits_in = [&](types::PrimitiveType src, types::PrimitiveType dst) -> bool {
+        const int src_bits = bit_width(src);
+        const int dst_bits = bit_width(dst);
+        const bool src_signed = is_signed(src);
+        const bool dst_signed = is_signed(dst);
+
+        if (src_signed == dst_signed) {
+            // Same signedness: the destination just needs to be at least as wide.
+            return dst_bits >= src_bits;
+        }
+        // not safe in general, as we may loose overflows
+        return false;
+    };
+
+    // Candidates ordered from smallest to largest capacity so the first match is
+    // the tightest common type that both operands extend into without loss.
+    static constexpr types::PrimitiveType candidates[] = {
+        types::PrimitiveType::Int32,
+        types::PrimitiveType::UInt32,
+        types::PrimitiveType::Int64,
+        types::PrimitiveType::UInt64,
+    };
+    for (auto candidate : candidates) {
+        if (fits_in(a, candidate) && fits_in(b, candidate)) {
+            return candidate;
+        }
+    }
+
+    throw std::invalid_argument(
+        "Cannot combine types " + std::string(types::primitive_type_to_string(a)) + " and " +
+        types::primitive_type_to_string(b) + " without loss"
+    );
 }
 
 } // namespace types

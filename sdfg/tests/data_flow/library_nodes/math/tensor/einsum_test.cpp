@@ -287,6 +287,7 @@ TEST(EinsumNodeTest, SimpleMeans) {
     builder.add_container("A", desc_m, true);
     builder.add_container("y", desc, true);
     builder.add_container("m_tmp", base_desc);
+    builder.add_container("i", sym_desc);
 
     // Symbols
     auto zero = symbolic::zero();
@@ -403,6 +404,7 @@ TEST(EinsumNodeTest, ExpandMeans) {
     builder.add_container("A", desc_m, true);
     builder.add_container("y", desc, true);
     builder.add_container("m_tmp", base_desc);
+    builder.add_container("i", sym_desc);
 
     // Symbols
     auto zero = symbolic::zero();

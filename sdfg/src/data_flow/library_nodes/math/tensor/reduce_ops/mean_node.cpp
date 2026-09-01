@@ -3,6 +3,7 @@
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/div_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/reduce_ops/sum_node.h"
+#include "sdfg/types/utils.h"
 
 namespace sdfg {
 namespace math {
@@ -46,9 +47,6 @@ passes::LibNodeExpander::ExpandOutcome MeanNode::expand_inner(
     builder.add_computational_memlet(sum_block, sum_out_node, sum_node, "Y", {}, out_type, this->debug_info());
 
     // Create Count (symbolically)
-    auto count_container = builder.find_new_name("_mean_count");
-    builder.add_container(count_container, types::Scalar(types::PrimitiveType::Int64));
-
     symbolic::Expression count_expr = symbolic::one();
     for (auto axis : axes_) {
         int64_t ax = axis;
@@ -56,6 +54,10 @@ passes::LibNodeExpander::ExpandOutcome MeanNode::expand_inner(
         symbolic::Expression dim = shape_[ax];
         count_expr = symbolic::mul(count_expr, dim);
     }
+
+    auto count_container = builder.find_new_name("_mean_count");
+    builder.add_container(count_container, types::Scalar(types::get_primitive_type_to_hold_upper_bound(count_expr)));
+
     builder.add_assignments(seq, {{symbolic::symbol(count_container), count_expr}}, this->debug_info());
 
     // Create DivNode

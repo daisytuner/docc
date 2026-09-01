@@ -23,7 +23,7 @@ using namespace sdfg;
 TEST(DeadDataEliminationTest, Unused) {
     builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
 
-    types::Scalar desc(types::PrimitiveType::UInt32);
+    types::Scalar desc(types::PrimitiveType::Int32);
     builder.add_container("i", desc);
     auto sdfg = builder.move();
 
@@ -45,7 +45,7 @@ TEST(DeadDataEliminationTest, Unused) {
 TEST(DeadDataEliminationTest, WriteWithoutRead_Transition) {
     builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
 
-    types::Scalar desc(types::PrimitiveType::UInt32);
+    types::Scalar desc(types::PrimitiveType::Int32);
     builder.add_container("i", desc);
     auto sym1 = symbolic::symbol("i");
 
@@ -76,7 +76,7 @@ TEST(DeadDataEliminationTest, WriteWithoutRead_Transition) {
 TEST(DeadDataEliminationTest, WriteWithoutRead_Dataflow) {
     builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
 
-    types::Scalar desc(types::PrimitiveType::UInt32);
+    types::Scalar desc(types::PrimitiveType::Int32);
     builder.add_container("j", desc);
 
     auto& root = builder.subject().root();
@@ -175,7 +175,7 @@ TEST(DeadDataEliminationTest, Does_not_remove_some_libNode_outputs) {
 TEST(DeadDataEliminationTest, WriteAfterWrite_For) {
     builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
 
-    types::Scalar desc(types::PrimitiveType::UInt32);
+    types::Scalar desc(types::PrimitiveType::Int32);
     builder.add_container("i", desc);
     auto sym = symbolic::symbol("i");
 
@@ -634,7 +634,7 @@ TEST(DeadDataEliminationTest, DanglingRead) {
 TEST(DeadDataEliminationTest, OwnedHeapMemoryIsRemoved) {
     builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
 
-    types::Scalar t_int_desc(types::PrimitiveType::UInt32);
+    types::Scalar t_int_desc(types::PrimitiveType::Int32);
     types::Scalar t_fp_desc(types::PrimitiveType::Float);
     types::Pointer t_fp_ptr(t_fp_desc);
 
@@ -704,7 +704,7 @@ TEST(DeadDataEliminationTest, OwnedHeapMemoryIsRemoved) {
 TEST(DeadDataEliminationTest, OwnedHeapMemoryWithFree) {
     builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
 
-    types::Scalar t_int_desc(types::PrimitiveType::UInt32);
+    types::Scalar t_int_desc(types::PrimitiveType::Int32);
     types::Scalar t_fp_desc(types::PrimitiveType::Float);
     types::Pointer t_fp_ptr(t_fp_desc);
 
@@ -779,7 +779,7 @@ TEST(DeadDataEliminationTest, OwnedHeapMemoryWithFree) {
 TEST(DeadDataEliminationTest, MultiWrittenOwnedHeapMemoryIsRemoved) {
     builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
 
-    types::Scalar t_int_desc(types::PrimitiveType::UInt32);
+    types::Scalar t_int_desc(types::PrimitiveType::Int32);
     types::Scalar t_fp_desc(types::PrimitiveType::Float);
     types::Pointer t_fp_ptr(t_fp_desc);
 
@@ -847,7 +847,7 @@ TEST(DeadDataEliminationTest, MultiWrittenOwnedHeapMemoryIsRemoved) {
 TEST(DeadDataEliminationTest, OwnedHeapMemoryPtrEscapedViaReturn) {
     builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
 
-    types::Scalar t_int_desc(types::PrimitiveType::UInt32);
+    types::Scalar t_int_desc(types::PrimitiveType::Int32);
     types::Scalar t_fp_desc(types::PrimitiveType::Float);
     types::Pointer t_fp_ptr(t_fp_desc);
 
@@ -918,7 +918,7 @@ TEST(DeadDataEliminationTest, OwnedHeapMemoryPtrEscapedViaReturn) {
 TEST(DeadDataEliminationTest, OwnedHeapMemorySubsetAddrEscapedViaReturn) {
     builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
 
-    types::Scalar t_int_desc(types::PrimitiveType::UInt32);
+    types::Scalar t_int_desc(types::PrimitiveType::Int32);
     types::Scalar t_fp_desc(types::PrimitiveType::Float);
     types::Pointer t_fp_ptr(t_fp_desc);
 
@@ -996,7 +996,7 @@ TEST(DeadDataEliminationTest, OwnedHeapMemorySubsetAddrEscapedViaReturn) {
 TEST(DeadDataEliminationTest, OwnedHeapMemoryEscapesViaPtrWrite) {
     builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
 
-    types::Scalar t_int_desc(types::PrimitiveType::UInt32);
+    types::Scalar t_int_desc(types::PrimitiveType::Int32);
     types::Scalar t_fp_desc(types::PrimitiveType::Float);
     types::Pointer t_fp_ptr(t_fp_desc);
     types::Pointer t_fp_ptr_ptr(reinterpret_cast<types::IType&>(t_fp_ptr));
@@ -1072,7 +1072,7 @@ TEST(DeadDataEliminationTest, OwnedHeapMemoryEscapesViaPtrWrite) {
 TEST(DeadDataEliminationTest, OwnedHeapMemoryEscapesViaBlackbox) {
     builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
 
-    types::Scalar t_int_desc(types::PrimitiveType::UInt32);
+    types::Scalar t_int_desc(types::PrimitiveType::Int32);
     types::Scalar t_fp_desc(types::PrimitiveType::Float);
     types::Pointer t_fp_ptr(t_fp_desc);
     types::Pointer t_fp_ptr_ptr(reinterpret_cast<types::IType&>(t_fp_ptr));
@@ -1154,7 +1154,7 @@ TEST(DeadDataEliminationTest, OwnedHeapMemoryEscapesViaBlackbox) {
 TEST(DeadDataEliminationTest, OwnedHeapMemoryEscapesViaTasklet) {
     builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
 
-    types::Scalar t_int_desc(types::PrimitiveType::UInt32);
+    types::Scalar t_int_desc(types::PrimitiveType::Int32);
     types::Scalar t_int64_desc(types::PrimitiveType::UInt64);
     types::Scalar t_fp_desc(types::PrimitiveType::Float);
     types::Pointer t_fp_ptr(t_fp_desc);
@@ -1237,7 +1237,7 @@ TEST(DeadDataEliminationTest, OwnedHeapMemoryEscapesViaTasklet) {
 TEST(DeadDataEliminationTest, OwnedHeapMemoryEscapesViaSymbol) {
     builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
 
-    types::Scalar t_int_desc(types::PrimitiveType::UInt32);
+    types::Scalar t_int_desc(types::PrimitiveType::Int32);
     types::Scalar t_int64_desc(types::PrimitiveType::UInt64);
     types::Scalar t_fp_desc(types::PrimitiveType::Float);
     types::Pointer t_fp_ptr(t_fp_desc);
@@ -1334,7 +1334,7 @@ TEST(DeadDataEliminationTest, OwnedHeapMemoryEscapesViaSymbol) {
 TEST(DeadDataEliminationTest, OwnedHeapMemoryElementRead) {
     builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
 
-    types::Scalar t_int_desc(types::PrimitiveType::UInt32);
+    types::Scalar t_int_desc(types::PrimitiveType::Int32);
     types::Scalar t_int64_desc(types::PrimitiveType::UInt64);
     types::Scalar t_fp_desc(types::PrimitiveType::Float);
     types::Pointer t_fp_ptr(t_fp_desc);

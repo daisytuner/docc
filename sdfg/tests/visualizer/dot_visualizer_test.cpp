@@ -37,7 +37,7 @@ TEST(DotVisualizerTest, transpose) {
     auto& root = sdfg.root();
 
     // Add containers
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("M", sym_desc, true);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
@@ -126,7 +126,7 @@ TEST(DotVisualizerTest, transpose) {
 TEST(DotVisualizerTest, syrk) {
     builder::StructuredSDFGBuilder sdfg("sdfg_1", FunctionType_CPU);
 
-    types::Scalar desc_symbols(types::PrimitiveType::UInt64);
+    types::Scalar desc_symbols(types::PrimitiveType::Int64);
     sdfg.add_container("M", desc_symbols, true);
     sdfg.add_container("N", desc_symbols, true);
     sdfg.add_container("i", desc_symbols);
@@ -848,7 +848,7 @@ TEST(DotVisualizerTest, reduce) {
     auto& sdfg = builder.subject();
     auto& root = sdfg.root();
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
 

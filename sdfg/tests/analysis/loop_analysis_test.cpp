@@ -353,7 +353,7 @@ TEST(LoopAnalysisTest, ancestors_outermost) {
 TEST(LoopAnalysisTest, outermost_loops) {
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
 
-    types::Scalar desc_symbols(types::PrimitiveType::UInt64);
+    types::Scalar desc_symbols(types::PrimitiveType::Int64);
     builder.add_container("i_1", desc_symbols);
     builder.add_container("i_2", desc_symbols);
     builder.add_container("i_3", desc_symbols);

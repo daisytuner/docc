@@ -7,6 +7,7 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/tensor_node.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/types/type.h"
+#include "sdfg/types/utils.h"
 
 namespace sdfg {
 namespace math {
@@ -158,7 +159,7 @@ passes::LibNodeExpander::ExpandOutcome PoolingNode::
 
     // Map over batch
     std::string n_str = builder.find_new_name("n");
-    builder.add_container(n_str, types::Scalar(types::PrimitiveType::UInt64));
+    builder.add_container(n_str, types::Scalar(types::get_primitive_type_to_hold_upper_bound(N)));
     auto n_var = symbolic::symbol(n_str);
     auto& map_n = builder.add_map(
         *current_scope,
@@ -174,7 +175,7 @@ passes::LibNodeExpander::ExpandOutcome PoolingNode::
 
     // Map over channel
     std::string c_str = builder.find_new_name("c");
-    builder.add_container(c_str, types::Scalar(types::PrimitiveType::UInt64));
+    builder.add_container(c_str, types::Scalar(types::get_primitive_type_to_hold_upper_bound(C)));
     auto c_var = symbolic::symbol(c_str);
     auto& map_c = builder.add_map(
         *current_scope,
@@ -191,12 +192,13 @@ passes::LibNodeExpander::ExpandOutcome PoolingNode::
     // Map over each output spatial dimension
     for (size_t i = 0; i < spatial_dims; ++i) {
         std::string od_str = builder.find_new_name("od" + std::to_string(i));
-        builder.add_container(od_str, types::Scalar(types::PrimitiveType::UInt64));
+        auto& dim = output_spatial_dims[i];
+        builder.add_container(od_str, types::Scalar(types::get_primitive_type_to_hold_upper_bound(dim)));
         auto od_var = symbolic::symbol(od_str);
         auto& map_od = builder.add_map(
             *current_scope,
             od_var,
-            symbolic::Lt(od_var, output_spatial_dims[i]),
+            symbolic::Lt(od_var, dim),
             symbolic::zero(),
             symbolic::add(od_var, symbolic::one()),
             structured_control_flow::ScheduleType_Sequential::create(),
@@ -256,12 +258,13 @@ passes::LibNodeExpander::ExpandOutcome PoolingNode::
                                    : structured_control_flow::ReductionOperation::Add);
     for (size_t i = 0; i < spatial_dims; ++i) {
         std::string k_str = builder.find_new_name("k" + std::to_string(i));
-        builder.add_container(k_str, types::Scalar(types::PrimitiveType::UInt64));
+        auto& dim = kernel_shape_[i];
+        builder.add_container(k_str, types::Scalar(types::get_primitive_type_to_hold_upper_bound(dim)));
         auto k_var = symbolic::symbol(k_str);
         auto& reduce_k = builder.add_reduce(
             *loop_scope,
             k_var,
-            symbolic::Lt(k_var, kernel_shape_[i]),
+            symbolic::Lt(k_var, dim),
             symbolic::zero(),
             symbolic::add(k_var, symbolic::one()),
             {{.operation = reduce_op, .container = accum_var}},

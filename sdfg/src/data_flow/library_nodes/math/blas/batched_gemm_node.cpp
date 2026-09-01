@@ -240,7 +240,7 @@ passes::LibNodeExpander::ExpandOutcome BatchedGEMMNode::
     // Batch loop (outermost)
     std::string batch_indvar_str = builder.find_new_name("_batch");
     builder
-        .add_container(batch_indvar_str, types::Scalar(types::get_primitive_type_to_hold_expression(this->batch_count_)));
+        .add_container(batch_indvar_str, types::Scalar(types::get_primitive_type_to_hold_upper_bound(this->batch_count_)));
     auto batch_indvar = symbolic::symbol(batch_indvar_str);
     auto& batch_loop = builder.add_map(
         new_sequence,
@@ -268,7 +268,7 @@ passes::LibNodeExpander::ExpandOutcome BatchedGEMMNode::
         auto& dim_end = indvar_ends[i];
 
         std::string indvar_str = builder.find_new_name(indvar_names[i]);
-        builder.add_container(indvar_str, types::Scalar(types::get_primitive_type_to_hold_expression(dim_end)));
+        builder.add_container(indvar_str, types::Scalar(types::get_primitive_type_to_hold_upper_bound(dim_end)));
 
         auto indvar = symbolic::symbol(indvar_str);
         auto init = dim_begin;

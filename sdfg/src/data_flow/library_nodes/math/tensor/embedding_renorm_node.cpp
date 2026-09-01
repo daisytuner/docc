@@ -14,6 +14,7 @@
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/types/scalar.h"
 #include "sdfg/types/type.h"
+#include "sdfg/types/utils.h"
 
 namespace sdfg {
 namespace math {
@@ -259,9 +260,10 @@ passes::LibNodeExpander::ExpandOutcome EmbeddingRenormNode::
     structured_control_flow::Sequence* inner_scope = &new_sequence;
     for (size_t i = 0; i < nB; ++i) {
         std::string var_name = builder.find_new_name("_i" + std::to_string(i));
-        builder.add_container(var_name, types::Scalar(types::PrimitiveType::Int64));
+        auto& dim = this->indices_layout_.get_dim(i);
+        builder.add_container(var_name, types::Scalar(types::get_primitive_type_to_hold_upper_bound(dim)));
         auto sym_var = symbolic::symbol(var_name);
-        auto condition = symbolic::Lt(sym_var, this->indices_layout_.get_dim(i));
+        auto condition = symbolic::Lt(sym_var, dim);
         auto init = symbolic::zero();
         auto update = symbolic::add(sym_var, symbolic::one());
         auto& loop = builder.add_map(
@@ -317,7 +319,7 @@ passes::LibNodeExpander::ExpandOutcome EmbeddingRenormNode::
     // Sequential accumulation loop over the embedding dimension.
     {
         std::string j_name = builder.find_new_name("_j");
-        builder.add_container(j_name, types::Scalar(types::PrimitiveType::Int64));
+        builder.add_container(j_name, types::Scalar(types::get_primitive_type_to_hold_upper_bound(embedding_dim)));
         auto j_sym = symbolic::symbol(j_name);
         auto& acc_loop = builder.add_for(
             *inner_scope,
@@ -461,7 +463,7 @@ passes::LibNodeExpander::ExpandOutcome EmbeddingRenormNode::
     // In-place scaling loop: W[idx, j] *= scale.
     {
         std::string j_name = builder.find_new_name("_j_scale");
-        builder.add_container(j_name, types::Scalar(types::PrimitiveType::Int64));
+        builder.add_container(j_name, types::Scalar(types::get_primitive_type_to_hold_upper_bound(embedding_dim)));
         auto j_sym = symbolic::symbol(j_name);
         auto& scale_loop = builder.add_map(
             *inner_scope,

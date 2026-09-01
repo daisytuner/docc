@@ -126,7 +126,28 @@ const types::IType* peel_to_next_element(const types::IType& type);
  */
 bool is_contiguous_type(const types::IType& type, StructuredSDFG& sdfg);
 
-PrimitiveType get_primitive_type_to_hold_expression(const symbolic::Expression& expr);
+/**
+ * Return a good primitive type that can hold the expressions maximum value.
+ * Current limited impl: will evaluate the expression. If result is immediate and fits into Int32, then that,
+ * otherwise falls back to Int64
+ * @return For now Int32 or Int64 if not sure
+ */
+PrimitiveType get_primitive_type_to_hold_upper_bound(const symbolic::Expression& expr);
+
+/**
+ * Return a good primitive type that can hold the expressions minimum value.
+ * Current limited impl: will evaluate the expression. If result is immediate and fits into Int32, then that,
+ * otherwise falls back to Int64
+ * @return For now Int32 or Int64 if not sure
+ */
+PrimitiveType get_primitive_type_to_hold_lower_bound(const symbolic::Expression& expr);
+
+/**
+ * Return the primitive type that can hold the contents of both a and b without any risk of loss
+ * (respecting C-style signed-overflow is undefined and need not be considered. but unsigned overflow does)
+ * @return
+ */
+PrimitiveType get_primitive_type_to_hold(PrimitiveType a, PrimitiveType b);
 
 } // namespace types
 } // namespace sdfg

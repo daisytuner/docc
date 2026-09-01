@@ -108,8 +108,6 @@ public:
     static std::ostream& emit_symbolic_list(std::ostream& stream, const symbolic::MultiExpression& list);
 
     static types::PrimitiveType get_tensor_indvar_type_for_shape(const std::vector<symbolic::Expression>& shape);
-
-    static types::PrimitiveType get_combined_tensor_indvar_type(types::PrimitiveType a, types::PrimitiveType b);
 };
 
 std::ostream& operator<<(std::ostream& stream, const TensorLayout& layout);

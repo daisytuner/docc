@@ -30,6 +30,7 @@
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/types/scalar.h"
 #include "sdfg/types/type.h"
+#include "sdfg/types/utils.h"
 #include "symengine/symengine_rcp.h"
 
 namespace sdfg {
@@ -44,19 +45,19 @@ void TensorCopyNode::expand_identity_mode(
     auto& dfg = this->get_parent();
     structured_control_flow::Sequence* current_seq = &sequence;
     int dims = this->layout_x_.dims();
-    types::Scalar indvar_type(types::PrimitiveType::UInt64);
 
     data_flow::Subset indvars;
     indvars.reserve(dims);
     for (int i = 0; i < dims; i++) {
         auto indvar_container = builder.find_new_name("_i");
-        builder.add_container(indvar_container, indvar_type);
+        auto& dim = this->layout_x_.get_dim(i);
+        builder.add_container(indvar_container, types::Scalar(types::get_primitive_type_to_hold_upper_bound(dim)));
         auto indvar = symbolic::symbol(indvar_container);
         indvars.push_back(indvar);
         auto& map = builder.add_map(
             *current_seq,
             indvar,
-            symbolic::Lt(indvar, this->layout_x_.get_dim(i)),
+            symbolic::Lt(indvar, dim),
             symbolic::zero(),
             symbolic::add(indvar, symbolic::one()),
             structured_control_flow::ScheduleType_Sequential::create(),
@@ -115,19 +116,19 @@ void TensorCopyNode::expand_permutation_mode(
 
     auto& dfg = this->get_parent();
     structured_control_flow::Sequence* current_seq = &sequence;
-    types::Scalar indvar_type(types::PrimitiveType::UInt64);
 
     data_flow::Subset indvars_y;
     indvars_y.reserve(dims);
     for (int i = 0; i < dims; i++) {
         auto indvar_container = builder.find_new_name("_i");
-        builder.add_container(indvar_container, indvar_type);
+        auto& dim = this->layout_y_.get_dim(i);
+        builder.add_container(indvar_container, types::Scalar(types::get_primitive_type_to_hold_upper_bound(dim)));
         auto indvar = symbolic::symbol(indvar_container);
         indvars_y.push_back(indvar);
         auto& map = builder.add_map(
             *current_seq,
             indvar,
-            symbolic::Lt(indvar, this->layout_y_.get_dim(i)),
+            symbolic::Lt(indvar, dim),
             symbolic::zero(),
             symbolic::add(indvar, symbolic::one()),
             structured_control_flow::ScheduleType_Sequential::create(),
@@ -175,19 +176,19 @@ void TensorCopyNode::expand_squeeze_mode(
     auto& dfg = this->get_parent();
     structured_control_flow::Sequence* current_seq = &sequence;
     int smaller_dims = smaller.dims();
-    types::Scalar indvar_type(types::PrimitiveType::UInt64);
 
     data_flow::Subset indvars_smaller;
     indvars_smaller.reserve(smaller_dims);
     for (int i = 0; i < smaller_dims; i++) {
         auto indvar_container = builder.find_new_name("_i");
-        builder.add_container(indvar_container, indvar_type);
+        auto& dim = smaller.get_dim(i);
+        builder.add_container(indvar_container, types::Scalar(types::get_primitive_type_to_hold_upper_bound(dim)));
         auto indvar = symbolic::symbol(indvar_container);
         indvars_smaller.push_back(indvar);
         auto& map = builder.add_map(
             *current_seq,
             indvar,
-            symbolic::Lt(indvar, smaller.get_dim(i)),
+            symbolic::Lt(indvar, dim),
             symbolic::zero(),
             symbolic::add(indvar, symbolic::one()),
             structured_control_flow::ScheduleType_Sequential::create(),
@@ -264,9 +265,9 @@ void TensorCopyNode::expand_reshape_mode(
     }
 
     auto& dfg = this->get_parent();
-    types::Scalar indvar_type(types::PrimitiveType::UInt64);
     auto indvar_container = builder.find_new_name("_i");
-    builder.add_container(indvar_container, indvar_type);
+    builder
+        .add_container(indvar_container, types::Scalar(types::get_primitive_type_to_hold_upper_bound(total_elements)));
     auto indvar = symbolic::symbol(indvar_container);
     auto& map = builder.add_map(
         sequence,

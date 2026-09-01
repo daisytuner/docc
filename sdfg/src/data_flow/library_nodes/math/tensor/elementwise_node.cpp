@@ -177,7 +177,7 @@ std::pair<structured_control_flow::Sequence*, std::vector<symbolic::Expression>>
     for (size_t i = 0; i < shape.size(); i++) {
         std::string indvar_str = builder.find_new_name("_i");
         auto& dim_end = shape.at(i);
-        builder.add_container(indvar_str, types::Scalar(types::get_primitive_type_to_hold_expression(dim_end)));
+        builder.add_container(indvar_str, types::Scalar(types::get_primitive_type_to_hold_upper_bound(dim_end)));
 
         auto indvar = symbolic::symbol(indvar_str);
         auto init = symbolic::zero();

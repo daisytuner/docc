@@ -133,7 +133,7 @@ TEST(DeadCFGEliminationTest, NonTrivialMap) {
     // Test non-trivial loop: for (i = 0; i < 10; i++) - should NOT be eliminated
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
 
-    types::Scalar int_type(types::PrimitiveType::UInt64);
+    types::Scalar int_type(types::PrimitiveType::Int64);
     builder.add_container("i", int_type);
 
     auto& root = builder.subject().root();

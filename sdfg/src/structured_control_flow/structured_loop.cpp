@@ -1,5 +1,6 @@
 #include "sdfg/structured_control_flow/structured_loop.h"
 
+#include "sdfg/function.h"
 #include "sdfg/symbolic/conjunctive_normal_form.h"
 #include "sdfg/symbolic/polynomials.h"
 #include "symengine/subs.h"
@@ -23,9 +24,26 @@ StructuredLoop::StructuredLoop(
 }
 
 void StructuredLoop::validate(const Function& function) const {
-    if (this->indvar_.is_null()) {
-        throw InvalidSDFGException("StructuredLoop: Induction variable cannot be null");
+    auto indvar = this->indvar_;
+    if (indvar.is_null()) {
+        throw InvalidSDFGException(
+            "StructuredLoop: Induction variable cannot be null on #" + std::to_string(this->element_id())
+        );
     }
+    if (!function.exists(indvar->get_name())) {
+        throw InvalidSDFGException(
+            "StructuredLoop: Indvar '" + indvar->get_name() + "' must exist as container on #" +
+            std::to_string(this->element_id())
+        );
+    }
+    auto& indvar_type = function.type(indvar->get_name());
+    if (indvar_type.type_id() == types::TypeID::Scalar && types::is_unsigned(indvar_type.primitive_type())) {
+        throw InvalidSDFGException(
+            "StructuredLoop: Expressions must be signed: '" + indvar->get_name() + "' is unsigned on #" +
+            std::to_string(this->element_id())
+        );
+    }
+
     if (this->init_.is_null()) {
         throw InvalidSDFGException("StructuredLoop: Initialization expression cannot be null");
     }

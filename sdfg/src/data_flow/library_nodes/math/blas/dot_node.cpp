@@ -104,7 +104,7 @@ passes::LibNodeExpander::ExpandOutcome DotNode::
     auto& new_sequence = standalone->replace_with_sequence();
 
     std::string loop_var = builder.find_new_name("_i");
-    builder.add_container(loop_var, types::Scalar(types::get_primitive_type_to_hold_expression(this->n_)));
+    builder.add_container(loop_var, types::Scalar(types::get_primitive_type_to_hold_upper_bound(this->n_)));
 
     auto loop_indvar = symbolic::symbol(loop_var);
     auto loop_init = symbolic::integer(0);

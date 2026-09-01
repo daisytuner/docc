@@ -31,6 +31,7 @@
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/types/scalar.h"
 #include "sdfg/types/type.h"
+#include "sdfg/types/utils.h"
 #include "symengine/symbol.h"
 
 namespace sdfg {
@@ -256,7 +257,9 @@ bool EinsumNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
         if (builder.subject().exists(indvar_name)) {
             continue;
         }
-        builder.add_container(indvar_name, types::Scalar(types::PrimitiveType::Int64));
+        auto bound_type = types::get_primitive_type_to_hold_upper_bound(this->bound(i));
+        auto init_type = types::get_primitive_type_to_hold_lower_bound(this->init(i));
+        builder.add_container(indvar_name, types::Scalar(types::get_primitive_type_to_hold(bound_type, init_type)));
     }
 
     // Add loops
