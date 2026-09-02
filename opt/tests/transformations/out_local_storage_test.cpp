@@ -36,7 +36,7 @@ TEST(OutLocalStorageTest, For_Array_RW) {
     builder::StructuredSDFGBuilder builder("ols_for_array_rw_test", FunctionType_CPU);
 
     // Create containers
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Float);
@@ -210,7 +210,7 @@ TEST(OutLocalStorageTest, For_Array_RW) {
 TEST(OutLocalStorageTest, For_Array_WO) {
     builder::StructuredSDFGBuilder builder("ols_for_array_wo_test", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Float);
@@ -329,7 +329,7 @@ TEST(OutLocalStorageTest, For_Array_Linearized_RW) {
     builder::StructuredSDFGBuilder builder("ols_cpu_flatptr_rw", FunctionType_CPU);
     auto& root = builder.subject().root();
 
-    types::Scalar loop_var(types::PrimitiveType::UInt64);
+    types::Scalar loop_var(types::PrimitiveType::Int64);
     types::Scalar elem(types::PrimitiveType::Float);
     types::Pointer ptr(elem);
     types::Pointer opaque_ptr;
@@ -453,7 +453,7 @@ TEST(OutLocalStorageTest, For_Array_Linearized_WO) {
     builder::StructuredSDFGBuilder builder("ols_cpu_flatptr", FunctionType_CPU);
     auto& root = builder.subject().root();
 
-    types::Scalar loop_var(types::PrimitiveType::UInt64);
+    types::Scalar loop_var(types::PrimitiveType::Int64);
     types::Scalar elem(types::PrimitiveType::Float);
     types::Pointer ptr(elem);
 
@@ -549,7 +549,7 @@ TEST(OutLocalStorageTest, For_Array_Linearized_WO) {
 TEST(OutLocalStorageTest, For_Array_PolyBench_WO) {
     builder::StructuredSDFGBuilder builder("ols_polybench_wo", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
     builder.add_container("j", sym_desc);
 
@@ -659,7 +659,7 @@ TEST(OutLocalStorageTest, For_Array_PolyBench_WO) {
 TEST(OutLocalStorageTest, For_Array_PolyBench_RW) {
     builder::StructuredSDFGBuilder builder("ols_flat_2d", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
     builder.add_container("j", sym_desc);
 
@@ -781,7 +781,7 @@ TEST(OutLocalStorageTest, For_Array_PolyBench_RW) {
 TEST(OutLocalStorageTest, For_Scalar_RW) {
     builder::StructuredSDFGBuilder builder("ols_for_scalar_rw_test", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Float);
@@ -916,7 +916,7 @@ TEST(OutLocalStorageTest, For_Scalar_RW) {
 TEST(OutLocalStorageTest, For_Scalar_WO) {
     builder::StructuredSDFGBuilder builder("ols_for_scalar_wo_test", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Float);
@@ -999,7 +999,7 @@ TEST(OutLocalStorageTest, For_Scalar_WO) {
 TEST(OutLocalStorageTest, Map_Array_RW) {
     builder::StructuredSDFGBuilder builder("ols_map_array_rw_test", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Float);
@@ -1061,7 +1061,7 @@ TEST(OutLocalStorageTest, Map_Array_RW) {
 TEST(OutLocalStorageTest, Map_Array_WO) {
     builder::StructuredSDFGBuilder builder("ols_map_array_wo_test", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Float);
@@ -1123,7 +1123,7 @@ TEST(OutLocalStorageTest, Map_Array_WO) {
 TEST(OutLocalStorageTest, For_MultipleGroups_RW) {
     builder::StructuredSDFGBuilder builder("ols_multi_groups_rw_test", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     types::Scalar elem_desc(types::PrimitiveType::Float);
     types::Pointer ptr_desc(elem_desc);
     types::Pointer opaque_desc;
@@ -1211,7 +1211,7 @@ TEST(OutLocalStorageTest, For_MultipleGroups_RW) {
 TEST(OutLocalStorageTest, For_MultipleGroups_WO) {
     builder::StructuredSDFGBuilder builder("ols_multi_groups_wo_test", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     types::Scalar elem_desc(types::PrimitiveType::Float);
     types::Pointer ptr_desc(elem_desc);
     types::Pointer opaque_desc;
@@ -1294,7 +1294,7 @@ TEST(OutLocalStorageTest, For_MultipleGroups_WO) {
 TEST(OutLocalStorageTest, For_MultipleGroups_SplitNode_WO) {
     builder::StructuredSDFGBuilder builder("ols_split_node_wo_test", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     types::Scalar elem_desc(types::PrimitiveType::Float);
     types::Pointer ptr_desc(elem_desc);
     types::Pointer opaque_desc;
@@ -1381,7 +1381,7 @@ TEST(OutLocalStorageTest, For_MultipleGroups_SplitNode_WO) {
 TEST(OutLocalStorageTest, FailsOnUnusedContainer) {
     builder::StructuredSDFGBuilder builder("ols_unused_test", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Float);
@@ -1429,7 +1429,7 @@ TEST(OutLocalStorageTest, FailsOnUnusedContainer) {
 TEST(OutLocalStorageTest, JsonSerialization) {
     builder::StructuredSDFGBuilder builder("ols_json_test", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Float);
@@ -1485,7 +1485,7 @@ TEST(OutLocalStorageTest, JsonSerialization) {
 TEST(OutLocalStorageTest, FailsOnReadOnly) {
     builder::StructuredSDFGBuilder builder("ols_ro_fail", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
     builder.add_container("j", sym_desc);
 
@@ -1534,7 +1534,7 @@ TEST(OutLocalStorageTest, FailsOnReadOnly) {
 TEST(OutLocalStorageTest, FailsOnAccessOutsideLoop) {
     builder::StructuredSDFGBuilder builder("ols_outside_fail", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
     builder.add_container("j", sym_desc);
 
@@ -1612,7 +1612,7 @@ TEST(OutLocalStorageTest, FailsOnAccessOutsideLoop) {
 TEST(OutLocalStorageTest, FlatPointer_Linearized2D) {
     builder::StructuredSDFGBuilder builder("ols_flat_2d", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
     builder.add_container("j", sym_desc);
 
@@ -1726,7 +1726,7 @@ TEST(OutLocalStorageTest, FlatPointer_Linearized2D) {
 TEST(OutLocalStorageTest, TiledAccumulator_2D) {
     builder::StructuredSDFGBuilder builder("ols_tiled_2d", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("K", sym_desc, true);
     builder.add_container("i_tile", sym_desc);
@@ -1890,7 +1890,7 @@ TEST(OutLocalStorageTest, TiledAccumulator_2D) {
 TEST(OutLocalStorageTest, TiledWriteOnly_1D) {
     builder::StructuredSDFGBuilder builder("ols_tiled_wo", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i_tile", sym_desc);
     builder.add_container("i", sym_desc);
@@ -1996,7 +1996,7 @@ TEST(OutLocalStorageTest, TiledWriteOnly_1D) {
 TEST(OutLocalStorageTest, TiledAccumulator_1D_NonZeroBase) {
     builder::StructuredSDFGBuilder builder("ols_tiled_1d_base", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("M", sym_desc, true);
     builder.add_container("i_tile", sym_desc);

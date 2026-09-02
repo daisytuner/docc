@@ -26,7 +26,7 @@ def _build_map_nest():
     """A 2-D elementwise map nest ``B[i, j] = A[i, j]`` (fully parallelizable)."""
     builder = StructuredSDFGBuilder("scheduler_test")
     f = Scalar(PrimitiveType.Float)
-    u = Scalar(PrimitiveType.UInt64)
+    u = Scalar(PrimitiveType.Int64)
 
     builder.add_container("N", u, is_argument=True)
     builder.add_container("M", u, is_argument=True)

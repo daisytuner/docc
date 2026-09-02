@@ -37,7 +37,7 @@ from docc.sdfg import (
 from docc.compiler.compiled_sdfg import CompiledSDFG
 
 F = Scalar(PrimitiveType.Float)
-U = Scalar(PrimitiveType.UInt64)
+U = Scalar(PrimitiveType.Int64)
 PF = Pointer(F)
 
 

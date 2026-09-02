@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 
 #include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/codegen/dispatchers/for_dispatcher.h"
+#include "sdfg/codegen/language_extensions/cpp_language_extension.h"
 #include "sdfg/structured_control_flow/for.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/structured_control_flow/reduce.h"
@@ -1450,6 +1452,39 @@ TEST(StructuredLoopTest, IsLoopNormalFormFalseNoCanonicalBound) {
     );
 
     EXPECT_FALSE(loop.is_loop_normal_form());
+}
+
+TEST(StructuredLoopTest, AllowsPtrAsIndvar) {
+    builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+    types::Pointer ptr_type;
+    builder.add_container("head", ptr_type, true);
+    builder.add_container("end", ptr_type, true);
+    builder.add_container("it", ptr_type);
+
+    auto& for_node = builder.add_for(
+        builder.subject().root(),
+        symbolic::symbol("it"),
+        symbolic::Ne(symbolic::symbol("it"), symbolic::symbol("end")),
+        symbolic::symbol("head"),
+        symbolic::add(symbolic::symbol("it"), symbolic::one())
+    );
+
+    builder.subject().validate();
+
+    analysis::AnalysisManager ana(builder.subject());
+
+    auto ip = codegen::InstrumentationPlan::none(builder.subject());
+    auto ap = codegen::ArgCapturePlan::none(builder.subject());
+    codegen::CPPLanguageExtension lang(builder.subject());
+
+    codegen::ForDispatcher for_disp(lang, builder.subject(), ana, for_node, *ip, *ap);
+
+    codegen::PrettyPrinter p_main;
+    codegen::PrettyPrinter p_glob;
+    codegen::CodeSnippetFactory cs;
+    EXPECT_NO_THROW(for_disp.dispatch_node(p_main, p_glob, cs));
+    auto str = p_main.str();
+    EXPECT_TRUE(!str.empty());
 }
 
 } // namespace sdfg::structured_control_flow

@@ -21,7 +21,7 @@ static builder::StructuredSDFGBuilder make_simple_loop_sdfg(structured_control_f
     types::Pointer opaque_desc;
     builder.add_container("A", opaque_desc, true);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
 
@@ -66,7 +66,7 @@ TEST(LoopSplitTest, Basic) {
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
 
     // Split at symbolic point M (need to add M as a container)
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder_opt.add_container("M", sym_desc, true);
     auto split_point = symbolic::symbol("M");
 
@@ -155,7 +155,7 @@ TEST(LoopSplitTest, SplitWithNonZeroInit) {
     types::Pointer opaque_desc;
     builder.add_container("A", opaque_desc, true);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("M", sym_desc, true);
     builder.add_container("K", sym_desc, true);
@@ -212,7 +212,7 @@ TEST(LoopSplitTest, Serialization) {
     structured_control_flow::For* orig_loop = nullptr;
     auto builder = make_simple_loop_sdfg(orig_loop);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("M", sym_desc, true);
 
     auto split_point = symbolic::symbol("M");
@@ -235,7 +235,7 @@ TEST(LoopSplitTest, Deserialization) {
     structured_control_flow::For* orig_loop = nullptr;
     auto builder = make_simple_loop_sdfg(orig_loop);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("M", sym_desc, true);
 
     size_t loop_id = orig_loop->element_id();
@@ -257,7 +257,7 @@ TEST(LoopSplitTest, CannotApplyNonContiguous) {
     auto& sdfg = builder.subject();
     auto& root = sdfg.root();
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
 

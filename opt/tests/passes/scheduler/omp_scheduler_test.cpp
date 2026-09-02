@@ -19,7 +19,7 @@ TEST(OMPSchedulerTest, OuterParallelMapWithInnerMap) {
     auto& sdfg = builder.subject();
     auto& root = sdfg.root();
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     types::Scalar base_desc(types::PrimitiveType::Float);
     types::Array desc_1(base_desc, symbolic::symbol("M"));
     types::Pointer desc_2(desc_1);
@@ -88,7 +88,7 @@ TEST(OMPSchedulerTest, OuterWhileWith2DMap) {
     auto& sdfg = builder.subject();
     auto& root = sdfg.root();
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     types::Scalar base_desc(types::PrimitiveType::Float);
     types::Array desc_1(base_desc, symbolic::symbol("M"));
     types::Pointer desc_2(desc_1);
@@ -164,7 +164,7 @@ TEST(OMPSchedulerTest, OuterWhileWithInnerMaps) {
     auto& sdfg = builder.subject();
     auto& root = sdfg.root();
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     types::Scalar base_desc(types::PrimitiveType::Float);
     types::Pointer desc_2(base_desc);
 
@@ -246,7 +246,7 @@ TEST(OMPSchedulerTest, SkipsAlreadyParallelMap) {
     auto& sdfg = builder.subject();
     auto& root = sdfg.root();
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     types::Scalar base_desc(types::PrimitiveType::Float);
     types::Pointer desc_2(base_desc);
     types::Pointer opaque_desc;

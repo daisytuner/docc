@@ -56,7 +56,7 @@ inline std::unique_ptr<StructuredSDFG> correlation() {
 
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
 
-    types::Scalar desc_symbols(types::PrimitiveType::UInt64);
+    types::Scalar desc_symbols(types::PrimitiveType::Int64);
     builder.add_container("M", desc_symbols, true);
     builder.add_container("N", desc_symbols, true);
     builder.add_container("i", desc_symbols);
@@ -166,7 +166,7 @@ inline std::unique_ptr<StructuredSDFG> covariance() {
 
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
 
-    types::Scalar desc_symbols(types::PrimitiveType::UInt64);
+    types::Scalar desc_symbols(types::PrimitiveType::Int64);
     builder.add_container("M", desc_symbols, true);
     builder.add_container("N", desc_symbols, true);
     builder.add_container("i", desc_symbols);
@@ -276,7 +276,7 @@ inline std::unique_ptr<StructuredSDFG> gemm() {
     builder.add_container("B", desc_2d, true);
     builder.add_container("C", desc_2d, true);
 
-    types::Scalar desc_symbols(types::PrimitiveType::UInt64);
+    types::Scalar desc_symbols(types::PrimitiveType::Int64);
     builder.add_container("N", desc_symbols, true);
     builder.add_container("M", desc_symbols, true);
     builder.add_container("K", desc_symbols, true);
@@ -381,7 +381,7 @@ inline std::unique_ptr<StructuredSDFG> symm() {
 
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
 
-    types::Scalar desc_symbols(types::PrimitiveType::UInt64);
+    types::Scalar desc_symbols(types::PrimitiveType::Int64);
     builder.add_container("i", desc_symbols);
     builder.add_container("j", desc_symbols);
     builder.add_container("k", desc_symbols);
@@ -503,7 +503,7 @@ inline std::unique_ptr<StructuredSDFG> gemver() {
 
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
 
-    types::Scalar desc_symbols(types::PrimitiveType::UInt64);
+    types::Scalar desc_symbols(types::PrimitiveType::Int64);
     builder.add_container("i_1", desc_symbols);
     builder.add_container("i_2", desc_symbols);
     builder.add_container("i_3", desc_symbols);
@@ -693,7 +693,7 @@ inline std::unique_ptr<StructuredSDFG> gesummv() {
 
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
 
-    types::Scalar desc_symbols(types::PrimitiveType::UInt64);
+    types::Scalar desc_symbols(types::PrimitiveType::Int64);
     builder.add_container("i", desc_symbols);
     builder.add_container("j", desc_symbols);
     builder.add_container("N", desc_symbols, true);
@@ -808,7 +808,7 @@ inline std::unique_ptr<StructuredSDFG> syr2k() {
 
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
 
-    types::Scalar desc_symbols(types::PrimitiveType::UInt64);
+    types::Scalar desc_symbols(types::PrimitiveType::Int64);
     builder.add_container("M", desc_symbols, true);
     builder.add_container("N", desc_symbols, true);
     builder.add_container("i", desc_symbols);
@@ -932,7 +932,7 @@ inline std::unique_ptr<StructuredSDFG> syrk() {
 
     builder::StructuredSDFGBuilder sdfg("sdfg_1", FunctionType_CPU);
 
-    types::Scalar desc_symbols(types::PrimitiveType::UInt64);
+    types::Scalar desc_symbols(types::PrimitiveType::Int64);
     sdfg.add_container("M", desc_symbols, true);
     sdfg.add_container("N", desc_symbols, true);
     sdfg.add_container("i", desc_symbols);
@@ -1034,7 +1034,7 @@ inline std::unique_ptr<StructuredSDFG> trmm() {
 
     builder::StructuredSDFGBuilder sdfg("sdfg_1", FunctionType_CPU);
 
-    types::Scalar desc_symbols(types::PrimitiveType::UInt64);
+    types::Scalar desc_symbols(types::PrimitiveType::Int64);
     sdfg.add_container("M", desc_symbols, true);
     sdfg.add_container("N", desc_symbols, true);
     sdfg.add_container("i", desc_symbols);
@@ -1129,7 +1129,7 @@ inline std::unique_ptr<StructuredSDFG> atax() {
 
     builder::StructuredSDFGBuilder sdfg("sdfg_1", FunctionType_CPU);
 
-    types::Scalar desc_symbols(types::PrimitiveType::UInt64);
+    types::Scalar desc_symbols(types::PrimitiveType::Int64);
     sdfg.add_container("M", desc_symbols, true);
     sdfg.add_container("N", desc_symbols, true);
     sdfg.add_container("i_1", desc_symbols);
@@ -1249,7 +1249,7 @@ inline std::unique_ptr<StructuredSDFG> bicg() {
 
     builder::StructuredSDFGBuilder sdfg("sdfg_1", FunctionType_CPU);
 
-    types::Scalar desc_symbols(types::PrimitiveType::UInt64);
+    types::Scalar desc_symbols(types::PrimitiveType::Int64);
     sdfg.add_container("M", desc_symbols, true);
     sdfg.add_container("N", desc_symbols, true);
     sdfg.add_container("i_1", desc_symbols);
@@ -1362,7 +1362,7 @@ inline std::unique_ptr<StructuredSDFG> doitgen() {
 
     builder::StructuredSDFGBuilder sdfg("sdfg_1", FunctionType_CPU);
 
-    types::Scalar desc_symbols(types::PrimitiveType::UInt64);
+    types::Scalar desc_symbols(types::PrimitiveType::Int64);
     sdfg.add_container("NP", desc_symbols, true);
     sdfg.add_container("NQ", desc_symbols, true);
     sdfg.add_container("NR", desc_symbols, true);
@@ -1484,7 +1484,7 @@ inline std::unique_ptr<StructuredSDFG> mvt() {
 
     builder::StructuredSDFGBuilder sdfg("sdfg_1", FunctionType_CPU);
 
-    types::Scalar desc_symbols(types::PrimitiveType::UInt64);
+    types::Scalar desc_symbols(types::PrimitiveType::Int64);
     sdfg.add_container("N", desc_symbols, true);
     sdfg.add_container("i_1", desc_symbols);
     sdfg.add_container("i_2", desc_symbols);
@@ -1588,7 +1588,7 @@ inline std::unique_ptr<StructuredSDFG> cholesky() {
 
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
 
-    types::Scalar desc_symbols(types::PrimitiveType::UInt64);
+    types::Scalar desc_symbols(types::PrimitiveType::Int64);
     builder.add_container("N", desc_symbols, true);
     builder.add_container("i", desc_symbols);
     builder.add_container("j", desc_symbols);
@@ -1747,7 +1747,7 @@ inline std::unique_ptr<StructuredSDFG> fdtd_2d() {
 
     builder::StructuredSDFGBuilder builder("fdtd_2d", FunctionType_CPU);
 
-    types::Scalar desc_symbols(types::PrimitiveType::UInt64);
+    types::Scalar desc_symbols(types::PrimitiveType::Int64);
     builder.add_container("TMAX", desc_symbols, true);
     builder.add_container("NX", desc_symbols, true);
     builder.add_container("NY", desc_symbols, true);
@@ -1997,7 +1997,7 @@ inline std::unique_ptr<StructuredSDFG> jacobi_2d() {
 
     builder::StructuredSDFGBuilder builder("jacobi_2d", FunctionType_CPU);
 
-    types::Scalar desc_symbols(types::PrimitiveType::UInt64);
+    types::Scalar desc_symbols(types::PrimitiveType::Int64);
     builder.add_container("TSTEPS", desc_symbols, true);
     builder.add_container("N", desc_symbols, true);
     builder.add_container("t", desc_symbols);

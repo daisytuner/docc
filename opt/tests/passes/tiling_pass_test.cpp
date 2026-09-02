@@ -18,7 +18,7 @@ void add_containers(builder::StructuredSDFGBuilder& builder, const std::string& 
         types::Pointer opaque_desc;
         builder.add_container("A", opaque_desc, true);
     }
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container(indvar, sym_desc);
 }
 

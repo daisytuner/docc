@@ -16,7 +16,7 @@ TEST(MapFusionPassTest, DoesNotCrashOnEmptyNestedProducerBody) {
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
     auto& root = builder.subject().root();
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("M", sym_desc, true);
     builder.add_container("i", sym_desc);
@@ -80,7 +80,7 @@ TEST(MapFusionPassTest, PipelineStableAfterFusion) {
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
     auto& root = builder.subject().root();
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("_s0", sym_desc, true);
     builder.add_container("_s1", sym_desc, true);
     builder.add_container("_i4", sym_desc);
@@ -181,7 +181,7 @@ TEST(MapFusionPassTest, DoesNotCrashOnEmptyNestedConsumerBody) {
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
     auto& root = builder.subject().root();
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("M", sym_desc, true);
     builder.add_container("i", sym_desc);

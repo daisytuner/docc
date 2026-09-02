@@ -35,7 +35,7 @@ using namespace sdfg;
 TEST(LoopRotateTest, BasicRotation) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Double);
@@ -116,7 +116,7 @@ TEST(LoopRotateTest, BasicRotation) {
 TEST(LoopRotateTest, SymbolicBounds) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
 
@@ -185,7 +185,7 @@ TEST(LoopRotateTest, SymbolicBounds) {
 TEST(LoopRotateTest, NonZeroLowerBound) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Double);
@@ -245,7 +245,7 @@ TEST(LoopRotateTest, NonZeroLowerBound) {
 TEST(LoopRotateTest, CannotApplyPositiveStride) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
 
     auto& root = builder.subject().root();
@@ -277,7 +277,7 @@ TEST(LoopRotateTest, CannotApplyPositiveStride) {
 TEST(LoopRotateTest, CannotApplyNonUnitNegativeStride) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
 
     auto& root = builder.subject().root();
@@ -309,7 +309,7 @@ TEST(LoopRotateTest, CannotApplyNonUnitNegativeStride) {
 TEST(LoopRotateTest, MapLoop) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Double);
@@ -360,7 +360,7 @@ TEST(LoopRotateTest, MapLoop) {
 TEST(LoopRotateTest, WithSymbolPropagation) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Double);
@@ -434,7 +434,7 @@ TEST(LoopRotateTest, WithSymbolPropagation) {
 TEST(LoopRotateTest, JsonRoundTrip) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
 
     auto& root = builder.subject().root();
@@ -478,7 +478,7 @@ TEST(LoopRotateTest, JsonRoundTrip) {
 TEST(LoopRotateTest, IndvarFinalValueAfterLoop) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Double);

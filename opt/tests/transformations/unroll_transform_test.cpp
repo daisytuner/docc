@@ -17,7 +17,7 @@ static builder::StructuredSDFGBuilder make_loop(structured_control_flow::For*& o
     types::Pointer desc(base_desc);
     types::Pointer opaque_desc;
     builder.add_container("A", opaque_desc, true);
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
 

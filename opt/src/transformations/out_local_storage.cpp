@@ -22,6 +22,7 @@
 #include "sdfg/types/array.h"
 #include "sdfg/types/pointer.h"
 #include "sdfg/types/scalar.h"
+#include "sdfg/types/utils.h"
 
 namespace sdfg {
 namespace transformations {
@@ -486,7 +487,7 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
 
             // Cooperative copy-in loop
             auto idx_name = builder.find_new_name("__daisy_ols_coop_init_" + this->container_);
-            types::Scalar idx_type(types::PrimitiveType::UInt64);
+            types::Scalar idx_type(types::get_primitive_type_to_hold_upper_bound(varying_flat_size));
             builder.add_container(idx_name, idx_type);
             auto idx_var = symbolic::symbol(idx_name);
 
@@ -525,7 +526,7 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
 
             // Cooperative writeback loop
             auto idx_name = builder.find_new_name("__daisy_ols_coop_wb_" + this->container_);
-            types::Scalar idx_type(types::PrimitiveType::UInt64);
+            types::Scalar idx_type(types::get_primitive_type_to_hold_upper_bound(varying_flat_size));
             builder.add_container(idx_name, idx_type);
             auto idx_var = symbolic::symbol(idx_name);
 
@@ -569,7 +570,7 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                 size_t d = varying_dims[i];
                 auto indvar_name =
                     builder.find_new_name("__daisy_ols_init_" + this->container_ + "_d" + std::to_string(d));
-                types::Scalar indvar_type(types::PrimitiveType::UInt64);
+                types::Scalar indvar_type(types::get_primitive_type_to_hold_upper_bound(varying_dim_sizes[i]));
                 builder.add_container(indvar_name, indvar_type);
                 auto indvar = symbolic::symbol(indvar_name);
                 init_indvars.push_back(indvar);
@@ -618,7 +619,7 @@ void OutLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::A
                 size_t d = varying_dims[i];
                 auto indvar_name =
                     builder.find_new_name("__daisy_ols_wb_" + this->container_ + "_d" + std::to_string(d));
-                types::Scalar indvar_type(types::PrimitiveType::UInt64);
+                types::Scalar indvar_type(types::get_primitive_type_to_hold_upper_bound(varying_dim_sizes[i]));
                 builder.add_container(indvar_name, indvar_type);
                 auto indvar = symbolic::symbol(indvar_name);
                 wb_indvars.push_back(indvar);

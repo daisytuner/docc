@@ -15,7 +15,7 @@ using namespace sdfg;
 TEST(LoopUnitStrideTest, BasicPositiveStride) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Double);
@@ -86,7 +86,7 @@ TEST(LoopUnitStrideTest, BasicPositiveStride) {
 TEST(LoopUnitStrideTest, SymbolicBoundPositiveStride) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
 
@@ -150,7 +150,7 @@ TEST(LoopUnitStrideTest, SymbolicBoundPositiveStride) {
 TEST(LoopUnitStrideTest, CannotApplyNonZeroInit) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Double);
@@ -259,7 +259,7 @@ TEST(LoopUnitStrideTest, NegativeStridePreservesDirection) {
 TEST(LoopUnitStrideTest, PositiveStridePreservesDirection) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Double);
@@ -315,7 +315,7 @@ TEST(LoopUnitStrideTest, PositiveStridePreservesDirection) {
 TEST(LoopUnitStrideTest, CannotApplyUnitStride) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Double);
@@ -356,7 +356,7 @@ TEST(LoopUnitStrideTest, CannotApplyUnitStride) {
 TEST(LoopUnitStrideTest, CannotApplyNegativeUnitStride) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Double);
@@ -397,7 +397,7 @@ TEST(LoopUnitStrideTest, CannotApplyNegativeUnitStride) {
 TEST(LoopUnitStrideTest, MapLoop) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Double);
@@ -450,7 +450,7 @@ TEST(LoopUnitStrideTest, MapLoop) {
 TEST(LoopUnitStrideTest, JsonRoundTrip) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Double);
@@ -498,7 +498,7 @@ TEST(LoopUnitStrideTest, JsonRoundTrip) {
 TEST(LoopUnitStrideTest, LargeStride) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Double);
@@ -556,7 +556,7 @@ TEST(LoopUnitStrideTest, LargeStride) {
 TEST(LoopUnitStrideTest, IndvarFinalValueAfterLoop) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Double);

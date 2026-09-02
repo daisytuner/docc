@@ -14,6 +14,7 @@
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/types/scalar.h"
 #include "sdfg/types/type.h"
+#include "sdfg/types/utils.h"
 
 namespace sdfg {
 namespace offloading {
@@ -37,7 +38,6 @@ bool CudaConcatExpander::expand_concat_separately(
     int parent_block_index = parent_sequence->index(*parent_block);
     auto& new_sequence = builder.add_sequence_before(*parent_sequence, *parent_block, parent_block->debug_info());
 
-    types::Scalar indvar_type(types::PrimitiveType::UInt64);
     size_t num_tensors = node.inputs().size() - 1;
     const auto* iedge_result = dfg.in_edge_for_connector(node, node.result());
     if (!iedge_result) {
@@ -52,7 +52,7 @@ bool CudaConcatExpander::expand_concat_separately(
         subset.reserve(node.tensor_layouts()[i].dims());
         for (auto dim : node.tensor_layouts()[i].shape()) {
             auto indvar_container = builder.find_new_name("_i");
-            builder.add_container(indvar_container, indvar_type);
+            builder.add_container(indvar_container, types::Scalar(types::get_primitive_type_to_hold_upper_bound(dim)));
             auto indvar = symbolic::symbol(indvar_container);
             subset.push_back(indvar);
             auto& map = builder.add_map(

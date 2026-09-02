@@ -22,6 +22,7 @@
 #include "sdfg/types/array.h"
 #include "sdfg/types/pointer.h"
 #include "sdfg/types/scalar.h"
+#include "sdfg/types/utils.h"
 
 
 namespace sdfg {
@@ -470,7 +471,7 @@ void InLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::An
 
         // 2. Cooperative copy: for (idx = coop_flat; idx < varying_flat_size; idx += total_coop_threads)
         auto idx_name = builder.find_new_name("__daisy_ils_coop_" + this->container_);
-        types::Scalar idx_type(types::PrimitiveType::UInt64);
+        types::Scalar idx_type(types::get_primitive_type_to_hold_upper_bound(varying_flat_size));
         builder.add_container(idx_name, idx_type);
         auto idx_var = symbolic::symbol(idx_name);
 
@@ -541,13 +542,14 @@ void InLocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::An
         for (size_t i = 0; i < varying_dims.size(); i++) {
             size_t d = varying_dims[i];
             auto indvar_name = builder.find_new_name("__daisy_ils_" + this->container_ + "_d" + std::to_string(d));
-            types::Scalar indvar_type(types::PrimitiveType::UInt64);
+            auto& dim = varying_dim_sizes[i];
+            types::Scalar indvar_type(types::get_primitive_type_to_hold_upper_bound(dim));
             builder.add_container(indvar_name, indvar_type);
             auto indvar = symbolic::symbol(indvar_name);
             copy_indvars.push_back(indvar);
 
             auto init = symbolic::integer(0);
-            auto condition = symbolic::Lt(indvar, varying_dim_sizes[i]);
+            auto condition = symbolic::Lt(indvar, dim);
             auto update = symbolic::add(indvar, symbolic::integer(1));
 
             auto& copy_loop = builder.add_map(

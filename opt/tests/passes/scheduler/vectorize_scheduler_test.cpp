@@ -21,7 +21,7 @@ TEST(VectorizeSchedulerTest, SkipsAlreadyVectorizedMap) {
     auto& sdfg = builder.subject();
     auto& root = sdfg.root();
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     types::Scalar base_desc(types::PrimitiveType::Float);
     types::Pointer desc_2(base_desc);
     types::Pointer opaque_desc;

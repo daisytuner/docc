@@ -21,7 +21,7 @@ using namespace sdfg;
 TEST(LoopIndvarFinalizeTest, AfterLoopShift) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Double);
@@ -91,7 +91,7 @@ TEST(LoopIndvarFinalizeTest, AfterLoopShift) {
 TEST(LoopIndvarFinalizeTest, AfterLoopShiftAndUnitStride) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Double);
@@ -167,7 +167,7 @@ TEST(LoopIndvarFinalizeTest, AfterLoopShiftAndUnitStride) {
 TEST(LoopIndvarFinalizeTest, CanApplyToNormalizedLoop) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
 
     auto& root = builder.subject().root();
@@ -217,7 +217,7 @@ TEST(LoopIndvarFinalizeTest, CanApplyToNormalizedLoop) {
 TEST(LoopIndvarFinalizeTest, CannotApplyNotNormalForm) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
 
     auto& root = builder.subject().root();
