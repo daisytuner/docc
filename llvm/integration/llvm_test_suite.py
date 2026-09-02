@@ -9,65 +9,13 @@ from pathlib import Path
 # This method clones / fetches the llvm-test-suite repository
 @pytest.fixture(scope="session")
 def setup():
-    # The commit sha on which the llvm-test-suite is fixed
-    COMMIT = "f711e105d94c4819d3bc8f399f06f22d4df49421"
-
     # Check the repository dir
-    repo_dir = Path(__file__).parent / "llvm-test-suite"
-    if repo_dir.exists():
-        # The repository already exists, check that its a folder
-        assert (
-            repo_dir.is_dir()
-        ), "The repository path already exists but is not a directory: " + str(repo_dir)
-        assert (
-            repo_dir / ".git"
-        ).is_dir(), "The repository dir already exists but is not a git repository: " + str(
-            repo_dir
-        )
-        # Fetch all
-        fetch_process = subprocess.Popen(
-            ["git", "fetch", "-q", "--all"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            universal_newlines=True,
-            cwd=repo_dir,
-        )
-        stdout, stderr = fetch_process.communicate()
-        assert (
-            fetch_process.returncode == 0
-        ), "Could not fetch the llvm-test-suite repository"
-    else:
-        # The repository does not exist
-        # We need to clone it
-        clone_process = subprocess.Popen(
-            [
-                "git",
-                "clone",
-                "-q",
-                "https://github.com/llvm/llvm-test-suite.git",
-                str(repo_dir),
-            ],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            universal_newlines=True,
-        )
-        stdout, stderr = clone_process.communicate()
-        assert (
-            clone_process.returncode == 0
-        ), "Could not clone the llvm-test-suite repository"
+    repo_dir = Path(__file__).parent / "tests" / "llvm-test-suite"
 
-    # Now, we have to checkout the specified branch / commit
-    checkout_process = subprocess.Popen(
-        ["git", "checkout", "-q", COMMIT],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        universal_newlines=True,
-        cwd=repo_dir,
-    )
-    stdout, stderr = checkout_process.communicate()
-    assert checkout_process.returncode == 0, (
-        "Could not checkout the llvm-test-suite repository to commit: " + COMMIT
-    )
+    # The repository already exists, check that its a folder
+    assert (
+        repo_dir.exists() and repo_dir.is_dir()
+    ), "The repository path already exists but is not a directory: " + str(repo_dir)
 
     # Check the build dir
     build_dir = repo_dir / "build"
