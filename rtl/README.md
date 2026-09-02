@@ -33,7 +33,10 @@ __daisy_instrumentation_enter(region_id);
 __daisy_instrumentation_exit(region_id);
 ```
 
-Call `__daisy_instrumentation_finalize(region_id)` after the final measurement to finish recording. 
+We use the space between exit and finalize to record "static" counters that the compiler can compute, e.g. bytes transferred or flops.
+
+Call `__daisy_instrumentation_finalize(region_id)` after the final region measurement to finish recording.
+After all regions are finished, calling `__daisy_instrumentation_finalize_all` is required to clean up asynchronous measurements and update aggregate metrics.
 
 For the full list of API calls and metadata fields, refer to [rtl/include/daisy_rtl/daisy_rtl.h](include/daisy_rtl/daisy_rtl.h).
 
@@ -68,7 +71,7 @@ Tracing can be configured using the following environment variables:
 - `__DAISY_INSTRUMENTATION_FILE`: Output location of the trace file
 - `__DAISY_INSTRUMENTATION_EVENTS`: List of PAPI events to record on the CPU
 - `__DAISY_INSTRUMENTATION_EVENTS_CUDA`: List of PAPI events to record on the GPU
-- `__DAISY_INSTRUMENTATION_ASYNC_CAPTURE` Enable/disable asynchronous event capturing (on by default)
+- `__DAISY_INSTRUMENTATION_ASYNC_CAPTURE` Enable/disable asynchronous event capturing (on by default for aggregate GPU event recording)
 
 Captured arguments are written to individual files in the directory specified by `__DAISY_CAPTURE_BASE_DIR`.
 The default capturing behavior is defined by `__DAISY_CAPTURE_STRATEGY_DEFAULT`:
