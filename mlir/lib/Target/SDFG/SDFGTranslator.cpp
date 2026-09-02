@@ -37,6 +37,7 @@
 #include "sdfg/types/scalar.h"
 #include "sdfg/types/tensor.h"
 #include "sdfg/types/type.h"
+#include "sdfg/types/utils.h"
 
 namespace mlir {
 namespace sdfg {
@@ -583,12 +584,14 @@ std::string SDFGTranslator::store_in_c_order(
 
     for (size_t i = 0; i < tensor_info.shape().size(); i++) {
         std::string indvar_str = builder_.find_new_name("_i");
-        builder_.add_container(indvar_str, ::sdfg::types::Scalar(::sdfg::types::PrimitiveType::UInt64));
+        auto dim = ::sdfg::symbolic::integer(tensor_info.shape()[i]);
+        builder_
+            .add_container(indvar_str, ::sdfg::types::Scalar(::sdfg::types::get_primitive_type_to_hold_upper_bound(dim)));
 
         auto indvar = ::sdfg::symbolic::symbol(indvar_str);
         auto init = ::sdfg::symbolic::zero();
         auto update = ::sdfg::symbolic::add(indvar, ::sdfg::symbolic::one());
-        auto condition = ::sdfg::symbolic::Lt(indvar, ::sdfg::symbolic::integer(tensor_info.shape()[i]));
+        auto condition = ::sdfg::symbolic::Lt(indvar, dim);
 
         auto& loop =
             builder_
@@ -634,12 +637,14 @@ void SDFGTranslator::copy_to_output(
 
     for (size_t i = 0; i < tensor_info.shape().size(); i++) {
         std::string indvar_str = builder_.find_new_name("_i");
-        builder_.add_container(indvar_str, ::sdfg::types::Scalar(::sdfg::types::PrimitiveType::UInt64));
+        auto dim = ::sdfg::symbolic::integer(tensor_info.shape()[i]);
+        builder_
+            .add_container(indvar_str, ::sdfg::types::Scalar(::sdfg::types::get_primitive_type_to_hold_upper_bound(dim)));
 
         auto indvar = ::sdfg::symbolic::symbol(indvar_str);
         auto init = ::sdfg::symbolic::zero();
         auto update = ::sdfg::symbolic::add(indvar, ::sdfg::symbolic::one());
-        auto condition = ::sdfg::symbolic::Lt(indvar, ::sdfg::symbolic::integer(tensor_info.shape()[i]));
+        auto condition = ::sdfg::symbolic::Lt(indvar, dim);
 
         auto& loop =
             builder_

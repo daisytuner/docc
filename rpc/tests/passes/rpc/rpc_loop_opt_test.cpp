@@ -36,7 +36,7 @@ protected:
         builder_->add_container("B", desc_2, true);
         builder_->add_container("C", desc_2, true);
 
-        types::Scalar sym_desc(types::PrimitiveType::UInt64);
+        types::Scalar sym_desc(types::PrimitiveType::Int64);
         builder_->add_container("K", sym_desc, true);
         builder_->add_container("N", sym_desc, true);
         builder_->add_container("M", sym_desc, true);
@@ -231,7 +231,7 @@ protected:
         builder_->add_container("B", desc_2, true);
         builder_->add_container("C", desc_2, true);
 
-        types::Scalar sym_desc(types::PrimitiveType::UInt64);
+        types::Scalar sym_desc(types::PrimitiveType::Int64);
         builder_->add_container("K", sym_desc, true);
         builder_->add_container("N", sym_desc, true);
         builder_->add_container("M", sym_desc, true);
