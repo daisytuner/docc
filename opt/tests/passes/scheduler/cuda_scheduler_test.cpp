@@ -24,7 +24,7 @@ TEST(CUDASchedulerTest, OuterParallelMapWithInnerMap) {
     auto& sdfg = builder.subject();
     auto& root = sdfg.root();
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     types::Scalar base_desc(types::PrimitiveType::Float);
     types::Array desc_1(base_desc, symbolic::symbol("M"));
     types::Pointer desc_2(desc_1);
@@ -90,7 +90,7 @@ TEST(CUDASchedulerTest, OuterSequentialForWith2DMap) {
     auto& sdfg = builder.subject();
     auto& root = sdfg.root();
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     types::Scalar base_desc(types::PrimitiveType::Float);
     types::Array desc_1(base_desc, symbolic::symbol("M"));
     types::Pointer desc_2(desc_1);
@@ -162,7 +162,7 @@ TEST(CUDASchedulerTest, OuterWhileWithInnerMaps) {
     auto& sdfg = builder.subject();
     auto& root = sdfg.root();
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     types::Scalar base_desc(types::PrimitiveType::Float);
     types::Pointer desc_2(base_desc);
 
@@ -245,7 +245,7 @@ TEST(CUDASchedulerTest, NoDoubleSchedulingOfAlreadyCUDAMaps) {
     auto& sdfg = builder.subject();
     auto& root = sdfg.root();
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     types::Scalar base_desc(types::PrimitiveType::Float);
     types::Pointer desc_2(base_desc);
 
@@ -366,7 +366,7 @@ TEST(CUDASchedulerTest, MultipleTargetsNoDoubleScheduling) {
     auto& sdfg = builder.subject();
     auto& root = sdfg.root();
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     types::Scalar base_desc(types::PrimitiveType::Float);
     types::Pointer desc_2(base_desc);
 
@@ -450,7 +450,7 @@ TEST(CUDASchedulerTest, NoDoubleSchedulingOfCUDAMaps) {
     auto& sdfg = builder.subject();
     auto& root = sdfg.root();
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     types::Scalar base_desc(types::PrimitiveType::Float);
     types::Pointer desc_2(base_desc);
 
@@ -585,7 +585,7 @@ TEST(CUDASchedulerTest, DISABLED_OuterParallelMapWithInnerReduce) {
     auto& sdfg = builder.subject();
     auto& root = sdfg.root();
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     types::Scalar base_desc(types::PrimitiveType::Float);
     types::Array desc_1(base_desc, symbolic::symbol("M"));
     types::Pointer desc_2(desc_1);
@@ -653,7 +653,7 @@ TEST(CUDASchedulerTest, SkipsLoneAlreadyCUDAScheduledMap) {
     auto& sdfg = builder.subject();
     auto& root = sdfg.root();
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     types::Scalar base_desc(types::PrimitiveType::Float);
     types::Pointer desc_2(base_desc);
     types::Pointer opaque_desc;

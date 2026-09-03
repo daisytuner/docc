@@ -5,6 +5,8 @@
 
 #include <algorithm>
 
+#include "sdfg/types/utils.h"
+
 namespace sdfg {
 namespace math {
 namespace tensor {
@@ -219,12 +221,13 @@ passes::LibNodeExpander::ExpandOutcome ReduceNode::expand_inner(
         // Generate outer parallel loops (Maps)
         for (size_t dim_idx : outer_dims) {
             std::string indvar_str = builder.find_new_name("_i");
-            builder.add_container(indvar_str, types::Scalar(types::PrimitiveType::Int64));
+            auto& limit = shape_[dim_idx];
+            builder.add_container(indvar_str, types::Scalar(types::get_primitive_type_to_hold_upper_bound(limit)));
 
             auto indvar = symbolic::symbol(indvar_str);
             auto init = symbolic::zero();
             auto update = symbolic::add(indvar, symbolic::one());
-            auto condition = symbolic::Lt(indvar, shape_[dim_idx]);
+            auto condition = symbolic::Lt(indvar, limit);
 
             auto& map = builder.add_map(
                 *last_scope,
@@ -243,12 +246,13 @@ passes::LibNodeExpander::ExpandOutcome ReduceNode::expand_inner(
         auto reduction_operation = this->reduction_operation();
         for (size_t dim_idx : inner_dims) {
             std::string indvar_str = builder.find_new_name("_k");
-            builder.add_container(indvar_str, types::Scalar(types::PrimitiveType::Int64));
+            auto& limit = shape_[dim_idx];
+            builder.add_container(indvar_str, types::Scalar(types::get_primitive_type_to_hold_upper_bound(limit)));
 
             auto indvar = symbolic::symbol(indvar_str);
             auto init = symbolic::zero();
             auto update = symbolic::add(indvar, symbolic::one());
-            auto condition = symbolic::Lt(indvar, shape_[dim_idx]);
+            auto condition = symbolic::Lt(indvar, limit);
 
             if (reduction_operation.has_value()) {
                 last_loop = &builder.add_reduce(

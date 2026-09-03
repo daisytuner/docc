@@ -132,6 +132,7 @@ class TestSequence:
         builder = StructuredSDFGBuilder("test_sdfg")
 
         # Create a for loop which has its own body sequence
+        builder.add_container("i", Scalar(PrimitiveType.Int64))
         builder.begin_for("i", "0", "10", "1")
         builder.add_block()
         builder.end_for()

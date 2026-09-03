@@ -18,7 +18,7 @@ TEST(UniqueLoopIndvarsTest, DistinctIndvars_NoChange) {
 
     auto& root = builder.subject().root();
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
     builder.add_container("j", sym_desc);
@@ -53,7 +53,7 @@ TEST(UniqueLoopIndvarsTest, SiblingLoops_SameIndvar_Renamed) {
 
     auto& root = builder.subject().root();
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
 
@@ -94,7 +94,7 @@ TEST(UniqueLoopIndvarsTest, NestedLoops_SameIndvar_InnerRenamed) {
     builder.add_container("A", pointer_type, true);
     builder.add_container("B", pointer_type);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("M", sym_desc, true);
     builder.add_container("i", sym_desc);
@@ -143,7 +143,7 @@ TEST(UniqueLoopIndvarsTest, NestedMaps_SameIndvar_InnerRenamed) {
 
     auto& root = builder.subject().root();
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("M", sym_desc, true);
     builder.add_container("i", sym_desc);
@@ -191,7 +191,7 @@ TEST(UniqueLoopIndvarsTest, Idempotent) {
 
     auto& root = builder.subject().root();
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("M", sym_desc, true);
     builder.add_container("i", sym_desc);
@@ -224,7 +224,7 @@ TEST(UniqueLoopIndvarsTest, IndvarReadAfterLoop_NotRenamed) {
     builder.add_container("A", pointer_type, true);
     builder.add_container("B", pointer_type, true);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
 

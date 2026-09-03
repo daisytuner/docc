@@ -5,6 +5,7 @@
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/structured_control_flow/if_else.h"
+#include "sdfg_debug_dump.h"
 
 using namespace sdfg;
 
@@ -20,7 +21,7 @@ static builder::StructuredSDFGBuilder make_compound_loop(structured_control_flow
     types::Pointer opaque_desc;
     builder.add_container("A", opaque_desc, true);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("M", sym_desc, true);
     builder.add_container("i", sym_desc);
@@ -56,7 +57,7 @@ static builder::StructuredSDFGBuilder make_nested_loops(structured_control_flow:
     types::Pointer desc(base_desc);
     types::Pointer opaque_desc;
     builder.add_container("A", opaque_desc, true);
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     for (auto name : {"N", "P", "Q", "i", "j"}) {
         builder.add_container(name, sym_desc);
     }
@@ -177,7 +178,7 @@ TEST(LoopPeelingTest, NotApplicableToSimpleLoop) {
 
     types::Pointer opaque_desc;
     builder.add_container("A", opaque_desc, true);
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
 
@@ -207,7 +208,7 @@ static builder::StructuredSDFGBuilder make_always_fits_loop(structured_control_f
     types::Pointer desc(base_desc);
     types::Pointer opaque_desc;
     builder.add_container("A", opaque_desc, true);
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("M", sym_desc, true); // unsigned => assumption M >= 0
     builder.add_container("i", sym_desc);
 
@@ -235,12 +236,15 @@ TEST(LoopPeelingTest, HoistedRemainderEliminatedWhenProvablyInBounds) {
     auto builder = make_always_fits_loop(orig);
 
     auto sdfg = builder.move();
+    dump_sdfg(*sdfg, "0.init");
     builder::StructuredSDFGBuilder b(sdfg);
     analysis::AnalysisManager am(b.subject());
 
     transformations::LoopPeeling t(*orig); // hoisted
     EXPECT_TRUE(t.can_be_applied(b, am));
     t.apply(b, am);
+
+    dump_sdfg(b.subject(), "1.peeled");
 
     auto& s = b.subject();
     ASSERT_EQ(s.root().size(), 1);
@@ -323,7 +327,7 @@ TEST(LoopPeelingTest, InnerRemainderEliminatedViaEnclosingLoopBound) {
     types::Pointer desc(base_desc);
     types::Pointer opaque_desc;
     builder.add_container("A", opaque_desc, true);
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("t", sym_desc);
     builder.add_container("i", sym_desc);
 
@@ -386,7 +390,7 @@ TEST(LoopPeelingTest, InnerRemainderEliminatedViaStrideTightBound) {
     types::Pointer desc(base_desc);
     types::Pointer opaque_desc;
     builder.add_container("A", opaque_desc, true);
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("it", sym_desc);
     builder.add_container("i", sym_desc);
 

@@ -30,7 +30,7 @@ using namespace sdfg;
 TEST(LoopShiftTest, ShiftToZero) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
 
@@ -105,7 +105,7 @@ TEST(LoopShiftTest, ShiftToZero) {
 TEST(LoopShiftTest, ShiftByOffset) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
 
@@ -169,7 +169,7 @@ TEST(LoopShiftTest, ShiftByOffset) {
 TEST(LoopShiftTest, IndvarUsedInAccessNode) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
 
@@ -248,7 +248,7 @@ TEST(LoopShiftTest, IndvarUsedInAccessNode) {
 TEST(LoopShiftTest, NoOpWhenOffsetIsZero) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
 
@@ -286,7 +286,7 @@ TEST(LoopShiftTest, NoOpWhenOffsetIsZero) {
 TEST(LoopShiftTest, IndvarFinalValueAfterLoop) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Double);

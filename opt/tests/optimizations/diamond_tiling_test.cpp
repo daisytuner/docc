@@ -20,6 +20,8 @@
 #include "sdfg/types/pointer.h"
 #include "sdfg_debug_dump.h"
 
+namespace diamond_tiling_test {
+
 using namespace sdfg;
 
 /**
@@ -51,7 +53,7 @@ struct Jacobi1DFixture {
     void build() {
         builder = std::make_unique<builder::StructuredSDFGBuilder>("jacobi_1d", FunctionType_CPU);
 
-        types::Scalar sym_desc(types::PrimitiveType::UInt64);
+        types::Scalar sym_desc(types::PrimitiveType::Int64);
         builder->add_container("TSTEPS", sym_desc, true);
         builder->add_container("N", sym_desc, true);
         builder->add_container("t", sym_desc);
@@ -302,7 +304,7 @@ struct Jacobi2DFixture {
     void build() {
         builder = std::make_unique<builder::StructuredSDFGBuilder>("jacobi_2d", FunctionType_CPU);
 
-        types::Scalar sym_desc(types::PrimitiveType::UInt64);
+        types::Scalar sym_desc(types::PrimitiveType::Int64);
         builder->add_container("TSTEPS", sym_desc, true);
         builder->add_container("N", sym_desc, true);
         builder->add_container("t", sym_desc);
@@ -680,7 +682,7 @@ struct FDTD2DFixture {
     void build() {
         builder = std::make_unique<builder::StructuredSDFGBuilder>("fdtd_2d", FunctionType_CPU);
 
-        types::Scalar sym_desc(types::PrimitiveType::UInt64);
+        types::Scalar sym_desc(types::PrimitiveType::Int64);
         builder->add_container("TMAX", sym_desc, true);
         builder->add_container("NX", sym_desc, true);
         builder->add_container("NY", sym_desc, true);
@@ -1143,3 +1145,5 @@ TEST(DiamondTilingTest, FDTD2D_2DSpatial) {
     // Inner t should have two maps
     ASSERT_EQ(final_t->root().size(), 2);
 }
+
+} // namespace diamond_tiling_test

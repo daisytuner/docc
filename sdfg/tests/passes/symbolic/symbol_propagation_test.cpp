@@ -338,7 +338,7 @@ TEST(SymbolPropagationTest, Transition2IfElse_Negative) {
 TEST(SymbolPropagationTest, Transition2For_Init) {
     builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
 
-    types::Scalar desc(types::PrimitiveType::UInt32);
+    types::Scalar desc(types::PrimitiveType::Int32);
     builder.add_container("i", desc);
     auto sym = symbolic::symbol("i");
 
@@ -365,7 +365,7 @@ TEST(SymbolPropagationTest, Transition2For_Init) {
 TEST(SymbolPropagationTest, Transition2For_Condition) {
     builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
 
-    types::Scalar desc(types::PrimitiveType::UInt32);
+    types::Scalar desc(types::PrimitiveType::Int32);
     builder.add_container("i", desc);
     builder.add_container("N", desc);
     auto sym = symbolic::symbol("i");
@@ -394,7 +394,7 @@ TEST(SymbolPropagationTest, Transition2For_Condition) {
 TEST(SymbolPropagationTest, Transition2For_Update) {
     builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
 
-    types::Scalar desc(types::PrimitiveType::UInt32);
+    types::Scalar desc(types::PrimitiveType::Int32);
     builder.add_container("i", desc);
     builder.add_container("j", desc);
     auto sym = symbolic::symbol("i");

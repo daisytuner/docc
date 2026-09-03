@@ -60,7 +60,7 @@ def _collapse_to_compiled(builder, outer_map, name, output_root):
 def _build_single_map():
     builder = StructuredSDFGBuilder("collapse_single_map")
     f = Scalar(PrimitiveType.Float)
-    u = Scalar(PrimitiveType.UInt64)
+    u = Scalar(PrimitiveType.Int64)
 
     builder.add_container("N", u, is_argument=True)
     builder.add_container("M", u, is_argument=True)
@@ -109,7 +109,7 @@ def test_collapse_single_map(N, M, tmp_path):
 def _build_two_maps():
     builder = StructuredSDFGBuilder("collapse_two_maps")
     f = Scalar(PrimitiveType.Float)
-    u = Scalar(PrimitiveType.UInt64)
+    u = Scalar(PrimitiveType.Int64)
 
     for name in ("N", "M", "P"):
         builder.add_container(name, u, is_argument=True)
@@ -163,7 +163,7 @@ def test_collapse_two_maps(N, M, P, tmp_path):
 def _build_block_map():
     builder = StructuredSDFGBuilder("collapse_block_map")
     f = Scalar(PrimitiveType.Float)
-    u = Scalar(PrimitiveType.UInt64)
+    u = Scalar(PrimitiveType.Int64)
 
     builder.add_container("N", u, is_argument=True)
     builder.add_container("M", u, is_argument=True)

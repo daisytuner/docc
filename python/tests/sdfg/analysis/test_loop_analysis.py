@@ -8,6 +8,8 @@ from docc.sdfg import (
     For,
     StructuredLoop,
     ControlFlowNode,
+    PrimitiveType,
+    Scalar,
 )
 
 
@@ -30,6 +32,7 @@ class TestLoopAnalysisBasic:
     def test_loops_single_for(self):
         """Test loops() returns single loop for SDFG with one for loop."""
         builder = StructuredSDFGBuilder("test_sdfg")
+        builder.add_container("i", Scalar(PrimitiveType.Int64))
         builder.begin_for("i", "0", "10", "1")
         builder.add_block()
         builder.end_for()
@@ -45,7 +48,9 @@ class TestLoopAnalysisBasic:
     def test_loops_nested_fors(self):
         """Test loops() returns all nested loops in DFS order."""
         builder = StructuredSDFGBuilder("test_sdfg")
+        builder.add_container("i", Scalar(PrimitiveType.Int64))
         builder.begin_for("i", "0", "10", "1")
+        builder.add_container("j", Scalar(PrimitiveType.Int64))
         builder.begin_for("j", "0", "20", "1")
         builder.add_block()
         builder.end_for()
@@ -68,6 +73,7 @@ class TestLoopInfo:
     def test_loop_info_single_loop(self):
         """Test loop_info() returns correct info for a single loop."""
         builder = StructuredSDFGBuilder("test_sdfg")
+        builder.add_container("i", Scalar(PrimitiveType.Int64))
         builder.begin_for("i", "0", "10", "1")
         builder.add_block()
         builder.end_for()
@@ -89,8 +95,11 @@ class TestLoopInfo:
     def test_loop_info_nested_loops(self):
         """Test loop_info() returns correct depth for nested loops."""
         builder = StructuredSDFGBuilder("test_sdfg")
+        builder.add_container("i", Scalar(PrimitiveType.Int64))
         builder.begin_for("i", "0", "10", "1")
+        builder.add_container("j", Scalar(PrimitiveType.Int64))
         builder.begin_for("j", "0", "20", "1")
+        builder.add_container("k", Scalar(PrimitiveType.Int64))
         builder.begin_for("k", "0", "30", "1")
         builder.add_block()
         builder.end_for()
@@ -109,6 +118,7 @@ class TestLoopInfo:
     def test_loop_info_repr(self):
         """Test LoopInfo string representation."""
         builder = StructuredSDFGBuilder("test_sdfg")
+        builder.add_container("i", Scalar(PrimitiveType.Int64))
         builder.begin_for("i", "0", "10", "1")
         builder.add_block()
         builder.end_for()
@@ -129,6 +139,7 @@ class TestLoopInfo:
     def test_loop_info_all_properties(self):
         """Test all LoopInfo properties are accessible."""
         builder = StructuredSDFGBuilder("test_sdfg")
+        builder.add_container("i", Scalar(PrimitiveType.Int64))
         builder.begin_for("i", "0", "10", "1")
         builder.add_block()
         builder.end_for()
@@ -160,6 +171,7 @@ class TestFindLoopByIndvar:
     def test_find_existing_indvar(self):
         """Test finding a loop by existing induction variable."""
         builder = StructuredSDFGBuilder("test_sdfg")
+        builder.add_container("i", Scalar(PrimitiveType.Int64))
         builder.begin_for("i", "0", "10", "1")
         builder.add_block()
         builder.end_for()
@@ -176,6 +188,7 @@ class TestFindLoopByIndvar:
     def test_find_nonexistent_indvar(self):
         """Test finding a loop by nonexistent induction variable returns None."""
         builder = StructuredSDFGBuilder("test_sdfg")
+        builder.add_container("i", Scalar(PrimitiveType.Int64))
         builder.begin_for("i", "0", "10", "1")
         builder.add_block()
         builder.end_for()
@@ -190,7 +203,9 @@ class TestFindLoopByIndvar:
     def test_find_indvar_nested_loops(self):
         """Test finding loops by indvar in nested loop structure."""
         builder = StructuredSDFGBuilder("test_sdfg")
+        builder.add_container("i", Scalar(PrimitiveType.Int64))
         builder.begin_for("i", "0", "10", "1")
+        builder.add_container("j", Scalar(PrimitiveType.Int64))
         builder.begin_for("j", "0", "20", "1")
         builder.add_block()
         builder.end_for()
@@ -216,6 +231,7 @@ class TestParentLoop:
     def test_parent_loop_outermost(self):
         """Test parent_loop() returns None for outermost loop."""
         builder = StructuredSDFGBuilder("test_sdfg")
+        builder.add_container("i", Scalar(PrimitiveType.Int64))
         builder.begin_for("i", "0", "10", "1")
         builder.add_block()
         builder.end_for()
@@ -231,7 +247,9 @@ class TestParentLoop:
     def test_parent_loop_nested(self):
         """Test parent_loop() returns correct parent for nested loop."""
         builder = StructuredSDFGBuilder("test_sdfg")
+        builder.add_container("i", Scalar(PrimitiveType.Int64))
         builder.begin_for("i", "0", "10", "1")
+        builder.add_container("j", Scalar(PrimitiveType.Int64))
         builder.begin_for("j", "0", "20", "1")
         builder.add_block()
         builder.end_for()
@@ -255,6 +273,7 @@ class TestOutermostLoops:
     def test_outermost_loops_single(self):
         """Test outermost_loops() with single outermost loop."""
         builder = StructuredSDFGBuilder("test_sdfg")
+        builder.add_container("i", Scalar(PrimitiveType.Int64))
         builder.begin_for("i", "0", "10", "1")
         builder.add_block()
         builder.end_for()
@@ -270,9 +289,11 @@ class TestOutermostLoops:
     def test_outermost_loops_multiple(self):
         """Test outermost_loops() with multiple sequential loops."""
         builder = StructuredSDFGBuilder("test_sdfg")
+        builder.add_container("i", Scalar(PrimitiveType.Int64))
         builder.begin_for("i", "0", "10", "1")
         builder.add_block()
         builder.end_for()
+        builder.add_container("j", Scalar(PrimitiveType.Int64))
         builder.begin_for("j", "0", "20", "1")
         builder.add_block()
         builder.end_for()
@@ -287,7 +308,9 @@ class TestOutermostLoops:
     def test_outermost_loops_nested_only_returns_outer(self):
         """Test outermost_loops() only returns outer loop for nested structure."""
         builder = StructuredSDFGBuilder("test_sdfg")
+        builder.add_container("i", Scalar(PrimitiveType.Int64))
         builder.begin_for("i", "0", "10", "1")
+        builder.add_container("j", Scalar(PrimitiveType.Int64))
         builder.begin_for("j", "0", "20", "1")
         builder.add_block()
         builder.end_for()
@@ -304,7 +327,9 @@ class TestOutermostLoops:
     def test_is_outermost_loop(self):
         """Test is_outermost_loop() correctly identifies outermost loops."""
         builder = StructuredSDFGBuilder("test_sdfg")
+        builder.add_container("i", Scalar(PrimitiveType.Int64))
         builder.begin_for("i", "0", "10", "1")
+        builder.add_container("j", Scalar(PrimitiveType.Int64))
         builder.begin_for("j", "0", "20", "1")
         builder.add_block()
         builder.end_for()
@@ -327,6 +352,7 @@ class TestChildrenAndDescendants:
     def test_children_empty(self):
         """Test children() returns empty list for innermost loop."""
         builder = StructuredSDFGBuilder("test_sdfg")
+        builder.add_container("i", Scalar(PrimitiveType.Int64))
         builder.begin_for("i", "0", "10", "1")
         builder.add_block()
         builder.end_for()
@@ -343,7 +369,9 @@ class TestChildrenAndDescendants:
     def test_children_nested(self):
         """Test children() returns immediate child loops."""
         builder = StructuredSDFGBuilder("test_sdfg")
+        builder.add_container("i", Scalar(PrimitiveType.Int64))
         builder.begin_for("i", "0", "10", "1")
+        builder.add_container("j", Scalar(PrimitiveType.Int64))
         builder.begin_for("j", "0", "20", "1")
         builder.add_block()
         builder.end_for()
@@ -366,6 +394,7 @@ class TestChildrenAndDescendants:
     def test_descendants_empty(self):
         """Test descendants() returns empty for innermost loop."""
         builder = StructuredSDFGBuilder("test_sdfg")
+        builder.add_container("i", Scalar(PrimitiveType.Int64))
         builder.begin_for("i", "0", "10", "1")
         builder.add_block()
         builder.end_for()
@@ -382,8 +411,11 @@ class TestChildrenAndDescendants:
     def test_descendants_nested(self):
         """Test descendants() returns all descendant loops."""
         builder = StructuredSDFGBuilder("test_sdfg")
+        builder.add_container("i", Scalar(PrimitiveType.Int64))
         builder.begin_for("i", "0", "10", "1")
+        builder.add_container("j", Scalar(PrimitiveType.Int64))
         builder.begin_for("j", "0", "20", "1")
+        builder.add_container("k", Scalar(PrimitiveType.Int64))
         builder.begin_for("k", "0", "30", "1")
         builder.add_block()
         builder.end_for()
@@ -416,6 +448,7 @@ class TestLoopTreePaths:
     def test_loop_tree_paths_single_loop(self):
         """Test loop_tree_paths() for single loop returns path with just that loop."""
         builder = StructuredSDFGBuilder("test_sdfg")
+        builder.add_container("i", Scalar(PrimitiveType.Int64))
         builder.begin_for("i", "0", "10", "1")
         builder.add_block()
         builder.end_for()
@@ -436,7 +469,9 @@ class TestLoopTreePaths:
     def test_loop_tree_paths_nested(self):
         """Test loop_tree_paths() returns correct paths for nested loops."""
         builder = StructuredSDFGBuilder("test_sdfg")
+        builder.add_container("i", Scalar(PrimitiveType.Int64))
         builder.begin_for("i", "0", "10", "1")
+        builder.add_container("j", Scalar(PrimitiveType.Int64))
         builder.begin_for("j", "0", "20", "1")
         builder.add_block()
         builder.end_for()
@@ -473,6 +508,7 @@ class TestOutermostMaps:
     def test_outermost_maps_empty_when_no_maps(self):
         """Test outermost_maps() returns empty when only For loops present."""
         builder = StructuredSDFGBuilder("test_sdfg")
+        builder.add_container("i", Scalar(PrimitiveType.Int64))
         builder.begin_for("i", "0", "10", "1")
         builder.add_block()
         builder.end_for()

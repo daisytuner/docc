@@ -24,7 +24,7 @@ using namespace sdfg;
 TEST(LoopConditionNormalizeTest, PositiveStrideUnequality) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
 
@@ -90,7 +90,7 @@ TEST(LoopConditionNormalizeTest, PositiveStrideUnequality) {
 TEST(LoopConditionNormalizeTest, NegativeStrideUnequality) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
 
@@ -156,7 +156,7 @@ TEST(LoopConditionNormalizeTest, NegativeStrideUnequality) {
 TEST(LoopConditionNormalizeTest, AffineCondition) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
 
@@ -218,7 +218,7 @@ TEST(LoopConditionNormalizeTest, AffineCondition) {
 TEST(LoopConditionNormalizeTest, NonUnitStride_NotApplicable) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
 
@@ -251,7 +251,7 @@ TEST(LoopConditionNormalizeTest, NonUnitStride_NotApplicable) {
 TEST(LoopConditionNormalizeTest, NoUnequality_NotApplicable) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
 
@@ -284,7 +284,7 @@ TEST(LoopConditionNormalizeTest, NoUnequality_NotApplicable) {
 TEST(LoopConditionNormalizeTest, MapUnequality) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
 
@@ -342,7 +342,7 @@ TEST(LoopConditionNormalizeTest, MapUnequality) {
 TEST(LoopConditionNormalizeTest, IndvarOnRHS) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
 
@@ -392,7 +392,7 @@ TEST(LoopConditionNormalizeTest, IndvarOnRHS) {
 TEST(LoopConditionNormalizeTest, AffineIndvarExpression_NotApplicable) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
 
@@ -437,7 +437,7 @@ TEST(LoopConditionNormalizeTest, AffineIndvarExpression_NotApplicable) {
 TEST(LoopConditionNormalizeTest, BooleanComparisonFalseEqRelational) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("M", sym_desc, true);
     builder.add_container("i", sym_desc);
@@ -488,7 +488,7 @@ TEST(LoopConditionNormalizeTest, BooleanComparisonFalseEqRelational) {
 TEST(LoopConditionNormalizeTest, MaxBoundSimplification) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
 

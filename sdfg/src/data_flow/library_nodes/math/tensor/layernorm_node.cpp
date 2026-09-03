@@ -29,6 +29,7 @@
 #include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/types/tensor.h"
+#include "sdfg/types/utils.h"
 #include "symengine/add.h"
 #include "symengine/mul.h"
 
@@ -404,14 +405,12 @@ passes::LibNodeExpander::ExpandOutcome LayerNormNode::
     }
     auto prim_type = this->primitive_type(graph);
     types::Scalar base_type(prim_type);
-    types::Scalar indvar_type(types::PrimitiveType::UInt64);
 
     // _ln_norm_dim_sum_int = Mul_{d in normalized_shape} d
     auto norm_dim_sum_int_container = builder.find_new_name("_ln_norm_dim_sum_int");
-    builder.add_container(norm_dim_sum_int_container, indvar_type);
-    builder.add_assignments(
-        new_sequence, {{symbolic::symbol(norm_dim_sum_int_container), SymEngine::mul(this->normalized_shape_)}}
-    );
+    auto dim = SymEngine::mul(this->normalized_shape_);
+    builder.add_container(norm_dim_sum_int_container, types::Scalar(types::get_primitive_type_to_hold_upper_bound(dim)));
+    builder.add_assignments(new_sequence, {{symbolic::symbol(norm_dim_sum_int_container), dim}});
 
     auto norm_dim_sum_container = builder.find_new_name("_ln_norm_dim_sum");
     builder.add_container(norm_dim_sum_container, base_type);
@@ -432,7 +431,7 @@ passes::LibNodeExpander::ExpandOutcome LayerNormNode::
     outer_subset.reserve(non_normalized_shape.size());
     for (auto dim : non_normalized_shape) {
         auto indvar_container = builder.find_new_name("_i");
-        builder.add_container(indvar_container, indvar_type);
+        builder.add_container(indvar_container, types::Scalar(types::get_primitive_type_to_hold_upper_bound(dim)));
         auto indvar = symbolic::symbol(indvar_container);
         outer_subset.push_back(indvar);
         auto& map = builder.add_map(
@@ -471,7 +470,7 @@ passes::LibNodeExpander::ExpandOutcome LayerNormNode::
         // Add reduction nest over normalized shape
         for (auto dim : this->normalized_shape_) {
             auto indvar_container = builder.find_new_name("_i");
-            builder.add_container(indvar_container, indvar_type);
+            builder.add_container(indvar_container, types::Scalar(types::get_primitive_type_to_hold_upper_bound(dim)));
             auto indvar = symbolic::symbol(indvar_container);
             mean_subset.push_back(indvar);
             auto& reduce = builder.add_reduce(
@@ -534,7 +533,7 @@ passes::LibNodeExpander::ExpandOutcome LayerNormNode::
         // Add reduction nest over normalized shape
         for (auto dim : this->normalized_shape_) {
             auto indvar_container = builder.find_new_name("_i");
-            builder.add_container(indvar_container, indvar_type);
+            builder.add_container(indvar_container, types::Scalar(types::get_primitive_type_to_hold_upper_bound(dim)));
             auto indvar = symbolic::symbol(indvar_container);
             std_subset.push_back(indvar);
             auto& reduce = builder.add_reduce(
@@ -637,7 +636,7 @@ passes::LibNodeExpander::ExpandOutcome LayerNormNode::
         // Add map nest over normalized shape
         for (auto dim : this->normalized_shape_) {
             auto indvar_container = builder.find_new_name("_i");
-            builder.add_container(indvar_container, indvar_type);
+            builder.add_container(indvar_container, types::Scalar(types::get_primitive_type_to_hold_upper_bound(dim)));
             auto indvar = symbolic::symbol(indvar_container);
             y_subset.push_back(indvar);
             inner_subset.push_back(indvar);

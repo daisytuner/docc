@@ -96,6 +96,7 @@ TEST(ReduceTest, SumNode_1D) {
     {
         auto sum_loop = dyn_cast<structured_control_flow::Reduce*>(&new_sequence.at(1));
         EXPECT_NE(sum_loop, nullptr);
+        EXPECT_EQ(sdfg.type(sum_loop->indvar()->get_name()).primitive_type(), types::PrimitiveType::Int32);
         EXPECT_EQ(sum_loop->root().size(), 1);
 
         auto reduce_block = dyn_cast<structured_control_flow::Block*>(&sum_loop->root().at(0));
@@ -188,6 +189,7 @@ TEST(ReduceTest, SumNode_2D) {
         EXPECT_NE(map_loop, nullptr);
 
         auto for_loop = dyn_cast<structured_control_flow::Reduce*>(&map_loop->root().at(0));
+        EXPECT_EQ(sdfg.type(for_loop->indvar()->get_name()).primitive_type(), types::PrimitiveType::Int32);
         EXPECT_NE(for_loop, nullptr);
 
         auto reduce_block = dyn_cast<structured_control_flow::Block*>(&for_loop->root().at(0));
@@ -257,9 +259,11 @@ TEST(ReduceTest, SumNode_2D_KeepDims) {
     // Inner loop: dim 1 (For)
     {
         auto map_loop = dyn_cast<structured_control_flow::Map*>(&new_sequence.at(1));
+        EXPECT_EQ(sdfg.type(map_loop->indvar()->get_name()).primitive_type(), types::PrimitiveType::Int32);
         EXPECT_NE(map_loop, nullptr);
 
         auto for_loop = dyn_cast<structured_control_flow::Reduce*>(&map_loop->root().at(0));
+        EXPECT_EQ(sdfg.type(for_loop->indvar()->get_name()).primitive_type(), types::PrimitiveType::Int32);
         EXPECT_NE(for_loop, nullptr);
 
         auto reduce_block = dyn_cast<structured_control_flow::Block*>(&for_loop->root().at(0));
@@ -331,12 +335,15 @@ TEST(ReduceTest, SumNode_3D_Reduce_0_2) {
     // Inner loops: dim 0 (For), dim 2 (For)
     {
         auto map_loop = dyn_cast<structured_control_flow::Map*>(&new_sequence.at(1));
+        EXPECT_EQ(sdfg.type(map_loop->indvar()->get_name()).primitive_type(), types::PrimitiveType::Int32);
         EXPECT_NE(map_loop, nullptr);
 
         auto for_loop_0 = dyn_cast<structured_control_flow::Reduce*>(&map_loop->root().at(0));
+        EXPECT_EQ(sdfg.type(for_loop_0->indvar()->get_name()).primitive_type(), types::PrimitiveType::Int32);
         EXPECT_NE(for_loop_0, nullptr);
 
         auto for_loop_2 = dyn_cast<structured_control_flow::Reduce*>(&for_loop_0->root().at(0));
+        EXPECT_EQ(sdfg.type(for_loop_2->indvar()->get_name()).primitive_type(), types::PrimitiveType::Int32);
         EXPECT_NE(for_loop_2, nullptr);
 
         auto reduce_block = dyn_cast<structured_control_flow::Block*>(&for_loop_2->root().at(0));

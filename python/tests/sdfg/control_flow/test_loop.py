@@ -20,6 +20,7 @@ class TestStructuredLoop:
     def test_indvar_property(self):
         """Test indvar property returns the induction variable."""
         builder = StructuredSDFGBuilder("test_sdfg")
+        builder.add_container("i", Scalar(PrimitiveType.Int64))
         builder.begin_for("i", "0", "10", "1")
         builder.add_block()
         builder.end_for()
@@ -34,6 +35,7 @@ class TestStructuredLoop:
     def test_init_property(self):
         """Test init property returns the initialization expression."""
         builder = StructuredSDFGBuilder("test_sdfg")
+        builder.add_container("i", Scalar(PrimitiveType.Int64))
         builder.begin_for("i", "0", "10", "1")
         builder.add_block()
         builder.end_for()
@@ -48,6 +50,7 @@ class TestStructuredLoop:
     def test_update_property(self):
         """Test update property returns the update expression."""
         builder = StructuredSDFGBuilder("test_sdfg")
+        builder.add_container("i", Scalar(PrimitiveType.Int64))
         builder.begin_for("i", "0", "10", "1")
         builder.add_block()
         builder.end_for()
@@ -63,6 +66,7 @@ class TestStructuredLoop:
     def test_condition_property(self):
         """Test condition property returns the loop condition."""
         builder = StructuredSDFGBuilder("test_sdfg")
+        builder.add_container("i", Scalar(PrimitiveType.Int64))
         builder.begin_for("i", "0", "10", "1")
         builder.add_block()
         builder.end_for()
@@ -79,6 +83,7 @@ class TestStructuredLoop:
     def test_body_property(self):
         """Test body property returns the loop body sequence."""
         builder = StructuredSDFGBuilder("test_sdfg")
+        builder.add_container("i", Scalar(PrimitiveType.Int64))
         builder.begin_for("i", "0", "10", "1")
         builder.add_block()
         builder.end_for()
@@ -94,6 +99,7 @@ class TestStructuredLoop:
         """Test parent references of structured loop"""
         builder = StructuredSDFGBuilder("test_sdfg")
 
+        builder.add_container("i", Scalar(PrimitiveType.Int64))
         builder.begin_for("i", "0", "10", "1")
         builder.add_block()
         builder.end_for()
@@ -112,6 +118,7 @@ class TestFor:
     def test_for_isinstance(self):
         """Test that for loop is an instance of For."""
         builder = StructuredSDFGBuilder("test_sdfg")
+        builder.add_container("i", Scalar(PrimitiveType.Int64))
         builder.begin_for("i", "0", "10", "1")
         builder.add_block()
         builder.end_for()
@@ -124,6 +131,7 @@ class TestFor:
     def test_for_inherits_structured_loop(self):
         """Test that For inherits from StructuredLoop."""
         builder = StructuredSDFGBuilder("test_sdfg")
+        builder.add_container("i", Scalar(PrimitiveType.Int64))
         builder.begin_for("i", "0", "10", "1")
         builder.add_block()
         builder.end_for()
@@ -136,6 +144,7 @@ class TestFor:
     def test_for_repr(self):
         """Test For string representation."""
         builder = StructuredSDFGBuilder("test_sdfg")
+        builder.add_container("i", Scalar(PrimitiveType.Int64))
         builder.begin_for("i", "0", "10", "1")
         builder.add_block()
         builder.end_for()
@@ -150,6 +159,7 @@ class TestFor:
     def test_for_with_step(self):
         """Test for loop with different step values."""
         builder = StructuredSDFGBuilder("test_sdfg")
+        builder.add_container("i", Scalar(PrimitiveType.Int64))
         builder.begin_for("i", "0", "100", "5")
         builder.add_block()
         builder.end_for()
@@ -166,6 +176,7 @@ class TestFor:
         builder = StructuredSDFGBuilder("test_sdfg")
         builder.add_container("n", Scalar(PrimitiveType.Int32), is_argument=True)
 
+        builder.add_container("i", Scalar(PrimitiveType.Int64))
         builder.begin_for("i", "0", "n", "1")
         builder.add_block()
         builder.end_for()
@@ -180,7 +191,9 @@ class TestFor:
         """Test nested for loops."""
         builder = StructuredSDFGBuilder("test_sdfg")
 
+        builder.add_container("i", Scalar(PrimitiveType.Int64))
         builder.begin_for("i", "0", "10", "1")
+        builder.add_container("j", Scalar(PrimitiveType.Int64))
         builder.begin_for("j", "0", "10", "1")
         builder.add_block()
         builder.end_for()

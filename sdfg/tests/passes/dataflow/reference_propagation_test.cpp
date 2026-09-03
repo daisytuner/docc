@@ -568,6 +568,7 @@ TEST(ReferencePropagationTest, ReferenceUsedInsideForLoop) {
 
     // For loop: for (i = 0; i < N; i++)
     auto i = symbolic::symbol("i");
+    builder.add_container("i", types::Scalar(types::PrimitiveType::Int64));
     auto N = symbolic::symbol("N");
     auto& loop =
         builder.add_for(root, i, symbolic::Lt(i, N), symbolic::integer(0), symbolic::add(i, symbolic::integer(1)));

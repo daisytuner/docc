@@ -75,7 +75,7 @@ bool reads_container(structured_control_flow::Block& block, const std::string& n
 }
 
 symbolic::Symbol add_index(builder::StructuredSDFGBuilder& builder, const std::string& name) {
-    builder.add_container(name, types::Scalar(types::PrimitiveType::UInt64));
+    builder.add_container(name, types::Scalar(types::PrimitiveType::Int64));
     return symbolic::symbol(name);
 }
 

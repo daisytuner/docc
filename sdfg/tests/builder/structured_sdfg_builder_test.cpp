@@ -242,6 +242,8 @@ TEST(StructuredSDFGBuilderTest, addFor) {
     auto& root = builder.subject().root();
     EXPECT_EQ(root.element_id(), 0);
 
+    builder.add_container("i", types::Scalar(types::PrimitiveType::Int64));
+
     auto& scope = builder.add_for(
         root,
         symbolic::symbol("i"),
@@ -273,6 +275,8 @@ TEST(StructuredSDFGBuilderTest, addMap) {
 
     auto& root = builder.subject().root();
     EXPECT_EQ(root.element_id(), 0);
+
+    builder.add_container("i", types::Scalar(types::PrimitiveType::Int64));
 
     auto& scope = builder.add_map(
         root,

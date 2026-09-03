@@ -14,6 +14,8 @@
 #include "sdfg/types/array.h"
 #include "sdfg/types/scalar.h"
 
+namespace tile_fusion_test {
+
 using namespace sdfg;
 
 /**
@@ -34,7 +36,7 @@ struct Jacobi1DFixture {
     void build() {
         builder = std::make_unique<builder::StructuredSDFGBuilder>("jacobi_1d", FunctionType_CPU);
 
-        types::Scalar sym_desc(types::PrimitiveType::UInt64);
+        types::Scalar sym_desc(types::PrimitiveType::Int64);
         builder->add_container("TSTEPS", sym_desc, true);
         builder->add_container("N", sym_desc, true);
         builder->add_container("t", sym_desc);
@@ -264,7 +266,7 @@ TEST(TileFusionTest, Jacobi1D_Basic) {
 TEST(TileFusionTest, NonConsecutiveMaps_ShouldFail) {
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
     builder.add_container("j", sym_desc);
@@ -357,7 +359,7 @@ TEST(TileFusionTest, NonConsecutiveMaps_ShouldFail) {
 TEST(TileFusionTest, IncompatibleTileSizes_ShouldFail) {
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
     builder.add_container("j", sym_desc);
@@ -429,7 +431,7 @@ TEST(TileFusionTest, IncompatibleTileSizes_ShouldFail) {
 TEST(TileFusionTest, NoSharedContainer_ShouldFail) {
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
     builder.add_container("j", sym_desc);
@@ -503,7 +505,7 @@ TEST(TileFusionTest, NoSharedContainer_ShouldFail) {
 TEST(TileFusionTest, ConsumerAlsoWritesIntermediate_ShouldFail) {
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
     builder.add_container("j", sym_desc);
@@ -577,7 +579,7 @@ TEST(TileFusionTest, ZeroRadiusElementwise) {
     // Radius should be 0, but transformation should still work
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
     builder.add_container("j", sym_desc);
@@ -874,7 +876,7 @@ TEST(TileFusionTest, NoCyclicDependency_NoBuffers) {
     // No cyclic: K2 writes C, K1 doesn't read C.
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
     builder.add_container("j", sym_desc);
@@ -1021,3 +1023,5 @@ TEST(TileFusionTest, Jacobi1D_Serialization) {
     EXPECT_TRUE(tile_fusion2.can_be_applied(builder_opt, analysis_manager));
     EXPECT_EQ(tile_fusion2.radius(), 1);
 }
+
+} // namespace tile_fusion_test

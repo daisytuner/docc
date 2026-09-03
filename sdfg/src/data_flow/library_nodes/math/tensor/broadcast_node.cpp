@@ -1,6 +1,7 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/broadcast_node.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/structured_control_flow/for.h"
+#include "sdfg/types/utils.h"
 
 namespace sdfg {
 namespace math {
@@ -129,10 +130,11 @@ passes::LibNodeExpander::ExpandOutcome BroadcastNode::
 
     for (size_t i = 0; i < output_shape_.size(); ++i) {
         std::string var_name = builder.find_new_name("_i" + std::to_string(i));
-        builder.add_container(var_name, types::Scalar(types::PrimitiveType::Int64));
+        auto& dim = output_shape_[i];
+        builder.add_container(var_name, types::Scalar(types::get_primitive_type_to_hold_upper_bound(dim)));
 
         auto sym_var = symbolic::symbol(var_name);
-        auto condition = symbolic::Lt(sym_var, output_shape_[i]);
+        auto condition = symbolic::Lt(sym_var, dim);
         auto init = symbolic::zero();
         auto update = symbolic::add(sym_var, symbolic::one());
 

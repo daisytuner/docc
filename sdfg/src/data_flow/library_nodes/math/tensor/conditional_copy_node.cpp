@@ -27,6 +27,7 @@
 #include "sdfg/types/scalar.h"
 #include "sdfg/types/tensor.h"
 #include "sdfg/types/type.h"
+#include "sdfg/types/utils.h"
 
 namespace sdfg {
 namespace math {
@@ -232,13 +233,12 @@ passes::LibNodeExpander::ExpandOutcome ConditionalTensorCopyNode::
     auto& new_sequence = standalone->replace_with_sequence();
 
     // Add map nest over shape
-    types::Scalar indvar_type(types::PrimitiveType::UInt64);
     structured_control_flow::Sequence* current_seq = &new_sequence;
     data_flow::Subset subset;
     subset.reserve(this->layout_y_.dims());
     for (auto dim : this->layout_y_.shape()) {
         auto indvar_container = builder.find_new_name("_i");
-        builder.add_container(indvar_container, indvar_type);
+        builder.add_container(indvar_container, types::Scalar(types::get_primitive_type_to_hold_upper_bound(dim)));
         auto indvar = symbolic::symbol(indvar_container);
         subset.push_back(indvar);
         auto& map = builder.add_map(

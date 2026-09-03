@@ -171,7 +171,7 @@ passes::LibNodeExpander::ExpandOutcome GEMMNode::
                     ) -> structured_control_flow::StructuredLoop& {
         std::string iv = builder.find_new_name(indvar_names[dim]);
         auto& indvar_end = indvar_ends[dim];
-        auto indvar_type = types::get_primitive_type_to_hold_expression(indvar_end);
+        auto indvar_type = types::get_primitive_type_to_hold_upper_bound(indvar_end);
         builder.add_container(iv, types::Scalar(indvar_type));
         auto sym = symbolic::symbol(iv);
         auto cond = symbolic::Lt(sym, indvar_end);

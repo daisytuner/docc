@@ -31,7 +31,7 @@ protected:
         types::Pointer desc(base_desc);
         builder_->add_container("A", desc, true);
 
-        types::Scalar sym_desc(types::PrimitiveType::UInt64);
+        types::Scalar sym_desc(types::PrimitiveType::Int64);
         builder_->add_container("N", sym_desc, true);
         builder_->add_container("i", sym_desc);
 
@@ -142,7 +142,7 @@ protected:
 
         builder_->add_container("A", desc, true);
 
-        types::Scalar sym_desc(types::PrimitiveType::UInt64);
+        types::Scalar sym_desc(types::PrimitiveType::Int64);
         builder_->add_container("N", sym_desc, true);
         builder_->add_container("M", sym_desc, true);
         builder_->add_container("i", sym_desc);
@@ -364,7 +364,7 @@ protected:
 
         builder_->add_container("A", desc, true);
 
-        types::Scalar sym_desc(types::PrimitiveType::UInt64);
+        types::Scalar sym_desc(types::PrimitiveType::Int64);
         builder_->add_container("N", sym_desc, true);
         builder_->add_container("M", sym_desc, true);
         builder_->add_container("i", sym_desc);

@@ -107,7 +107,7 @@
             "K": {
                 "alignment": 0,
                 "initializer": "",
-                "primitive_type": 10,
+                "primitive_type": 5,
                 "storage_type": {
                     "allocation": 0,
                     "deallocation": 0,
@@ -118,7 +118,7 @@
             "M": {
                 "alignment": 0,
                 "initializer": "",
-                "primitive_type": 10,
+                "primitive_type": 5,
                 "storage_type": {
                     "allocation": 0,
                     "deallocation": 0,
@@ -129,7 +129,7 @@
             "N": {
                 "alignment": 0,
                 "initializer": "",
-                "primitive_type": 10,
+                "primitive_type": 5,
                 "storage_type": {
                     "allocation": 0,
                     "deallocation": 0,
@@ -140,7 +140,7 @@
             "i": {
                 "alignment": 0,
                 "initializer": "",
-                "primitive_type": 10,
+                "primitive_type": 5,
                 "storage_type": {
                     "allocation": 0,
                     "deallocation": 0,
@@ -151,7 +151,7 @@
             "i_tile0": {
                 "alignment": 0,
                 "initializer": "",
-                "primitive_type": 10,
+                "primitive_type": 5,
                 "storage_type": {
                     "allocation": 0,
                     "deallocation": 0,
@@ -162,7 +162,7 @@
             "j": {
                 "alignment": 0,
                 "initializer": "",
-                "primitive_type": 10,
+                "primitive_type": 5,
                 "storage_type": {
                     "allocation": 0,
                     "deallocation": 0,
@@ -173,7 +173,7 @@
             "j_tile0": {
                 "alignment": 0,
                 "initializer": "",
-                "primitive_type": 10,
+                "primitive_type": 5,
                 "storage_type": {
                     "allocation": 0,
                     "deallocation": 0,
@@ -184,7 +184,7 @@
             "k": {
                 "alignment": 0,
                 "initializer": "",
-                "primitive_type": 10,
+                "primitive_type": 5,
                 "storage_type": {
                     "allocation": 0,
                     "deallocation": 0,
@@ -195,7 +195,7 @@
             "k_tile0": {
                 "alignment": 0,
                 "initializer": "",
-                "primitive_type": 10,
+                "primitive_type": 5,
                 "storage_type": {
                     "allocation": 0,
                     "deallocation": 0,

@@ -6,6 +6,7 @@
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/types/type.h"
+#include "sdfg/types/utils.h"
 
 namespace sdfg {
 namespace math {
@@ -88,7 +89,6 @@ passes::LibNodeExpander::ExpandOutcome UpsampleBilinear2DNode::
 
     types::Scalar double_type(types::PrimitiveType::Double);
     types::Scalar int_type(types::PrimitiveType::Int64);
-    types::Scalar loop_type(types::PrimitiveType::UInt64);
 
     symbolic::Expression N = output_shape_[0];
     symbolic::Expression C = output_shape_[1];
@@ -285,7 +285,7 @@ passes::LibNodeExpander::ExpandOutcome UpsampleBilinear2DNode::
 
     // Map over batch dimension N.
     std::string n_str = builder.find_new_name("n");
-    builder.add_container(n_str, loop_type);
+    builder.add_container(n_str, types::Scalar(types::get_primitive_type_to_hold_upper_bound(N)));
     auto n_var = symbolic::symbol(n_str);
     auto& map_n = builder.add_map(
         *scope,
@@ -300,7 +300,7 @@ passes::LibNodeExpander::ExpandOutcome UpsampleBilinear2DNode::
 
     // Map over channel dimension C.
     std::string c_str = builder.find_new_name("c");
-    builder.add_container(c_str, loop_type);
+    builder.add_container(c_str, types::Scalar(types::get_primitive_type_to_hold_upper_bound(C)));
     auto c_var = symbolic::symbol(c_str);
     auto& map_c = builder.add_map(
         *scope,
@@ -315,7 +315,7 @@ passes::LibNodeExpander::ExpandOutcome UpsampleBilinear2DNode::
 
     // Map over output height.
     std::string oh_str = builder.find_new_name("oh");
-    builder.add_container(oh_str, loop_type);
+    builder.add_container(oh_str, types::Scalar(types::get_primitive_type_to_hold_upper_bound(Hout)));
     auto oh_var = symbolic::symbol(oh_str);
     auto& map_oh = builder.add_map(
         *scope,
@@ -333,7 +333,7 @@ passes::LibNodeExpander::ExpandOutcome UpsampleBilinear2DNode::
 
     // Map over output width.
     std::string ow_str = builder.find_new_name("ow");
-    builder.add_container(ow_str, loop_type);
+    builder.add_container(ow_str, types::Scalar(types::get_primitive_type_to_hold_upper_bound(Wout)));
     auto ow_var = symbolic::symbol(ow_str);
     auto& map_ow = builder.add_map(
         oh_scope,

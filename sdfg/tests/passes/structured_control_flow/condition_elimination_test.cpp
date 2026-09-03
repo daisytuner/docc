@@ -22,7 +22,7 @@ TEST(ConditionEliminationTest, Basic) {
     builder.add_container("A", opaque_desc, true);
     builder.add_container("B", opaque_desc, true);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
 
@@ -83,7 +83,7 @@ TEST(ConditionEliminationTest, Basic_WithAssignmentsAfterLoop) {
     builder.add_container("A", opaque_desc, true);
     builder.add_container("B", opaque_desc, true);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
 
@@ -151,7 +151,7 @@ TEST(ConditionEliminationTest, Basic_LeavesAfterAlone) {
     builder.add_container("A", opaque_desc, true);
     builder.add_container("B", opaque_desc, true);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
 
@@ -219,7 +219,7 @@ TEST(ConditionEliminationTest, IndvarReadAfterLoop) {
     builder.add_container("A", opaque_desc, true);
     builder.add_container("B", opaque_desc, true);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
 

@@ -4,6 +4,7 @@
 #include "sdfg/exceptions.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/types/scalar.h"
+#include "sdfg/types/utils.h"
 
 namespace sdfg::math::tensor {
 
@@ -43,20 +44,20 @@ std::vector<MapDimension> create_maps(
     std::vector<MapDimension> result;
     result.reserve(shape.size());
 
-    types::Scalar indvar_type(types::PrimitiveType::Int64);
     structured_control_flow::Sequence* current_seq = &parent_seq;
 
     for (size_t i = 0; i < shape.size(); ++i) {
         // Create induction variable for this dimension
         std::string loop_var_name = builder.find_new_name("i" + std::to_string(i));
-        builder.add_container(loop_var_name, indvar_type);
+        auto& dim = shape[i];
+        builder.add_container(loop_var_name, types::Scalar(types::get_primitive_type_to_hold_upper_bound(dim)));
         auto loop_var = symbolic::symbol(loop_var_name);
 
         // Create the map: for (i = 0; i < dim_size; i++)
         auto& map = builder.add_map(
             *current_seq,
             loop_var,
-            symbolic::Lt(loop_var, shape[i]),
+            symbolic::Lt(loop_var, dim),
             symbolic::integer(0),
             symbolic::add(loop_var, symbolic::one()),
             structured_control_flow::ScheduleType_Sequential::create()

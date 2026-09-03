@@ -49,7 +49,7 @@ protected:
         builder_->add_container("B", desc_2, true);
         builder_->add_container("C", desc_2, true);
 
-        types::Scalar sym_desc(types::PrimitiveType::UInt64);
+        types::Scalar sym_desc(types::PrimitiveType::Int64);
         builder_->add_container("K", sym_desc, true);
         builder_->add_container("N", sym_desc, true);
         builder_->add_container("M", sym_desc, true);
@@ -190,6 +190,7 @@ TEST_F(RPCNodeTransformTest, Double_Matmul) {
     auto outer_loops = loop_analysis.outermost_loops();
     EXPECT_EQ(outer_loops.size(), 2);
 
+    builder.subject().validate();
     auto outer_loop = static_cast<structured_control_flow::StructuredLoop*>(outer_loops[0]);
     sdfg::transformations::RPCNodeTransform
         transfer_tuning(*outer_loop, "sequential", "server", *ctx_, true, true, true);

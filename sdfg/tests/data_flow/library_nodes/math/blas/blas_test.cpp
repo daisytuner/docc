@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <cstdint>
+
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/library_nodes/math/blas/batched_gemm_node.h"
@@ -120,9 +122,11 @@ TEST(BlasTest, GemmNode) {
     // ---- Init nest: for i, j: C[i,j] = beta * C[i,j] ----
     auto init_map_i = dyn_cast<structured_control_flow::Map*>(&new_sequence->at(0));
     ASSERT_NE(init_map_i, nullptr);
+    EXPECT_EQ(sdfg.type(init_map_i->indvar()->get_name()).primitive_type(), types::PrimitiveType::Int32);
     ASSERT_EQ(init_map_i->root().size(), 1);
     auto init_map_j = dyn_cast<structured_control_flow::Map*>(&init_map_i->root().at(0));
     ASSERT_NE(init_map_j, nullptr);
+    EXPECT_EQ(sdfg.type(init_map_j->indvar()->get_name()).primitive_type(), types::PrimitiveType::Int32);
     ASSERT_EQ(init_map_j->root().size(), 1);
     {
         auto block_init = dyn_cast<structured_control_flow::Block*>(&init_map_j->root().at(0));
@@ -137,12 +141,15 @@ TEST(BlasTest, GemmNode) {
     // ---- Compute nest: for i, j, k: C[i,j] = alpha * A[i,k] * B[k,j] + C[i,j] ----
     auto comp_map_i = dyn_cast<structured_control_flow::Map*>(&new_sequence->at(1));
     ASSERT_NE(comp_map_i, nullptr);
+    EXPECT_EQ(sdfg.type(comp_map_i->indvar()->get_name()).primitive_type(), types::PrimitiveType::Int32);
     ASSERT_EQ(comp_map_i->root().size(), 1);
     auto comp_map_j = dyn_cast<structured_control_flow::Map*>(&comp_map_i->root().at(0));
     ASSERT_NE(comp_map_j, nullptr);
+    EXPECT_EQ(sdfg.type(comp_map_j->indvar()->get_name()).primitive_type(), types::PrimitiveType::Int32);
     ASSERT_EQ(comp_map_j->root().size(), 1);
     auto comp_for_k = dyn_cast<structured_control_flow::For*>(&comp_map_j->root().at(0));
     ASSERT_NE(comp_for_k, nullptr);
+    EXPECT_EQ(sdfg.type(comp_for_k->indvar()->get_name()).primitive_type(), types::PrimitiveType::Int32);
     ASSERT_EQ(comp_for_k->root().size(), 1);
     {
         auto block_fma = dyn_cast<structured_control_flow::Block*>(&comp_for_k->root().at(0));
@@ -171,6 +178,7 @@ TEST(BlasTest, GemmNode) {
         ASSERT_EQ(final_access->data(), c_var_name);
     }
 }
+
 
 TEST(BlasTest, GemmNode_AlphaOneBetaZero) {
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
@@ -636,3 +644,156 @@ TEST(BlasTest, BatchedGemmNode_AlphaOneBetaZero) {
     EXPECT_NE(final_access, nullptr);
     EXPECT_EQ(final_access->data(), c_var_name);
 }
+
+// ---------------------------------------------------------------------------
+// Parameterized GEMM expansion test focused on the induction-variable types.
+//
+// The expansion picks each loop's index type from its dimension bound via
+// types::get_primitive_type_to_hold_expression: bounds that fit in INT32_MAX
+// stay Int32, everything larger (beyond Int32 *and* beyond UInt32) becomes
+// Int64. The i/j/k induction variables come from m/n/k respectively, so mixing
+// the dimension magnitudes lets each index resolve to a different width.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// Reference thresholds for readable parameter values.
+constexpr int64_t kInt32Max = INT32_MAX; // 2^31 - 1
+constexpr int64_t kUInt32Max = UINT32_MAX; // 2^32 - 1
+constexpr int64_t kAboveInt32 = kInt32Max + 1; // 2^31, no longer fits Int32
+constexpr int64_t kAboveUInt32 = kUInt32Max + 1; // 2^32, beyond UInt32 too
+
+struct GemmIndvarTypeParams {
+    std::string label;
+    int64_t dim_i; // -> i induction variable (from m)
+    int64_t dim_j; // -> j induction variable (from n)
+    int64_t dim_k; // -> k induction variable (from k)
+    types::PrimitiveType expected_i;
+    types::PrimitiveType expected_j;
+    types::PrimitiveType expected_k;
+};
+
+class GemmNodeIndvarTypeTest : public ::testing::TestWithParam<GemmIndvarTypeParams> {};
+
+TEST_P(GemmNodeIndvarTypeTest, ExpandedIndvarTypesMatchDimensionMagnitude) {
+    const auto& p = GetParam();
+
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+
+    auto m = symbolic::integer(p.dim_i);
+    auto n = symbolic::integer(p.dim_j);
+    auto k = symbolic::integer(p.dim_k);
+
+    // res: ixj, A: ixk, B: kxj. Sizes are symbolic (arbitrary precision), so
+    // huge dimensions do not overflow the container descriptors.
+    types::Scalar desc(types::PrimitiveType::Float);
+    types::Array arr_a_type(desc, symbolic::mul(k, m));
+    types::Array arr_b_type(desc, symbolic::mul(n, k));
+    types::Array arr_res_type(desc, symbolic::mul(n, m));
+
+    builder.add_container("arr_a", arr_a_type);
+    builder.add_container("arr_b", arr_b_type);
+    builder.add_container("output", arr_res_type);
+
+    auto& block = builder.add_block(sdfg.root());
+
+    auto& input_a_node = builder.add_access(block, "arr_a");
+    auto& input_b_node = builder.add_access(block, "arr_b");
+    auto& dummy_input_node = builder.add_access(block, "output");
+    auto& gemm_node = static_cast<math::blas::GEMMNode&>(builder.add_library_node<math::blas::GEMMNode>(
+        block,
+        DebugInfo(),
+        data_flow::ImplementationType_NONE,
+        math::blas::BLAS_Precision::s,
+        math::blas::BLAS_Layout::RowMajor,
+        math::blas::BLAS_Transpose::No,
+        math::blas::BLAS_Transpose::No,
+        m,
+        n,
+        k,
+        n, // lda
+        k, // ldb
+        n // ldc
+    ));
+
+    // Non-special alpha/beta so both the init and compute nests are generated.
+    auto& alpha_node = builder.add_constant(block, "2.0", desc);
+    auto& beta_node = builder.add_constant(block, "3.0", desc);
+
+    builder.add_computational_memlet(block, input_a_node, gemm_node, "__A", {symbolic::integer(0)}, arr_a_type);
+    builder.add_computational_memlet(block, input_b_node, gemm_node, "__B", {symbolic::integer(0)}, arr_b_type);
+    builder.add_computational_memlet(block, dummy_input_node, gemm_node, "__C", {symbolic::integer(0)}, arr_res_type);
+    builder.add_computational_memlet(block, alpha_node, gemm_node, "__alpha", {}, desc);
+    builder.add_computational_memlet(block, beta_node, gemm_node, "__beta", {}, desc);
+
+    builder.subject().validate();
+    auto outcome = passes::expansion::expand_single_math_node(builder, block, gemm_node);
+    ASSERT_TRUE(outcome.expanded);
+    dump_sdfg(builder.subject(), "1.expanded");
+    ASSERT_TRUE(outcome.block_removed);
+    builder.subject().validate();
+
+    ASSERT_EQ(sdfg.root().size(), 1);
+    auto new_sequence = dyn_cast<structured_control_flow::Sequence*>(&sdfg.root().at(0));
+    ASSERT_NE(new_sequence, nullptr);
+    // beta != 1 => [init nest, compute nest]; the compute nest carries all three
+    // (i, j, k) induction variables, so it is enough to inspect it.
+    ASSERT_EQ(new_sequence->size(), 2);
+
+    auto comp_map_i = dyn_cast<structured_control_flow::Map*>(&new_sequence->at(1));
+    ASSERT_NE(comp_map_i, nullptr);
+    auto comp_map_j = dyn_cast<structured_control_flow::Map*>(&comp_map_i->root().at(0));
+    ASSERT_NE(comp_map_j, nullptr);
+    auto comp_for_k = dyn_cast<structured_control_flow::For*>(&comp_map_j->root().at(0));
+    ASSERT_NE(comp_for_k, nullptr);
+
+    EXPECT_EQ(sdfg.type(comp_map_i->indvar()->get_name()).primitive_type(), p.expected_i);
+    EXPECT_EQ(sdfg.type(comp_map_j->indvar()->get_name()).primitive_type(), p.expected_j);
+    EXPECT_EQ(sdfg.type(comp_for_k->indvar()->get_name()).primitive_type(), p.expected_k);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    BlasTest,
+    GemmNodeIndvarTypeTest,
+    ::testing::Values(
+        // All dimensions small: every index fits in Int32.
+        GemmIndvarTypeParams{
+            "AllInt32", 10, 20, 30, types::PrimitiveType::Int32, types::PrimitiveType::Int32, types::PrimitiveType::Int32
+        },
+        // One dimension just past Int32 (still within UInt32) -> that index is
+        // promoted to Int64, the others stay Int32. Magnitudes are mixed.
+        GemmIndvarTypeParams{
+            "MixedAboveInt32",
+            kAboveInt32,
+            20,
+            30,
+            types::PrimitiveType::Int64,
+            types::PrimitiveType::Int32,
+            types::PrimitiveType::Int32
+        },
+        // Mix of "> Int32" and "> UInt32": both promote to Int64, small stays Int32.
+        GemmIndvarTypeParams{
+            "MixedAboveUInt32",
+            kAboveUInt32,
+            kAboveInt32,
+            30,
+            types::PrimitiveType::Int64,
+            types::PrimitiveType::Int64,
+            types::PrimitiveType::Int32
+        },
+        // Fully mixed across the three regimes: small / > Int32 / > UInt32.
+        GemmIndvarTypeParams{
+            "MixedAllRegimes",
+            10,
+            kAboveInt32,
+            kAboveUInt32,
+            types::PrimitiveType::Int32,
+            types::PrimitiveType::Int64,
+            types::PrimitiveType::Int64
+        }
+    ),
+    [](const ::testing::TestParamInfo<GemmIndvarTypeParams>& info) { return info.param.label; }
+);
+
+} // namespace

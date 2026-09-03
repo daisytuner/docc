@@ -35,7 +35,7 @@ TEST(InLocalStorageTest, For_Array) {
     builder::StructuredSDFGBuilder builder("ils_dynamic_test", FunctionType_CPU);
 
     // Create containers
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Float);
@@ -158,7 +158,7 @@ TEST(InLocalStorageTest, For_Array_Linearized) {
     builder::StructuredSDFGBuilder builder("ils_cpu_flatptr", FunctionType_CPU);
     auto& root = builder.subject().root();
 
-    types::Scalar loop_var(types::PrimitiveType::UInt64);
+    types::Scalar loop_var(types::PrimitiveType::Int64);
     types::Scalar elem(types::PrimitiveType::Float);
     types::Pointer ptr(elem);
     types::Pointer opaque_ptr;
@@ -283,7 +283,7 @@ TEST(InLocalStorageTest, For_Array_Linearized) {
 TEST(InLocalStorageTest, For_Array_PolyBench) {
     builder::StructuredSDFGBuilder builder("ols_flat_2d", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
     builder.add_container("j", sym_desc);
 
@@ -448,7 +448,7 @@ TEST(InLocalStorageTest, For_Scalar) {
     builder::StructuredSDFGBuilder builder("ils_dynamic_test", FunctionType_CPU);
 
     // Create containers
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Float);
@@ -564,7 +564,7 @@ TEST(InLocalStorageTest, Map_Array) {
     builder::StructuredSDFGBuilder builder("ils_dynamic_test", FunctionType_CPU);
 
     // Create containers
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Float);
@@ -693,7 +693,7 @@ TEST(InLocalStorageTest, Map_Array) {
 TEST(InLocalStorageTest, For_MultipleGroups) {
     builder::StructuredSDFGBuilder builder("ils_syr2k_seq_test", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     types::Scalar elem_desc(types::PrimitiveType::Float);
     types::Pointer ptr_desc(elem_desc);
     types::Pointer opaque_desc;
@@ -882,7 +882,7 @@ TEST(InLocalStorageTest, For_MultipleGroups) {
 TEST(InLocalStorageTest, For_MultipleGroups_SplitNode) {
     builder::StructuredSDFGBuilder builder("ils_syr2k_seq_test", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     types::Scalar elem_desc(types::PrimitiveType::Float);
     types::Pointer ptr_desc(elem_desc);
     types::Pointer opaque_desc;
@@ -1103,7 +1103,7 @@ TEST(InLocalStorageTest, For_MultipleGroups_SplitNode) {
 TEST(InLocalStorageTest, FailsOnWrittenContainer) {
     builder::StructuredSDFGBuilder builder("ils_rw_test", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Float);
@@ -1145,7 +1145,7 @@ TEST(InLocalStorageTest, FailsOnWrittenContainer) {
 TEST(InLocalStorageTest, FailsOnAccessOutsideLoop) {
     builder::StructuredSDFGBuilder builder("ils_outside_test", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Float);
@@ -1195,7 +1195,7 @@ TEST(InLocalStorageTest, FailsOnAccessOutsideLoop) {
 TEST(InLocalStorageTest, FailsOnUnusedContainer) {
     builder::StructuredSDFGBuilder builder("ils_unused_test", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Float);
@@ -1246,7 +1246,7 @@ TEST(InLocalStorageTest, FailsOnUnusedContainer) {
 TEST(InLocalStorageTest, JsonSerialization) {
     builder::StructuredSDFGBuilder builder("ils_json_test", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Float);
@@ -1319,7 +1319,7 @@ TEST(InLocalStorageTest, JsonSerialization) {
 TEST(InLocalStorageTest, TiledAccess_2D) {
     builder::StructuredSDFGBuilder builder("ils_2d_test", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("M", sym_desc, true);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i_tile", sym_desc);
@@ -1459,7 +1459,7 @@ TEST(InLocalStorageTest, TiledAccess_2D) {
 TEST(InLocalStorageTest, TiledAccess_1D) {
     builder::StructuredSDFGBuilder builder("ils_tiled_1d_test", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i_tile", sym_desc);
     builder.add_container("i", sym_desc);
@@ -1556,7 +1556,7 @@ TEST(InLocalStorageTest, TiledAccess_1D) {
 TEST(InLocalStorageTest, TiledAccess_2D_Panel) {
     builder::StructuredSDFGBuilder builder("ils_tiled_2d_test", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("M", sym_desc, true);
     builder.add_container("K", sym_desc, true);
     builder.add_container("i_tile", sym_desc);
@@ -1705,7 +1705,7 @@ TEST(InLocalStorageTest, TiledAccess_2D_Panel) {
 TEST(InLocalStorageTest, TiledStencil_2D_5Point) {
     builder::StructuredSDFGBuilder builder("ils_tiled_stencil_test", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("M", sym_desc, true);
     builder.add_container("i_tile", sym_desc);

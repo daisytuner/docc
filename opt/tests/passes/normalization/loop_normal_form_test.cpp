@@ -29,7 +29,7 @@ static void add_simple_body(
 TEST(LoopNormalFormTest, ShiftsNonZeroInit) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Double);
@@ -78,7 +78,7 @@ TEST(LoopNormalFormTest, ShiftsNonZeroInit) {
 TEST(LoopNormalFormTest, NormalizesNonUnitStride) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Double);
@@ -128,7 +128,7 @@ TEST(LoopNormalFormTest, NormalizesNonUnitStride) {
 TEST(LoopNormalFormTest, RotatesNegativeStride) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Double);
@@ -173,7 +173,7 @@ TEST(LoopNormalFormTest, RotatesNegativeStride) {
 TEST(LoopNormalFormTest, AlreadyNormalized) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Double);
@@ -228,7 +228,7 @@ TEST(LoopNormalFormTest, AlreadyNormalized) {
 TEST(LoopNormalFormTest, FullPipelinePositiveStride) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Double);
@@ -336,7 +336,7 @@ TEST(LoopNormalFormTest, FullPipelineNegativeNonUnitStride) {
 TEST(LoopNormalFormTest, MapLoopNormalization) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Double);
@@ -386,7 +386,7 @@ TEST(LoopNormalFormTest, MapLoopNormalization) {
 TEST(LoopNormalFormTest, NestedLoops) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("i", sym_desc);
     builder.add_container("j", sym_desc);
 
@@ -464,7 +464,7 @@ TEST(LoopNormalFormTest, NestedLoops) {
 TEST(LoopNormalFormTest, SymbolicBounds) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
 

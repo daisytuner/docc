@@ -303,77 +303,7 @@ std::unique_ptr<TensorLayout> TensorLayout::reshape(const symbolic::MultiExpress
 
 types::PrimitiveType TensorLayout::get_tensor_indvar_type_for_shape(const std::vector<symbolic::Expression>& shape) {
     auto num_elems = SymEngine::mul(shape);
-    return types::get_primitive_type_to_hold_expression(num_elems);
-}
-
-types::PrimitiveType TensorLayout::get_combined_tensor_indvar_type(types::PrimitiveType a, types::PrimitiveType b) {
-    // Describe each supported integer type by its bit width and signedness.
-    auto bit_width = [](types::PrimitiveType t) -> int {
-        switch (t) {
-            case types::PrimitiveType::Int32:
-            case types::PrimitiveType::UInt32:
-                return 32;
-            case types::PrimitiveType::Int64:
-            case types::PrimitiveType::UInt64:
-                return 64;
-            default:
-                throw std::invalid_argument(
-                    "Unsupported type for tensor indvar: " + std::string(types::primitive_type_to_string(t))
-                );
-        }
-    };
-    auto is_signed = [](types::PrimitiveType t) -> bool {
-        switch (t) {
-            case types::PrimitiveType::Int32:
-            case types::PrimitiveType::Int64:
-                return true;
-            case types::PrimitiveType::UInt32:
-            case types::PrimitiveType::UInt64:
-                return false;
-            default:
-                throw std::invalid_argument(
-                    "Unsupported type for tensor indvar: " + std::string(types::primitive_type_to_string(t))
-                );
-        }
-    };
-
-    // Can every value of `src` be extended into `dst` without any loss?
-    auto fits_in = [&](types::PrimitiveType src, types::PrimitiveType dst) -> bool {
-        const int src_bits = bit_width(src);
-        const int dst_bits = bit_width(dst);
-        const bool src_signed = is_signed(src);
-        const bool dst_signed = is_signed(dst);
-
-        if (src_signed == dst_signed) {
-            // Same signedness: the destination just needs to be at least as wide.
-            return dst_bits >= src_bits;
-        }
-        if (!src_signed && dst_signed) {
-            // Unsigned into signed: need one extra bit to hold the unsigned range.
-            return dst_bits > src_bits;
-        }
-        // Signed into unsigned: negative values can never be represented.
-        return false;
-    };
-
-    // Candidates ordered from smallest to largest capacity so the first match is
-    // the tightest common type that both operands extend into without loss.
-    static constexpr types::PrimitiveType candidates[] = {
-        types::PrimitiveType::Int32,
-        types::PrimitiveType::UInt32,
-        types::PrimitiveType::Int64,
-        types::PrimitiveType::UInt64,
-    };
-    for (auto candidate : candidates) {
-        if (fits_in(a, candidate) && fits_in(b, candidate)) {
-            return candidate;
-        }
-    }
-
-    throw std::invalid_argument(
-        "Cannot combine types " + std::string(types::primitive_type_to_string(a)) + " and " +
-        types::primitive_type_to_string(b)
-    );
+    return types::get_primitive_type_to_hold_upper_bound(num_elems);
 }
 
 } // namespace sdfg::math::tensor

@@ -19,6 +19,7 @@
 #include "sdfg/transformations/loop_split.h"
 #include "sdfg/transformations/loop_tiling.h"
 #include "sdfg/transformations/out_local_storage.h"
+#include "sdfg_debug_dump.h"
 
 using namespace sdfg;
 
@@ -82,7 +83,7 @@ struct GEMMFixture {
     void build() {
         builder = std::make_unique<builder::StructuredSDFGBuilder>("gemm", FunctionType_CPU);
 
-        types::Scalar sym_desc(types::PrimitiveType::UInt64);
+        types::Scalar sym_desc(types::PrimitiveType::Int64);
         builder->add_container("M", sym_desc, true);
         builder->add_container("N", sym_desc, true);
         builder->add_container("K", sym_desc, true);
@@ -673,7 +674,7 @@ struct GEMVFixture {
     void build() {
         builder = std::make_unique<builder::StructuredSDFGBuilder>("gemv", FunctionType_CPU);
 
-        types::Scalar sym_desc(types::PrimitiveType::UInt64);
+        types::Scalar sym_desc(types::PrimitiveType::Int64);
         builder->add_container("M", sym_desc, true);
         builder->add_container("N", sym_desc, true);
         builder->add_container("i", sym_desc);
@@ -839,7 +840,7 @@ struct LUFixture {
     void build() {
         builder = std::make_unique<builder::StructuredSDFGBuilder>("lu", FunctionType_CPU);
 
-        types::Scalar sym_desc(types::PrimitiveType::UInt64);
+        types::Scalar sym_desc(types::PrimitiveType::Int64);
         builder->add_container("N", sym_desc, true);
         builder->add_container("i", sym_desc);
         builder->add_container("j", sym_desc);
@@ -1076,6 +1077,7 @@ TEST(BlockingTest, LU_BlockedPipeline) {
     // A[i, <i_tile+B] cells, so MLA + LCDA correctly conclude no carried
     // RAW spans piece 2 with pieces 0/1.
     // -----------------------------------------------------------------------
+    dump_sdfg(builder.subject(), "lu_blocked_pipeline_before_distribution");
     transformations::LoopDistribute distribute(*i_inner, *j2_trailing);
     EXPECT_TRUE(distribute.can_be_applied(builder, am));
     recorder.apply<transformations::LoopDistribute>(builder, am, false, *i_inner, *j2_trailing);

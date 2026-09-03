@@ -26,7 +26,7 @@ TEST(ForClassificationTest, Basic) {
     builder.add_container("A", opaque_desc, true);
     builder.add_container("B", opaque_desc, true);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
 
@@ -77,7 +77,7 @@ TEST(ForClassificationTest, MultiBound) {
     builder.add_container("A", opaque_desc, true);
     builder.add_container("B", opaque_desc, true);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("M", sym_desc, true);
     builder.add_container("i", sym_desc);
@@ -129,7 +129,7 @@ TEST(ForClassificationTest, NonContiguousDomain) {
     builder.add_container("A", opaque_desc, true);
     builder.add_container("B", opaque_desc, true);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
 
@@ -180,7 +180,7 @@ TEST(ForClassificationTest, NonCanonicalBound) {
     builder.add_container("A", opaque_desc, true);
     builder.add_container("B", opaque_desc, true);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
 
@@ -231,7 +231,7 @@ TEST(ForClassificationTest, Shift) {
     builder.add_container("A", opaque_desc, true);
     builder.add_container("B", opaque_desc, true);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
 
@@ -282,7 +282,7 @@ TEST(ForClassificationTest, LastValue) {
     builder.add_container("A", opaque_desc, true);
     builder.add_container("B", opaque_desc, true);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
 
@@ -331,7 +331,7 @@ TEST(ForClassificationTest, Tiled) {
     types::Pointer opaque_desc;
     builder.add_container("A", opaque_desc, true);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
     builder.add_container("i_tile", sym_desc);
@@ -402,7 +402,7 @@ TEST(ForClassificationTest, NonContiguousMemory) {
     builder.add_container("B", opaque_desc);
     builder.add_container("A", opaque_desc, true);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
 
@@ -456,7 +456,7 @@ TEST(ForClassificationTest, ScalarSumReduction) {
     builder.add_container("A", opaque_desc, true);
     builder.add_container("sum", base_desc, true);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
 
@@ -511,7 +511,7 @@ TEST(ForClassificationTest, ScalarProductReduction) {
     builder.add_container("A", opaque_desc, true);
     builder.add_container("prod", base_desc, true);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
 
@@ -562,7 +562,7 @@ TEST(ForClassificationTest, FloatMaxReductionCMath) {
     builder.add_container("A", opaque_desc, true);
     builder.add_container("m", base_desc, true);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
 
@@ -616,7 +616,7 @@ TEST(ForClassificationTest, FusedSumAndProductReduction) {
     builder.add_container("sum", base_desc, true);
     builder.add_container("prod", base_desc, true);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
 
@@ -687,7 +687,7 @@ TEST(ForClassificationTest, RecurrenceIsNotReduction) {
     builder.add_container("A", opaque_desc, true);
     builder.add_container("c", base_desc, true);
 
-    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
 
