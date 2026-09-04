@@ -2031,32 +2031,38 @@ void PyStructuredSDFGBuilder::add_reduce_op(
 }
 
 void PyStructuredSDFGBuilder::add_index_op(
-    const std::string& X,
-    const sdfg::types::Tensor& X_type,
-    const std::vector<std::string>& indices,
-    const std::vector<const sdfg::types::Tensor*>& index_types,
     const std::string& Y,
     const sdfg::types::Tensor& Y_type,
-    long long dim_offset,
+    const std::string& X,
+    const sdfg::types::Tensor& X_type,
+    const std::vector<std::string>& Indices,
+    const std::vector<sdfg::types::Tensor*>& Index_types,
+    const std::vector<long long>& index_positions,
     const sdfg::DebugInfo& debug_info
 ) {
-    auto& block = builder_.add_block(current_sequence(), {}, debug_info);
-    auto& X_access = builder_.add_access(block, X, debug_info);
+    long long num_indcies = Indices.size();
+    auto& block = builder_.add_block(current_sequence(), debug_info);
     auto& Y_access = builder_.add_access(block, Y, debug_info);
+    auto& X_access = builder_.add_access(block, X, debug_info);
+    std::vector<sdfg::data_flow::AccessNode*> Index_accesses;
+    Index_accesses.reserve(num_indcies);
+    for (const auto& Index : Indices) {
+        Index_accesses.push_back(&builder_.add_access(block, Index, debug_info));
+    }
+    std::vector<sdfg::math::tensor::TensorLayout> index_layouts;
+    index_layouts.reserve(num_indcies);
+    for (const auto* Index_type : Index_types) {
+        index_layouts.push_back(Index_type->layout());
+    }
     auto& libnode = builder_.add_library_node<sdfg::math::tensor::IndexNode>(
-        block,
-        debug_info,
-        X_type.shape(),
-        index_types.front()->shape(),
-        dim_offset,
-        static_cast<long long>(indices.size())
+        block, debug_info, index_positions, Y_type.layout(), X_type.layout(), index_layouts
     );
     builder_.add_computational_memlet(block, Y_access, libnode, "Y", {}, Y_type, debug_info);
     builder_.add_computational_memlet(block, X_access, libnode, "X", {}, X_type, debug_info);
-    for (size_t j = 0; j < indices.size(); ++j) {
-        auto& I_access = builder_.add_access(block, indices[j], debug_info);
-        builder_
-            .add_computational_memlet(block, I_access, libnode, "I" + std::to_string(j), {}, *index_types[j], debug_info);
+    for (long long i = 0; i < num_indcies; i++) {
+        builder_.add_computational_memlet(
+            block, *Index_accesses[i], libnode, "I" + std::to_string(index_positions[i]), {}, *Index_types[i], debug_info
+        );
     }
 }
 

@@ -85,7 +85,15 @@ public:
 
     bool is_scalar() const;
 
+    /**
+     * @return True iff the strides are basic strides
+     */
     bool is_contiguous() const;
+
+    /**
+     * @return True iff contiguous and offset is zero
+     */
+    bool is_tight() const;
 
     virtual bool operator==(const IType& other) const override;
 

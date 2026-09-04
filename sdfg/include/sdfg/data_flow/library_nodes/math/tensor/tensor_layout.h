@@ -85,7 +85,13 @@ public:
 
     static TensorLayout deserialize_from_json(const nlohmann::json& j);
 
-    static bool has_linear_accesses_no_padding(symbolic::MultiExpression shape, symbolic::MultiExpression strides);
+    static bool has_linear_accesses(symbolic::MultiExpression shape, symbolic::MultiExpression strides);
+
+    static bool has_linear_accesses_no_padding(
+        symbolic::MultiExpression shape, symbolic::MultiExpression strides, symbolic::Expression offset
+    );
+
+    bool has_linear_accesses() const;
 
     bool has_linear_accesses_no_padding() const;
 

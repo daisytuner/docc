@@ -130,7 +130,7 @@ def test_expand_as_simple(target: str) -> None:
     check(
         ExpandAsSimpleNet(),
         *(torch.tensor([[1], [2], [3]]), torch.randn(3, 4)),
-        target=target
+        target=target,
     )
 
 
@@ -213,6 +213,377 @@ def test_view_shape_identity(target: str) -> None:
     check(TensorMutatingViewShapeIdentityNet(), torch.randn(1, 3, 2, 4), target=target)
 
 
+# --- "indexing" ---
+
+
+def test_indexing_simple(target: str) -> None:
+    class IndexingSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input[0]
+
+    check(IndexingSimpleNet(), torch.randn(5, 4), target=target)
+
+
+def test_indexing_negative(target: str) -> None:
+    class IndexingNegativeNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input[-1]
+
+    check(IndexingNegativeNet(), torch.randn(5, 4), target=target)
+
+
+def test_indexing_multi_dim(target: str) -> None:
+    class IndexingMultiDimNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input[0, 1]
+
+    check(IndexingMultiDimNet(), torch.randn(5, 4), target=target)
+
+
+@pytest.mark.skip(reason="Needs fixes for constants")
+def test_indexing_tuple(target: str) -> None:
+    class IndexingTupleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input[(2, 3), 1]
+
+    check(IndexingTupleNet(), torch.randn(5, 4), target=target)
+
+
+@pytest.mark.skip(reason="Needs fixes for constants")
+def test_indexing_list(target: str) -> None:
+    class IndexingListNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input[[2, 3], 1]
+
+    check(IndexingListNet(), torch.randn(5, 4), target=target)
+
+
+def test_indexing_tensor(target: str) -> None:
+    class IndexingTensorNet(nn.Module):
+        def forward(self, input: torch.Tensor, idx: torch.Tensor) -> torch.Tensor:
+            return input[idx, 1]
+
+    check(
+        IndexingTensorNet(), *(torch.randn(5, 4), torch.tensor([2, 3])), target=target
+    )
+
+
+def test_indexing_multi_tensor(target: str) -> None:
+    class IndexingMultiTensorNet(nn.Module):
+        def forward(
+            self, input: torch.Tensor, idx1: torch.Tensor, idx2: torch.Tensor
+        ) -> torch.Tensor:
+            return input[idx1, idx2]
+
+    check(
+        IndexingMultiTensorNet(),
+        *(torch.randn(5, 4), torch.tensor([2, 3]), torch.tensor([0, 1])),
+        target=target,
+    )
+
+
+def test_indexing_tensor_multi_dim(target: str) -> None:
+    class IndexingTensorMultiDimNet(nn.Module):
+        def forward(self, input: torch.Tensor, idx: torch.Tensor) -> torch.Tensor:
+            return input[:, idx]
+
+    check(
+        IndexingTensorMultiDimNet(),
+        *(torch.randn(5, 4), torch.tensor([[0, 1], [3, 2]])),
+        target=target,
+    )
+
+
+def test_indexing_scalar_and_tensor(target: str) -> None:
+    class IndexingScalarAndTensorNet(nn.Module):
+        def forward(self, input: torch.Tensor, idx: torch.Tensor) -> torch.Tensor:
+            return input[0, idx]
+
+    check(
+        IndexingScalarAndTensorNet(),
+        *(torch.randn(5, 4), torch.tensor([0, 1])),
+        target=target,
+    )
+
+
+def test_indexing_tensor_and_scalar(target: str) -> None:
+    class IndexingTensorAndScalarNet(nn.Module):
+        def forward(self, input: torch.Tensor, idx: torch.Tensor) -> torch.Tensor:
+            return input[idx, 0]
+
+    check(
+        IndexingTensorAndScalarNet(),
+        *(torch.randn(5, 4), torch.tensor([0, 1])),
+        target=target,
+    )
+
+
+def test_indexing_multi_scalar_multi_tensor(target: str) -> None:
+    class IndexingMultiScalarMultiTensorNet(nn.Module):
+        def forward(
+            self, input: torch.Tensor, idx1: torch.Tensor, idx2: torch.Tensor
+        ) -> torch.Tensor:
+            return input[0, idx1, 0, idx2]
+
+    check(
+        IndexingMultiScalarMultiTensorNet(),
+        *(torch.randn(1, 5, 1, 4), torch.tensor([0, 1]), torch.tensor([2, 3])),
+        target=target,
+    )
+
+
+def test_indexing_repeated(target: str) -> None:
+    class IndexingRepeatedNet(nn.Module):
+        def forward(self, input: torch.Tensor, idx: torch.Tensor) -> torch.Tensor:
+            return input[idx]
+
+    check(
+        IndexingRepeatedNet(),
+        *(torch.randn(5, 4), torch.tensor([4, 0, 4, 1, 0])),
+        target=target,
+    )
+
+
+def test_indexing_two_tensors(target: str) -> None:
+    class IndexingTwoTensorsNet(nn.Module):
+        def forward(
+            self, input: torch.Tensor, rows: torch.Tensor, cols: torch.Tensor
+        ) -> torch.Tensor:
+            return input[rows, cols]
+
+    check(
+        IndexingTwoTensorsNet(),
+        *(torch.randn(5, 4), torch.tensor([0, 1, 4]), torch.tensor([2, 3, 1])),
+        target=target,
+    )
+
+
+def test_indexing_two_tensors_different_shapes(target: str) -> None:
+    class IndexingTwoTensorDifferentShapesNet(nn.Module):
+        def forward(
+            self, input: torch.Tensor, idx1: torch.Tensor, idx2: torch.Tensor
+        ) -> torch.Tensor:
+            return input[idx1, idx2]
+
+    check(
+        IndexingTwoTensorDifferentShapesNet(),
+        *(
+            torch.randn(1, 39),
+            torch.tensor([0]).reshape([1, 1, 1, 1]),
+            torch.arange(39).reshape(1, 1, 1, 39),
+        ),
+        target=target,
+    )
+
+
+def test_indexing_None(target: str) -> None:
+    class IndexingNoneNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input[None, 0]
+
+    check(IndexingNoneNet(), torch.randn(5, 4), target=target)
+
+
+def test_indexing_None_middle(target: str) -> None:
+    class IndexingNoneMiddleNet(nn.Module):
+        def forward(
+            self, input: torch.Tensor, idx1: torch.Tensor, idx2: torch.Tensor
+        ) -> torch.Tensor:
+            return input[idx1, None, idx2]
+
+    check(
+        IndexingNoneMiddleNet(),
+        *(torch.randn(4, 4, 4), torch.tensor([0, 1]), torch.tensor([2, 3])),
+        target=target,
+    )
+
+
+def test_indexing_Ellipsis(target: str) -> None:
+    class IndexingEllipsisNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input[..., 0]
+
+    check(IndexingEllipsisNet(), torch.randn(5, 4), target=target)
+
+
+@pytest.mark.skip(reason="Needs support for aten.empty.memory_format")
+def test_indexing_True(target: str) -> None:
+    class IndexingTrueNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input[True]
+
+    check(IndexingTrueNet(), torch.randn(5, 4), target=target)
+
+
+@pytest.mark.skip(reason="Output order wrong")
+def test_indexing_bool_mask(target: str) -> None:
+    class IndexingBoolMaskNet(nn.Module):
+        def forward(self, input: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+            return input[mask]
+
+    check(
+        IndexingBoolMaskNet(),
+        *(torch.randn(4), torch.tensor([True, False, False, True])),
+        target=target,
+    )
+
+
+def test_indexing_advanced_contiguous(target: str) -> None:
+    class IndexingAdvancedContiguousNet(nn.Module):
+        def forward(
+            self, input: torch.Tensor, idx1: torch.Tensor, idx2: torch.Tensor
+        ) -> torch.Tensor:
+            return input[None, idx1, idx2]
+
+    check(
+        IndexingAdvancedContiguousNet(),
+        *(torch.randn(4, 4, 4, 4, 4), torch.tensor([0, 1]), torch.tensor([2, 3])),
+        target=target,
+    )
+
+
+def test_indexing_advanced_contiguous_broadcast_1(target: str) -> None:
+    class IndexingAdvancedContiguousBroadcast1Net(nn.Module):
+        def forward(
+            self, input: torch.Tensor, idx1: torch.Tensor, idx2: torch.Tensor
+        ) -> torch.Tensor:
+            return input[None, idx1, idx2]
+
+    check(
+        IndexingAdvancedContiguousBroadcast1Net(),
+        *(torch.randn(4, 4, 4, 4, 4), torch.tensor([[0], [1]]), torch.tensor([2, 3])),
+        target=target,
+    )
+
+
+def test_indexing_advanced_contiguous_broadcast_2(target: str) -> None:
+    class IndexingAdvancedContiguousBroadcast2Net(nn.Module):
+        def forward(
+            self, input: torch.Tensor, idx1: torch.Tensor, idx2: torch.Tensor
+        ) -> torch.Tensor:
+            return input[None, idx1, idx2]
+
+    check(
+        IndexingAdvancedContiguousBroadcast2Net(),
+        *(
+            torch.randn(4, 4, 4, 4, 4),
+            torch.tensor([[0, 1], [2, 3]]),
+            torch.tensor([2]),
+        ),
+        target=target,
+    )
+
+
+def test_indexing_advanced_contiguous_broadcast_3(target: str) -> None:
+    class IndexingAdvancedContiguousBroadcast3Net(nn.Module):
+        def forward(
+            self, input: torch.Tensor, idx1: torch.Tensor, idx2: torch.Tensor
+        ) -> torch.Tensor:
+            return input[None, idx1, idx2]
+
+    check(
+        IndexingAdvancedContiguousBroadcast3Net(),
+        *(torch.randn(4, 4, 4, 4, 4), torch.tensor([2, 3]), torch.tensor([[0], [1]])),
+        target=target,
+    )
+
+
+def test_indexing_advanced_contiguous_broadcast_4(target: str) -> None:
+    class IndexingAdvancedContiguousBroadcast4Net(nn.Module):
+        def forward(
+            self, input: torch.Tensor, idx1: torch.Tensor, idx2: torch.Tensor
+        ) -> torch.Tensor:
+            return input[None, idx1, idx2]
+
+    check(
+        IndexingAdvancedContiguousBroadcast4Net(),
+        *(
+            torch.randn(4, 4, 4, 4, 4),
+            torch.tensor([2]),
+            torch.tensor([[0, 1], [2, 3]]),
+        ),
+        target=target,
+    )
+
+
+def test_indexing_advanced_non_contiguous(target: str) -> None:
+    class IndexingAdvancedNonContiguousNet(nn.Module):
+        def forward(
+            self, input: torch.Tensor, idx1: torch.Tensor, idx2: torch.Tensor
+        ) -> torch.Tensor:
+            return input[None, idx1, None, idx2]
+
+    check(
+        IndexingAdvancedNonContiguousNet(),
+        *(torch.randn(4, 4, 4, 4, 4), torch.tensor([0, 1]), torch.tensor([2, 3])),
+        target=target,
+    )
+
+
+def test_indexing_advanced_non_contiguous_broadcast_1(target: str) -> None:
+    class IndexingAdvancedNonContiguousBroadcast1Net(nn.Module):
+        def forward(
+            self, input: torch.Tensor, idx1: torch.Tensor, idx2: torch.Tensor
+        ) -> torch.Tensor:
+            return input[None, idx1, None, idx2]
+
+    check(
+        IndexingAdvancedNonContiguousBroadcast1Net(),
+        *(torch.randn(4, 4, 4, 4, 4), torch.tensor([[0], [1]]), torch.tensor([2, 3])),
+        target=target,
+    )
+
+
+def test_indexing_advanced_non_contiguous_broadcast_2(target: str) -> None:
+    class IndexingAdvancedNonContiguousBroadcast2Net(nn.Module):
+        def forward(
+            self, input: torch.Tensor, idx1: torch.Tensor, idx2: torch.Tensor
+        ) -> torch.Tensor:
+            return input[None, idx1, None, idx2]
+
+    check(
+        IndexingAdvancedNonContiguousBroadcast2Net(),
+        *(
+            torch.randn(4, 4, 4, 4, 4),
+            torch.tensor([[0, 1], [2, 3]]),
+            torch.tensor([2]),
+        ),
+        target=target,
+    )
+
+
+def test_indexing_advanced_non_contiguous_broadcast_3(target: str) -> None:
+    class IndexingAdvancedNonContiguousBroadcast3Net(nn.Module):
+        def forward(
+            self, input: torch.Tensor, idx1: torch.Tensor, idx2: torch.Tensor
+        ) -> torch.Tensor:
+            return input[None, idx1, None, idx2]
+
+    check(
+        IndexingAdvancedNonContiguousBroadcast3Net(),
+        *(torch.randn(4, 4, 4, 4, 4), torch.tensor([2, 3]), torch.tensor([[0], [1]])),
+        target=target,
+    )
+
+
+def test_indexing_advanced_non_contiguous_broadcast_4(target: str) -> None:
+    class IndexingAdvancedNonContiguousBroadcast4Net(nn.Module):
+        def forward(
+            self, input: torch.Tensor, idx1: torch.Tensor, idx2: torch.Tensor
+        ) -> torch.Tensor:
+            return input[None, idx1, None, idx2]
+
+    check(
+        IndexingAdvancedNonContiguousBroadcast4Net(),
+        *(
+            torch.randn(4, 4, 4, 4, 4),
+            torch.tensor([2]),
+            torch.tensor([[0, 1], [2, 3]]),
+        ),
+        target=target,
+    )
+
+
 # --- "slicing" ---
 
 
@@ -276,7 +647,6 @@ def test_slicing_colon(target: str) -> None:
     check(SlicingColonNet(), torch.arange(10).reshape(2, 5), target=target)
 
 
-@pytest.mark.skip(reason="Needs support for aten.select.int")
 def test_slicing_select_ellipsis(target: str) -> None:
     class SlicingSelectEllipsisNet(nn.Module):
         def forward(self, input: torch.Tensor) -> torch.Tensor:
@@ -289,7 +659,6 @@ def test_slicing_select_ellipsis(target: str) -> None:
     )
 
 
-@pytest.mark.skip(reason="Needs support for aten.select.int")
 def test_slicing_select_colon(target: str) -> None:
     class SlicingSelectColonNet(nn.Module):
         def forward(self, input: torch.Tensor) -> torch.Tensor:

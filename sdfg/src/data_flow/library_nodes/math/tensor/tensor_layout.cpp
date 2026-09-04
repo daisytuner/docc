@@ -1,6 +1,7 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/tensor_layout.h"
 
 #include "sdfg/serializer/json_serializer.h"
+#include "sdfg/symbolic/symbolic.h"
 #include "sdfg/types/utils.h"
 
 namespace sdfg::math::tensor {
@@ -145,7 +146,7 @@ std::ostream& operator<<(std::ostream& stream, const TensorLayout& layout) {
     return stream;
 }
 
-bool TensorLayout::has_linear_accesses_no_padding(symbolic::MultiExpression shape, symbolic::MultiExpression strides) {
+bool TensorLayout::has_linear_accesses(symbolic::MultiExpression shape, symbolic::MultiExpression strides) {
     auto basic_strides = types::Tensor::strides_from_shape(shape);
     if (basic_strides.size() != strides.size()) {
         return false;
@@ -158,7 +159,17 @@ bool TensorLayout::has_linear_accesses_no_padding(symbolic::MultiExpression shap
     return true;
 }
 
-bool TensorLayout::has_linear_accesses_no_padding() const { return has_linear_accesses_no_padding(shape_, strides_); }
+bool TensorLayout::has_linear_accesses_no_padding(
+    symbolic::MultiExpression shape, symbolic::MultiExpression strides, symbolic::Expression offset
+) {
+    return has_linear_accesses(shape, strides) && symbolic::eq(offset, symbolic::zero());
+}
+
+bool TensorLayout::has_linear_accesses() const { return has_linear_accesses(shape_, strides_); }
+
+bool TensorLayout::has_linear_accesses_no_padding() const {
+    return has_linear_accesses_no_padding(shape_, strides_, offset_);
+}
 
 bool TensorLayout::has_transposed_strides_no_padding() const {
     if (shape_.size() < 2) {
@@ -174,7 +185,7 @@ bool TensorLayout::has_transposed_strides_no_padding() const {
     symbolic::MultiExpression transposed_strides(strides_);
     transposed_strides[strides_.size() - 2] = strides_.at(strides_.size() - 1);
     transposed_strides[strides_.size() - 1] = strides_.at(strides_.size() - 2);
-    return TensorLayout::has_linear_accesses_no_padding(new_shape, transposed_strides);
+    return TensorLayout::has_linear_accesses_no_padding(new_shape, transposed_strides, offset_);
 }
 
 bool TensorLayout::operator==(const TensorLayout& other) const {

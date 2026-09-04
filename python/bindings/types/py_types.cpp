@@ -185,5 +185,6 @@ void register_types(py::module& m) {
             },
             py::arg("new_shape")
         )
-        .def("is_contiguous", &Tensor::is_contiguous);
+        .def("is_contiguous", &Tensor::is_contiguous)
+        .def("is_tight", &Tensor::is_tight);
 }

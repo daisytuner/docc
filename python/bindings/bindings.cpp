@@ -875,13 +875,13 @@ PYBIND11_MODULE(_sdfg, m) {
         .def(
             "add_index_op",
             &PyStructuredSDFGBuilder::add_index_op,
-            py::arg("X"),
-            py::arg("X_type"),
-            py::arg("indices"),
-            py::arg("index_types"),
             py::arg("Y"),
             py::arg("Y_type"),
-            py::arg("dim_offset"),
+            py::arg("X"),
+            py::arg("X_type"),
+            py::arg("Indices"),
+            py::arg("Index_types"),
+            py::arg("index_positions"),
             py::arg("debug_info") = sdfg::DebugInfo()
         )
         .def(

@@ -81,7 +81,9 @@ symbolic::Expression Tensor::total_size() const {
 
 bool Tensor::is_scalar() const { return layout_.is_scalar(); }
 
-bool Tensor::is_contiguous() const { return layout_.has_linear_accesses_no_padding(); }
+bool Tensor::is_contiguous() const { return layout_.has_linear_accesses(); }
+
+bool Tensor::is_tight() const { return layout_.has_linear_accesses_no_padding(); }
 
 TypeID Tensor::type_id() const { return TypeID::Tensor; };
 

@@ -160,6 +160,10 @@ class TensorInfo:
         """True iff the tensor is contiguous, i.e., has C-strides"""
         return self.sdfg_tensor_type().is_contiguous()
 
+    def is_tight(self) -> bool:
+        """True iff the tensor is contiguous and has a offset of zero"""
+        return self.sdfg_tensor_type().is_tight()
+
     def sdfg_type(self) -> Type:
         """Constructs an SDFG type for the underlying container"""
         if len(self.shape()) == 0:
@@ -735,8 +739,19 @@ class GraphParserBase:
                 ),
             }
             limit: tuple[int, int] = limits[dst_type.primitive_type]
-            if primitive_type_is_integer(constant_prim):
-                int_val: int = int(constant.value())
+            int_val: int | None = None
+            if constant_prim == PrimitiveType.Bool:
+                int_val: int | None = int(bool(constant.value()))
+            elif primitive_type_is_integer(constant_prim):
+                if constant.value() in ("False", "True"):
+                    int_val: int | None = int(bool(constant.value()))
+                else:
+                    int_val: int | None = int(constant.value())
+            elif primitive_type_is_floating_point(constant_prim):
+                float_val: float = float(constant.value())
+                if float_val.is_integer():
+                    int_val: int | None = int(float_val)
+            if not int_val is None:
                 if int_val >= limit[0] and int_val <= limit[1]:
                     return dst_type
         elif primitive_type_is_floating_point(dst_type.primitive_type):
@@ -927,19 +942,18 @@ class GraphParserBase:
             )
 
         debug_info: DebugInfo = self.get_debug_info(node)
-        if not src_info.is_contiguous() and dst_info.is_contiguous():
-            # This means that the model would return a non-contiguous tensor. We need to perform a
-            # copy to make it contiguous.
-            builder.add_copy_op(
-                src_info.container(),
-                src_info.sdfg_tensor_type(),
-                dst_info.container(),
-                dst_info.sdfg_tensor_type(),
-                debug_info,
-            )
-        elif src_info.shape() == [] and dst_info.shape() == ["1"]:
+        if src_info.shape() == [] and dst_info.shape() == ["1"]:
             # This means that the model would return a scalar tensor, i.e., a scalar. However, we
             # can only return pointers. So, a copy is performed.
+            if isinstance(
+                metadata.container(src_info.container()).sdfg_type(), Pointer
+            ):
+                # Underlying data is a pointer
+                src_subset: str = src_info.offset()
+            else:
+                # Underlying data is a scalar
+                src_subset: str = ""
+
             block: Block = builder.add_block(debug_info)
             src_access: AccessNode = builder.add_access(
                 block, src_info.container(), debug_info
@@ -956,6 +970,7 @@ class GraphParserBase:
                 "void",
                 tasklet,
                 "_in",
+                subset=src_subset,
                 debug_info=debug_info,
             )
             builder.add_memlet(
@@ -966,6 +981,16 @@ class GraphParserBase:
                 "void",
                 subset="0",
                 debug_info=debug_info,
+            )
+        elif not src_info.is_tight() and dst_info.is_tight():
+            # This means that the model would return a non-contiguous tensor. We need to perform a
+            # copy to make it contiguous.
+            builder.add_copy_op(
+                src_info.container(),
+                src_info.sdfg_tensor_type(),
+                dst_info.container(),
+                dst_info.sdfg_tensor_type(),
+                debug_info,
             )
         else:
             raise GraphParserError(
