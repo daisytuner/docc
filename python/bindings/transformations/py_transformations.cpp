@@ -528,10 +528,11 @@ void register_transformations(py::module& m) {
     // LocalStorage transformation (schedule-derived local buffer; direction derived)
     py::class_<LocalStorage, Transformation>(m, "LocalStorage")
         .def(
-            py::init<StructuredLoop&, const sdfg::data_flow::AccessNode&, bool>(),
+            py::init<StructuredLoop&, const sdfg::data_flow::AccessNode&, bool, bool>(),
             py::arg("loop"),
             py::arg("access_node"),
             py::arg("swizzle_layout") = false,
+            py::arg("lane_contiguous") = false,
             "Create a local-storage transformation.\n\n"
             "The copy direction (in/out) and the storage space are both derived\n"
             "from the dataflow and the enclosing parallel schedule.\n\n"
@@ -541,7 +542,10 @@ void register_transformations(py::module& m) {
             "    swizzle_layout: For a bank-conflict-free NV_Shared tile, XOR-swizzle\n"
             "        the inner index instead of padding its stride (saves shared\n"
             "        memory; the layout tensor-core ldmatrix needs). Requires a\n"
-            "        power-of-two inner block; falls back to padding otherwise."
+            "        power-of-two inner block; falls back to padding otherwise.\n"
+            "    lane_contiguous: Lay the NV_Shared tile flat and thread-linear (slots\n"
+            "        folded, no padding) via a full-block cooperative copy, as required\n"
+            "        by the CDNA async global->LDS DMA (global_load_lds)."
         )
         .def_property_readonly(
             "local_container", &LocalStorage::local_container, "Name of the created local buffer (valid after apply())"

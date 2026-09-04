@@ -77,6 +77,18 @@ public:
         /// Per-varying-dim local tile index (@p access_subset[d] - base[d]) for a
         /// body access. Pure; unit-testable.
         std::vector<symbolic::Expression> local_index(const std::vector<symbolic::Expression>& access_subset) const;
+
+        /// Container linear address for the *full flat* tile (slots folded in).
+        /// original_subset() carries each slot indvar through the per-thread base;
+        /// this substitutes each @p slot_indvars[s] with @p slot_values[s] (the
+        /// indvar's value for the delinearized slot index, i.e. init + stride*idx),
+        /// yielding the gather address for a lane-contiguous cooperative copy whose
+        /// flat index carries the slot rather than a threadIdx. Pure; unit-testable.
+        std::vector<symbolic::Expression> flat_original_subset(
+            const std::vector<symbolic::Expression>& slot_indvars,
+            const std::vector<symbolic::Expression>& slot_values,
+            const std::vector<symbolic::Expression>& tile_indices
+        ) const;
     };
 
     /// Dense row-major local buffer laid out as [per-thread slot dims] ++ [tile
@@ -114,26 +126,35 @@ public:
         /// indices (row-major).
         std::vector<symbolic::Expression> delinearize_tile(const symbolic::Expression& flat) const;
 
-        /// GPU-shared only: pad the per-slot inner block stride to be coprime with
-        /// 32 so a warp's per-slot accesses land on distinct banks (no bank
-        /// conflicts). When set, the buffer is laid out `[slot dims][inner_stride]`
-        /// with a flat per-slot block, and axes()/multi_subset() switch to that
-        /// form. Set by apply() for an NV_Shared buffer that owns a slot prefix.
-        bool bank_padded = false;
+        /// How the per-slot tile block is laid out. Selected by apply() from the
+        /// storage space and options; drives axes() and multi_subset().
+        enum class Layout {
+            /// Dense row-major `[slot dims ++ tile dims]`. CPU/private default.
+            MultiDim,
+            /// `[slot dims ++ flat tile block]` at natural stride — no padding or
+            /// swizzle, so each slot is lane-contiguous. Required by the CDNA async
+            /// global->LDS DMA (`global_load_lds` ignores per-lane destinations and
+            /// writes lane-contiguous from a wave-uniform base).
+            Linearized,
+            /// `[slot dims ++ flat tile block]` with inner_stride() padded coprime
+            /// with 32, so a warp's per-slot accesses land on distinct banks.
+            Padded,
+            /// `[slot dims ++ flat tile block]` at natural stride, tile index
+            /// XOR-swizzled by the slot to spread accesses across banks without
+            /// wasted columns. Requires a constant power-of-two inner block.
+            Swizzle,
+        };
+        /// Selected buffer layout. GPU-shared slot buffers default to Padded (or
+        /// Swizzle when opted in); everything else stays MultiDim.
+        Layout layout = Layout::MultiDim;
         /// GPU-shared cooperative stores: the number of distinct cooperative-copy
-        /// indices a warp writes (the coop axis's per-warp thread count). When >0,
-        /// inner_stride() is padded to be congruent to this modulo 32 so a warp's
-        /// `[slot][coop]` stores land on distinct banks for both slot-fast and
+        /// indices a warp writes (the coop axis's per-warp thread count). When >0
+        /// (Padded layout), inner_stride() is padded congruent to it modulo 32 so a
+        /// warp's `[slot][coop]` stores land on distinct banks for both slot-fast and
         /// slot-slow tiles; 0 falls back to the next-odd (coprime-with-32) stride.
         size_t coop_warp_span = 0;
-        /// GPU-shared alternative to bank_padded: lay the per-slot block out at its
-        /// natural (unpadded) size and XOR-swizzle the inner index by the slot, so
-        /// a warp's per-slot accesses land on distinct banks without wasted columns.
-        /// Requires a constant power-of-two inner block. Mutually exclusive with
-        /// bank_padded.
-        bool swizzled = false;
         /// Per-slot inner block stride: tile_total_size() bumped to the next value
-        /// coprime with 32 (i.e. odd) when bank_padded and the size is a constant;
+        /// coprime with 32 (i.e. odd) when Padded and the size is a constant;
         /// tile_total_size() otherwise.
         symbolic::Expression inner_stride() const;
         /// Flat row-major index of @p slot_indices over slot_sizes (the swizzle key).
@@ -432,6 +453,8 @@ private:
     TileInfo tile_info_; ///< Populated by can_be_applied()
     LocalityPlan plan_; ///< Schedule classification (populated by can_be_applied)
     bool swizzle_layout_ = false; ///< XOR-swizzle the NV_Shared inner index instead of padding it
+    bool lane_contiguous_ = false; ///< Lay the NV_Shared tile thread-linearly (flat, no slots) for the CDNA async
+                                   ///< global->LDS DMA, which writes lane-contiguous from a wave-uniform base.
     std::unordered_set<const data_flow::Memlet*> group_memlets_; ///< Memlets in the selected tile group
     std::vector<structured_control_flow::Reduce*> reduce_retargets_; ///< non-cooperative Reduce nodes to retarget in
                                                                      ///< apply()
@@ -499,6 +522,24 @@ private:
         const types::IType& pointer_type
     );
 
+    /// Lane-contiguous cooperative path (CDNA async global->LDS): a full-block
+    /// thread-linear copy into a flat buffer, so `dst = buf[flat_tid + BLK*iter]`
+    /// is lane-contiguous (required by global_load_lds, which ignores per-lane
+    /// destinations). Gathers via TileInfo::flat_original_subset from the
+    /// delinearized flat index. @p slot_* describe the folded per-thread dims.
+    void emit_lane_contiguous_copy_in(
+        builder::StructuredSDFGBuilder& builder,
+        analysis::AnalysisManager& analysis_manager,
+        structured_control_flow::Sequence& parent,
+        const TileBuffer& buffer,
+        const types::IType& buffer_type,
+        const types::IType& pointer_type,
+        const std::vector<symbolic::Expression>& slot_sizes,
+        const std::vector<symbolic::Expression>& slot_indvars,
+        const std::vector<symbolic::Expression>& slot_inits,
+        const std::vector<symbolic::Expression>& slot_strides
+    );
+
     /// Redirect every container access in the loop body to the local buffer,
     /// prefixed by the per-thread @p slot_indices.
     void rewrite_body(
@@ -522,14 +563,21 @@ public:
      *        wasted columns (saves shared) and the layout `ldmatrix` needs for
      *        tensor cores. Requires a power-of-two inner block; falls back to
      *        padding otherwise.
+     * @param lane_contiguous When true, the NV_Shared tile is laid out flat and
+     *        thread-linear (slots folded, no padding) and staged by a full-block
+     *        cooperative copy. Required by the CDNA async global->LDS DMA
+     *        (`global_load_lds`), which ignores per-lane destinations and writes
+     *        lane-contiguous from a wave-uniform base.
      */
     LocalStorage(
         structured_control_flow::StructuredLoop& loop,
         const data_flow::AccessNode& access_node,
-        bool swizzle_layout = false
+        bool swizzle_layout = false,
+        bool lane_contiguous = false
     )
         : loop_(loop), access_node_(access_node), container_(access_node.data()),
-          storage_type_(types::StorageType::CPU_Stack()), swizzle_layout_(swizzle_layout) {}
+          storage_type_(types::StorageType::CPU_Stack()), swizzle_layout_(swizzle_layout),
+          lane_contiguous_(lane_contiguous) {}
 
     std::string name() const override { return "LocalStorage"; }
 

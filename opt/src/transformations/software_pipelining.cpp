@@ -525,22 +525,37 @@ void SoftwarePipelining::apply(builder::StructuredSDFGBuilder& builder, analysis
     // (exact and symbolic-safe, so a compound/symbolic-init tile bound works too).
     auto shift = symbolic::mul(symbolic::integer(static_cast<long long>(stages_ - 1)), stride);
     auto guard_cond = symbolic::Lt(symbolic::add(indvar, shift), bound);
-    structured_control_flow::ControlFlowNode* last_copy = nullptr;
+
+    // One if-else guards the whole prefetch+commit+wait region:
+    //   if (indvar + (stages-1)*stride < bound):
+    //       prefetch panel indvar+shift; commit; wait keeping stages-1 in flight
+    //   else:  // final stages-1 iterations — nothing new was prefetched
+    //       wait for *all* outstanding loads (keep 0) so the buffer we are about
+    //       to consume is complete.
+    // The else branch is essential on CDNA: its wait lowers to `s_waitcnt
+    // vmcnt(keep*loads_per_group)`, and with `keep = stages-1` the only loads
+    // still in flight on the tail are exactly the buffer being read, so that
+    // wait would be a no-op and the last panel would read incomplete LDS.
+    auto& if_else = builder.add_if_else_before(body, *copies.front());
+    auto& then_branch = builder.add_case(if_else, guard_cond, loop_.debug_info());
+    auto& else_branch = builder.add_case(if_else, symbolic::Not(guard_cond), loop_.debug_info());
+
     for (auto* copy : copies) {
         copy->replace(indvar, symbolic::add(indvar, shift));
-        auto& if_else = builder.add_if_else_before(body, *copy);
-        auto& branch = builder.add_case(if_else, guard_cond, loop_.debug_info());
-        builder.move_child(body, body.index(*copy), branch);
-        last_copy = &if_else;
+        builder.move_child(body, body.index(*copy), then_branch);
     }
 
-    // Commit this iteration's prefetch group, then wait for the panel we are
-    // about to consume (keep stages-1 in flight) — placed before the compute
-    // barrier that already follows the copies.
-    auto& commitb = builder.add_block_after(body, *last_copy, loop_.debug_info());
+    auto& commitb = builder.add_block(then_branch, loop_.debug_info());
     builder.add_library_node<data_flow::PipelineCommitNode>(commitb, loop_.debug_info());
-    auto& waitb = builder.add_block_after(body, commitb, loop_.debug_info());
-    builder.add_library_node<data_flow::PipelineWaitNode>(waitb, loop_.debug_info(), stages_ - 1);
+    auto& waitb = builder.add_block(then_branch, loop_.debug_info());
+    auto& wait_node =
+        static_cast<data_flow::PipelineWaitNode&>(builder.add_library_node<
+                                                  data_flow::PipelineWaitNode>(waitb, loop_.debug_info(), stages_ - 1));
+
+    auto& drainb = builder.add_block(else_branch, loop_.debug_info());
+    auto& drain_wait_node =
+        static_cast<data_flow::PipelineWaitNode&>(builder.add_library_node<
+                                                  data_flow::PipelineWaitNode>(drainb, loop_.debug_info(), 0));
 
     analysis_manager.invalidate_all();
 
@@ -560,6 +575,26 @@ void SoftwarePipelining::apply(builder::StructuredSDFGBuilder& builder, analysis
     }
 
     analysis_manager.invalidate_all();
+
+    // CUDA counts commit groups, but CDNA waits on the flat vmcnt counter, where
+    // one stage expands to (sum of cp.async bytes / 4) individual global->LDS
+    // loads per lane. Record that per-stage word count so the ROCm/CDNA wait can
+    // emit vmcnt(keep_outstanding * loads_per_group). One loop iteration prefetches
+    // exactly one stage, so summing the body's CpAsyncCopyNodes gives the group
+    // size (a coverage loop that runs >1x per lane only makes this an under-count,
+    // which over-waits — safe, never early).
+    size_t loads_per_group = 0;
+    for_each_block(body, [&](structured_control_flow::Block& b) {
+        for (auto& node : b.dataflow().nodes()) {
+            if (auto* cp = dynamic_cast<data_flow::CpAsyncCopyNode*>(&node)) {
+                loads_per_group += cp->bytes() / 4;
+            }
+        }
+    });
+    if (loads_per_group > 0) {
+        wait_node.set_loads_per_group(loads_per_group);
+        drain_wait_node.set_loads_per_group(loads_per_group);
+    }
 }
 
 void SoftwarePipelining::to_json(nlohmann::json& j) const {

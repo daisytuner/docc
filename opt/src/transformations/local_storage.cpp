@@ -352,6 +352,20 @@ std::vector<symbolic::Expression> LocalStorage::TileInfo::original_subset(const 
     return {linear};
 }
 
+std::vector<symbolic::Expression> LocalStorage::TileInfo::flat_original_subset(
+    const std::vector<symbolic::Expression>& slot_indvars,
+    const std::vector<symbolic::Expression>& slot_values,
+    const std::vector<symbolic::Expression>& tile_indices
+) const {
+    // The gather address for a flat element: original_subset with each slot indvar
+    // replaced by its value for the delinearized slot index (init + stride*idx).
+    auto lin = original_subset(tile_indices).at(0);
+    for (size_t s = 0; s < slot_indvars.size(); s++) {
+        lin = symbolic::subs(lin, slot_indvars.at(s), slot_values.at(s));
+    }
+    return {lin};
+}
+
 std::vector<symbolic::Expression> LocalStorage::TileInfo::local_index(const std::vector<symbolic::Expression>&
                                                                           access_subset) const {
     std::vector<symbolic::Expression> local;
@@ -414,22 +428,26 @@ symbolic::Expression LocalStorage::TileBuffer::linearize(
 }
 
 std::vector<symbolic::Expression> LocalStorage::TileBuffer::axes() const {
-    if (bank_padded) {
-        // [slot dims][padded per-slot block]: the inner block is one flat, padded
-        // dimension so its stride (inner_stride) is coprime with 32.
-        std::vector<symbolic::Expression> out = slot_sizes;
-        out.push_back(inner_stride());
-        return out;
-    }
-    if (swizzled) {
-        // [slot dims][natural per-slot block]: no padding — the XOR swizzle in
-        // multi_subset() spreads the per-slot accesses across banks instead.
-        std::vector<symbolic::Expression> out = slot_sizes;
-        out.push_back(tile_total_size());
-        return out;
-    }
     std::vector<symbolic::Expression> out = slot_sizes;
-    out.insert(out.end(), tile_sizes.begin(), tile_sizes.end());
+    switch (layout) {
+        case Layout::Padded:
+            // [slot dims][padded per-slot block]: one flat dim whose stride
+            // (inner_stride) is coprime with 32.
+            out.push_back(inner_stride());
+            break;
+        case Layout::Linearized:
+            // Fully flat [total_size]: slots folded into one linear dimension
+            // (lane-contiguous thread-linear staging).
+            return {total_size()};
+        case Layout::Swizzle:
+            // [slot dims][natural per-slot block]: flat, unpadded; the XOR swizzle
+            // in multi_subset spreads banks.
+            out.push_back(tile_total_size());
+            break;
+        case Layout::MultiDim:
+            out.insert(out.end(), tile_sizes.begin(), tile_sizes.end());
+            break;
+    }
     return out;
 }
 
@@ -450,16 +468,23 @@ data_flow::Subset LocalStorage::TileBuffer::multi_subset(
     const std::vector<symbolic::Expression>& slot_indices, const std::vector<symbolic::Expression>& tile_indices
 ) const {
     data_flow::Subset subset = slot_indices;
-    if (bank_padded) {
-        // Flatten the tile indices into the single padded inner dimension.
-        subset.push_back(tile_linearize(tile_indices));
-    } else if (swizzled) {
-        // Flatten, then XOR-swizzle by the slot so per-slot accesses hit distinct
-        // banks. A bijection on the power-of-two inner range (applied identically
-        // to copy-in and reads, so it is a pure relabelling of where data lives).
-        subset.push_back(symbolic::bit_xor(tile_linearize(tile_indices), slot_linearize(slot_indices)));
-    } else {
-        subset.insert(subset.end(), tile_indices.begin(), tile_indices.end());
+    switch (layout) {
+        case Layout::Linearized:
+            // Fully flat: one linear index over [slot ++ tile] (slots folded).
+            return {linearize(slot_indices, tile_indices)};
+        case Layout::Padded:
+            // Flatten the tile indices into the single flat inner dimension.
+            subset.push_back(tile_linearize(tile_indices));
+            break;
+        case Layout::Swizzle:
+            // Flatten, then XOR-swizzle by the slot so per-slot accesses hit distinct
+            // banks. A bijection on the power-of-two inner range (applied identically
+            // to copy-in and reads, so it is a pure relabelling of where data lives).
+            subset.push_back(symbolic::bit_xor(tile_linearize(tile_indices), slot_linearize(slot_indices)));
+            break;
+        case Layout::MultiDim:
+            subset.insert(subset.end(), tile_indices.begin(), tile_indices.end());
+            break;
     }
     // A degenerate (all extent-1, no-slot) tile has no axes; the buffer is a
     // single [1] element addressed at index 0.
@@ -1130,6 +1155,9 @@ void LocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::Anal
     // unlike a raw threadIdx symbol — is a real container the type system knows.
     std::vector<symbolic::Expression> slot_sizes;
     std::vector<symbolic::Expression> slot_indices;
+    std::vector<symbolic::Expression> slot_indvars; // offload indvar per slot (flat-gather address)
+    std::vector<symbolic::Expression> slot_inits;
+    std::vector<symbolic::Expression> slot_strides;
     if (storage_type_.is_nv_shared()) {
         for (const auto& d : plan_.gpu_per_thread_dims()) {
             // Only block-level per-thread dims own a buffer slot. A grid per-thread
@@ -1146,24 +1174,30 @@ void LocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::Anal
             // over a 128-wide block collapses 16 threads to 2 slots).
             symbolic::Expression tid = symbolic::div(symbolic::sub(d.indvar, d.init), d.stride);
             slot_indices.push_back(symbolic::mod(tid, d.parallel_size));
+            slot_indvars.push_back(d.indvar);
+            slot_inits.push_back(d.init);
+            slot_strides.push_back(d.stride);
         }
     }
 
     TileBuffer buffer{slot_sizes, tile_info_.varying_sizes()};
-    // GPU shared buffers with a per-thread slot prefix pad the inner block stride
-    // to be coprime with 32, so a warp's per-slot accesses hit distinct banks (no
-    // bank conflicts). CPU/private buffers keep the dense multi-dim layout.
-    buffer.bank_padded = storage_type_.is_nv_shared() && !slot_sizes.empty();
-    // Swizzle mode: replace the stride padding with an XOR swizzle of the inner
-    // index. Needs a constant power-of-two inner block (so the XOR stays in range
-    // and is a bijection); otherwise keep padding.
-    if (buffer.bank_padded && swizzle_layout_) {
-        auto total = buffer.tile_total_size();
-        if (SymEngine::is_a<SymEngine::Integer>(*total)) {
-            auto n = SymEngine::rcp_static_cast<const SymEngine::Integer>(total)->as_int();
-            if (n > 0 && (n & (n - 1)) == 0) {
-                buffer.bank_padded = false;
-                buffer.swizzled = true;
+    // GPU shared buffers with a per-thread slot prefix use a flat per-slot block so
+    // a warp's per-slot accesses hit distinct banks: Padded (stride coprime with 32)
+    // by default, or Swizzle (XOR the inner index) when opted in with a constant
+    // power-of-two block. CPU/private buffers keep the dense multi-dim layout.
+    if (lane_contiguous_ && storage_type_.is_nv_shared()) {
+        // Fully flat, thread-linear staging for the CDNA async global->LDS DMA
+        // (global_load_lds writes lane-contiguous from a wave-uniform base).
+        buffer.layout = TileBuffer::Layout::Linearized;
+    } else if (storage_type_.is_nv_shared() && !slot_sizes.empty()) {
+        buffer.layout = TileBuffer::Layout::Padded;
+        if (swizzle_layout_) {
+            auto total = buffer.tile_total_size();
+            if (SymEngine::is_a<SymEngine::Integer>(*total)) {
+                auto n = SymEngine::rcp_static_cast<const SymEngine::Integer>(total)->as_int();
+                if (n > 0 && (n & (n - 1)) == 0) {
+                    buffer.layout = TileBuffer::Layout::Swizzle;
+                }
             }
         }
     }
@@ -1171,7 +1205,7 @@ void LocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::Anal
     // per-warp thread count (mod 32). Compute it from the block dims + the coop
     // copy's axis (A tiles are coop over X, B over Y -> different spans, so a single
     // odd stride leaves one of them 2-way conflicted; this makes both conflict-free).
-    if (buffer.bank_padded) {
+    if (buffer.layout == TileBuffer::Layout::Padded) {
         if (auto* coop_map = find_cooperative_offload_map(loop_, plan_.gpu_cooperative_dims())) {
             auto block_width = [&](gpu::TargetLevel lvl) -> size_t {
                 for (const auto& d : plan_.dims) {
@@ -1217,7 +1251,23 @@ void LocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::Anal
     builder.add_container(local_name_, buffer_type);
 
     if (storage_type_.is_nv_shared()) {
-        if (plan_.enclosing_cooperative) {
+        if (lane_contiguous_) {
+            // Fully flat thread-linear staging: a full-block cooperative copy whose
+            // dst is lane-contiguous, so SoftwarePipelining's async global_load_lds
+            // lands correctly on CDNA.
+            emit_lane_contiguous_copy_in(
+                builder,
+                analysis_manager,
+                *parent,
+                buffer,
+                buffer_type,
+                pointer_type,
+                slot_sizes,
+                slot_indvars,
+                slot_inits,
+                slot_strides
+            );
+        } else if (plan_.enclosing_cooperative) {
             // Stage the row once at the top of the localized GPU map's body; the
             // (sibling) block consumers below read the shared buffer.
             emit_enclosing_cooperative_copy_in(builder, analysis_manager, buffer, buffer_type, pointer_type);
@@ -1499,9 +1549,11 @@ void LocalStorage::emit_cooperative_copy_in(
     auto& src = builder.add_access(block, container_);
     auto& dst = builder.add_access(block, local_name_);
     auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
-    // Per-thread slot row followed by the (flat, when bank-padded) tile offset.
+    // Per-thread slot row followed by the tile offset. A flat padded inner block
+    // takes the coop flat index directly (keeps the copy vectorizable); MultiDim,
+    // Swizzle, and Linearized route through multi_subset.
     data_flow::Subset dst_subset;
-    if (buffer.bank_padded) {
+    if (buffer.layout == TileBuffer::Layout::Padded) {
         dst_subset = slot_indices;
         dst_subset.push_back(c);
     } else {
@@ -1562,6 +1614,102 @@ void LocalStorage::emit_enclosing_cooperative_copy_in(
     builder.add_library_node<data_flow::BarrierLocalNode>(barrier_block, DebugInfo());
 }
 
+void LocalStorage::emit_lane_contiguous_copy_in(
+    builder::StructuredSDFGBuilder& builder,
+    analysis::AnalysisManager& analysis_manager,
+    structured_control_flow::Sequence& parent,
+    const TileBuffer& buffer,
+    const types::IType& buffer_type,
+    const types::IType& pointer_type,
+    const std::vector<symbolic::Expression>& slot_sizes,
+    const std::vector<symbolic::Expression>& slot_indvars,
+    const std::vector<symbolic::Expression>& slot_inits,
+    const std::vector<symbolic::Expression>& slot_strides
+) {
+    // Leading barrier: the flat tile is re-staged each panel, so guard the overwrite
+    // against the previous panel's outstanding reads.
+    auto& pre = builder.add_block_before(parent, loop_, loop_.debug_info());
+    builder.add_library_node<data_flow::BarrierLocalNode>(pre, DebugInfo());
+
+    // Flat thread id over the full block (x fastest) + block size, from every
+    // block-level offload dim (both cooperative and per-thread/slot). The whole
+    // block cooperatively sweeps the tile in thread-linear order.
+    struct BlockDim {
+        symbolic::Expression tid;
+        long long width;
+        int order;
+    };
+    std::vector<BlockDim> bdims;
+    for (const auto& d : plan_.dims) {
+        if (d.level != LocalityPlan::Level::Block) {
+            continue;
+        }
+        long long w =
+            static_cast<long long>(SymEngine::rcp_static_cast<const SymEngine::Integer>(d.parallel_size)->as_int());
+        auto tid = symbolic::mod(symbolic::div(symbolic::sub(d.indvar, d.init), d.stride), d.parallel_size);
+        bdims.push_back({tid, w, static_cast<int>(d.target_level)});
+    }
+    std::sort(bdims.begin(), bdims.end(), [](const BlockDim& a, const BlockDim& b) { return a.order < b.order; });
+    symbolic::Expression flat_tid = symbolic::integer(0);
+    long long blk = 1;
+    for (const auto& b : bdims) {
+        flat_tid = symbolic::add(flat_tid, symbolic::mul(b.tid, symbolic::integer(blk)));
+        blk *= b.width;
+    }
+
+    long long total =
+        static_cast<long long>(SymEngine::rcp_static_cast<const SymEngine::Integer>(buffer.total_size())->as_int());
+
+    // Coverage loop: each thread strides the flat tile from flat_tid by blk. The
+    // loop index c is the flat position itself (init = flat_tid, step = blk), so it
+    // stays an opaque symbol in the delinearized indices below. This is essential:
+    // the gather substitutes the slot indvar (threadIdx) with its delinearized value,
+    // and if c were the expanded (flat_tid + blk*it) form it would still contain the
+    // slot indvar inside the delinearized tile indices, which the substitution would
+    // then corrupt. The `c < total` bound also subsumes the ragged-tail guard.
+    auto c_name = builder.find_new_name("__daisy_ls_lc_" + container_);
+    builder.add_container(c_name, types::Scalar(types::PrimitiveType::Int32));
+    auto c = symbolic::symbol(c_name);
+    auto& cov = builder.add_for_before(
+        parent,
+        loop_,
+        c,
+        symbolic::Lt(c, symbolic::integer(total)),
+        flat_tid,
+        symbolic::add(c, symbolic::integer(blk)),
+        loop_.debug_info()
+    );
+    structured_control_flow::Sequence* copy_body = &cov.root();
+
+    // Delinearize c over [slot_sizes ++ tile_sizes] (row-major): slot_idx select the
+    // per-thread base offset, tile_idx the within-tile position.
+    std::vector<symbolic::Expression> combined = slot_sizes;
+    combined.insert(combined.end(), buffer.tile_sizes.begin(), buffer.tile_sizes.end());
+    std::vector<symbolic::Expression> idx(combined.size());
+    symbolic::Expression rem = c;
+    for (int i = static_cast<int>(combined.size()) - 1; i >= 0; i--) {
+        idx[i] = symbolic::mod(rem, combined[i]);
+        rem = symbolic::div(rem, combined[i]);
+    }
+    std::vector<symbolic::Expression> slot_values;
+    for (size_t s = 0; s < slot_sizes.size(); s++) {
+        slot_values.push_back(symbolic::add(slot_inits.at(s), symbolic::mul(slot_strides.at(s), idx.at(s))));
+    }
+    std::vector<symbolic::Expression> tile_idx(idx.begin() + slot_sizes.size(), idx.end());
+    auto src_subset = tile_info_.flat_original_subset(slot_indvars, slot_values, tile_idx);
+
+    auto& block = builder.add_block(*copy_body);
+    auto& src = builder.add_access(block, container_);
+    auto& dst = builder.add_access(block, local_name_);
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(block, src, tasklet, "_in", src_subset, pointer_type);
+    builder.add_computational_memlet(block, tasklet, "_out", dst, {c}, buffer_type);
+
+    // Trailing barrier: publish the staged tile before the consumers read it.
+    auto& post = builder.add_block_before(parent, loop_, loop_.debug_info());
+    builder.add_library_node<data_flow::BarrierLocalNode>(post, DebugInfo());
+}
+
 void LocalStorage::rewrite_body(
     builder::StructuredSDFGBuilder& builder,
     analysis::AnalysisManager& analysis_manager,
@@ -1616,6 +1764,7 @@ void LocalStorage::to_json(nlohmann::json& j) const {
     j["parameters"]["storage_type"] = nlohmann::json::object();
     serializer_full.storage_type_to_json(j["parameters"]["storage_type"], storage_type_);
     j["parameters"]["swizzle_layout"] = swizzle_layout_;
+    j["parameters"]["lane_contiguous"] = lane_contiguous_;
 
     serializer::JSONSerializer ser_flat(false);
     j["subgraph"] = nlohmann::json::object();
@@ -1654,7 +1803,12 @@ LocalStorage LocalStorage::from_json(builder::StructuredSDFGBuilder& builder, co
         swizzle_layout = desc["parameters"]["swizzle_layout"].get<bool>();
     }
 
-    return LocalStorage(*loop, *access_node, swizzle_layout);
+    bool lane_contiguous = false;
+    if (desc.contains("parameters") && desc["parameters"].contains("lane_contiguous")) {
+        lane_contiguous = desc["parameters"]["lane_contiguous"].get<bool>();
+    }
+
+    return LocalStorage(*loop, *access_node, swizzle_layout, lane_contiguous);
 }
 
 } // namespace transformations

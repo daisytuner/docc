@@ -3176,9 +3176,9 @@ TEST(LocalStorageTest, TileBuffer_Swizzle) {
     // [slot(2)][tile(2,4)]: tile_total = 8 (power of two). Swizzled layout uses a
     // natural (unpadded) inner axis and XOR-swizzles the inner index by the slot.
     LocalStorage::TileBuffer buf{{symbolic::integer(2)}, {symbolic::integer(2), symbolic::integer(4)}};
-    buf.swizzled = true;
+    buf.layout = LocalStorage::TileBuffer::Layout::Swizzle;
 
-    // axes: [slot][natural inner] = [2][8] — no padding (vs bank_padded's +1/coop pad).
+    // axes: [slot][natural inner] = [2][8] — no padding (vs Padded's +1/coop pad).
     auto ax = buf.axes();
     ASSERT_EQ(ax.size(), 2u);
     EXPECT_TRUE(symbolic::eq(ax[0], symbolic::integer(2)));

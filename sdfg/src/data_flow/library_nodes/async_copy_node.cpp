@@ -15,6 +15,13 @@ bool is_cuda(const codegen::LanguageExtension& le) {
 bool is_rocm(const codegen::LanguageExtension& le) {
     return dynamic_cast<const codegen::ROCMLanguageExtension*>(&le) != nullptr;
 }
+
+// Preprocessor guard selecting the CDNA archs (gfx9xx) that support the
+// asynchronous direct global->LDS load path (`global_load_lds` / vmcnt). RDNA
+// (gfx10xx/11xx/12xx) lacks it, so the emitted #else keeps a synchronous copy.
+constexpr const char* kCdnaArchGuard =
+    "defined(__gfx908__) || defined(__gfx90a__) || defined(__gfx940__) || "
+    "defined(__gfx941__) || defined(__gfx942__) || defined(__gfx950__)";
 } // namespace
 
 // ============================== CpAsyncCopyNode ==============================
@@ -69,19 +76,21 @@ PipelineWaitNode::PipelineWaitNode(
     const DebugInfo& debug_info,
     const graph::Vertex vertex,
     DataFlowGraph& parent,
-    size_t keep_outstanding
+    size_t keep_outstanding,
+    size_t loads_per_group
 )
     : LibraryNode(
           element_id, debug_info, vertex, parent, LibraryNodeType_PipelineWait, {}, {}, true, ImplementationType_NONE
       ),
-      keep_outstanding_(keep_outstanding) {}
+      keep_outstanding_(keep_outstanding), loads_per_group_(loads_per_group) {}
 
 void PipelineWaitNode::validate(const Function& function) const { LibraryNode::validate(function); }
 symbolic::SymbolSet PipelineWaitNode::symbols() const { return {}; }
 std::unique_ptr<DataFlowNode> PipelineWaitNode::clone(size_t element_id, const graph::Vertex vertex, DataFlowGraph& parent)
     const {
-    return std::unique_ptr<
-        PipelineWaitNode>(new PipelineWaitNode(element_id, this->debug_info_, vertex, parent, keep_outstanding_));
+    return std::unique_ptr<PipelineWaitNode>(
+        new PipelineWaitNode(element_id, this->debug_info_, vertex, parent, keep_outstanding_, loads_per_group_)
+    );
 }
 void PipelineWaitNode::replace(const symbolic::Expression, const symbolic::Expression) {}
 void PipelineWaitNode::replace(const symbolic::ExpressionMapping&) {}
@@ -117,13 +126,15 @@ nlohmann::json PipelineWaitNodeSerializer::serialize(const sdfg::data_flow::Libr
     nlohmann::json j;
     j["code"] = std::string(node.code().value());
     j["keep_outstanding"] = node.keep_outstanding();
+    j["loads_per_group"] = node.loads_per_group();
     return j;
 }
 data_flow::LibraryNode& PipelineWaitNodeSerializer::deserialize(
     const nlohmann::json& j, sdfg::builder::StructuredSDFGBuilder& builder, sdfg::structured_control_flow::Block& parent
 ) {
-    return builder
-        .add_library_node<data_flow::PipelineWaitNode>(parent, DebugInfo(), j["keep_outstanding"].get<size_t>());
+    return builder.add_library_node<data_flow::PipelineWaitNode>(
+        parent, DebugInfo(), j["keep_outstanding"].get<size_t>(), j.value("loads_per_group", static_cast<size_t>(1))
+    );
 }
 
 // ============================== Dispatchers ==================================
@@ -147,13 +158,23 @@ void CpAsyncCopyNodeDispatcher::dispatch_code_with_edges(
     const std::string& src = inputs.at(1).expr;
     const size_t bytes = node.bytes();
 
+    const size_t words = bytes / 4;
     if (is_cuda(language_extension_)) {
         out.stream << "__pipeline_memcpy_async(" << dst << ", " << src << ", " << bytes << ");" << std::endl;
     } else if (is_rocm(language_extension_)) {
-        // ROCm has no portable cp.async — copy synchronously (correct, no overlap).
-        out.stream << "for (size_t __i = 0; __i < " << (bytes / 4) << "; ++__i) "
+        // CDNA has an asynchronous direct global->LDS load; RDNA does not.
+        out.stream << "#if " << kCdnaArchGuard << std::endl;
+        // CDNA: per-word async global->LDS load (in flight, tracked by vmcnt,
+        // drained by the matching PipelineWait). dst points into __shared__.
+        out.stream << "for (size_t __i = 0; __i < " << words << "; ++__i) "
+                   << "__builtin_amdgcn_global_load_lds(reinterpret_cast<const unsigned*>(" << src
+                   << ") + __i, reinterpret_cast<unsigned*>(" << dst << ") + __i, 4, 0, 0);" << std::endl;
+        out.stream << "#else" << std::endl;
+        // RDNA (and any non-CDNA): no async LDS path — copy synchronously.
+        out.stream << "for (size_t __i = 0; __i < " << words << "; ++__i) "
                    << "reinterpret_cast<float*>(" << dst << ")[__i] = reinterpret_cast<const float*>(" << src
                    << ")[__i];" << std::endl;
+        out.stream << "#endif" << std::endl;
     } else {
         throw std::runtime_error("CpAsyncCopyNode requires a CUDA or ROCM language extension");
     }
@@ -172,7 +193,8 @@ void PipelineCommitNodeDispatcher::
     if (is_cuda(language_extension_)) {
         stream << "__pipeline_commit();" << std::endl;
     } else if (is_rocm(language_extension_)) {
-        // ROCm: synchronous fallback — nothing to commit.
+        // No commit primitive on either arch: CDNA loads are tracked directly by
+        // the hardware vmcnt (drained in PipelineWait); RDNA is synchronous.
     } else {
         throw std::runtime_error("PipelineCommitNode requires a CUDA or ROCM language extension");
     }
@@ -192,7 +214,13 @@ void PipelineWaitNodeDispatcher::
     if (is_cuda(language_extension_)) {
         stream << "__pipeline_wait_prior(" << node.keep_outstanding() << ");" << std::endl;
     } else if (is_rocm(language_extension_)) {
-        // ROCm: synchronous fallback — nothing outstanding to wait on.
+        // CDNA: drain direct-to-LDS loads on the flat vmcnt counter, keeping
+        // keep_outstanding pipeline stages (each loads_per_group words) still in
+        // flight. RDNA: synchronous, nothing outstanding to wait on.
+        stream << "#if " << kCdnaArchGuard << std::endl;
+        stream << "asm volatile(\"s_waitcnt vmcnt(" << (node.keep_outstanding() * node.loads_per_group()) << ")\");"
+               << std::endl;
+        stream << "#endif" << std::endl;
     } else {
         throw std::runtime_error("PipelineWaitNode requires a CUDA or ROCM language extension");
     }
