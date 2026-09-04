@@ -1,10 +1,14 @@
 #include "sdfg/targets/rocm/plugin.h"
 
+#include <memory>
+
 #include "sdfg/passes/scheduler/rocm_offload_scheduler.h"
+#include "sdfg/targets/gpu/gpu_tile_target.h"
 #include "sdfg/targets/rocm/rocm.h"
 #include "sdfg/targets/rocm/rocm_offload_map_dispatcher.h"
 #include "sdfg/targets/rocm/rocm_offload_reduce_dispatcher.h"
 #include "sdfg/targets/rocm/rocm_reduce_dispatcher.h"
+#include "sdfg/tiles/tile_target_registry.h"
 
 namespace sdfg::rocm {
 
@@ -13,6 +17,12 @@ void register_rocm_plugin(plugins::Context& context) {
     auto& mapDispatcherRegistry = context.map_dispatcher_registry;
     auto& reduceDispatcherRegistry = context.reduce_dispatcher_registry;
     auto& libNodeSerRegistry = context.library_node_serializer_registry;
+
+    // The tile algebra's view of ROCm: 64-wide wavefront + level/storage mapping,
+    // shared under both the legacy and the offload schedule value.
+    auto rocm_tile_target = std::make_shared<tiles::GPUTileTarget>(ROCM_WARP_SIZE, ScheduleType_ROCM_Offload::value());
+    tiles::TileTargetRegistry::instance().register_target(ScheduleType_ROCM::value(), rocm_tile_target);
+    tiles::TileTargetRegistry::instance().register_target(ScheduleType_ROCM_Offload::value(), rocm_tile_target);
 
     mapDispatcherRegistry.register_map_dispatcher(
         ScheduleType_ROCM::value(),

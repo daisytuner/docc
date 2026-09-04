@@ -9,6 +9,17 @@ FetchContent_MakeAvailable(googletest)
 option(DOCC_TESTS_ENABLE_DUMP "Enable dumping intermediary files of test cases" OFF)
 
 set(TEST_FILES
+    tiles/layout_test.cpp
+    tiles/tile_test.cpp
+    tiles/tile_analysis_test.cpp
+    tiles/reduction_analysis_test.cpp
+    tiles/locality_test.cpp
+    tiles/tiled_copy_test.cpp
+    tiles/buffer_layout_test.cpp
+    tiles/tiled_copy_emit_test.cpp
+    tiles/transformations/tile_fusion_test.cpp
+    tiles/transformations/software_pipelining_test.cpp
+    tiles/transformations/local_storage_test.cpp
     cuda/blas/cublas_test.cpp
     cuda/cuda_kernel_test.cpp
     cuda/cuda_reduce_dispatcher_test.cpp
@@ -80,12 +91,9 @@ set(TEST_FILES
     transformations/loop_unit_stride_test.cpp
     transformations/map_fusion_test.cpp
     transformations/multi_level_tiling_test.cpp
-    transformations/software_pipelining_test.cpp
     transformations/stream_k_test.cpp
-    transformations/tile_fusion_test.cpp
     transformations/out_local_storage_test.cpp
     transformations/in_local_storage_test.cpp
-    transformations/test_local_storage.cpp
     transformations/recorder_test.cpp
     transformations/vectorize_transform_test.cpp
     transformations/unroll_transform_test.cpp

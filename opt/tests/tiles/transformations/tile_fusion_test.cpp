@@ -1,4 +1,4 @@
-#include "sdfg/transformations/tile_fusion.h"
+#include "sdfg/tiles/transformations/tile_fusion.h"
 
 #include <gtest/gtest.h>
 

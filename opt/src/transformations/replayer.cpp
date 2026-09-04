@@ -1,10 +1,11 @@
+#include <sdfg/tiles/transformations/local_storage.h>
+#include <sdfg/tiles/transformations/tile_fusion.h>
 #include <sdfg/transformations/einsum2dot.h>
 #include <sdfg/transformations/einsum2gemm.h>
 #include <sdfg/transformations/einsum_extend.h>
 #include <sdfg/transformations/einsum_lift.h>
 #include <sdfg/transformations/einsum_promotion.h>
 #include <sdfg/transformations/in_local_storage.h>
-#include <sdfg/transformations/local_storage.h>
 #include <sdfg/transformations/loop_distribute.h>
 #include <sdfg/transformations/loop_interchange.h>
 #include <sdfg/transformations/loop_peeling.h>
@@ -27,7 +28,6 @@
 #include <sdfg/transformations/omp_transform.h>
 #include <sdfg/transformations/out_local_storage.h>
 #include <sdfg/transformations/replayer.h>
-#include <sdfg/transformations/tile_fusion.h>
 #include <sdfg/transformations/unroll_transform.h>
 #include <sdfg/transformations/vectorize_transform.h>
 

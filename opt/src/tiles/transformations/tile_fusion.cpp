@@ -1,4 +1,4 @@
-#include "sdfg/transformations/tile_fusion.h"
+#include "sdfg/tiles/transformations/tile_fusion.h"
 
 #include <climits>
 #include <cmath>
@@ -561,9 +561,7 @@ bool TileFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysi
             cyc_info.max_offset = max_offset;
             cyc_info.tiled_dim = tiled_dim;
             cyc_info.tiled_dim_buf_size = tiled_dim_buf_size;
-            cyc_info.dimensions = layout_dimensions;
-            cyc_info.strides = layout_strides;
-            cyc_info.layout_offset = layout_offset;
+            cyc_info.layout = math::tensor::TensorLayout(layout_dimensions, layout_strides, layout_offset);
             // buffer_size is now used as a symbolic expression in apply, but store int for 1D compat
             if (SymEngine::is_a<SymEngine::Integer>(*total_buf_size)) {
                 cyc_info.buffer_size =
@@ -755,11 +753,11 @@ void TileFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analys
 
         // Build buffer dimensions: same as layout but with tiled dim replaced by tiled_dim_buf_size
         std::vector<symbolic::Expression> buf_dimensions;
-        for (size_t d = 0; d < cyc.dimensions.size(); d++) {
+        for (size_t d = 0; d < cyc.layout.shape().size(); d++) {
             if (static_cast<int>(d) == cyc.tiled_dim) {
                 buf_dimensions.push_back(symbolic::integer(cyc.tiled_dim_buf_size));
             } else {
-                buf_dimensions.push_back(cyc.dimensions[d]);
+                buf_dimensions.push_back(cyc.layout.shape()[d]);
             }
         }
 
@@ -794,7 +792,7 @@ void TileFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analys
         auto build_src_subset = [&](const std::vector<symbolic::Expression>& copy_indices,
                                     const symbolic::Expression& tiled_base) -> data_flow::Subset {
             std::vector<symbolic::Expression> full_indices;
-            for (size_t d = 0; d < cyc.dimensions.size(); d++) {
+            for (size_t d = 0; d < cyc.layout.shape().size(); d++) {
                 if (static_cast<int>(d) == cyc.tiled_dim) {
                     full_indices.push_back(symbolic::add(tiled_base, copy_indices[d]));
                 } else {
@@ -803,9 +801,9 @@ void TileFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analys
             }
             if (is_pointer) {
                 // Re-linearize using layout strides: offset + sum(stride[d] * index[d])
-                symbolic::Expression linear = cyc.layout_offset;
+                symbolic::Expression linear = cyc.layout.offset();
                 for (size_t d = 0; d < full_indices.size(); d++) {
-                    linear = symbolic::add(linear, symbolic::mul(cyc.strides[d], full_indices[d]));
+                    linear = symbolic::add(linear, symbolic::mul(cyc.layout.strides()[d], full_indices[d]));
                 }
                 return {linear};
             } else {
@@ -934,15 +932,15 @@ void TileFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analys
         // For Array (multi-dim) access A[idx0, idx1, ...]:
         //   rebase tiled_dim, linearize into flat buffer index
         auto rebase_to_buffer = [&](const data_flow::Subset& subset) -> data_flow::Subset {
-            if (subset.size() == 1 && cyc.dimensions.size() > 1 && is_pointer) {
+            if (subset.size() == 1 && cyc.layout.shape().size() > 1 && is_pointer) {
                 // Pointer type: subtract the tiled dimension's contribution to the linear base
-                auto linear_base = symbolic::mul(cyc.strides[cyc.tiled_dim], buf_cur_base_tiled);
+                auto linear_base = symbolic::mul(cyc.layout.strides()[cyc.tiled_dim], buf_cur_base_tiled);
                 return {symbolic::sub(subset.at(0), linear_base)};
             }
-            if (subset.size() == cyc.dimensions.size()) {
+            if (subset.size() == cyc.layout.shape().size()) {
                 // Multi-dim: rebase tiled dimension, linearize into buffer
                 std::vector<symbolic::Expression> buf_indices;
-                for (size_t d = 0; d < cyc.dimensions.size(); d++) {
+                for (size_t d = 0; d < cyc.layout.shape().size(); d++) {
                     if (static_cast<int>(d) == cyc.tiled_dim) {
                         buf_indices.push_back(symbolic::sub(subset[d], buf_cur_base_tiled));
                     } else {

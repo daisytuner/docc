@@ -54,9 +54,18 @@ public:
     void replace(const symbolic::ExpressionMapping& replacements) override;
 };
 
-/** @brief Wait until at most @p keep_outstanding prior commit groups remain in flight. */
+/**
+ * @brief Wait until at most @p keep_outstanding prior commit groups remain in flight.
+ *
+ * @p loads_per_group is the number of individual vector-memory loads one commit
+ * group expands to on hardware without a group abstraction (CDNA: each
+ * `global_load_lds` word is one vmcnt tick), so the ROCm/CDNA lowering can wait
+ * on the flat vmcnt counter as `vmcnt(keep_outstanding * loads_per_group)`.
+ * Ignored by the CUDA lowering, which counts commit groups directly.
+ */
 class PipelineWaitNode : public LibraryNode {
     size_t keep_outstanding_;
+    size_t loads_per_group_;
 
 public:
     PipelineWaitNode(
@@ -64,10 +73,13 @@ public:
         const DebugInfo& debug_info,
         const graph::Vertex vertex,
         DataFlowGraph& parent,
-        size_t keep_outstanding
+        size_t keep_outstanding,
+        size_t loads_per_group = 1
     );
 
     size_t keep_outstanding() const { return keep_outstanding_; }
+    size_t loads_per_group() const { return loads_per_group_; }
+    void set_loads_per_group(size_t loads_per_group) { loads_per_group_ = loads_per_group; }
 
     void validate(const Function& function) const override;
     symbolic::SymbolSet symbols() const override;

@@ -52,10 +52,9 @@ class TileFusion : public Transformation {
         int tiled_dim; ///< Which delinearized dimension is tiled
         int tiled_dim_buf_size; ///< Buffer size in tiled dim: S + 2*radius + max_offset - min_offset
 
-        /// Delinearized layout info (shape, strides) for multi-dim buffer management
-        std::vector<symbolic::Expression> dimensions; ///< Per-dimension sizes from layout
-        std::vector<symbolic::Expression> strides; ///< Per-dimension strides from layout
-        symbolic::Expression layout_offset = symbolic::integer(0); ///< Layout offset
+        /// Container geometry (shape/strides/offset) from MemoryLayoutAnalysis, used
+        /// to re-linearize stencil accesses into the double buffer.
+        math::tensor::TensorLayout layout{symbolic::MultiExpression{}};
 
         int buffer_size; ///< Total buffer elements: tiled_dim_buf_size * product(other_dims)
     };
