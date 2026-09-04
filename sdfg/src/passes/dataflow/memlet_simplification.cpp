@@ -224,6 +224,13 @@ std::optional<symbolic::Expression> MemletSimplification::
         return std::nullopt;
     }
 
+    // Outermost term must have no modulus: it must capture all high-order bits.
+    // With a finite modulus, the sum only reconstructs base % (modulus * divisor),
+    // e.g. 2*((base/2)%2) + (base%2) != base for base >= 4.
+    if (terms.front().modulus != 0) {
+        return std::nullopt;
+    }
+
     // All checks passed - the expression equals the base index
     return expected_base;
 }
