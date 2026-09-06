@@ -12,11 +12,11 @@
 #include "sdfg/passes/symbolic/symbol_propagation.h"
 #include "sdfg/structured_control_flow/for.h"
 #include "sdfg/structured_control_flow/map.h"
+#include "sdfg/tiles/transformations/tile_fusion.h"
 #include "sdfg/transformations/loop_interchange.h"
 #include "sdfg/transformations/loop_shift.h"
 #include "sdfg/transformations/loop_skewing.h"
 #include "sdfg/transformations/loop_tiling.h"
-#include "sdfg/transformations/tile_fusion.h"
 #include "sdfg/types/pointer.h"
 #include "sdfg_debug_dump.h"
 

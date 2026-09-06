@@ -1,4 +1,4 @@
-#include "sdfg/transformations/local_storage.h"
+#include "sdfg/tiles/transformations/local_storage.h"
 
 #include <gtest/gtest.h>
 
@@ -21,6 +21,8 @@
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/cuda/cuda.h"
 #include "sdfg/targets/gpu/gpu_schedule_type.h"
+#include "sdfg/tiles/analysis/tile_analysis.h"
+#include "sdfg/tiles/locality.h"
 #include "sdfg/transformations/loop_tiling.h"
 #include "sdfg/types/array.h"
 #include "sdfg/types/pointer.h"
@@ -29,6 +31,7 @@
 #include "sdfg_debug_dump.h"
 
 using namespace sdfg;
+using tiles::TileAnalysis;
 using transformations::LocalStorage;
 
 namespace {
@@ -65,135 +68,8 @@ std::vector<symbolic::Expression> strides_of(const analysis::MemoryTileGroup& gr
 } // namespace
 
 // =====================================================================
-// IsRead / IsWrite classification
+// Tile identification (constant-bounded groups)
 // =====================================================================
-
-TEST(LocalStorageTest, IsRead_ReadOnly) {
-    builder::StructuredSDFGBuilder builder("ls_read_only", FunctionType_CPU);
-
-    types::Scalar sym(types::PrimitiveType::UInt64);
-    types::Scalar elem(types::PrimitiveType::Float);
-    types::Pointer ptr(elem);
-    builder.add_container("i", sym);
-    builder.add_container("A", ptr, true);
-    builder.add_container("C", elem);
-
-    auto i = symbolic::symbol("i");
-    auto& loop = builder.add_for(
-        builder.subject().root(),
-        i,
-        symbolic::Lt(i, symbolic::integer(4)),
-        symbolic::integer(0),
-        symbolic::add(i, symbolic::integer(1))
-    );
-    auto& block = builder.add_block(loop.root());
-    auto& a_in = builder.add_access(block, "A");
-    auto& c_out = builder.add_access(block, "C");
-    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
-    builder.add_computational_memlet(block, a_in, tasklet, "_in", {i}, ptr);
-    builder.add_computational_memlet(block, tasklet, "_out", c_out, {}, elem);
-
-    auto summary = LocalStorage::summarize(builder.subject(), loop, "A");
-    EXPECT_TRUE(summary.reads);
-    EXPECT_FALSE(summary.writes);
-    EXPECT_FALSE(summary.aliased);
-}
-
-TEST(LocalStorageTest, IsWrite_WriteOnly) {
-    builder::StructuredSDFGBuilder builder("ls_write_only", FunctionType_CPU);
-
-    types::Scalar sym(types::PrimitiveType::UInt64);
-    types::Scalar elem(types::PrimitiveType::Float);
-    types::Pointer ptr(elem);
-    builder.add_container("i", sym);
-    builder.add_container("A", ptr, true);
-    builder.add_container("C", elem);
-
-    auto i = symbolic::symbol("i");
-    auto& loop = builder.add_for(
-        builder.subject().root(),
-        i,
-        symbolic::Lt(i, symbolic::integer(4)),
-        symbolic::integer(0),
-        symbolic::add(i, symbolic::integer(1))
-    );
-    auto& block = builder.add_block(loop.root());
-    auto& c_in = builder.add_access(block, "C");
-    auto& a_out = builder.add_access(block, "A");
-    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
-    builder.add_computational_memlet(block, c_in, tasklet, "_in", {}, elem);
-    builder.add_computational_memlet(block, tasklet, "_out", a_out, {i}, ptr);
-
-    auto summary = LocalStorage::summarize(builder.subject(), loop, "A");
-    EXPECT_FALSE(summary.reads);
-    EXPECT_TRUE(summary.writes);
-    EXPECT_FALSE(summary.aliased);
-}
-
-TEST(LocalStorageTest, IsReadWrite_ReadAndWrite) {
-    builder::StructuredSDFGBuilder builder("ls_read_write", FunctionType_CPU);
-
-    types::Scalar sym(types::PrimitiveType::UInt64);
-    types::Scalar elem(types::PrimitiveType::Float);
-    types::Pointer ptr(elem);
-    builder.add_container("i", sym);
-    builder.add_container("A", ptr, true);
-    builder.add_container("C", elem);
-
-    auto i = symbolic::symbol("i");
-    auto& loop = builder.add_for(
-        builder.subject().root(),
-        i,
-        symbolic::Lt(i, symbolic::integer(4)),
-        symbolic::integer(0),
-        symbolic::add(i, symbolic::integer(1))
-    );
-    // A[i] = A[i] + C
-    auto& block = builder.add_block(loop.root());
-    auto& a_in = builder.add_access(block, "A");
-    auto& c_in = builder.add_access(block, "C");
-    auto& a_out = builder.add_access(block, "A");
-    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
-    builder.add_computational_memlet(block, a_in, tasklet, "_in1", {i}, ptr);
-    builder.add_computational_memlet(block, c_in, tasklet, "_in2", {}, elem);
-    builder.add_computational_memlet(block, tasklet, "_out", a_out, {i}, ptr);
-
-    auto summary = LocalStorage::summarize(builder.subject(), loop, "A");
-    EXPECT_TRUE(summary.reads);
-    EXPECT_TRUE(summary.writes);
-    EXPECT_FALSE(summary.aliased);
-}
-
-TEST(LocalStorageTest, IsReadWrite_Unused) {
-    builder::StructuredSDFGBuilder builder("ls_unused", FunctionType_CPU);
-
-    types::Scalar sym(types::PrimitiveType::UInt64);
-    types::Scalar elem(types::PrimitiveType::Float);
-    types::Pointer ptr(elem);
-    builder.add_container("i", sym);
-    builder.add_container("A", ptr, true); // never accessed in the loop
-    builder.add_container("C", elem);
-
-    auto i = symbolic::symbol("i");
-    auto& loop = builder.add_for(
-        builder.subject().root(),
-        i,
-        symbolic::Lt(i, symbolic::integer(4)),
-        symbolic::integer(0),
-        symbolic::add(i, symbolic::integer(1))
-    );
-    auto& block = builder.add_block(loop.root());
-    auto& c_in = builder.add_access(block, "C");
-    auto& c_out = builder.add_access(block, "C");
-    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
-    builder.add_computational_memlet(block, c_in, tasklet, "_in", {}, elem);
-    builder.add_computational_memlet(block, tasklet, "_out", c_out, {}, elem);
-
-    auto summary = LocalStorage::summarize(builder.subject(), loop, "A");
-    EXPECT_FALSE(summary.reads);
-    EXPECT_FALSE(summary.writes);
-    EXPECT_FALSE(summary.aliased);
-}
 
 /**
  * Tile_Constant: pointer read at a constant location inside the loop.
@@ -229,11 +105,11 @@ TEST(LocalStorageTest, Tile_Constant) {
     builder.add_computational_memlet(block, tasklet, "_out", c_out, {}, elem);
 
     analysis::AnalysisManager am(builder.subject());
-    auto summary = LocalStorage::summarize(builder.subject(), loop, "A");
+    auto summary = TileAnalysis::summarize(builder.subject(), loop, "A");
     EXPECT_TRUE(summary.reads);
     EXPECT_FALSE(summary.writes);
 
-    auto* group = LocalStorage::tile(loop, "A", am);
+    auto* group = tiles::localizable_tile(loop, "A", am);
     ASSERT_NE(group, nullptr);
     EXPECT_TRUE(all_extents_integer(group->tile));
     EXPECT_EQ(varying_dims(group->tile).size(), 0u); // scalar tile
@@ -274,11 +150,11 @@ TEST(LocalStorageTest, Tile_Accumulator) {
     builder.add_computational_memlet(block, tasklet, "_out", c_out, {symbolic::integer(0)}, ptr);
 
     analysis::AnalysisManager am(builder.subject());
-    auto summary = LocalStorage::summarize(builder.subject(), loop, "C");
+    auto summary = TileAnalysis::summarize(builder.subject(), loop, "C");
     EXPECT_TRUE(summary.reads);
     EXPECT_TRUE(summary.writes);
 
-    auto* group = LocalStorage::tile(loop, "C", am);
+    auto* group = tiles::localizable_tile(loop, "C", am);
     ASSERT_NE(group, nullptr);
     EXPECT_TRUE(all_extents_integer(group->tile));
     EXPECT_EQ(varying_dims(group->tile).size(), 0u); // scalar accumulator tile
@@ -319,9 +195,9 @@ TEST(LocalStorageTest, Tile_Row) {
     builder.add_computational_memlet(block, tasklet, "_out", c_out, {row_idx}, ptr);
 
     analysis::AnalysisManager am(builder.subject());
-    EXPECT_TRUE(LocalStorage::summarize(builder.subject(), loop, "C").writes);
+    EXPECT_TRUE(TileAnalysis::summarize(builder.subject(), loop, "C").writes);
 
-    auto* group = LocalStorage::tile(loop, "C", am);
+    auto* group = tiles::localizable_tile(loop, "C", am);
     ASSERT_NE(group, nullptr);
     EXPECT_TRUE(all_extents_integer(group->tile));
 
@@ -377,9 +253,9 @@ TEST(LocalStorageTest, Tile_Column) {
     builder.add_computational_memlet(block, tasklet, "_out", c_out, {i, symbolic::integer(3)}, ptr);
 
     analysis::AnalysisManager am(builder.subject());
-    EXPECT_TRUE(LocalStorage::summarize(builder.subject(), loop, "C").writes);
+    EXPECT_TRUE(TileAnalysis::summarize(builder.subject(), loop, "C").writes);
 
-    auto* group = LocalStorage::tile(loop, "C", am);
+    auto* group = tiles::localizable_tile(loop, "C", am);
     ASSERT_NE(group, nullptr);
     EXPECT_TRUE(all_extents_integer(group->tile));
 
@@ -463,9 +339,9 @@ TEST(LocalStorageTest, Tile_2DBox) {
     builder.add_computational_memlet(block, tasklet, "_out", c_out, {}, elem);
 
     analysis::AnalysisManager am(builder.subject());
-    auto* group = LocalStorage::tile(i_loop, "A", am);
+    auto* group = tiles::localizable_tile(i_loop, "A", am);
     ASSERT_NE(group, nullptr);
-    EXPECT_TRUE(LocalStorage::is_constant_bounded(group));
+    EXPECT_TRUE(tiles::is_constant_bounded(group));
 
     auto dims = varying_dims(group->tile);
     ASSERT_EQ(dims.size(), 2u);
@@ -580,9 +456,9 @@ TEST(LocalStorageTest, Tile_2DBoxWithHalo_Radius1) {
     auto fix = build_tiled_stencil(builder, /*radius=*/1);
 
     analysis::AnalysisManager am(builder.subject());
-    auto* group = LocalStorage::tile(*fix.i_loop, "A", am);
+    auto* group = tiles::localizable_tile(*fix.i_loop, "A", am);
     ASSERT_NE(group, nullptr);
-    EXPECT_TRUE(LocalStorage::is_constant_bounded(group));
+    EXPECT_TRUE(tiles::is_constant_bounded(group));
 
     auto dims = varying_dims(group->tile);
     ASSERT_EQ(dims.size(), 2u);
@@ -600,9 +476,9 @@ TEST(LocalStorageTest, Tile_2DBoxWithHalo_Radius2) {
     auto fix = build_tiled_stencil(builder, /*radius=*/2);
 
     analysis::AnalysisManager am(builder.subject());
-    auto* group = LocalStorage::tile(*fix.i_loop, "A", am);
+    auto* group = tiles::localizable_tile(*fix.i_loop, "A", am);
     ASSERT_NE(group, nullptr);
-    EXPECT_TRUE(LocalStorage::is_constant_bounded(group));
+    EXPECT_TRUE(tiles::is_constant_bounded(group));
 
     auto dims = varying_dims(group->tile);
     ASSERT_EQ(dims.size(), 2u);
@@ -646,9 +522,9 @@ TEST(LocalStorageTest, Tile_Negative_SymbolicBound) {
     builder.add_computational_memlet(block, tasklet, "_out", c_out, {}, elem);
 
     analysis::AnalysisManager am(builder.subject());
-    auto* group = LocalStorage::tile(loop, "A", am);
+    auto* group = tiles::localizable_tile(loop, "A", am);
     ASSERT_NE(group, nullptr); // a tile exists...
-    EXPECT_FALSE(LocalStorage::is_constant_bounded(group)); // ...but its extent is symbolic (N)
+    EXPECT_FALSE(tiles::is_constant_bounded(group)); // ...but its extent is symbolic (N)
 }
 
 /**
@@ -698,8 +574,8 @@ TEST(LocalStorageTest, Tile_Negative_IndirectGather) {
     builder.add_computational_memlet(b2, t2, "_out", c_out, {}, elem);
 
     analysis::AnalysisManager am(builder.subject());
-    auto* group = LocalStorage::tile(loop, "A", am);
-    EXPECT_FALSE(LocalStorage::is_constant_bounded(group)); // no analyzable, constant tile
+    auto* group = tiles::localizable_tile(loop, "A", am);
+    EXPECT_FALSE(tiles::is_constant_bounded(group)); // no analyzable, constant tile
 }
 
 /**
@@ -744,7 +620,7 @@ TEST(LocalStorageTest, Tile_Degenerate_ConstantButHuge) {
     builder.add_computational_memlet(block, c_in, t, "_in1", {}, elem);
 
     analysis::AnalysisManager am(builder.subject());
-    auto* group = LocalStorage::tile(loop, "A", am);
+    auto* group = tiles::localizable_tile(loop, "A", am);
     ASSERT_NE(group, nullptr);
 
     // The extent is a large constant, not null.
@@ -754,7 +630,7 @@ TEST(LocalStorageTest, Tile_Degenerate_ConstantButHuge) {
     EXPECT_TRUE(symbolic::eq(extents[0], symbolic::integer(101)));
 
     // is_constant_bounded passes despite the buffer being 101 slots for 2 uses.
-    EXPECT_TRUE(LocalStorage::is_constant_bounded(group));
+    EXPECT_TRUE(tiles::is_constant_bounded(group));
 }
 
 /**
@@ -813,20 +689,20 @@ TEST(LocalStorageTest, Tile_MultipleGroups_SymbolicBases) {
     analysis::AnalysisManager am(builder.subject());
 
     // Two distinct groups at the k loop (bases i*8 vs j*8 do not merge).
-    auto* groups = LocalStorage::tile_groups(k_loop, "A", am);
+    auto* groups = tiles::tile_groups(k_loop, "A", am);
     ASSERT_NE(groups, nullptr);
     ASSERT_EQ(groups->size(), 2u);
 
     // Each group is a 2D tile [i..i] x [0..7] (resp. j) — one varying dim of 8.
     for (const auto& g : *groups) {
-        EXPECT_TRUE(LocalStorage::is_constant_bounded(&g));
+        EXPECT_TRUE(tiles::is_constant_bounded(&g));
         auto dims = varying_dims(g.tile);
         ASSERT_EQ(dims.size(), 1u);
         EXPECT_TRUE(symbolic::eq(extents_of(g)[dims[0]], K));
     }
 
     // Container-anchored: a multi-group container is NOT localizable in v1.
-    EXPECT_EQ(LocalStorage::tile(k_loop, "A", am), nullptr);
+    EXPECT_EQ(tiles::localizable_tile(k_loop, "A", am), nullptr);
 }
 
 // =====================================================================
@@ -866,11 +742,11 @@ TEST(LocalStorageTest, Tile_SingleGroup_Localizable) {
     builder.add_computational_memlet(block, t, "_out", c_out, {}, elem);
 
     analysis::AnalysisManager am(builder.subject());
-    auto* groups = LocalStorage::tile_groups(loop, "A", am);
+    auto* groups = tiles::tile_groups(loop, "A", am);
     ASSERT_NE(groups, nullptr);
     EXPECT_EQ(groups->size(), 1u);
 
-    auto* single = LocalStorage::tile(loop, "A", am);
+    auto* single = tiles::localizable_tile(loop, "A", am);
     ASSERT_NE(single, nullptr);
     EXPECT_EQ(single, &groups->front());
 }
@@ -919,8 +795,8 @@ TEST(LocalStorageTest, Tile_SplitNode_NotLocalizable) {
     builder.add_computational_memlet(block, t, "_out", c_out, {}, elem);
 
     analysis::AnalysisManager am(builder.subject());
-    EXPECT_EQ(LocalStorage::tile_groups(k_loop, "A", am)->size(), 2u);
-    EXPECT_EQ(LocalStorage::tile(k_loop, "A", am), nullptr);
+    EXPECT_EQ(tiles::tile_groups(k_loop, "A", am)->size(), 2u);
+    EXPECT_EQ(tiles::localizable_tile(k_loop, "A", am), nullptr);
 }
 
 /**
@@ -982,8 +858,8 @@ TEST(LocalStorageTest, Tile_UngroupedMemlet_NotLocalizable) {
 
     analysis::AnalysisManager am(builder.subject());
     // MLA drops the whole container tile when any of its accesses is unanalyzable.
-    EXPECT_EQ(LocalStorage::tile_groups(loop, "A", am), nullptr);
-    EXPECT_EQ(LocalStorage::tile(loop, "A", am), nullptr);
+    EXPECT_EQ(tiles::tile_groups(loop, "A", am), nullptr);
+    EXPECT_EQ(tiles::localizable_tile(loop, "A", am), nullptr);
 }
 
 // =====================================================================
@@ -1022,9 +898,9 @@ TEST(LocalStorageTest, Tile_ElementCount_Dense) {
     );
 
     analysis::AnalysisManager am(builder.subject());
-    auto* group = LocalStorage::tile(loop, "C", am);
+    auto* group = tiles::localizable_tile(loop, "C", am);
     ASSERT_NE(group, nullptr);
-    EXPECT_TRUE(symbolic::eq(LocalStorage::tile_element_count(group), symbolic::integer(8)));
+    EXPECT_TRUE(symbolic::eq(tiles::tile_element_count(group), symbolic::integer(8)));
 }
 
 /**
@@ -1062,10 +938,10 @@ TEST(LocalStorageTest, Tile_ElementCount_Degenerate) {
     builder.add_computational_memlet(block, t, "_out", c_out, {}, elem);
 
     analysis::AnalysisManager am(builder.subject());
-    auto* group = LocalStorage::tile(loop, "A", am);
+    auto* group = tiles::localizable_tile(loop, "A", am);
     ASSERT_NE(group, nullptr);
-    EXPECT_TRUE(LocalStorage::is_constant_bounded(group)); // passes the constant check
-    EXPECT_TRUE(symbolic::eq(LocalStorage::tile_element_count(group), symbolic::integer(101))); // but 101 slots
+    EXPECT_TRUE(tiles::is_constant_bounded(group)); // passes the constant check
+    EXPECT_TRUE(symbolic::eq(tiles::tile_element_count(group), symbolic::integer(101))); // but 101 slots
 }
 
 // =====================================================================
@@ -1341,10 +1217,10 @@ TEST(LocalStorageTest, CanApply_BudgetExceeded_Rejects) {
     LocalStorage xform(loop, a_lo);
 
     // The tile is a compile-time constant, but its slot count exceeds the budget.
-    auto* group = LocalStorage::tile(loop, "A", am);
+    auto* group = tiles::localizable_tile(loop, "A", am);
     ASSERT_NE(group, nullptr);
-    EXPECT_TRUE(LocalStorage::is_constant_bounded(group));
-    EXPECT_TRUE(symbolic::eq(LocalStorage::tile_element_count(group), symbolic::integer(70001)));
+    EXPECT_TRUE(tiles::is_constant_bounded(group));
+    EXPECT_TRUE(symbolic::eq(tiles::tile_element_count(group), symbolic::integer(70001)));
     EXPECT_FALSE(xform.can_be_applied(builder, am));
 }
 
@@ -1392,7 +1268,7 @@ TEST(LocalStorageTest, CanApply_Aliased_Rejects) {
     auto& b_ref = builder.add_access(ref_block, "B");
     builder.add_reference_memlet(ref_block, a_ref, b_ref, {symbolic::integer(0)}, ptr);
 
-    EXPECT_TRUE(LocalStorage::summarize(builder.subject(), loop, "A").aliased);
+    EXPECT_TRUE(TileAnalysis::summarize(builder.subject(), loop, "A").aliased);
 
     analysis::AnalysisManager am(builder.subject());
     LocalStorage xform(loop, a_in);
@@ -1510,7 +1386,7 @@ TEST(LocalStorageTest, CanApply_LibraryNodeCaptures_Rejects) {
     // The library node has no global side effect...
     EXPECT_FALSE(LocalStorage::has_side_effect(loop));
     // ...yet the pointer analysis flags the capture.
-    EXPECT_TRUE(LocalStorage::summarize(builder.subject(), loop, "A").aliased);
+    EXPECT_TRUE(TileAnalysis::summarize(builder.subject(), loop, "A").aliased);
 
     analysis::AnalysisManager am(builder.subject());
     LocalStorage xform(loop, a_in);
@@ -1756,362 +1632,6 @@ TEST(LocalStorageTest, Apply_Scalar_Accumulator) {
     EXPECT_NE(dyn_cast<structured_control_flow::Block*>(&root.at(2)), nullptr);
 }
 
-// =====================================================================
-// LocalityPlan: schedule classification (build_locality_plan)
-// =====================================================================
-
-namespace {
-
-/// A cooperative/per-thread GPU dim at @p level for direct derive_storage tests.
-LocalStorage::LocalityPlan::Dim
-make_gpu_dim(bool cooperative, LocalStorage::LocalityPlan::Level level = LocalStorage::LocalityPlan::Level::Block) {
-    LocalStorage::LocalityPlan::Dim d;
-    d.indvar = symbolic::symbol("i");
-    d.is_gpu = true;
-    d.cooperative = cooperative;
-    d.level = level;
-    d.parallel_size = symbolic::integer(32);
-    return d;
-}
-
-/// A cooperative/per-thread CPU parallel dim for direct derive_storage tests.
-LocalStorage::LocalityPlan::Dim make_cpu_dim(bool cooperative) {
-    LocalStorage::LocalityPlan::Dim d;
-    d.indvar = symbolic::symbol("i");
-    d.is_gpu = false;
-    d.cooperative = cooperative;
-    return d;
-}
-
-} // namespace
-
-// Sequential For nest: no parallel dims, not inside a kernel.
-TEST(LocalStorageTest, Plan_Sequential_NoParallelDims) {
-    builder::StructuredSDFGBuilder builder("plan_seq", FunctionType_CPU);
-    auto& seq = builder.subject().root();
-    types::Scalar loop_var(types::PrimitiveType::Int32);
-    types::Scalar elem(types::PrimitiveType::Float);
-    types::Pointer ptr(elem);
-    auto i = symbolic::symbol("i");
-    auto k = symbolic::symbol("k");
-    auto K = symbolic::symbol("K");
-    builder.add_container("K", loop_var, true);
-    builder.add_container("i", loop_var);
-    builder.add_container("k", loop_var);
-
-    auto& loop_i =
-        builder.add_for(seq, i, symbolic::Lt(i, K), symbolic::integer(0), symbolic::add(i, symbolic::integer(1)));
-    auto& loop_k =
-        builder
-            .add_for(loop_i.root(), k, symbolic::Lt(k, K), symbolic::integer(0), symbolic::add(k, symbolic::integer(1)));
-
-    analysis::AnalysisManager am(builder.subject());
-    LocalStorage::TileInfo ti;
-    ti.bases = {k};
-    auto plan = LocalStorage::build_locality_plan(loop_k, ti, am);
-
-    EXPECT_TRUE(plan.dims.empty());
-    EXPECT_FALSE(plan.inside_gpu_kernel());
-    EXPECT_FALSE(plan.has_gpu_cooperative());
-    EXPECT_FALSE(plan.loop_is_outermost);
-    EXPECT_EQ(LocalStorage::derive_storage(plan, /*written*/ false), LocalStorage::Locality::Private);
-    EXPECT_EQ(LocalStorage::derive_storage(plan, /*written*/ true), LocalStorage::Locality::Private);
-}
-
-// GPU map whose indvar appears in the tile base → per-thread dim.
-TEST(LocalStorageTest, Plan_GpuPerThread) {
-    builder::StructuredSDFGBuilder builder("plan_gpu_perthread", FunctionType_CPU);
-    auto& seq = builder.subject().root();
-    types::Scalar loop_var(types::PrimitiveType::Int32);
-    auto i = symbolic::symbol("i");
-    auto k = symbolic::symbol("k");
-    auto N = symbolic::symbol("N");
-    auto K = symbolic::symbol("K");
-    builder.add_container("N", loop_var, true);
-    builder.add_container("K", loop_var, true);
-    builder.add_container("i", loop_var);
-    builder.add_container("k", loop_var);
-
-    auto sched_x = cuda::ScheduleType_CUDA::create();
-    gpu::gpu_block_size(sched_x, symbolic::integer(32));
-    auto& map_i =
-        builder
-            .add_map(seq, i, symbolic::Lt(i, N), symbolic::integer(0), symbolic::add(i, symbolic::integer(1)), sched_x);
-    auto& loop_k =
-        builder
-            .add_for(map_i.root(), k, symbolic::Lt(k, K), symbolic::integer(0), symbolic::add(k, symbolic::integer(1)));
-
-    analysis::AnalysisManager am(builder.subject());
-    LocalStorage::TileInfo ti;
-    ti.bases = {symbolic::add(symbolic::mul(i, K), k)}; // base depends on i → per-thread
-    auto plan = LocalStorage::build_locality_plan(loop_k, ti, am);
-
-    ASSERT_EQ(plan.dims.size(), 1u);
-    EXPECT_TRUE(plan.dims[0].is_gpu);
-    EXPECT_FALSE(plan.dims[0].cooperative);
-    EXPECT_TRUE(plan.inside_gpu_kernel());
-    EXPECT_FALSE(plan.has_gpu_cooperative());
-    // Per-thread read or write both localize to a private buffer.
-    EXPECT_EQ(LocalStorage::derive_storage(plan, false), LocalStorage::Locality::Private);
-    EXPECT_EQ(LocalStorage::derive_storage(plan, true), LocalStorage::Locality::Private);
-}
-
-// GPU map whose indvar is absent from the tile base → cooperative dim.
-TEST(LocalStorageTest, Plan_GpuCooperative) {
-    builder::StructuredSDFGBuilder builder("plan_gpu_coop", FunctionType_CPU);
-    auto& seq = builder.subject().root();
-    types::Scalar loop_var(types::PrimitiveType::Int32);
-    auto i = symbolic::symbol("i");
-    auto k = symbolic::symbol("k");
-    auto N = symbolic::symbol("N");
-    auto K = symbolic::symbol("K");
-    builder.add_container("N", loop_var, true);
-    builder.add_container("K", loop_var, true);
-    builder.add_container("i", loop_var);
-    builder.add_container("k", loop_var);
-
-    auto sched_x = cuda::ScheduleType_CUDA::create();
-    gpu::gpu_block_size(sched_x, symbolic::integer(32));
-    auto& map_i =
-        builder
-            .add_map(seq, i, symbolic::Lt(i, N), symbolic::integer(0), symbolic::add(i, symbolic::integer(1)), sched_x);
-    auto& loop_k =
-        builder
-            .add_for(map_i.root(), k, symbolic::Lt(k, K), symbolic::integer(0), symbolic::add(k, symbolic::integer(1)));
-
-    analysis::AnalysisManager am(builder.subject());
-    LocalStorage::TileInfo ti;
-    ti.bases = {k}; // base independent of i → all threads share the tile
-    auto plan = LocalStorage::build_locality_plan(loop_k, ti, am);
-
-    ASSERT_EQ(plan.dims.size(), 1u);
-    EXPECT_TRUE(plan.dims[0].is_gpu);
-    EXPECT_TRUE(plan.dims[0].cooperative);
-    EXPECT_TRUE(plan.inside_gpu_kernel());
-    EXPECT_TRUE(plan.has_gpu_cooperative());
-    EXPECT_FALSE(plan.loop_is_outermost);
-    // Cooperative read → shared; cooperative write → reduction we can't lower.
-    EXPECT_EQ(LocalStorage::derive_storage(plan, /*written*/ false), LocalStorage::Locality::Shared);
-    EXPECT_EQ(LocalStorage::derive_storage(plan, /*written*/ true), LocalStorage::Locality::Reject);
-}
-
-// =====================================================================
-// derive_storage: storage derivation from a schedule classification
-// =====================================================================
-
-TEST(LocalStorageTest, Derive_Empty_Private) {
-    LocalStorage::LocalityPlan plan;
-    EXPECT_EQ(LocalStorage::derive_storage(plan, false), LocalStorage::Locality::Private);
-    EXPECT_EQ(LocalStorage::derive_storage(plan, true), LocalStorage::Locality::Private);
-}
-
-// A cooperative CPU-parallel dim (tile invariant across threads, e.g. shared ~B):
-// a read-only tile replicates per-thread (Private); a written one is a cross-thread
-// reduction/race and rejects.
-TEST(LocalStorageTest, Derive_CpuCooperative_ReadReplicates_WriteRejects) {
-    LocalStorage::LocalityPlan plan;
-    plan.dims.push_back(make_cpu_dim(/*cooperative*/ true));
-    EXPECT_EQ(LocalStorage::derive_storage(plan, false), LocalStorage::Locality::Private);
-    EXPECT_EQ(LocalStorage::derive_storage(plan, true), LocalStorage::Locality::Reject);
-}
-
-TEST(LocalStorageTest, Derive_CpuPerThread_Private) {
-    LocalStorage::LocalityPlan plan;
-    plan.dims.push_back(make_cpu_dim(/*cooperative*/ false));
-    EXPECT_EQ(LocalStorage::derive_storage(plan, false), LocalStorage::Locality::Private);
-    EXPECT_EQ(LocalStorage::derive_storage(plan, true), LocalStorage::Locality::Private);
-}
-
-TEST(LocalStorageTest, Derive_GpuCooperativeRead_Shared) {
-    LocalStorage::LocalityPlan plan;
-    plan.dims.push_back(make_gpu_dim(/*cooperative*/ true));
-    EXPECT_EQ(LocalStorage::derive_storage(plan, /*written*/ false), LocalStorage::Locality::Shared);
-}
-
-TEST(LocalStorageTest, Derive_GpuCooperativeWrite_Reject) {
-    LocalStorage::LocalityPlan plan;
-    plan.dims.push_back(make_gpu_dim(/*cooperative*/ true));
-    EXPECT_EQ(LocalStorage::derive_storage(plan, /*written*/ true), LocalStorage::Locality::Reject);
-}
-
-TEST(LocalStorageTest, Derive_GpuCooperativeOutermost_Reject) {
-    LocalStorage::LocalityPlan plan;
-    plan.dims.push_back(make_gpu_dim(/*cooperative*/ true));
-    plan.loop_is_outermost = true; // a shared buffer can't straddle the kernel boundary
-    EXPECT_EQ(LocalStorage::derive_storage(plan, false), LocalStorage::Locality::Reject);
-}
-
-TEST(LocalStorageTest, Derive_GpuPerThread_Private) {
-    LocalStorage::LocalityPlan plan;
-    plan.dims.push_back(make_gpu_dim(/*cooperative*/ false));
-    EXPECT_EQ(LocalStorage::derive_storage(plan, false), LocalStorage::Locality::Private);
-    EXPECT_EQ(LocalStorage::derive_storage(plan, true), LocalStorage::Locality::Private);
-}
-
-// A host-level loop that itself is GPU-scheduled or wraps a GPU kernel is not a
-// localization site for a private stack buffer.
-TEST(LocalStorageTest, Derive_HostWrapsGpuKernel_Reject) {
-    LocalStorage::LocalityPlan plan;
-    plan.has_gpu_descendant = true;
-    EXPECT_EQ(LocalStorage::derive_storage(plan, false), LocalStorage::Locality::Reject);
-
-    LocalStorage::LocalityPlan plan2;
-    plan2.loop_is_gpu = true;
-    EXPECT_EQ(LocalStorage::derive_storage(plan2, false), LocalStorage::Locality::Reject);
-}
-
-// Cooperation across blocks (grid level) needs grid-wide global memory.
-TEST(LocalStorageTest, Derive_GpuGridCooperativeRead_Global) {
-    using Level = LocalStorage::LocalityPlan::Level;
-    LocalStorage::LocalityPlan plan;
-    plan.dims.push_back(make_gpu_dim(/*cooperative*/ true, Level::Grid));
-    EXPECT_EQ(LocalStorage::derive_storage(plan, /*written*/ false), LocalStorage::Locality::Global);
-    EXPECT_EQ(LocalStorage::derive_storage(plan, /*written*/ true), LocalStorage::Locality::Reject);
-}
-
-// A read tile with block cooperation lives in shared memory even when it is also
-// grid-cooperative: each block redundantly stages its own copy (grid cooperation
-// is replication, not a shared buffer). This is the 2D-block GEMM shape.
-TEST(LocalStorageTest, Derive_GpuGridAndBlockCooperativeRead_Shared) {
-    using Level = LocalStorage::LocalityPlan::Level;
-    LocalStorage::LocalityPlan plan;
-    plan.dims.push_back(make_gpu_dim(/*cooperative*/ true, Level::Block));
-    plan.dims.push_back(make_gpu_dim(/*cooperative*/ true, Level::Grid));
-    EXPECT_EQ(LocalStorage::derive_storage(plan, /*written*/ false), LocalStorage::Locality::Shared);
-}
-
-// Warp-only cooperation is served by shuffles, not a staged buffer → Reject.
-TEST(LocalStorageTest, Derive_GpuWarpCooperativeRead_Reject) {
-    using Level = LocalStorage::LocalityPlan::Level;
-    LocalStorage::LocalityPlan plan;
-    plan.dims.push_back(make_gpu_dim(/*cooperative*/ true, Level::Warp));
-    EXPECT_EQ(LocalStorage::derive_storage(plan, /*written*/ false), LocalStorage::Locality::Reject);
-}
-
-// A per-thread warp dim (indvar in the tile base) is fine → private register tile.
-TEST(LocalStorageTest, Derive_GpuWarpPerThread_Private) {
-    using Level = LocalStorage::LocalityPlan::Level;
-    LocalStorage::LocalityPlan plan;
-    plan.dims.push_back(make_gpu_dim(/*cooperative*/ false, Level::Warp));
-    EXPECT_EQ(LocalStorage::derive_storage(plan, false), LocalStorage::Locality::Private);
-}
-
-// build_locality_plan reads the new *_Offload schedule: block-level target,
-// parallel size, and sync flag.
-TEST(LocalStorageTest, Plan_GpuOffload_BlockLevel) {
-    builder::StructuredSDFGBuilder builder("plan_offload_block", FunctionType_CPU);
-    auto& seq = builder.subject().root();
-    types::Scalar loop_var(types::PrimitiveType::Int32);
-    auto i = symbolic::symbol("i");
-    auto k = symbolic::symbol("k");
-    auto N = symbolic::symbol("N");
-    auto K = symbolic::symbol("K");
-    builder.add_container("N", loop_var, true);
-    builder.add_container("K", loop_var, true);
-    builder.add_container("i", loop_var);
-    builder.add_container("k", loop_var);
-
-    auto sched = gpu::ScheduleType_GPU_Offload::create<
-        cuda::ScheduleType_CUDA_Offload>(gpu::TargetLevel::X_BLOCK, symbolic::integer(64));
-    auto& map_i =
-        builder.add_map(seq, i, symbolic::Lt(i, N), symbolic::integer(0), symbolic::add(i, symbolic::integer(1)), sched);
-    auto& loop_k =
-        builder
-            .add_for(map_i.root(), k, symbolic::Lt(k, K), symbolic::integer(0), symbolic::add(k, symbolic::integer(1)));
-
-    analysis::AnalysisManager am(builder.subject());
-    LocalStorage::TileInfo ti;
-    ti.bases = {k}; // base independent of i → cooperative across the block
-    auto plan = LocalStorage::build_locality_plan(loop_k, ti, am);
-
-    ASSERT_EQ(plan.dims.size(), 1u);
-    EXPECT_TRUE(plan.dims[0].is_gpu);
-    EXPECT_TRUE(plan.dims[0].cooperative);
-    EXPECT_EQ(plan.dims[0].level, LocalStorage::LocalityPlan::Level::Block);
-    EXPECT_TRUE(symbolic::eq(plan.dims[0].parallel_size, symbolic::integer(64)));
-    EXPECT_FALSE(plan.dims[0].needs_sync);
-    EXPECT_EQ(LocalStorage::derive_storage(plan, /*written*/ false), LocalStorage::Locality::Shared);
-}
-
-// A grid-level *_Offload cooperative read derives to grid-wide global memory.
-TEST(LocalStorageTest, Plan_GpuOffload_GridLevel) {
-    builder::StructuredSDFGBuilder builder("plan_offload_grid", FunctionType_CPU);
-    auto& seq = builder.subject().root();
-    types::Scalar loop_var(types::PrimitiveType::Int32);
-    auto i = symbolic::symbol("i");
-    auto k = symbolic::symbol("k");
-    auto N = symbolic::symbol("N");
-    auto K = symbolic::symbol("K");
-    builder.add_container("N", loop_var, true);
-    builder.add_container("K", loop_var, true);
-    builder.add_container("i", loop_var);
-    builder.add_container("k", loop_var);
-
-    auto sched = gpu::ScheduleType_GPU_Offload::create<
-        cuda::ScheduleType_CUDA_Offload>(gpu::TargetLevel::X_GRID, symbolic::integer(128));
-    auto& map_i =
-        builder.add_map(seq, i, symbolic::Lt(i, N), symbolic::integer(0), symbolic::add(i, symbolic::integer(1)), sched);
-    auto& loop_k =
-        builder
-            .add_for(map_i.root(), k, symbolic::Lt(k, K), symbolic::integer(0), symbolic::add(k, symbolic::integer(1)));
-
-    analysis::AnalysisManager am(builder.subject());
-    LocalStorage::TileInfo ti;
-    ti.bases = {k};
-    auto plan = LocalStorage::build_locality_plan(loop_k, ti, am);
-
-    ASSERT_EQ(plan.dims.size(), 1u);
-    EXPECT_EQ(plan.dims[0].level, LocalStorage::LocalityPlan::Level::Grid);
-    EXPECT_EQ(LocalStorage::derive_storage(plan, /*written*/ false), LocalStorage::Locality::Global);
-}
-
-// A GPU-scheduled Reduce enclosing the loop is a cooperative block level too, so
-// build_locality_plan classifies a read tile inside a block reduction as shared
-// (previously it saw only Maps and mis-derived a private per-thread buffer).
-TEST(LocalStorageTest, Plan_GpuOffloadReduce_BlockLevel) {
-    builder::StructuredSDFGBuilder builder("plan_offload_reduce_block", FunctionType_CPU);
-    auto& seq = builder.subject().root();
-    types::Scalar loop_var(types::PrimitiveType::Int32);
-    types::Pointer ptr(types::StorageType::NV_Generic(), 0, "", types::Scalar(types::PrimitiveType::Float));
-    auto i = symbolic::symbol("i");
-    auto k = symbolic::symbol("k");
-    auto N = symbolic::symbol("N");
-    auto K = symbolic::symbol("K");
-    builder.add_container("N", loop_var, true);
-    builder.add_container("K", loop_var, true);
-    builder.add_container("i", loop_var);
-    builder.add_container("k", loop_var);
-    builder.add_container("acc", ptr);
-
-    auto sched = gpu::ScheduleType_GPU_Offload::create<
-        cuda::ScheduleType_CUDA_Offload>(gpu::TargetLevel::X_BLOCK, symbolic::integer(64));
-    auto& reduce_i = builder.add_reduce(
-        seq,
-        i,
-        symbolic::Lt(i, N),
-        symbolic::integer(0),
-        symbolic::add(i, symbolic::integer(1)),
-        {structured_control_flow::ReductionInfo{structured_control_flow::ReductionOperation::Add, "acc"}},
-        sched
-    );
-    auto& loop_k =
-        builder
-            .add_for(reduce_i.root(), k, symbolic::Lt(k, K), symbolic::integer(0), symbolic::add(k, symbolic::integer(1)));
-
-    analysis::AnalysisManager am(builder.subject());
-    LocalStorage::TileInfo ti;
-    ti.bases = {k}; // base independent of i → cooperative across the block reduce
-    auto plan = LocalStorage::build_locality_plan(loop_k, ti, am);
-
-    ASSERT_EQ(plan.dims.size(), 1u);
-    EXPECT_TRUE(plan.dims[0].is_gpu);
-    EXPECT_TRUE(plan.dims[0].cooperative);
-    EXPECT_EQ(plan.dims[0].level, LocalStorage::LocalityPlan::Level::Block);
-    EXPECT_TRUE(symbolic::eq(plan.dims[0].parallel_size, symbolic::integer(64)));
-    EXPECT_EQ(LocalStorage::derive_storage(plan, /*written*/ false), LocalStorage::Locality::Shared);
-}
-
-// A reduction accumulator is owned by the Reduce node + reduce dispatcher;
 // A read-only row consumed by Reduce nodes (softmax-style: reduce-max via a
 // cmath fmax, reduce-sum, normalize) stages at the enclosing grid loop. The cmath
 // input must be no_capture, else the pointer analysis falsely flags X as aliased.
@@ -2204,230 +1724,12 @@ TEST(LocalStorageTest, Gate_ReduceConsumerStaging_Accepts) {
     builder.add_computational_memlet(nblk, divt, "_out", y_n, {symbolic::add(symbolic::mul(row, Nc), jn)}, ptr);
 
     analysis::AnalysisManager am(builder.subject());
-    auto plan = LocalStorage::build_locality_plan(map_row, LocalStorage::TileInfo{}, am);
-    EXPECT_TRUE(plan.enclosing_cooperative);
-    EXPECT_FALSE(LocalStorage::is_reduction_accumulator(map_row, "X", am));
+    auto plan = tiles::LocalityPlan::analyze(map_row, tiles::TileAxis::enclosing(map_row, {}), am);
+    EXPECT_TRUE(plan.enclosing_cooperative());
+    EXPECT_FALSE(tiles::is_reduction_accumulator(map_row, "X", am));
     // A cmath (fmax) reading X must not flag X as pointer-captured (no_capture).
     LocalStorage xform(map_row, x_r);
     EXPECT_TRUE(xform.can_be_applied(builder, am));
-}
-
-// is_reduction_accumulator detects it whether the Reduce is the loop itself, an
-// ancestor, or a descendant, so can_be_applied refuses to localize it.
-TEST(LocalStorageTest, IsReductionAccumulator_EnclosingAndNested) {
-    builder::StructuredSDFGBuilder builder("ls_reduce_acc", FunctionType_CPU);
-    auto& seq = builder.subject().root();
-    types::Scalar loop_var(types::PrimitiveType::Int32);
-    types::Pointer ptr(types::StorageType::NV_Generic(), 0, "", types::Scalar(types::PrimitiveType::Float));
-    auto j = symbolic::symbol("j");
-    auto i = symbolic::symbol("i");
-    auto k = symbolic::symbol("k");
-    auto N = symbolic::symbol("N");
-    auto K = symbolic::symbol("K");
-    builder.add_container("N", loop_var, true);
-    builder.add_container("K", loop_var, true);
-    builder.add_container("j", loop_var);
-    builder.add_container("i", loop_var);
-    builder.add_container("k", loop_var);
-    builder.add_container("acc", ptr);
-    builder.add_container("other", ptr);
-
-    auto& for_j =
-        builder.add_for(seq, j, symbolic::Lt(j, N), symbolic::integer(0), symbolic::add(j, symbolic::integer(1)));
-    auto& reduce_i = builder.add_reduce(
-        for_j.root(),
-        i,
-        symbolic::Lt(i, N),
-        symbolic::integer(0),
-        symbolic::add(i, symbolic::integer(1)),
-        {structured_control_flow::ReductionInfo{structured_control_flow::ReductionOperation::Add, "acc"}},
-        structured_control_flow::ScheduleType_Sequential::create()
-    );
-    auto& loop_k =
-        builder
-            .add_for(reduce_i.root(), k, symbolic::Lt(k, K), symbolic::integer(0), symbolic::add(k, symbolic::integer(1)));
-
-    analysis::AnalysisManager am(builder.subject());
-    EXPECT_TRUE(LocalStorage::is_reduction_accumulator(reduce_i, "acc", am)); // the reduce itself
-    EXPECT_TRUE(LocalStorage::is_reduction_accumulator(loop_k, "acc", am)); // ancestor reduce
-    EXPECT_TRUE(LocalStorage::is_reduction_accumulator(for_j, "acc", am)); // descendant reduce
-    EXPECT_FALSE(LocalStorage::is_reduction_accumulator(loop_k, "other", am));
-}
-
-// collect_reduction_owners: a sequential (non-cooperative) Reduce at the localized
-// loop is privatizable — it is returned so apply() can retarget its descriptor.
-TEST(LocalStorageTest, CollectReductionOwners_SequentialAccepts) {
-    builder::StructuredSDFGBuilder builder("ls_collect_seq", FunctionType_CPU);
-    auto& seq = builder.subject().root();
-    types::Scalar loop_var(types::PrimitiveType::Int32);
-    types::Pointer ptr(types::StorageType::NV_Generic(), 0, "", types::Scalar(types::PrimitiveType::Float));
-    auto j = symbolic::symbol("j");
-    auto N = symbolic::symbol("N");
-    builder.add_container("N", loop_var, true);
-    builder.add_container("j", loop_var);
-    builder.add_container("acc", ptr);
-
-    auto& reduce_j = builder.add_reduce(
-        seq,
-        j,
-        symbolic::Lt(j, N),
-        symbolic::integer(0),
-        symbolic::add(j, symbolic::integer(1)),
-        {structured_control_flow::ReductionInfo{structured_control_flow::ReductionOperation::Add, "acc"}},
-        structured_control_flow::ScheduleType_Sequential::create()
-    );
-
-    analysis::AnalysisManager am(builder.subject());
-    std::vector<structured_control_flow::Reduce*> owners;
-    EXPECT_TRUE(LocalStorage::collect_reduction_owners(reduce_j, "acc", am, owners));
-    ASSERT_EQ(owners.size(), 1u);
-    EXPECT_EQ(owners.front(), &reduce_j);
-}
-
-// collect_reduction_owners: a GPU-offloaded (cooperatively combined) Reduce is
-// owned by the reduce dispatcher — reject.
-TEST(LocalStorageTest, CollectReductionOwners_CooperativeRejects) {
-    builder::StructuredSDFGBuilder builder("ls_collect_coop", FunctionType_CPU);
-    auto& seq = builder.subject().root();
-    types::Scalar loop_var(types::PrimitiveType::Int32);
-    types::Pointer ptr(types::StorageType::NV_Generic(), 0, "", types::Scalar(types::PrimitiveType::Float));
-    auto j = symbolic::symbol("j");
-    auto N = symbolic::symbol("N");
-    builder.add_container("N", loop_var, true);
-    builder.add_container("j", loop_var);
-    builder.add_container("acc", ptr);
-
-    auto block = gpu::ScheduleType_GPU_Offload::create<
-        cuda::ScheduleType_CUDA_Offload>(gpu::TargetLevel::X_BLOCK, symbolic::integer(32));
-    auto& reduce_j = builder.add_reduce(
-        seq,
-        j,
-        symbolic::Lt(j, N),
-        symbolic::integer(0),
-        symbolic::add(j, symbolic::integer(1)),
-        {structured_control_flow::ReductionInfo{structured_control_flow::ReductionOperation::Add, "acc"}},
-        block
-    );
-
-    analysis::AnalysisManager am(builder.subject());
-    std::vector<structured_control_flow::Reduce*> owners;
-    EXPECT_FALSE(LocalStorage::collect_reduction_owners(reduce_j, "acc", am, owners));
-}
-
-// collect_reduction_owners: a *sequential* ancestor Reduce is accepted — its outer
-// iterations are barrier-separated, so a read-modify-write copy-in/out around loop_
-// carries the accumulation through the global container each iteration (classical
-// BLIS pc loop). The ancestor is not retargeted (owners stays empty here).
-TEST(LocalStorageTest, CollectReductionOwners_SequentialAncestorAccepts) {
-    builder::StructuredSDFGBuilder builder("ls_collect_ancestor_seq", FunctionType_CPU);
-    auto& seq = builder.subject().root();
-    types::Scalar loop_var(types::PrimitiveType::Int32);
-    types::Pointer ptr(types::StorageType::NV_Generic(), 0, "", types::Scalar(types::PrimitiveType::Float));
-    auto j = symbolic::symbol("j");
-    auto k = symbolic::symbol("k");
-    auto N = symbolic::symbol("N");
-    auto K = symbolic::symbol("K");
-    builder.add_container("N", loop_var, true);
-    builder.add_container("K", loop_var, true);
-    builder.add_container("j", loop_var);
-    builder.add_container("k", loop_var);
-    builder.add_container("acc", ptr);
-
-    auto& reduce_j = builder.add_reduce(
-        seq,
-        j,
-        symbolic::Lt(j, N),
-        symbolic::integer(0),
-        symbolic::add(j, symbolic::integer(1)),
-        {structured_control_flow::ReductionInfo{structured_control_flow::ReductionOperation::Add, "acc"}},
-        structured_control_flow::ScheduleType_Sequential::create()
-    );
-    auto& loop_k =
-        builder
-            .add_for(reduce_j.root(), k, symbolic::Lt(k, K), symbolic::integer(0), symbolic::add(k, symbolic::integer(1)));
-
-    analysis::AnalysisManager am(builder.subject());
-    std::vector<structured_control_flow::Reduce*> owners;
-    EXPECT_TRUE(LocalStorage::collect_reduction_owners(loop_k, "acc", am, owners));
-    EXPECT_TRUE(owners.empty());
-}
-
-// collect_reduction_owners: a GPU block-cooperative ancestor Reduce is combined by
-// the reduce dispatcher (not an atomic-merge grid reduce), so localizing its
-// accumulator at an inner loop is rejected.
-TEST(LocalStorageTest, CollectReductionOwners_GpuBlockAncestorRejects) {
-    builder::StructuredSDFGBuilder builder("ls_collect_ancestor_block", FunctionType_CPU);
-    auto& seq = builder.subject().root();
-    types::Scalar loop_var(types::PrimitiveType::Int32);
-    types::Pointer ptr(types::StorageType::NV_Generic(), 0, "", types::Scalar(types::PrimitiveType::Float));
-    auto j = symbolic::symbol("j");
-    auto k = symbolic::symbol("k");
-    auto N = symbolic::symbol("N");
-    auto K = symbolic::symbol("K");
-    builder.add_container("N", loop_var, true);
-    builder.add_container("K", loop_var, true);
-    builder.add_container("j", loop_var);
-    builder.add_container("k", loop_var);
-    builder.add_container("acc", ptr);
-
-    auto block = gpu::ScheduleType_GPU_Offload::create<
-        cuda::ScheduleType_CUDA_Offload>(gpu::TargetLevel::X_BLOCK, symbolic::integer(32));
-    auto& reduce_j = builder.add_reduce(
-        seq,
-        j,
-        symbolic::Lt(j, N),
-        symbolic::integer(0),
-        symbolic::add(j, symbolic::integer(1)),
-        {structured_control_flow::ReductionInfo{structured_control_flow::ReductionOperation::Add, "acc"}},
-        block
-    );
-    auto& loop_k =
-        builder
-            .add_for(reduce_j.root(), k, symbolic::Lt(k, K), symbolic::integer(0), symbolic::add(k, symbolic::integer(1)));
-
-    analysis::AnalysisManager am(builder.subject());
-    std::vector<structured_control_flow::Reduce*> owners;
-    EXPECT_FALSE(LocalStorage::collect_reduction_owners(loop_k, "acc", am, owners));
-}
-
-// collect_reduction_owners: a grid-parallel (split-K Z_GRID) ancestor Reduce merges
-// per-block partials via an atomic writeback, so privatizing the per-block partial
-// into a register tile at an inner loop is permitted — and the reduce is NOT
-// retargeted (LocalStorage takes over the cross-block merge separately).
-TEST(LocalStorageTest, CollectReductionOwners_GridParallelAncestorAccepts) {
-    builder::StructuredSDFGBuilder builder("ls_collect_grid_ancestor", FunctionType_CPU);
-    auto& seq = builder.subject().root();
-    types::Scalar loop_var(types::PrimitiveType::Int32);
-    types::Pointer ptr(types::StorageType::NV_Generic(), 0, "", types::Scalar(types::PrimitiveType::Float));
-    auto j = symbolic::symbol("j");
-    auto k = symbolic::symbol("k");
-    auto N = symbolic::symbol("N");
-    auto K = symbolic::symbol("K");
-    builder.add_container("N", loop_var, true);
-    builder.add_container("K", loop_var, true);
-    builder.add_container("j", loop_var);
-    builder.add_container("k", loop_var);
-    builder.add_container("acc", ptr);
-
-    auto grid = gpu::ScheduleType_GPU_Offload::create<
-        cuda::ScheduleType_CUDA_Offload>(gpu::TargetLevel::Z_GRID, symbolic::integer(16));
-    auto& reduce_j = builder.add_reduce(
-        seq,
-        j,
-        symbolic::Lt(j, N),
-        symbolic::integer(0),
-        symbolic::add(j, symbolic::integer(1)),
-        {structured_control_flow::ReductionInfo{structured_control_flow::ReductionOperation::Add, "acc"}},
-        grid
-    );
-    auto& loop_k =
-        builder
-            .add_for(reduce_j.root(), k, symbolic::Lt(k, K), symbolic::integer(0), symbolic::add(k, symbolic::integer(1)));
-
-    analysis::AnalysisManager am(builder.subject());
-    std::vector<structured_control_flow::Reduce*> owners;
-    EXPECT_TRUE(LocalStorage::collect_reduction_owners(loop_k, "acc", am, owners));
-    EXPECT_TRUE(owners.empty());
 }
 
 
@@ -2548,7 +1850,7 @@ TEST(LocalStorageTest, Apply_SequentialAncestorReduce_RMW) {
 
     analysis::AnalysisManager am(builder.subject());
     // Ancestor reduce owns acc, so it is detected as a reduction accumulator...
-    EXPECT_TRUE(LocalStorage::is_reduction_accumulator(for_ki, "acc", am));
+    EXPECT_TRUE(tiles::is_reduction_accumulator(for_ki, "acc", am));
     // ...but a sequential ancestor is now localizable at the inner loop.
     LocalStorage xform(for_ki, acc_out);
     ASSERT_TRUE(xform.can_be_applied(builder, am));
@@ -2682,13 +1984,13 @@ TEST(LocalStorageTest, Gate_EnclosingCooperativeStaging_Accepts) {
 
     LocalStorage::TileInfo ti;
     ti.bases = {symbolic::mul(row, Nc)};
-    auto plan = LocalStorage::build_locality_plan(map_row, ti, am);
-    EXPECT_TRUE(plan.dims.empty());
-    EXPECT_TRUE(plan.loop_is_gpu);
-    EXPECT_TRUE(plan.has_gpu_descendant);
-    EXPECT_TRUE(plan.enclosing_cooperative);
-    EXPECT_EQ(LocalStorage::derive_storage(plan, /*written*/ false), LocalStorage::Locality::Shared);
-    EXPECT_EQ(LocalStorage::derive_storage(plan, /*written*/ true), LocalStorage::Locality::Reject);
+    auto plan = tiles::LocalityPlan::analyze(map_row, tiles::TileAxis::enclosing(map_row, ti.bases), am);
+    EXPECT_TRUE(plan.axes().empty());
+    EXPECT_TRUE(plan.loop_has_scratchpad());
+    EXPECT_TRUE(plan.has_scratchpad_descendant());
+    EXPECT_TRUE(plan.enclosing_cooperative());
+    EXPECT_EQ(plan.required_space(/*written*/ false), tiles::Space::Shared);
+    EXPECT_FALSE(plan.required_space(/*written*/ true));
 
     LocalStorage xform(map_row, x_in1);
     EXPECT_TRUE(xform.can_be_applied(builder, am));
@@ -3060,53 +2362,8 @@ TEST(LocalStorageTest, Apply_Cooperative_Shared) {
 }
 
 // =====================================================================
-// Pure buffer / tile index math (TileBuffer, TileInfo) — no SDFG state
+// Pure tile index math (TileInfo) — no SDFG state
 // =====================================================================
-
-TEST(LocalStorageTest, TileBuffer_TotalSize) {
-    LocalStorage::TileBuffer buf{{symbolic::integer(2)}, {symbolic::integer(3), symbolic::integer(4)}};
-    EXPECT_TRUE(symbolic::eq(buf.total_size(), symbolic::integer(24)));
-
-    LocalStorage::TileBuffer tile_only{{}, {symbolic::integer(8)}};
-    EXPECT_TRUE(symbolic::eq(tile_only.total_size(), symbolic::integer(8)));
-}
-
-TEST(LocalStorageTest, TileBuffer_Linearize_TileOnly) {
-    auto i = symbolic::symbol("i");
-    auto j = symbolic::symbol("j");
-    LocalStorage::TileBuffer buf{{}, {symbolic::integer(3), symbolic::integer(4)}};
-    // Row-major: i*4 + j.
-    EXPECT_TRUE(symbolic::eq(buf.linearize({}, {i, j}), symbolic::add(symbolic::mul(i, symbolic::integer(4)), j)));
-}
-
-TEST(LocalStorageTest, TileBuffer_Linearize_WithSlots) {
-    auto s = symbolic::symbol("s");
-    auto i = symbolic::symbol("i");
-    auto j = symbolic::symbol("j");
-    LocalStorage::TileBuffer buf{{symbolic::integer(2)}, {symbolic::integer(3), symbolic::integer(4)}};
-    // Row-major over [slot(2), tile(3,4)]: s*12 + i*4 + j.
-    auto expected =
-        symbolic::add(symbolic::mul(s, symbolic::integer(12)), symbolic::add(symbolic::mul(i, symbolic::integer(4)), j));
-    EXPECT_TRUE(symbolic::eq(buf.linearize({s}, {i, j}), expected));
-}
-
-TEST(LocalStorageTest, TileBuffer_Delinearize) {
-    auto c = symbolic::symbol("c");
-    // Single tile dim: the flat index passes through unchanged.
-    LocalStorage::TileBuffer d1{{}, {symbolic::integer(4)}};
-    auto one = d1.delinearize_tile(c);
-    ASSERT_EQ(one.size(), 1u);
-    EXPECT_TRUE(symbolic::eq(one[0], c));
-
-    // Two tile dims (3 x 4): row-major decomposition [c / 4, c % 4] (integer
-    // div/mod, lowered by codegen). Tested structurally — symbolic::div is exact
-    // division, so a concrete roundtrip would not floor.
-    LocalStorage::TileBuffer d2{{}, {symbolic::integer(3), symbolic::integer(4)}};
-    auto two = d2.delinearize_tile(c);
-    ASSERT_EQ(two.size(), 2u);
-    EXPECT_TRUE(symbolic::eq(two[0], symbolic::div(c, symbolic::integer(4))));
-    EXPECT_TRUE(symbolic::eq(two[1], symbolic::mod(c, symbolic::integer(4))));
-}
 
 TEST(LocalStorageTest, TileInfo_VaryingDims) {
     LocalStorage::TileInfo ti;
@@ -3148,51 +2405,24 @@ TEST(LocalStorageTest, TileInfo_LocalIndex) {
     EXPECT_TRUE(symbolic::eq(local[0], symbolic::sub(x, c)));
 }
 
-TEST(LocalStorageTest, TileBuffer_SlotOffset) {
-    // [slot(2)][tile(3,4)]: tile block = 12, so slot s starts at s*12.
-    LocalStorage::TileBuffer buf{{symbolic::integer(2)}, {symbolic::integer(3), symbolic::integer(4)}};
-    EXPECT_TRUE(symbolic::eq(buf.tile_total_size(), symbolic::integer(12)));
-    auto s = symbolic::symbol("s");
-    EXPECT_TRUE(symbolic::eq(buf.slot_offset({s}), symbolic::mul(s, symbolic::integer(12))));
-
-    // [slot(2,5)][tile(4)]: row-major slots scaled by tile_total 4 -> a*20 + b*4.
-    LocalStorage::TileBuffer buf2{{symbolic::integer(2), symbolic::integer(5)}, {symbolic::integer(4)}};
-    EXPECT_TRUE(symbolic::eq(buf2.tile_total_size(), symbolic::integer(4)));
-    auto a = symbolic::symbol("a");
-    auto b = symbolic::symbol("b");
-    EXPECT_TRUE(symbolic::
-                    eq(buf2.slot_offset({a, b}),
-                       symbolic::add(symbolic::mul(a, symbolic::integer(20)), symbolic::mul(b, symbolic::integer(4)))));
-
-    // slot_offset(slots) + tile-linear == full linearize(slots, tile) (consistency).
+TEST(LocalStorageTest, TileInfo_SourceLayout) {
+    // The source geometry as a tiles Layout: one mode per varying dim, extent-1
+    // dims folded into the offset. Its apply_coords is the gather address.
     auto i = symbolic::symbol("i");
+    auto M = symbolic::symbol("M");
+    auto off = symbolic::symbol("off");
     auto j = symbolic::symbol("j");
-    EXPECT_TRUE(symbolic::
-                    eq(buf.linearize({s}, {i, j}),
-                       symbolic::add(buf.slot_offset({s}), symbolic::add(symbolic::mul(i, symbolic::integer(4)), j))));
-}
-
-TEST(LocalStorageTest, TileBuffer_Swizzle) {
-    // [slot(2)][tile(2,4)]: tile_total = 8 (power of two). Swizzled layout uses a
-    // natural (unpadded) inner axis and XOR-swizzles the inner index by the slot.
-    LocalStorage::TileBuffer buf{{symbolic::integer(2)}, {symbolic::integer(2), symbolic::integer(4)}};
-    buf.swizzled = true;
-
-    // axes: [slot][natural inner] = [2][8] — no padding (vs bank_padded's +1/coop pad).
-    auto ax = buf.axes();
-    ASSERT_EQ(ax.size(), 2u);
-    EXPECT_TRUE(symbolic::eq(ax[0], symbolic::integer(2)));
-    EXPECT_TRUE(symbolic::eq(ax[1], symbolic::integer(8)));
-
-    // multi_subset: [slot, bit_xor(tile_linear, slot)].
-    auto s = symbolic::symbol("s");
-    auto i = symbolic::symbol("i");
-    auto j = symbolic::symbol("j");
-    auto sub = buf.multi_subset({s}, {i, j});
-    ASSERT_EQ(sub.size(), 2u);
-    EXPECT_TRUE(symbolic::eq(sub[0], s));
-    auto expected = symbolic::bit_xor(symbolic::add(symbolic::mul(i, symbolic::integer(4)), j), s);
-    EXPECT_TRUE(symbolic::eq(sub[1], expected));
+    LocalStorage::TileInfo ti;
+    ti.dimensions = {symbolic::integer(1), symbolic::integer(4)};
+    ti.bases = {i, symbolic::integer(0)};
+    ti.strides = {M, symbolic::integer(1)};
+    ti.offset = off;
+    auto layout = ti.source_layout();
+    ASSERT_EQ(layout.rank(), 1u); // only the varying dim
+    EXPECT_TRUE(symbolic::eq(layout.shape()[0], symbolic::integer(4)));
+    EXPECT_TRUE(symbolic::eq(layout.stride()[0], symbolic::integer(1)));
+    // apply_coords == original_subset.
+    EXPECT_TRUE(symbolic::eq(layout.apply_coords({j}), ti.original_subset({j})[0]));
 }
 
 /**
@@ -3273,6 +2503,100 @@ TEST(LocalStorageTest, Apply_Cooperative_Mixed) {
     EXPECT_EQ(copy_map->schedule_type().category(), structured_control_flow::ScheduleTypeCategory::Offloader);
     EXPECT_NE(dyn_cast<structured_control_flow::Block*>(&map_j.root().at(2)), nullptr);
     EXPECT_NE(dyn_cast<structured_control_flow::For*>(&map_j.root().at(3)), nullptr);
+
+    // The body reads the shared buffer, not A.
+    auto* main_block = dyn_cast<structured_control_flow::Block*>(&loop_k.root().at(0));
+    ASSERT_NE(main_block, nullptr);
+    EXPECT_TRUE(block_uses(*main_block, buf));
+    EXPECT_FALSE(block_uses(*main_block, "A"));
+}
+
+/**
+ * Apply_LaneContiguous_FlatStaging: the CDNA async global->LDS shape. With
+ * lane_contiguous=true the shared tile is laid out FLAT (Linearized: slots folded
+ * into one axis, no padding) and staged by a full-block thread-linear sweep, so
+ * `global_load_lds` (which writes lane-contiguous from a wave-uniform base) lands
+ * correctly. The copy coverage is a strided For (init = flat thread id, step =
+ * block size), and the buffer is addressed by the single flat index.
+ */
+TEST(LocalStorageTest, Apply_LaneContiguous_FlatStaging) {
+    builder::StructuredSDFGBuilder builder("ls_lane_contig", FunctionType_CPU);
+    auto& seq = builder.subject().root();
+    types::Scalar loop_var(types::PrimitiveType::Int32);
+    types::Scalar elem(types::PrimitiveType::Float);
+    types::Pointer ptr(elem);
+    auto i = symbolic::symbol("i");
+    auto j = symbolic::symbol("j");
+    auto k = symbolic::symbol("k");
+    auto N = symbolic::symbol("N");
+    auto M = symbolic::symbol("M");
+    builder.add_container("N", loop_var, true);
+    builder.add_container("M", loop_var, true);
+    builder.add_container("A", ptr, true);
+    builder.add_container("C", ptr, true);
+    builder.add_container("i", loop_var);
+    builder.add_container("j", loop_var);
+    builder.add_container("k", loop_var);
+
+    auto sched_i = gpu::ScheduleType_GPU_Offload::create<
+        cuda::ScheduleType_CUDA_Offload>(gpu::TargetLevel::X_BLOCK, symbolic::integer(8));
+    auto sched_j = gpu::ScheduleType_GPU_Offload::create<
+        cuda::ScheduleType_CUDA_Offload>(gpu::TargetLevel::Y_BLOCK, symbolic::integer(4));
+    auto& map_i =
+        builder
+            .add_map(seq, i, symbolic::Lt(i, N), symbolic::integer(0), symbolic::add(i, symbolic::integer(1)), sched_i);
+    auto& map_j = builder.add_map(
+        map_i.root(), j, symbolic::Lt(j, M), symbolic::integer(0), symbolic::add(j, symbolic::integer(1)), sched_j
+    );
+    auto& loop_k = builder.add_for(
+        map_j.root(),
+        k,
+        symbolic::Lt(k, symbolic::integer(16)),
+        symbolic::integer(0),
+        symbolic::add(k, symbolic::integer(1))
+    );
+
+    // C[i*M + j] += A[i*16 + k] — A per-thread in i (base uses i), cooperative in j.
+    auto& block = builder.add_block(loop_k.root());
+    auto& c_in = builder.add_access(block, "C");
+    auto& a_in = builder.add_access(block, "A");
+    auto& c_out = builder.add_access(block, "C");
+    auto& t = builder.add_tasklet(block, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
+    builder.add_computational_memlet(block, c_in, t, "_in1", {symbolic::add(symbolic::mul(i, M), j)}, ptr);
+    builder
+        .add_computational_memlet(block, a_in, t, "_in2", {symbolic::add(symbolic::mul(i, symbolic::integer(16)), k)}, ptr);
+    builder.add_computational_memlet(block, t, "_out", c_out, {symbolic::add(symbolic::mul(i, M), j)}, ptr);
+
+    analysis::AnalysisManager am(builder.subject());
+    LocalStorage xform(loop_k, a_in, /*swizzle*/ false, /*lane_contiguous*/ true);
+    ASSERT_TRUE(xform.can_be_applied(builder, am));
+    EXPECT_TRUE(xform.storage_type().is_nv_shared());
+    xform.apply(builder, am);
+
+    auto buf = xform.local_container();
+    ASSERT_TRUE(builder.subject().exists(buf));
+    // Flat (Linearized) staging buffer: a single [slot*tile] axis, not a nested
+    // [slot][tile] type (its array element is the scalar, not another array).
+    auto* arr = dynamic_cast<const types::Array*>(&builder.subject().type(buf));
+    ASSERT_NE(arr, nullptr);
+    EXPECT_EQ(dynamic_cast<const types::Array*>(&arr->element_type()), nullptr);
+
+    // Body = [leading barrier, coverage For (strided sweep), trailing barrier, k-loop].
+    ASSERT_EQ(map_j.root().size(), 4u);
+    EXPECT_NE(dyn_cast<structured_control_flow::Block*>(&map_j.root().at(0)), nullptr);
+    auto* cov = dyn_cast<structured_control_flow::For*>(&map_j.root().at(1));
+    ASSERT_NE(cov, nullptr);
+    EXPECT_NE(dyn_cast<structured_control_flow::Block*>(&map_j.root().at(2)), nullptr);
+    EXPECT_NE(dyn_cast<structured_control_flow::For*>(&map_j.root().at(3)), nullptr);
+
+    // The staged copy writes the buffer by a single flat index.
+    auto* copy = copy_block_of(cov->root().at(0));
+    ASSERT_NE(copy, nullptr);
+    ASSERT_TRUE(block_uses(*copy, buf));
+    for (auto& edge : copy->dataflow().edges()) {
+        auto* d = dynamic_cast<const data_flow::AccessNode*>(&edge.dst());
+        if (d && d->data() == buf) EXPECT_EQ(edge.subset().size(), 1u);
+    }
 
     // The body reads the shared buffer, not A.
     auto* main_block = dyn_cast<structured_control_flow::Block*>(&loop_k.root().at(0));

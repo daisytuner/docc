@@ -1,4 +1,4 @@
-#include "sdfg/transformations/software_pipelining.h"
+#include "sdfg/tiles/transformations/software_pipelining.h"
 
 #include <gtest/gtest.h>
 
@@ -214,6 +214,67 @@ structured_control_flow::For& build_coop(builder::StructuredSDFGBuilder& builder
     return static_cast<structured_control_flow::For&>(gmap.root().at(0));
 }
 
+// Like build(), but the shared copy-in is nested inside a boundary-guard IfElse
+// (as StreamK's ragged panel produces). A shared write inside a conditional still
+// stages a shared tile, so the staging gate must descend into the IfElse.
+structured_control_flow::For& build_guarded(builder::StructuredSDFGBuilder& builder, int K) {
+    auto& root = builder.subject().root();
+    types::Scalar f(types::PrimitiveType::Float);
+    types::Pointer aptr(f);
+    types::Scalar u64(types::PrimitiveType::UInt64);
+    types::Array buf_inner(f, symbolic::integer(8));
+    types::Array buf_type(types::StorageType::NV_Shared(), 0, "", buf_inner, symbolic::integer(4));
+
+    builder.add_container("A", aptr, true);
+    builder.add_container("buf", buf_type);
+    builder.add_container("C", f, true);
+    builder.add_container("i", u64);
+    builder.add_container("k", u64);
+
+    auto cuda_sched = cuda::ScheduleType_CUDA::create();
+    cuda::ScheduleType_CUDA::dimension(cuda_sched, cuda::CUDADimension::X);
+    cuda::ScheduleType_CUDA::block_size(cuda_sched, symbolic::integer(32));
+    auto i = symbolic::symbol("i");
+    auto& gmap = builder.add_map(
+        root,
+        i,
+        symbolic::Lt(i, symbolic::integer(64)),
+        symbolic::integer(0),
+        symbolic::add(i, symbolic::integer(1)),
+        cuda_sched
+    );
+
+    auto k = symbolic::symbol("k");
+    auto& kloop = builder.add_for(
+        gmap.root(),
+        k,
+        symbolic::Lt(k, symbolic::integer(K)),
+        symbolic::integer(0),
+        symbolic::add(k, symbolic::integer(1))
+    );
+
+    // Boundary-guarded cooperative copy-in: buf[1][2] = A[k] under `if (k < K)`.
+    {
+        auto& if_else = builder.add_if_else(kloop.root());
+        auto& guarded = builder.add_case(if_else, symbolic::Lt(k, symbolic::integer(K)));
+        auto& b = builder.add_block(guarded);
+        auto& a = builder.add_access(b, "A");
+        auto& tk = builder.add_tasklet(b, data_flow::TaskletCode::assign, "_out", {"_in"});
+        auto& bufw = builder.add_access(b, "buf");
+        builder.add_computational_memlet(b, a, tk, "_in", {k}, aptr);
+        builder.add_computational_memlet(b, tk, "_out", bufw, {symbolic::integer(1), symbolic::integer(2)}, buf_type);
+    }
+    {
+        auto& b = builder.add_block(kloop.root());
+        auto& bufr = builder.add_access(b, "buf");
+        auto& tk = builder.add_tasklet(b, data_flow::TaskletCode::assign, "_out", {"_in"});
+        auto& c = builder.add_access(b, "C");
+        builder.add_computational_memlet(b, bufr, tk, "_in", {symbolic::integer(1), symbolic::integer(2)}, buf_type);
+        builder.add_computational_memlet(b, tk, "_out", c, {}, f);
+    }
+    return static_cast<structured_control_flow::For&>(gmap.root().at(0));
+}
+
 } // namespace
 
 TEST(SoftwarePipeliningTest, SingleOperandStagesOnlyFirstBuffer) {
@@ -374,6 +435,26 @@ TEST(SoftwarePipeliningTest, RejectsNonShared) {
     EXPECT_FALSE(sp.can_be_applied(builder, am));
 }
 
+// Regression: the shared-staging gate must descend into IfElse. StreamK's ragged
+// panel wraps the cooperative copy-in in a boundary guard; a copy nested in a
+// conditional still stages a shared tile, so the panel stays pipelineable and
+// apply() prepends the [stages] axis as usual.
+TEST(SoftwarePipeliningTest, GuardedCopyInStagesShared) {
+    builder::StructuredSDFGBuilder builder("sp", FunctionType_CPU);
+    auto& kloop = build_guarded(builder, /*K=*/4);
+    auto& sdfg = builder.subject();
+    analysis::AnalysisManager am(sdfg);
+    transformations::SoftwarePipelining sp(kloop, 2);
+    ASSERT_TRUE(sp.can_be_applied(builder, am));
+    sp.apply(builder, am);
+
+    // buf gained the leading [2] stage axis; inner is the original [4].
+    auto* outer = dynamic_cast<const types::Array*>(&sdfg.type("buf"));
+    ASSERT_NE(outer, nullptr);
+    EXPECT_TRUE(symbolic::eq(outer->num_elements(), symbolic::integer(2)));
+    EXPECT_TRUE(outer->storage_type().is_nv_shared());
+}
+
 TEST(SoftwarePipeliningTest, StagesBufferAndReindexes) {
     builder::StructuredSDFGBuilder builder("sp", FunctionType_CPU);
     auto& kloop = build(builder, /*K=*/4);
@@ -479,5 +560,7 @@ TEST(SoftwarePipeliningTest, StagesBufferAndReindexes) {
     EXPECT_TRUE(has_guarded_copy);
     EXPECT_EQ(loop_async, 1u);
     EXPECT_EQ(loop_commit, 1u);
-    EXPECT_EQ(loop_wait, 1u);
+    // Two waits: the guarded prefetch's wait (keep stages-1 in flight) in the
+    // `then` branch, and the tail drain wait (keep 0) in the `else` branch.
+    EXPECT_EQ(loop_wait, 2u);
 }
