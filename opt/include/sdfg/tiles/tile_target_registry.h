@@ -40,6 +40,15 @@ public:
         return it == targets_.end() ? nullptr : it->second.get();
     }
 
+    /// The implementation selector the target owning @p schedule_value stamps onto
+    /// its tile codegen library nodes, or @ref data_flow::ImplementationType_NONE
+    /// when no target is registered. Lets a transformation pick the right backend
+    /// dispatcher without naming CUDA/ROCm.
+    data_flow::ImplementationType implementation_type(const std::string& schedule_value) const {
+        const TileTarget* target = get(schedule_value);
+        return target ? target->implementation_type() : data_flow::ImplementationType_NONE;
+    }
+
     /// Classify @p sched into cooperation facts via the owning target, or the
     /// neutral fallback when none is registered (`std::nullopt` for a sequential
     /// loop, else device-wide global cooperation without a scratchpad). This is

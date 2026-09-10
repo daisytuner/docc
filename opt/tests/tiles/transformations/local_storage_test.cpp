@@ -22,6 +22,7 @@
 #include "sdfg/targets/cuda/cuda.h"
 #include "sdfg/targets/gpu/gpu_schedule_type.h"
 #include "sdfg/tiles/analysis/tile_analysis.h"
+#include "sdfg/tiles/library_nodes/async_copy_node.h"
 #include "sdfg/tiles/locality.h"
 #include "sdfg/transformations/loop_tiling.h"
 #include "sdfg/types/array.h"

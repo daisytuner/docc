@@ -73,7 +73,6 @@ set(SOURCE_FILES
     src/data_flow/data_flow_node.cpp
     src/data_flow/library_node.cpp
     src/data_flow/library_nodes/atomic_op_node.cpp
-    src/data_flow/library_nodes/async_copy_node.cpp
     src/data_flow/library_nodes/barrier_local_node.cpp
     src/data_flow/library_nodes/call_node.cpp
     src/data_flow/library_nodes/invoke_node.cpp

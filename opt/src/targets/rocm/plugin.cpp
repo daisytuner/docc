@@ -8,6 +8,7 @@
 #include "sdfg/targets/rocm/rocm_offload_map_dispatcher.h"
 #include "sdfg/targets/rocm/rocm_offload_reduce_dispatcher.h"
 #include "sdfg/targets/rocm/rocm_reduce_dispatcher.h"
+#include "sdfg/targets/rocm/tiles/async_copy_node.h"
 #include "sdfg/tiles/tile_target_registry.h"
 
 namespace sdfg::rocm {
@@ -20,7 +21,8 @@ void register_rocm_plugin(plugins::Context& context) {
 
     // The tile algebra's view of ROCm: 64-wide wavefront + level/storage mapping,
     // shared under both the legacy and the offload schedule value.
-    auto rocm_tile_target = std::make_shared<tiles::GPUTileTarget>(ROCM_WARP_SIZE, ScheduleType_ROCM_Offload::value());
+    auto rocm_tile_target = std::make_shared<
+        ::sdfg::tiles::GPUTileTarget>(ROCM_WARP_SIZE, ScheduleType_ROCM_Offload::value(), ImplementationType_ROCM);
     context.tile_target_registry.register_target(ScheduleType_ROCM::value(), rocm_tile_target);
     context.tile_target_registry.register_target(ScheduleType_ROCM_Offload::value(), rocm_tile_target);
 
@@ -233,6 +235,54 @@ void register_rocm_plugin(plugins::Context& context) {
         }
     );
 
+    // Async copy / pipeline primitives (software pipelining)
+    libNodeDispatcherRegistry.instance().register_library_node_dispatcher(
+        ::sdfg::tiles::LibraryNodeType_CpAsyncCopy.value() + "::" + ImplementationType_ROCM.value(),
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<rocm::tiles::CpAsyncCopyNodeDispatcher>(
+                language_extension, function, data_flow_graph, dynamic_cast<const ::sdfg::tiles::CpAsyncCopyNode&>(node)
+            );
+        }
+    );
+    libNodeDispatcherRegistry.instance().register_library_node_dispatcher(
+        ::sdfg::tiles::LibraryNodeType_VectorCopy.value() + "::" + ImplementationType_ROCM.value(),
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<rocm::tiles::VectorCopyNodeDispatcher>(
+                language_extension, function, data_flow_graph, dynamic_cast<const ::sdfg::tiles::VectorCopyNode&>(node)
+            );
+        }
+    );
+    libNodeDispatcherRegistry.instance().register_library_node_dispatcher(
+        ::sdfg::tiles::LibraryNodeType_PipelineCommit.value() + "::" + ImplementationType_ROCM.value(),
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<rocm::tiles::PipelineCommitNodeDispatcher>(
+                language_extension,
+                function,
+                data_flow_graph,
+                dynamic_cast<const ::sdfg::tiles::PipelineCommitNode&>(node)
+            );
+        }
+    );
+    libNodeDispatcherRegistry.instance().register_library_node_dispatcher(
+        ::sdfg::tiles::LibraryNodeType_PipelineWait.value() + "::" + ImplementationType_ROCM.value(),
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<rocm::tiles::PipelineWaitNodeDispatcher>(
+                language_extension, function, data_flow_graph, dynamic_cast<const ::sdfg::tiles::PipelineWaitNode&>(node)
+            );
+        }
+    );
 
     context.scheduler_registry.register_loop_scheduler<
         passes::scheduler::ROCMOffloadScheduler>(passes::scheduler::ROCMOffloadScheduler::target());

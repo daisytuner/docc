@@ -36,18 +36,10 @@ class SoftwarePipelining : public Transformation {
     // synchronous. This keeps occupancy (fewer shared bytes) while still
     // overlapping the costlier operand's global load.
     bool single_operand_;
-    // Widen each pipelined cp.async to a 16-byte (float4) transfer by striding
-    // the cooperative-copy map by 4. Only sound when the copied run is
-    // contiguous and 16-byte aligned; opt-in because clang cannot vectorize the
-    // cp.async intrinsic (its width is whatever we emit).
-    bool vectorize_;
 
 public:
     explicit SoftwarePipelining(
-        structured_control_flow::StructuredLoop& loop,
-        size_t stages = 2,
-        bool single_operand = false,
-        bool vectorize = false
+        structured_control_flow::StructuredLoop& loop, size_t stages = 2, bool single_operand = false
     );
 
     virtual std::string name() const override;

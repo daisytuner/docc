@@ -48,6 +48,7 @@
 #include <sdfg/targets/omp/plugin.h>
 #include <sdfg/targets/rocm/plugin.h>
 #include <sdfg/targets/vectorize/plugin.h>
+#include <sdfg/tiles/plugin.h>
 
 #include <sdfg/passes/statistics.h>
 
@@ -89,6 +90,7 @@ PYBIND11_MODULE(_sdfg, m) {
     sdfg::serializer::register_default_serializers();
     sdfg::passes::register_core_passes(docc_context);
     sdfg::einsum::register_einsum_plugin();
+    sdfg::tiles::register_tiles_plugin(docc_context);
     sdfg::omp::register_omp_plugin();
     sdfg::vectorize::register_vectorize_plugin();
     sdfg::cuda::register_cuda_plugin(docc_context);

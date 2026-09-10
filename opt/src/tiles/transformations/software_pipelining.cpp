@@ -7,7 +7,6 @@
 #include <vector>
 
 #include "sdfg/data_flow/access_node.h"
-#include "sdfg/data_flow/library_nodes/async_copy_node.h"
 #include "sdfg/data_flow/library_nodes/barrier_local_node.h"
 #include "sdfg/data_flow/memlet.h"
 #include "sdfg/data_flow/tasklet.h"
@@ -18,7 +17,10 @@
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
+#include "sdfg/tiles/library_nodes/async_copy_node.h"
 #include "sdfg/tiles/tile.h"
+#include "sdfg/tiles/tile_target_registry.h"
+#include "sdfg/tiles/vectorize/copy_widen.h"
 #include "sdfg/types/array.h"
 #include "sdfg/types/pointer.h"
 #include "sdfg/types/scalar.h"
@@ -169,262 +171,10 @@ std::unique_ptr<types::IType> prepend_stage_dim(const types::IType& buf, size_t 
         types::Array>(buf.storage_type(), buf.alignment(), buf.initializer(), *inner, symbolic::integer(stages));
 }
 
-// The innermost array extent (row stride in elements) of a nested-array type,
-// or 0 if the leaf isn't reached through arrays.
-size_t innermost_array_extent(const types::IType& type) {
-    const types::IType* cur = &type;
-    size_t extent = 0;
-    while (auto* arr = dynamic_cast<const types::Array*>(cur)) {
-        auto* n = dynamic_cast<const SymEngine::Integer*>(arr->num_elements().get());
-        extent = (n != nullptr) ? static_cast<size_t>(n->as_int()) : 0;
-        cur = &arr->element_type();
-    }
-    return extent;
-}
-
-// The nearest GPU-thread-scheduled Map enclosing @p block (the cooperative
-// copy's coverage map), or null.
-structured_control_flow::Map* enclosing_thread_map(structured_control_flow::Block& block) {
-    structured_control_flow::ControlFlowNode* n = block.get_parent();
-    while (n != nullptr) {
-        if (auto* m = dynamic_cast<structured_control_flow::Map*>(n)) {
-            if (tiles::AxisSchedule::classify_level(m->schedule_type()).has_value()) {
-                return m;
-            }
-        }
-        n = n->get_parent();
-    }
-    return nullptr;
-}
-
-// Linear stride of @p e in @p coop over a length-4, 4-aligned run:
-//   e(coop+j) - e(coop) == stride * j  for j in [0,3] when coop % 4 == 0.
-// Returns nullopt when it cannot be proven (any opaque use of coop). Only bare
-// coop and idiv/imod(coop, M) with M a multiple of 4 are contiguity-safe: a
-// 4-aligned run then stays inside one M-block, so imod is unit-stride and idiv
-// is constant across the run.
-std::optional<long long> coop_run_stride(const symbolic::Expression& e, const symbolic::Symbol& coop) {
-    if (!symbolic::uses(e, coop)) {
-        return 0;
-    }
-    if (SymEngine::eq(*e, *coop)) {
-        return 1;
-    }
-    if (SymEngine::is_a<SymEngine::Add>(*e)) {
-        long long sum = 0;
-        for (const auto& t : e->get_args()) {
-            auto st = coop_run_stride(t, coop);
-            if (!st) {
-                return std::nullopt;
-            }
-            sum += *st;
-        }
-        return sum;
-    }
-    if (SymEngine::is_a<SymEngine::Mul>(*e)) {
-        long long coeff = 1;
-        symbolic::Expression var = SymEngine::null;
-        for (const auto& f : e->get_args()) {
-            if (symbolic::uses(f, coop)) {
-                if (!var.is_null()) {
-                    return std::nullopt; // coop in two factors -> nonlinear
-                }
-                var = f;
-            } else if (SymEngine::is_a<SymEngine::Integer>(*f)) {
-                coeff *= SymEngine::rcp_static_cast<const SymEngine::Integer>(f)->as_int();
-            } else {
-                return std::nullopt; // non-integer coefficient
-            }
-        }
-        if (var.is_null()) {
-            return 0;
-        }
-        auto sv = coop_run_stride(var, coop);
-        if (!sv) {
-            return std::nullopt;
-        }
-        return coeff * (*sv);
-    }
-    if (SymEngine::is_a<SymEngine::FunctionSymbol>(*e)) {
-        auto fs = SymEngine::rcp_static_cast<const SymEngine::FunctionSymbol>(e);
-        const auto& args = fs->get_args();
-        const std::string name = fs->get_name();
-        if (args.size() == 2 && (name == "imod" || name == "idiv")) {
-            if (!SymEngine::eq(*args[0], *coop) || !SymEngine::is_a<SymEngine::Integer>(*args[1])) {
-                return std::nullopt;
-            }
-            long long m = SymEngine::rcp_static_cast<const SymEngine::Integer>(args[1])->as_int();
-            if (m % 4 != 0) {
-                return std::nullopt; // run may cross the M-block boundary
-            }
-            return (name == "imod") ? 1 : 0;
-        }
-    }
-    return std::nullopt;
-}
-
-// The flattened run-stride of a memlet subset in @p coop: only the innermost
-// index may vary with coop (outer indices multiply larger extents, so any coop
-// dependence there breaks contiguity). Returns nullopt if unprovable.
-std::optional<long long> subset_run_stride(const data_flow::Subset& subset, const symbolic::Symbol& coop) {
-    if (subset.empty()) {
-        return std::nullopt;
-    }
-    for (size_t i = 0; i + 1 < subset.size(); i++) {
-        if (symbolic::uses(subset[i], coop)) {
-            return std::nullopt;
-        }
-    }
-    return coop_run_stride(subset.back(), coop);
-}
-
-// Rewrite a synchronous copy block (src[..] --assign--> shared_buf[..]) into a
-// cp.async: reference memlets take &shared_buf[..] and &src[..], and a
-// CpAsyncCopyNode streams the element directly. The replacement blocks are
-// inserted before @p block, then @p block is removed. When @p vectorize is set
-// and the copied run is a contiguous, 16-byte-aligned float4, the cooperative
-// map is strided by 4 and a single 16-byte cp.async replaces four scalar ones.
-void convert_copy_block_to_async(
-    builder::StructuredSDFGBuilder& builder, structured_control_flow::Block& block, bool vectorize
-) {
-    auto& df = block.dataflow();
-    data_flow::Tasklet* tk = nullptr;
-    for (auto& node : df.nodes()) {
-        if (auto* t = dynamic_cast<data_flow::Tasklet*>(&node)) {
-            tk = t;
-            break;
-        }
-    }
-    if (tk == nullptr) {
-        return;
-    }
-    data_flow::Memlet* in_m = nullptr;
-    for (auto& m : df.in_edges(*tk)) {
-        in_m = &m;
-        break;
-    }
-    data_flow::Memlet* out_m = nullptr;
-    for (auto& m : df.out_edges(*tk)) {
-        out_m = &m;
-        break;
-    }
-    if (in_m == nullptr || out_m == nullptr) {
-        return;
-    }
-    auto* src_acc = dynamic_cast<data_flow::AccessNode*>(&in_m->src());
-    auto* dst_acc = dynamic_cast<data_flow::AccessNode*>(&out_m->dst());
-    if (src_acc == nullptr || dst_acc == nullptr) {
-        return;
-    }
-    const std::string src_name = src_acc->data();
-    const std::string dst_name = dst_acc->data();
-    const data_flow::Subset src_subset = in_m->subset();
-    const data_flow::Subset dst_subset = out_m->subset();
-    types::Scalar src_leaf(in_m->base_type().primitive_type());
-    types::Scalar dst_leaf(out_m->base_type().primitive_type());
-    types::Pointer src_ptr_t(src_leaf);
-    types::Pointer dst_ptr_t(dst_leaf);
-    const size_t elem_bytes = types::bit_width(out_m->base_type().primitive_type()) / 8;
-
-    // cp.async only moves 4-, 8-, or 16-byte transfers. Coalesce `factor` contiguous
-    // elements per thread into one transfer of `factor * elem_bytes` bytes: both the
-    // shared destination and the global source must be unit-stride in the cooperative
-    // indvar, the shared row `factor`-aligned, and the copy count/init a multiple of
-    // `factor`. Then stride the coop map by `factor`.
-    size_t bytes = elem_bytes;
-    auto* cmap = enclosing_thread_map(block);
-    const size_t row = innermost_array_extent(out_m->base_type());
-    auto try_widen = [&](size_t factor) -> bool {
-        const size_t width = factor * elem_bytes;
-        if (width != 4 && width != 8 && width != 16) {
-            return false;
-        }
-        if (cmap == nullptr || cmap->stride().is_null() || cmap->stride()->as_int() != 1 || row % factor != 0) {
-            return false;
-        }
-        auto coop = cmap->indvar();
-        auto dst_stride = subset_run_stride(dst_subset, coop);
-        auto src_stride = subset_run_stride(src_subset, coop);
-        auto trip = cmap->num_iterations();
-        auto* n = trip.is_null() ? nullptr : dynamic_cast<const SymEngine::Integer*>(trip.get());
-        auto* init_i = dynamic_cast<const SymEngine::Integer*>(cmap->init().get());
-        if (!(dst_stride.has_value() && *dst_stride == 1 && src_stride.has_value() && *src_stride == 1 &&
-              n != nullptr && n->as_int() % static_cast<int>(factor) == 0 && init_i != nullptr &&
-              init_i->as_int() % static_cast<int>(factor) == 0)) {
-            return false;
-        }
-        builder.update_loop(
-            *cmap,
-            coop,
-            cmap->condition(),
-            cmap->init(),
-            symbolic::add(coop, symbolic::integer(static_cast<int>(factor)))
-        );
-        bytes = width;
-        return true;
-    };
-
-    // fp32 keeps its float4 (16-byte) path, gated by `vectorize`. Narrow elements
-    // (fp16/int8) must coalesce to reach a legal >=4-byte width even without
-    // `vectorize`, since a scalar sub-4-byte cp.async is illegal; pick the widest
-    // legal transfer (16B, then 8B, then 4B).
-    if (vectorize && elem_bytes == 4) {
-        try_widen(4);
-    } else if (elem_bytes > 0 && elem_bytes < 4) {
-        const size_t max_factor = (vectorize ? 16u : 4u) / elem_bytes;
-        for (size_t width : {size_t{16}, size_t{8}, size_t{4}}) {
-            const size_t factor = width / elem_bytes;
-            if (width % elem_bytes == 0 && factor > 1 && factor <= max_factor && try_widen(factor)) {
-                break;
-            }
-        }
-    }
-
-    // cp.async has no legal sub-4-byte transfer. If a narrow copy could not be
-    // widened (e.g. non-contiguous), keep the synchronous copy block rather than
-    // emitting an illegal cp.async.
-    if (bytes != 4 && bytes != 8 && bytes != 16) {
-        return;
-    }
-
-    auto* pseq = dynamic_cast<structured_control_flow::Sequence*>(block.get_parent());
-    if (pseq == nullptr) {
-        return;
-    }
-
-    const auto src_ptr_name = builder.find_new_name("__daisy_cp_src");
-    const auto dst_ptr_name = builder.find_new_name("__daisy_cp_dst");
-    builder.add_container(src_ptr_name, src_ptr_t);
-    builder.add_container(dst_ptr_name, dst_ptr_t);
-
-    // Reference block: take addresses of the shared dst slot and the global src.
-    // The reference base_type is the indexed container's own type (so the subset
-    // dimensions match); the result access node holds a pointer-to-element.
-    auto& refb = builder.add_block_before(*pseq, block, block.debug_info());
-    auto& s_acc = builder.add_access(refb, src_name);
-    auto& d_acc = builder.add_access(refb, dst_name);
-    auto& src_ptr_w = builder.add_access(refb, src_ptr_name);
-    auto& dst_ptr_w = builder.add_access(refb, dst_ptr_name);
-    builder.add_reference_memlet(refb, s_acc, src_ptr_w, src_subset, in_m->base_type());
-    builder.add_reference_memlet(refb, d_acc, dst_ptr_w, dst_subset, out_m->base_type());
-
-    // Node block: cp.async from the global src ptr into the shared dst ptr.
-    auto& nodeb = builder.add_block_before(*pseq, block, block.debug_info());
-    auto& src_ptr_r = builder.add_access(nodeb, src_ptr_name);
-    auto& dst_ptr_r = builder.add_access(nodeb, dst_ptr_name);
-    auto& node = builder.add_library_node<data_flow::CpAsyncCopyNode>(nodeb, block.debug_info(), bytes);
-    builder.add_computational_memlet(nodeb, dst_ptr_r, node, "_dst", {}, dst_ptr_t);
-    builder.add_computational_memlet(nodeb, src_ptr_r, node, "_src", {}, src_ptr_t);
-
-    builder.remove_child(*pseq, pseq->index(block));
-}
-
 } // namespace
 
-SoftwarePipelining::SoftwarePipelining(
-    structured_control_flow::StructuredLoop& loop, size_t stages, bool single_operand, bool vectorize
-)
-    : loop_(loop), stages_(stages), single_operand_(single_operand), vectorize_(vectorize) {}
+SoftwarePipelining::SoftwarePipelining(structured_control_flow::StructuredLoop& loop, size_t stages, bool single_operand)
+    : loop_(loop), stages_(stages), single_operand_(single_operand) {}
 
 std::string SoftwarePipelining::name() const { return "SoftwarePipelining"; }
 
@@ -483,6 +233,17 @@ bool SoftwarePipelining::
 void SoftwarePipelining::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     auto& sdfg = builder.subject();
 
+    // The pipeline/copy nodes are stamped with the enclosing GPU tile target's
+    // implementation type (CUDA/ROCm) so codegen picks that backend's dispatcher.
+    data_flow::ImplementationType impl = data_flow::ImplementationType_NONE;
+    for (auto* node : structured_control_flow::ControlFlowNode::parent_chain(loop_)) {
+        auto* map = dynamic_cast<structured_control_flow::Map*>(node);
+        if (map != nullptr && tiles::AxisSchedule::classify_level(map->schedule_type()).has_value()) {
+            impl = tiles::TileTargetRegistry::instance().implementation_type(map->schedule_type().value());
+            break;
+        }
+    }
+
     // Stage slot for panel p: mod((indvar - init) / stride, stages).
     auto panel = symbolic::div(symbolic::sub(loop_.indvar(), loop_.init()), loop_.stride());
     auto stage_idx = symbolic::mod(panel, symbolic::integer(stages_));
@@ -538,7 +299,15 @@ void SoftwarePipelining::apply(builder::StructuredSDFGBuilder& builder, analysis
     // copy to prefetch panel p+(stages-1) into buf[(p+stages-1)%stages], and
     // clone a prologue that fills buf[0..stages-2] with panels 0..stages-2.
     // Correct software prefetch (still synchronous; step 3 makes it cp.async).
-    auto& body = loop_.root();
+    structured_control_flow::Sequence* body_ptr = &loop_.root();
+    while (body_ptr->size() == 1) {
+        auto* inner = dynamic_cast<structured_control_flow::Sequence*>(&body_ptr->at(0));
+        if (inner == nullptr) {
+            break;
+        }
+        body_ptr = inner;
+    }
+    auto& body = *body_ptr;
     auto* parent = dynamic_cast<structured_control_flow::Sequence*>(loop_.get_parent());
     if (parent == nullptr) {
         return;
@@ -568,7 +337,7 @@ void SoftwarePipelining::apply(builder::StructuredSDFGBuilder& builder, analysis
             clone->replace(indvar, panel_k);
         }
         auto& commitb = builder.add_block(prologue, loop_.debug_info());
-        builder.add_library_node<data_flow::PipelineCommitNode>(commitb, loop_.debug_info());
+        builder.add_library_node<tiles::PipelineCommitNode>(commitb, loop_.debug_info(), impl);
     }
 
     // In-loop: shift each copy to panel indvar+(stages-1)*stride and guard it so
@@ -598,18 +367,16 @@ void SoftwarePipelining::apply(builder::StructuredSDFGBuilder& builder, analysis
     }
 
     auto& commitb = builder.add_block(then_branch, loop_.debug_info());
-    builder.add_library_node<data_flow::PipelineCommitNode>(commitb, loop_.debug_info());
+    builder.add_library_node<tiles::PipelineCommitNode>(commitb, loop_.debug_info(), impl);
     auto& waitb = builder.add_block(then_branch, loop_.debug_info());
     auto& wait_node =
-        static_cast<data_flow::PipelineWaitNode&>(builder.add_library_node<
-                                                  data_flow::PipelineWaitNode>(waitb, loop_.debug_info(), stages_ - 1));
+        static_cast<tiles::PipelineWaitNode&>(builder.add_library_node<
+                                              tiles::PipelineWaitNode>(waitb, loop_.debug_info(), impl, stages_ - 1));
 
     auto& drainb = builder.add_block(else_branch, loop_.debug_info());
-    auto& drain_wait_node =
-        static_cast<data_flow::PipelineWaitNode&>(builder.add_library_node<
-                                                  data_flow::PipelineWaitNode>(drainb, loop_.debug_info(), 0));
-
-    analysis_manager.invalidate_all();
+    auto& drain_wait_node = static_cast<
+        tiles::PipelineWaitNode&>(builder.add_library_node<tiles::PipelineWaitNode>(drainb, loop_.debug_info(), impl, 0)
+    );
 
     // ---- Step 3: convert the synchronous copies to cp.async ----------------
     // Every shared-writing assign becomes a CpAsyncCopyNode (address-of src/dst
@@ -623,10 +390,10 @@ void SoftwarePipelining::apply(builder::StructuredSDFGBuilder& builder, analysis
     for_each_block(prologue, collect);
     for_each_block(body, collect);
     for (auto* b : copy_blocks) {
-        convert_copy_block_to_async(builder, *b, vectorize_);
+        // Minimal legal cp.async (narrow types coalesce to 4 bytes); TileVectorizer
+        // widens further for performance.
+        tiles::rewrite_cooperative_copy(builder, *b, /*allow_vectorize=*/false, tiles::CopyTransfer::CpAsync, impl);
     }
-
-    analysis_manager.invalidate_all();
 
     // CUDA counts commit groups, but CDNA waits on the flat vmcnt counter, where
     // one stage expands to (sum of cp.async bytes / 4) individual global->LDS
@@ -638,7 +405,7 @@ void SoftwarePipelining::apply(builder::StructuredSDFGBuilder& builder, analysis
     size_t loads_per_group = 0;
     for_each_block(body, [&](structured_control_flow::Block& b) {
         for (auto& node : b.dataflow().nodes()) {
-            if (auto* cp = dynamic_cast<data_flow::CpAsyncCopyNode*>(&node)) {
+            if (auto* cp = dynamic_cast<tiles::CpAsyncCopyNode*>(&node)) {
                 loads_per_group += cp->bytes() / 4;
             }
         }
@@ -647,6 +414,8 @@ void SoftwarePipelining::apply(builder::StructuredSDFGBuilder& builder, analysis
         wait_node.set_loads_per_group(loads_per_group);
         drain_wait_node.set_loads_per_group(loads_per_group);
     }
+
+    analysis_manager.invalidate_all();
 }
 
 void SoftwarePipelining::to_json(nlohmann::json& j) const {
@@ -654,7 +423,6 @@ void SoftwarePipelining::to_json(nlohmann::json& j) const {
     j["parameters"] = nlohmann::json::object();
     j["parameters"]["stages"] = stages_;
     j["parameters"]["single_operand"] = single_operand_;
-    j["parameters"]["vectorize"] = vectorize_;
 
     serializer::JSONSerializer ser_flat(false);
     j["subgraph"] = nlohmann::json::object();
@@ -676,7 +444,6 @@ SoftwarePipelining SoftwarePipelining::from_json(builder::StructuredSDFGBuilder&
     }
     size_t stages = 2;
     bool single_operand = false;
-    bool vectorize = false;
     if (j.contains("parameters")) {
         if (j["parameters"].contains("stages")) {
             stages = j["parameters"]["stages"].get<size_t>();
@@ -684,11 +451,8 @@ SoftwarePipelining SoftwarePipelining::from_json(builder::StructuredSDFGBuilder&
         if (j["parameters"].contains("single_operand")) {
             single_operand = j["parameters"]["single_operand"].get<bool>();
         }
-        if (j["parameters"].contains("vectorize")) {
-            vectorize = j["parameters"]["vectorize"].get<bool>();
-        }
     }
-    return SoftwarePipelining(*loop, stages, single_operand, vectorize);
+    return SoftwarePipelining(*loop, stages, single_operand);
 }
 
 } // namespace transformations

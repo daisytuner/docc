@@ -22,6 +22,7 @@
 #include "sdfg/structured_sdfg.h"
 #include "sdfg/symbolic/extreme_values.h"
 #include "sdfg/tiles/analysis/tile_analysis.h"
+#include "sdfg/tiles/library_nodes/async_copy_node.h"
 #include "sdfg/tiles/locality.h"
 #include "sdfg/tiles/tile.h"
 #include "sdfg/tiles/tile_target_registry.h"
@@ -284,6 +285,13 @@ bool LocalStorage::has_side_effect(structured_control_flow::StructuredLoop& loop
             // primitive), so it cannot reference the localized container and does
             // not block staging — unlike genuine side effects (malloc/memset/…).
             if (dynamic_cast<data_flow::BarrierLocalNode*>(lib_node)) {
+                continue;
+            }
+            // A cooperative copy (cp.async / vector) moves data through no_capture
+            // pointers precisely described by pointer_access_type, so the per-container
+            // alias analysis already accounts for it; it cannot independently reach the
+            // localized container. Its side_effect flag only keeps DCE from dropping it.
+            if (dynamic_cast<tiles::CpAsyncCopyNode*>(lib_node) || dynamic_cast<tiles::VectorCopyNode*>(lib_node)) {
                 continue;
             }
             if (lib_node->side_effect()) {

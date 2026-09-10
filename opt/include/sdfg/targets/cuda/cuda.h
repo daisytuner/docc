@@ -17,6 +17,11 @@ inline std::string CUDA_DEVICE_PREFIX = "__daisy_cuda_";
 constexpr int CUDA_WARP_SIZE = 32;
 
 /**
+ * @brief Generic CUDA implementation
+ */
+inline data_flow::ImplementationType ImplementationType_CUDA{"CUDA"};
+
+/**
  * @brief CUDA implementation with automatic memory transfers
  * Used for CUBLAS, memset, and other CUDA-accelerated library nodes
  */

@@ -48,7 +48,6 @@ set(TEST_FILES
     data_flow/code_node_test.cpp
     data_flow/data_flow_graph_test.cpp
     data_flow/data_flow_node_test.cpp
-    data_flow/library_nodes/async_copy_node_test.cpp
     data_flow/library_nodes/atomic_node_test.cpp
     data_flow/library_nodes/load_const_node_test.cpp
     data_flow/library_nodes/math/blas/blas_test.cpp

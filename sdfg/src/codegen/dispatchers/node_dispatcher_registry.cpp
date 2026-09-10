@@ -10,7 +10,6 @@
 #include "sdfg/codegen/dispatchers/sequence_dispatcher.h"
 #include "sdfg/codegen/dispatchers/while_dispatcher.h"
 
-#include "sdfg/data_flow/library_nodes/async_copy_node.h"
 #include "sdfg/data_flow/library_nodes/atomic_op_node.h"
 #include "sdfg/data_flow/library_nodes/barrier_local_node.h"
 #include "sdfg/data_flow/library_nodes/call_node.h"
@@ -415,41 +414,6 @@ void register_default_dispatchers() {
            const data_flow::LibraryNode& node) {
             return std::make_unique<data_flow::BarrierLocalNodeDispatcher>(
                 language_extension, function, data_flow_graph, dynamic_cast<const data_flow::BarrierLocalNode&>(node)
-            );
-        }
-    );
-
-    // Async copy / pipeline primitives (software pipelining)
-    LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        data_flow::LibraryNodeType_CpAsyncCopy.value() + "::" + data_flow::ImplementationType_NONE.value(),
-        [](LanguageExtension& language_extension,
-           const Function& function,
-           const data_flow::DataFlowGraph& data_flow_graph,
-           const data_flow::LibraryNode& node) {
-            return std::make_unique<data_flow::CpAsyncCopyNodeDispatcher>(
-                language_extension, function, data_flow_graph, dynamic_cast<const data_flow::CpAsyncCopyNode&>(node)
-            );
-        }
-    );
-    LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        data_flow::LibraryNodeType_PipelineCommit.value() + "::" + data_flow::ImplementationType_NONE.value(),
-        [](LanguageExtension& language_extension,
-           const Function& function,
-           const data_flow::DataFlowGraph& data_flow_graph,
-           const data_flow::LibraryNode& node) {
-            return std::make_unique<data_flow::PipelineCommitNodeDispatcher>(
-                language_extension, function, data_flow_graph, dynamic_cast<const data_flow::PipelineCommitNode&>(node)
-            );
-        }
-    );
-    LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        data_flow::LibraryNodeType_PipelineWait.value() + "::" + data_flow::ImplementationType_NONE.value(),
-        [](LanguageExtension& language_extension,
-           const Function& function,
-           const data_flow::DataFlowGraph& data_flow_graph,
-           const data_flow::LibraryNode& node) {
-            return std::make_unique<data_flow::PipelineWaitNodeDispatcher>(
-                language_extension, function, data_flow_graph, dynamic_cast<const data_flow::PipelineWaitNode&>(node)
             );
         }
     );

@@ -41,9 +41,12 @@ set(SOURCE_FILES
     src/tiles/buffer_layout.cpp
     src/tiles/tiled_copy.cpp
     src/tiles/tiled_copy_emit.cpp
+    src/tiles/library_nodes/async_copy_node.cpp
     src/tiles/transformations/local_storage.cpp
     src/tiles/transformations/software_pipelining.cpp
     src/tiles/transformations/tile_fusion.cpp
+    src/tiles/transformations/tile_vectorizer.cpp
+    src/tiles/vectorize/copy_widen.cpp
     src/passes/code_motion/extended_block_hoisting.cpp
     src/passes/code_motion/extended_block_sorting.cpp
     src/passes/collapse_pass.cpp
@@ -88,6 +91,7 @@ set(SOURCE_FILES
     src/targets/cuda/blas/dot.cpp
     src/targets/cuda/blas/gemm.cpp
     src/targets/cuda/blas/utils.cpp
+    src/targets/cuda/tiles/async_copy_node.cpp
     src/targets/cuda/cuda_data_offloading_node.cpp
     src/targets/cuda/cuda_map_dispatcher.cpp
     src/targets/cuda/cuda_offload_map_dispatcher.cpp
@@ -114,6 +118,7 @@ set(SOURCE_FILES
     src/targets/rocm/blas/gemm_handtuned.cpp
     src/targets/rocm/blas/gemm.cpp
     src/targets/rocm/blas/utils.cpp
+    src/targets/rocm/tiles/async_copy_node.cpp
     src/targets/rocm/math/tensor/batched_matmul_expander.cpp
     src/targets/rocm/math/tensor/concat_expander.cpp
     src/targets/rocm/plugin.cpp

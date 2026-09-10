@@ -17,6 +17,11 @@ inline std::string ROCM_DEVICE_PREFIX = "__daisy_hip_";
 constexpr int ROCM_WARP_SIZE = 64;
 
 /**
+ * @brief Generic ROCM implementation
+ */
+inline data_flow::ImplementationType ImplementationType_ROCM{"ROCM"};
+
+/**
  * @brief ROCM implementation with automatic memory transfers
  * Used for ROCm BLAS, memset, and other ROCm-accelerated library nodes
  */

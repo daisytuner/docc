@@ -1,4 +1,5 @@
 #include "sdfg/tiles/transformations/software_pipelining.h"
+#include "sdfg/tiles/transformations/tile_vectorizer.h"
 
 #include <gtest/gtest.h>
 
@@ -9,13 +10,13 @@
 
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
-#include "sdfg/data_flow/library_nodes/async_copy_node.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/if_else.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/targets/cuda/cuda.h"
+#include "sdfg/tiles/library_nodes/async_copy_node.h"
 #include "sdfg/types/array.h"
 
 using namespace sdfg;
@@ -149,7 +150,8 @@ structured_control_flow::For& build_two(builder::StructuredSDFGBuilder& builder,
 // A panel loop whose body has a cooperative-copy Map (X_BLOCK over c in [0,COOP))
 // writing buf[c] from A[src_coeff*c], then a compute reading buf. Returns the
 // panel loop. src_coeff>1 makes the source non-contiguous in c.
-structured_control_flow::For& build_coop(builder::StructuredSDFGBuilder& builder, int K, int COOP, int src_coeff = 1) {
+structured_control_flow::For&
+build_coop(builder::StructuredSDFGBuilder& builder, int K, int COOP, int src_coeff = 1, bool wrap = false) {
     auto& root = builder.subject().root();
     types::Scalar f(types::PrimitiveType::Float);
     types::Pointer aptr(f);
@@ -187,8 +189,12 @@ structured_control_flow::For& build_coop(builder::StructuredSDFGBuilder& builder
         symbolic::add(k, symbolic::integer(1))
     );
     auto c = symbolic::symbol("c");
+    // A wrapper Sequence around the copy+compute reproduces the real-codegen shape
+    // where the panel body is a single nested Sequence (both operands + compute in
+    // one scope); the pipeline must still peel only the copy, not the compute.
+    structured_control_flow::Sequence& panel_body = wrap ? builder.add_sequence(kloop.root()) : kloop.root();
     auto& coop = builder.add_map(
-        kloop.root(),
+        panel_body,
         c,
         symbolic::Lt(c, symbolic::integer(COOP)),
         symbolic::integer(0),
@@ -204,7 +210,7 @@ structured_control_flow::For& build_coop(builder::StructuredSDFGBuilder& builder
         builder.add_computational_memlet(b, tk, "_out", bufw, {c}, buf_type);
     }
     {
-        auto& b = builder.add_block(kloop.root());
+        auto& b = builder.add_block(panel_body);
         auto& bufr = builder.add_access(b, "buf");
         auto& tk = builder.add_tasklet(b, data_flow::TaskletCode::assign, "_out", {"_in"});
         auto& cc = builder.add_access(b, "C");
@@ -301,7 +307,7 @@ TEST(SoftwarePipeliningTest, SingleOperandStagesOnlyFirstBuffer) {
         [&](structured_control_flow::ControlFlowNode& n) {
             if (auto* b = dynamic_cast<structured_control_flow::Block*>(&n)) {
                 for (auto& node : b->dataflow().nodes()) {
-                    if (dynamic_cast<data_flow::CpAsyncCopyNode*>(&node) != nullptr) {
+                    if (dynamic_cast<tiles::CpAsyncCopyNode*>(&node) != nullptr) {
                         async++;
                     }
                 }
@@ -327,16 +333,23 @@ TEST(SoftwarePipeliningTest, VectorizeStridesCoopMapAndWidensCpAsync) {
     auto& kloop = build_coop(builder, /*K=*/4, /*COOP=*/8);
     auto& sdfg = builder.subject();
     analysis::AnalysisManager am(sdfg);
-    transformations::SoftwarePipelining sp(kloop, 2, /*single_operand=*/false, /*vectorize=*/true);
+    transformations::SoftwarePipelining sp(kloop, 2, /*single_operand=*/false);
     ASSERT_TRUE(sp.can_be_applied(builder, am));
     sp.apply(builder, am);
+    // Widening now belongs to TileVectorizer, applied over the enclosing offload map
+    // (so both the prologue and in-loop cp.async are reached).
+    auto* omap = dynamic_cast<structured_control_flow::StructuredLoop*>(kloop.get_parent()->get_parent());
+    ASSERT_NE(omap, nullptr);
+    transformations::TileVectorizer tv(*omap);
+    ASSERT_TRUE(tv.can_be_applied(builder, am));
+    tv.apply(builder, am);
 
     size_t async = 0, bytes16 = 0, strided4 = 0;
     std::function<void(structured_control_flow::ControlFlowNode&)> scan =
         [&](structured_control_flow::ControlFlowNode& n) {
             if (auto* b = dynamic_cast<structured_control_flow::Block*>(&n)) {
                 for (auto& node : b->dataflow().nodes()) {
-                    if (auto* cp = dynamic_cast<data_flow::CpAsyncCopyNode*>(&node)) {
+                    if (auto* cp = dynamic_cast<tiles::CpAsyncCopyNode*>(&node)) {
                         async++;
                         if (cp->bytes() == 16) {
                             bytes16++;
@@ -372,9 +385,14 @@ TEST(SoftwarePipeliningTest, VectorizeRejectsNonContiguousSource) {
     auto& kloop = build_coop(builder, /*K=*/4, /*COOP=*/8, /*src_coeff=*/2); // A[2c] -> not contiguous
     auto& sdfg = builder.subject();
     analysis::AnalysisManager am(sdfg);
-    transformations::SoftwarePipelining sp(kloop, 2, /*single_operand=*/false, /*vectorize=*/true);
+    transformations::SoftwarePipelining sp(kloop, 2, /*single_operand=*/false);
     ASSERT_TRUE(sp.can_be_applied(builder, am));
     sp.apply(builder, am);
+    auto* omap = dynamic_cast<structured_control_flow::StructuredLoop*>(kloop.get_parent()->get_parent());
+    ASSERT_NE(omap, nullptr);
+    transformations::TileVectorizer tv(*omap);
+    tv.can_be_applied(builder, am);
+    tv.apply(builder, am);
 
     // The non-contiguous source must keep scalar (4-byte) cp.async and unit-stride
     // coop maps — the widening guard must not fire.
@@ -383,7 +401,7 @@ TEST(SoftwarePipeliningTest, VectorizeRejectsNonContiguousSource) {
         [&](structured_control_flow::ControlFlowNode& n) {
             if (auto* b = dynamic_cast<structured_control_flow::Block*>(&n)) {
                 for (auto& node : b->dataflow().nodes()) {
-                    if (auto* cp = dynamic_cast<data_flow::CpAsyncCopyNode*>(&node)) {
+                    if (auto* cp = dynamic_cast<tiles::CpAsyncCopyNode*>(&node)) {
                         (cp->bytes() == 16 ? bytes16 : bytes4)++;
                     }
                 }
@@ -417,6 +435,40 @@ TEST(SoftwarePipeliningTest, CanBeApplied) {
     analysis::AnalysisManager am(builder.subject());
     transformations::SoftwarePipelining sp(kloop, 2);
     EXPECT_TRUE(sp.can_be_applied(builder, am));
+}
+
+// When the panel body is a single wrapper Sequence holding both the copy and the
+// compute, the pipeline must peel/shift only the copy — not the compute. A
+// regression clones the compute into the prologue (so it reads the just-prefetched
+// panel: no overlap). Assert exactly one block writes the compute output C.
+TEST(SoftwarePipeliningTest, WrapperSequenceDoesNotShiftCompute) {
+    builder::StructuredSDFGBuilder builder("sp", FunctionType_CPU);
+    auto& kloop = build_coop(builder, /*K=*/4, /*COOP=*/8, /*src_coeff=*/1, /*wrap=*/true);
+    auto& sdfg = builder.subject();
+    analysis::AnalysisManager am(sdfg);
+    transformations::SoftwarePipelining sp(kloop, 2, /*single_operand=*/false);
+    ASSERT_TRUE(sp.can_be_applied(builder, am));
+    sp.apply(builder, am);
+
+    size_t writes_C = 0;
+    std::function<void(structured_control_flow::ControlFlowNode&)> scan =
+        [&](structured_control_flow::ControlFlowNode& n) {
+            if (auto* b = dynamic_cast<structured_control_flow::Block*>(&n)) {
+                for (auto* acc : b->dataflow().data_nodes()) {
+                    if (acc->data() == "C" && b->dataflow().in_degree(*acc) > 0) writes_C++;
+                }
+            } else if (auto* ie = dynamic_cast<structured_control_flow::IfElse*>(&n)) {
+                for (size_t i = 0; i < ie->size(); i++) scan(ie->at(i).first);
+            } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&n)) {
+                for (size_t i = 0; i < seq->size(); i++) scan(seq->at(i));
+            } else if (auto* map = dynamic_cast<structured_control_flow::Map*>(&n)) {
+                scan(map->root());
+            } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&n)) {
+                scan(loop->root());
+            }
+        };
+    scan(static_cast<structured_control_flow::Sequence&>(*kloop.get_parent()));
+    EXPECT_EQ(writes_C, 1u) << "the compute must stay in the loop, not be cloned into the prologue";
 }
 
 TEST(SoftwarePipeliningTest, RejectsTooFewPanels) {
@@ -489,10 +541,10 @@ TEST(SoftwarePipeliningTest, StagesBufferAndReindexes) {
             continue;
         }
         for (auto& node : b->dataflow().nodes()) {
-            if (dynamic_cast<data_flow::CpAsyncCopyNode*>(&node) != nullptr) {
+            if (dynamic_cast<tiles::CpAsyncCopyNode*>(&node) != nullptr) {
                 prologue_async++;
             }
-            if (dynamic_cast<data_flow::PipelineCommitNode*>(&node) != nullptr) {
+            if (dynamic_cast<tiles::PipelineCommitNode*>(&node) != nullptr) {
                 prologue_commit++;
             }
         }
@@ -518,13 +570,13 @@ TEST(SoftwarePipeliningTest, StagesBufferAndReindexes) {
         [&](structured_control_flow::ControlFlowNode& n) {
             if (auto* b = dynamic_cast<structured_control_flow::Block*>(&n)) {
                 for (auto& node : b->dataflow().nodes()) {
-                    if (dynamic_cast<data_flow::CpAsyncCopyNode*>(&node) != nullptr) {
+                    if (dynamic_cast<tiles::CpAsyncCopyNode*>(&node) != nullptr) {
                         loop_async++;
                     }
-                    if (dynamic_cast<data_flow::PipelineCommitNode*>(&node) != nullptr) {
+                    if (dynamic_cast<tiles::PipelineCommitNode*>(&node) != nullptr) {
                         loop_commit++;
                     }
-                    if (dynamic_cast<data_flow::PipelineWaitNode*>(&node) != nullptr) {
+                    if (dynamic_cast<tiles::PipelineWaitNode*>(&node) != nullptr) {
                         loop_wait++;
                     }
                 }

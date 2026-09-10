@@ -13,6 +13,7 @@
 #include <sdfg/targets/memory/plugin.h>
 #include <sdfg/targets/omp/plugin.h>
 #include <sdfg/targets/vectorize/plugin.h>
+#include <sdfg/tiles/plugin.h>
 #ifdef DOCC_BUILD_TARGET_TENSTORRENT
 #include <docc/target/tenstorrent/plugin.h>
 #endif
@@ -39,6 +40,7 @@ void register_sdfg_dispatchers() {
         sdfg::codegen::register_default_dispatchers();
         sdfg::serializer::register_default_serializers();
         sdfg::einsum::register_einsum_plugin();
+        sdfg::tiles::register_tiles_plugin();
         sdfg::omp::register_omp_plugin();
         sdfg::vectorize::register_vectorize_plugin();
         sdfg::cuda::register_cuda_plugin();

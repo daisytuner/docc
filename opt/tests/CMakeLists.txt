@@ -17,8 +17,10 @@ set(TEST_FILES
     tiles/tiled_copy_test.cpp
     tiles/buffer_layout_test.cpp
     tiles/tiled_copy_emit_test.cpp
+    tiles/library_nodes/async_copy_node_test.cpp
     tiles/transformations/tile_fusion_test.cpp
     tiles/transformations/software_pipelining_test.cpp
+    tiles/transformations/tile_vectorizer_test.cpp
     tiles/transformations/local_storage_test.cpp
     cuda/blas/cublas_test.cpp
     cuda/cuda_library_nodes_test.cpp

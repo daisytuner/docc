@@ -10,6 +10,7 @@
 #include <sdfg/tiles/transformations/local_storage.h>
 #include <sdfg/tiles/transformations/software_pipelining.h>
 #include <sdfg/tiles/transformations/tile_fusion.h>
+#include <sdfg/tiles/transformations/tile_vectorizer.h>
 #include <sdfg/transformations/loop_distribute.h>
 #include <sdfg/transformations/loop_interchange.h>
 #include <sdfg/transformations/loop_peeling.h>
@@ -380,11 +381,10 @@ void register_transformations(py::module& m) {
     // SoftwarePipelining transformation (cp.async double-buffer a panel loop)
     py::class_<SoftwarePipelining, Transformation>(m, "SoftwarePipelining")
         .def(
-            py::init<StructuredLoop&, size_t, bool, bool>(),
+            py::init<StructuredLoop&, size_t, bool>(),
             py::arg("loop"),
             py::arg("stages") = 2,
             py::arg("single_operand") = false,
-            py::arg("vectorize") = false,
             "Software-pipeline a sequential panel loop that cooperatively stages a\n"
             "shared-memory tile each iteration, overlapping the next panel's global\n"
             "load (via cp.async) with the current panel's compute.\n\n"
@@ -394,14 +394,32 @@ void register_transformations(py::module& m) {
             "    single_operand: Pipeline only the first (name-ordered) shared\n"
             "        operand and keep the rest single-buffered + synchronous. Uses\n"
             "        less shared memory, preserving occupancy when double-buffering\n"
-            "        every operand would drop a block per SM.\n"
-            "    vectorize: Emit 16-byte (float4) cp.async by striding the\n"
-            "        cooperative copy by 4. Only sound for contiguous, 16-byte\n"
-            "        aligned tiles; clang cannot widen the cp.async intrinsic."
+            "        every operand would drop a block per SM."
         )
         .def("__repr__", [](const SoftwarePipelining& t) {
             std::ostringstream oss;
             oss << "<SoftwarePipelining name='" << t.name() << "'>";
+            return oss.str();
+        });
+
+    // TileVectorizer transformation (widen cooperative copies, sync or async)
+    py::class_<TileVectorizer, Transformation>(m, "TileVectorizer")
+        .def(
+            py::init<StructuredLoop&>(),
+            py::arg("loop"),
+            "Widen every cooperative shared-staging copy in a loop's subtree to the\n"
+            "widest legal vector transfer, independent of how the copy was produced.\n\n"
+            "Run after LocalStorage (scalar copies) and, optionally, after\n"
+            "SoftwarePipelining (minimal-width cp.async): scalar copies lower to\n"
+            "synchronous VectorCopy (float4/float2), existing cp.async nodes widen in\n"
+            "place, and pipelined vmcnt fences are recomputed. Always safe (a no-op\n"
+            "when nothing widens); composes with any copy representation.\n\n"
+            "Args:\n"
+            "    loop: A loop enclosing the cooperative copies to widen."
+        )
+        .def("__repr__", [](const TileVectorizer& t) {
+            std::ostringstream oss;
+            oss << "<TileVectorizer name='" << t.name() << "'>";
             return oss.str();
         });
 

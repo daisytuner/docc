@@ -24,6 +24,7 @@ namespace tiles {
 class GPUTileTarget : public TileTarget {
     unsigned lane_width_;
     std::string offload_value_;
+    data_flow::ImplementationType implementation_type_;
 
     static unsigned spatial_axis_of(gpu::TargetLevel tl) {
         switch (tl) {
@@ -39,8 +40,9 @@ class GPUTileTarget : public TileTarget {
     }
 
 public:
-    GPUTileTarget(unsigned lane_width, std::string offload_value)
-        : lane_width_(lane_width), offload_value_(std::move(offload_value)) {}
+    GPUTileTarget(unsigned lane_width, std::string offload_value, data_flow::ImplementationType implementation_type)
+        : lane_width_(lane_width), offload_value_(std::move(offload_value)),
+          implementation_type_(std::move(implementation_type)) {}
 
     std::optional<AxisSchedule> classify(const structured_control_flow::ScheduleType& sched) const override {
         if (sched.value() == offload_value_) {
@@ -95,6 +97,8 @@ public:
     }
 
     unsigned lane_width() const override { return lane_width_; }
+
+    data_flow::ImplementationType implementation_type() const override { return implementation_type_; }
 };
 
 } // namespace tiles

@@ -35,6 +35,9 @@ public:
     bool supports_cooperative_staging(const structured_control_flow::ScheduleType&) const override { return false; }
 
     unsigned lane_width() const override { return 1; }
+
+    /// A host thread pool has no cp.async / vector-copy / pipeline library nodes.
+    data_flow::ImplementationType implementation_type() const override { return data_flow::ImplementationType_NONE; }
 };
 
 inline void register_omp_plugin(plugins::Context& context) {
