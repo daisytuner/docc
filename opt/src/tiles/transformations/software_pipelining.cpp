@@ -24,6 +24,7 @@
 #include "sdfg/types/array.h"
 #include "sdfg/types/pointer.h"
 #include "sdfg/types/scalar.h"
+#include "sdfg/visitor/for_each.h"
 
 #include <symengine/add.h>
 #include <symengine/functions.h>
@@ -133,27 +134,6 @@ bool subtree_writes_any(structured_control_flow::ControlFlowNode& node, const st
     return false;
 }
 
-// Visit every Block reachable under @p node.
-void for_each_block(
-    structured_control_flow::ControlFlowNode& node, const std::function<void(structured_control_flow::Block&)>& fn
-) {
-    if (auto* block = dynamic_cast<structured_control_flow::Block*>(&node)) {
-        fn(*block);
-    } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&node)) {
-        for (size_t i = 0; i < seq->size(); i++) {
-            for_each_block(seq->at(i), fn);
-        }
-    } else if (auto* map = dynamic_cast<structured_control_flow::Map*>(&node)) {
-        for_each_block(map->root(), fn);
-    } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&node)) {
-        for_each_block(loop->root(), fn);
-    } else if (auto* if_else = dynamic_cast<structured_control_flow::IfElse*>(&node)) {
-        for (size_t i = 0; i < if_else->size(); i++) {
-            for_each_block(if_else->at(i).first, fn);
-        }
-    }
-}
-
 // Prepend a leading `[stages]` axis to a nested-array buffer type, keeping the
 // NV_Shared storage on the (new) outermost axis only.
 std::unique_ptr<types::IType> prepend_stage_dim(const types::IType& buf, size_t stages) {
@@ -250,7 +230,7 @@ void SoftwarePipelining::apply(builder::StructuredSDFGBuilder& builder, analysis
 
     // Collect the shared buffers the loop cooperatively stages.
     std::set<std::string> buffers;
-    for_each_block(loop_.root(), [&](structured_control_flow::Block& b) {
+    visitor::for_each_block(loop_.root(), [&](structured_control_flow::Block& b) {
         for (auto* acc : b.dataflow().data_nodes()) {
             if (is_shared_container(sdfg, acc->data()) && b.dataflow().in_degree(*acc) > 0) {
                 buffers.insert(acc->data());
@@ -269,7 +249,7 @@ void SoftwarePipelining::apply(builder::StructuredSDFGBuilder& builder, analysis
     }
     for (const auto& name : pipelined) {
         auto staged = prepend_stage_dim(sdfg.type(name), stages_);
-        for_each_block(loop_.root(), [&](structured_control_flow::Block& b) {
+        visitor::for_each_block(loop_.root(), [&](structured_control_flow::Block& b) {
             auto& dfg = b.dataflow();
             for (auto* acc : dfg.data_nodes()) {
                 if (acc->data() != name) {
@@ -387,8 +367,8 @@ void SoftwarePipelining::apply(builder::StructuredSDFGBuilder& builder, analysis
             copy_blocks.push_back(&b);
         }
     };
-    for_each_block(prologue, collect);
-    for_each_block(body, collect);
+    visitor::for_each_block(prologue, collect);
+    visitor::for_each_block(body, collect);
     for (auto* b : copy_blocks) {
         // Minimal legal cp.async (narrow types coalesce to 4 bytes); TileVectorizer
         // widens further for performance.
@@ -403,7 +383,7 @@ void SoftwarePipelining::apply(builder::StructuredSDFGBuilder& builder, analysis
     // size (a coverage loop that runs >1x per lane only makes this an under-count,
     // which over-waits — safe, never early).
     size_t loads_per_group = 0;
-    for_each_block(body, [&](structured_control_flow::Block& b) {
+    visitor::for_each_block(body, [&](structured_control_flow::Block& b) {
         for (auto& node : b.dataflow().nodes()) {
             if (auto* cp = dynamic_cast<tiles::CpAsyncCopyNode*>(&node)) {
                 loads_per_group += cp->bytes() / 4;

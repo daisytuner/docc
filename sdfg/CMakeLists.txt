@@ -218,6 +218,7 @@ set(SOURCE_FILES
     src/types/structure.cpp
     src/types/tensor.cpp
     src/types/utils.cpp
+    src/visitor/for_each.cpp
     src/visitor/immutable_structured_sdfg_visitor.cpp
     src/visitor/structured_sdfg_visitor.cpp
     src/visitor/structured_sdfg_walker.cpp

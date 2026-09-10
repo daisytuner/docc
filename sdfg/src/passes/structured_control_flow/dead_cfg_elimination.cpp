@@ -13,6 +13,7 @@
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/structured_control_flow/while.h"
 #include "sdfg/symbolic/symbolic.h"
+#include "sdfg/visitor/for_each.h"
 
 namespace sdfg {
 namespace passes {
@@ -56,57 +57,39 @@ void DeadCFGElimination::
     update_loop_indvar_accesses(builder::StructuredSDFGBuilder& builder, structured_control_flow::Map* loop) {
     symbolic::Symbol indvar = loop->indvar();
     const auto& indvar_type = builder.subject().type(indvar->get_name());
-    std::list<structured_control_flow::ControlFlowNode*> queue = {&loop->root()};
-    while (!queue.empty()) {
-        auto* current = queue.front();
-        queue.pop_front();
+    visitor::for_each_block(*loop, [&builder, &indvar, &indvar_type](structured_control_flow::Block& block) -> void {
+        auto access_nodes = block.dataflow().data_nodes();
+        for (auto* access_node : access_nodes) {
+            // Skip constant nodes
+            if (is_a(access_node->type_id(), ElementType::ConstantNode)) {
+                continue;
+            }
+            // Skip access nodes on containers other than the indvar
+            if (access_node->data() != indvar->get_name()) {
+                continue;
+            }
 
-        if (auto* block = dyn_cast<structured_control_flow::Block*>(current)) {
-            auto access_nodes = block->dataflow().data_nodes();
-            for (auto* access_node : access_nodes) {
-                // Skip constant nodes
-                if (is_a(access_node->type_id(), ElementType::ConstantNode)) {
-                    continue;
-                }
-                // Skip access nodes on containers other than the indvar
-                if (access_node->data() != indvar->get_name()) {
-                    continue;
-                }
-
-                auto& new_constant_node = builder.add_constant(*block, "0", indvar_type, access_node->debug_info());
-                std::unordered_set<data_flow::Memlet*> old_memlets;
-                for (auto& memlet : block->dataflow().out_edges(*access_node)) {
-                    builder.add_memlet(
-                        *block,
-                        new_constant_node,
-                        memlet.src_conn(),
-                        memlet.dst(),
-                        memlet.dst_conn(),
-                        memlet.subset(),
-                        memlet.base_type(),
-                        memlet.debug_info()
-                    );
-                    old_memlets.insert(&memlet);
-                }
-                for (auto* old_memlet : old_memlets) {
-                    builder.remove_memlet(*block, *old_memlet);
-                }
-                builder.remove_node(*block, *access_node);
+            auto& new_constant_node = builder.add_constant(block, "0", indvar_type, access_node->debug_info());
+            std::unordered_set<data_flow::Memlet*> old_memlets;
+            for (auto& memlet : block.dataflow().out_edges(*access_node)) {
+                builder.add_memlet(
+                    block,
+                    new_constant_node,
+                    memlet.src_conn(),
+                    memlet.dst(),
+                    memlet.dst_conn(),
+                    memlet.subset(),
+                    memlet.base_type(),
+                    memlet.debug_info()
+                );
+                old_memlets.insert(&memlet);
             }
-        } else if (auto* if_else = dyn_cast<structured_control_flow::IfElse*>(current)) {
-            for (long long i = 0; i < if_else->size(); i++) {
-                queue.push_back(&if_else->at(i).first);
+            for (auto* old_memlet : old_memlets) {
+                builder.remove_memlet(block, *old_memlet);
             }
-        } else if (auto* sequence = dyn_cast<structured_control_flow::Sequence*>(current)) {
-            for (long long i = 0; i < sequence->size(); i++) {
-                queue.push_back(&sequence->at(i));
-            }
-        } else if (auto* structured_loop = dyn_cast<structured_control_flow::StructuredLoop*>(current)) {
-            queue.push_back(&structured_loop->root());
-        } else if (auto* while_loop = dyn_cast<structured_control_flow::While*>(current)) {
-            queue.push_back(&while_loop->root());
+            builder.remove_node(block, *access_node);
         }
-    }
+    });
 }
 
 DeadCFGElimination::DeadCFGElimination()
