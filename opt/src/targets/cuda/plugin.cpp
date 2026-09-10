@@ -15,17 +15,17 @@
 namespace sdfg::cuda {
 
 void register_cuda_plugin(plugins::Context& context) {
-    auto& libNodeDispatcherRegistry = context.library_node_dispatcher_registry;
-    auto& mapDispatcherRegistry = context.map_dispatcher_registry;
-    auto& reduceDispatcherRegistry = context.reduce_dispatcher_registry;
-    auto& libNodeSerRegistry = context.library_node_serializer_registry;
+    auto& libNodeDispatcherRegistry = context.get_library_node_dispatcher_registry();
+    auto& mapDispatcherRegistry = context.get_map_dispatcher_registry();
+    auto& reduceDispatcherRegistry = context.get_reduce_dispatcher_registry();
+    auto& libNodeSerRegistry = context.get_library_node_serializer_registry();
 
     // The tile algebra's view of CUDA: warp width + level/storage mapping, shared
     // under both the legacy and the offload schedule value.
     auto cuda_tile_target = std::make_shared<
         ::sdfg::tiles::GPUTileTarget>(CUDA_WARP_SIZE, ScheduleType_CUDA_Offload::value(), ImplementationType_CUDA);
-    context.tile_target_registry.register_target(ScheduleType_CUDA::value(), cuda_tile_target);
-    context.tile_target_registry.register_target(ScheduleType_CUDA_Offload::value(), cuda_tile_target);
+    context.get_tile_target_registry().register_target(ScheduleType_CUDA::value(), cuda_tile_target);
+    context.get_tile_target_registry().register_target(ScheduleType_CUDA_Offload::value(), cuda_tile_target);
 
     mapDispatcherRegistry.register_map_dispatcher(
         ScheduleType_CUDA::value(),
@@ -257,7 +257,7 @@ void register_cuda_plugin(plugins::Context& context) {
     );
 
     // Async copy / pipeline primitives (software pipelining)
-    libNodeDispatcherRegistry.instance().register_library_node_dispatcher(
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
         ::sdfg::tiles::LibraryNodeType_CpAsyncCopy.value() + "::" + ImplementationType_CUDA.value(),
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
@@ -268,7 +268,7 @@ void register_cuda_plugin(plugins::Context& context) {
             );
         }
     );
-    libNodeDispatcherRegistry.instance().register_library_node_dispatcher(
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
         ::sdfg::tiles::LibraryNodeType_VectorCopy.value() + "::" + ImplementationType_CUDA.value(),
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
@@ -279,7 +279,7 @@ void register_cuda_plugin(plugins::Context& context) {
             );
         }
     );
-    libNodeDispatcherRegistry.instance().register_library_node_dispatcher(
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
         ::sdfg::tiles::LibraryNodeType_PipelineCommit.value() + "::" + ImplementationType_CUDA.value(),
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
@@ -293,7 +293,7 @@ void register_cuda_plugin(plugins::Context& context) {
             );
         }
     );
-    libNodeDispatcherRegistry.instance().register_library_node_dispatcher(
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
         ::sdfg::tiles::LibraryNodeType_PipelineWait.value() + "::" + ImplementationType_CUDA.value(),
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
@@ -305,8 +305,9 @@ void register_cuda_plugin(plugins::Context& context) {
         }
     );
 
-    context.scheduler_registry.register_loop_scheduler<
-        passes::scheduler::CUDAOffloadScheduler>(passes::scheduler::CUDAOffloadScheduler::target());
+    context.get_scheduler_registry()
+        .register_loop_scheduler<
+            passes::scheduler::CUDAOffloadScheduler>(passes::scheduler::CUDAOffloadScheduler::target());
 }
 
 } // namespace sdfg::cuda

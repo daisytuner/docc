@@ -10,6 +10,7 @@
 #include <sdfg/helpers/helpers.h>
 
 #include "sdfg/targets/rocm/rocm.h"
+#include "sdfg/targets/rocm/rocm_mma.h"
 
 namespace sdfg {
 namespace rocm {
@@ -109,14 +110,24 @@ void ROCMOffloadMapDispatcher::dispatch_kernel_preamble(
     codegen::PrettyPrinter& library_stream,
     analysis::AnalysisManager& analysis_manager,
     const std::string& kernel_name,
-    std::vector<std::string>& arguments_declaration
+    std::vector<std::string>& arguments_declaration,
+    codegen::CodeSnippetFactory& library_snippet_factory
 ) {
     // fp16/bf16 atomics (e.g. split-K accumulate) use the __half / __hip_bfloat16
     // struct overloads of atomicAdd, declared in these HIP headers.
     library_stream << "#include <hip/hip_fp16.h>" << std::endl;
     library_stream << "#include <hip/hip_bf16.h>" << std::endl;
-    gpu::GPUOffloadMapDispatcher::
-        dispatch_kernel_preamble(library_stream, analysis_manager, kernel_name, arguments_declaration);
+    if (library_snippet_factory.is_available(gpu::rocm::RocmWmmaLibDependency::instance())) {
+        std::vector<std::string> includes; // dont mark as used, as that would add it to the host files as well
+        gpu::rocm::RocmWmmaLibDependency::instance()->enumerate_includes(includes);
+        for (auto& basic_string : includes) {
+            library_stream << "#include <" << basic_string << ">" << std::endl;
+        }
+    }
+
+    gpu::GPUOffloadMapDispatcher::dispatch_kernel_preamble(
+        library_stream, analysis_manager, kernel_name, arguments_declaration, library_snippet_factory
+    );
 }
 
 } // namespace rocm

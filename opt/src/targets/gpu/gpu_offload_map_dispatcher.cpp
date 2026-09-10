@@ -204,7 +204,9 @@ void GPUOffloadMapDispatcher::dispatch_node(
         library_stream << "#include " << library_snippet_factory.header_path().filename() << std::endl
                        << std::endl; // we expect the compiler-call to do this instead
 
-        this->dispatch_kernel_preamble(library_stream, analysis_manager, kernel_name, arguments_declaration);
+        this->dispatch_kernel_preamble(
+            library_stream, analysis_manager, kernel_name, arguments_declaration, library_snippet_factory
+        );
 
         // Every device-pointer argument is a full cudaMalloc/hipMalloc allocation,
         // which is guaranteed >=256-byte aligned. Asserting 16-byte alignment lets
@@ -432,7 +434,8 @@ void GPUOffloadMapDispatcher::dispatch_kernel_preamble(
     codegen::PrettyPrinter& library_stream,
     analysis::AnalysisManager& analysis_manager,
     const std::string& kernel_name,
-    std::vector<std::string>& arguments_declaration
+    std::vector<std::string>& arguments_declaration,
+    codegen::CodeSnippetFactory& library_snippet_factory
 ) {
     // Kernel Header
     dispatch_header(library_stream, kernel_name, arguments_declaration);

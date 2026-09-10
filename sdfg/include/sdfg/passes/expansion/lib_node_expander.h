@@ -10,8 +10,8 @@ public:
     enum class InputUse { Skip = 0, Scalar, IndirectRead, IndirectWrite, IndirectReadWrite };
 
     struct ExpandOutcome {
-        bool expanded;
-        explicit ExpandOutcome(bool expanded) : expanded(expanded) {}
+        bool applied;
+        explicit ExpandOutcome(bool applied) : applied(applied) {}
     };
     virtual ~LibNodeExpander() = default;
 
@@ -128,6 +128,11 @@ public:
         // this would be a quicker way, when the expansion only consists of pure dataflow, where base expansion
         // infrastructure needs to migrate edges from the old node to the new nodes. Describing the new targets of edges
         // can be taken from `ElementWiseDataflowTensorNode.expand_operation_dataflow()`
+
+        /**
+         * Only properties of the node under expansion had to be changed, no change to the dataflow were necessary
+         */
+        virtual ExpandOutcome successfully_modified_node_only() = 0;
 
         virtual ExpandOutcome unable() = 0;
 

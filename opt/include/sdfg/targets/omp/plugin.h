@@ -41,7 +41,7 @@ public:
 };
 
 inline void register_omp_plugin(plugins::Context& context) {
-    context.map_dispatcher_registry.register_map_dispatcher(
+    context.get_map_dispatcher_registry().register_map_dispatcher(
         ScheduleType_OMP::value(),
         [](codegen::LanguageExtension& language_extension,
            StructuredSDFG& sdfg,
@@ -55,10 +55,10 @@ inline void register_omp_plugin(plugins::Context& context) {
         }
     );
 
-    context.scheduler_registry
+    context.get_scheduler_registry()
         .register_loop_scheduler<passes::scheduler::OMPScheduler>(passes::scheduler::OMPScheduler::target());
 
-    context.tile_target_registry.register_target(ScheduleType_OMP::value(), std::make_shared<OMPTileTarget>());
+    context.get_tile_target_registry().register_target(ScheduleType_OMP::value(), std::make_shared<OMPTileTarget>());
 }
 
 inline void register_omp_plugin() {

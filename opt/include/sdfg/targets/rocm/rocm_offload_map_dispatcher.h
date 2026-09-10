@@ -52,7 +52,8 @@ public:
         codegen::PrettyPrinter& library_stream,
         analysis::AnalysisManager& analysis_manager,
         const std::string& kernel_name,
-        std::vector<std::string>& arguments_declaration
+        std::vector<std::string>& arguments_declaration,
+        codegen::CodeSnippetFactory& library_snippet_factory
     ) override;
 
     void dispatch_kernel_launch_error_check(

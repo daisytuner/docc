@@ -56,7 +56,8 @@ protected:
         codegen::PrettyPrinter& library_stream,
         analysis::AnalysisManager& analysis_manager,
         const std::string& kernel_name,
-        std::vector<std::string>& arguments_declaration
+        std::vector<std::string>& arguments_declaration,
+        codegen::CodeSnippetFactory& library_snippet_factory
     );
 
     virtual codegen::LanguageExtension& create_kernel_language_extension() = 0;

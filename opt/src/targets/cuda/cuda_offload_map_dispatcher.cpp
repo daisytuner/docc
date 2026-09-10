@@ -108,7 +108,8 @@ void CUDAOffloadMapDispatcher::dispatch_kernel_preamble(
     codegen::PrettyPrinter& library_stream,
     analysis::AnalysisManager& analysis_manager,
     const std::string& kernel_name,
-    std::vector<std::string>& arguments_declaration
+    std::vector<std::string>& arguments_declaration,
+    codegen::CodeSnippetFactory& library_snippet_factory
 ) {
     // fp16/bf16 atomics (e.g. split-K accumulate) use the __half / __nv_bfloat16
     // struct overloads of atomicAdd, declared in these headers.
@@ -116,8 +117,9 @@ void CUDAOffloadMapDispatcher::dispatch_kernel_preamble(
     library_stream << "#include <cuda_bf16.h>" << std::endl;
     // cp.async pipeline primitives for software-pipelined cooperative copies.
     library_stream << "#include <cuda_pipeline.h>" << std::endl;
-    gpu::GPUOffloadMapDispatcher::
-        dispatch_kernel_preamble(library_stream, analysis_manager, kernel_name, arguments_declaration);
+    gpu::GPUOffloadMapDispatcher::dispatch_kernel_preamble(
+        library_stream, analysis_manager, kernel_name, arguments_declaration, library_snippet_factory
+    );
 }
 
 } // namespace cuda

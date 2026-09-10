@@ -5,6 +5,7 @@
 #include "sdfg/passes/scheduler/rocm_offload_scheduler.h"
 #include "sdfg/targets/gpu/gpu_tile_target.h"
 #include "sdfg/targets/rocm/rocm.h"
+#include "sdfg/targets/rocm/rocm_mma.h"
 #include "sdfg/targets/rocm/rocm_offload_map_dispatcher.h"
 #include "sdfg/targets/rocm/rocm_offload_reduce_dispatcher.h"
 #include "sdfg/targets/rocm/rocm_reduce_dispatcher.h"
@@ -14,17 +15,17 @@
 namespace sdfg::rocm {
 
 void register_rocm_plugin(plugins::Context& context) {
-    auto& libNodeDispatcherRegistry = context.library_node_dispatcher_registry;
-    auto& mapDispatcherRegistry = context.map_dispatcher_registry;
-    auto& reduceDispatcherRegistry = context.reduce_dispatcher_registry;
-    auto& libNodeSerRegistry = context.library_node_serializer_registry;
+    auto& libNodeDispatcherRegistry = context.get_library_node_dispatcher_registry();
+    auto& mapDispatcherRegistry = context.get_map_dispatcher_registry();
+    auto& reduceDispatcherRegistry = context.get_reduce_dispatcher_registry();
+    auto& libNodeSerRegistry = context.get_library_node_serializer_registry();
 
     // The tile algebra's view of ROCm: 64-wide wavefront + level/storage mapping,
     // shared under both the legacy and the offload schedule value.
     auto rocm_tile_target = std::make_shared<
         ::sdfg::tiles::GPUTileTarget>(ROCM_WARP_SIZE, ScheduleType_ROCM_Offload::value(), ImplementationType_ROCM);
-    context.tile_target_registry.register_target(ScheduleType_ROCM::value(), rocm_tile_target);
-    context.tile_target_registry.register_target(ScheduleType_ROCM_Offload::value(), rocm_tile_target);
+    context.get_tile_target_registry().register_target(ScheduleType_ROCM::value(), rocm_tile_target);
+    context.get_tile_target_registry().register_target(ScheduleType_ROCM_Offload::value(), rocm_tile_target);
 
     mapDispatcherRegistry.register_map_dispatcher(
         ScheduleType_ROCM::value(),
@@ -235,8 +236,19 @@ void register_rocm_plugin(plugins::Context& context) {
         }
     );
 
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
+        math::tensor::LibraryNodeType_MatMul.value() + "::" + gpu::rocm::ImplementationType_ROCM_MMA.value(),
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<gpu::rocm::RocmMmaMatmulDispatcher>(
+                language_extension, function, data_flow_graph, dynamic_cast<const math::tensor::MatMulNode&>(node)
+            );
+        }
+    );
     // Async copy / pipeline primitives (software pipelining)
-    libNodeDispatcherRegistry.instance().register_library_node_dispatcher(
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
         ::sdfg::tiles::LibraryNodeType_CpAsyncCopy.value() + "::" + ImplementationType_ROCM.value(),
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
@@ -247,7 +259,7 @@ void register_rocm_plugin(plugins::Context& context) {
             );
         }
     );
-    libNodeDispatcherRegistry.instance().register_library_node_dispatcher(
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
         ::sdfg::tiles::LibraryNodeType_VectorCopy.value() + "::" + ImplementationType_ROCM.value(),
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
@@ -258,7 +270,7 @@ void register_rocm_plugin(plugins::Context& context) {
             );
         }
     );
-    libNodeDispatcherRegistry.instance().register_library_node_dispatcher(
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
         ::sdfg::tiles::LibraryNodeType_PipelineCommit.value() + "::" + ImplementationType_ROCM.value(),
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
@@ -272,7 +284,7 @@ void register_rocm_plugin(plugins::Context& context) {
             );
         }
     );
-    libNodeDispatcherRegistry.instance().register_library_node_dispatcher(
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
         ::sdfg::tiles::LibraryNodeType_PipelineWait.value() + "::" + ImplementationType_ROCM.value(),
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
@@ -284,8 +296,10 @@ void register_rocm_plugin(plugins::Context& context) {
         }
     );
 
-    context.scheduler_registry.register_loop_scheduler<
-        passes::scheduler::ROCMOffloadScheduler>(passes::scheduler::ROCMOffloadScheduler::target());
+
+    context.get_scheduler_registry()
+        .register_loop_scheduler<
+            passes::scheduler::ROCMOffloadScheduler>(passes::scheduler::ROCMOffloadScheduler::target());
 }
 
 } // namespace sdfg::rocm

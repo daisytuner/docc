@@ -17,10 +17,9 @@ void cuda_error_checking(
     }
     stream << "if (" << status_variable << " != cudaSuccess) {" << std::endl;
     stream.setIndent(stream.indent() + 4);
-    stream << language_extension.external_prefix()
-           << "fprintf(stderr, \"CUDA error: %s File: %s, Line: %d\\n\", cudaGetErrorString(" << status_variable
+    stream << "fprintf(stderr, \"CUDA error: %s File: %s, Line: %d\\n\", cudaGetErrorString(" << status_variable
            << "), __FILE__, __LINE__);" << std::endl;
-    stream << language_extension.external_prefix() << "exit(EXIT_FAILURE);" << std::endl;
+    stream << "exit(EXIT_FAILURE);" << std::endl;
     stream.setIndent(stream.indent() - 4);
     stream << "}" << std::endl;
 }
