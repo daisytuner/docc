@@ -69,6 +69,13 @@ public:
     );
 
     /**
+     * Called as part of validate. By default checks that all primitive types match (TODO do not do this for all
+     * TensorOps, too restrictive)
+     * @param graph
+     */
+    virtual void verify_data_types(const data_flow::DataFlowGraph& graph) const;
+
+    /**
      * @brief Validate tensor node constraints
      *
      * Validates that:

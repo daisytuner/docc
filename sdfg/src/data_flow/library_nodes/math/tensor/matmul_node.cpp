@@ -140,6 +140,41 @@ void MatMulNode::validate(const Function& function) const {
     }
 }
 
+void MatMulNode::verify_data_types(const data_flow::DataFlowGraph& graph) const {
+    if (fixed_quantization_ == QUANTIZATION_MATCH_INPUTS) {
+        TensorNode::verify_data_types(graph);
+        return;
+    }
+
+    auto result_quant = fixed_quantization_;
+    auto input_quant = fixed_quantization_;
+
+    auto* res_edge = graph.in_edge_for_connector(*this, inputs_.at(Y_INPUT_IDX));
+    auto res_prim_type = res_edge->base_type().primitive_type();
+    if (res_prim_type != result_quant && res_prim_type != types::PrimitiveType::Void) {
+        throw InvalidSDFGException(
+            "MatMulNode: Output memlet type mismatch. Expected " +
+            std::string(types::primitive_type_to_string(result_quant)) + ", got " +
+            std::string(types::primitive_type_to_string(res_edge->base_type().primitive_type()))
+        );
+    }
+
+    std::vector<const data_flow::Memlet*> input_edges = {
+        graph.in_edge_for_connector(*this, inputs_.at(A_INPUT_IDX)),
+        graph.in_edge_for_connector(*this, inputs_.at(B_INPUT_IDX))
+    };
+    for (auto& input_edge : input_edges) {
+        auto in_prim_type = input_edge->base_type().primitive_type();
+        if (in_prim_type != input_quant && in_prim_type != types::PrimitiveType::Void) {
+            throw InvalidSDFGException(
+                "MatMulNode: Input memlet type mismatch. Expected " +
+                std::string(types::primitive_type_to_string(input_quant)) + ", got " +
+                std::string(types::primitive_type_to_string(input_edge->base_type().primitive_type()))
+            );
+        }
+    }
+}
+
 symbolic::SymbolSet MatMulNode::symbols() const {
     symbolic::SymbolSet syms;
     layout_a_.collect_symbols(syms);
@@ -180,7 +215,7 @@ std::optional<types::PrimitiveType> MatMulNode::uniform_quantization(const data_
 ) const {
     if (fixed_quantization_ != QUANTIZATION_MATCH_INPUTS) {
         auto inferred = this->primitive_type(data_flow_graph);
-        if (inferred == fixed_quantization_) {
+        if (inferred == fixed_quantization_ || inferred == types::PrimitiveType::Void) {
             return fixed_quantization_;
         } else {
             return std::nullopt;

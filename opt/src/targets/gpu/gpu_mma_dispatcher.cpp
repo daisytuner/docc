@@ -57,11 +57,11 @@ void GpuMmaMatmulDispatcher::dispatch_code_with_edges(
 
     auto tiling = get_mma_tiling({result_layout.get_dim(0), result_layout.get_dim(1), k_dim});
 
-    auto macro_m = tiling.macro_blocks_m * tiling.wave_tile_blocks_m * tiling.mma_block_m;
-    auto macro_n = tiling.macro_blocks_n * tiling.wave_tile_blocks_n * tiling.mma_block_n;
-    auto macro_k = tiling.mma_block_k;
+    auto wave_tile_m = tiling.wave_tile_blocks_m * tiling.mma_block_m;
+    auto wave_tile_n = tiling.wave_tile_blocks_n * tiling.mma_block_n;
+    auto wave_tile_k = tiling.mma_block_k;
 
-    std::array<int, 3> macro_dims = {macro_m, macro_n, macro_k};
+    std::array<int, 3> wave_tile_dims = {wave_tile_m, wave_tile_n, wave_tile_k};
 
     auto& layout_org_b = node.layout_b();
     auto layout_org_b_col_major = is_col_major(layout_org_b);
@@ -82,7 +82,7 @@ void GpuMmaMatmulDispatcher::dispatch_code_with_edges(
         out,
         "fragA",
         FragmentType::A,
-        macro_dims,
+        wave_tile_dims,
         layout_org_a_col_major ? TensorLayout::LAYOUT_COL_MAJOR : TensorLayout::LAYOUT_ROW_MAJOR,
         uniform_type
     );
@@ -90,12 +90,12 @@ void GpuMmaMatmulDispatcher::dispatch_code_with_edges(
         out,
         "fragB",
         FragmentType::B,
-        macro_dims,
+        wave_tile_dims,
         layout_org_b_col_major ? TensorLayout::LAYOUT_COL_MAJOR : TensorLayout::LAYOUT_ROW_MAJOR,
         uniform_type
     );
 
-    emit_block_frag_declaration(out, "fragAcc", FragmentType::C, macro_dims, TensorLayout::LAYOUT_OTHER, uniform_type);
+    emit_block_frag_declaration(out, "fragAcc", FragmentType::C, wave_tile_dims, TensorLayout::LAYOUT_OTHER, uniform_type);
 
     emit_frag_zero_init(out, "fragAcc", uniform_type);
 
@@ -134,7 +134,7 @@ void GpuMmaMatmulDispatcher::dispatch_code_with_edges(
     out.stream.changeIndent(-4);
     out.stream << "}" << std::endl;
 
-    emit_block_frag_declaration(out, "fragC", FragmentType::C, macro_dims, TensorLayout::LAYOUT_OTHER, uniform_type);
+    emit_block_frag_declaration(out, "fragC", FragmentType::C, wave_tile_dims, TensorLayout::LAYOUT_OTHER, uniform_type);
     emit_load_macro(
         out,
         "fragC",

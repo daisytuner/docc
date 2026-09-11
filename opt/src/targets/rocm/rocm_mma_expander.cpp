@@ -1,3 +1,5 @@
+#include "sdfg/targets/gpu/gpu_offload_schedule_type.h"
+#include "sdfg/targets/rocm/rocm.h"
 #include "sdfg/targets/rocm/rocm_mma.h"
 
 namespace sdfg::gpu::rocm {
@@ -25,7 +27,7 @@ bool RocmMmaExpander::matches_possible_mma_pattern(const math::tensor::MatMulNod
     auto layout_b = dims_b.is_2d_col_or_row_major();
     if (layout_a == math::tensor::TensorLayout::LAYOUT_OTHER || layout_b == math::tensor::TensorLayout::LAYOUT_OTHER ||
         node.layout_y().is_2d_col_or_row_major() == math::tensor::TensorLayout::LAYOUT_OTHER) {
-        // only support row-major or col-major layouts
+        // only support row-major or col-major layout
         return false;
     }
 
@@ -44,14 +46,21 @@ bool RocmMmaExpander::matches_possible_mma_pattern(const math::tensor::MatMulNod
     return mma_arch->valid_block_counts(mma_arch->mma_block_m, m_blocks, n_blocks, k_blocks);
 }
 
-passes::LibNodeExpander::ExpandOutcome RocmMmaExpander::handle_expand(
-    LibNodeExpander::ExpandContext& context, structured_control_flow::Block& block, math::tensor::MatMulNode& node
-) const {
-    // should only ever arrive here, if we already checked node preconditions
+GpuMmaTiling RocmMmaExpander::get_mma_tiling(const symbolic::MultiExpression& res_shape) const {
+    auto* mma_arch = arch_.mma_support();
+    if (!mma_arch) {
+        throw std::runtime_error("No MMA architecture available for this GPU target.");
+    }
 
+    return RocmMmaMatmulDispatcher::get_mma_tiling(mma_arch, res_shape);
+}
+
+ScheduleType RocmMmaExpander::get_schedule_type(gpu::TargetLevel dim, const symbolic::Integer& size) const {
+    return gpu::ScheduleType_GPU_Offload::create<sdfg::rocm::ScheduleType_ROCM_Offload>(dim, size);
+}
+
+void RocmMmaExpander::set_implementation_type_mma(math::tensor::MatMulNode& node, const GpuMmaTiling& mma_tiling) const {
     node.implementation_type() = ImplementationType_ROCM_MMA;
-
-    return context.successfully_modified_node_only();
 }
 
 
