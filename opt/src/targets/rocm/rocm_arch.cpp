@@ -29,6 +29,8 @@ bool RocmMmaSupport::valid_block_counts(uint16_t block_base, int m_blocks, int n
             return true;
         } else if (m_blocks <= 2 && n_blocks <= 2) {
             return true;
+        } else if (m_blocks == 4 && n_blocks == 4) {
+            return true;
         } else if (m_blocks == 8 && n_blocks == 4) { // this is limited by shared memory size, but this is the
                                                      // perf-recommend form for RDNA3
             return true;

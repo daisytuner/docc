@@ -151,6 +151,12 @@ public:
 
     const TensorLayout& layout_y() const;
 
+    TensorLayout& layout_a() { return layout_a_; }
+
+    TensorLayout& layout_b() { return layout_b_; }
+
+    TensorLayout& layout_y() { return layout_y_; }
+
     static TensorLayout get_linear_result_layout(const TensorLayout& layout_a, const TensorLayout& layout_b);
 
     /**
@@ -160,6 +166,8 @@ public:
     symbolic::Expression k() const;
 
     void validate(const Function& function) const override;
+
+    void verify_data_types(const data_flow::DataFlowGraph& graph) const override;
 
     /**
      * @brief Expand matmul into nested maps

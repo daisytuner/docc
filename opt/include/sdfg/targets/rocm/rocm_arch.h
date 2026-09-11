@@ -7,8 +7,8 @@ namespace sdfg::gpu::rocm {
 struct RocmMmaSupport : public GpuMmaSupport {
     const bool f32_support;
 
-    RocmMmaSupport(uint16_t base_size, bool f32_support)
-        : GpuMmaSupport(base_size, base_size, base_size), f32_support(f32_support) {}
+    RocmMmaSupport(uint16_t base_size, bool f32_support, uint16_t threads)
+        : GpuMmaSupport(base_size, base_size, base_size, threads), f32_support(f32_support) {}
 
 public:
     bool valid_block_counts(uint16_t block_base, int m_blocks, int n_blocks, int k_blocks) const override;
@@ -21,7 +21,8 @@ class RocmArch : public GpuArch {
 
 public:
     RocmArch(const std::string& name, int per_cu_threads, bool mma_base_support, bool mma_f32_support)
-        : GpuArch(name), per_cu_threads_(per_cu_threads), mma_support_(mma_base_support ? 16 : 0, mma_f32_support) {}
+        : GpuArch(name), per_cu_threads_(per_cu_threads),
+          mma_support_(mma_base_support ? 16 : 0, mma_f32_support, per_cu_threads) {}
 
     int per_cu_threads() const override { return per_cu_threads_; }
 

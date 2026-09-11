@@ -12,14 +12,14 @@ inline data_flow::ImplementationType ImplementationType_ROCM_MMA("ROCM_MMA");
 class RocmMmaExpander : public GpuMmaExpander {
     const RocmArch& arch_;
 
+protected:
+    GpuMmaTiling get_mma_tiling(const symbolic::MultiExpression& res_shape) const override;
+    bool matches_possible_mma_pattern(const math::tensor::MatMulNode& node) const override;
+    ScheduleType get_schedule_type(gpu::TargetLevel dim, const symbolic::Integer& size) const override;
+    void set_implementation_type_mma(math::tensor::MatMulNode& node, const GpuMmaTiling& mma_tiling) const override;
+
 public:
     RocmMmaExpander(const RocmArch& arch) : GpuMmaExpander(), arch_(arch) {}
-
-    bool matches_possible_mma_pattern(const math::tensor::MatMulNode& node) const override;
-
-    LibNodeExpander::ExpandOutcome handle_expand(
-        LibNodeExpander::ExpandContext& context, structured_control_flow::Block& block, math::tensor::MatMulNode& node
-    ) const override;
 };
 
 class RocmMmaMatmulDispatcher : public GpuMmaMatmulDispatcher {
@@ -35,6 +35,8 @@ public:
     )
         : GpuMmaMatmulDispatcher(language_extension, function, data_flow_graph, node) {}
 
+    static GpuMmaTiling get_mma_tiling(const GpuMmaSupport* arch, const symbolic::MultiExpression& res_shape);
+
 protected:
     void emit_block_frag_declaration(
         codegen::CodegenOutput& out,
@@ -46,7 +48,7 @@ protected:
         std::optional<std::pair<int, int>> coop_dims = std::nullopt
     ) const override;
 
-    MmaTiling get_mma_tiling(const symbolic::MultiExpression& res_shape) const override;
+    GpuMmaTiling get_mma_tiling(const symbolic::MultiExpression& res_shape) const override;
 
     void emit_load_macro(
         codegen::CodegenOutput& out,
