@@ -18,6 +18,7 @@
 #include "py_dominance_analysis.h"
 #include "py_flop_analysis.h"
 #include "py_loop_analysis.h"
+#include "py_tile_analysis.h"
 #include "py_type_analysis.h"
 #include "py_users.h"
 
@@ -41,6 +42,7 @@ private:
     std::optional<PyDominanceAnalysis> dominance_analysis_;
     std::optional<PyFlopAnalysis> flop_analysis_;
     std::optional<PyLoopAnalysis> loop_analysis_;
+    std::optional<PyTileAnalysis> tile_analysis_;
     std::optional<PyTypeAnalysis> type_analysis_;
     std::optional<PyUsers> users_;
 
@@ -61,6 +63,7 @@ public:
         dominance_analysis_.reset();
         flop_analysis_.reset();
         loop_analysis_.reset();
+        tile_analysis_.reset();
         type_analysis_.reset();
         users_.reset();
 
@@ -107,6 +110,13 @@ public:
             loop_analysis_.emplace(*manager_);
         }
         return *loop_analysis_;
+    }
+
+    PyTileAnalysis& tile_analysis() {
+        if (!tile_analysis_) {
+            tile_analysis_.emplace(*manager_);
+        }
+        return *tile_analysis_;
     }
 
     PyTypeAnalysis& type_analysis() {
@@ -168,6 +178,12 @@ inline void register_analysis(py::module& m) {
             &PyAnalysisManager::loop_analysis,
             py::return_value_policy::reference_internal,
             "Get the LoopAnalysis"
+        )
+        .def(
+            "tile_analysis",
+            &PyAnalysisManager::tile_analysis,
+            py::return_value_policy::reference_internal,
+            "Get the schedule-aware TileAnalysis"
         )
         .def(
             "type_analysis",
@@ -321,6 +337,16 @@ inline void register_analysis(py::module& m) {
             "Get all paths from the given loop to leaf loops in the loop tree"
         )
         .def("__repr__", [](const PyLoopAnalysis&) { return "<LoopAnalysis>"; });
+
+    py::class_<PyTileAnalysis>(m, "TileAnalysis")
+        .def(
+            "tile",
+            &PyTileAnalysis::tile,
+            py::arg("loop"),
+            py::arg("container"),
+            "The tile of `container` at `loop` (a loop node from LoopAnalysis), or None."
+        )
+        .def("__repr__", [](const PyTileAnalysis&) { return "<TileAnalysis>"; });
 
     py::class_<PyTypeAnalysis>(m, "TypeAnalysis").def("__repr__", [](const PyTypeAnalysis&) {
         return "<TypeAnalysis>";
