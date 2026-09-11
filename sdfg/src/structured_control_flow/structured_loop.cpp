@@ -38,13 +38,14 @@ void StructuredLoop::validate(const Function& function) const {
     }
     auto& indvar_type = function.type(indvar->get_name());
     if (indvar_type.type_id() == types::TypeID::Scalar) {
-        if (types::is_unsigned(indvar_type.primitive_type())) {
-            throw InvalidSDFGException(
-                "StructuredLoop: Expressions must be signed: '" + indvar->get_name() + "' is " +
-                types::primitive_type_to_string(indvar_type.primitive_type()) + " on #" +
-                std::to_string(this->element_id())
-            );
-        }
+        // if (types::is_unsigned(indvar_type.primitive_type())) {
+        //     throw InvalidSDFGException(
+        //         "StructuredLoop: Expressions must be signed: '" + indvar->get_name() + "' is " +
+        //         types::primitive_type_to_string(indvar_type.primitive_type()) + " on #" +
+        //         std::to_string(this->element_id())
+        //     );
+        // }
+        
     } else if (indvar_type.type_id() != types::TypeID::Pointer && indvar_type.type_id() != types::TypeID::Reference) {
         throw InvalidSDFGException(
             "StructuredLoop: Expressions must be signed Scalars or Ptr: '" + indvar->get_name() + "' is " +
