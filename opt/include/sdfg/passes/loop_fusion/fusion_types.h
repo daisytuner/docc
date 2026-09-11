@@ -138,6 +138,7 @@ public:
 struct ComplexFusionResult {
     PatternHandler::MatchResult pattern_result;
     bool fused = false;
+    int64_t copied_redundant_writes = 0;
 };
 
 } // namespace sdfg::passes::loop_fusion

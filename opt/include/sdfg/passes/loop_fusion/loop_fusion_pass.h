@@ -70,6 +70,7 @@ public:
         std::unordered_map<analysis::ElementId, std::unique_ptr<loop_fusion::FusionLoopCandidate>> fuse_candidates;
         uint32_t fused_by_domain_count = 0;
         uint32_t fused_by_access_count = 0;
+        int64_t copied_redundant_writes = 0;
 
         State(
             builder::StructuredSDFGBuilder& builder,

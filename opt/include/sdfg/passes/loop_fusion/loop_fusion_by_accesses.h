@@ -53,6 +53,9 @@ protected:
         structured_control_flow::Sequence* hoist_body_ = nullptr;
         // The loops being fused match domains exactly, so we can remove the original loop, if we do
         bool domains_match = false;
+
+        // Number of redundant writes copied into the target loop (that could technically by avoided)
+        int64_t copied_redundant_writes = 0;
     };
 
     virtual ~LoopFusionByAccessWorker() = default;
@@ -89,6 +92,7 @@ protected:
         std::unordered_set<RegId> fusion_regs;
         std::unordered_set<RegId> second_outputs;
         bool conflicts;
+        int64_t copied_redundant_writes = 0;
     };
 
     FusionRegs find_fusion_regs(const FusionLoopCandidate& first, const FusionLoopCandidate& second);
