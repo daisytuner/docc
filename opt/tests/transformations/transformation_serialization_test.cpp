@@ -207,6 +207,14 @@ TEST(TransformationSerializationTest, OffloadingAndGPUTransformationsShape) {
     ValidateSerialization(jcp, 1);
     auto cond_prop2 = transformations::GPUConditionPropagation::from_json(f.builder, jcp);
     ASSERT_EQ(cond_prop2.name(), cond_prop.name());
+
+    // GPUConditionPropagationScope
+    transformations::GPUConditionPropagationScope cond_prop_scope(*f.outer_map);
+    nlohmann::json jcps;
+    cond_prop_scope.to_json(jcps);
+    ValidateSerialization(jcps, 1);
+    auto cond_prop_scope2 = transformations::GPUConditionPropagationScope::from_json(f.builder, jcps);
+    ASSERT_EQ(cond_prop_scope2.name(), cond_prop_scope.name());
 }
 
 TEST(TransformationSerializationTest, OtherScheduleTransformationsShape) {
