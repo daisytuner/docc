@@ -156,6 +156,8 @@ dispatch_transformation(const std::string& transformation_name, const nlohmann::
         }
     } else if (transformation_name == "GPUConditionPropagation") {
         return detail::invoke_for<transformations::GPUConditionPropagation>(std::forward<Visitor>(visitor));
+    } else if (transformation_name == "GPUConditionPropagationScope") {
+        return detail::invoke_for<transformations::GPUConditionPropagationScope>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "GPULoopReordering") {
         return detail::invoke_for<transformations::GPULoopReordering>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "EinsumLift") {

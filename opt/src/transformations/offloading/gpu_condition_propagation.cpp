@@ -1,7 +1,9 @@
 #include "sdfg/transformations/offloading/gpu_condition_propagation.h"
+#include <set>
 #include <symengine/integer.h>
 #include <vector>
 #include "sdfg/analysis/assumptions_analysis.h"
+#include "sdfg/analysis/loop_analysis.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/data_flow/library_nodes/barrier_local_node.h"
 #include "sdfg/element.h"
@@ -193,6 +195,92 @@ GPUConditionPropagation GPUConditionPropagation::
     auto map = dyn_cast<structured_control_flow::Map*>(element);
 
     return GPUConditionPropagation(*map);
+}
+
+// Element ids of GPU-scheduled Maps in the subtree rooted at `root` (root included), collected up
+// front because applying GPUConditionPropagation invalidates the analysis.
+static std::vector<size_t>
+gpu_map_ids(structured_control_flow::StructuredLoop& root, analysis::AnalysisManager& analysis_manager) {
+    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
+    std::vector<size_t> ids;
+    std::set<size_t> seen;
+    auto consider = [&](structured_control_flow::ControlFlowNode* node) {
+        auto* map = dyn_cast<structured_control_flow::Map*>(node);
+        if (map != nullptr && gpu::is_gpu_schedule(map->schedule_type()) && seen.insert(map->element_id()).second) {
+            ids.push_back(map->element_id());
+        }
+    };
+    consider(&root);
+    for (auto& path : loop_analysis.loop_tree_paths(&root)) {
+        for (auto* node : path) {
+            consider(node);
+        }
+    }
+    return ids;
+}
+
+GPUConditionPropagationScope::GPUConditionPropagationScope(structured_control_flow::StructuredLoop& root)
+    : root_(root) {}
+
+bool GPUConditionPropagationScope::
+    can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+    for (size_t id : gpu_map_ids(root_, analysis_manager)) {
+        auto* map = dyn_cast<structured_control_flow::Map*>(builder.find_element_by_id(id));
+        if (map == nullptr) {
+            continue;
+        }
+        GPUConditionPropagation transformation(*map);
+        if (transformation.can_be_applied(builder, analysis_manager)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void GPUConditionPropagationScope::
+    apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+    for (size_t id : gpu_map_ids(root_, analysis_manager)) {
+        auto* map = dyn_cast<structured_control_flow::Map*>(builder.find_element_by_id(id));
+        if (map == nullptr) {
+            continue;
+        }
+        GPUConditionPropagation transformation(*map);
+        if (transformation.can_be_applied(builder, analysis_manager)) {
+            transformation.apply(builder, analysis_manager);
+        }
+    }
+    analysis_manager.invalidate_all();
+}
+
+std::string GPUConditionPropagationScope::name() const { return "GPUConditionPropagationScope"; };
+
+void GPUConditionPropagationScope::to_json(nlohmann::json& j) const {
+    j["transformation_type"] = this->name();
+    j["parameters"] = nlohmann::json::object();
+
+    serializer::JSONSerializer ser_flat(false);
+    j["subgraph"] = nlohmann::json::object();
+    j["subgraph"]["0"] = nlohmann::json::object();
+    ser_flat.serialize_node(j["subgraph"]["0"], root_);
+}
+
+GPUConditionPropagationScope GPUConditionPropagationScope::
+    from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& j) {
+    const auto& node_desc = j.at("subgraph").at("0");
+    size_t root_id = node_desc.at("element_id").get<size_t>();
+
+    auto element = builder.find_element_by_id(root_id);
+    if (!element) {
+        throw InvalidTransformationDescriptionException("Element with ID " + std::to_string(root_id) + " not found.");
+    }
+    auto root = dyn_cast<structured_control_flow::StructuredLoop*>(element);
+    if (!root) {
+        throw InvalidTransformationDescriptionException(
+            "Element with ID " + std::to_string(root_id) + " is not a structured loop."
+        );
+    }
+
+    return GPUConditionPropagationScope(*root);
 }
 
 BarrierFinder::BarrierFinder(builder::StructuredSDFGBuilder& builder, sdfg::analysis::AnalysisManager& analysis_manager)
