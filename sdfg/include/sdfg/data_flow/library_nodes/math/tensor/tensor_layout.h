@@ -1,4 +1,5 @@
 #pragma once
+#include <memory>
 #include <nlohmann/json_fwd.hpp>
 
 #include "sdfg/symbolic/symbolic.h"
@@ -110,6 +111,11 @@ public:
     std::unique_ptr<TensorLayout> squeeze() const;
 
     std::unique_ptr<TensorLayout> reshape(const symbolic::MultiExpression& new_shape) const;
+
+    /**
+     * Broadcast this layout to a bigger shape with strides correctly set.
+     */
+    std::unique_ptr<TensorLayout> broadcast(const symbolic::MultiExpression& ref_shape) const;
 
     static std::ostream& emit_symbolic_list(std::ostream& stream, const symbolic::MultiExpression& list);
 

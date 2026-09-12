@@ -658,8 +658,8 @@ void LoopAnalysis::removed_loop(structured_control_flow::ControlFlowNode* existi
 void LoopAnalysis::
     added_local_contents(structured_control_flow::ControlFlowNode* loop, bool side_effects, bool non_perfectly_nested) {
     auto& state = loop_infos_.at(loop);
-    state.local.contains_side_effects = side_effects;
-    state.local.contains_non_perfectly_nested = non_perfectly_nested;
+    state.local.contains_side_effects |= side_effects;
+    state.local.contains_non_perfectly_nested |= non_perfectly_nested;
 
     propagate_changed_nest_info(loops_.begin() + state.local.loop_id);
 }

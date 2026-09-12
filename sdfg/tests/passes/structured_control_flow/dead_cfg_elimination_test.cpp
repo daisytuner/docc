@@ -2,13 +2,16 @@
 
 #include <gtest/gtest.h>
 
-#include <ostream>
-
-#include "sdfg/builder/sdfg_builder.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/data_flow/access_node.h"
+#include "sdfg/data_flow/tasklet.h"
+#include "sdfg/element.h"
+#include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/for.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/structured_control_flow/return.h"
+#include "sdfg/types/pointer.h"
+#include "sdfg_debug_dump.h"
 
 using namespace sdfg;
 
@@ -227,4 +230,70 @@ TEST(DeadCFGEliminationTest, TrivialMapEmptyBody) {
 
     // Trivial loop with empty body should be removed entirely
     EXPECT_EQ(root.size(), 0);
+}
+
+TEST(DeadCFGEliminationTest, TrivialMapUseOfIndvar) {
+    // Test trivial loop with empty body: for (i = 0; i < 1; i++) { a[i] = i; }
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+
+    types::Scalar int_type(types::PrimitiveType::UInt64);
+    types::Pointer int_pointer_type(int_type);
+    builder.add_container("i", int_type);
+    builder.add_container("a", int_pointer_type);
+
+    auto& root = builder.subject().root();
+
+    // for (i = 0; i < 1; i++)
+    auto indvar = symbolic::symbol("i");
+    auto& map = builder.add_map(
+        root,
+        indvar,
+        symbolic::Lt(indvar, symbolic::integer(1)),
+        symbolic::integer(0),
+        symbolic::add(indvar, symbolic::integer(1)),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+
+    // a[i] = i
+    auto& block = builder.add_block(map.root());
+    auto& i_access = builder.add_access(block, "i");
+    auto& a_access = builder.add_access(block, "a");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(block, i_access, tasklet, "_in", {});
+    builder.add_computational_memlet(block, tasklet, "_out", a_access, {indvar});
+
+    EXPECT_EQ(root.size(), 1);
+    EXPECT_EQ(map.root().size(), 1);
+    dump_sdfg(builder.subject(), "0.before");
+
+    // Dead CFG Elimination
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    passes::DeadCFGElimination dce_pass;
+    EXPECT_TRUE(dce_pass.run(builder, analysis_manager));
+    dump_sdfg(builder.subject(), "1.after");
+
+    ASSERT_EQ(root.size(), 1);
+    auto* new_block = dyn_cast<structured_control_flow::Block*>(&root.at(0));
+    ASSERT_NE(new_block, nullptr);
+    auto data_nodes = new_block->dataflow().data_nodes();
+    ASSERT_EQ(data_nodes.size(), 2);
+    auto it = data_nodes.begin();
+    auto* first_node = *it;
+    it++;
+    auto* second_node = *it;
+
+    data_flow::ConstantNode* constant_node = nullptr;
+    data_flow::AccessNode* access_node = nullptr;
+    if (is_a(first_node->type_id(), ElementType::ConstantNode)) {
+        constant_node = dyn_cast<data_flow::ConstantNode*>(first_node);
+        access_node = dyn_cast<data_flow::AccessNode*>(second_node);
+    } else {
+        constant_node = dyn_cast<data_flow::ConstantNode*>(second_node);
+        access_node = dyn_cast<data_flow::AccessNode*>(first_node);
+    }
+
+    ASSERT_NE(constant_node, nullptr);
+    EXPECT_EQ(constant_node->data(), "0");
+    ASSERT_NE(access_node, nullptr);
+    EXPECT_EQ(access_node->data(), "a");
 }

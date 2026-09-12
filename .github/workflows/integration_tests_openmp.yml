@@ -18,7 +18,7 @@ jobs:
       image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:latest-amd64
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           token: ${{ secrets.BENCHMARK_TESTS_TOKEN }}
           submodules: recursive

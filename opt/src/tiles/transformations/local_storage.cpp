@@ -31,6 +31,7 @@
 #include "sdfg/types/pointer.h"
 #include "sdfg/types/scalar.h"
 #include "sdfg/types/type.h"
+#include "sdfg/visitor/for_each.h"
 
 namespace sdfg {
 namespace transformations {
@@ -86,30 +87,10 @@ std::unique_ptr<types::IType> make_nested_array(
     return std::make_unique<types::Array>(storage, align, "", *inner, axes[0]);
 }
 
-/// Visit every Block reachable under @p node (recursing through sequences,
-/// loops, and if-else branches).
-void for_each_block(
-    structured_control_flow::ControlFlowNode& node, const std::function<void(structured_control_flow::Block&)>& fn
-) {
-    if (auto* block = dyn_cast<structured_control_flow::Block*>(&node)) {
-        fn(*block);
-    } else if (auto* seq = dyn_cast<structured_control_flow::Sequence*>(&node)) {
-        for (size_t i = 0; i < seq->size(); i++) {
-            for_each_block(seq->at(i), fn);
-        }
-    } else if (auto* loop = dyn_cast<structured_control_flow::StructuredLoop*>(&node)) {
-        for_each_block(loop->root(), fn);
-    } else if (auto* if_else = dyn_cast<structured_control_flow::IfElse*>(&node)) {
-        for (size_t i = 0; i < if_else->size(); i++) {
-            for_each_block(if_else->at(i).first, fn);
-        }
-    }
-}
-
 /// True if @p scope's body reads @p container in any block.
 bool scope_reads_container(structured_control_flow::ControlFlowNode& scope, const std::string& container) {
     bool reads = false;
-    for_each_block(scope, [&](structured_control_flow::Block& block) {
+    visitor::for_each_block(scope, [&](structured_control_flow::Block& block) {
         for (auto* access : block.dataflow().data_nodes()) {
             if (access->data() == container) {
                 reads = true;
@@ -276,7 +257,7 @@ std::vector<symbolic::Expression> LocalStorage::TileInfo::local_index(const std:
 
 bool LocalStorage::has_side_effect(structured_control_flow::StructuredLoop& loop) {
     bool found = false;
-    for_each_block(loop.root(), [&](structured_control_flow::Block& block) {
+    visitor::for_each_block(loop.root(), [&](structured_control_flow::Block& block) {
         if (found) {
             return;
         }
@@ -1113,7 +1094,7 @@ void LocalStorage::rewrite_body(
     // v1 guarantees single-group full coverage, so every group memlet is rewritten
     // and its access node renamed (no split-node handling needed).
     auto& mla = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
-    for_each_block(loop_.root(), [&](structured_control_flow::Block& block) {
+    visitor::for_each_block(loop_.root(), [&](structured_control_flow::Block& block) {
         auto& dfg = block.dataflow();
         std::vector<data_flow::AccessNode*> access_nodes;
         for (auto* access_node : dfg.data_nodes()) {

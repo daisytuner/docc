@@ -368,6 +368,7 @@ bool LoopFusionPass::run_pass(builder::StructuredSDFGBuilder& builder, analysis:
 
     CompileStatistics::add_metric_if_enabled("fused-by-domain", state.fused_by_domain_count);
     CompileStatistics::add_metric_if_enabled("fused-by-access", state.fused_by_access_count);
+    CompileStatistics::add_metric_if_enabled("copied-redundant-writes", state.copied_redundant_writes);
 
     return state.total_fused_count();
 }
@@ -679,6 +680,7 @@ PatternHandler::MatchResult LoopFusionHandler::try_complex_fuse_producer_into_co
         }
 
         state_.fused_by_access_count++;
+        state_.copied_redundant_writes += outcome.copied_redundant_writes;
     }
 
     return outcome.pattern_result;

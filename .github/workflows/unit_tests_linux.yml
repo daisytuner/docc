@@ -21,7 +21,7 @@ jobs:
         --gpus=all
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           token: ${{ secrets.BENCHMARK_TESTS_TOKEN }}
           submodules: recursive
@@ -154,7 +154,7 @@ jobs:
     env:
       DOCC_INFERENCE: "ON" #skips certain tests only when inference enabled.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           token: ${{ secrets.BENCHMARK_TESTS_TOKEN }}
           submodules: recursive
@@ -234,7 +234,7 @@ jobs:
       image: daisytuner/docc-build-env-llvm21-ubuntu-24.04:latest-amd64
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           token: ${{ secrets.BENCHMARK_TESTS_TOKEN }}
           submodules: recursive
@@ -319,7 +319,7 @@ jobs:
         python-version: ["3.11", "3.12"]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           token: ${{ secrets.BENCHMARK_TESTS_TOKEN }}
           submodules: recursive
@@ -403,7 +403,7 @@ jobs:
         python-version: ["3.11", "3.12", "3.13", "3.14"]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           token: ${{ secrets.BENCHMARK_TESTS_TOKEN }}
           submodules: recursive
@@ -486,7 +486,7 @@ jobs:
         python-version: ["3.11", "3.12", "3.13", "3.14"]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
 
@@ -508,10 +508,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r pytorch/requirements.txt
 
-      - name: Check Formatting & Typing
+      - name: Check Formatting
         run: |
           black --check pytorch/
-          pyright -p pytorch/
 
       - name: Build frontends
         run: |
@@ -520,6 +519,12 @@ jobs:
             -v -e python/
           pip install --no-build-isolation \
             -v -e pytorch/
+
+      - name: Check Typing
+        run: |
+          pip install pybind11-stubgen
+          ./scripts/generate-pybind-stubs.py
+          pyright -p pytorch/
 
       - name: Unit Tests
         env:
@@ -559,7 +564,7 @@ jobs:
       DOCC_CUDA_ARCH: sm_120
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           token: ${{ secrets.BENCHMARK_TESTS_TOKEN }}
           submodules: recursive
@@ -651,7 +656,7 @@ jobs:
       DOCC_ROCM_ARCH: gfx1201
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           token: ${{ secrets.BENCHMARK_TESTS_TOKEN }}
           submodules: recursive
@@ -745,7 +750,7 @@ jobs:
         python-version: [ "3.12" ]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           token: ${{ secrets.BENCHMARK_TESTS_TOKEN }}
           submodules: recursive

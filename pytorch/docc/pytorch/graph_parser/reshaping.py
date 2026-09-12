@@ -41,7 +41,6 @@ class ConcatParser(GraphParserModule):
                 "First argument must be a list type but got: "
                 + str(type(node.args[0])),
             )
-        num_args: int = len(node.args[0])
         tensor_infos: list[TensorInfo] = []
         for arg in node.args[0]:
             tensor_info: TensorInfo = self.convert_arg_to_tensor_info(
@@ -59,7 +58,21 @@ class ConcatParser(GraphParserModule):
                     node,
                     "Expected an SDFG container to be present: " + str(tensor_info),
                 )
-            tensor_infos.append(tensor_info)
+            if tensor_info.shape() != ["0"]:
+                tensor_infos.append(tensor_info)
+
+        result_info = self.get_result_tensor_info(node, builder, metadata)
+        debug_info: DebugInfo = self.get_debug_info(node)
+
+        if len(tensor_infos) == 1:
+            builder.add_copy_op(
+                tensor_infos[0].container(),
+                tensor_infos[0].sdfg_tensor_type(),
+                result_info.container(),
+                result_info.sdfg_tensor_type(),
+                debug_info,
+            )
+            return
 
         if len(node.args) == 2:
             if not isinstance(node.args[1], int):
@@ -73,10 +86,7 @@ class ConcatParser(GraphParserModule):
         else:
             dim: int = 0
         if dim < 0:
-            dim: int = dim + num_args
-
-        result_info = self.get_result_tensor_info(node, builder, metadata)
-        debug_info: DebugInfo = self.get_debug_info(node)
+            dim: int = dim + len(result_info.shape())
 
         builder.add_concat_op(
             [tensor_info.container() for tensor_info in tensor_infos],

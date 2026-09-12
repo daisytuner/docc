@@ -3,6 +3,9 @@
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/access_node.h"
 #include "sdfg/data_flow/library_nodes/math/math_node.h"
+#include "sdfg/data_flow/memlet.h"
+#include "sdfg/data_flow/tasklet.h"
+#include "sdfg/symbolic/symbolic.h"
 #include "sdfg/types/type.h"
 #include "sdfg/types/utils.h"
 
@@ -41,10 +44,9 @@ void ArangeNode::validate(const Function& function) const {
     if (edges.size() > RESULT_PTR_IDX && edges[RESULT_PTR_IDX] != nullptr) {
         auto* result_edge = edges.at(RESULT_PTR_IDX);
         auto type_id = result_edge->base_type().type_id();
-        if (type_id != types::TypeID::Tensor && type_id != types::TypeID::Pointer) {
+        if (type_id != types::TypeID::Tensor) {
             throw InvalidSDFGException(
-                "ArangeNode: _out input must be of tensor or pointer type. Found type: " +
-                result_edge->base_type().print()
+                "ArangeNode: _out input must be of tensor type. Found type: " + result_edge->base_type().print()
             );
         }
     }
@@ -112,6 +114,13 @@ passes::LibNodeExpander::ExpandOutcome ArangeNode::
     auto& start_edge = *edges.at(START_IDX);
     auto& step_edge = *edges.at(STEP_IDX);
 
+    bool start_zero =
+        isa<data_flow::AccessNode>(start_edge.src()) &&
+        data_flow::AccessNode::has_constant_value(static_cast<data_flow::AccessNode&>(start_edge.src()), 0ll);
+    bool step_one =
+        isa<data_flow::AccessNode>(step_edge.src()) &&
+        data_flow::AccessNode::has_constant_value(static_cast<data_flow::AccessNode&>(step_edge.src()), 1ll);
+
     using Use = passes::LibNodeExpander::InputUse;
     // _end is Skip: it is captured symbolically in shape_ and not needed in the expansion body
     auto standalone =
@@ -153,7 +162,8 @@ passes::LibNodeExpander::ExpandOutcome ArangeNode::
                 condition,
                 init,
                 update,
-                structured_control_flow::ScheduleType_Sequential::create()
+                structured_control_flow::ScheduleType_Sequential::create(),
+                this->debug_info_
             );
             inner_scope = &loop.root();
         }
@@ -161,113 +171,131 @@ passes::LibNodeExpander::ExpandOutcome ArangeNode::
         loop_vars.push_back(sym_var);
     }
 
-    auto& tasklet_block = builder.add_block(*inner_scope, {}, this->debug_info());
+    auto& new_block = builder.add_block(*inner_scope, {}, this->debug_info_);
+    types::Scalar base_type(result_ptr_edge.base_type().primitive_type());
+    bool is_float = types::is_floating_point(base_type.primitive_type());
 
-    auto& out_acc = standalone->add_indirect_write_access(tasklet_block, RESULT_PTR_IDX);
-    auto& start_acc = standalone->add_indirect_read_access(tasklet_block, START_IDX);
-    auto& step_acc = standalone->add_indirect_read_access(tasklet_block, STEP_IDX);
-
-    bool is_float = false;
-    if (auto* tensor_type = dynamic_cast<const types::Tensor*>(&result_ptr_edge.base_type())) {
-        is_float = types::is_floating_point(tensor_type->primitive_type());
-    } else if (auto* ptr_type = dynamic_cast<const types::Pointer*>(&result_ptr_edge.base_type())) {
-        is_float = types::is_floating_point(ptr_type->primitive_type());
-    }
-
-    auto& i0_acc = builder.add_access(tasklet_block, loop_vars.at(0)->__str__(), this->debug_info());
-
+    // Create access to index variable and cast it if necessary
+    auto* i_access = &builder.add_access(new_block, loop_vars.at(0)->__str__(), this->debug_info_);
     if (is_float) {
         std::string cast_tmp_name = builder.find_new_name("_i_cast");
-        builder.add_container(cast_tmp_name, types::Scalar(result_ptr_edge.base_type().primitive_type()));
-        auto& cast_tmp_acc = builder.add_access(tasklet_block, cast_tmp_name, this->debug_info());
-
+        builder.add_container(cast_tmp_name, base_type);
+        auto& cast_tmp_access = builder.add_access(new_block, cast_tmp_name, this->debug_info_);
         auto& cast_tasklet =
-            builder.add_tasklet(tasklet_block, data_flow::TaskletCode::assign, "_out", {"_in"}, this->debug_info());
-
+            builder.add_tasklet(new_block, data_flow::TaskletCode::assign, "_out", {"_in"}, this->debug_info_);
         builder.add_computational_memlet(
-            tasklet_block,
-            i0_acc,
-            cast_tasklet,
-            "_in",
-            {},
-            types::Scalar(types::PrimitiveType::Int64),
-            this->debug_info()
+            new_block, *i_access, cast_tasklet, "_in", {}, types::Scalar(types::PrimitiveType::Int64), this->debug_info_
         );
+        builder
+            .add_computational_memlet(new_block, cast_tasklet, "_out", cast_tmp_access, {}, base_type, this->debug_info_);
+        i_access = &cast_tmp_access;
+    }
 
+    // Special case: Use FMA
+    if (!start_zero && !step_one && is_float) {
+        auto& start_access = standalone->add_indirect_read_access(new_block, START_IDX);
+        auto& step_access = standalone->add_indirect_read_access(new_block, STEP_IDX);
+        auto& result_access = standalone->add_indirect_write_access(new_block, RESULT_PTR_IDX);
+        auto& fma_tasklet = builder.add_tasklet(
+            new_block, data_flow::TaskletCode::fp_fma, "_out", {"_in1", "_in2", "_in3"}, this->debug_info_
+        );
+        builder.add_computational_memlet(new_block, *i_access, fma_tasklet, "_in1", {}, base_type, this->debug_info_);
+        builder
+            .add_computational_memlet(new_block, step_access, fma_tasklet, "_in2", {}, base_type, step_edge.debug_info());
+        builder
+            .add_computational_memlet(new_block, start_access, fma_tasklet, "_in3", {}, base_type, step_edge.debug_info());
         builder.add_computational_memlet(
-            tasklet_block,
-            cast_tasklet,
+            new_block,
+            fma_tasklet,
             "_out",
-            cast_tmp_acc,
-            {},
-            types::Scalar(result_ptr_edge.base_type().primitive_type()),
-            this->debug_info()
+            result_access,
+            loop_vars,
+            result_ptr_edge.base_type(),
+            result_ptr_edge.debug_info()
         );
+        return standalone->successfully_expanded();
+    }
 
-        auto& tasklet = builder.add_tasklet(
-            tasklet_block, data_flow::TaskletCode::fp_fma, "_out", {"_step", "_i", "_start"}, this->debug_info()
+    // Special case: Use assign
+    if (start_zero && step_one) {
+        auto& result_access = standalone->add_indirect_write_access(new_block, RESULT_PTR_IDX);
+        auto& assign_tasklet =
+            builder.add_tasklet(new_block, data_flow::TaskletCode::assign, "_out", {"_in"}, this->debug_info_);
+        builder.add_computational_memlet(new_block, *i_access, assign_tasklet, "_in", {}, base_type);
+        builder.add_computational_memlet(
+            new_block,
+            assign_tasklet,
+            "_out",
+            result_access,
+            loop_vars,
+            result_ptr_edge.base_type(),
+            result_ptr_edge.debug_info()
         );
+        return standalone->successfully_expanded();
+    }
 
-        builder.add_computational_memlet(
-            tasklet_block, step_acc, tasklet, "_step", {}, step_edge.base_type(), this->debug_info()
-        );
-        builder.add_computational_memlet(
-            tasklet_block,
-            cast_tmp_acc,
-            tasklet,
-            "_i",
-            {},
-            types::Scalar(result_ptr_edge.base_type().primitive_type()),
-            this->debug_info()
-        );
-        builder.add_computational_memlet(
-            tasklet_block, start_acc, tasklet, "_start", {}, start_edge.base_type(), this->debug_info()
-        );
-
-        builder.add_computational_memlet(
-            tasklet_block, tasklet, "_out", out_acc, loop_vars, result_ptr_edge.base_type(), this->debug_info()
-        );
+    data_flow::AccessNode* tmp_access = nullptr;
+    data_flow::Subset tmp_subset;
+    const types::IType* tmp_type = nullptr;
+    data_flow::AccessNode* result_access = nullptr;
+    data_flow::Subset result_subset;
+    const types::IType* result_type = nullptr;
+    if (start_zero && !step_one) {
+        tmp_access = &standalone->add_indirect_write_access(new_block, RESULT_PTR_IDX);
+        tmp_subset = loop_vars;
+        tmp_type = &result_ptr_edge.base_type();
+    } else if (!start_zero && step_one) {
+        tmp_access = i_access;
+        tmp_type = &base_type;
+        result_access = &standalone->add_indirect_write_access(new_block, RESULT_PTR_IDX);
+        result_subset = loop_vars;
+        result_type = &result_ptr_edge.base_type();
     } else {
-        std::string tmp_name = builder.find_new_name("_arange_tmp");
-        builder.add_container(tmp_name, types::Scalar(result_ptr_edge.base_type().primitive_type()));
-        auto& tmp_acc = builder.add_access(tasklet_block, tmp_name, this->debug_info());
+        auto tmp_step_container = builder.find_new_name("_arange_tmp");
+        builder.add_container(tmp_step_container, base_type);
+        tmp_access = &builder.add_access(new_block, tmp_step_container, this->debug_info_);
+        tmp_type = &base_type;
+        result_access = &standalone->add_indirect_write_access(new_block, RESULT_PTR_IDX);
+        result_subset = loop_vars;
+        result_type = &result_ptr_edge.base_type();
+    }
 
-        auto& tasklet_mul =
-            builder
-                .add_tasklet(tasklet_block, data_flow::TaskletCode::int_mul, "_out", {"_step", "_i"}, this->debug_info());
-        builder.add_computational_memlet(
-            tasklet_block, step_acc, tasklet_mul, "_step", {}, step_edge.base_type(), this->debug_info()
-        );
-        builder.add_computational_memlet(
-            tasklet_block, i0_acc, tasklet_mul, "_i", {}, types::Scalar(types::PrimitiveType::Int64), this->debug_info()
-        );
-        builder.add_computational_memlet(
-            tasklet_block,
-            tasklet_mul,
+    // Multiply index variable with step if necessary
+    if (!step_one) {
+        auto& step_access = standalone->add_indirect_read_access(new_block, STEP_IDX);
+        auto& mul_tasklet = builder.add_tasklet(
+            new_block,
+            (is_float ? data_flow::TaskletCode::fp_mul : data_flow::TaskletCode::int_mul),
             "_out",
-            tmp_acc,
-            {},
-            types::Scalar(result_ptr_edge.base_type().primitive_type()),
-            this->debug_info()
+            {"_in1", "_in2"},
+            this->debug_info_
         );
+        builder.add_computational_memlet(new_block, *i_access, mul_tasklet, "_in1", {}, base_type, this->debug_info_);
+        builder
+            .add_computational_memlet(new_block, step_access, mul_tasklet, "_in2", {}, base_type, step_edge.debug_info());
+        builder.add_computational_memlet(
+            new_block, mul_tasklet, "_out", *tmp_access, tmp_subset, *tmp_type, this->debug_info_
+        );
+    }
 
-        auto& tasklet_add = builder.add_tasklet(
-            tasklet_block, data_flow::TaskletCode::int_add, "_out", {"_tmp", "_start"}, this->debug_info()
+    // Add start if necessary
+    if (!start_zero) {
+        auto& start_access = standalone->add_indirect_read_access(new_block, START_IDX);
+        auto& add_tasklet = builder.add_tasklet(
+            new_block,
+            (is_float ? data_flow::TaskletCode::fp_add : data_flow::TaskletCode::int_add),
+            "_out",
+            {"_in1", "_in2"},
+            this->debug_info_
         );
         builder.add_computational_memlet(
-            tasklet_block,
-            tmp_acc,
-            tasklet_add,
-            "_tmp",
-            {},
-            types::Scalar(result_ptr_edge.base_type().primitive_type()),
-            this->debug_info()
+            new_block, *tmp_access, add_tasklet, "_in1", tmp_subset, *tmp_type, this->debug_info_
         );
         builder.add_computational_memlet(
-            tasklet_block, start_acc, tasklet_add, "_start", {}, start_edge.base_type(), this->debug_info()
+            new_block, start_access, add_tasklet, "_in2", {}, base_type, start_edge.debug_info()
         );
         builder.add_computational_memlet(
-            tasklet_block, tasklet_add, "_out", out_acc, loop_vars, result_ptr_edge.base_type(), this->debug_info()
+            new_block, add_tasklet, "_out", *result_access, result_subset, *result_type, result_ptr_edge.debug_info()
         );
     }
 
@@ -279,6 +307,27 @@ std::unique_ptr<data_flow::DataFlowNode> ArangeNode::
     return std::unique_ptr<data_flow::DataFlowNode>(
         new ArangeNode(element_id, this->debug_info(), vertex, parent, shape_, implementation_type_)
     );
+}
+
+symbolic::Expression ArangeNode::flop() const {
+    auto edges = this->get_parent().in_edges_by_connector(*this);
+    auto& start_edge = *edges.at(START_IDX);
+    auto& step_edge = *edges.at(STEP_IDX);
+    bool start_zero =
+        isa<data_flow::AccessNode>(start_edge.src()) &&
+        data_flow::AccessNode::has_constant_value(static_cast<const data_flow::AccessNode&>(start_edge.src()), 0ll);
+    bool step_one =
+        isa<data_flow::AccessNode>(step_edge.src()) &&
+        data_flow::AccessNode::has_constant_value(static_cast<const data_flow::AccessNode&>(step_edge.src()), 1ll);
+
+    long long inner = 0;
+    if (!start_zero) {
+        ++inner;
+    }
+    if (!step_one) {
+        ++inner;
+    }
+    return symbolic::mul(SymEngine::mul(this->shape_), symbolic::integer(inner));
 }
 
 data_flow::PointerAccessType ArangeNode::pointer_access_type(int input_idx) const {

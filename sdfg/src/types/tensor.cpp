@@ -1,5 +1,7 @@
 #include "sdfg/types/tensor.h"
 
+#include <memory>
+
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/types/scalar.h"
 
@@ -144,6 +146,15 @@ std::unique_ptr<Tensor> Tensor::reshape(const symbolic::MultiExpression& new_sha
     return std::make_unique<Tensor>(
         this->storage_type(), this->alignment(), this->initializer(), *this->element_type_, *layout_.reshape(new_shape)
     );
+}
+
+std::unique_ptr<Tensor> Tensor::broadcast(const symbolic::MultiExpression& ref_shape) const {
+    auto new_layout = this->layout_.broadcast(ref_shape);
+    if (!new_layout) {
+        return nullptr;
+    }
+    return std::make_unique<
+        Tensor>(this->storage_type(), this->alignment(), this->initializer(), *this->element_type_, *new_layout);
 }
 
 void Tensor::replace_symbols(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {

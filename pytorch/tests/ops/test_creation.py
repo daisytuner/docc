@@ -89,6 +89,14 @@ def test_full_dtype(target: str) -> None:
     check(FullDtypeNet(), *(), target=target)
 
 
+def test_full_bools(target: str) -> None:
+    class FullBoolsNet(nn.Module):
+        def forward(self) -> torch.Tensor:
+            return torch.full((2,), True)
+
+    check(FullBoolsNet(), *(), target=target)
+
+
 # --- full_like ---
 
 

@@ -3,15 +3,21 @@
 #include <gtest/gtest.h>
 
 #include "loop_info_debug_dump.h"
-#include "sdfg/analysis/assumptions_analysis.h"
+#include "sdfg/analysis/analysis.h"
 #include "sdfg/analysis/loop_analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/library_nodes/stdlib/malloc.h"
+#include "sdfg/data_flow/tasklet.h"
+#include "sdfg/function.h"
 #include "sdfg/passes/dataflow/tasklet_fusion.h"
 #include "sdfg/passes/pipeline.h"
 #include "sdfg/passes/redundant_load_elimination_pass.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
+#include "sdfg/symbolic/symbolic.h"
+#include "sdfg/types/pointer.h"
+#include "sdfg/types/scalar.h"
+#include "sdfg/types/type.h"
 #include "sdfg_debug_dump.h"
 
 using namespace sdfg;
@@ -596,4 +602,338 @@ TEST(LoopFusionByDomainTest, FuseReduceThenBroadcast_Softmax) {
     ASSERT_TRUE(fused != nullptr);
     // Fused body: init block + reduction For + exp Map = 3 children.
     EXPECT_EQ(fused->root().size(), 3);
+}
+
+TEST(LoopFusionByDomainTest, FuseNonPerfectlyNestedMapsWithIndexingPartial) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+    auto test_output_dir = get_test_output_dir();
+    if (test_output_dir.has_value()) {
+        sdfg.add_metadata("output_dir", test_output_dir->string());
+    }
+
+    types::Scalar int64_type(types::PrimitiveType::Int64);
+    types::Pointer int64_pointer_type(int64_type);
+    types::Scalar bool_type(types::PrimitiveType::Bool);
+    types::Pointer bool_pointer_type(bool_type);
+    builder.add_container("add", int64_pointer_type, true);
+    builder.add_container("add_1", int64_pointer_type, true);
+    builder.add_container("le", bool_pointer_type, true);
+    builder.add_container("bitwise_and", bool_pointer_type, true);
+    builder.add_container("arange", int64_pointer_type, true);
+    builder.add_container("args_0", bool_pointer_type, true);
+    builder.add_container("index", bool_pointer_type, true);
+    builder.add_container("bitwise_and_1", bool_pointer_type, true);
+    builder.add_container("i", int64_type);
+    builder.add_container("j", int64_type);
+    builder.add_container("k", int64_type);
+    builder.add_container("l", int64_type);
+    builder.add_container("m", int64_type);
+    builder.add_container("n", int64_type);
+
+    auto bound = symbolic::integer(39);
+
+    auto i = symbolic::symbol("i");
+    auto& map1 = builder.add_map(
+        root,
+        i,
+        symbolic::Lt(i, bound),
+        symbolic::zero(),
+        symbolic::add(i, symbolic::one()),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+
+    auto j = symbolic::symbol("j");
+    auto& map2 = builder.add_map(
+        map1.root(),
+        j,
+        symbolic::Lt(j, bound),
+        symbolic::zero(),
+        symbolic::add(j, symbolic::one()),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+
+    auto& block1 = builder.add_block(map2.root());
+    {
+        auto& add_1_access = builder.add_access(block1, "add_1");
+        auto& add_access = builder.add_access(block1, "add");
+        auto& le_access = builder.add_access(block1, "le");
+        auto& tasklet = builder.add_tasklet(block1, data_flow::TaskletCode::int_sle, "_out", {"_in1", "_in2"});
+        builder.add_computational_memlet(block1, add_1_access, tasklet, "_in1", {j});
+        builder.add_computational_memlet(block1, add_access, tasklet, "_in2", {i});
+        builder
+            .add_computational_memlet(block1, tasklet, "_out", le_access, {symbolic::add(symbolic::mul(bound, i), j)});
+    }
+
+    auto& block2 = builder.add_block(map2.root());
+    {
+        auto& constant_one = builder.add_constant(block2, "1", bool_type);
+        auto& le_access = builder.add_access(block2, "le");
+        auto& bitwise_and_access = builder.add_access(block2, "bitwise_and");
+        auto& tasklet = builder.add_tasklet(block2, data_flow::TaskletCode::int_and, "_out", {"_in1", "_in2"});
+        builder.add_computational_memlet(block2, constant_one, tasklet, "_in1", {});
+        builder
+            .add_computational_memlet(block2, le_access, tasklet, "_in2", {symbolic::add(symbolic::mul(bound, i), j)});
+        builder.add_computational_memlet(
+            block2, tasklet, "_out", bitwise_and_access, {symbolic::add(symbolic::mul(bound, i), j)}
+        );
+    }
+
+    auto& block3 = builder.add_block(map1.root());
+    {
+        auto& arange_access = builder.add_access(block3, "arange");
+        auto& k_access = builder.add_access(block3, "k");
+        auto& tasklet1 = builder.add_tasklet(block3, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(block3, arange_access, tasklet1, "_in", {symbolic::zero()});
+        builder.add_computational_memlet(block3, tasklet1, "_out", k_access, {});
+
+        auto& add_1_access = builder.add_access(block3, "add_1");
+        auto& l_access = builder.add_access(block3, "l");
+        auto& tasklet2 = builder.add_tasklet(block3, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(block3, add_1_access, tasklet2, "_in", {i});
+        builder.add_computational_memlet(block3, tasklet2, "_out", l_access, {});
+    }
+    auto k = symbolic::symbol("k");
+    auto l = symbolic::symbol("l");
+
+    auto& block4 = builder.add_block(map1.root());
+    {
+        auto& args_0_access = builder.add_access(block4, "args_0");
+        auto& index_access = builder.add_access(block4, "index");
+        auto& tasklet = builder.add_tasklet(block4, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder
+            .add_computational_memlet(block4, args_0_access, tasklet, "_in", {symbolic::add(symbolic::mul(bound, k), l)});
+        builder.add_computational_memlet(block4, tasklet, "_out", index_access, {i});
+    }
+
+    auto m = symbolic::symbol("m");
+    auto& map3 = builder.add_map(
+        root,
+        m,
+        symbolic::Lt(m, bound),
+        symbolic::zero(),
+        symbolic::add(m, symbolic::one()),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+
+    auto n = symbolic::symbol("n");
+    auto& map4 = builder.add_map(
+        map3.root(),
+        n,
+        symbolic::Lt(n, bound),
+        symbolic::zero(),
+        symbolic::add(n, symbolic::one()),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+
+    auto& block5 = builder.add_block(map4.root());
+    {
+        auto& bitwise_and_access = builder.add_access(block5, "bitwise_and");
+        auto& index_access = builder.add_access(block5, "index");
+        auto& bitwise_and_1_access = builder.add_access(block5, "bitwise_and_1");
+        auto& tasklet = builder.add_tasklet(block5, data_flow::TaskletCode::int_and, "_out", {"_in1", "_in2"});
+        builder.add_computational_memlet(
+            block5, bitwise_and_access, tasklet, "_in1", {symbolic::add(symbolic::mul(bound, m), n)}
+        );
+        builder.add_computational_memlet(block5, index_access, tasklet, "_in2", {n});
+        builder.add_computational_memlet(
+            block5, tasklet, "_out", bitwise_and_1_access, {symbolic::add(symbolic::mul(bound, m), n)}
+        );
+    }
+
+    EXPECT_NO_THROW(sdfg.validate());
+    dump_sdfg(sdfg, "0.before");
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    LoopFusionPass pass({.allow_init_hoist = false});
+    EXPECT_FALSE(pass.run_pass(builder, analysis_manager));
+
+    EXPECT_NO_THROW(sdfg.validate());
+    dump_sdfg(sdfg, "1.after");
+}
+
+TEST(LoopFusionByDomainTest, FuseNonPerfectlyNestedMapsWithIndexingComplete) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+    auto test_output_dir = get_test_output_dir();
+    if (test_output_dir.has_value()) {
+        sdfg.add_metadata("output_dir", test_output_dir->string());
+    }
+
+    types::Scalar int64_type(types::PrimitiveType::Int64);
+    types::Pointer int64_pointer_type(int64_type);
+    types::Scalar bool_type(types::PrimitiveType::Bool);
+    types::Pointer bool_pointer_type(bool_type);
+    builder.add_container("add", int64_pointer_type, true);
+    builder.add_container("add_1", int64_pointer_type, true);
+    builder.add_container("le", bool_pointer_type, true);
+    builder.add_container("bitwise_and", bool_pointer_type, true);
+    builder.add_container("arange", int64_pointer_type, true);
+    builder.add_container("args_0", bool_pointer_type, true);
+    builder.add_container("index", bool_pointer_type, true);
+    builder.add_container("bitwise_and_1", bool_pointer_type, true);
+    builder.add_container("i", int64_type);
+    builder.add_container("j", int64_type);
+    builder.add_container("k", int64_type);
+    builder.add_container("l", int64_type);
+    builder.add_container("m", int64_type);
+    builder.add_container("n", int64_type);
+    builder.add_container("o", int64_type);
+    builder.add_container("p", int64_type);
+    builder.add_container("q", int64_type);
+
+    auto bound = symbolic::integer(39);
+
+    auto i = symbolic::symbol("i");
+    auto& map1 = builder.add_map(
+        root,
+        i,
+        symbolic::Lt(i, bound),
+        symbolic::zero(),
+        symbolic::add(i, symbolic::one()),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+
+    auto j = symbolic::symbol("j");
+    auto& map2 = builder.add_map(
+        map1.root(),
+        j,
+        symbolic::Lt(j, bound),
+        symbolic::zero(),
+        symbolic::add(j, symbolic::one()),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+
+    auto& block1 = builder.add_block(map2.root());
+    {
+        auto& add_1_access = builder.add_access(block1, "add_1");
+        auto& add_access = builder.add_access(block1, "add");
+        auto& le_access = builder.add_access(block1, "le");
+        auto& tasklet = builder.add_tasklet(block1, data_flow::TaskletCode::int_sle, "_out", {"_in1", "_in2"});
+        builder.add_computational_memlet(block1, add_1_access, tasklet, "_in1", {j});
+        builder.add_computational_memlet(block1, add_access, tasklet, "_in2", {i});
+        builder
+            .add_computational_memlet(block1, tasklet, "_out", le_access, {symbolic::add(symbolic::mul(bound, i), j)});
+    }
+
+    auto k = symbolic::symbol("k");
+    auto& map3 = builder.add_map(
+        root,
+        k,
+        symbolic::Lt(k, bound),
+        symbolic::zero(),
+        symbolic::add(k, symbolic::one()),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+
+    auto l = symbolic::symbol("l");
+    auto& map4 = builder.add_map(
+        map3.root(),
+        l,
+        symbolic::Lt(l, bound),
+        symbolic::zero(),
+        symbolic::add(l, symbolic::one()),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+
+    auto& block2 = builder.add_block(map4.root());
+    {
+        auto& constant_one = builder.add_constant(block2, "1", bool_type);
+        auto& le_access = builder.add_access(block2, "le");
+        auto& bitwise_and_access = builder.add_access(block2, "bitwise_and");
+        auto& tasklet = builder.add_tasklet(block2, data_flow::TaskletCode::int_and, "_out", {"_in1", "_in2"});
+        builder.add_computational_memlet(block2, constant_one, tasklet, "_in1", {});
+        builder
+            .add_computational_memlet(block2, le_access, tasklet, "_in2", {symbolic::add(symbolic::mul(bound, k), l)});
+        builder.add_computational_memlet(
+            block2, tasklet, "_out", bitwise_and_access, {symbolic::add(symbolic::mul(bound, k), l)}
+        );
+    }
+
+    auto m = symbolic::symbol("m");
+    auto& map5 = builder.add_map(
+        root,
+        m,
+        symbolic::Lt(m, bound),
+        symbolic::zero(),
+        symbolic::add(m, symbolic::one()),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+
+    auto& block3 = builder.add_block(map5.root());
+    {
+        auto& arange_access = builder.add_access(block3, "arange");
+        auto& n_access = builder.add_access(block3, "n");
+        auto& tasklet1 = builder.add_tasklet(block3, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(block3, arange_access, tasklet1, "_in", {symbolic::zero()});
+        builder.add_computational_memlet(block3, tasklet1, "_out", n_access, {});
+
+        auto& add_1_access = builder.add_access(block3, "add_1");
+        auto& o_access = builder.add_access(block3, "o");
+        auto& tasklet2 = builder.add_tasklet(block3, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(block3, add_1_access, tasklet2, "_in", {m});
+        builder.add_computational_memlet(block3, tasklet2, "_out", o_access, {});
+    }
+    auto n = symbolic::symbol("n");
+    auto o = symbolic::symbol("o");
+
+    auto& block4 = builder.add_block(map5.root());
+    {
+        auto& args_0_access = builder.add_access(block4, "args_0");
+        auto& index_access = builder.add_access(block4, "index");
+        auto& tasklet = builder.add_tasklet(block4, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder
+            .add_computational_memlet(block4, args_0_access, tasklet, "_in", {symbolic::add(symbolic::mul(bound, n), o)});
+        builder.add_computational_memlet(block4, tasklet, "_out", index_access, {m});
+    }
+
+    auto p = symbolic::symbol("p");
+    auto& map6 = builder.add_map(
+        root,
+        p,
+        symbolic::Lt(p, bound),
+        symbolic::zero(),
+        symbolic::add(p, symbolic::one()),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+
+    auto q = symbolic::symbol("q");
+    auto& map7 = builder.add_map(
+        map6.root(),
+        q,
+        symbolic::Lt(q, bound),
+        symbolic::zero(),
+        symbolic::add(q, symbolic::one()),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+
+    auto& block5 = builder.add_block(map7.root());
+    {
+        auto& bitwise_and_access = builder.add_access(block5, "bitwise_and");
+        auto& index_access = builder.add_access(block5, "index");
+        auto& bitwise_and_1_access = builder.add_access(block5, "bitwise_and_1");
+        auto& tasklet = builder.add_tasklet(block5, data_flow::TaskletCode::int_and, "_out", {"_in1", "_in2"});
+        builder.add_computational_memlet(
+            block5, bitwise_and_access, tasklet, "_in1", {symbolic::add(symbolic::mul(bound, p), q)}
+        );
+        builder.add_computational_memlet(block5, index_access, tasklet, "_in2", {q});
+        builder.add_computational_memlet(
+            block5, tasklet, "_out", bitwise_and_1_access, {symbolic::add(symbolic::mul(bound, p), q)}
+        );
+    }
+
+    EXPECT_NO_THROW(sdfg.validate());
+    dump_sdfg(sdfg, "0.before");
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    LoopFusionPass pass({.allow_init_hoist = false});
+    EXPECT_TRUE(pass.run_pass(builder, analysis_manager));
+
+    EXPECT_NO_THROW(sdfg.validate());
+    dump_sdfg(sdfg, "1.after");
+
+    ASSERT_EQ(root.size(), 2);
+    EXPECT_EQ(&root.at(1), &map6) << "Last map nest should not have been fused";
 }

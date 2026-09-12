@@ -1,5 +1,7 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/tensor_layout.h"
 
+#include <memory>
+
 #include "sdfg/serializer/json_serializer.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/types/utils.h"
@@ -310,6 +312,31 @@ std::unique_ptr<TensorLayout> TensorLayout::reshape(const symbolic::MultiExpress
     symbolic::MultiExpression new_strides = linear_strides(new_shape);
 
     return std::make_unique<TensorLayout>(new_shape, new_strides, offset_);
+}
+
+std::unique_ptr<TensorLayout> TensorLayout::broadcast(const symbolic::MultiExpression& ref_shape) const {
+    // Cannot broadcast
+    if (this->shape_.size() > ref_shape.size()) {
+        return nullptr;
+    }
+
+    long long offset = ref_shape.size() - this->shape_.size();
+    symbolic::MultiExpression new_shape;
+    symbolic::MultiExpression new_strides;
+    for (long long i = 0; i < ref_shape.size(); i++) {
+        if (i < offset || symbolic::eq(this->shape_[i - offset], symbolic::one())) {
+            new_shape.push_back(ref_shape[i]);
+            new_strides.push_back(symbolic::zero());
+        } else if (symbolic::eq(this->shape_[i - offset], ref_shape[i])) {
+            new_shape.push_back(this->shape_[i - offset]);
+            new_strides.push_back(this->strides_[i - offset]);
+        } else {
+            // Incompatible shapes
+            return nullptr;
+        }
+    }
+
+    return std::make_unique<TensorLayout>(new_shape, new_strides, this->offset_);
 }
 
 types::PrimitiveType TensorLayout::get_tensor_indvar_type_for_shape(const std::vector<symbolic::Expression>& shape) {

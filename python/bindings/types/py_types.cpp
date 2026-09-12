@@ -185,6 +185,17 @@ void register_types(py::module& m) {
             },
             py::arg("new_shape")
         )
+        .def(
+            "broadcast",
+            [](const Tensor& self, const std::vector<std::string>& ref_shape_str) {
+                sdfg::symbolic::MultiExpression ref_shape;
+                for (const auto& dim : ref_shape_str) {
+                    ref_shape.push_back(sdfg::symbolic::parse(dim));
+                }
+                return self.broadcast(ref_shape);
+            },
+            py::arg("ref_shape")
+        )
         .def("is_contiguous", &Tensor::is_contiguous)
         .def("is_tight", &Tensor::is_tight);
 }

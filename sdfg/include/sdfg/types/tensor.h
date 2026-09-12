@@ -1,6 +1,8 @@
 #pragma once
 
+#include <memory>
 #include "sdfg/data_flow/library_nodes/math/tensor/tensor_layout.h"
+#include "sdfg/symbolic/symbolic.h"
 #include "sdfg/types/type.h"
 
 namespace sdfg {
@@ -114,6 +116,11 @@ public:
     std::unique_ptr<Tensor> squeeze() const;
 
     std::unique_ptr<Tensor> reshape(const symbolic::MultiExpression& new_shape) const;
+
+    /**
+     * Broadcast this tensor to a bigger shape with strides correctly set.
+     */
+    std::unique_ptr<Tensor> broadcast(const symbolic::MultiExpression& ref_shape) const;
 
     /**
      * @brief Replace symbolic expressions on this type

@@ -1,10 +1,21 @@
 #include "sdfg/passes/loop_fusion/loop_fusion_pass.h"
 
-#include "sdfg_debug_dump.h"
+#include <unordered_set>
 
 #include <gtest/gtest.h>
 
-#include <set>
+#include "sdfg/analysis/analysis.h"
+#include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/data_flow/access_node.h"
+#include "sdfg/data_flow/tasklet.h"
+#include "sdfg/function.h"
+#include "sdfg/structured_control_flow/block.h"
+#include "sdfg/structured_control_flow/structured_loop.h"
+#include "sdfg/symbolic/symbolic.h"
+#include "sdfg/types/pointer.h"
+#include "sdfg/types/scalar.h"
+#include "sdfg/types/type.h"
+#include "sdfg_debug_dump.h"
 
 using namespace sdfg;
 
@@ -5135,4 +5146,407 @@ TEST(LoopFusionPassTest, SameDomain_2ForLoops_OverlapRejects) {
 
     // The two overlapping loops must remain separate.
     EXPECT_EQ(root.size(), 2u);
+}
+
+TEST(LoopFusionPassTest, SimpleSDPAMaskOneArange) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar int_type(types::PrimitiveType::Int64);
+    types::Pointer int_pointer_type(int_type);
+    types::Scalar bool_type(types::PrimitiveType::Bool);
+    types::Pointer bool_pointer_type(bool_type);
+    builder.add_container("arange", int_pointer_type);
+    builder.add_container("le", bool_pointer_type, true);
+    builder.add_container("i", int_type);
+    builder.add_container("j", int_type);
+    builder.add_container("k", int_type);
+
+    auto bound = symbolic::integer(5);
+
+    auto i = symbolic::symbol("i");
+    auto& map1 = builder.add_map(
+        root,
+        i,
+        symbolic::Lt(i, bound),
+        symbolic::zero(),
+        symbolic::add(i, symbolic::one()),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+
+    auto& block1 = builder.add_block(map1.root());
+    {
+        auto& i_access = builder.add_access(block1, "i");
+        auto& arange_access = builder.add_access(block1, "arange");
+        auto& tasklet1 = builder.add_tasklet(block1, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(block1, i_access, tasklet1, "_in", {});
+        builder.add_computational_memlet(block1, tasklet1, "_out", arange_access, {i});
+    }
+
+    auto j = symbolic::symbol("j");
+    auto& map2 = builder.add_map(
+        root,
+        j,
+        symbolic::Lt(j, bound),
+        symbolic::zero(),
+        symbolic::add(j, symbolic::one()),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+
+    auto k = symbolic::symbol("k");
+    auto& map3 = builder.add_map(
+        map2.root(),
+        k,
+        symbolic::Lt(k, bound),
+        symbolic::zero(),
+        symbolic::add(k, symbolic::one()),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+
+    auto& block2 = builder.add_block(map3.root());
+    {
+        auto& arange_access = builder.add_access(block2, "arange");
+        auto& le_access = builder.add_access(block2, "le");
+        auto& tasklet = builder.add_tasklet(block2, data_flow::TaskletCode::int_sle, "_out", {"_in1", "_in2"});
+        builder.add_computational_memlet(block2, arange_access, tasklet, "_in1", {j});
+        builder.add_computational_memlet(block2, arange_access, tasklet, "_in2", {k});
+        builder
+            .add_computational_memlet(block2, tasklet, "_out", le_access, {symbolic::add(symbolic::mul(bound, j), k)});
+    }
+
+    ASSERT_NO_THROW(sdfg.validate());
+    dump_sdfg(sdfg, "0.before");
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    passes::loop_fusion::LoopFusionPass loop_fusion_pass({.allow_init_hoist = true});
+    EXPECT_TRUE(loop_fusion_pass.run(builder, analysis_manager));
+
+    ASSERT_NO_THROW(sdfg.validate());
+    dump_sdfg(sdfg, "1.after");
+
+    auto& map3_seq = map3.root();
+    ASSERT_EQ(map3_seq.size(), 3);
+
+    auto* map3_block1 = dyn_cast<structured_control_flow::Block*>(&map3_seq.at(0));
+    ASSERT_NE(map3_block1, nullptr);
+    auto& graph1 = map3_block1->dataflow();
+    ASSERT_EQ(graph1.tasklets().size(), 1);
+    auto* tasklet1 = *graph1.tasklets().begin();
+    ASSERT_NE(tasklet1, nullptr);
+    auto tasklet1_iedges = graph1.in_edges_by_connector(*tasklet1);
+    ASSERT_EQ(tasklet1_iedges.size(), 1);
+    auto* tasklet1_iedge = tasklet1_iedges[0];
+    ASSERT_NE(tasklet1_iedge, nullptr);
+    auto* tasklet1_iedge_access = dyn_cast<data_flow::AccessNode*>(&tasklet1_iedge->src());
+    ASSERT_NE(tasklet1_iedge_access, nullptr);
+    auto tasklet1_oedges = graph1.out_edges_by_connector(*tasklet1);
+    ASSERT_EQ(tasklet1_oedges.size(), 1);
+    auto* tasklet1_oedge = tasklet1_oedges[0];
+    ASSERT_NE(tasklet1_oedge, nullptr);
+    auto* tasklet1_oedge_access = dyn_cast<data_flow::AccessNode*>(&tasklet1_oedge->dst());
+
+    auto* map3_block2 = dyn_cast<structured_control_flow::Block*>(&map3_seq.at(1));
+    ASSERT_NE(map3_block2, nullptr);
+    auto& graph2 = map3_block2->dataflow();
+    ASSERT_EQ(graph2.tasklets().size(), 1);
+    auto* tasklet2 = *graph2.tasklets().begin();
+    ASSERT_NE(tasklet2, nullptr);
+    auto tasklet2_iedges = graph2.in_edges_by_connector(*tasklet2);
+    ASSERT_EQ(tasklet2_iedges.size(), 1);
+    auto* tasklet2_iedge = tasklet2_iedges[0];
+    ASSERT_NE(tasklet2_iedge, nullptr);
+    auto* tasklet2_iedge_access = dyn_cast<data_flow::AccessNode*>(&tasklet2_iedge->src());
+    ASSERT_NE(tasklet2_iedge_access, nullptr);
+    auto tasklet2_oedges = graph2.out_edges_by_connector(*tasklet2);
+    ASSERT_EQ(tasklet2_oedges.size(), 1);
+    auto* tasklet2_oedge = tasklet2_oedges[0];
+    ASSERT_NE(tasklet2_oedge, nullptr);
+    auto* tasklet2_oedge_access = dyn_cast<data_flow::AccessNode*>(&tasklet2_oedge->dst());
+
+    auto* map3_block3 = dyn_cast<structured_control_flow::Block*>(&map3_seq.at(2));
+    ASSERT_NE(map3_block3, nullptr);
+    auto& graph3 = map3_block3->dataflow();
+    ASSERT_EQ(graph3.tasklets().size(), 1);
+    auto* tasklet3 = *graph3.tasklets().begin();
+    ASSERT_NE(tasklet3, nullptr);
+    auto tasklet3_iedges = graph3.in_edges_by_connector(*tasklet3);
+    ASSERT_EQ(tasklet3_iedges.size(), 2);
+    ASSERT_NE(tasklet3_iedges[0], nullptr);
+    auto* tasklet3_iedge1_access = dyn_cast<data_flow::AccessNode*>(&tasklet3_iedges[0]->src());
+    ASSERT_NE(tasklet3_iedge1_access, nullptr);
+    const auto& fused_tmp1 = tasklet3_iedge1_access->data();
+    ASSERT_NE(tasklet3_iedges[1], nullptr);
+    auto* tasklet3_iedge2_access = dyn_cast<data_flow::AccessNode*>(&tasklet3_iedges[1]->src());
+    ASSERT_NE(tasklet3_iedge2_access, nullptr);
+    const auto& fused_tmp2 = tasklet3_iedge2_access->data();
+
+    if (tasklet1_oedge_access->data() == fused_tmp1) {
+        EXPECT_EQ(tasklet1_iedge_access->data(), "j");
+    } else if (tasklet1_oedge_access->data() == fused_tmp2) {
+        EXPECT_EQ(tasklet1_iedge_access->data(), "k");
+    } else {
+        EXPECT_TRUE(std::unordered_set<std::string>({fused_tmp1, fused_tmp2}).contains(tasklet1_oedge_access->data()));
+    }
+
+    if (tasklet2_oedge_access->data() == fused_tmp1) {
+        EXPECT_EQ(tasklet2_iedge_access->data(), "j");
+    } else if (tasklet2_oedge_access->data() == fused_tmp2) {
+        EXPECT_EQ(tasklet2_iedge_access->data(), "k");
+    } else {
+        EXPECT_TRUE(std::unordered_set<std::string>({fused_tmp1, fused_tmp2}).contains(tasklet2_oedge_access->data()));
+    }
+}
+
+TEST(LoopFusionPassTest, SimpleSDPAMaskTwoAranges) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar int_type(types::PrimitiveType::Int64);
+    types::Pointer int_pointer_type(int_type);
+    types::Scalar bool_type(types::PrimitiveType::Bool);
+    types::Pointer bool_pointer_type(bool_type);
+    builder.add_container("arange_1", int_pointer_type);
+    builder.add_container("arange_2", int_pointer_type);
+    builder.add_container("le", bool_pointer_type, true);
+    builder.add_container("i", int_type);
+    builder.add_container("j", int_type);
+    builder.add_container("k", int_type);
+
+    auto bound = symbolic::integer(5);
+
+    auto i = symbolic::symbol("i");
+    auto& map1 = builder.add_map(
+        root,
+        i,
+        symbolic::Lt(i, bound),
+        symbolic::zero(),
+        symbolic::add(i, symbolic::one()),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+
+    auto& block1 = builder.add_block(map1.root());
+    {
+        auto& i_access = builder.add_access(block1, "i");
+        auto& arange_1_access = builder.add_access(block1, "arange_1");
+        auto& arange_2_access = builder.add_access(block1, "arange_2");
+        auto& tasklet1 = builder.add_tasklet(block1, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(block1, i_access, tasklet1, "_in", {});
+        builder.add_computational_memlet(block1, tasklet1, "_out", arange_1_access, {i});
+        auto& tasklet2 = builder.add_tasklet(block1, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(block1, i_access, tasklet2, "_in", {});
+        builder.add_computational_memlet(block1, tasklet2, "_out", arange_2_access, {i});
+    }
+
+    auto j = symbolic::symbol("j");
+    auto& map2 = builder.add_map(
+        root,
+        j,
+        symbolic::Lt(j, bound),
+        symbolic::zero(),
+        symbolic::add(j, symbolic::one()),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+
+    auto k = symbolic::symbol("k");
+    auto& map3 = builder.add_map(
+        map2.root(),
+        k,
+        symbolic::Lt(k, bound),
+        symbolic::zero(),
+        symbolic::add(k, symbolic::one()),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+
+    auto& block2 = builder.add_block(map3.root());
+    {
+        auto& arange_1_access = builder.add_access(block2, "arange_1");
+        auto& arange_2_access = builder.add_access(block2, "arange_2");
+        auto& le_access = builder.add_access(block2, "le");
+        auto& tasklet = builder.add_tasklet(block2, data_flow::TaskletCode::int_sle, "_out", {"_in1", "_in2"});
+        builder.add_computational_memlet(block2, arange_1_access, tasklet, "_in1", {j});
+        builder.add_computational_memlet(block2, arange_2_access, tasklet, "_in2", {k});
+        builder
+            .add_computational_memlet(block2, tasklet, "_out", le_access, {symbolic::add(symbolic::mul(bound, j), k)});
+    }
+
+    ASSERT_NO_THROW(sdfg.validate());
+    dump_sdfg(sdfg, "0.before");
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    passes::loop_fusion::LoopFusionPass loop_fusion_pass({.allow_init_hoist = true});
+    EXPECT_TRUE(loop_fusion_pass.run(builder, analysis_manager));
+
+    ASSERT_NO_THROW(sdfg.validate());
+    dump_sdfg(sdfg, "1.after");
+
+    auto& map3_seq = map3.root();
+    ASSERT_EQ(map3_seq.size(), 3);
+
+    auto* map3_block3 = dyn_cast<structured_control_flow::Block*>(&map3_seq.at(2));
+    ASSERT_NE(map3_block3, nullptr);
+    auto& graph3 = map3_block3->dataflow();
+    ASSERT_EQ(graph3.tasklets().size(), 1);
+    auto* tasklet3 = *graph3.tasklets().begin();
+    ASSERT_NE(tasklet3, nullptr);
+    auto tasklet3_iedges = graph3.in_edges_by_connector(*tasklet3);
+    ASSERT_EQ(tasklet3_iedges.size(), 2);
+    ASSERT_NE(tasklet3_iedges[0], nullptr);
+    auto* tasklet3_iedge1_access = dyn_cast<data_flow::AccessNode*>(&tasklet3_iedges[0]->src());
+    ASSERT_NE(tasklet3_iedge1_access, nullptr);
+    const auto& fused_tmp1 = tasklet3_iedge1_access->data();
+    ASSERT_NE(tasklet3_iedges[1], nullptr);
+    auto* tasklet3_iedge2_access = dyn_cast<data_flow::AccessNode*>(&tasklet3_iedges[1]->src());
+    ASSERT_NE(tasklet3_iedge2_access, nullptr);
+    const auto& fused_tmp2 = tasklet3_iedge2_access->data();
+    const std::unordered_set<std::string> fused_tmps = {fused_tmp1, fused_tmp2};
+
+    auto* map3_block1 = dyn_cast<structured_control_flow::Block*>(&map3_seq.at(0));
+    ASSERT_NE(map3_block1, nullptr);
+    auto& graph1 = map3_block1->dataflow();
+    data_flow::AccessNode* tasklet1_oedge_access = nullptr;
+    for (auto* sink : graph1.sinks()) {
+        if (auto* access_node = dyn_cast<data_flow::AccessNode*>(sink)) {
+            if (fused_tmps.contains(access_node->data())) {
+                tasklet1_oedge_access = access_node;
+                break;
+            }
+        }
+    }
+    ASSERT_NE(tasklet1_oedge_access, nullptr);
+    auto* tasklet1_oedge = graph1.in_edge(*tasklet1_oedge_access);
+    ASSERT_NE(tasklet1_oedge, nullptr);
+    auto* tasklet1 = dyn_cast<data_flow::Tasklet*>(&tasklet1_oedge->src());
+    ASSERT_NE(tasklet1, nullptr);
+    auto tasklet1_iedges = graph1.in_edges_by_connector(*tasklet1);
+    ASSERT_EQ(tasklet1_iedges.size(), 1);
+    auto* tasklet1_iedge = tasklet1_iedges[0];
+    ASSERT_NE(tasklet1_iedge, nullptr);
+    auto* tasklet1_iedge_access = dyn_cast<data_flow::AccessNode*>(&tasklet1_iedge->src());
+    ASSERT_NE(tasklet1_iedge, nullptr);
+
+    auto* map3_block2 = dyn_cast<structured_control_flow::Block*>(&map3_seq.at(1));
+    ASSERT_NE(map3_block2, nullptr);
+    auto& graph2 = map3_block2->dataflow();
+    data_flow::AccessNode* tasklet2_oedge_access = nullptr;
+    for (auto* sink : graph2.sinks()) {
+        if (auto* access_node = dyn_cast<data_flow::AccessNode*>(sink)) {
+            if (fused_tmps.contains(access_node->data())) {
+                tasklet2_oedge_access = access_node;
+                break;
+            }
+        }
+    }
+    ASSERT_NE(tasklet2_oedge_access, nullptr);
+    auto* tasklet2_oedge = graph2.in_edge(*tasklet2_oedge_access);
+    ASSERT_NE(tasklet2_oedge, nullptr);
+    auto* tasklet2 = dyn_cast<data_flow::Tasklet*>(&tasklet2_oedge->src());
+    ASSERT_NE(tasklet2, nullptr);
+    auto tasklet2_iedges = graph2.in_edges_by_connector(*tasklet2);
+    ASSERT_EQ(tasklet2_iedges.size(), 1);
+    auto* tasklet2_iedge = tasklet2_iedges[0];
+    ASSERT_NE(tasklet2_iedge, nullptr);
+    auto* tasklet2_iedge_access = dyn_cast<data_flow::AccessNode*>(&tasklet2_iedge->src());
+    ASSERT_NE(tasklet2_iedge, nullptr);
+
+    if (tasklet1_oedge_access->data() == fused_tmp1) {
+        EXPECT_EQ(tasklet1_iedge_access->data(), "j");
+    } else if (tasklet1_oedge_access->data() == fused_tmp2) {
+        EXPECT_EQ(tasklet1_iedge_access->data(), "k");
+    } else {
+        EXPECT_TRUE(fused_tmps.contains(tasklet1_oedge_access->data()));
+    }
+
+    if (tasklet2_oedge_access->data() == fused_tmp1) {
+        EXPECT_EQ(tasklet2_iedge_access->data(), "j");
+    } else if (tasklet2_oedge_access->data() == fused_tmp2) {
+        EXPECT_EQ(tasklet2_iedge_access->data(), "k");
+    } else {
+        EXPECT_TRUE(fused_tmps.contains(tasklet2_oedge_access->data()));
+    }
+}
+
+TEST(LoopFusionPassTest, PreventFusingInplaceOverride) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Pointer desc(base_desc);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
+    builder.add_container("a", desc, true);
+    builder.add_container("b", desc, true);
+    builder.add_container("c", desc, true);
+    builder.add_container("i", sym_desc);
+    builder.add_container("j", sym_desc);
+    builder.add_container("k", sym_desc);
+
+    auto bound = symbolic::integer(5);
+
+    auto i = symbolic::symbol("i");
+    auto& map1 = builder.add_map(
+        root,
+        i,
+        symbolic::Lt(i, bound),
+        symbolic::zero(),
+        symbolic::add(i, symbolic::one()),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+
+    auto& block1 = builder.add_block(map1.root());
+    {
+        auto& constant_one = builder.add_constant(block1, "1.0", base_desc);
+        auto& a_access_in = builder.add_access(block1, "a");
+        auto& a_access_out = builder.add_access(block1, "a");
+        auto& b_access = builder.add_access(block1, "b");
+        auto& tasklet1 = builder.add_tasklet(block1, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
+        builder.add_computational_memlet(block1, constant_one, tasklet1, "_in1", {});
+        builder.add_computational_memlet(block1, a_access_in, tasklet1, "_in2", {i});
+        builder.add_computational_memlet(block1, tasklet1, "_out", a_access_out, {i});
+        auto& tasklet2 = builder.add_tasklet(block1, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(block1, a_access_in, tasklet2, "_in", {i});
+        builder.add_computational_memlet(block1, tasklet2, "_out", b_access, {i});
+    }
+
+    auto j = symbolic::symbol("j");
+    auto& map2 = builder.add_map(
+        root,
+        j,
+        symbolic::Lt(j, bound),
+        symbolic::zero(),
+        symbolic::add(j, symbolic::one()),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+
+    auto k = symbolic::symbol("k");
+    auto& map3 = builder.add_map(
+        map2.root(),
+        k,
+        symbolic::Lt(k, bound),
+        symbolic::zero(),
+        symbolic::add(k, symbolic::one()),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+
+    auto& block2 = builder.add_block(map3.root());
+    {
+        auto& constant_two = builder.add_constant(block2, "2.0", base_desc);
+        auto& b_access = builder.add_access(block2, "b");
+        auto& c_access = builder.add_access(block2, "c");
+        auto& tasklet = builder.add_tasklet(block2, data_flow::TaskletCode::fp_mul, "_out", {"_in1", "_in2"});
+        builder.add_computational_memlet(block2, constant_two, tasklet, "_in1", {});
+        builder.add_computational_memlet(block2, b_access, tasklet, "_in2", {k});
+        builder.add_computational_memlet(block2, tasklet, "_out", c_access, {symbolic::add(symbolic::mul(bound, j), k)});
+    }
+
+    ASSERT_NO_THROW(sdfg.validate());
+    dump_sdfg(sdfg, "0.before");
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    passes::loop_fusion::LoopFusionPass loop_fusion_pass({.allow_init_hoist = true});
+    EXPECT_FALSE(loop_fusion_pass.run(builder, analysis_manager));
+
+    ASSERT_NO_THROW(sdfg.validate());
+    dump_sdfg(sdfg, "1.after");
 }

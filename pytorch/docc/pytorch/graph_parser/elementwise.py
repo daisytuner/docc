@@ -187,22 +187,15 @@ class ElementwiseTensorOpParser(GraphParserModule):
                 node, metadata, 1, align_constant_type=self_info.element_type()
             )
         )
-
-        self_tensor: Tensor = self_info.sdfg_tensor_type()
-        other_tensor: Tensor = other_info_or_const.sdfg_tensor_type()
-        if len(self_info.shape()) != len(other_info_or_const.shape()):
-            self_tensor, other_tensor = self.align_elementwise_tensors(
-                node, self_tensor, other_tensor
-            )
-
         result_info: TensorInfo = self.get_result_tensor_info(node, builder, metadata)
         debug_info: DebugInfo = self.get_debug_info(node)
+
         builder.add_elementwise_op(
             self.op_type,
             self_info.container(),
-            self_tensor,
+            self_info.broadcast(result_info),
             other_info_or_const.container(),
-            other_tensor,
+            other_info_or_const.broadcast(result_info),
             result_info.container(),
             result_info.sdfg_tensor_type(),
             debug_info,
@@ -265,7 +258,10 @@ class ElementwiseTaskletOpParser(GraphParserModule):
         builder.add_elementwise_tasklet_op(
             tasklet_code,
             [self_info.container(), other_info_or_const.container()],
-            [self_info.sdfg_tensor_type(), other_info_or_const.sdfg_tensor_type()],
+            [
+                self_info.broadcast(result_info),
+                other_info_or_const.broadcast(result_info),
+            ],
             result_info.container(),
             result_info.sdfg_tensor_type(),
             debug_info,
@@ -366,20 +362,13 @@ class ElementwiseTensorOpParserWithAlpha(GraphParserModule):
                 self, node, "Unsupported number of kwargs: " + str(len(node.kwargs))
             )
 
-        self_tensor: Tensor = self_info.sdfg_tensor_type()
-        intermediate_tensor: Tensor = intermediate_info_or_const.sdfg_tensor_type()
-        if len(self_info.shape()) != len(intermediate_info_or_const.shape()):
-            self_tensor, intermediate_tensor = self.align_elementwise_tensors(
-                node, self_tensor, intermediate_tensor
-            )
-
         result_info: TensorInfo = self.get_result_tensor_info(node, builder, metadata)
         builder.add_elementwise_op(
             self.op_type,
             self_info.container(),
-            self_tensor,
+            self_info.broadcast(result_info),
             intermediate_info_or_const.container(),
-            intermediate_tensor,
+            intermediate_info_or_const.broadcast(result_info),
             result_info.container(),
             result_info.sdfg_tensor_type(),
             debug_info,

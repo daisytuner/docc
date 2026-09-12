@@ -1,5 +1,6 @@
 #pragma once
 
+#include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/passes/pass.h"
 
 namespace sdfg {
@@ -16,6 +17,8 @@ private:
     bool is_dead(const structured_control_flow::ControlFlowNode& node);
 
     bool is_trivial(structured_control_flow::Map* loop);
+
+    void update_loop_indvar_accesses(builder::StructuredSDFGBuilder& builder, structured_control_flow::Map* loop);
 
 public:
     DeadCFGElimination();

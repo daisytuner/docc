@@ -10,7 +10,9 @@
 #include "sdfg/symbolic/delinearization.h"
 #include "sdfg/symbolic/utils.h"
 #include "sdfg/transformations/map_fusion.h"
+#include "symengine/matrix.h"
 #include "symengine/solve.h"
+#include "symengine/symbol.h"
 
 namespace sdfg::passes::loop_fusion {
 
@@ -280,7 +282,25 @@ LoopFusionByAccessWorker::FusionRegs LoopFusionByAccessWorker::
         }
     }
 
-    return {.fusion_regs = fusion_containers, .second_outputs = second_outputs, .conflicts = false};
+    // Count all first outputs that are not fusion containers
+    // They are superfluous but we currently cannot remove them safely/efficiently
+    int64_t copied_redundant_writes = 0;
+    for (const auto& name : first_outputs) {
+        // Prevent copy of containers that overwrite themselves inplace, e.g., a[i] = a[i] + 1
+        if (first_args.at(name).arg.is_explicit_input) {
+            return {.conflicts = true};
+        }
+        if (!fusion_containers.contains(name)) {
+            ++copied_redundant_writes;
+        }
+    }
+
+    return {
+        .fusion_regs = fusion_containers,
+        .second_outputs = second_outputs,
+        .conflicts = false,
+        .copied_redundant_writes = copied_redundant_writes
+    };
 }
 
 std::vector<StructuredLoop*> LoopFusionByAccessWorker::collect_structured_sub_tree(StructuredLoop& top) {
@@ -432,7 +452,7 @@ std::unique_ptr<LoopFusionByAccessWorker::Plan> LoopFusionByAccessWorker::
     }
 
     // Get arguments analysis to identify inputs/outputs of each loop
-    auto [fusion_regs, second_outputs, reg_conflicts] = find_fusion_regs(first, second);
+    auto [fusion_regs, second_outputs, reg_conflicts, copied_redundant_writes] = find_fusion_regs(first, second);
     if (fusion_regs.empty() || reg_conflicts) {
         return {};
     }
@@ -710,6 +730,7 @@ std::unique_ptr<LoopFusionByAccessWorker::Plan> LoopFusionByAccessWorker::
             //
             candidate.integrated_rle = true;
         }
+        state.copied_redundant_writes = copied_redundant_writes;
     }
 
     // Criterion: At least one valid fusion candidate
@@ -777,22 +798,17 @@ ComplexFusionResult LoopFusionByAccessWorker::apply_producer_into_consumer(Plan&
                     access_node->data(temp_name);
                 } else if (access_node->data() == plan.first.indvar()->get_name()) {
                     // Determine the new expression for the index variable of the first map
-                    symbolic::Expression new_expr = SymEngine::null;
-                    for (auto& c : plan.fusion_candidates_) {
-                        for (auto& [sym, expr] : c.index_mappings) {
-                            if (symbolic::eq(sym, plan.first.indvar())) {
-                                new_expr = expr;
-                                break;
-                            }
-                        }
-                        if (!new_expr.is_null()) {
+                    symbolic::Expression new_expr = plan.second.indvar();
+                    for (auto& [sym, expr] : candidate.index_mappings) {
+                        if (symbolic::eq(sym, plan.first.indvar())) {
+                            new_expr = expr;
                             break;
                         }
                     }
 
-                    if (new_expr.is_null() || symbolic::eq(new_expr, plan.second.indvar())) {
-                        // Simple case: The new expression is simply the index variable of the second loop
-                        access_node->data(plan.second.indvar()->get_name());
+                    if (SymEngine::is_a<SymEngine::Symbol>(*new_expr)) {
+                        // Simple case: The new expression is an index variable (symbol)
+                        access_node->data(new_expr->__str__());
                     } else {
                         // Complex case: Add AssignmentBlock before the new block (if necessary) and store the
                         // shifted index into a new temporary variable with an assignment. Then, replace the index
@@ -903,7 +919,8 @@ ComplexFusionResult LoopFusionByAccessWorker::apply_producer_into_consumer(Plan&
     return {
         .pattern_result =
             {.removed_first = removed_first, .visit_second_body = false, .second_root_replacement = nullptr},
-        .fused = true
+        .fused = true,
+        .copied_redundant_writes = plan.copied_redundant_writes
     };
 }
 
