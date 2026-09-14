@@ -127,8 +127,8 @@ void MatMulNode::validate(const Function& function) const {
             "MatMulNode: K dimension mismatch. A has K=" + k_a->__str__() + ", B has K=" + k_b->__str__()
         );
     }
-    auto m_y = layout_y_.get_dim_innermost(0);
-    auto n_y = layout_y_.get_dim_innermost(1);
+    auto m_y = layout_y_.get_dim_innermost(1);
+    auto n_y = layout_y_.get_dim_innermost(0);
 
     auto m_match = symbolic::eq(m_a, m_y);
     auto n_match = symbolic::eq(n_b, n_y);
