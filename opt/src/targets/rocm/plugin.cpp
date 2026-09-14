@@ -237,7 +237,18 @@ void register_rocm_plugin(plugins::Context& context) {
     );
 
     libNodeDispatcherRegistry.register_library_node_dispatcher(
-        math::tensor::LibraryNodeType_MatMul.value() + "::" + gpu::rocm::ImplementationType_ROCM_MMA.value(),
+        math::tensor::LibraryNodeType_MatMul.value() + "::" + gpu::rocm::ImplementationType_ROCM_MMA_GFX1201.value(),
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<gpu::rocm::RocmMmaMatmulDispatcher>(
+                language_extension, function, data_flow_graph, dynamic_cast<const math::tensor::MatMulNode&>(node)
+            );
+        }
+    );
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
+        math::tensor::LibraryNodeType_MatMul.value() + "::" + gpu::rocm::ImplementationType_ROCM_MMA_GFX90A.value(),
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,

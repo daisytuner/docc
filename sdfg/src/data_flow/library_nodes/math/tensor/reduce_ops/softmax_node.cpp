@@ -39,7 +39,7 @@ passes::LibNodeExpander::ExpandOutcome SoftmaxNode::expand(passes::LibNodeExpand
     auto& dataflow = this->get_parent();
 
     // Select the online (log-sum-exp monoid) variant; defaults to the 3-pass form.
-    const bool softmax_use_online = context.options().get(passes::LibraryNodeExpansionPass::ONLINE_SOFTMAX, false);
+    const bool softmax_use_online = context.options().get(passes::LibraryNodeExpansionPass<>::ONLINE_SOFTMAX, false);
 
     if (dataflow.in_degree(*this) != 2) {
         return context.unable();

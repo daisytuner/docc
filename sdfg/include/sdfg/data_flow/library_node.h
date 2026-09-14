@@ -155,8 +155,10 @@ public:
     /**
      * @brief Get the implementation type (mutable)
      * @return Mutable reference to implementation type
-     * @deprecated use setter
+     * @deprecated use setter allow for future type-changes of ImplementationType that can still work with the existing
+     * API
      */
+    [[deprecated("use set_implementationtype(impl_type)")]]
     ImplementationType& implementation_type();
 
     void set_implementation_type(const ImplementationType& impl_type);

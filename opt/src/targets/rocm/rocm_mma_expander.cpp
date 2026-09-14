@@ -4,7 +4,25 @@
 
 namespace sdfg::gpu::rocm {
 
+namespace {
+
+std::optional<data_flow::ImplementationType> resolve_mma_impl_type(const RocmArch& arch) {
+    auto& arch_name = arch.name();
+    if (arch_name == "gfx1201") {
+        return ImplementationType_ROCM_MMA_GFX1201;
+    } else if (arch_name == "gfx90a") {
+        return ImplementationType_ROCM_MMA_GFX90A;
+    }
+    return std::nullopt;
+}
+
+} // namespace
+
 bool RocmMmaExpander::matches_possible_mma_pattern(const math::tensor::MatMulNode& node) const {
+    if (!resolve_mma_impl_type(arch_)) {
+        return false;
+    }
+
     auto* mma_arch = arch_.mma_support();
 
     if (!mma_arch) {
@@ -60,8 +78,11 @@ ScheduleType RocmMmaExpander::get_schedule_type(gpu::TargetLevel dim, const symb
 }
 
 void RocmMmaExpander::set_implementation_type_mma(math::tensor::MatMulNode& node, const GpuMmaTiling& mma_tiling) const {
-    node.implementation_type() = ImplementationType_ROCM_MMA;
+    auto impl_type = resolve_mma_impl_type(arch_);
+    if (!impl_type) {
+        throw std::runtime_error("Unsupported ROCm architecture: " + arch_.name());
+    }
+    node.set_implementation_type(*impl_type);
 }
-
 
 } // namespace sdfg::gpu::rocm

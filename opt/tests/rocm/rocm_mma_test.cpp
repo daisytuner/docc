@@ -171,7 +171,7 @@ static std::tuple<Block&, math::tensor::MatMulNode&> build_offloaded_mma_structu
     return {block, matmul_node};
 }
 
-TEST(ROCMMMATest, 1K_1K_1K_16x16) {
+TEST(ROCMMMATest, 1K_1K_1K_16x16_gfx1201) {
     constexpr int M = 1024; // rows of A / C
     constexpr int N = 1024; // cols of B / C
     constexpr int K = 1024; // contraction dimension
@@ -194,7 +194,7 @@ TEST(ROCMMMATest, 1K_1K_1K_16x16) {
     test::utils::test_codegen(builder.subject(), "result", true);
 }
 
-TEST(ROCMMMATest, 1K_1K_1K_32x32) {
+TEST(ROCMMMATest, 1K_1K_1K_32x32_gfx1201) {
     constexpr int M = 1024; // rows of A / C
     constexpr int N = 1024; // cols of B / C
     constexpr int K = 1024; // contraction dimension
@@ -217,7 +217,7 @@ TEST(ROCMMMATest, 1K_1K_1K_32x32) {
     test::utils::test_codegen(builder.subject(), "result", true);
 }
 
-TEST(ROCMMMATest, 1K_1K_1K_64x64) {
+TEST(ROCMMMATest, 1K_1K_1K_64x64_gfx1201) {
     constexpr int M = 1024; // rows of A / C
     constexpr int N = 1024; // cols of B / C
     constexpr int K = 1024; // contraction dimension
@@ -232,6 +232,29 @@ TEST(ROCMMMATest, 1K_1K_1K_64x64) {
 
     passes::expansion::
         expand_single_node(builder, block, matmul_node, gpu::rocm::RocmMmaExpander(gpu::rocm::ROCM_ARCH_GFX1201));
+
+    dump_sdfg(builder.subject(), "1.expanded");
+
+    EXPECT_NO_THROW(builder.subject().validate());
+
+    test::utils::test_codegen(builder.subject(), "result", true);
+}
+
+TEST(ROCMMMATest, 1K_1K_1K_64x64_gfx90a) {
+    constexpr int M = 1024; // rows of A / C
+    constexpr int N = 1024; // cols of B / C
+    constexpr int K = 1024; // contraction dimension
+    constexpr int TILE = 64; // MMA-friendly tile width for the outer maps
+
+    sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+    auto [block, matmul_node] = build_offloaded_mma_structure(builder, M, N, K, TILE, TILE, 16);
+
+    dump_sdfg(builder.subject(), "0.init");
+
+    EXPECT_NO_THROW(builder.subject().validate());
+
+    passes::expansion::
+        expand_single_node(builder, block, matmul_node, gpu::rocm::RocmMmaExpander(gpu::rocm::ROCM_ARCH_GFX90A));
 
     dump_sdfg(builder.subject(), "1.expanded");
 

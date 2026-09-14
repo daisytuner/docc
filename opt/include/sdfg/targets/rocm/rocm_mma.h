@@ -7,7 +7,8 @@
 
 namespace sdfg::gpu::rocm {
 
-inline data_flow::ImplementationType ImplementationType_ROCM_MMA("ROCM_MMA");
+inline data_flow::ImplementationType ImplementationType_ROCM_MMA_GFX1201("ROCM_MMA_GFX1201");
+inline data_flow::ImplementationType ImplementationType_ROCM_MMA_GFX90A("ROCM_MMA_GFX90A");
 
 class RocmMmaExpander : public GpuMmaExpander {
     const RocmArch& arch_;
