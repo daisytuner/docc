@@ -1,7 +1,7 @@
 #include "sdfg/passes/expansion/library_node_expansion_pass.h"
 
-#include "sdfg/passes/expansion/lib_node_expansion_context.h"
 #include "sdfg/data_flow/library_nodes/math/math.h"
+#include "sdfg/passes/expansion/lib_node_expansion_context.h"
 
 #include <memory>
 
