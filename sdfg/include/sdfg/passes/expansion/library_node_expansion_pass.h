@@ -100,7 +100,8 @@ private:
         auto expander = holder_.get_expander_for(node);
 
         if (expander) {
-            expansion::LibNodeExpansionContext ctx(this->builder_, parent, child_idx, block, node);
+            expansion::LibNodeExpansionContext
+                ctx(this->builder_, parent, child_idx, block, node, analysis_manager_.options());
 
             auto outcome = expander->handle_expand(ctx, block, node);
 
