@@ -46,13 +46,13 @@ bool RocmLibraryNodeRewriter::accept(structured_control_flow::Block& node) {
             auto implType = try_library_node_implementation(*lib_node, lib_node->scalar_primitive());
 
             if (implType) {
-                lib_node->implementation_type() = implType.value();
+                lib_node->set_implementation_type(implType.value());
             }
         }
         if (auto memset_node = dynamic_cast<::sdfg::stdlib::MemsetNode*>(&library_node)) {
             auto implType = try_memset_implementation(*memset_node);
             if (implType) {
-                memset_node->implementation_type() = implType.value();
+                memset_node->set_implementation_type(implType.value());
             }
         }
     }

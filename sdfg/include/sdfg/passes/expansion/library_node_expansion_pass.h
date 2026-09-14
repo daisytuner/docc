@@ -276,13 +276,18 @@ public:
     }
 
     bool run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override {
-        LibNodeExpansionVisitor v(builder, analysis_manager, Holder(holder_options_), this->option(FORCE_EXPAND));
+        LibNodeExpansionVisitor<Holder>
+            v(builder, analysis_manager, Holder(holder_options_), this->option(FORCE_EXPAND));
 
         v.dispatch(builder.subject().root());
 
         return v.expanded_any_;
     }
 };
+
+// Deduction guide
+template<typename T>
+LibraryNodeExpansionPass(T) -> LibraryNodeExpansionPass<T>;
 
 namespace expansion {
 

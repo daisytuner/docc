@@ -22,7 +22,7 @@ TEST(RocmLibraryNodeTransferExtractionPassTest, MemsetExpansion) {
 
     auto [block, memset_node] = stdlib::add_memset_block(builder, sdfg.root(), "buf", value, num, ptr_type);
 
-    memset_node.implementation_type() = rocm::ImplementationType_ROCMWithTransfers;
+    memset_node.set_implementation_type(rocm::ImplementationType_ROCMWithTransfers);
 
     analysis::AnalysisManager analysis_manager(sdfg);
 

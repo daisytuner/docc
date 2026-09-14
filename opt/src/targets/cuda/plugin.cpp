@@ -87,7 +87,8 @@ void register_cuda_plugin(plugins::Context& context) {
     );
 
     libNodeDispatcherRegistry.register_library_node_dispatcher(
-        cuda::LibraryNodeType_CUDA_Offloading.value() + "::" + data_flow::ImplementationType_NONE.value(),
+        cuda::LibraryNodeType_CUDA_Offloading,
+        data_flow::ImplementationType_NONE,
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -104,7 +105,8 @@ void register_cuda_plugin(plugins::Context& context) {
 
     // Dot - CUBLAS with data transfers
     libNodeDispatcherRegistry.register_library_node_dispatcher(
-        math::blas::LibraryNodeType_DOT.value() + "::" + cuda::ImplementationType_CUDAWithTransfers.value(),
+        math::blas::LibraryNodeType_DOT,
+        cuda::ImplementationType_CUDAWithTransfers,
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -116,7 +118,8 @@ void register_cuda_plugin(plugins::Context& context) {
     );
     // Dot - CUBLAS without data transfers
     libNodeDispatcherRegistry.register_library_node_dispatcher(
-        math::blas::LibraryNodeType_DOT.value() + "::" + cuda::ImplementationType_CUDAWithoutTransfers.value(),
+        math::blas::LibraryNodeType_DOT,
+        cuda::ImplementationType_CUDAWithoutTransfers,
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -129,7 +132,8 @@ void register_cuda_plugin(plugins::Context& context) {
 
     // GEMM - CUBLAS with data transfers
     libNodeDispatcherRegistry.register_library_node_dispatcher(
-        math::blas::LibraryNodeType_GEMM.value() + "::" + cuda::ImplementationType_CUDAWithTransfers.value(),
+        math::blas::LibraryNodeType_GEMM,
+        cuda::ImplementationType_CUDAWithTransfers,
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -141,7 +145,8 @@ void register_cuda_plugin(plugins::Context& context) {
     );
     // GEMM - CUBLAS without data transfers
     libNodeDispatcherRegistry.register_library_node_dispatcher(
-        math::blas::LibraryNodeType_GEMM.value() + "::" + cuda::ImplementationType_CUDAWithoutTransfers.value(),
+        math::blas::LibraryNodeType_GEMM,
+        cuda::ImplementationType_CUDAWithoutTransfers,
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -154,7 +159,8 @@ void register_cuda_plugin(plugins::Context& context) {
 
     // BatchedGEMM - CUBLAS with data transfers
     libNodeDispatcherRegistry.register_library_node_dispatcher(
-        math::blas::LibraryNodeType_BatchedGEMM.value() + "::" + cuda::ImplementationType_CUDAWithTransfers.value(),
+        math::blas::LibraryNodeType_BatchedGEMM,
+        cuda::ImplementationType_CUDAWithTransfers,
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -166,7 +172,8 @@ void register_cuda_plugin(plugins::Context& context) {
     );
     // BatchedGEMM - CUBLAS without data transfers
     libNodeDispatcherRegistry.register_library_node_dispatcher(
-        math::blas::LibraryNodeType_BatchedGEMM.value() + "::" + cuda::ImplementationType_CUDAWithoutTransfers.value(),
+        math::blas::LibraryNodeType_BatchedGEMM,
+        cuda::ImplementationType_CUDAWithoutTransfers,
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -180,7 +187,8 @@ void register_cuda_plugin(plugins::Context& context) {
 
     // Softmax - CUDA with data transfers
     libNodeDispatcherRegistry.register_library_node_dispatcher(
-        sdfg::math::tensor::LibraryNodeType_Softmax.value() + "::" + cuda::ImplementationType_CUDAWithTransfers.value(),
+        sdfg::math::tensor::LibraryNodeType_Softmax,
+        cuda::ImplementationType_CUDAWithTransfers,
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -192,8 +200,8 @@ void register_cuda_plugin(plugins::Context& context) {
     );
     // Softmax - CUDA without data transfers
     libNodeDispatcherRegistry.register_library_node_dispatcher(
-        sdfg::math::tensor::LibraryNodeType_Softmax.value() +
-            "::" + cuda::ImplementationType_CUDAWithoutTransfers.value(),
+        sdfg::math::tensor::LibraryNodeType_Softmax,
+        cuda::ImplementationType_CUDAWithoutTransfers,
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -207,7 +215,8 @@ void register_cuda_plugin(plugins::Context& context) {
 
     // Memset - CUDA with data transfers
     libNodeDispatcherRegistry.register_library_node_dispatcher(
-        sdfg::stdlib::LibraryNodeType_Memset.value() + "::" + cuda::ImplementationType_CUDAWithTransfers.value(),
+        sdfg::stdlib::LibraryNodeType_Memset,
+        cuda::ImplementationType_CUDAWithTransfers,
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -219,7 +228,8 @@ void register_cuda_plugin(plugins::Context& context) {
     );
     // Memset - CUDA without data transfers
     libNodeDispatcherRegistry.register_library_node_dispatcher(
-        sdfg::stdlib::LibraryNodeType_Memset.value() + "::" + cuda::ImplementationType_CUDAWithoutTransfers.value(),
+        sdfg::stdlib::LibraryNodeType_Memset,
+        cuda::ImplementationType_CUDAWithoutTransfers,
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -233,7 +243,8 @@ void register_cuda_plugin(plugins::Context& context) {
 
     // Memcpy - CUDA with data transfers
     libNodeDispatcherRegistry.register_library_node_dispatcher(
-        sdfg::stdlib::LibraryNodeType_Memcpy.value() + "::" + cuda::ImplementationType_CUDAWithTransfers.value(),
+        sdfg::stdlib::LibraryNodeType_Memcpy,
+        cuda::ImplementationType_CUDAWithTransfers,
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -245,7 +256,8 @@ void register_cuda_plugin(plugins::Context& context) {
     );
     // Memcpy - CUDA without data transfers
     libNodeDispatcherRegistry.register_library_node_dispatcher(
-        sdfg::stdlib::LibraryNodeType_Memcpy.value() + "::" + cuda::ImplementationType_CUDAWithoutTransfers.value(),
+        sdfg::stdlib::LibraryNodeType_Memcpy,
+        cuda::ImplementationType_CUDAWithoutTransfers,
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -258,7 +270,8 @@ void register_cuda_plugin(plugins::Context& context) {
 
     // Async copy / pipeline primitives (software pipelining)
     libNodeDispatcherRegistry.register_library_node_dispatcher(
-        ::sdfg::tiles::LibraryNodeType_CpAsyncCopy.value() + "::" + ImplementationType_CUDA.value(),
+        ::sdfg::tiles::LibraryNodeType_CpAsyncCopy,
+        ImplementationType_CUDA,
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -269,7 +282,8 @@ void register_cuda_plugin(plugins::Context& context) {
         }
     );
     libNodeDispatcherRegistry.register_library_node_dispatcher(
-        ::sdfg::tiles::LibraryNodeType_VectorCopy.value() + "::" + ImplementationType_CUDA.value(),
+        ::sdfg::tiles::LibraryNodeType_VectorCopy,
+        ImplementationType_CUDA,
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -280,7 +294,8 @@ void register_cuda_plugin(plugins::Context& context) {
         }
     );
     libNodeDispatcherRegistry.register_library_node_dispatcher(
-        ::sdfg::tiles::LibraryNodeType_PipelineCommit.value() + "::" + ImplementationType_CUDA.value(),
+        ::sdfg::tiles::LibraryNodeType_PipelineCommit,
+        ImplementationType_CUDA,
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -294,7 +309,8 @@ void register_cuda_plugin(plugins::Context& context) {
         }
     );
     libNodeDispatcherRegistry.register_library_node_dispatcher(
-        ::sdfg::tiles::LibraryNodeType_PipelineWait.value() + "::" + ImplementationType_CUDA.value(),
+        ::sdfg::tiles::LibraryNodeType_PipelineWait,
+        ImplementationType_CUDA,
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,

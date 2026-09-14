@@ -181,7 +181,7 @@ void CUDASoftmaxDataTransferExtraction::
     x_access.data(dX);
     y_access.data(dY);
 
-    this->softmax_node_.implementation_type() = cuda::ImplementationType_CUDAWithoutTransfers;
+    this->softmax_node_.set_implementation_type(cuda::ImplementationType_CUDAWithoutTransfers);
 }
 
 void CUDASoftmaxDataTransferExtraction::to_json(nlohmann::json& j) const {

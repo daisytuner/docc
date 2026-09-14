@@ -40,7 +40,7 @@ static std::string dispatch_softmax(
                                                  math::tensor::SoftmaxNode>(block, DebugInfo(), shape, axes, false));
 
     // Set the implementation type to CUDA
-    softmax_node.implementation_type() = impl_type;
+    softmax_node.set_implementation_type(impl_type);
 
     // Connectors: inputs_={"Y", "X"}
     // Y is the output buffer passed as input, X is the input data

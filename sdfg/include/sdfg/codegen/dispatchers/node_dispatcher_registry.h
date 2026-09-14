@@ -256,7 +256,11 @@ public:
         LibraryNodeDispatcherFn fn
     ) {
         std::string full_code = code.value() + "::" + impl_type.value();
-        register_library_node_dispatcher(full_code, std::move(fn));
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (factory_map_.find(full_code) != factory_map_.end()) {
+            return;
+        }
+        factory_map_[full_code] = std::move(fn);
     }
 
     LibraryNodeDispatcherFn get_library_node_dispatcher(std::string library_node_code) const {

@@ -338,7 +338,7 @@ void ROCBLASDataTransferExtraction::
     }
 
     // Change the implementation type to ROCMBLAS without data transfers
-    this->blas_node_.implementation_type() = rocm::ImplementationType_ROCMWithoutTransfers;
+    this->blas_node_.set_implementation_type(rocm::ImplementationType_ROCMWithoutTransfers);
 }
 
 void ROCBLASDataTransferExtraction::to_json(nlohmann::json& j) const {

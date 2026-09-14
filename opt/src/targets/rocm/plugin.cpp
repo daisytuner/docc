@@ -87,7 +87,8 @@ void register_rocm_plugin(plugins::Context& context) {
     );
 
     libNodeDispatcherRegistry.register_library_node_dispatcher(
-        rocm::LibraryNodeType_ROCM_Offloading.value() + "::" + data_flow::ImplementationType_NONE.value(),
+        rocm::LibraryNodeType_ROCM_Offloading,
+        data_flow::ImplementationType_NONE,
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -104,7 +105,8 @@ void register_rocm_plugin(plugins::Context& context) {
 
     // Dot - ROCMBLAS with data transfers
     libNodeDispatcherRegistry.register_library_node_dispatcher(
-        math::blas::LibraryNodeType_DOT.value() + "::" + rocm::ImplementationType_ROCMWithTransfers.value(),
+        math::blas::LibraryNodeType_DOT,
+        rocm::ImplementationType_ROCMWithTransfers,
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -116,7 +118,8 @@ void register_rocm_plugin(plugins::Context& context) {
     );
     // Dot - ROCMBLAS without data transfers
     libNodeDispatcherRegistry.register_library_node_dispatcher(
-        math::blas::LibraryNodeType_DOT.value() + "::" + rocm::ImplementationType_ROCMWithoutTransfers.value(),
+        math::blas::LibraryNodeType_DOT,
+        rocm::ImplementationType_ROCMWithoutTransfers,
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -129,7 +132,8 @@ void register_rocm_plugin(plugins::Context& context) {
 
     // GEMM - ROCMBLAS with data transfers
     libNodeDispatcherRegistry.register_library_node_dispatcher(
-        math::blas::LibraryNodeType_GEMM.value() + "::" + rocm::ImplementationType_ROCMWithTransfers.value(),
+        math::blas::LibraryNodeType_GEMM,
+        rocm::ImplementationType_ROCMWithTransfers,
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -142,7 +146,8 @@ void register_rocm_plugin(plugins::Context& context) {
 
     // GEMM - ROCM hand-tuned kernel (data already on GPU)
     libNodeDispatcherRegistry.register_library_node_dispatcher(
-        math::blas::LibraryNodeType_GEMM.value() + "::" + rocm::ImplementationType_ROCMWithoutTransfers.value(),
+        math::blas::LibraryNodeType_GEMM,
+        rocm::ImplementationType_ROCMWithoutTransfers,
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -161,7 +166,8 @@ void register_rocm_plugin(plugins::Context& context) {
 
     // BatchedGEMM - ROCMBLAS with data transfers
     libNodeDispatcherRegistry.register_library_node_dispatcher(
-        math::blas::LibraryNodeType_BatchedGEMM.value() + "::" + rocm::ImplementationType_ROCMWithTransfers.value(),
+        math::blas::LibraryNodeType_BatchedGEMM,
+        rocm::ImplementationType_ROCMWithTransfers,
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -173,7 +179,8 @@ void register_rocm_plugin(plugins::Context& context) {
     );
     // BatchedGEMM - ROCMBLAS without data transfers
     libNodeDispatcherRegistry.register_library_node_dispatcher(
-        math::blas::LibraryNodeType_BatchedGEMM.value() + "::" + rocm::ImplementationType_ROCMWithoutTransfers.value(),
+        math::blas::LibraryNodeType_BatchedGEMM,
+        rocm::ImplementationType_ROCMWithoutTransfers,
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -187,7 +194,8 @@ void register_rocm_plugin(plugins::Context& context) {
 
     // Memset - ROCM with data transfers
     libNodeDispatcherRegistry.register_library_node_dispatcher(
-        sdfg::stdlib::LibraryNodeType_Memset.value() + "::" + rocm::ImplementationType_ROCMWithTransfers.value(),
+        sdfg::stdlib::LibraryNodeType_Memset,
+        rocm::ImplementationType_ROCMWithTransfers,
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -199,7 +207,8 @@ void register_rocm_plugin(plugins::Context& context) {
     );
     // Memset - ROCM without data transfers
     libNodeDispatcherRegistry.register_library_node_dispatcher(
-        sdfg::stdlib::LibraryNodeType_Memset.value() + "::" + rocm::ImplementationType_ROCMWithoutTransfers.value(),
+        sdfg::stdlib::LibraryNodeType_Memset,
+        rocm::ImplementationType_ROCMWithoutTransfers,
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -213,7 +222,8 @@ void register_rocm_plugin(plugins::Context& context) {
 
     // Memcpy - ROCM with data transfers
     libNodeDispatcherRegistry.register_library_node_dispatcher(
-        sdfg::stdlib::LibraryNodeType_Memcpy.value() + "::" + rocm::ImplementationType_ROCMWithTransfers.value(),
+        sdfg::stdlib::LibraryNodeType_Memcpy,
+        rocm::ImplementationType_ROCMWithTransfers,
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -225,7 +235,8 @@ void register_rocm_plugin(plugins::Context& context) {
     );
     // Memcpy - ROCM without data transfers
     libNodeDispatcherRegistry.register_library_node_dispatcher(
-        sdfg::stdlib::LibraryNodeType_Memcpy.value() + "::" + rocm::ImplementationType_ROCMWithoutTransfers.value(),
+        sdfg::stdlib::LibraryNodeType_Memcpy,
+        rocm::ImplementationType_ROCMWithoutTransfers,
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -237,7 +248,8 @@ void register_rocm_plugin(plugins::Context& context) {
     );
 
     libNodeDispatcherRegistry.register_library_node_dispatcher(
-        math::tensor::LibraryNodeType_MatMul.value() + "::" + gpu::rocm::ImplementationType_ROCM_MMA_GFX1201.value(),
+        math::tensor::LibraryNodeType_MatMul,
+        gpu::rocm::ImplementationType_ROCM_MMA_GFX1201,
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -248,7 +260,8 @@ void register_rocm_plugin(plugins::Context& context) {
         }
     );
     libNodeDispatcherRegistry.register_library_node_dispatcher(
-        math::tensor::LibraryNodeType_MatMul.value() + "::" + gpu::rocm::ImplementationType_ROCM_MMA_GFX90A.value(),
+        math::tensor::LibraryNodeType_MatMul,
+        gpu::rocm::ImplementationType_ROCM_MMA_GFX90A,
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -260,7 +273,8 @@ void register_rocm_plugin(plugins::Context& context) {
     );
     // Async copy / pipeline primitives (software pipelining)
     libNodeDispatcherRegistry.register_library_node_dispatcher(
-        ::sdfg::tiles::LibraryNodeType_CpAsyncCopy.value() + "::" + ImplementationType_ROCM.value(),
+        ::sdfg::tiles::LibraryNodeType_CpAsyncCopy,
+        ImplementationType_ROCM,
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -271,7 +285,8 @@ void register_rocm_plugin(plugins::Context& context) {
         }
     );
     libNodeDispatcherRegistry.register_library_node_dispatcher(
-        ::sdfg::tiles::LibraryNodeType_VectorCopy.value() + "::" + ImplementationType_ROCM.value(),
+        ::sdfg::tiles::LibraryNodeType_VectorCopy,
+        ImplementationType_ROCM,
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -282,7 +297,8 @@ void register_rocm_plugin(plugins::Context& context) {
         }
     );
     libNodeDispatcherRegistry.register_library_node_dispatcher(
-        ::sdfg::tiles::LibraryNodeType_PipelineCommit.value() + "::" + ImplementationType_ROCM.value(),
+        ::sdfg::tiles::LibraryNodeType_PipelineCommit,
+        ImplementationType_ROCM,
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -296,7 +312,8 @@ void register_rocm_plugin(plugins::Context& context) {
         }
     );
     libNodeDispatcherRegistry.register_library_node_dispatcher(
-        ::sdfg::tiles::LibraryNodeType_PipelineWait.value() + "::" + ImplementationType_ROCM.value(),
+        ::sdfg::tiles::LibraryNodeType_PipelineWait,
+        ImplementationType_ROCM,
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,

@@ -39,7 +39,8 @@ inline void register_printf_plugin() {
     // 2. Register Library Node Dispatcher
     // Associates PrintfOffloading library nodes with their code generator
     codegen::LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        LibraryNodeType_Printf_Offloading.value() + "::" + data_flow::ImplementationType_NONE.value(),
+        LibraryNodeType_Printf_Offloading,
+        data_flow::ImplementationType_NONE,
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,

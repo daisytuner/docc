@@ -60,7 +60,7 @@ void AtomicScalarOpNode::switch_implementation(const AtomicScalarOpImpl& new_imp
         );
     }
     impl_ = &new_impl;
-    implementation_type() = new_impl.implementation_type();
+    set_implementation_type(new_impl.implementation_type());
 }
 
 void AtomicScalarOpNode::validate(const Function& function) const {

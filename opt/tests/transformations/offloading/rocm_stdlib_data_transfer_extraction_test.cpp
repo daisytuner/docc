@@ -25,7 +25,7 @@ TEST(ROCMStdlibDataTransferExtractionTest, MemsetCanBeApplied) {
 
     auto [block, memset_node] = stdlib::add_memset_block(builder, sdfg.root(), "buf", value, num, ptr_type);
 
-    memset_node.implementation_type() = rocm::ImplementationType_ROCMWithTransfers;
+    memset_node.set_implementation_type(rocm::ImplementationType_ROCMWithTransfers);
 
     analysis::AnalysisManager analysis_manager(sdfg);
 
@@ -47,7 +47,7 @@ TEST(ROCMStdlibDataTransferExtractionTest, MemsetApply) {
 
     auto [block, memset_node] = stdlib::add_memset_block(builder, sdfg.root(), "buf", value, num, ptr_type);
 
-    memset_node.implementation_type() = rocm::ImplementationType_ROCMWithTransfers;
+    memset_node.set_implementation_type(rocm::ImplementationType_ROCMWithTransfers);
     auto* buf_node = *block.dataflow().data_nodes().begin();
 
     analysis::AnalysisManager analysis_manager(sdfg);
@@ -81,7 +81,7 @@ TEST(ROCMStdlibDataTransferExtractionTest, MemsetWrongImplType) {
 
     auto [block, memset_node] = stdlib::add_memset_block(builder, sdfg.root(), "buf", value, num, ptr_type);
 
-    memset_node.implementation_type() = rocm::ImplementationType_ROCMWithoutTransfers;
+    memset_node.set_implementation_type(rocm::ImplementationType_ROCMWithoutTransfers);
 
     analysis::AnalysisManager analysis_manager(sdfg);
 
@@ -123,7 +123,7 @@ TEST(ROCMStdlibDataTransferExtractionTest, MemsetSerialization) {
 
     auto [block, memset_node] = stdlib::add_memset_block(builder, sdfg.root(), "buf", value, num, ptr_type);
 
-    memset_node.implementation_type() = rocm::ImplementationType_ROCMWithTransfers;
+    memset_node.set_implementation_type(rocm::ImplementationType_ROCMWithTransfers);
 
     rocm::ROCMStdlibDataTransferExtraction expansion(memset_node);
 

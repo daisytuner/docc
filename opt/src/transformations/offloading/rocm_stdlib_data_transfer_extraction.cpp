@@ -176,7 +176,7 @@ void ROCMStdlibDataTransferExtraction::
     }
 
     // Change the implementation type to without transfers
-    this->lib_node_.implementation_type() = rocm::ImplementationType_ROCMWithoutTransfers;
+    this->lib_node_.set_implementation_type(rocm::ImplementationType_ROCMWithoutTransfers);
 }
 
 void ROCMStdlibDataTransferExtraction::apply_memset(

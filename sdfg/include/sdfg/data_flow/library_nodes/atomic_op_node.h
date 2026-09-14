@@ -138,6 +138,8 @@ public:
 
     bool supports(types::PrimitiveType data_type, AtomicOpType op) const override;
 
+    static ImplementationType implementation_type() { return {TYPE_NAME}; }
+
 private:
     AtomicScalarOpCPUImpl() : AtomicScalarOpImpl() {}
 };
@@ -164,6 +166,8 @@ public:
 
     bool supports(types::PrimitiveType data_type, AtomicOpType op) const override;
 
+    static ImplementationType implementation_type() { return {TYPE_NAME}; }
+
 private:
     AtomicScalarOpCudaImpl() : AtomicScalarOpGPUImpl() {}
 };
@@ -177,6 +181,8 @@ public:
     std::string_view type_name() const override { return TYPE_NAME; }
 
     bool supports(types::PrimitiveType data_type, AtomicOpType op) const override;
+
+    static ImplementationType implementation_type() { return {TYPE_NAME}; }
 
 private:
     AtomicScalarOpRocmImpl() : AtomicScalarOpGPUImpl() {}

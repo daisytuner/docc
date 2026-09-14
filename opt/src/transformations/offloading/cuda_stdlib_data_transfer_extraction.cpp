@@ -176,7 +176,7 @@ void CUDAStdlibDataTransferExtraction::
     }
 
     // Change the implementation type to without transfers
-    this->lib_node_.implementation_type() = cuda::ImplementationType_CUDAWithoutTransfers;
+    this->lib_node_.set_implementation_type(cuda::ImplementationType_CUDAWithoutTransfers);
 }
 
 void CUDAStdlibDataTransferExtraction::apply_memset(
