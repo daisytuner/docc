@@ -32,6 +32,8 @@ public:
     bool is_as_file() const { return as_file_; }
 
     const std::string& name() const { return name_; }
+
+    std::filesystem::path filename() const { return name_ + "." + extension_; }
 };
 
 class LibDependency {
@@ -47,6 +49,11 @@ struct DependencyState {
     bool runtime_available = false;
 };
 
+/**
+ * Originally started out as a handler for additional source files, like hardware-accelerator kernels that are called
+ * from the main code, it has morphed more into a CodegenState That also includes library dependencies and header
+ * definitions that could be used with the existing arguments given to any dispatcher
+ */
 class CodeSnippetFactory {
 protected:
     std::unordered_map<std::string, CodeSnippet> snippets_;
@@ -65,7 +72,10 @@ public:
 
     virtual ~CodeSnippetFactory() = default;
 
-    CodeSnippet& require(const std::string& name, const std::string& extension, bool as_file = true);
+    virtual CodeSnippet& require(const std::string& name, const std::string& extension, bool as_file);
+    CodeSnippet& require(const std::string& name, const std::string& extension) {
+        return require(name, extension, true);
+    }
 
     std::unordered_map<std::string, CodeSnippet>::iterator find(const std::string& name);
 
@@ -74,11 +84,11 @@ public:
     const std::filesystem::path& output_path() const { return output_path_; }
     const std::filesystem::path& header_path() const { return header_path_; }
 
-    void add_setup(const std::string& snippet);
-    void add_teardown(const std::string& snippet);
-    void add_global(const std::string& snippet);
-    const std::unordered_set<std::string>& setup_snippets() const;
-    const std::unordered_set<std::string>& teardown_snippets() const;
+    virtual void add_setup(const std::string& snippet);
+    virtual void add_teardown(const std::string& snippet);
+    virtual void add_global(const std::string& snippet);
+    virtual const std::unordered_set<std::string>& setup_snippets() const;
+    virtual const std::unordered_set<std::string>& teardown_snippets() const;
 
     std::vector<const LibDependency*> get_used_lib_dependencies() const;
 
@@ -115,6 +125,35 @@ public:
      * @return true if the dependency is now newly used
      */
     bool require_dependency(const LibDependency* dependency);
+};
+
+/**
+ * Used when we need to dispatch main SDFG elements into a subset of files (like offloaded kernels). All outputs of the
+ * kernel should be scoped to the kernel, including any libraries etc.
+ */
+class NestedCodeSnippetFactory : public CodeSnippetFactory {
+public:
+    NestedCodeSnippetFactory(const std::pair<std::filesystem::path, std::filesystem::path>* config = nullptr);
+
+    CodeSnippet& require(const std::string& name, const std::string& extension, bool as_file) override {
+        throw std::runtime_error("NestedCodeSnippetFactory does not support nested snippets");
+    }
+
+    void add_setup(const std::string& snippet) override {
+        throw std::runtime_error("Unsupported on NestedCodeSnippetFactory");
+    }
+    void add_teardown(const std::string& snippet) override {
+        throw std::runtime_error("Unsupported on NestedCodeSnippetFactory");
+    }
+    void add_global(const std::string& snippet) override {
+        throw std::runtime_error("Unsupported on NestedCodeSnippetFactory");
+    }
+    const std::unordered_set<std::string>& setup_snippets() const override {
+        throw std::runtime_error("Unsupported on NestedCodeSnippetFactory");
+    }
+    const std::unordered_set<std::string>& teardown_snippets() const override {
+        throw std::runtime_error("Unsupported on NestedCodeSnippetFactory");
+    }
 };
 
 

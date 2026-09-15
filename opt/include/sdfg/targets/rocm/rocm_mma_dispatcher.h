@@ -1,27 +1,14 @@
 #pragma once
 
+#include "sdfg/codegen/code_snippet_factory.h"
 #include "sdfg/codegen/dispatchers/block_dispatcher.h"
 #include "sdfg/data_flow/library_node.h"
-#include "sdfg/targets/gpu/gpu_mma.h"
-#include "sdfg/targets/rocm/rocm_arch.h"
+#include "sdfg/targets/gpu/gpu_mma_dispatcher.h"
 
 namespace sdfg::gpu::rocm {
 
 inline data_flow::ImplementationType ImplementationType_ROCM_MMA_GFX1201("ROCM_MMA_GFX1201");
 inline data_flow::ImplementationType ImplementationType_ROCM_MMA_GFX90A("ROCM_MMA_GFX90A");
-
-class RocmMmaExpander : public GpuMmaExpander {
-    const RocmArch& arch_;
-
-protected:
-    GpuMmaTiling get_mma_tiling(const symbolic::MultiExpression& res_shape) const override;
-    bool matches_possible_mma_pattern(const math::tensor::MatMulNode& node) const override;
-    ScheduleType get_schedule_type(gpu::TargetLevel dim, const symbolic::Integer& size) const override;
-    void set_implementation_type_mma(math::tensor::MatMulNode& node, const GpuMmaTiling& mma_tiling) const override;
-
-public:
-    RocmMmaExpander(const RocmArch& arch) : GpuMmaExpander(), arch_(arch) {}
-};
 
 class RocmMmaMatmulDispatcher : public GpuMmaMatmulDispatcher {
 protected:
@@ -77,6 +64,8 @@ protected:
         const std::string& frag_b,
         const std::string& frag_c_in
     ) const override;
+
+    void emit_needed_declarations(codegen::CodegenOutput& out) const override;
 };
 
 class RocmWmmaLibDependency : public codegen::LibDependency {

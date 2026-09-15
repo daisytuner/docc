@@ -1,4 +1,4 @@
-#include "sdfg/targets/gpu/gpu_mma.h"
+#include "sdfg/targets/gpu/gpu_mma_expander.h"
 
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/gpu/gpu_offload_schedule_type.h"
@@ -25,6 +25,9 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::handle_expand(
     auto n_dim = node.layout_b().get_dim(1);
 
     auto mma_tiling = get_mma_tiling({result_layout.get_dim(0), result_layout.get_dim(1), k_dim});
+
+    auto input_type = node.uniform_quantization(node.get_parent()).value();
+    auto output_type = input_type;
 
     auto standalone = context.replacement_requires_access_nodes({InputUse::Scalar, InputUse::Scalar, InputUse::Scalar});
 
@@ -115,18 +118,35 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::handle_expand(
         }
 
         set_implementation_type_mma(inner_node, mma_tiling);
+        inner_node.set_fixed_quantization(input_type);
 
-        types::Scalar scalar_type(inner_node.fixed_quantization());
-        types::Pointer ptr_type(scalar_type);
+        types::Scalar input_scalar_type(input_type);
+        types::Scalar output_scalar_type(output_type);
+        types::Pointer ptr_type(input_scalar_type);
 
         builder.add_computational_memlet(
-            inner_block, input_y, inner_node, inner_node.input(math::tensor::MatMulNode::Y_INPUT_IDX), {}, ptr_type
+            inner_block,
+            input_y,
+            inner_node,
+            inner_node.input(math::tensor::MatMulNode::Y_INPUT_IDX),
+            {},
+            types::Pointer(output_scalar_type)
         );
         builder.add_computational_memlet(
-            inner_block, input_a, inner_node, inner_node.input(math::tensor::MatMulNode::A_INPUT_IDX), {}, ptr_type
+            inner_block,
+            input_a,
+            inner_node,
+            inner_node.input(math::tensor::MatMulNode::A_INPUT_IDX),
+            {},
+            types::Pointer(input_scalar_type)
         );
         builder.add_computational_memlet(
-            inner_block, input_b, inner_node, inner_node.input(math::tensor::MatMulNode::B_INPUT_IDX), {}, ptr_type
+            inner_block,
+            input_b,
+            inner_node,
+            inner_node.input(math::tensor::MatMulNode::B_INPUT_IDX),
+            {},
+            types::Pointer(input_scalar_type)
         );
 
         return standalone->successfully_expanded();

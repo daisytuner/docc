@@ -1,4 +1,4 @@
-#include "sdfg/targets/rocm/rocm_mma.h"
+#include "sdfg/targets/rocm/rocm_mma_expander.h"
 
 #include <gtest/gtest.h>
 #include <sdfg/serializer/json_serializer.h>
@@ -52,7 +52,6 @@ TestCodegenOut test_codegen(sdfg::StructuredSDFG& sdfg, const std::string& group
     auto instr_plan = sdfg::codegen::InstrumentationPlan::none(sdfg);
     auto cap_plan = sdfg::codegen::ArgCapturePlan::none(sdfg);
     auto snippetFactory = std::make_shared<sdfg::codegen::CodeSnippetFactory>();
-    snippetFactory->add_available_dependency(sdfg::gpu::rocm::RocmWmmaLibDependency::instance());
     sdfg::codegen::CPPCodeGenerator codegen(sdfg, ana, *instr_plan, *cap_plan, snippetFactory);
     codegen.generate();
     std::stringstream ss;

@@ -373,6 +373,10 @@ TensorLayout::TensorLayoutType TensorLayout::is_2d_col_or_row_major() const {
     return is_last_dims_col_or_row_major(strides_);
 }
 
+bool TensorLayout::is_last_dims_expressible_as_row_major() const {
+    return strides_.size() >= 2 && symbolic::eq(strides_.back(), symbolic::integer(1));
+}
+
 TensorLayout::TensorLayoutType TensorLayout::is_last_dims_col_or_row_major(const symbolic::MultiExpression& strides) {
     if (strides.size() < 2) {
         return TensorLayoutType::LAYOUT_OTHER;
@@ -382,13 +386,23 @@ TensorLayout::TensorLayoutType TensorLayout::is_last_dims_col_or_row_major(const
     auto outer = strides.at(outer_i);
     auto inner = strides.at(innermost_i);
 
+    bool col_major = false;
+    bool row_major = false;
     if (symbolic::eq(outer, symbolic::integer(1))) {
-        return TensorLayoutType::LAYOUT_COL_MAJOR;
+        col_major = true;
     }
     if (symbolic::eq(inner, symbolic::integer(1))) {
-        return TensorLayoutType::LAYOUT_ROW_MAJOR;
+        if (col_major) {
+            return TensorLayoutType::LAYOUT_ROW_OR_COL_MAJOR;
+        } else {
+            return TensorLayoutType::LAYOUT_ROW_MAJOR;
+        }
     }
-    return TensorLayoutType::LAYOUT_OTHER;
+    if (col_major) {
+        return TensorLayoutType::LAYOUT_COL_MAJOR;
+    } else {
+        return TensorLayoutType::LAYOUT_OTHER;
+    }
 }
 
 } // namespace sdfg::math::tensor

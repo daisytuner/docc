@@ -106,4 +106,8 @@ bool CodeSnippetFactory::require_dependency(const LibDependency* dependency) {
     }
 }
 
+NestedCodeSnippetFactory::NestedCodeSnippetFactory(const std::pair<std::filesystem::path, std::filesystem::path>* config
+)
+    : CodeSnippetFactory(config) {}
+
 } // namespace sdfg::codegen

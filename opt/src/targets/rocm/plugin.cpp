@@ -5,7 +5,7 @@
 #include "sdfg/passes/scheduler/rocm_offload_scheduler.h"
 #include "sdfg/targets/gpu/gpu_tile_target.h"
 #include "sdfg/targets/rocm/rocm.h"
-#include "sdfg/targets/rocm/rocm_mma.h"
+#include "sdfg/targets/rocm/rocm_mma_dispatcher.h"
 #include "sdfg/targets/rocm/rocm_offload_map_dispatcher.h"
 #include "sdfg/targets/rocm/rocm_offload_reduce_dispatcher.h"
 #include "sdfg/targets/rocm/rocm_reduce_dispatcher.h"

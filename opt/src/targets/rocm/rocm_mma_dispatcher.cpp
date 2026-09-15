@@ -1,6 +1,7 @@
-#include "sdfg/targets/rocm/rocm_mma.h"
+#include "sdfg/targets/rocm/rocm_mma_dispatcher.h"
 
 #include "sdfg/targets/rocm/rocm_arch.h"
+#include "sdfg/targets/rocm/rocm_mma_expander.h"
 
 
 namespace sdfg::gpu::rocm {
@@ -44,7 +45,10 @@ void RocmMmaMatmulDispatcher::emit_block_frag_declaration(
             out.stream << "rocwmma::float32_t";
             break;
         default:
-            throw std::invalid_argument("invalid scalar type");
+            throw std::invalid_argument(
+                "invalid scalar type: " + std::string(types::primitive_type_to_string(scalar_type)) + " on mma #" +
+                std::to_string(node_.element_id())
+            );
     }
 
     if (layout == math::tensor::TensorLayout::LAYOUT_COL_MAJOR) {
@@ -150,6 +154,12 @@ void RocmMmaMatmulDispatcher::emit_mma_compute(
 ) const {
     out.stream << "rocwmma::mma_sync(" << frag_d_out << ", " << frag_a << ", " << frag_b << ", " << frag_c_in << ");"
                << std::endl;
+}
+
+void RocmMmaMatmulDispatcher::emit_needed_declarations(codegen::CodegenOutput& out) const {
+    GpuMmaMatmulDispatcher::emit_needed_declarations(out);
+
+    out.library_snippet_factory.require_dependency(RocmWmmaLibDependency::instance());
 }
 
 void RocmMmaMatmulDispatcher::emit_store_macro(

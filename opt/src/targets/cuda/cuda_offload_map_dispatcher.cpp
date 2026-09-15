@@ -103,23 +103,17 @@ bool CUDAOffloadMapDispatcher::is_device_pointer_storage(const types::StorageTyp
 }
 
 std::string CUDAOffloadMapDispatcher::kernel_file_extension() const { return "cu"; }
+std::string CUDAOffloadMapDispatcher::kernel_header_file_extension() const { return "cu.h"; }
 
-void CUDAOffloadMapDispatcher::dispatch_kernel_preamble(
-    codegen::PrettyPrinter& library_stream,
-    analysis::AnalysisManager& analysis_manager,
-    const std::string& kernel_name,
-    std::vector<std::string>& arguments_declaration,
-    codegen::CodeSnippetFactory& library_snippet_factory
+void CUDAOffloadMapDispatcher::emit_additional_header_declarations(
+    codegen::PrettyPrinter& kernel_header_stream, codegen::NestedCodeSnippetFactory& nested_snippet_factory
 ) {
     // fp16/bf16 atomics (e.g. split-K accumulate) use the __half / __nv_bfloat16
     // struct overloads of atomicAdd, declared in these headers.
-    library_stream << "#include <cuda_fp16.h>" << std::endl;
-    library_stream << "#include <cuda_bf16.h>" << std::endl;
+    kernel_header_stream << "#include <cuda_fp16.h>" << std::endl;
+    kernel_header_stream << "#include <cuda_bf16.h>" << std::endl;
     // cp.async pipeline primitives for software-pipelined cooperative copies.
-    library_stream << "#include <cuda_pipeline.h>" << std::endl;
-    gpu::GPUOffloadMapDispatcher::dispatch_kernel_preamble(
-        library_stream, analysis_manager, kernel_name, arguments_declaration, library_snippet_factory
-    );
+    kernel_header_stream << "#include <cuda_pipeline.h>" << std::endl;
 }
 
 } // namespace cuda

@@ -1,6 +1,7 @@
+#include "sdfg/targets/rocm/rocm_mma_expander.h"
 #include "sdfg/targets/gpu/gpu_offload_schedule_type.h"
 #include "sdfg/targets/rocm/rocm.h"
-#include "sdfg/targets/rocm/rocm_mma.h"
+#include "sdfg/targets/rocm/rocm_mma_dispatcher.h"
 
 namespace sdfg::gpu::rocm {
 
@@ -61,7 +62,19 @@ bool RocmMmaExpander::matches_possible_mma_pattern(const math::tensor::MatMulNod
         return false;
     }
 
-    return mma_arch->valid_block_counts(mma_arch->mma_block_m, m_blocks, n_blocks, k_blocks);
+    if (!mma_arch->valid_block_counts(mma_arch->mma_block_m, m_blocks, n_blocks, k_blocks)) {
+        return false;
+    }
+
+    auto input_type = node.uniform_quantization(node.get_parent());
+    auto output_type = input_type;
+
+    if (!input_type || !output_type || input_type.value() == types::PrimitiveType::Void ||
+        output_type.value() == types::PrimitiveType::Void) {
+        return false;
+    }
+
+    return mma_arch->supported_types(input_type.value(), output_type.value());
 }
 
 GpuMmaTiling RocmMmaExpander::get_mma_tiling(const symbolic::MultiExpression& res_shape) const {

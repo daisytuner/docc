@@ -2088,7 +2088,7 @@ void PyStructuredSDFGBuilder::add_broadcast_op(
     builder_.add_computational_memlet(block, Y_access, libnode, "Y", {}, Y_type, debug_info);
 }
 
-void PyStructuredSDFGBuilder::add_matmul_op(
+sdfg::data_flow::LibraryNode& PyStructuredSDFGBuilder::add_matmul_op(
     const std::string& A,
     const sdfg::types::Tensor& A_type,
     const std::string& B,
@@ -2101,11 +2101,13 @@ void PyStructuredSDFGBuilder::add_matmul_op(
     auto& A_access = builder_.add_access(block, A, debug_info);
     auto& B_access = builder_.add_access(block, B, debug_info);
     auto& Y_access = builder_.add_access(block, Y, debug_info);
-    auto& libnode =
-        builder_.add_library_node<sdfg::math::tensor::MatMulNode>(block, debug_info, A_type.layout(), B_type.layout());
+    auto& libnode = builder_.add_library_node<sdfg::math::tensor::MatMulNode>(
+        block, debug_info, A_type.layout(), B_type.layout(), sdfg::types::PrimitiveType::Void, &Y_type.layout()
+    );
     builder_.add_computational_memlet(block, A_access, libnode, "A", {}, A_type, debug_info);
     builder_.add_computational_memlet(block, B_access, libnode, "B", {}, B_type, debug_info);
     builder_.add_computational_memlet(block, Y_access, libnode, "Y", {}, Y_type, debug_info);
+    return libnode;
 }
 
 void PyStructuredSDFGBuilder::add_fill_op(

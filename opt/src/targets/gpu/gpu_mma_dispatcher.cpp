@@ -1,5 +1,6 @@
+#include "sdfg/targets/gpu/gpu_mma_dispatcher.h"
+
 #include "sdfg/symbolic/symbolic.h"
-#include "sdfg/targets/gpu/gpu_mma.h"
 #include "sdfg/types/scalar.h"
 #include "sdfg/types/type.h"
 
@@ -68,6 +69,8 @@ void GpuMmaMatmulDispatcher::dispatch_code_with_edges(
     auto layout_b_line_size = layout_org_b_col_major ? layout_org_b.get_stride(1) : layout_org_b.get_stride(0);
 
     types::Scalar offset_type(types::PrimitiveType::UInt32);
+
+    emit_needed_declarations(out);
 
     auto matA_glbl_offset = "matA_glbl_offset";
     auto matB_glbl_offset = "matB_glbl_offset";

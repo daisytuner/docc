@@ -1,4 +1,4 @@
-#include "sdfg/targets/gpu/gpu_mma.h"
+#include "sdfg/targets/gpu/gpu_arch.h"
 
 namespace sdfg::gpu {
 

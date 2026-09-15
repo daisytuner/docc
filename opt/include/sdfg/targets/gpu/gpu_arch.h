@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <string>
 #include "sdfg/symbolic/symbolic.h"
+#include "sdfg/types/type.h"
 
 namespace sdfg::gpu {
 
@@ -18,6 +19,8 @@ struct GpuMmaSupport {
     virtual bool valid_block_counts(uint16_t block_base, int m_blocks, int n_blocks, int k_blocks) const = 0;
 
     static int get_integer_block_count(const symbolic::Expression& size, uint16_t block_size);
+
+    virtual bool supported_types(types::PrimitiveType input_type, types::PrimitiveType output_type) const = 0;
 };
 
 class GpuArch {

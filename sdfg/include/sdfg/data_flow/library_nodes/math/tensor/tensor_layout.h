@@ -124,11 +124,7 @@ public:
 
     static types::PrimitiveType get_tensor_indvar_type_for_shape(const std::vector<symbolic::Expression>& shape);
 
-    enum TensorLayoutType {
-        LAYOUT_OTHER = 0,
-        LAYOUT_ROW_MAJOR = 1,
-        LAYOUT_COL_MAJOR = -1,
-    };
+    enum TensorLayoutType { LAYOUT_OTHER = 0, LAYOUT_ROW_MAJOR = 1, LAYOUT_COL_MAJOR = 2, LAYOUT_ROW_OR_COL_MAJOR = 3 };
     /**
      * Checks if the layout is 2D and either column-major or row-major. A layout is considered column-major if the
      * stride of the first dimension is 1, and row-major if the stride of the second dimension is 1. If neither
@@ -137,6 +133,13 @@ public:
      * @return LAYOUT_OTHER(0), LAYOUT_ROW_MAJOR(1), LAYOUT_COL_MAJOR(-1)
      */
     TensorLayoutType is_2d_col_or_row_major() const;
+
+    /**
+     * Whatever the dimesionality of the entire Tensor, if it has at least 2 dimensions, and the innermost has a stride
+     * of "1" Useful to check of certain (hardware) APIs that only support 1 stride parameter and implicitly expect the
+     * other stride to be 1 can be used with this Tensor
+     */
+    bool is_last_dims_expressible_as_row_major() const;
 
     /**
      * Checks if the given strides can be looked at as col-major or row-major. A layout is considered column-major if

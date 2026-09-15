@@ -48,4 +48,15 @@ bool RocmMmaSupport::valid_block_counts(uint16_t block_base, int m_blocks, int n
     return false;
 }
 
+bool RocmMmaSupport::supported_types(types::PrimitiveType input_type, types::PrimitiveType output_type) const {
+    if (input_type == types::PrimitiveType::BFloat || input_type == types::PrimitiveType::Half) {
+        return output_type == types::PrimitiveType::Float || output_type == input_type;
+    } else if (input_type == types::PrimitiveType::Float) {
+        return f32_support && output_type == types::PrimitiveType::Float;
+    } else if (input_type == types::PrimitiveType::Double) {
+        return f32_support && output_type == types::PrimitiveType::Double;
+    }
+    return false;
+}
+
 } // namespace sdfg::gpu::rocm

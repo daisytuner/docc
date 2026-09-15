@@ -331,7 +331,10 @@ passes::LibNodeExpander::ExpandOutcome MatMulNode::expand(passes::LibNodeExpande
             return context.unable();
     };
 
-    if (layout_y_.is_2d_col_or_row_major() != TensorLayout::LAYOUT_ROW_MAJOR) {
+    if (!layout_y_.is_last_dims_expressible_as_row_major()) {
+        DEBUG_PRINTLN(
+            "Matmul #" << this->element_id() << " uses a custom result layout, that does not fulfill GEMM requirements"
+        );
         return context.unable();
     }
 

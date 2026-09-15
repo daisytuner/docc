@@ -130,6 +130,7 @@ set(SOURCE_FILES
     src/targets/rocm/rocm_map_dispatcher.cpp
     src/targets/rocm/rocm_mma_dispatcher.cpp
     src/targets/rocm/rocm_mma_expander.cpp
+    src/targets/rocm/rocm_mma_transform.cpp
     src/targets/rocm/rocm_offload_map_dispatcher.cpp
     src/targets/rocm/rocm_offload_reduce_dispatcher.cpp
     src/targets/rocm/rocm_reduce_dispatcher.cpp
