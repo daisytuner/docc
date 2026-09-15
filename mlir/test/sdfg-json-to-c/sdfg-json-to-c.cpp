@@ -12,6 +12,7 @@
 #include <sdfg/passes/pipeline.h>
 #include <sdfg/serializer/json_serializer.h>
 
+#include "sdfg/passes/expansion/library_node_expansion_pass.h"
 #include "sdfg/passes/schedules/expansion_pass.h"
 
 int main(int argc, char* argv[]) {
@@ -31,7 +32,7 @@ int main(int argc, char* argv[]) {
     sdfg::builder::StructuredSDFGBuilder builder(*sdfg);
     sdfg::analysis::AnalysisManager analysis_manager(builder.subject());
 
-    sdfg::passes::LibraryNodeExpansionPass math_expansion;
+    sdfg::passes::LibraryNodeExpansionPass math_expansion(std::make_shared<sdfg::passes::MathNodeExpander>());
     math_expansion.run(builder, analysis_manager);
 
     sdfg::passes::TensorToPointerConversionPass tensor_to_pointer_conversion_pass;

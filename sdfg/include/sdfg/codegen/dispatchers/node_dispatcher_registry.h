@@ -228,12 +228,39 @@ public:
         return registry;
     }
 
+    /**
+     * @param  library_node_code Compound string of LibraryNodeCode + "::" + ImplementationType
+     * @deprecated to decouple how this registry indexes from its users
+     */
+    [[deprecated(
+        "use register_library_node_dispatcher(const data_flow::LibraryNodeCode&, const data_flow::ImplementationType&, "
+        "LibraryNodeDispatcherFn) instead"
+    )]]
     void register_library_node_dispatcher(std::string library_node_code, LibraryNodeDispatcherFn fn) {
         std::lock_guard<std::mutex> lock(mutex_);
         if (factory_map_.find(library_node_code) != factory_map_.end()) {
             return;
         }
         factory_map_[library_node_code] = std::move(fn);
+    }
+
+    /**
+     * Designed to make the way the lookup of impl-type specific dispatchers work implementation detail
+     * @param code Just the LibraryNodeCode
+     * @param impl_type The ImplementationType
+     * @param fn
+     */
+    void register_library_node_dispatcher(
+        const data_flow::LibraryNodeCode& code,
+        const data_flow::ImplementationType& impl_type,
+        LibraryNodeDispatcherFn fn
+    ) {
+        std::string full_code = code.value() + "::" + impl_type.value();
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (factory_map_.find(full_code) != factory_map_.end()) {
+            return;
+        }
+        factory_map_[full_code] = std::move(fn);
     }
 
     LibraryNodeDispatcherFn get_library_node_dispatcher(std::string library_node_code) const {

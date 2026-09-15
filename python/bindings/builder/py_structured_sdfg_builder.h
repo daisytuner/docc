@@ -496,7 +496,7 @@ public:
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
 
-    void add_matmul_op(
+    sdfg::data_flow::LibraryNode& add_matmul_op(
         const std::string& A,
         const sdfg::types::Tensor& A_type,
         const std::string& B,

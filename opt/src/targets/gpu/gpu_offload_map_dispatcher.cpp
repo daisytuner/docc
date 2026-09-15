@@ -43,9 +43,19 @@ GPUOffloadMapDispatcher::GPUOffloadMapDispatcher(
     codegen::ArgCapturePlan& arg_capture_plan
 )
     : codegen::NodeDispatcher(language_extension, sdfg, analysis_manager, node, instrumentation_plan, arg_capture_plan),
-      node_(node) {
+      node_(node) {}
 
-      };
+void GPUOffloadMapDispatcher::emit_additional_header_declarations(
+    codegen::PrettyPrinter& kernel_header_stream, codegen::NestedCodeSnippetFactory& nested_snippet_factory
+) {
+    std::vector<std::string> includes;
+    for (auto* dep : nested_snippet_factory.get_used_lib_dependencies()) {
+        dep->enumerate_includes(includes);
+    }
+    for (auto& include : includes) {
+        kernel_header_stream << "#include <" << include << ">" << std::endl;
+    }
+}
 
 bool GPUOffloadMapDispatcher::is_outermost_map(analysis::AnalysisManager& analysis_manager) {
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
@@ -204,13 +214,24 @@ void GPUOffloadMapDispatcher::dispatch_node(
         this->dispatch_header(globals_stream, kernel_name, arguments_declaration);
         globals_stream << ";" << std::endl;
 
-        auto& library_stream =
+        auto& kernel_stream =
             library_snippet_factory.require(kernel_name, this->kernel_file_extension(), true).stream();
+        auto& kernel_header_snippet =
+            library_snippet_factory.require(kernel_name + "_inc", this->kernel_header_file_extension(), true);
 
-        library_stream << "#include " << library_snippet_factory.header_path().filename() << std::endl
-                       << std::endl; // we expect the compiler-call to do this instead
+        auto kernel_header_path = library_snippet_factory.output_path() / kernel_header_snippet.filename();
+        kernel_stream << "#include " << kernel_header_path.filename() << std::endl << std::endl << std::endl;
+        kernel_header_snippet.stream() << "#include " << library_snippet_factory.header_path().filename()
+                                       << std::endl; // we expect the compiler-call to do this instead
 
-        this->dispatch_kernel_preamble(library_stream, analysis_manager, kernel_name, arguments_declaration);
+        std::pair<std::filesystem::path, std::filesystem::path> nested_config{
+            library_snippet_factory.output_path(), kernel_header_path
+        };
+        auto nested_snippet_factory = codegen::NestedCodeSnippetFactory(&nested_config);
+
+        this->dispatch_kernel_preamble(
+            kernel_stream, analysis_manager, kernel_name, arguments_declaration, library_snippet_factory
+        );
 
         // Every device-pointer argument is a full cudaMalloc/hipMalloc allocation,
         // which is guaranteed >=256-byte aligned. Asserting 16-byte alignment lets
@@ -218,17 +239,25 @@ void GPUOffloadMapDispatcher::dispatch_node(
         // (LDG/STG.128); decltype keeps it agnostic to element type / constness.
         for (auto& container : arguments) {
             if (this->is_device_pointer_storage(sdfg_.type(container).storage_type())) {
-                library_stream << container << " = reinterpret_cast<decltype(" << container
-                               << ")>(__builtin_assume_aligned(" << container << ", 16));" << std::endl;
+                kernel_stream << container << " = reinterpret_cast<decltype(" << container
+                              << ")>(__builtin_assume_aligned(" << container << ", 16));" << std::endl;
             }
         }
 
-        this->dispatch_kernel_body(library_snippet_factory, library_stream, node_.indvar(), scope_variables, num_iters);
+        this->dispatch_kernel_body(nested_snippet_factory, kernel_stream, node_.indvar(), scope_variables, num_iters);
 
-        library_stream.setIndent(library_stream.indent() - 4);
-        library_stream << "}" << std::endl;
+        kernel_stream.setIndent(kernel_stream.indent() - 4);
+        kernel_stream << "}" << std::endl;
+
+        this->emit_additional_header_declarations(kernel_header_snippet.stream(), nested_snippet_factory);
     } else {
-        this->dispatch_kernel_body(library_snippet_factory, main_stream, node_.indvar(), scope_variables, num_iters);
+        this->dispatch_kernel_body(
+            dynamic_cast<codegen::NestedCodeSnippetFactory&>(library_snippet_factory),
+            main_stream,
+            node_.indvar(),
+            scope_variables,
+            num_iters
+        );
     }
 };
 
@@ -243,8 +272,8 @@ void GPUOffloadMapDispatcher::dispatch_header(
 }
 
 void GPUOffloadMapDispatcher::dispatch_kernel_body(
-    codegen::CodeSnippetFactory& library_snippet_factory,
-    codegen::PrettyPrinter& library_stream,
+    codegen::NestedCodeSnippetFactory& library_snippet_factory,
+    codegen::PrettyPrinter& kernel_source_stream,
     symbolic::Symbol indvar,
     std::vector<std::string>& scope_variables,
     symbolic::Expression& num_iterations
@@ -258,15 +287,15 @@ void GPUOffloadMapDispatcher::dispatch_kernel_body(
             }
             std::string val = kernel_language_extension.declaration(local, sdfg_.type(local), false, true);
             if (!val.empty()) {
-                library_stream << val;
-                library_stream << ";" << std::endl;
+                kernel_source_stream << val;
+                kernel_source_stream << ";" << std::endl;
             }
             auto& type = sdfg_.type(local);
             if (type.storage_type().allocation() == types::StorageType::AllocationType::Managed) {
-                library_stream << local << " = ";
-                library_stream << "malloc("
-                               << kernel_language_extension.expression(type.storage_type().allocation_size()) << ")";
-                library_stream << ";" << std::endl;
+                kernel_source_stream << local << " = ";
+                kernel_source_stream
+                    << "malloc(" << kernel_language_extension.expression(type.storage_type().allocation_size()) << ")";
+                kernel_source_stream << ";" << std::endl;
             }
         }
     }
@@ -280,17 +309,17 @@ void GPUOffloadMapDispatcher::dispatch_kernel_body(
         const std::string type_thread = kernel_language_extension.primitive_type(types::PrimitiveType::UInt32);
         std::string warp_dim = kernel_language_extension.expression(get_target_level_dim(target_level, get_warp_size())
         );
-        library_stream << type_thread << " num_warps = ("
-                       << kernel_language_extension.expression(symbolic::blockDim_x()) << " + " << warp_dim
-                       << " - 1) / " << warp_dim << ";" << std::endl;
-        library_stream << type_thread << " warp_id = " << kernel_language_extension.expression(symbolic::threadIdx_x())
-                       << " / "
-                       << kernel_language_extension.expression(get_target_level_dim(target_level, get_warp_size()))
-                       << ";" << std::endl;
-        library_stream << type_thread << " lane = " << kernel_language_extension.expression(symbolic::threadIdx_x())
-                       << " & ("
-                       << kernel_language_extension.expression(get_target_level_dim(target_level, get_warp_size()))
-                       << " - 1);" << std::endl;
+        kernel_source_stream << type_thread << " num_warps = ("
+                             << kernel_language_extension.expression(symbolic::blockDim_x()) << " + " << warp_dim
+                             << " - 1) / " << warp_dim << ";" << std::endl;
+        kernel_source_stream
+            << type_thread << " warp_id = " << kernel_language_extension.expression(symbolic::threadIdx_x()) << " / "
+            << kernel_language_extension.expression(get_target_level_dim(target_level, get_warp_size())) << ";"
+            << std::endl;
+        kernel_source_stream
+            << type_thread << " lane = " << kernel_language_extension.expression(symbolic::threadIdx_x()) << " & ("
+            << kernel_language_extension.expression(get_target_level_dim(target_level, get_warp_size())) << " - 1);"
+            << std::endl;
     }
 
     // The indvar keeps its declared (container) width.
@@ -355,9 +384,9 @@ void GPUOffloadMapDispatcher::dispatch_kernel_body(
         coverage_bound = "max((" + type_coverage + ")1, (" + type_coverage + ")((" + size + " + " + coverage_count_dim +
                          " - 1) / " + coverage_count_dim + "))";
     }
-    library_stream << "for (" << type_coverage << " " << coverage_loop_var << " = 0; " << coverage_loop_var << " < "
-                   << coverage_bound << "; " << coverage_loop_var << "++) {" << std::endl;
-    library_stream.setIndent(library_stream.indent() + 4);
+    kernel_source_stream << "for (" << type_coverage << " " << coverage_loop_var << " = 0; " << coverage_loop_var
+                         << " < " << coverage_bound << "; " << coverage_loop_var << "++) {" << std::endl;
+    kernel_source_stream.setIndent(kernel_source_stream.indent() + 4);
 
     std::string indvar_name = indvar->get_name();
     if (target_level == TargetLevel::WARP) {
@@ -367,9 +396,9 @@ void GPUOffloadMapDispatcher::dispatch_kernel_body(
         }
 
         // Sequential per-thread iteration over the warp-level space.
-        library_stream << type_index << " " << indvar_name << " = "
-                       << kernel_language_extension.expression(node_.init()) << " + " << coverage_loop_var << " * "
-                       << kernel_language_extension.expression(node_.stride()) << ";" << std::endl;
+        kernel_source_stream << type_index << " " << indvar_name << " = "
+                             << kernel_language_extension.expression(node_.init()) << " + " << coverage_loop_var
+                             << " * " << kernel_language_extension.expression(node_.stride()) << ";" << std::endl;
     } else {
         // 0-based parallel index across this dimension: `coverage` sweeps of `dim`
         // units plus this thread/block's index. The map's induction variable is
@@ -388,8 +417,9 @@ void GPUOffloadMapDispatcher::dispatch_kernel_body(
             offset = kernel_language_extension.expression(node_.stride()) + " * (" + parallel_index + ")";
         }
 
-        library_stream << type_index << " " << indvar_name << " = "
-                       << kernel_language_extension.expression(node_.init()) << " + " << offset << ";" << std::endl;
+        kernel_source_stream << type_index << " " << indvar_name << " = "
+                             << kernel_language_extension.expression(node_.init()) << " + " << offset << ";"
+                             << std::endl;
     }
 
 
@@ -406,39 +436,40 @@ void GPUOffloadMapDispatcher::dispatch_kernel_body(
         (target_level != TargetLevel::WARP && resolved_trip >= 0 && psize_int > 0 && resolved_trip % psize_int == 0);
     bool emit_guard = !gpu::ScheduleType_GPU_Offload::nested_sync(node_.schedule_type()) && !guard_redundant;
     if (emit_guard) {
-        library_stream << "if (" << kernel_language_extension.expression(node_.condition()) << ") {" << std::endl;
-        library_stream.setIndent(library_stream.indent() + 4);
+        kernel_source_stream << "if (" << kernel_language_extension.expression(node_.condition()) << ") {" << std::endl;
+        kernel_source_stream.setIndent(kernel_source_stream.indent() + 4);
     }
 
     // Body
     codegen::SequenceDispatcher dispatcher(
         kernel_language_extension, sdfg_, analysis_manager_, node_.root(), instrumentation_plan_, arg_capture_plan_
     );
-    dispatcher.dispatch(library_stream, library_stream, library_snippet_factory);
+    dispatcher.dispatch(kernel_source_stream, kernel_source_stream, library_snippet_factory);
 
     // Free managed scope variables
     for (auto& local : scope_variables) {
         auto& type = sdfg_.type(local);
         if (type.storage_type().deallocation() == types::StorageType::AllocationType::Managed) {
-            library_stream << "free(" << local << ")";
-            library_stream << ";" << std::endl;
+            kernel_source_stream << "free(" << local << ")";
+            kernel_source_stream << ";" << std::endl;
         }
     }
 
     if (emit_guard) {
-        library_stream.setIndent(library_stream.indent() - 4);
-        library_stream << "}" << std::endl;
+        kernel_source_stream.setIndent(kernel_source_stream.indent() - 4);
+        kernel_source_stream << "}" << std::endl;
     }
 
-    library_stream.setIndent(library_stream.indent() - 4);
-    library_stream << "}" << std::endl;
+    kernel_source_stream.setIndent(kernel_source_stream.indent() - 4);
+    kernel_source_stream << "}" << std::endl;
 }
 
 void GPUOffloadMapDispatcher::dispatch_kernel_preamble(
     codegen::PrettyPrinter& library_stream,
     analysis::AnalysisManager& analysis_manager,
     const std::string& kernel_name,
-    std::vector<std::string>& arguments_declaration
+    std::vector<std::string>& arguments_declaration,
+    codegen::CodeSnippetFactory& library_snippet_factory
 ) {
     // Kernel Header
     dispatch_header(library_stream, kernel_name, arguments_declaration);

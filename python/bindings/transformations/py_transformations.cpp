@@ -7,6 +7,8 @@
 #include <sdfg/symbolic/symbolic.h>
 #include <sdfg/targets/cuda/cuda.h>
 #include <sdfg/targets/rocm/rocm.h>
+#include <sdfg/targets/rocm/rocm_arch.h>
+#include <sdfg/targets/rocm/rocm_mma_transform.h>
 #include <sdfg/tiles/transformations/local_storage.h>
 #include <sdfg/tiles/transformations/software_pipelining.h>
 #include <sdfg/tiles/transformations/tile_fusion.h>
@@ -571,6 +573,31 @@ void register_transformations(py::module& m) {
             std::ostringstream oss;
             oss << "<Recorder transformations=" << self.get_history().size() << ">";
             return oss.str();
+        });
+
+    // RocmMmaExpand transformation: expand a MatMul node into an arch-specific MMA impl.
+    py::class_<sdfg::gpu::rocm::RocmMmaTransform, Transformation>(m, "RocmMmaTransform")
+        .def(
+            py::init([](sdfg::data_flow::LibraryNode& node, const sdfg::gpu::rocm::RocmArch& arch) {
+                auto& matmul_node = sdfg::dyn_cast<sdfg::math::tensor::MatMulNode>(node);
+                return new sdfg::gpu::rocm::RocmMmaTransform(matmul_node, &arch);
+            }),
+            py::arg("node"),
+            py::arg("arch"),
+            py::keep_alive<1, 2>(),
+            py::keep_alive<1, 3>(),
+            "Create a ROCm MMA expansion transformation for a MatMul library node.\n\n"
+            "Args:\n"
+            "    node: The MatMul library node to expand (from block.dataflow.library_nodes)\n"
+            "    arch: The target RocmArch (e.g. RocmArch.get_from_name('gfx1201'))"
+        )
+        .def_property_readonly(
+            "expanded",
+            &sdfg::gpu::rocm::RocmMmaTransform::expanded,
+            "Whether the node was expanded (valid after apply())"
+        )
+        .def("__repr__", [](const sdfg::gpu::rocm::RocmMmaTransform&) {
+            return std::string("<RocmMmaTransform name='RocmMmaTransform'>");
         });
 
     // InvalidTransformationException

@@ -13,7 +13,8 @@ namespace offloading {
 
 inline void register_external_data_transfers_plugin() {
     codegen::LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        LibraryNodeType_External_Offloading.value() + "::" + data_flow::ImplementationType_NONE.value(),
+        LibraryNodeType_External_Offloading,
+        data_flow::ImplementationType_NONE,
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,

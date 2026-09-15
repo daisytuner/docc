@@ -10,6 +10,7 @@
 #include <sdfg/helpers/helpers.h>
 
 #include "sdfg/targets/rocm/rocm.h"
+#include "sdfg/targets/rocm/rocm_mma_expander.h"
 
 namespace sdfg {
 namespace rocm {
@@ -67,6 +68,17 @@ void ROCMOffloadMapDispatcher::dispatch_kernel_call(
     main_stream << "}" << std::endl;
 }
 
+void ROCMOffloadMapDispatcher::emit_additional_header_declarations(
+    codegen::PrettyPrinter& kernel_header_stream, codegen::NestedCodeSnippetFactory& nested_snippet_factory
+) {
+    GPUOffloadMapDispatcher::emit_additional_header_declarations(kernel_header_stream, nested_snippet_factory);
+
+    // fp16/bf16 atomics (e.g. split-K accumulate) use the __half / __hip_bfloat16
+    // struct overloads of atomicAdd, declared in these HIP headers.
+    kernel_header_stream << "#include <hip/hip_fp16.h>" << std::endl;
+    kernel_header_stream << "#include <hip/hip_bf16.h>" << std::endl;
+}
+
 void ROCMOffloadMapDispatcher::dispatch_kernel_launch_error_check(
     codegen::PrettyPrinter& stream, const codegen::LanguageExtension& language_extension, bool instrumented
 ) {
@@ -105,19 +117,8 @@ bool ROCMOffloadMapDispatcher::is_device_pointer_storage(const types::StorageTyp
 
 std::string ROCMOffloadMapDispatcher::kernel_file_extension() const { return "rocm.cpp"; }
 
-void ROCMOffloadMapDispatcher::dispatch_kernel_preamble(
-    codegen::PrettyPrinter& library_stream,
-    analysis::AnalysisManager& analysis_manager,
-    const std::string& kernel_name,
-    std::vector<std::string>& arguments_declaration
-) {
-    // fp16/bf16 atomics (e.g. split-K accumulate) use the __half / __hip_bfloat16
-    // struct overloads of atomicAdd, declared in these HIP headers.
-    library_stream << "#include <hip/hip_fp16.h>" << std::endl;
-    library_stream << "#include <hip/hip_bf16.h>" << std::endl;
-    gpu::GPUOffloadMapDispatcher::
-        dispatch_kernel_preamble(library_stream, analysis_manager, kernel_name, arguments_declaration);
-}
+std::string ROCMOffloadMapDispatcher::kernel_header_file_extension() const { return "rocm.h"; }
+
 
 } // namespace rocm
 } // namespace sdfg

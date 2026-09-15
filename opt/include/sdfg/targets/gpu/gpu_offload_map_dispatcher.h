@@ -15,8 +15,8 @@ protected:
     structured_control_flow::Map& node_;
 
     void dispatch_kernel_body(
-        codegen::CodeSnippetFactory& library_snippet_factory,
-        codegen::PrettyPrinter& globals_stream,
+        codegen::NestedCodeSnippetFactory& library_snippet_factory,
+        codegen::PrettyPrinter& kernel_source_stream,
         symbolic::Symbol indvar,
         std::vector<std::string>& scope_variables,
         symbolic::Expression& num_iterations
@@ -56,7 +56,8 @@ protected:
         codegen::PrettyPrinter& library_stream,
         analysis::AnalysisManager& analysis_manager,
         const std::string& kernel_name,
-        std::vector<std::string>& arguments_declaration
+        std::vector<std::string>& arguments_declaration,
+        codegen::CodeSnippetFactory& library_snippet_factory
     );
 
     virtual codegen::LanguageExtension& create_kernel_language_extension() = 0;
@@ -67,6 +68,11 @@ protected:
 
     /// File extension for the kernel translation unit ("cu"/"rocm.cpp").
     virtual std::string kernel_file_extension() const = 0;
+    virtual std::string kernel_header_file_extension() const = 0;
+
+    virtual void emit_additional_header_declarations(
+        codegen::PrettyPrinter& kernel_header_stream, codegen::NestedCodeSnippetFactory& nested_snippet_factory
+    );
 
 public:
     GPUOffloadMapDispatcher(

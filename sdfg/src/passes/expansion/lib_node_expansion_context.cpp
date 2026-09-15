@@ -1,4 +1,4 @@
-#include "lib_node_expansion_context.h"
+#include "sdfg/passes/expansion/lib_node_expansion_context.h"
 
 namespace sdfg::passes::expansion {
 
@@ -142,6 +142,10 @@ std::unique_ptr<LibNodeExpander::AccessNodeExpand> LibNodeExpansionContext::
 
     return std::make_unique<
         AccessNodeExpansion>(this, base_in_access_nodes, base_out_access_nodes, nothing_else_in_block);
+}
+
+LibNodeExpander::ExpandOutcome LibNodeExpansionContext::successfully_modified_node_only() {
+    return LibNodeExpander::ExpandOutcome(true);
 }
 
 LibNodeExpander::ExpandOutcome LibNodeExpansionContext::unable() { return LibNodeExpander::ExpandOutcome(false); }

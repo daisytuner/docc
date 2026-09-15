@@ -52,18 +52,19 @@ struct Context {
     codegen::LibraryNodeDispatcherRegistry& library_node_dispatcher_registry;
 
     // Schedulers
+    /// @deprecated
     passes::scheduler::SchedulerRegistry& scheduler_registry;
     passes::scheduler::SchedulerRegistry& get_scheduler_registry() { return scheduler_registry; }
 
     // Tile targets
-    tiles::TileTargetRegistry& tile_target_registry;
-    tiles::TileTargetRegistry& get_tile_target_registry() { return tile_target_registry; }
+    tiles::TileTargetRegistry& get_tile_target_registry() { return tile_target_registry_; }
 
     OptionRegistry& option_registry() { return option_registry_; }
 
 protected:
     std::unordered_map<std::string, docc::target::DoccTarget*> available_targets;
     OptionRegistry option_registry_;
+    tiles::TileTargetRegistry& tile_target_registry_;
 
 public:
     /// @deprecated
@@ -80,7 +81,7 @@ public:
           node_dispatcher_registry(node_dispatcher_registry), map_dispatcher_registry(map_dispatcher_registry),
           reduce_dispatcher_registry(reduce_dispatcher_registry),
           library_node_dispatcher_registry(library_node_dispatcher_registry), scheduler_registry(scheduler_registry),
-          tile_target_registry(tile_target_registry) {}
+          tile_target_registry_(tile_target_registry) {}
 
     static Context global_context() {
         return Context{

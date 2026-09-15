@@ -38,6 +38,10 @@ protected:
         std::vector<std::string>& arguments_device
     ) override;
 
+    void emit_additional_header_declarations(
+        codegen::PrettyPrinter& kernel_header_stream, codegen::NestedCodeSnippetFactory& nested_snippet_factory
+    ) override;
+
 public:
     CUDAOffloadMapDispatcher(
         codegen::LanguageExtension& language_extension,
@@ -47,13 +51,6 @@ public:
         codegen::InstrumentationPlan& instrumentation_plan,
         codegen::ArgCapturePlan& arg_capture_plan
     );
-
-    void dispatch_kernel_preamble(
-        codegen::PrettyPrinter& library_stream,
-        analysis::AnalysisManager& analysis_manager,
-        const std::string& kernel_name,
-        std::vector<std::string>& arguments_declaration
-    ) override;
 
     void dispatch_kernel_launch_error_check(
         codegen::PrettyPrinter& stream, const codegen::LanguageExtension& language_extension, bool instrumented
@@ -66,6 +63,7 @@ public:
     bool is_device_pointer_storage(const types::StorageType& storage) const override;
 
     std::string kernel_file_extension() const override;
+    std::string kernel_header_file_extension() const override;
 };
 
 } // namespace cuda

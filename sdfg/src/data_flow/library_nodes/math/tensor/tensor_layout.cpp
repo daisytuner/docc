@@ -107,6 +107,28 @@ symbolic::Expression TensorLayout::total_elements() const { return SymEngine::mu
 
 symbolic::MultiExpression TensorLayout::linear_strides() const { return std::move(linear_strides(shape_)); }
 
+symbolic::Expression TensorLayout::resolve_element(const symbolic::MultiExpression& indices, bool require_to_element)
+    const {
+    auto resolve_dims = indices.size();
+    if (resolve_dims != shape_.size() && require_to_element) {
+        throw std::invalid_argument(
+            "TensorLayout::resolve_element: indices size (" + std::to_string(resolve_dims) +
+            ") does not match shape size (" + std::to_string(shape_.size()) + ")"
+        );
+    } else if (resolve_dims > shape_.size()) {
+        throw std::invalid_argument(
+            "TensorLayout::resolve_element: indices size (" + std::to_string(resolve_dims) +
+            ") is greater than shape size (" + std::to_string(shape_.size()) + ")"
+        );
+    }
+
+    symbolic::Expression addr = offset_;
+    for (size_t i = 0; i < indices.size(); ++i) {
+        addr = symbolic::add(addr, symbolic::mul(indices.at(i), strides_.at(i)));
+    }
+    return addr;
+}
+
 bool TensorLayout::is_scalar() const { return shape_.empty(); }
 
 TensorLayout TensorLayout::deserialize_from_json(const nlohmann::json& j) {
@@ -342,6 +364,45 @@ std::unique_ptr<TensorLayout> TensorLayout::broadcast(const symbolic::MultiExpre
 types::PrimitiveType TensorLayout::get_tensor_indvar_type_for_shape(const std::vector<symbolic::Expression>& shape) {
     auto num_elems = SymEngine::mul(shape);
     return types::get_primitive_type_to_hold_upper_bound(num_elems);
+}
+
+TensorLayout::TensorLayoutType TensorLayout::is_2d_col_or_row_major() const {
+    if (dims() != 2) {
+        return TensorLayoutType::LAYOUT_OTHER;
+    }
+    return is_last_dims_col_or_row_major(strides_);
+}
+
+bool TensorLayout::is_last_dims_expressible_as_row_major() const {
+    return strides_.size() >= 2 && symbolic::eq(strides_.back(), symbolic::integer(1));
+}
+
+TensorLayout::TensorLayoutType TensorLayout::is_last_dims_col_or_row_major(const symbolic::MultiExpression& strides) {
+    if (strides.size() < 2) {
+        return TensorLayoutType::LAYOUT_OTHER;
+    }
+    auto innermost_i = strides.size() - 1;
+    auto outer_i = innermost_i - 1;
+    auto outer = strides.at(outer_i);
+    auto inner = strides.at(innermost_i);
+
+    bool col_major = false;
+    bool row_major = false;
+    if (symbolic::eq(outer, symbolic::integer(1))) {
+        col_major = true;
+    }
+    if (symbolic::eq(inner, symbolic::integer(1))) {
+        if (col_major) {
+            return TensorLayoutType::LAYOUT_ROW_OR_COL_MAJOR;
+        } else {
+            return TensorLayoutType::LAYOUT_ROW_MAJOR;
+        }
+    }
+    if (col_major) {
+        return TensorLayoutType::LAYOUT_COL_MAJOR;
+    } else {
+        return TensorLayoutType::LAYOUT_OTHER;
+    }
 }
 
 } // namespace sdfg::math::tensor

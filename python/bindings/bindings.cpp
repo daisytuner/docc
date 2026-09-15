@@ -26,6 +26,7 @@
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/symbolic/extreme_values.h"
 #include "sdfg/targets/cuda/plugin.h"
+#include "targets/py_gpu_arch.h"
 #include "transformations/py_replayer.h"
 #include "transformations/py_transformations.h"
 #include "types/py_types.h"
@@ -168,6 +169,7 @@ PYBIND11_MODULE(_sdfg, m) {
     register_passes(m);
     register_cutout(m);
     register_metrics(m);
+    register_gpu_arch(m, docc_context);
 
     py::class_<sdfg::passes::rpc::RpcContext>(m, "RpcContext");
 
@@ -920,7 +922,8 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("B_type"),
             py::arg("Y"),
             py::arg("Y_type"),
-            py::arg("debug_info") = sdfg::DebugInfo()
+            py::arg("debug_info") = sdfg::DebugInfo(),
+            py::return_value_policy::reference
         )
         .def(
             "add_fill_op",

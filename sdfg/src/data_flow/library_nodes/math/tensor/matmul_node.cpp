@@ -61,10 +61,12 @@ MatMulNode::MatMulNode(
     const TensorLayout& layout_a,
     const TensorLayout& layout_b,
     QuantizationType quantization,
+    const TensorLayout* layout_y,
     const data_flow::ImplementationType& impl_type
 )
     : TensorNode(element_id, debug_info, vertex, parent, LibraryNodeType_MatMul, {}, {"Y", "A", "B"}, impl_type),
-      fixed_quantization_(quantization), layout_a_(layout_a), layout_b_(layout_b) {
+      fixed_quantization_(quantization), layout_a_(layout_a), layout_b_(layout_b),
+      layout_y_(layout_y ? *layout_y : get_linear_result_layout(layout_a, layout_b)) {
     if (layout_a.dims() < 2) {
         throw std::invalid_argument("MatMulNode: Input A must have at least 2 dimensions");
     }
@@ -92,6 +94,16 @@ const TensorLayout& MatMulNode::layout_a() const { return layout_a_; }
 
 const TensorLayout& MatMulNode::layout_b() const { return layout_b_; }
 
+const TensorLayout& MatMulNode::layout_y() const { return layout_y_; }
+
+TensorLayout MatMulNode::get_linear_result_layout(const TensorLayout& layout_a, const TensorLayout& layout_b) {
+    // The result layout is derived from the last two dimensions of A and B
+    auto m = layout_a.get_dim_innermost(1);
+    auto n = layout_b.get_dim_innermost(0);
+    // Assuming row-major layout for the result
+    return TensorLayout({m, n}); // always in row-major, linear strides, no padding
+}
+
 void MatMulNode::validate(const Function& function) const {
     TensorNode::validate(function);
 
@@ -106,12 +118,60 @@ void MatMulNode::validate(const Function& function) const {
     }
 
     // Validate K dimension matches between A and B
+    auto m_a = layout_a_.get_dim_innermost(1);
     auto k_a = layout_a_.get_dim_innermost(0);
+    auto n_b = layout_b_.get_dim_innermost(0);
     auto k_b = layout_b_.get_dim_innermost(1);
     if (!symbolic::eq(k_a, k_b)) {
         throw InvalidSDFGException(
             "MatMulNode: K dimension mismatch. A has K=" + k_a->__str__() + ", B has K=" + k_b->__str__()
         );
+    }
+    auto m_y = layout_y_.get_dim_innermost(1);
+    auto n_y = layout_y_.get_dim_innermost(0);
+
+    auto m_match = symbolic::eq(m_a, m_y);
+    auto n_match = symbolic::eq(n_b, n_y);
+    if (!m_match || !n_match) {
+        throw InvalidSDFGException(
+            "MatMulNode: Output dimensions mismatch. Expected (" + m_a->__str__() + ", " + n_b->__str__() + "), got (" +
+            m_y->__str__() + ", " + n_y->__str__() + ")"
+        );
+    }
+}
+
+void MatMulNode::verify_data_types(const data_flow::DataFlowGraph& graph) const {
+    if (fixed_quantization_ == QUANTIZATION_MATCH_INPUTS) {
+        TensorNode::verify_data_types(graph);
+        return;
+    }
+
+    auto result_quant = fixed_quantization_;
+    auto input_quant = fixed_quantization_;
+
+    auto* res_edge = graph.in_edge_for_connector(*this, inputs_.at(Y_INPUT_IDX));
+    auto res_prim_type = res_edge->base_type().primitive_type();
+    if (res_prim_type != result_quant && res_prim_type != types::PrimitiveType::Void) {
+        throw InvalidSDFGException(
+            "MatMulNode: Output memlet type mismatch. Expected " +
+            std::string(types::primitive_type_to_string(result_quant)) + ", got " +
+            std::string(types::primitive_type_to_string(res_edge->base_type().primitive_type()))
+        );
+    }
+
+    std::vector<const data_flow::Memlet*> input_edges = {
+        graph.in_edge_for_connector(*this, inputs_.at(A_INPUT_IDX)),
+        graph.in_edge_for_connector(*this, inputs_.at(B_INPUT_IDX))
+    };
+    for (auto& input_edge : input_edges) {
+        auto in_prim_type = input_edge->base_type().primitive_type();
+        if (in_prim_type != input_quant && in_prim_type != types::PrimitiveType::Void) {
+            throw InvalidSDFGException(
+                "MatMulNode: Input memlet type mismatch. Expected " +
+                std::string(types::primitive_type_to_string(input_quant)) + ", got " +
+                std::string(types::primitive_type_to_string(input_edge->base_type().primitive_type()))
+            );
+        }
     }
 }
 
@@ -135,7 +195,7 @@ void MatMulNode::replace(const symbolic::ExpressionMapping& replacements) {
 std::unique_ptr<data_flow::DataFlowNode> MatMulNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
     return std::unique_ptr<data_flow::DataFlowNode>(new MatMulNode(
-        element_id, debug_info(), vertex, parent, layout_a_, layout_b_, fixed_quantization_, implementation_type_
+        element_id, debug_info(), vertex, parent, layout_a_, layout_b_, fixed_quantization_, &layout_y_, implementation_type_
     ));
 }
 
@@ -155,7 +215,7 @@ std::optional<types::PrimitiveType> MatMulNode::uniform_quantization(const data_
 ) const {
     if (fixed_quantization_ != QUANTIZATION_MATCH_INPUTS) {
         auto inferred = this->primitive_type(data_flow_graph);
-        if (inferred == fixed_quantization_) {
+        if (inferred == fixed_quantization_ || inferred == types::PrimitiveType::Void) {
             return fixed_quantization_;
         } else {
             return std::nullopt;
@@ -171,6 +231,12 @@ std::string MatMulNode::toStr() const {
     ss << types::primitive_type_to_string(fixed_quantization_) << ", ";
     ss << "A: " << layout_a_;
     ss << ", B: " << layout_b_;
+    if (!layout_y_.has_linear_accesses()) {
+        ss << ", Y: " << layout_y_;
+    }
+    if (implementation_type_ != data_flow::ImplementationType_NONE) {
+        ss << ", impl: " << implementation_type_.value();
+    }
     ss << ")";
     return ss.str();
 }
@@ -264,6 +330,13 @@ passes::LibNodeExpander::ExpandOutcome MatMulNode::expand(passes::LibNodeExpande
             // GEMM only supports floating point types, fall back to naive expansion
             return context.unable();
     };
+
+    if (!layout_y_.is_last_dims_expressible_as_row_major()) {
+        DEBUG_PRINTLN(
+            "Matmul #" << this->element_id() << " uses a custom result layout, that does not fulfill GEMM requirements"
+        );
+        return context.unable();
+    }
 
     auto standalone =
         context.replacement_requires_access_nodes({Dir::IndirectReadWrite, Dir::IndirectRead, Dir::IndirectRead});

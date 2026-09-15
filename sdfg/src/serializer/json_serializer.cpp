@@ -651,8 +651,8 @@ void JSONSerializer::json_to_dataflow(
             }
             auto serializer = serializer_fn();
             auto& lib_node = serializer->deserialize(node, builder, parent);
-            lib_node.implementation_type() =
-                data_flow::ImplementationType(node["implementation_type"].get<std::string>());
+            lib_node.set_implementation_type(data_flow::ImplementationType(node["implementation_type"].get<std::string>()
+            ));
             lib_node.element_id_ = node["element_id"];
             nodes_map.insert({node["element_id"], lib_node});
         } else if (type == "access_node") {

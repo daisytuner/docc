@@ -28,6 +28,8 @@ const ImplementationType& LibraryNode::implementation_type() const { return this
 
 ImplementationType& LibraryNode::implementation_type() { return this->implementation_type_; };
 
+void LibraryNode::set_implementation_type(const ImplementationType& impl_type) { implementation_type_ = impl_type; }
+
 bool LibraryNode::side_effect() const { return this->side_effect_; };
 
 std::string LibraryNode::toStr() const { return std::string(this->code_.value()); }

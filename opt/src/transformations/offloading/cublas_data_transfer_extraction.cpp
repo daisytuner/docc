@@ -339,7 +339,7 @@ void CUBLASDataTransferExtraction::
     }
 
     // Change the implementation type to CUBLAS without data transfers
-    this->blas_node_.implementation_type() = cuda::ImplementationType_CUDAWithoutTransfers;
+    this->blas_node_.set_implementation_type(cuda::ImplementationType_CUDAWithoutTransfers);
 }
 
 void CUBLASDataTransferExtraction::to_json(nlohmann::json& j) const {
