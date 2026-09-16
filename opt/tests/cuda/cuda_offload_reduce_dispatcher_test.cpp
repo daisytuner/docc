@@ -9,7 +9,8 @@
 #include "sdfg/structured_control_flow/reduce.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/cuda/cuda.h"
-#include "sdfg/targets/cuda/cuda_offload_reduce_dispatcher.h"
+#include "sdfg/targets/cuda/cuda_offload_dispatcher_strategy.h"
+#include "sdfg/targets/gpu/gpu_offload_reduce_dispatcher.h"
 #include "sdfg/targets/gpu/gpu_offload_schedule_type.h"
 #include "sdfg/types/array.h"
 
@@ -74,16 +75,34 @@ static std::string dispatch_block_reduce(
     auto arg_capture = codegen::ArgCapturePlan::none(builder.subject());
     analysis::AnalysisManager analysis_manager(builder.subject());
 
-    CUDAOffloadReduceDispatcher
-        dispatcher(language_extension, builder.subject(), analysis_manager, reduce, *instrumentation, *arg_capture);
+    gpu::GPUOffloadReduceDispatcher dispatcher(
+        language_extension,
+        builder.subject(),
+        analysis_manager,
+        reduce,
+        *instrumentation,
+        *arg_capture,
+        std::make_unique<CUDAOffloadDispatcherStrategy>(builder.subject())
+    );
 
     codegen::PrettyPrinter main_stream;
     codegen::PrettyPrinter globals_stream;
     codegen::CodeSnippetFactory library_snippet_factory;
     dispatcher.dispatch_node(main_stream, globals_stream, library_snippet_factory);
 
-    EXPECT_EQ(library_snippet_factory.snippets().size(), 1u);
-    return library_snippet_factory.snippets().begin()->second.stream().str();
+    EXPECT_EQ(library_snippet_factory.snippets().size(), 2u);
+    const codegen::CodeSnippet* source_snippet = nullptr;
+    const codegen::CodeSnippet* header_snippet = nullptr;
+    for (auto& [key, snippet] : library_snippet_factory.snippets()) {
+        if (snippet.extension() == "cu.h") {
+            header_snippet = &snippet;
+        } else if (snippet.extension() == "cu") {
+            source_snippet = &snippet;
+        }
+    }
+    EXPECT_NE(source_snippet, nullptr);
+    EXPECT_NE(header_snippet, nullptr);
+    return source_snippet->stream().str();
 }
 
 // Default block level → shared-memory halving tree, no atomics.
@@ -192,8 +211,15 @@ TEST(CUDAOffloadReduceDispatcherTest, PlacedPartialContainerWrongStorageThrows) 
     auto instrumentation = codegen::InstrumentationPlan::none(builder.subject());
     auto arg_capture = codegen::ArgCapturePlan::none(builder.subject());
     analysis::AnalysisManager analysis_manager(builder.subject());
-    CUDAOffloadReduceDispatcher
-        dispatcher(language_extension, builder.subject(), analysis_manager, reduce, *instrumentation, *arg_capture);
+    gpu::GPUOffloadReduceDispatcher dispatcher(
+        language_extension,
+        builder.subject(),
+        analysis_manager,
+        reduce,
+        *instrumentation,
+        *arg_capture,
+        std::make_unique<CUDAOffloadDispatcherStrategy>(builder.subject())
+    );
     codegen::PrettyPrinter main_stream, globals_stream;
     codegen::CodeSnippetFactory library_snippet_factory;
     EXPECT_THROW(dispatcher.dispatch_node(main_stream, globals_stream, library_snippet_factory), InvalidSDFGException);

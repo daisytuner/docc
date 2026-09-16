@@ -4,10 +4,11 @@
 
 #include "sdfg/passes/scheduler/cuda_offload_scheduler.h"
 #include "sdfg/targets/cuda/cuda.h"
-#include "sdfg/targets/cuda/cuda_offload_map_dispatcher.h"
-#include "sdfg/targets/cuda/cuda_offload_reduce_dispatcher.h"
+#include "sdfg/targets/cuda/cuda_offload_dispatcher_strategy.h"
 #include "sdfg/targets/cuda/cuda_reduce_dispatcher.h"
 #include "sdfg/targets/cuda/tiles/async_copy_node.h"
+#include "sdfg/targets/gpu/gpu_offload_map_dispatcher.h"
+#include "sdfg/targets/gpu/gpu_offload_reduce_dispatcher.h"
 #include "sdfg/targets/gpu/gpu_tile_target.h"
 #include "sdfg/tiles/tile_target_registry.h"
 
@@ -66,8 +67,14 @@ void register_cuda_plugin(plugins::Context& context) {
            structured_control_flow::Map& node,
            codegen::InstrumentationPlan& instrumentation_plan,
            codegen::ArgCapturePlan& arg_capture_plan) {
-            return std::make_unique<CUDAOffloadMapDispatcher>(
-                language_extension, sdfg, analysis_manager, node, instrumentation_plan, arg_capture_plan
+            return std::make_unique<gpu::GPUOffloadMapDispatcher>(
+                language_extension,
+                sdfg,
+                analysis_manager,
+                node,
+                instrumentation_plan,
+                arg_capture_plan,
+                std::make_unique<CUDAOffloadDispatcherStrategy>(sdfg)
             );
         }
     );
@@ -80,8 +87,14 @@ void register_cuda_plugin(plugins::Context& context) {
            structured_control_flow::Reduce& node,
            codegen::InstrumentationPlan& instrumentation_plan,
            codegen::ArgCapturePlan& arg_capture_plan) {
-            return std::make_unique<CUDAOffloadReduceDispatcher>(
-                language_extension, sdfg, analysis_manager, node, instrumentation_plan, arg_capture_plan
+            return std::make_unique<gpu::GPUOffloadReduceDispatcher>(
+                language_extension,
+                sdfg,
+                analysis_manager,
+                node,
+                instrumentation_plan,
+                arg_capture_plan,
+                std::make_unique<CUDAOffloadDispatcherStrategy>(sdfg)
             );
         }
     );

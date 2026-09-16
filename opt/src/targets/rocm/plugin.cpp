@@ -3,11 +3,12 @@
 #include <memory>
 
 #include "sdfg/passes/scheduler/rocm_offload_scheduler.h"
+#include "sdfg/targets/gpu/gpu_offload_map_dispatcher.h"
+#include "sdfg/targets/gpu/gpu_offload_reduce_dispatcher.h"
 #include "sdfg/targets/gpu/gpu_tile_target.h"
 #include "sdfg/targets/rocm/rocm.h"
 #include "sdfg/targets/rocm/rocm_mma_dispatcher.h"
-#include "sdfg/targets/rocm/rocm_offload_map_dispatcher.h"
-#include "sdfg/targets/rocm/rocm_offload_reduce_dispatcher.h"
+#include "sdfg/targets/rocm/rocm_offload_dispatcher_strategy.h"
 #include "sdfg/targets/rocm/rocm_reduce_dispatcher.h"
 #include "sdfg/targets/rocm/tiles/async_copy_node.h"
 #include "sdfg/tiles/tile_target_registry.h"
@@ -66,8 +67,14 @@ void register_rocm_plugin(plugins::Context& context) {
            structured_control_flow::Map& node,
            codegen::InstrumentationPlan& instrumentation_plan,
            codegen::ArgCapturePlan& arg_capture_plan) {
-            return std::make_unique<ROCMOffloadMapDispatcher>(
-                language_extension, sdfg, analysis_manager, node, instrumentation_plan, arg_capture_plan
+            return std::make_unique<gpu::GPUOffloadMapDispatcher>(
+                language_extension,
+                sdfg,
+                analysis_manager,
+                node,
+                instrumentation_plan,
+                arg_capture_plan,
+                std::make_unique<rocm::ROCMOffloadDispatcherStrategy>(sdfg)
             );
         }
     );
@@ -80,8 +87,14 @@ void register_rocm_plugin(plugins::Context& context) {
            structured_control_flow::Reduce& node,
            codegen::InstrumentationPlan& instrumentation_plan,
            codegen::ArgCapturePlan& arg_capture_plan) {
-            return std::make_unique<ROCMOffloadReduceDispatcher>(
-                language_extension, sdfg, analysis_manager, node, instrumentation_plan, arg_capture_plan
+            return std::make_unique<gpu::GPUOffloadReduceDispatcher>(
+                language_extension,
+                sdfg,
+                analysis_manager,
+                node,
+                instrumentation_plan,
+                arg_capture_plan,
+                std::make_unique<rocm::ROCMOffloadDispatcherStrategy>(sdfg)
             );
         }
     );

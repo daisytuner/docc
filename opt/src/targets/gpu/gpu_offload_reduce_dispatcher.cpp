@@ -259,40 +259,18 @@ GPUOffloadReduceDispatcher::GPUOffloadReduceDispatcher(
     analysis::AnalysisManager& analysis_manager,
     structured_control_flow::Reduce& node,
     codegen::InstrumentationPlan& instrumentation_plan,
-    codegen::ArgCapturePlan& arg_capture_plan
+    codegen::ArgCapturePlan& arg_capture_plan,
+    std::unique_ptr<GPUOffloadDispatcherStrategy> strategy
 )
-    : codegen::NodeDispatcher(language_extension, sdfg, analysis_manager, node, instrumentation_plan, arg_capture_plan),
+    : GPUOffloadBaseDispatcher(
+          language_extension, sdfg, analysis_manager, node, instrumentation_plan, arg_capture_plan, std::move(strategy)
+      ),
       node_(node) {
 
       };
 
-bool GPUOffloadReduceDispatcher::is_outermost_map(analysis::AnalysisManager& analysis_manager) {
-    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
-    auto ancestors = loop_analysis.ancestors(&node_);
-    for (auto ancestor : ancestors) {
-        if (auto loop = dyn_cast<structured_control_flow::StructuredLoop*>(ancestor)) {
-            if (loop->schedule_type().category() == structured_control_flow::ScheduleTypeCategory::Offloader) {
-                return false;
-            }
-        }
-    }
-    return true;
-}
 
-void GPUOffloadReduceDispatcher::dispatch_node(
-    codegen::PrettyPrinter& main_stream,
-    codegen::PrettyPrinter& globals_stream,
-    codegen::CodeSnippetFactory& library_snippet_factory
-) {
-    // Mark written locals as private
-    analysis::AnalysisManager analysis_manager(sdfg_);
-    auto& users = analysis_manager.get<analysis::Users>();
-    analysis::UsersView body_users(users, node_.root());
-    analysis::ArgumentsAnalysis& arguments_analysis = analysis_manager.get<analysis::ArgumentsAnalysis>();
-
-    auto& used_arguments = arguments_analysis.arguments(analysis_manager, node_);
-    auto& locals = arguments_analysis.locals(analysis_manager, node_);
-
+void GPUOffloadReduceDispatcher::validate_before_dispatch(analysis::AnalysisManager& analysis_manager) {
     // The per-thread reduction model holds a single partial per accumulator, addressed by
     // a thread-invariant (enclosing) index. An accumulator indexed by the induction
     // variable of a loop nested INSIDE the reduce body would need one partial per
@@ -319,176 +297,18 @@ void GPUOffloadReduceDispatcher::dispatch_node(
             }
         }
     }
-
-    // filter indvar
-    auto indvar = node_.indvar();
-
-    std::vector<std::string> scope_variables_unfiltered(locals.begin(), locals.end());
-    scope_variables_unfiltered.erase(
-        std::remove(scope_variables_unfiltered.begin(), scope_variables_unfiltered.end(), indvar->get_name()),
-        scope_variables_unfiltered.end()
-    );
-    std::vector<std::string> arguments;
-
-    for (auto& argument : used_arguments) {
-        auto storage = sdfg_.type(argument.first).storage_type();
-        // Thread-index symbols and shared-memory scratch (a kernel-local placed partials
-        // buffer) are declared inside the kernel, never passed as kernel arguments.
-        if (!storage.is_nv_symbol() && !storage.is_nv_shared()) {
-            arguments.push_back(argument.first);
-        }
-    }
-
-    std::sort(arguments.begin(), arguments.end());
-    std::vector<std::string> arguments_device;
-    for (auto& argument : arguments) {
-        auto& arg_type = sdfg_.type(argument);
-        if (this->is_device_pointer_storage(arg_type.storage_type())) {
-            arguments_device.push_back(argument);
-        } else if (arg_type.type_id() == types::TypeID::Scalar) {
-            arguments_device.push_back(argument);
-        } else {
-            throw InvalidSDFGException("Argument " + argument + " is not a scalar or device pointer");
-        }
-    }
-
-    std::vector<std::string> scope_variables;
-
-    auto x_grids = target_level_indvars(node_, analysis_manager, TargetLevel::X_GRID);
-    auto y_grids = target_level_indvars(node_, analysis_manager, TargetLevel::Y_GRID);
-    auto z_grids = target_level_indvars(node_, analysis_manager, TargetLevel::Z_GRID);
-
-    auto x_blocks = target_level_indvars(node_, analysis_manager, TargetLevel::X_BLOCK);
-    auto y_blocks = target_level_indvars(node_, analysis_manager, TargetLevel::Y_BLOCK);
-    auto z_blocks = target_level_indvars(node_, analysis_manager, TargetLevel::Z_BLOCK);
-
-    auto warps = target_level_indvars(node_, analysis_manager, TargetLevel::WARP);
-
-    for (auto& var : scope_variables_unfiltered) {
-        if (x_grids.find(symbolic::symbol(var)) == x_grids.end() &&
-            y_grids.find(symbolic::symbol(var)) == y_grids.end() &&
-            z_grids.find(symbolic::symbol(var)) == z_grids.end() &&
-            x_blocks.find(symbolic::symbol(var)) == x_blocks.end() &&
-            y_blocks.find(symbolic::symbol(var)) == y_blocks.end() &&
-            z_blocks.find(symbolic::symbol(var)) == z_blocks.end() &&
-            warps.find(symbolic::symbol(var)) == warps.end()) {
-            scope_variables.push_back(var);
-        }
-    }
-
-    std::sort(scope_variables.begin(), scope_variables.end());
-
-    symbolic::Expression num_iters = node_.num_iterations();
-
-    if (is_outermost_map(analysis_manager)) {
-        // Arguments Declaration
-        std::vector<std::string> arguments_declaration;
-        for (auto& container : arguments) {
-            const auto& arg_type = sdfg_.type(container);
-            // Distinct device buffers never alias: mark pointer params __restrict__ so clang's
-            // load-store vectorizer can widen contiguous copies (it bails on possible aliasing).
-            const std::string decl_name = this->is_device_pointer_storage(arg_type.storage_type())
-                                              ? "__restrict__ " + container
-                                              : container;
-            arguments_declaration.push_back(this->language_extension_.declaration(decl_name, arg_type));
-        }
-
-        std::unordered_map<TargetLevel, ScheduleType> nested_schedule_types;
-        get_nested_schedule_types(node_, analysis_manager, nested_schedule_types);
-
-        symbolic::Expression block_size_x = symbolic::one();
-        symbolic::Expression block_size_y = symbolic::one();
-        symbolic::Expression block_size_z = symbolic::one();
-        symbolic::Expression grid_size_x = symbolic::one();
-        symbolic::Expression grid_size_y = symbolic::one();
-        symbolic::Expression grid_size_z = symbolic::one();
-
-        if (nested_schedule_types.find(TargetLevel::X_BLOCK) != nested_schedule_types.end()) {
-            block_size_x = gpu::ScheduleType_GPU_Offload::parallel_size(nested_schedule_types.at(TargetLevel::X_BLOCK));
-        }
-        if (nested_schedule_types.find(TargetLevel::Y_BLOCK) != nested_schedule_types.end()) {
-            block_size_y = gpu::ScheduleType_GPU_Offload::parallel_size(nested_schedule_types.at(TargetLevel::Y_BLOCK));
-        }
-        if (nested_schedule_types.find(TargetLevel::Z_BLOCK) != nested_schedule_types.end()) {
-            block_size_z = gpu::ScheduleType_GPU_Offload::parallel_size(nested_schedule_types.at(TargetLevel::Z_BLOCK));
-        }
-        if (nested_schedule_types.find(TargetLevel::X_GRID) != nested_schedule_types.end()) {
-            grid_size_x = gpu::ScheduleType_GPU_Offload::parallel_size(nested_schedule_types.at(TargetLevel::X_GRID));
-        }
-        if (nested_schedule_types.find(TargetLevel::Y_GRID) != nested_schedule_types.end()) {
-            grid_size_y = gpu::ScheduleType_GPU_Offload::parallel_size(nested_schedule_types.at(TargetLevel::Y_GRID));
-        }
-        if (nested_schedule_types.find(TargetLevel::Z_GRID) != nested_schedule_types.end()) {
-            grid_size_z = gpu::ScheduleType_GPU_Offload::parallel_size(nested_schedule_types.at(TargetLevel::Z_GRID));
-        }
-
-
-        std::string kernel_name = "kernel_" + sdfg_.name() + "_" + std::to_string(node_.element_id());
-
-
-        this->dispatch_kernel_call(
-            main_stream,
-            kernel_name,
-            grid_size_x,
-            grid_size_y,
-            grid_size_z,
-            block_size_x,
-            block_size_y,
-            block_size_z,
-            arguments_device
-        );
-
-        library_snippet_factory.add_global("#include <cstdio>");
-        // Kernel Declaration
-        this->dispatch_header(globals_stream, kernel_name, arguments_declaration);
-        globals_stream << ";" << std::endl;
-
-        auto& library_stream =
-            library_snippet_factory.require(kernel_name, this->kernel_file_extension(), true).stream();
-
-        library_stream << "#include " << library_snippet_factory.header_path().filename() << std::endl
-                       << std::endl; // we expect the compiler-call to do this instead
-
-        this->dispatch_kernel_preamble(library_stream, analysis_manager, kernel_name, arguments_declaration);
-
-        // Every device-pointer argument is a full cudaMalloc/hipMalloc allocation,
-        // which is guaranteed >=256-byte aligned. Asserting 16-byte alignment lets
-        // clang's load-store vectorizer widen contiguous copies to 128-bit
-        // (LDG/STG.128); decltype keeps it agnostic to element type / constness.
-        for (auto& container : arguments) {
-            if (this->is_device_pointer_storage(sdfg_.type(container).storage_type())) {
-                library_stream << container << " = reinterpret_cast<decltype(" << container
-                               << ")>(__builtin_assume_aligned(" << container << ", 16));" << std::endl;
-            }
-        }
-
-        this->dispatch_kernel_body(library_snippet_factory, library_stream, node_.indvar(), scope_variables, num_iters);
-
-        library_stream.setIndent(library_stream.indent() - 4);
-        library_stream << "}" << std::endl;
-    } else {
-        this->dispatch_kernel_body(library_snippet_factory, main_stream, node_.indvar(), scope_variables, num_iters);
-    }
-};
-
-void GPUOffloadReduceDispatcher::dispatch_header(
-    codegen::PrettyPrinter& globals_stream,
-    const std::string& kernel_name,
-    std::vector<std::string>& arguments_declaration
-) {
-    globals_stream << "__global__ void " << kernel_name << "(";
-    globals_stream << helpers::join(arguments_declaration, ", ");
-    globals_stream << ")";
 }
 
+
 void GPUOffloadReduceDispatcher::dispatch_kernel_body(
-    codegen::CodeSnippetFactory& library_snippet_factory,
-    codegen::PrettyPrinter& library_stream,
+    codegen::NestedCodeSnippetFactory& kernel_snippet_factory,
+    codegen::PrettyPrinter& kernel_source_stream,
+    codegen::PrettyPrinter& kernel_header_stream,
     symbolic::Symbol indvar,
     std::vector<std::string>& scope_variables,
     symbolic::Expression& num_iterations
 ) {
-    codegen::LanguageExtension& kernel_language_extension = create_kernel_language_extension();
+    codegen::LanguageExtension& kernel_language_extension = strategy_->create_kernel_language_extension();
     if (is_outermost_map(analysis_manager_)) {
         // Declare and optionally allocate scope variables
         for (auto& local : scope_variables) {
@@ -497,15 +317,15 @@ void GPUOffloadReduceDispatcher::dispatch_kernel_body(
             }
             std::string val = kernel_language_extension.declaration(local, sdfg_.type(local), false, true);
             if (!val.empty()) {
-                library_stream << val;
-                library_stream << ";" << std::endl;
+                kernel_source_stream << val;
+                kernel_source_stream << ";" << std::endl;
             }
             auto& type = sdfg_.type(local);
             if (type.storage_type().allocation() == types::StorageType::AllocationType::Managed) {
-                library_stream << local << " = ";
-                library_stream << "malloc("
-                               << kernel_language_extension.expression(type.storage_type().allocation_size()) << ")";
-                library_stream << ";" << std::endl;
+                kernel_source_stream << local << " = ";
+                kernel_source_stream
+                    << "malloc(" << kernel_language_extension.expression(type.storage_type().allocation_size()) << ")";
+                kernel_source_stream << ";" << std::endl;
             }
         }
     }
@@ -553,25 +373,26 @@ void GPUOffloadReduceDispatcher::dispatch_kernel_body(
 
     // Declare this level's reduction partials (registers for WARP/GRID, shared memory for
     // BLOCK) and initialize them to each operator's identity element.
-    this->dispatch_reduction_declarations(kernel_language_extension, library_stream, library_snippet_factory, target_level);
+    this->dispatch_reduction_declarations(
+        kernel_language_extension, kernel_source_stream, kernel_snippet_factory, target_level
+    );
 
 
+    auto warp_size = strategy_->get_warp_size();
     if (target_level == TargetLevel::WARP) {
-        std::string warp_dim = kernel_language_extension.expression(get_target_level_dim(target_level, get_warp_size())
-        );
-        library_stream << "uint32_t num_warps = (" << kernel_language_extension.expression(symbolic::blockDim_x())
-                       << " + " << warp_dim << " - 1) / " << warp_dim << ";" << std::endl;
-        library_stream << "uint32_t warp_id = " << kernel_language_extension.expression(symbolic::threadIdx_x())
-                       << " / "
-                       << kernel_language_extension.expression(get_target_level_dim(target_level, get_warp_size()))
-                       << ";" << std::endl;
-        library_stream << "uint32_t lane = " << kernel_language_extension.expression(symbolic::threadIdx_x()) << " & ("
-                       << kernel_language_extension.expression(get_target_level_dim(target_level, get_warp_size()))
-                       << " - 1);" << std::endl;
+        std::string warp_dim = kernel_language_extension.expression(get_target_level_dim(target_level, warp_size));
+        kernel_source_stream << "uint32_t num_warps = (" << kernel_language_extension.expression(symbolic::blockDim_x())
+                             << " + " << warp_dim << " - 1) / " << warp_dim << ";" << std::endl;
+        kernel_source_stream
+            << "uint32_t warp_id = " << kernel_language_extension.expression(symbolic::threadIdx_x()) << " / "
+            << kernel_language_extension.expression(get_target_level_dim(target_level, warp_size)) << ";" << std::endl;
+        kernel_source_stream << "uint32_t lane = " << kernel_language_extension.expression(symbolic::threadIdx_x())
+                             << " & ("
+                             << kernel_language_extension.expression(get_target_level_dim(target_level, warp_size))
+                             << " - 1);" << std::endl;
     }
 
-    std::string coverage_dim = kernel_language_extension.expression(get_target_level_dim(target_level, get_warp_size())
-    );
+    std::string coverage_dim = kernel_language_extension.expression(get_target_level_dim(target_level, warp_size));
     // For the WARP level each thread iterates sequentially over the warp-level
     // iteration space and accumulates into its per-thread register; the
     // cross-lane reduction is performed afterwards via __shfl_xor_sync over the
@@ -580,10 +401,10 @@ void GPUOffloadReduceDispatcher::dispatch_kernel_body(
     std::string coverage_count_dim = (target_level == TargetLevel::WARP) ? std::string("1") : coverage_dim;
     // Cast the ceil-div to int: blockDim/gridDim are unsigned, and CUDA 12.9's max()
     // overload set makes max(1, <unsigned>) ambiguous under clang-cuda.
-    library_stream << "for (int " << coverage_loop_var << " = 0; " << coverage_loop_var << " < "
-                   << "max(1, (int)((" << size << " + " << coverage_count_dim << " - 1) / " << coverage_count_dim
-                   << ")); " << coverage_loop_var << "++) {" << std::endl;
-    library_stream.setIndent(library_stream.indent() + 4);
+    kernel_source_stream << "for (int " << coverage_loop_var << " = 0; " << coverage_loop_var << " < "
+                         << "max(1, (int)((" << size << " + " << coverage_count_dim << " - 1) / " << coverage_count_dim
+                         << ")); " << coverage_loop_var << "++) {" << std::endl;
+    kernel_source_stream.changeIndent(+4);
 
     if (target_level == TargetLevel::WARP) {
         std::string indvar_name = indvar->get_name();
@@ -593,9 +414,9 @@ void GPUOffloadReduceDispatcher::dispatch_kernel_body(
         }
 
         // Sequential per-thread iteration over the warp-level space.
-        library_stream << "size_t " << indvar_name << " = " << kernel_language_extension.expression(node_.init())
-                       << " + " << coverage_loop_var << " * " << kernel_language_extension.expression(node_.stride())
-                       << ";" << std::endl;
+        kernel_source_stream << "size_t " << indvar_name << " = " << kernel_language_extension.expression(node_.init())
+                             << " + " << coverage_loop_var << " * "
+                             << kernel_language_extension.expression(node_.stride()) << ";" << std::endl;
     } else {
         std::string target_level_idx_access = kernel_language_extension.expression(node_.stride()) + " * " +
                                               kernel_language_extension.expression(get_target_level_idx(target_level));
@@ -605,66 +426,53 @@ void GPUOffloadReduceDispatcher::dispatch_kernel_body(
         }
 
         // compute the effective indvar for this coverage loop iteration
-        library_stream << "size_t " << indvar->get_name() << " = " << kernel_language_extension.expression(node_.init())
-                       << " + " << coverage_loop_var << " * "
-                       << kernel_language_extension.expression(get_target_level_dim(target_level, get_warp_size()))
-                       << " + " << target_level_idx_access << ";" << std::endl;
+        kernel_source_stream << "size_t " << indvar->get_name() << " = "
+                             << kernel_language_extension.expression(node_.init()) << " + " << coverage_loop_var
+                             << " * "
+                             << kernel_language_extension.expression(get_target_level_dim(target_level, warp_size))
+                             << " + " << target_level_idx_access << ";" << std::endl;
     }
 
 
     // Boundary Conditions
     if (!gpu::ScheduleType_GPU_Offload::nested_sync(node_.schedule_type())) {
-        library_stream << "if (" << kernel_language_extension.expression(node_.condition()) << ") {" << std::endl;
-        library_stream.setIndent(library_stream.indent() + 4);
+        kernel_source_stream << "if (" << kernel_language_extension.expression(node_.condition()) << ") {" << std::endl;
+        kernel_source_stream.changeIndent(+4);
     }
 
 
     // Redirect accumulator accesses in the body onto this level's private/shared partials.
-    this->dispatch_reduction_shadow(kernel_language_extension, library_stream, target_level);
+    this->dispatch_reduction_shadow(kernel_language_extension, kernel_source_stream, target_level);
 
     // Body
     codegen::SequenceDispatcher dispatcher(
         kernel_language_extension, sdfg_, analysis_manager_, node_.root(), instrumentation_plan_, arg_capture_plan_
     );
-    dispatcher.dispatch(library_stream, library_stream, library_snippet_factory);
+    dispatcher.dispatch(kernel_source_stream, kernel_header_stream, kernel_snippet_factory);
 
 
     // Free managed scope variables
     for (auto& local : scope_variables) {
         auto& type = sdfg_.type(local);
         if (type.storage_type().deallocation() == types::StorageType::AllocationType::Managed) {
-            library_stream << "free(" << local << ")";
-            library_stream << ";" << std::endl;
+            kernel_source_stream << "free(" << local << ")";
+            kernel_source_stream << ";" << std::endl;
         }
     }
 
     if (!gpu::ScheduleType_GPU_Offload::nested_sync(node_.schedule_type())) {
-        library_stream.setIndent(library_stream.indent() - 4);
-        library_stream << "}" << std::endl;
+        kernel_source_stream.changeIndent(-4);
+        kernel_source_stream << "}" << std::endl;
     }
 
-    library_stream.setIndent(library_stream.indent() - 4);
-    library_stream << "}" << std::endl;
+    kernel_source_stream.changeIndent(-4);
+    kernel_source_stream << "}" << std::endl;
 
     // Publish per-thread register partials to their shared slots once, before the combine.
-    this->dispatch_reduction_publish(kernel_language_extension, library_stream, target_level);
+    this->dispatch_reduction_publish(kernel_language_extension, kernel_source_stream, target_level);
 
     // Combine the per-thread / per-warp partials for this level into the accumulator.
-    this->dispatch_reduction_combine(kernel_language_extension, library_stream, library_snippet_factory, target_level);
-}
-
-void GPUOffloadReduceDispatcher::dispatch_kernel_preamble(
-    codegen::PrettyPrinter& library_stream,
-    analysis::AnalysisManager& analysis_manager,
-    const std::string& kernel_name,
-    std::vector<std::string>& arguments_declaration
-) {
-    // Kernel Header
-    dispatch_header(library_stream, kernel_name, arguments_declaration);
-
-    // Kernel Body
-    library_stream << "{" << std::endl;
-    library_stream.setIndent(library_stream.indent() + 4);
+    this->dispatch_reduction_combine(kernel_language_extension, kernel_source_stream, kernel_snippet_factory, target_level);
 }
 
 bool GPUOffloadReduceDispatcher::has_nested_warp_reduction(const std::string& container) {
@@ -1046,12 +854,12 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_declarations(
     if (declared_shared) {
         stream << "__syncthreads();" << std::endl;
     }
-    if (needs_cstdint) {
-        library_snippet_factory.add_global("#include <cstdint>");
-    }
-    if (needs_cmath) {
-        library_snippet_factory.add_global("#include <cmath>");
-    }
+    // if (needs_cstdint) {
+    //     library_snippet_factory.add_global("#include <cstdint>");
+    // }
+    // if (needs_cmath) {
+    //     library_snippet_factory.add_global("#include <cmath>");
+    // }
 }
 
 void GPUOffloadReduceDispatcher::dispatch_reduction_shadow(
@@ -1114,7 +922,9 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
     // halving tree walks the reduce axis with the stride that separates its neighbours
     // in the flat layout, while the axis-local index bounds the loop and selects writers.
     std::string lin_tid = reduce_linear_thread_index(language_extension);
-    std::string warp_size = language_extension.expression(get_target_level_dim(TargetLevel::WARP, get_warp_size()));
+
+    std::string warp_size =
+        language_extension.expression(get_target_level_dim(TargetLevel::WARP, strategy_->get_warp_size()));
 
     auto& type_analysis = analysis_manager_.get<analysis::TypeAnalysis>();
     for (const auto& r : node_.reductions()) {
@@ -1147,8 +957,8 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
             stream << "for (int __daisy_reduce_mask = " << warp_size << " / 2; __daisy_reduce_mask > 0; "
                    << "__daisy_reduce_mask >>= 1) {" << std::endl;
             stream.setIndent(stream.indent() + 4);
-            stream << ctype << " " << other << " = " << warp_shuffle_xor(reg_name, "__daisy_reduce_mask") << ";"
-                   << std::endl;
+            stream << ctype << " " << other << " = " << strategy_->warp_shuffle_xor(reg_name, "__daisy_reduce_mask")
+                   << ";" << std::endl;
             stream << reg_name << " = " << combine_expr(r.operation, reg_name, other) << ";" << std::endl;
             stream.setIndent(stream.indent() - 4);
             stream << "}" << std::endl;
