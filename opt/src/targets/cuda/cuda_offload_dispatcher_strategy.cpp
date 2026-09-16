@@ -68,8 +68,8 @@ bool CUDAOffloadDispatcherStrategy::is_device_pointer_storage(const types::Stora
     return storage.is_nv_generic();
 }
 
-std::string CUDAOffloadDispatcherStrategy::kernel_file_extension() const { return "cu"; }
-std::string CUDAOffloadDispatcherStrategy::kernel_header_file_extension() const { return "cu.h"; }
+std::string CUDAOffloadDispatcherStrategy::kernel_file_extension() const { return KERNEL_SNIPPET_FILE_EXT; }
+std::string CUDAOffloadDispatcherStrategy::kernel_header_file_extension() const { return KERNEL_SNIPPET_HEADER_EXT; }
 
 void CUDAOffloadDispatcherStrategy::emit_target_header_declarations(codegen::PrettyPrinter& kernel_header_stream) {
     // fp16/bf16 atomics (e.g. split-K accumulate) use the __half / __nv_bfloat16

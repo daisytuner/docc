@@ -12,7 +12,15 @@ class CompileState {
 public:
     virtual ~CompileState() = default;
     virtual bool codegen() = 0;
+    virtual bool has_compile_action() = 0;
+    // Safe to call after codegen. If it has no compile action, it will just NOOP
     virtual bool compile() = 0;
+
+    // Value assigned to this state's codegen step.
+    virtual int codegen_order() const = 0;
+    // The state may only enter compile() once every state whose codegen_order is
+    // strictly below this value has finished its codegen.
+    virtual int compile_min_order() const = 0;
     [[nodiscard]] virtual CodegenCompiler& creator() const = 0;
 };
 

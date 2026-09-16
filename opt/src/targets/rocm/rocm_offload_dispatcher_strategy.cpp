@@ -74,9 +74,9 @@ bool ROCMOffloadDispatcherStrategy::is_device_pointer_storage(const types::Stora
     return storage.is_amd_generic();
 }
 
-std::string ROCMOffloadDispatcherStrategy::kernel_file_extension() const { return "rocm.cpp"; }
+std::string ROCMOffloadDispatcherStrategy::kernel_file_extension() const { return KERNEL_SNIPPET_FILE_EXT; }
 
-std::string ROCMOffloadDispatcherStrategy::kernel_header_file_extension() const { return "rocm.h"; }
+std::string ROCMOffloadDispatcherStrategy::kernel_header_file_extension() const { return KERNEL_SNIPPET_HEADER_EXT; }
 
 std::string ROCMOffloadDispatcherStrategy::warp_shuffle_xor(const std::string& value, const std::string& lane_mask)
     const {

@@ -19,6 +19,8 @@ class FileCompileState : public CompileState {
     std::filesystem::path out_path_;
     FileCompileOutputType output_type_;
     std::function<void(std::ostream&)> generator_;
+    int codegen_order_;
+    int compile_min_order_;
 
     bool src_done_ = false;
     bool obj_done_ = false;
@@ -33,13 +35,21 @@ public:
         const std::filesystem::path& src_path,
         const std::filesystem::path& obj_path,
         FileCompileOutputType output_type,
+        int codegen_order,
+        int compile_min_order,
         std::function<void(std::ostream&)>& generator
     );
 
     [[nodiscard]] CodegenCompiler& creator() const override;
 
     bool codegen() override;
+
+    bool has_compile_action() override;
+
     bool compile() override;
+
+    int codegen_order() const override { return codegen_order_; }
+    int compile_min_order() const override { return compile_min_order_; }
 
     const std::filesystem::path& out_path() const;
 
@@ -63,10 +73,12 @@ class SrcFileCompiler : public CodegenCompiler, public LinkOptContributor {
     std::string compile_args_;
     std::vector<LibPath> library_paths_;
     std::vector<std::string> link_options_;
-    std::string main_src_ext_;
+    std::optional<std::string> main_src_ext_;
     std::string main_header_ext_;
     std::string bin_ext_;
     bool link_immediately_;
+    int codegen_order_;
+    int compile_min_order_;
     std::unordered_map<std::string, std::unique_ptr<SrcFileCompiler>> redirects_;
     std::vector<std::string> parent_link_opts_;
     sdfg::passes::CodegenStatistics* stats_ = nullptr;
@@ -81,7 +93,7 @@ class SrcFileCompiler : public CodegenCompiler, public LinkOptContributor {
 public:
     SrcFileCompiler(
         const std::filesystem::path& output_dir,
-        const std::string& main_src_ext,
+        const std::optional<std::string>& main_src_ext,
         const std::string& main_header_ext,
         const std::string& bin_ext,
         const std::optional<std::string>& compiler,
@@ -92,7 +104,9 @@ public:
         const std::vector<std::string>& link_options,
         bool link_immediately,
         std::unordered_map<std::string, std::unique_ptr<SrcFileCompiler>>&& redirects,
-        const std::vector<std::string>& parent_link_options
+        const std::vector<std::string>& parent_link_options,
+        int codegen_order = 0,
+        int compile_min_order = 0
     );
 
     std::unique_ptr<CompileState> create_compile(

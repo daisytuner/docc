@@ -49,6 +49,9 @@ public:
 
     bool is_device_pointer_storage(const types::StorageType& storage) const override;
 
+    constexpr static const char* KERNEL_SNIPPET_FILE_EXT = "cu";
+    constexpr static const char* KERNEL_SNIPPET_HEADER_EXT = "cu.h";
+
     std::string kernel_file_extension() const override;
     std::string kernel_header_file_extension() const override;
 

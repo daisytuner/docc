@@ -1,6 +1,8 @@
 #include "docc/compile/src_file_compiler.h"
 
+#include <algorithm>
 #include <sstream>
+#include <vector>
 
 #include "docc/util/docc_paths.h"
 
@@ -12,10 +14,13 @@ FileCompileState::FileCompileState(
     const std::filesystem::path& src_path,
     const std::filesystem::path& out_path,
     FileCompileOutputType output_type,
+    int codegen_order,
+    int compile_min_order,
     std::function<void(std::ostream&)>& generator
 )
     : CompileState(), compiler_(compiler), snippet_(snippet), src_path_(src_path), out_path_(out_path),
-      output_type_(output_type), generator_(generator), src_done_(generator == nullptr) {}
+      output_type_(output_type), codegen_order_(codegen_order), compile_min_order_(compile_min_order),
+      generator_(generator), src_done_(generator == nullptr) {}
 
 CodegenCompiler& FileCompileState::creator() const { return compiler_; }
 
@@ -44,6 +49,8 @@ bool FileCompileState::codegen() {
     }
     return true;
 }
+
+bool FileCompileState::has_compile_action() { return output_type_ != FileCompileOutputType::SrcOnly; }
 
 bool FileCompileState::compile() {
     std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
@@ -84,7 +91,7 @@ void FileCompileState::record_stats(const sdfg::StructuredSDFG& sdfg, sdfg::pass
 
 SrcFileCompiler::SrcFileCompiler(
     const std::filesystem::path& output_dir,
-    const std::string& main_src_ext,
+    const std::optional<std::string>& main_src_ext,
     const std::string& main_header_ext,
     const std::string& bin_ext,
     const std::optional<std::string>& compiler,
@@ -95,12 +102,15 @@ SrcFileCompiler::SrcFileCompiler(
     const std::vector<std::string>& link_options,
     bool link_immediately,
     std::unordered_map<std::string, std::unique_ptr<SrcFileCompiler>>&& redirects,
-    const std::vector<std::string>& parent_link_options
+    const std::vector<std::string>& parent_link_options,
+    int codegen_order,
+    int compile_min_order
 )
     : output_dir_(output_dir), main_src_ext_(main_src_ext), main_header_ext_(main_header_ext), bin_ext_(bin_ext),
       compiler_(compiler), linker_(linker), common_args_(common_args), compile_args_(compile_args),
       library_paths_(library_paths), link_options_(link_options), link_immediately_(link_immediately),
-      redirects_(std::move(redirects)), parent_link_opts_(parent_link_options) {
+      redirects_(std::move(redirects)), parent_link_opts_(parent_link_options), codegen_order_(codegen_order),
+      compile_min_order_(compile_min_order) {
     auto& codegen_statistics = sdfg::passes::CodegenStatistics::instance();
     if (codegen_statistics.enabled()) {
         stats_ = &codegen_statistics;
@@ -151,7 +161,7 @@ std::unique_ptr<CompileState> SrcFileCompiler::do_create_compile(
         ext = &snippet->extension();
     } else {
         name = &sdfg.name();
-        ext = &main_src_ext_;
+        ext = &main_src_ext_.value();
     }
     const std::string& out_ext = (link_immediately_ ? bin_ext_ : "o");
     FileCompileOutputType type = compiler_ ? (link_immediately_ ? FileCompileOutputType::LinkedArtifact
@@ -159,7 +169,14 @@ std::unique_ptr<CompileState> SrcFileCompiler::do_create_compile(
                                            : FileCompileOutputType::SrcOnly;
 
     auto state = std::make_unique<FileCompileState>(
-        *this, snippet, output_dir_ / (*name + "." + *ext), output_dir_ / (*name + "." + out_ext), type, generator
+        *this,
+        snippet,
+        output_dir_ / (*name + "." + *ext),
+        output_dir_ / (*name + "." + out_ext),
+        type,
+        codegen_order_,
+        compile_min_order_,
+        generator
     );
 
     return std::move(state);
@@ -220,12 +237,31 @@ std::filesystem::path SrcFileCompiler::process(
 
     executor.add_compile_state(std::move(mainCompile));
 
-    std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
-    for_each_file_snippet(generator, executor, [&](const sdfg::codegen::CodeSnippet& snippet) {
-        auto compile_state = create_compile(sdfg, &snippet, [&](std::ostream& out) { out << snippet.stream().str(); });
+    std::vector<std::unique_ptr<CompileState>> compile_states;
+    compile_states.reserve(generator.library_snippets().size());
 
-        executor.add_compile_state(std::move(compile_state));
+    std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
+    // Collect all snippet compile states and submit them ordered by compile_min_order,
+    // so a state that must wait for lower-order codegen is always enqueued after the
+    // states it may depend on. The build pool then gates each compile() until every
+    // state with a lower codegen_order has finished its codegen.
+    for_each_file_snippet(generator, executor, [&](const sdfg::codegen::CodeSnippet& snippet) {
+        compile_states.push_back(create_compile(sdfg, &snippet, [&snippet](std::ostream& out) {
+            out << snippet.stream().str();
+        }));
     });
+
+    std::stable_sort(
+        compile_states.begin(),
+        compile_states.end(),
+        [](const std::unique_ptr<CompileState>& a, const std::unique_ptr<CompileState>& b) {
+            return a->compile_min_order() < b->compile_min_order();
+        }
+    );
+
+    for (auto& compile_state : compile_states) {
+        executor.add_compile_state(std::move(compile_state));
+    }
 
     executor.await_compiles_finished();
     std::chrono::high_resolution_clock::time_point end = std::chrono::high_resolution_clock::now();
