@@ -7,8 +7,10 @@
 namespace sdfg {
 namespace transformations {
 
-MultiLevelTiling::MultiLevelTiling(structured_control_flow::StructuredLoop& loop, size_t tile_size, size_t tile_size_2)
-    : LoopTiling(loop, tile_size), tile_size_2_(tile_size_2) {};
+MultiLevelTiling::MultiLevelTiling(
+    structured_control_flow::StructuredLoop& loop, size_t tile_size, size_t tile_size_2, bool simplify_bounds
+)
+    : LoopTiling(loop, tile_size, simplify_bounds), tile_size_2_(tile_size_2) {};
 
 std::string MultiLevelTiling::name() const { return "MultiLevelTiling"; };
 
@@ -36,7 +38,7 @@ void MultiLevelTiling::apply(builder::StructuredSDFGBuilder& builder, analysis::
     // tiling logic so that behaviour (schedule handling, Map sequentialization,
     // etc.) stays consistent with single-level tiling.
     auto& inner = *inner_loop_;
-    middle_loop_ = &tile_loop(builder, inner, this->tile_size_2_);
+    middle_loop_ = &tile_loop(builder, inner, this->tile_size_2_, this->simplify_bounds_);
 
     analysis_manager.invalidate_all();
     inner_loop_ = &inner;
@@ -52,13 +54,14 @@ MultiLevelTiling MultiLevelTiling::from_json(builder::StructuredSDFGBuilder& bui
     auto loop_id = desc["subgraph"]["0"]["element_id"].get<size_t>();
     size_t tile_size = desc["parameters"]["tile_size"].get<size_t>();
     size_t tile_size_2 = desc["parameters"]["tile_size_2"].get<size_t>();
+    bool simplify_bounds = desc["parameters"].value("simplify_bounds", false);
     auto element = builder.find_element_by_id(loop_id);
     if (!element) {
         throw InvalidTransformationDescriptionException("Element with ID " + std::to_string(loop_id) + " not found.");
     }
     auto loop = dyn_cast<structured_control_flow::StructuredLoop*>(element);
 
-    return MultiLevelTiling(*loop, tile_size, tile_size_2);
+    return MultiLevelTiling(*loop, tile_size, tile_size_2, simplify_bounds);
 };
 
 structured_control_flow::StructuredLoop* MultiLevelTiling::middle_loop() {

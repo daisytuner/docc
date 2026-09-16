@@ -45,7 +45,7 @@ TEST(LoopTilingTest, For_Integer) {
 
     // Apply
     analysis::AnalysisManager analysis_manager(builder.subject());
-    transformations::LoopTiling transformation(orig_loop, 4);
+    transformations::LoopTiling transformation(orig_loop, 4, /*simplify_bounds=*/true);
     EXPECT_TRUE(transformation.can_be_applied(builder, analysis_manager));
     EXPECT_THROW(transformation.inner_loop(), InvalidSDFGException);
     EXPECT_THROW(transformation.outer_loop(), InvalidSDFGException);

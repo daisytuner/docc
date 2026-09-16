@@ -26,7 +26,7 @@ def test_sdpa_mask_simple(target: str) -> None:
     check(SdpaMaskSimpleNet(), *(), target=target)
 
 
-@pytest.mark.skip(reason="Needs support for aten.sub.Tensor")
+@pytest.mark.skip(reason="Needs support for aten.gt.Tensor")
 def test_sdpa_mask_sliding_window(target: str) -> None:
     class SdpaMaskSlidingWindowNet(nn.Module):
         def forward(self) -> torch.Tensor | None:
@@ -41,7 +41,7 @@ def test_sdpa_mask_sliding_window(target: str) -> None:
     check(SdpaMaskSlidingWindowNet(), *(), target=target)
 
 
-@pytest.mark.skip(reason="Needs support for aten.sub.Tensor")
+@pytest.mark.skip(reason="Needs support for aten.div.Tensor_mode")
 def test_sdpa_mask_chunked(target: str) -> None:
     class SdpaMaskChunkedNet(nn.Module):
         def forward(self) -> torch.Tensor | None:

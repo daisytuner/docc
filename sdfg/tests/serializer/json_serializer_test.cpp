@@ -25,6 +25,38 @@
 
 using namespace sdfg;
 
+TEST(JSONSerializerTest, BooleanExpressionsRoundTrip) {
+    auto first = symbolic::Eq(symbolic::symbol("first"), symbolic::zero());
+    auto second = symbolic::Eq(symbolic::symbol("second"), symbolic::zero());
+    auto third = symbolic::Eq(symbolic::symbol("third"), symbolic::zero());
+    auto negated = symbolic::Not(SymEngine::logical_xor({first, second}));
+    ASSERT_TRUE(SymEngine::is_a<SymEngine::Not>(*negated));
+
+    SymEngine::vec_boolean conditions = {
+        symbolic::__true__(),
+        symbolic::__false__(),
+        symbolic::And(first, second),
+        symbolic::Or(first, second),
+        SymEngine::logical_xor({first, second, third}),
+        negated,
+        symbolic::And(first, symbolic::Or(second, third)),
+        symbolic::
+            Ne(symbolic::__false__(),
+               symbolic::
+                   Or(symbolic::Eq(symbolic::__true__(), first),
+                      symbolic::Eq(symbolic::__true__(), symbolic::Or(second, third)))),
+    };
+
+    for (const auto& condition : conditions) {
+        auto serialized = serializer::JSONSerializer::expression(condition);
+        SCOPED_TRACE(serialized);
+        EXPECT_NO_THROW({
+            auto parsed = symbolic::parse(serialized);
+            EXPECT_TRUE(symbolic::eq(parsed, condition));
+        });
+    }
+}
+
 TEST(JSONSerializerTest, DatatypeToJSON_Scalar) {
     // Create a sample data type
     types::Scalar scalar_type(types::PrimitiveType::Int32);

@@ -157,6 +157,11 @@ public:
     using SymEngine::CodePrinter::str_;
 
     // Logical expressions
+    void bvisit(const SymEngine::BooleanAtom& x);
+    void bvisit(const SymEngine::And& expr);
+    void bvisit(const SymEngine::Or& expr);
+    void bvisit(const SymEngine::Not& expr);
+    void bvisit(const SymEngine::Xor& expr);
     void bvisit(const SymEngine::Equality& x);
     void bvisit(const SymEngine::Unequality& x);
 

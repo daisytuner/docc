@@ -146,7 +146,7 @@ TEST(MultiLevelTilingTest, ConstantExtentDropsRedundantBounds) {
     builder.add_computational_memlet(block, tasklet, "_out", A_out, {indvar}, desc);
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    transformations::MultiLevelTiling transformation(orig_loop, 32, 8);
+    transformations::MultiLevelTiling transformation(orig_loop, 32, 8, /*simplify_bounds=*/true);
     ASSERT_TRUE(transformation.can_be_applied(builder, analysis_manager));
     transformation.apply(builder, analysis_manager);
 
@@ -201,7 +201,7 @@ TEST(MultiLevelTilingTest, RaggedExtentKeepsBound) {
     builder.add_computational_memlet(block, tasklet, "_out", A_out, {indvar}, desc);
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    transformations::MultiLevelTiling transformation(orig_loop, 64, 8);
+    transformations::MultiLevelTiling transformation(orig_loop, 64, 8, /*simplify_bounds=*/true);
     ASSERT_TRUE(transformation.can_be_applied(builder, analysis_manager));
     transformation.apply(builder, analysis_manager);
 

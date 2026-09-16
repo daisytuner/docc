@@ -376,6 +376,7 @@ class ElementwiseTensorOpParserWithAlpha(GraphParserModule):
 
 
 register_module("aten.add.Tensor", ElementwiseTensorOpParserWithAlpha("add"))
+register_module("aten.sub.Tensor", ElementwiseTensorOpParserWithAlpha("sub"))
 
 
 class ElementwiseCMathTensorOpParser(GraphParserModule):

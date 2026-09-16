@@ -31,8 +31,8 @@ bool tile_evenly_divides(const structured_control_flow::StructuredLoop& loop, si
 
 } // namespace
 
-LoopTiling::LoopTiling(structured_control_flow::StructuredLoop& loop, size_t tile_size)
-    : loop_(loop), tile_size_(tile_size) {};
+LoopTiling::LoopTiling(structured_control_flow::StructuredLoop& loop, size_t tile_size, bool simplify_bounds)
+    : loop_(loop), tile_size_(tile_size), simplify_bounds_(simplify_bounds) {};
 
 std::string LoopTiling::name() const { return "LoopTiling"; };
 
@@ -44,7 +44,7 @@ bool LoopTiling::can_be_applied(builder::StructuredSDFGBuilder& builder, analysi
 };
 
 void LoopTiling::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
-    outer_loop_ = &tile_loop(builder, loop_, this->tile_size_);
+    outer_loop_ = &tile_loop(builder, loop_, this->tile_size_, this->simplify_bounds_);
     inner_loop_ = &loop_;
 
     analysis_manager.invalidate_all();
@@ -52,7 +52,10 @@ void LoopTiling::apply(builder::StructuredSDFGBuilder& builder, analysis::Analys
 };
 
 structured_control_flow::StructuredLoop& LoopTiling::tile_loop(
-    builder::StructuredSDFGBuilder& builder, structured_control_flow::StructuredLoop& loop, size_t tile_size
+    builder::StructuredSDFGBuilder& builder,
+    structured_control_flow::StructuredLoop& loop,
+    size_t tile_size,
+    bool simplify_bounds
 ) {
     auto& sdfg = builder.subject();
 
@@ -62,7 +65,9 @@ structured_control_flow::StructuredLoop& LoopTiling::tile_loop(
     auto indvar = loop.indvar();
 
     // Whether the tile evenly divides this loop's (original) trip -- computed before tiling mutates it.
-    bool drop_original_bound = tile_evenly_divides(loop, tile_size);
+    // Only simplify when the caller opts in: dropping the guard changes the loop shape that later
+    // passes (e.g. cooperative-copy vectorization) may depend on.
+    bool drop_original_bound = simplify_bounds && tile_evenly_divides(loop, tile_size);
 
     // Step 1: Define new outer loop
     auto outer_indvar_str = builder.find_new_name(indvar->get_name() + "_tile");
@@ -130,7 +135,7 @@ structured_control_flow::StructuredLoop& LoopTiling::tile_loop(
 void LoopTiling::to_json(nlohmann::json& j) const {
     j["transformation_type"] = this->name();
     j["parameters"] = nlohmann::json::object();
-    j["parameters"] = {{"tile_size", tile_size_}};
+    j["parameters"] = {{"tile_size", tile_size_}, {"simplify_bounds", simplify_bounds_}};
 
     serializer::JSONSerializer ser_flat(false);
     j["subgraph"] = nlohmann::json::object();
@@ -141,13 +146,14 @@ void LoopTiling::to_json(nlohmann::json& j) const {
 LoopTiling LoopTiling::from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& desc) {
     auto loop_id = desc["subgraph"]["0"]["element_id"].get<size_t>();
     size_t tile_size = desc["parameters"]["tile_size"].get<size_t>();
+    bool simplify_bounds = desc["parameters"].value("simplify_bounds", false);
     auto element = builder.find_element_by_id(loop_id);
     if (!element) {
         throw InvalidTransformationDescriptionException("Element with ID " + std::to_string(loop_id) + " not found.");
     }
     auto loop = dyn_cast<structured_control_flow::StructuredLoop*>(element);
 
-    return LoopTiling(*loop, tile_size);
+    return LoopTiling(*loop, tile_size, simplify_bounds);
 };
 
 structured_control_flow::StructuredLoop* LoopTiling::inner_loop() {
