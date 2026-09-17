@@ -119,6 +119,7 @@ static DoccTarget rocm_target = {
 
         compile::SrcFileCompilerBuilder hb;
         hb.inherit(builder, false);
+        hb.codegen_only();
         hb.set_compile_order(0);
 
         builder.redirect_snippet(sdfg::rocm::ROCMOffloadDispatcherStrategy::KERNEL_SNIPPET_HEADER_EXT, std::move(hb));
