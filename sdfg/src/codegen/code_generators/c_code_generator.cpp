@@ -49,6 +49,8 @@ void CCodeGenerator::dispatch_header_includes(PrettyPrinter& out) {
     out << "#include <stdint.h>" << std::endl;
 
     out << "#include <daisy_rtl/daisy_rtl.h>" << std::endl;
+
+    out << complex_support_preamble(false);
 };
 
 void CCodeGenerator::dispatch_header_structures(PrettyPrinter& out) {

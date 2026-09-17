@@ -262,3 +262,25 @@ TEST(CPPLanguageExtensionTest, Expression_External) {
     auto result = generator.expression(sym);
     EXPECT_EQ(result, "(reinterpret_cast<uintptr_t>(&EXT1))");
 }
+
+TEST(CPPLanguageExtensionTest, PrimitiveType_Complex) {
+    builder::SDFGBuilder builder("sdfg", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    codegen::CPPLanguageExtension generator(sdfg);
+
+    EXPECT_EQ(generator.primitive_type(types::PrimitiveType::CHalf), "__daisy_type_complex_half");
+    EXPECT_EQ(generator.primitive_type(types::PrimitiveType::CBFloat), "__daisy_type_complex_bfloat");
+    EXPECT_EQ(generator.primitive_type(types::PrimitiveType::CFloat), "__daisy_type_complex_float");
+    EXPECT_EQ(generator.primitive_type(types::PrimitiveType::CDouble), "__daisy_type_complex_double");
+    EXPECT_EQ(generator.primitive_type(types::PrimitiveType::CFP128), "__daisy_type_complex_fp128");
+}
+
+TEST(CPPLanguageExtensionTest, Zero_Complex) {
+    builder::SDFGBuilder builder("sdfg", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    codegen::CPPLanguageExtension generator(sdfg);
+
+    EXPECT_EQ(generator.zero(types::PrimitiveType::CFloat), "__daisy_type_complex_float{0, 0}");
+    EXPECT_EQ(generator.zero(types::PrimitiveType::CDouble), "__daisy_type_complex_double{0, 0}");
+    EXPECT_EQ(generator.zero(types::PrimitiveType::CFP128), "__daisy_type_complex_fp128{0, 0}");
+}

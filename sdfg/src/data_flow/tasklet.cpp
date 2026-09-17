@@ -43,6 +43,12 @@ void Tasklet::validate(const Function& function) const {
                 "): Floating point operation with integer input type: " + input_type->print()
             );
         }
+        if (is_complex(this->code_) && !types::is_complex(input_type->primitive_type())) {
+            throw InvalidSDFGException(
+                "Tasklet (Code: " + std::to_string(this->code_) +
+                "): Complex operation with non-complex input type: " + input_type->print()
+            );
+        }
     }
 
     // Validate: Edges

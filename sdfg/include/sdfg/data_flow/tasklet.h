@@ -149,7 +149,20 @@ enum TaskletCode {
     int_ugt, ///< Unsigned greater than
     int_ule, ///< Unsigned less or equal
     int_ult, ///< Unsigned less than
-    int_abs ///< Integer absolute value
+    int_abs, ///< Integer absolute value
+
+    // Complex-specific operations
+    complex_real, ///< Complex real part
+    complex_imag, ///< Complex imaginary part
+    complex_neg, ///< Complex negation
+    complex_add, ///< Complex addition
+    complex_sub, ///< Complex subtraction
+    complex_mul, ///< Complex multiplication
+    complex_div, ///< Complex division
+    // Comparisons
+    complex_eq, ///< Complex equality
+    complex_ne, ///< Complex inequality
+
 };
 
 /**
@@ -223,6 +236,20 @@ constexpr size_t arity(TaskletCode c) {
             return 2;
         case TaskletCode::fp_fma:
             return 3;
+        // Complex
+        case TaskletCode::complex_real:
+        case TaskletCode::complex_imag:
+        case TaskletCode::complex_neg:
+            return 1;
+        case TaskletCode::complex_add:
+        case TaskletCode::complex_sub:
+        case TaskletCode::complex_mul:
+        case TaskletCode::complex_div:
+            return 2;
+        // Comparisons
+        case TaskletCode::complex_eq:
+        case TaskletCode::complex_ne:
+            return 2;
     };
     throw InvalidSDFGException("Invalid tasklet code");
 };
@@ -325,6 +352,36 @@ constexpr bool is_floating_point(TaskletCode c) {
         case TaskletCode::fp_ult:
         case TaskletCode::fp_ule:
         case TaskletCode::fp_uno:
+        // complex
+        case TaskletCode::complex_real:
+        case TaskletCode::complex_imag:
+        case TaskletCode::complex_neg:
+        case TaskletCode::complex_add:
+        case TaskletCode::complex_sub:
+        case TaskletCode::complex_mul:
+        case TaskletCode::complex_div:
+        // Comparisons
+        case TaskletCode::complex_eq:
+        case TaskletCode::complex_ne:
+            return true;
+        default:
+            return false;
+    }
+};
+
+constexpr bool is_complex(TaskletCode c) {
+    switch (c) {
+        // Operations
+        case TaskletCode::complex_real:
+        case TaskletCode::complex_imag:
+        case TaskletCode::complex_neg:
+        case TaskletCode::complex_add:
+        case TaskletCode::complex_sub:
+        case TaskletCode::complex_mul:
+        case TaskletCode::complex_div:
+        // Comparisons
+        case TaskletCode::complex_eq:
+        case TaskletCode::complex_ne:
             return true;
         default:
             return false;

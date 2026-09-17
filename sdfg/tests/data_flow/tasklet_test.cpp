@@ -212,3 +212,124 @@ TEST(TaskletTest, Casts_Fptrunc) {
     EXPECT_TRUE(tasklet_1.is_cast(builder.subject()));
     EXPECT_TRUE(tasklet_1.is_fptrunc(builder.subject()));
 }
+
+TEST(TaskletTest, Complex_Arity) {
+    EXPECT_EQ(data_flow::arity(data_flow::TaskletCode::complex_real), 1);
+    EXPECT_EQ(data_flow::arity(data_flow::TaskletCode::complex_imag), 1);
+    EXPECT_EQ(data_flow::arity(data_flow::TaskletCode::complex_neg), 1);
+    EXPECT_EQ(data_flow::arity(data_flow::TaskletCode::complex_add), 2);
+    EXPECT_EQ(data_flow::arity(data_flow::TaskletCode::complex_sub), 2);
+    EXPECT_EQ(data_flow::arity(data_flow::TaskletCode::complex_mul), 2);
+    EXPECT_EQ(data_flow::arity(data_flow::TaskletCode::complex_div), 2);
+    EXPECT_EQ(data_flow::arity(data_flow::TaskletCode::complex_eq), 2);
+    EXPECT_EQ(data_flow::arity(data_flow::TaskletCode::complex_ne), 2);
+}
+
+TEST(TaskletTest, Complex_Classification) {
+    const std::vector<data_flow::TaskletCode> complex_codes = {
+        data_flow::TaskletCode::complex_real,
+        data_flow::TaskletCode::complex_imag,
+        data_flow::TaskletCode::complex_neg,
+        data_flow::TaskletCode::complex_add,
+        data_flow::TaskletCode::complex_sub,
+        data_flow::TaskletCode::complex_mul,
+        data_flow::TaskletCode::complex_div,
+        data_flow::TaskletCode::complex_eq,
+        data_flow::TaskletCode::complex_ne,
+    };
+
+    for (auto code : complex_codes) {
+        EXPECT_TRUE(data_flow::is_complex(code));
+        EXPECT_TRUE(data_flow::is_floating_point(code));
+        EXPECT_FALSE(data_flow::is_integer(code));
+        EXPECT_FALSE(data_flow::is_unsigned(code));
+    }
+
+    // Non-complex operations must not be classified as complex.
+    EXPECT_FALSE(data_flow::is_complex(data_flow::TaskletCode::assign));
+    EXPECT_FALSE(data_flow::is_complex(data_flow::TaskletCode::fp_add));
+    EXPECT_FALSE(data_flow::is_complex(data_flow::TaskletCode::int_add));
+}
+
+TEST(TaskletTest, Complex_Add_Validate) {
+    builder::SDFGBuilder builder("sdfg_complex_add", FunctionType_CPU);
+
+    auto& state = builder.add_state();
+
+    types::Scalar desc(types::PrimitiveType::CFloat);
+    builder.add_container("a", desc);
+    builder.add_container("b", desc);
+    builder.add_container("c", desc);
+
+    auto& a_node = builder.add_access(state, "a");
+    auto& b_node = builder.add_access(state, "b");
+    auto& c_node = builder.add_access(state, "c");
+    auto& tasklet = builder.add_tasklet(state, data_flow::TaskletCode::complex_add, "_out", {"_in1", "_in2"});
+    builder.add_computational_memlet(state, a_node, tasklet, "_in1", {});
+    builder.add_computational_memlet(state, b_node, tasklet, "_in2", {});
+    builder.add_computational_memlet(state, tasklet, "_out", c_node, {});
+
+    EXPECT_EQ(tasklet.code(), data_flow::TaskletCode::complex_add);
+    EXPECT_NO_THROW(tasklet.validate(builder.subject()));
+}
+
+TEST(TaskletTest, Complex_Mul_Validate) {
+    builder::SDFGBuilder builder("sdfg_complex_mul", FunctionType_CPU);
+
+    auto& state = builder.add_state();
+
+    types::Scalar desc(types::PrimitiveType::CDouble);
+    builder.add_container("a", desc);
+    builder.add_container("b", desc);
+    builder.add_container("c", desc);
+
+    auto& a_node = builder.add_access(state, "a");
+    auto& b_node = builder.add_access(state, "b");
+    auto& c_node = builder.add_access(state, "c");
+    auto& tasklet = builder.add_tasklet(state, data_flow::TaskletCode::complex_mul, "_out", {"_in1", "_in2"});
+    builder.add_computational_memlet(state, a_node, tasklet, "_in1", {});
+    builder.add_computational_memlet(state, b_node, tasklet, "_in2", {});
+    builder.add_computational_memlet(state, tasklet, "_out", c_node, {});
+
+    EXPECT_NO_THROW(tasklet.validate(builder.subject()));
+}
+
+TEST(TaskletTest, Complex_Neg_Validate) {
+    builder::SDFGBuilder builder("sdfg_complex_neg", FunctionType_CPU);
+
+    auto& state = builder.add_state();
+
+    types::Scalar desc(types::PrimitiveType::CFloat);
+    builder.add_container("a", desc);
+    builder.add_container("b", desc);
+
+    auto& a_node = builder.add_access(state, "a");
+    auto& b_node = builder.add_access(state, "b");
+    auto& tasklet = builder.add_tasklet(state, data_flow::TaskletCode::complex_neg, "_out", {"_in"});
+    builder.add_computational_memlet(state, a_node, tasklet, "_in", {});
+    builder.add_computational_memlet(state, tasklet, "_out", b_node, {});
+
+    EXPECT_NO_THROW(tasklet.validate(builder.subject()));
+}
+
+TEST(TaskletTest, Complex_Validate_RejectsNonComplexInput) {
+    builder::SDFGBuilder builder("sdfg_complex_invalid", FunctionType_CPU);
+
+    auto& state = builder.add_state();
+
+    // Feed a real floating-point input into a complex operation.
+    types::Scalar desc(types::PrimitiveType::Float);
+    builder.add_container("a", desc);
+    builder.add_container("b", desc);
+    builder.add_container("c", desc);
+
+    auto& a_node = builder.add_access(state, "a");
+    auto& b_node = builder.add_access(state, "b");
+    auto& c_node = builder.add_access(state, "c");
+    auto& tasklet = builder.add_tasklet(state, data_flow::TaskletCode::complex_add, "_out", {"_in1", "_in2"});
+    builder.add_computational_memlet(state, a_node, tasklet, "_in1", {});
+    builder.add_computational_memlet(state, b_node, tasklet, "_in2", {});
+    builder.add_computational_memlet(state, tasklet, "_out", c_node, {});
+
+    EXPECT_THROW(tasklet.validate(builder.subject()), InvalidSDFGException);
+}
