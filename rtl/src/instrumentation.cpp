@@ -753,6 +753,10 @@ public:
             }
         }
 
+        if (regions.empty()) {
+            return;
+        }
+
         // Write output file
         FILE* f = std::fopen(this->output_file.c_str(), "w");
         if (!f) {
