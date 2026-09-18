@@ -771,7 +771,6 @@ def _docc_dynamo_compiler(gm, example_inputs, backend_options):
     _invoke_on_compile(on_compile, program, "inference")
 
     def compiled_fn(*args):
-        print(f"docc compiled_fn called with args: {[type(a) for a in args]}")
         result = program(*args)
         if isinstance(result, (tuple, list)):
             return result
