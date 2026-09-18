@@ -28,5 +28,9 @@ const analysis::LoopInfo& InstrumentationInfo::loop_info() const { return loop_i
 
 const std::unordered_map<std::string, std::string>& InstrumentationInfo::metrics() const { return metrics_; }
 
+bool InstrumentationInfo::sampling() const { return sampling_; }
+
+void InstrumentationInfo::set_sampling(bool sampling) { sampling_ = sampling; }
+
 } // namespace codegen
 } // namespace sdfg

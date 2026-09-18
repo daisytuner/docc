@@ -125,6 +125,13 @@ void InstrumentationPlan::begin_instrumentation(
         }
     }
 
+    // Adaptive sampling: repeat the region until its runtime confidence interval
+    // converges. The loop opens before enter and closes after exit (see
+    // end_instrumentation), so the region body runs once per sample.
+    if (info.sampling()) {
+        stream << "while (true) {" << std::endl;
+    }
+
     // Enter region
     stream << "__daisy_instrumentation_enter(" << region_id_var << ");" << std::endl;
 }
@@ -141,6 +148,13 @@ void InstrumentationPlan::end_instrumentation(
         case InstrumentationEventType::NONE:
             stream << "__daisy_instrumentation_exit(" << region_id_var << ");" << std::endl;
             break;
+    }
+
+    // Close the adaptive sampling loop: take another sample unless the runtime
+    // confidence interval has converged or the sample/time caps are hit.
+    if (info.sampling()) {
+        stream << "if (!__daisy_instrumentation_should_continue(" << region_id_var << ")) break;" << std::endl;
+        stream << "}" << std::endl;
     }
 
     for (auto entry : info.metrics()) {
@@ -164,7 +178,7 @@ std::unique_ptr<InstrumentationPlan> InstrumentationPlan::none(StructuredSDFG& s
 }
 
 std::unique_ptr<InstrumentationPlan> InstrumentationPlan::
-    outermost_loops_plan(StructuredSDFG& sdfg, bool emit_finalize_all) {
+    outermost_loops_plan(StructuredSDFG& sdfg, bool emit_finalize_all, bool sampling) {
     analysis::AnalysisManager analysis_manager(sdfg);
     auto& loop_tree_analysis = analysis_manager.get<analysis::LoopAnalysis>();
     auto ols = loop_tree_analysis.outermost_loops();
@@ -175,7 +189,7 @@ std::unique_ptr<InstrumentationPlan> InstrumentationPlan::
     }
 
     DEBUG_PRINTLN("Created instrumentation plan for " << nodes.size() << " nodes.");
-    return std::make_unique<InstrumentationPlan>(sdfg, nodes, emit_finalize_all);
+    return std::make_unique<InstrumentationPlan>(sdfg, nodes, emit_finalize_all, sampling);
 }
 
 } // namespace codegen

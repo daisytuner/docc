@@ -333,6 +333,7 @@ void DataFlowDispatcher::dispatch_library_node(
         std::optional<InstrumentationInfo> instrument_info;
         if (should_instrument) {
             instrument_info = dispatcher->instrumentation_info();
+            instrument_info->set_sampling(this->instrumentation_plan_.sampling());
             this->instrumentation_plan_
                 .begin_instrumentation(libnode, stream, language_extension_, instrument_info.value());
         }

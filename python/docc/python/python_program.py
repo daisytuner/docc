@@ -194,6 +194,12 @@ class PythonProgram(DoccProgram):
         type_sig = ", ".join(self._type_to_str(t) for t in arg_types)
         signature = f"{type_sig}|{mapping_sig}"
 
+        # With concrete (non-symbolic) shapes the SDFG bakes in the actual sizes,
+        # so identically typed calls with different shapes must not alias in the
+        # cache; fold the shape values into the signature in that mode.
+        if not self.options.symbolic_shapes:
+            signature = f"{signature}|concrete{shape_values}"
+
         # In-memory cache key: the structural signature plus the resolved compile
         # options, so repeated in-process compiles with different
         # instrumentation/arg-capture/remote-tuning do not alias to the first
@@ -619,6 +625,9 @@ class PythonProgram(DoccProgram):
                         # Always use literal "1" for size-1 dimensions to enable
                         # proper broadcasting detection
                         shapes.append("1")
+                    elif not self.options.symbolic_shapes:
+                        # Bake in the concrete integer size instead of a symbol.
+                        shapes.append(str(int(dim_val)))
                     else:
                         u_idx = arg_shape_mapping[(i, dim_idx)]
                         shapes.append(f"_s{u_idx}")
@@ -663,23 +672,26 @@ class PythonProgram(DoccProgram):
                 tensor_table[name] = Tensor(element_type, [], [], "0")
 
         # Add unified shape arguments only for shapes without scalar equivalents
-        # and skip size-1 dimensions (they use literal "1" instead)
-        for i in range(len(shape_values)):
-            if shape_values[i] != 1:
-                builder.add_container(
-                    f"_s{i}", Scalar(PrimitiveType.Int64), is_argument=True
-                )
-                builder.add_assumption_lb(f"_s{i}", "1")  # Shapes must be positive
-                builder.add_assumption_const(f"_s{i}", True)  # Shapes are constant
+        # and skip size-1 dimensions (they use literal "1" instead). Symbolic
+        # shapes are disabled entirely when the concrete sizes are baked in.
+        if self.options.symbolic_shapes:
+            for i in range(len(shape_values)):
+                if shape_values[i] != 1:
+                    builder.add_container(
+                        f"_s{i}", Scalar(PrimitiveType.Int64), is_argument=True
+                    )
+                    builder.add_assumption_lb(f"_s{i}", "1")  # Shapes must be positive
+                    builder.add_assumption_const(f"_s{i}", True)  # Shapes are constant
 
         # Create symbol table for parser
         container_table = {}
         for i, ((name, param), dtype, arg) in enumerate(zip(params, arg_types, args)):
             container_table[name] = dtype
 
-        for i in range(len(shape_values)):
-            if shape_values[i] != 1:
-                container_table[f"_s{i}"] = Scalar(PrimitiveType.Int64)
+        if self.options.symbolic_shapes:
+            for i in range(len(shape_values)):
+                if shape_values[i] != 1:
+                    container_table[f"_s{i}"] = Scalar(PrimitiveType.Int64)
 
         # Parse AST
         source_lines, start_line = inspect.getsourcelines(self.func)
@@ -735,7 +747,7 @@ def native(func=None, **options: Any):
 
     Keyword options are forwarded to :class:`DoccOptions` (e.g. ``target``,
     ``category``, ``instrumentation_mode``, ``capture_args``, ``remote_tuning``,
-    ``einsum``).
+    ``einsum``, ``symbolic_shapes``).
 
     Example:
         @native

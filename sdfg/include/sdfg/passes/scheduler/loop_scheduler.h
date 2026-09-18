@@ -1,6 +1,5 @@
 #pragma once
 
-#include <sdfg/analysis/flop_analysis.h>
 #include <sdfg/analysis/loop_analysis.h>
 #include <sdfg/passes/pass.h>
 #include <sdfg/transformations/recorder.h>
@@ -22,9 +21,6 @@ enum SchedulerAction {
 struct SchedulerLoopInfo {
     // Static Properties
     analysis::LoopInfo loop_info = analysis::LoopInfo();
-
-    // Static Analysis
-    symbolic::Expression flop = SymEngine::null;
 };
 
 

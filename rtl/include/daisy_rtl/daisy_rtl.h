@@ -80,6 +80,14 @@ void __daisy_instrumentation_metric(size_t region_id, const char* name, double v
 // yet. Lets an in-process harness decide when to stop dynamic sampling.
 bool __daisy_instrumentation_stats(size_t region_id, double* mean_us, double* variance_us2, long long* count);
 
+// Decide whether a region's in-place sampling loop should take another sample.
+// Returns true while the running runtime confidence interval has not yet met the
+// target CV (DOCC_MEASURE_CV) and the sample/wall-time caps (DOCC_MEASURE_MAX_SAMPLES,
+// DOCC_MEASURE_MAX_SECONDS, min DOCC_MEASURE_MIN_SAMPLES) are not exhausted. Returns
+// false when no aggregate stats exist (not aggregate mode), so the loop takes a
+// single measurement. Only meaningful in __DAISY_INSTRUMENTATION_MODE=aggregate.
+bool __daisy_instrumentation_should_continue(size_t region_id);
+
 // Aggregate running runtime stats over ALL regions (aggregate mode): per-iteration
 // mean is the sum of the regions' means (mirrors the trace's summed durations),
 // variance the sum of variances, count the min sample count across regions.

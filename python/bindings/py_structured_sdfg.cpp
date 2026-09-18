@@ -582,7 +582,8 @@ std::string PyStructuredSDFG::compile(
     if (instrumentation_mode.empty()) {
         instrumentation_plan = sdfg::codegen::InstrumentationPlan::none(*sdfg_);
     } else if (instrumentation_mode == "ols") {
-        instrumentation_plan = sdfg::codegen::InstrumentationPlan::outermost_loops_plan(*sdfg_);
+        bool sampling = options_.get(sdfg::codegen::INSTRUMENTATION_ADAPTIVE_SAMPLING, false);
+        instrumentation_plan = sdfg::codegen::InstrumentationPlan::outermost_loops_plan(*sdfg_, true, sampling);
         sdfg::auto_util::add_offloading_instrumentations(*instrumentation_plan, *sdfg_);
     } else {
         throw std::runtime_error("Unsupported instrumentation plan: " + instrumentation_mode);

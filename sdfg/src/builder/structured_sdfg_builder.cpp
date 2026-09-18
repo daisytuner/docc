@@ -1,6 +1,8 @@
 #include "sdfg/builder/structured_sdfg_builder.h"
 
+#include <algorithm>
 #include <cstddef>
+#include <vector>
 
 #include "sdfg/builder/function_builder.h"
 #include "sdfg/data_flow/library_node.h"
@@ -1453,22 +1455,37 @@ int StructuredSDFGBuilder::clear_ptr_borrow_edge(Block& block, const data_flow::
 void StructuredSDFGBuilder::add_dataflow(const data_flow::DataFlowGraph& from, Block& to) {
     auto& to_dataflow = to.dataflow();
 
+    std::vector<const data_flow::DataFlowNode*> nodes;
+    for (const auto& node : from.nodes()) {
+        nodes.push_back(&node);
+    }
+    std::sort(nodes.begin(), nodes.end(), [](const auto* left, const auto* right) {
+        return left->element_id() < right->element_id();
+    });
+    std::vector<const data_flow::Memlet*> edges;
+    for (const auto& edge : from.edges()) {
+        edges.push_back(&edge);
+    }
+    std::sort(edges.begin(), edges.end(), [](const auto* left, const auto* right) {
+        return left->element_id() < right->element_id();
+    });
+
     std::unordered_map<graph::Vertex, graph::Vertex> node_mapping;
-    for (auto& entry : from.nodes_) {
+    for (const auto* node : nodes) {
         auto vertex = boost::add_vertex(to_dataflow.graph_);
-        to_dataflow.nodes_.insert({vertex, entry.second->clone(this->new_element_id(), vertex, to_dataflow)});
-        node_mapping.insert({entry.first, vertex});
+        to_dataflow.nodes_.insert({vertex, node->clone(this->new_element_id(), vertex, to_dataflow)});
+        node_mapping.insert({node->vertex(), vertex});
     }
 
-    for (auto& entry : from.edges_) {
-        auto src = node_mapping[entry.second->src().vertex()];
-        auto dst = node_mapping[entry.second->dst().vertex()];
+    for (const auto* memlet : edges) {
+        auto src = node_mapping[memlet->src().vertex()];
+        auto dst = node_mapping[memlet->dst().vertex()];
 
         auto edge = boost::add_edge(src, dst, to_dataflow.graph_);
 
         to_dataflow.edges_.insert(
             {edge.first,
-             entry.second->clone(
+             memlet->clone(
                  this->new_element_id(), edge.first, to_dataflow, *to_dataflow.nodes_[src], *to_dataflow.nodes_[dst]
              )}
         );

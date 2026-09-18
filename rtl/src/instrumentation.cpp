@@ -58,6 +58,16 @@ static inline pid_t gettid() { return syscall(SYS_gettid); }
 //  Dynamic PAPI loading – we avoid a hard dependency on the library at link time
 // -----------------------------------------------------------------------------
 namespace {
+// Read a numeric tuning knob from the environment, falling back to a default.
+static long env_long(const char* name, long fallback) {
+    const char* v = std::getenv(name);
+    return v ? std::atol(v) : fallback;
+}
+static double env_double(const char* name, double fallback) {
+    const char* v = std::getenv(name);
+    return v ? std::atof(v) : fallback;
+}
+
 static int (*_PAPI_library_init)(int) = nullptr;
 static int (*_PAPI_create_eventset)(int*) = nullptr;
 static int (*_PAPI_cleanup_eventset)(int) = nullptr;
@@ -1283,6 +1293,40 @@ public:
         return true;
     }
 
+    // Decide whether a region's in-place sampling loop should take another sample.
+    // Stops once the runtime confidence interval meets the target CV, or the sample
+    // / wall-time caps are hit. Returns false when no aggregate stats are available
+    // (e.g. not in aggregate mode), collapsing the loop to a single measurement.
+    bool should_continue_sampling(size_t region_id) {
+        static const long min_samples = env_long("DOCC_MEASURE_MIN_SAMPLES", 3);
+        static const long max_samples = env_long("DOCC_MEASURE_MAX_SAMPLES", 1000);
+        static const double target_cv = env_double("DOCC_MEASURE_CV", 0.05);
+        static const double max_seconds = env_double("DOCC_MEASURE_MAX_SECONDS", 10.0);
+
+        double mean_us = 0.0, var_us2 = 0.0;
+        long long count = 0;
+        if (!get_runtime_stats(region_id, &mean_us, &var_us2, &count)) {
+            return false;
+        }
+        if (count >= max_samples) {
+            return false;
+        }
+        // Wall-time cap based on accumulated measured time (mean * samples).
+        if (mean_us > 0.0 && mean_us * static_cast<double>(count) >= max_seconds * 1.0e6) {
+            return false;
+        }
+        if (count < min_samples) {
+            return true;
+        }
+        if (mean_us <= 0.0) {
+            return false;
+        }
+        // Samples needed for a half-width <= target_cv of the mean at 95% (z=1.96).
+        const double z = 1.96;
+        double target = 4.0 * z * z * var_us2 / (target_cv * target_cv * mean_us * mean_us);
+        return static_cast<double>(count) < target;
+    }
+
     // Aggregate over all regions (sum of means/variances, min count). Mirrors
     // parse_region_runtime summing every event's duration.
     bool get_total_stats(double* mean_us, double* variance_us2, long long* count) {
@@ -1404,6 +1448,10 @@ void __daisy_instrumentation_metric(size_t region_id, const char* name, double v
 
 bool __daisy_instrumentation_stats(size_t region_id, double* mean_us, double* variance_us2, long long* count) {
     return get_daisy_state().get_runtime_stats(region_id, mean_us, variance_us2, count);
+}
+
+bool __daisy_instrumentation_should_continue(size_t region_id) {
+    return get_daisy_state().should_continue_sampling(region_id);
 }
 
 bool __daisy_instrumentation_total_stats(double* mean_us, double* variance_us2, long long* count) {

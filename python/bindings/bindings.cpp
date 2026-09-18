@@ -41,6 +41,7 @@
 #include <sdfg/types/type.h>
 
 #include <sdfg/codegen/dispatchers/node_dispatcher_registry.h>
+#include <sdfg/codegen/instrumentation/instrumentation_plan.h>
 #include <sdfg/einsum/einsum.h>
 #include <sdfg/passes/expansion/library_node_expansion_pass.h>
 #include <sdfg/plugins/plugins.h>
@@ -79,6 +80,11 @@ void register_core_passes(plugins::Context& context) {
         .register_option(symbolic::BOUND_BUDGET
                              .spec(symbolic::DEFAULT_BOUND_BUDGET, "Proof-search work budget for symbolic bound analysis")
         );
+    // Opt-in adaptive sampling: wrap each instrumented region in a loop that
+    // repeats the measurement until its runtime confidence interval converges.
+    context.option_registry()
+        .register_option(codegen::INSTRUMENTATION_ADAPTIVE_SAMPLING
+                             .spec(false, "Wrap instrumented regions in an adaptive (CI-based) sampling loop"));
 }
 } // namespace passes
 } // namespace sdfg

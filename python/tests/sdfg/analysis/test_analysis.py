@@ -52,16 +52,6 @@ def test_dominance_analysis():
     assert str(dominance_analysis) == "<DominanceAnalysis>"
 
 
-def test_flop_analysis():
-    builder = StructuredSDFGBuilder("sdfg")
-    sdfg = builder.move()
-
-    analysis = AnalysisManager(sdfg)
-    flop_analysis = analysis.flop_analysis()
-
-    assert str(flop_analysis) == "<FlopAnalysis>"
-
-
 def test_loop_analysis():
     builder = StructuredSDFGBuilder("sdfg")
     sdfg = builder.move()

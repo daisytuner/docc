@@ -119,3 +119,67 @@ def test_pass_options():
     assert len(outermost) == 2
     total_loops = sum(loop_analysis.loop_info(loop).num_loops for loop in outermost)
     assert total_loops == 5
+
+
+def test_symbolic_shapes_default():
+    # symbolic_shapes defaults to True: array dimensions become `_s{i}` symbol
+    # arguments on the SDFG.
+    @native
+    def add(a, b):
+        return a + b
+
+    a = np.zeros((4, 8), dtype=np.float64)
+    b = np.zeros((4, 8), dtype=np.float64)
+    add.compile(a, b)
+    sdfg = add.last_sdfg
+
+    assert add.options.symbolic_shapes is True
+    shape_args = [name for name in sdfg.arguments if name.startswith("_s")]
+    assert shape_args, "expected symbolic shape arguments in symbolic mode"
+
+
+def test_symbolic_shapes_disabled_no_symbols():
+    # symbolic_shapes=False bakes the concrete integer sizes into the SDFG, so
+    # no `_s{i}` symbol arguments are emitted.
+    @native(symbolic_shapes=False)
+    def add(a, b):
+        return a + b
+
+    a = np.zeros((4, 8), dtype=np.float64)
+    b = np.zeros((4, 8), dtype=np.float64)
+    add.compile(a, b)
+    sdfg = add.last_sdfg
+
+    assert add.options.symbolic_shapes is False
+    shape_args = [name for name in sdfg.arguments if name.startswith("_s")]
+    assert not shape_args, "concrete mode must not emit symbolic shape arguments"
+
+
+def test_symbolic_shapes_disabled_runtime():
+    # Concrete-shape kernels still compile and execute correctly.
+    @native(symbolic_shapes=False)
+    def add(a, b):
+        return a + b
+
+    a = np.random.rand(4, 8)
+    b = np.random.rand(4, 8)
+    res = add(a, b)
+    assert np.allclose(res, a + b)
+
+
+def test_symbolic_shapes_disabled_no_cache_alias():
+    # With concrete shapes baked in, calls with different sizes must not alias to
+    # the same cached binary.
+    @native(symbolic_shapes=False)
+    def add(a, b):
+        return a + b
+
+    a1 = np.random.rand(4, 8)
+    b1 = np.random.rand(4, 8)
+    res1 = add(a1, b1)
+    assert np.allclose(res1, a1 + b1)
+
+    a2 = np.random.rand(16, 32)
+    b2 = np.random.rand(16, 32)
+    res2 = add(a2, b2)
+    assert np.allclose(res2, a2 + b2)

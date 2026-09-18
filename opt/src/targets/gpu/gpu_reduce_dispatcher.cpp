@@ -519,12 +519,6 @@ codegen::InstrumentationInfo GPUReduceDispatcher::instrumentation_info() const {
     analysis::LoopInfo loop_info = loop_analysis.loop_info(&node_);
 
     std::unordered_map<std::string, std::string> metrics;
-    auto& flop_analysis = analysis_manager_.get<analysis::FlopAnalysis>();
-    auto flop = flop_analysis.get_if_available_for_codegen(&node_);
-    if (!flop.is_null()) {
-        metrics.insert({"flop", language_extension_.expression(flop)});
-    }
-
     return codegen::InstrumentationInfo(
         node_.element_id(),
         node_.element_type(),

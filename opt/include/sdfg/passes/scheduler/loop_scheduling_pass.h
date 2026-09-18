@@ -1,6 +1,5 @@
 #pragma once
 
-#include <sdfg/analysis/flop_analysis.h>
 #include <sdfg/analysis/loop_analysis.h>
 #include <sdfg/passes/pass.h>
 #include <string>

@@ -996,14 +996,7 @@ codegen::InstrumentationInfo TenstorrentMapDispatcher::instrumentation_info() co
     auto& loop_analysis = analysis_manager_.get<analysis::LoopAnalysis>();
     analysis::LoopInfo loop_info = loop_analysis.loop_info(&map_);
 
-    // Perform FlopAnalysis
     std::unordered_map<std::string, std::string> metrics;
-    auto& flop_analysis = analysis_manager_.get<analysis::FlopAnalysis>();
-    auto flops = flop_analysis.get_if_available_for_codegen(&map_);
-    if (!flops.is_null()) {
-        std::string flop_str = language_extension_.expression(flops);
-        metrics.insert({"flop", flop_str});
-    }
 
     metrics.insert({"tt_cores_used_rel", "tt_cores_used_rel_"});
     metrics.insert({"tt_work_units_per_core", "tt_work_units_per_core_"});

@@ -4,7 +4,6 @@
 #include <vector>
 
 #include <sdfg/analysis/analysis.h>
-#include <sdfg/analysis/flop_analysis.h>
 #include <sdfg/analysis/loop_analysis.h>
 #include <sdfg/helpers/helpers.h>
 

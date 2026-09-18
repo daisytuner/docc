@@ -39,6 +39,7 @@ void NodeDispatcher::
     std::optional<InstrumentationInfo> instrumentation_info;
     if (should_instrument) {
         instrumentation_info = this->instrumentation_info();
+        instrumentation_info->set_sampling(this->instrumentation_plan_.sampling());
         this->instrumentation_plan_
             .begin_instrumentation(node_, main_stream, language_extension_, instrumentation_info.value());
     }
