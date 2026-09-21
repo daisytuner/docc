@@ -30,12 +30,6 @@ bool OffloadTransform::can_be_applied(builder::StructuredSDFGBuilder& builder, a
         return false;
     }
 
-    if (dynamic_cast<structured_control_flow::Reduce*>(&loop_)) {
-        if (report_) report_->transform_impossible(this, "reduce");
-        DEBUG_PRINTLN("Cannot apply transform: Reduce nodes are not offloaded yet");
-        return false;
-    }
-
     // Already-scheduled loops (e.g. tuned cutouts returned from remote tuning) must not be
     // offloaded again, which would nest device buffers (double offloading).
     if (loop_.schedule_type().category() != structured_control_flow::ScheduleTypeCategory::None) {
