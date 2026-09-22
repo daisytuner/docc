@@ -1,26 +1,29 @@
 #pragma once
 
+#include <cstddef>
+#include <vector>
+
+#include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/transformations/loop_tiling.h"
 
 namespace sdfg {
 namespace transformations {
 
 /**
- * @brief Multi-level (two-level) loop tiling transformation
+ * @brief Multi-level loop tiling transformation
  *
- * This transformation extends LoopTiling by applying a second level of tiling.
- * The result is three nested loops: an outer loop that iterates over outer tiles,
- * a middle loop that iterates over inner tiles, and an innermost loop that
- * iterates over individual elements.
+ * This transformation extends LoopTiling by applying multiple levels of tiling. Therefore, at least two tile sizes are
+ * expected. For n tile sizes, the result is n + 1 nested loops: n loops that iterate over the corresponding tile size,
+ * and an innermost loop that iterates over individual elements.
  *
- * @note The outer tile size must be greater than 1
- * @note The inner tile size must be greater than 1 and less than the outer tile size
- * @note The outer tile size must be divisible by the inner tile size
+ * @note The outermost tile size must be greater than 1.
+ * @note Every inner tile size must be greate than 1 and less than the tile size from one level outter.
+ * @note Every tile size must be divisible by the tile size one level inner.
  */
 class MultiLevelTiling : public LoopTiling {
-    size_t tile_size_2_;
+    std::vector<size_t> additional_tile_sizes_;
 
-    structured_control_flow::StructuredLoop* middle_loop_ = nullptr;
+    std::vector<structured_control_flow::StructuredLoop*> middle_loops_;
 
 public:
     /**
@@ -35,6 +38,19 @@ public:
         structured_control_flow::StructuredLoop& loop, size_t tile_size, size_t tile_size_2, bool simplify_bounds = false
     );
 
+    /**
+     * @brief Construct a multi-level loop tiling transformation
+     * @param loop The loop to be tiled
+     * @param tile_sizes The tile sizes (must be at least 2)
+     * @param simplify_bounds Drop the redundant inner bound for perfectly dividing tiles at all levels (off by default;
+     *        see LoopTiling::tile_loop)
+     */
+    MultiLevelTiling(
+        structured_control_flow::StructuredLoop& loop,
+        const std::vector<size_t>& tile_sizes,
+        bool simplify_bounds = false
+    );
+
     std::string name() const override;
 
     bool can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
@@ -45,7 +61,12 @@ public:
 
     static MultiLevelTiling from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& j);
 
-    structured_control_flow::StructuredLoop* middle_loop();
+    const std::vector<structured_control_flow::StructuredLoop*>& middle_loops();
+
+    structured_control_flow::StructuredLoop* middle_loop(size_t idx);
+
+    /// @deprecated Kept for backwards compatibility
+    [[deprecated("Use middle_loop with index instead")]] structured_control_flow::StructuredLoop* middle_loop();
 };
 
 } // namespace transformations
