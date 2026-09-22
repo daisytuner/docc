@@ -1,12 +1,27 @@
 #include "sdfg/parallelization/passes/for_classification.h"
 
+#include <chrono>
+#include <fstream>
+#include <iostream>
 #include <set>
 #include <vector>
+#include <unistd.h>
 
 #include "sdfg/analysis/loop_analysis.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/parallelization/analysis/loop_carried_dependency_analysis.h"
 #include "sdfg/passes/pipeline.h"
+
+namespace {
+double get_fc_rss_mb() {
+    std::ifstream statm("/proc/self/statm");
+    long size = 0, resident = 0;
+    if (statm >> size >> resident) {
+        return (resident * sysconf(_SC_PAGESIZE)) / (1024.0 * 1024.0);
+    }
+    return 0.0;
+}
+} // namespace
 
 namespace sdfg {
 namespace parallelization {
@@ -168,22 +183,40 @@ ForClassificationPass::Classification ForClassificationPass::classify(
 }
 
 bool ForClassificationPass::run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+    auto t0 = std::chrono::high_resolution_clock::now();
+    double start_rss = get_fc_rss_mb();
+
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
+    auto loops = loop_analysis.loops_in_pre_order();
+    std::cout << "\n================================================================================" << std::endl;
+    std::cout << ">>> [ForClassificationPass] START: " << loops.size() 
+              << " total loops | RSS: " << start_rss << " MB" << std::endl;
+    std::cout << "================================================================================" << std::endl;
 
     // Traverse loops in bottom-up fashion (reverse loop)
     std::list<structured_control_flow::For*> for_queue;
-    for (auto& loop : loop_analysis.loops_in_pre_order()) {
+    for (auto& loop : loops) {
         if (auto for_stmt = dyn_cast<structured_control_flow::For*>(loop)) {
             for_queue.push_front(for_stmt);
         }
     }
+    std::cout << ">>> [ForClassificationPass] For-loops to classify: " << for_queue.size() << std::endl;
 
     // Mark for loops that can be converted, recording the target classification
     // (and the reductions for Reduce loops) up front while the analyses are valid.
     std::list<structured_control_flow::For*> map_queue;
     std::list<std::pair<structured_control_flow::For*, std::vector<structured_control_flow::ReductionInfo>>>
         reduce_queue;
+
+    size_t loop_idx = 0;
+    const size_t total_for_loops = for_queue.size();
     for (auto& for_loop : for_queue) {
+        loop_idx++;
+        if (loop_idx % 20 == 1 || loop_idx == total_for_loops) {
+            std::cout << "  --> Classifying loop " << loop_idx << "/" << total_for_loops 
+                      << " | Current RSS: " << get_fc_rss_mb() << " MB" << std::endl;
+        }
+
         std::vector<structured_control_flow::ReductionInfo> reductions;
         switch (this->classify(builder, analysis_manager, *for_loop, reductions)) {
             case Classification::Map:
@@ -210,6 +243,14 @@ bool ForClassificationPass::run_pass(builder::StructuredSDFGBuilder& builder, an
         builder.convert_for_to_reduce(*parent, *for_stmt, entry.second);
         applied = true;
     }
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+    double end_rss = get_fc_rss_mb();
+    double duration = std::chrono::duration<double>(t1 - t0).count();
+    std::cout << ">>> [ForClassificationPass] FINISHED in " << duration << "s"
+              << " (Converted Maps: " << map_queue.size() << ", Reduces: " << reduce_queue.size() << ")"
+              << " | RSS: " << end_rss << " MB (Delta: " << (end_rss - start_rss) << " MB)" << std::endl;
+    std::cout << "================================================================================\n" << std::endl;
 
     return applied;
 }

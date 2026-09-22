@@ -1,11 +1,15 @@
 #include "sdfg/parallelization/analysis/loop_carried_dependency_analysis.h"
 
 #include <cassert>
+#include <chrono>
+#include <fstream>
+#include <iostream>
 #include <map>
 #include <optional>
 #include <set>
 #include <string>
 #include <vector>
+#include <unistd.h>
 
 #include <isl/ctx.h>
 #include <isl/options.h>
@@ -382,6 +386,10 @@ void LoopCarriedDependencyAnalysis::run(analysis::AnalysisManager& analysis_mana
     dependencies_.clear();
     pairs_.clear();
 
+    auto t0 = std::chrono::high_resolution_clock::now();
+    double start_rss = get_lcda_rss_mb();
+    std::cout << "\n  >>> [LCDA] START: running Detailed Assumptions & DDA | RSS: " << start_rss << " MB" << std::endl;
+
     // Build a fresh branch-condition-aware assumptions analysis. The
     // manager-cached `AssumptionsAnalysis` deliberately skips IfElse-branch
     // refinement to stay cheap; LCDA needs the refined coupled constraints
@@ -392,23 +400,19 @@ void LoopCarriedDependencyAnalysis::run(analysis::AnalysisManager& analysis_mana
     detailed_assumptions_->run(analysis_manager);
 
     // Drive entirely from DDA's reaching-definitions scaffold:
-    //   - DDA computes per-loop boundary snapshots (upward-exposed reads,
-    //     escaping definitions) — its primary job.
-    //   - LCDA enumerates the cross-iteration pair space and computes delta
-    //     sets via `pair_deltas` (using `symbolic::maps::dependence_deltas`).
-    //
-    // For a structured loop L with indvar i_L:
-    //   pairs(L) = { (W,R, RAW, Δ_L(W,R)) : W ∈ esc(L), R ∈ ue(L),
-    //                                       cont(W) = cont(R), Δ ≠ ∅ }
-    //            ∪ { (W₁,W₂, WAW, Δ_L(W₁,W₂)) : W₁,W₂ ∈ esc(L),
-    //                                           cont(W₁) = cont(W₂), Δ ≠ ∅ }
     passes::CompileStatistics::enter_analysis_if_enabled("DetailedDDA");
     auto& dda = detailed_dda();
     dda.run(analysis_manager);
     passes::CompileStatistics::exit_analysis_if_enabled();
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
 
-    for (auto* loop_node : loop_analysis.loops()) {
+    auto all_loops = loop_analysis.loops();
+    std::cout << "  >>> [LCDA] DDA finished. Starting pairwise check over " << all_loops.size() << " loops | RSS: " << get_lcda_rss_mb() << " MB" << std::endl;
+
+    size_t loop_count = 0;
+    size_t total_pair_checks = 0;
+
+    for (auto* loop_node : all_loops) {
         auto* loop = dyn_cast<structured_control_flow::StructuredLoop*>(loop_node);
         if (loop == nullptr) {
             continue;
@@ -450,6 +454,7 @@ void LoopCarriedDependencyAnalysis::run(analysis::AnalysisManager& analysis_mana
                 if (write->container() != read->container()) {
                     continue;
                 }
+                total_pair_checks++;
                 auto deltas = pair_deltas(this->sdfg_, *write, *read, analysis_manager, *detailed_assumptions_, *loop);
                 if (deltas.empty) {
                     continue;
@@ -473,6 +478,7 @@ void LoopCarriedDependencyAnalysis::run(analysis::AnalysisManager& analysis_mana
                 if (w1->container() != w2->container()) {
                     continue;
                 }
+                total_pair_checks++;
                 auto deltas = pair_deltas(this->sdfg_, *w1, *w2, analysis_manager, *detailed_assumptions_, *loop);
                 if (deltas.empty) {
                     continue;
@@ -485,7 +491,20 @@ void LoopCarriedDependencyAnalysis::run(analysis::AnalysisManager& analysis_mana
         }
 
         detect_reductions(*loop);
+
+        loop_count++;
+        if (loop_count % 50 == 1 || loop_count == all_loops.size()) {
+            std::cout << "    [LCDA] Progress: " << loop_count << "/" << all_loops.size() 
+                      << " loops (Pairs evaluated: " << total_pair_checks << ") | Current RSS: " 
+                      << get_lcda_rss_mb() << " MB" << std::endl;
+        }
     }
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+    double end_rss = get_lcda_rss_mb();
+    double duration = std::chrono::duration<double>(t1 - t0).count();
+    std::cout << "  >>> [LCDA] FINISHED in " << duration << "s. Total pairs solved: " << total_pair_checks
+              << " | RSS: " << end_rss << " MB (Delta: " << (end_rss - start_rss) << " MB)\n" << std::endl;
 }
 
 void LoopCarriedDependencyAnalysis::detect_reductions(structured_control_flow::StructuredLoop& loop) {
