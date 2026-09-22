@@ -43,6 +43,7 @@
 #include <sdfg/codegen/dispatchers/node_dispatcher_registry.h>
 #include <sdfg/codegen/instrumentation/instrumentation_plan.h>
 #include <sdfg/einsum/einsum.h>
+#include <sdfg/parallelization/parallelization.h>
 #include <sdfg/passes/expansion/library_node_expansion_pass.h>
 #include <sdfg/plugins/plugins.h>
 #include <sdfg/serializer/json_serializer.h>
@@ -97,6 +98,7 @@ PYBIND11_MODULE(_sdfg, m) {
     sdfg::serializer::register_default_serializers();
     sdfg::passes::register_core_passes(docc_context);
     sdfg::einsum::register_einsum_plugin();
+    sdfg::parallelization::register_parallelization_plugin(docc_context);
     sdfg::tiles::register_tiles_plugin(docc_context);
     sdfg::omp::register_omp_plugin();
     sdfg::vectorize::register_vectorize_plugin();

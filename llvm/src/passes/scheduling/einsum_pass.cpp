@@ -1,6 +1,5 @@
 #include "docc/passes/scheduling/einsum_pass.h"
 
-#include <llvm/IR/Analysis.h>
 #include <llvm/IR/Module.h>
 #include <llvm/IR/PassManager.h>
 
@@ -10,6 +9,7 @@
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/library_node.h"
 #include "sdfg/einsum/einsum.h"
+#include "sdfg/parallelization/parallelization.h"
 #include "sdfg/passes/pipeline.h"
 
 namespace docc {
@@ -43,7 +43,7 @@ llvm::PreservedAnalyses EinsumPass::
         lower.register_pass<sdfg::einsum::EinsumLowerPass>();
         lower.run(builder, analysis_manager);
 
-        sdfg::passes::Pipeline data_parallelism = sdfg::passes::Pipeline::data_parallelism();
+        sdfg::passes::Pipeline data_parallelism = sdfg::parallelization::data_parallelism();
         data_parallelism.run(builder, analysis_manager);
     });
 

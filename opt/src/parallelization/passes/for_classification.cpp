@@ -1,15 +1,15 @@
-#include "sdfg/passes/structured_control_flow/for_classification.h"
+#include "sdfg/parallelization/passes/for_classification.h"
 
 #include <set>
 #include <vector>
 
 #include "sdfg/analysis/loop_analysis.h"
-#include "sdfg/analysis/loop_carried_dependency_analysis.h"
 #include "sdfg/analysis/users.h"
+#include "sdfg/parallelization/analysis/loop_carried_dependency_analysis.h"
 #include "sdfg/passes/pipeline.h"
 
 namespace sdfg {
-namespace passes {
+namespace parallelization {
 
 std::string ForClassificationPass::name() { return "ForClassification"; }
 
@@ -73,7 +73,7 @@ ForClassificationPass::Classification ForClassificationPass::classify(
     }
 
     // Criterion: loop must be data-parallel w.r.t containers
-    auto& lcd = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& lcd = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
     auto& dependencies = lcd.dependencies(for_stmt);
 
     // Recognized reductions: loop-carried read-write dependencies that are
@@ -212,5 +212,5 @@ bool ForClassificationPass::run_pass(builder::StructuredSDFGBuilder& builder, an
     return applied;
 }
 
-} // namespace passes
+} // namespace parallelization
 } // namespace sdfg

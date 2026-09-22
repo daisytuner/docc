@@ -1,4 +1,4 @@
-#include "sdfg/passes/structured_control_flow/for_classification.h"
+#include "sdfg/parallelization/passes/for_classification.h"
 
 #include <gtest/gtest.h>
 
@@ -52,7 +52,7 @@ TEST(ForClassificationTest, Basic) {
     auto sdfg_opt = builder.move();
     builder::StructuredSDFGBuilder builder_opt(sdfg_opt);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
-    passes::ForClassificationPass conversion_pass;
+    parallelization::ForClassificationPass conversion_pass;
     EXPECT_TRUE(conversion_pass.run(builder_opt, analysis_manager));
 
     auto& sdfg_map = builder_opt.subject();
@@ -104,7 +104,7 @@ TEST(ForClassificationTest, MultiBound) {
     auto sdfg_opt = builder.move();
     builder::StructuredSDFGBuilder builder_opt(sdfg_opt);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
-    passes::ForClassificationPass conversion_pass;
+    parallelization::ForClassificationPass conversion_pass;
     EXPECT_TRUE(conversion_pass.run(builder_opt, analysis_manager));
 
     auto& sdfg_map = builder_opt.subject();
@@ -155,7 +155,7 @@ TEST(ForClassificationTest, NonContiguousDomain) {
     auto sdfg_opt = builder.move();
     builder::StructuredSDFGBuilder builder_opt(sdfg_opt);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
-    passes::ForClassificationPass conversion_pass;
+    parallelization::ForClassificationPass conversion_pass;
     EXPECT_TRUE(conversion_pass.run(builder_opt, analysis_manager));
 
     auto& sdfg_map = builder_opt.subject();
@@ -206,7 +206,7 @@ TEST(ForClassificationTest, NonCanonicalBound) {
     auto sdfg_opt = builder.move();
     builder::StructuredSDFGBuilder builder_opt(sdfg_opt);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
-    passes::ForClassificationPass conversion_pass;
+    parallelization::ForClassificationPass conversion_pass;
     EXPECT_TRUE(conversion_pass.run(builder_opt, analysis_manager));
 
     auto& sdfg_map = builder_opt.subject();
@@ -257,7 +257,7 @@ TEST(ForClassificationTest, Shift) {
     auto sdfg_opt = builder.move();
     builder::StructuredSDFGBuilder builder_opt(sdfg_opt);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
-    passes::ForClassificationPass conversion_pass;
+    parallelization::ForClassificationPass conversion_pass;
     EXPECT_TRUE(conversion_pass.run(builder_opt, analysis_manager));
 
     auto& sdfg_map = builder_opt.subject();
@@ -308,7 +308,7 @@ TEST(ForClassificationTest, LastValue) {
     auto sdfg_opt = builder.move();
     builder::StructuredSDFGBuilder builder_opt(sdfg_opt);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
-    passes::ForClassificationPass conversion_pass;
+    parallelization::ForClassificationPass conversion_pass;
     EXPECT_TRUE(conversion_pass.run(builder_opt, analysis_manager));
 
     auto& sdfg_map = builder_opt.subject();
@@ -371,7 +371,7 @@ TEST(ForClassificationTest, Tiled) {
     auto sdfg_opt = builder.move();
     builder::StructuredSDFGBuilder builder_opt(sdfg_opt);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
-    passes::ForClassificationPass conversion_pass;
+    parallelization::ForClassificationPass conversion_pass;
     EXPECT_TRUE(conversion_pass.run(builder_opt, analysis_manager));
 
     auto& sdfg_map = builder_opt.subject();
@@ -438,7 +438,7 @@ TEST(ForClassificationTest, NonContiguousMemory) {
     auto sdfg_opt = builder.move();
     builder::StructuredSDFGBuilder builder_opt(sdfg_opt);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
-    passes::ForClassificationPass conversion_pass;
+    parallelization::ForClassificationPass conversion_pass;
     EXPECT_TRUE(conversion_pass.run(builder_opt, analysis_manager));
 }
 
@@ -484,7 +484,7 @@ TEST(ForClassificationTest, ScalarSumReduction) {
     auto sdfg_opt = builder.move();
     builder::StructuredSDFGBuilder builder_opt(sdfg_opt);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
-    passes::ForClassificationPass conversion_pass;
+    parallelization::ForClassificationPass conversion_pass;
     EXPECT_TRUE(conversion_pass.run(builder_opt, analysis_manager));
 
     auto& sdfg_red = builder_opt.subject();
@@ -537,7 +537,7 @@ TEST(ForClassificationTest, ScalarProductReduction) {
     auto sdfg_opt = builder.move();
     builder::StructuredSDFGBuilder builder_opt(sdfg_opt);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
-    passes::ForClassificationPass conversion_pass;
+    parallelization::ForClassificationPass conversion_pass;
     EXPECT_TRUE(conversion_pass.run(builder_opt, analysis_manager));
 
     auto& sdfg_red = builder_opt.subject();
@@ -590,7 +590,7 @@ TEST(ForClassificationTest, FloatMaxReductionCMath) {
     auto sdfg_opt = builder.move();
     builder::StructuredSDFGBuilder builder_opt(sdfg_opt);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
-    passes::ForClassificationPass conversion_pass;
+    parallelization::ForClassificationPass conversion_pass;
     EXPECT_TRUE(conversion_pass.run(builder_opt, analysis_manager));
 
     auto& sdfg_red = builder_opt.subject();
@@ -655,7 +655,7 @@ TEST(ForClassificationTest, FusedSumAndProductReduction) {
     auto sdfg_opt = builder.move();
     builder::StructuredSDFGBuilder builder_opt(sdfg_opt);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
-    passes::ForClassificationPass conversion_pass;
+    parallelization::ForClassificationPass conversion_pass;
     EXPECT_TRUE(conversion_pass.run(builder_opt, analysis_manager));
 
     auto& sdfg_red = builder_opt.subject();
@@ -713,7 +713,7 @@ TEST(ForClassificationTest, RecurrenceIsNotReduction) {
     auto sdfg_opt = builder.move();
     builder::StructuredSDFGBuilder builder_opt(sdfg_opt);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
-    passes::ForClassificationPass conversion_pass;
+    parallelization::ForClassificationPass conversion_pass;
     EXPECT_FALSE(conversion_pass.run(builder_opt, analysis_manager));
 
     auto& sdfg_res = builder_opt.subject();

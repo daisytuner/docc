@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include "sdfg/parallelization/parallelization.h"
 #include "sdfg/passes/normalization/perfect_loop_distribution.h"
 
 #include <sdfg/analysis/loop_analysis.h>
@@ -37,7 +38,7 @@ TEST(PerfectLoopDistributionTest, Polybench_correlation) {
     auto builder = std::make_unique<builder::StructuredSDFGBuilder>(init_sdfg);
 
     auto analysis_manager = std::make_unique<analysis::AnalysisManager>(builder->subject());
-    passes::Pipeline data_parallism = passes::Pipeline::data_parallelism();
+    passes::Pipeline data_parallism = parallelization::data_parallelism();
     data_parallism.run(*builder, *analysis_manager);
 
     // Pass
@@ -139,7 +140,7 @@ TEST(PerfectLoopDistributionTest, Polybench_covariance) {
     auto builder = std::make_unique<builder::StructuredSDFGBuilder>(init_sdfg);
 
     auto analysis_manager = std::make_unique<analysis::AnalysisManager>(builder->subject());
-    passes::Pipeline data_parallism = passes::Pipeline::data_parallelism();
+    passes::Pipeline data_parallism = parallelization::data_parallelism();
     data_parallism.run(*builder, *analysis_manager);
 
     // Pass
@@ -211,7 +212,7 @@ TEST(PerfectLoopDistributionTest, Polybench_gemm) {
 
     auto analysis_manager = std::make_unique<analysis::AnalysisManager>(builder->subject());
 
-    passes::Pipeline data_parallism = passes::Pipeline::data_parallelism();
+    passes::Pipeline data_parallism = parallelization::data_parallelism();
     data_parallism.run(*builder, *analysis_manager);
 
     // Pass
@@ -285,7 +286,7 @@ TEST(PerfectLoopDistributionTest, Polybench_symm) {
 
     auto analysis_manager = std::make_unique<analysis::AnalysisManager>(builder->subject());
 
-    passes::Pipeline data_parallism = passes::Pipeline::data_parallelism();
+    passes::Pipeline data_parallism = parallelization::data_parallelism();
     data_parallism.run(*builder, *analysis_manager);
 
     // Pass
@@ -329,7 +330,7 @@ TEST(PerfectLoopDistributionTest, Polybench_gemver) {
 
     auto analysis_manager = std::make_unique<analysis::AnalysisManager>(builder->subject());
 
-    passes::Pipeline data_parallism = passes::Pipeline::data_parallelism();
+    passes::Pipeline data_parallism = parallelization::data_parallelism();
     data_parallism.run(*builder, *analysis_manager);
 
     // Pass
@@ -372,7 +373,7 @@ TEST(PerfectLoopDistributionTest, Polybench_gesummv) {
 
     auto analysis_manager = std::make_unique<analysis::AnalysisManager>(builder->subject());
 
-    passes::Pipeline data_parallism = passes::Pipeline::data_parallelism();
+    passes::Pipeline data_parallism = parallelization::data_parallelism();
     data_parallism.run(*builder, *analysis_manager);
 
     // Pass
@@ -453,7 +454,7 @@ TEST(PerfectLoopDistributionTest, Polybench_syr2k) {
 
     auto analysis_manager = std::make_unique<analysis::AnalysisManager>(builder->subject());
 
-    passes::Pipeline data_parallism = passes::Pipeline::data_parallelism();
+    passes::Pipeline data_parallism = parallelization::data_parallelism();
     data_parallism.run(*builder, *analysis_manager);
 
     // Pass
@@ -538,7 +539,7 @@ TEST(PerfectLoopDistributionTest, Polybench_syrk) {
 
     auto analysis_manager = std::make_unique<analysis::AnalysisManager>(builder->subject());
 
-    passes::Pipeline data_parallism = passes::Pipeline::data_parallelism();
+    passes::Pipeline data_parallism = parallelization::data_parallelism();
     data_parallism.run(*builder, *analysis_manager);
 
     // Pass
@@ -621,7 +622,7 @@ TEST(PerfectLoopDistributionTest, Polybench_trmm) {
 
     auto analysis_manager = std::make_unique<analysis::AnalysisManager>(builder->subject());
 
-    passes::Pipeline data_parallism = passes::Pipeline::data_parallelism();
+    passes::Pipeline data_parallism = parallelization::data_parallelism();
     data_parallism.run(*builder, *analysis_manager);
 
     // Pass
@@ -707,7 +708,7 @@ TEST(PerfectLoopDistributionTest, Polybench_atax) {
 
     auto analysis_manager = std::make_unique<analysis::AnalysisManager>(builder->subject());
 
-    passes::Pipeline data_parallism = passes::Pipeline::data_parallelism();
+    passes::Pipeline data_parallism = parallelization::data_parallelism();
     data_parallism.run(*builder, *analysis_manager);
 
     // Pass
@@ -797,7 +798,7 @@ TEST(PerfectLoopDistributionTest, Polybench_bicg) {
 
     auto analysis_manager = std::make_unique<analysis::AnalysisManager>(builder->subject());
 
-    passes::Pipeline data_parallism = passes::Pipeline::data_parallelism();
+    passes::Pipeline data_parallism = parallelization::data_parallelism();
     data_parallism.run(*builder, *analysis_manager);
 
     // Pass
@@ -867,7 +868,7 @@ TEST(PerfectLoopDistributionTest, Polybench_doitgen) {
 
     auto analysis_manager = std::make_unique<analysis::AnalysisManager>(builder->subject());
 
-    passes::Pipeline data_parallism = passes::Pipeline::data_parallelism();
+    passes::Pipeline data_parallism = parallelization::data_parallelism();
     data_parallism.run(*builder, *analysis_manager);
 
     // Pass
@@ -948,7 +949,7 @@ TEST(PerfectLoopDistributionTest, Polybench_mvt) {
 
     auto analysis_manager = std::make_unique<analysis::AnalysisManager>(builder->subject());
 
-    passes::Pipeline data_parallism = passes::Pipeline::data_parallelism();
+    passes::Pipeline data_parallism = parallelization::data_parallelism();
     data_parallism.run(*builder, *analysis_manager);
 
     // Pass
@@ -985,7 +986,7 @@ TEST(PerfectLoopDistributionTest, Polybench_cholesky) {
 
     auto analysis_manager = std::make_unique<analysis::AnalysisManager>(builder->subject());
 
-    passes::Pipeline data_parallism = passes::Pipeline::data_parallelism();
+    passes::Pipeline data_parallism = parallelization::data_parallelism();
     data_parallism.run(*builder, *analysis_manager);
 
     // Pass
@@ -1066,7 +1067,7 @@ TEST(PerfectLoopDistributionTest, Polybench_fdtd_2d) {
 
     auto analysis_manager = std::make_unique<analysis::AnalysisManager>(builder->subject());
 
-    passes::Pipeline data_parallism = passes::Pipeline::data_parallelism();
+    passes::Pipeline data_parallism = parallelization::data_parallelism();
     data_parallism.run(*builder, *analysis_manager);
 
     // Pass

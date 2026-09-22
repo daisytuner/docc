@@ -6,7 +6,7 @@
 #include "sdfg/structured_control_flow/reduce.h"
 
 namespace sdfg {
-namespace passes {
+namespace parallelization {
 
 /**
  * @brief Classifies parallelizable `For` loops and lowers them to `Map` or
@@ -23,7 +23,7 @@ namespace passes {
  *                        dependency analysis) -> `Reduce`
  *   - otherwise       -> a genuine hazard remains; the loop is left as a `For`.
  */
-class ForClassificationPass : public Pass {
+class ForClassificationPass : public passes::Pass {
 public:
     enum class Classification { None, Map, Reduce };
 
@@ -41,5 +41,5 @@ public:
     virtual bool run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
 };
 
-} // namespace passes
+} // namespace parallelization
 } // namespace sdfg

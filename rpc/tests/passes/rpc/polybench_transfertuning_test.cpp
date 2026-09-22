@@ -3,6 +3,7 @@
 
 #include "sdfg/analysis/loop_analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/parallelization/parallelization.h"
 #include "sdfg/passes/normalization/normalization.h"
 #include "sdfg/passes/pipeline.h"
 #include "sdfg/passes/rpc/daisytuner_rpc_context.h"
@@ -21,7 +22,7 @@ static bool run_rpc_scheduling(std::unique_ptr<StructuredSDFG> init_sdfg) {
     builder::StructuredSDFGBuilder builder(init_sdfg);
     analysis::AnalysisManager analysis_manager(builder.subject());
 
-    passes::Pipeline data_parallelism = passes::Pipeline::data_parallelism();
+    passes::Pipeline data_parallelism = parallelization::data_parallelism();
     data_parallelism.run(builder, analysis_manager);
 
     passes::Pipeline lp_pipeline = passes::normalization::loop_normalization();
