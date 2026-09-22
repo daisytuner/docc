@@ -1,5 +1,7 @@
 #pragma once
 
+#include <map>
+
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/codegen/dispatchers/node_dispatcher.h"
 #include "sdfg/codegen/instrumentation/instrumentation_info.h"
@@ -16,6 +18,12 @@ namespace gpu {
 class GPUOffloadReduceDispatcher : public GPUOffloadBaseDispatcher {
 protected:
     structured_control_flow::Reduce& node_;
+
+    struct AccumulatorLayout {
+        symbolic::Expression base;
+        int64_t extent;
+    };
+    std::map<std::string, AccumulatorLayout> multi_output_layouts_;
 
     void dispatch_kernel_body(
         codegen::NestedCodeSnippetFactory& kernel_snippet_factory,

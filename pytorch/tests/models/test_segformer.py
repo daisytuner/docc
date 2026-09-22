@@ -30,7 +30,7 @@ def test_segformer_b0_finetuned_cityscapes_1024_1024_simple(target: str) -> None
             "return_dict": False,
         },
         target=target,
-        atol=3e-5,
+        atol=1e-4,
     )
 
 

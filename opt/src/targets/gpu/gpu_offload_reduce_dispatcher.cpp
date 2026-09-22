@@ -212,7 +212,11 @@ private:
         } else if (edge.subset().size() == 1) {
             candidate = edge.subset()[0];
         } else {
-            return;
+            throw InvalidSDFGException(
+                "GPUOffloadReduceDispatcher: accumulator '" + container_ + "' has an unsupported " +
+                std::to_string(edge.subset().size()) +
+                "-dimensional access; only scalar or one-dimensional accumulator accesses are supported"
+            );
         }
         if (!found_) {
             index_ = candidate;
@@ -271,31 +275,57 @@ GPUOffloadReduceDispatcher::GPUOffloadReduceDispatcher(
 
 
 void GPUOffloadReduceDispatcher::validate_before_dispatch(analysis::AnalysisManager& analysis_manager) {
-    // The per-thread reduction model holds a single partial per accumulator, addressed by
-    // a thread-invariant (enclosing) index. An accumulator indexed by the induction
-    // variable of a loop nested INSIDE the reduce body would need one partial per
-    // inner-loop value, which the shadow/combine cannot represent -- the shadow subtracts
-    // that index once (a sequential inner var is not yet its final value; a nested block
-    // map's var is out of scope at the shadow/combine points). Reject it here rather than
-    // emit a silently wrong (sequential) or uncompilable (nested map) kernel.
     auto& index_loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
+    multi_output_layouts_.clear();
     for (const auto& r : node_.reductions()) {
         auto index = accumulator_index(node_.root(), r.container, node_.indvar());
+        auto base = index;
+        symbolic::Expression span = symbolic::one();
+        bool multi_output = false;
         for (auto* descendant : index_loop_analysis.descendants(&node_)) {
             auto* inner = dynamic_cast<structured_control_flow::StructuredLoop*>(descendant);
-            if (inner == nullptr) {
+            if (inner == nullptr || !symbolic::uses(index, inner->indvar())) {
                 continue;
             }
-            if (symbolic::uses(index, inner->indvar())) {
+            auto origin = SymEngine::subs(index, {{inner->indvar(), symbolic::zero()}});
+            auto coefficient =
+                symbolic::expand(symbolic::sub(SymEngine::subs(index, {{inner->indvar(), symbolic::one()}}), origin));
+            auto count = inner->num_iterations();
+            auto stride = inner->stride();
+            auto positive_integer = [](const symbolic::Expression& expression) {
+                return !expression.is_null() && SymEngine::is_a<SymEngine::Integer>(*expression) &&
+                       SymEngine::rcp_static_cast<const SymEngine::Integer>(expression)->as_int() > 0;
+            };
+            if (!positive_integer(count) || !positive_integer(stride) || !positive_integer(coefficient) ||
+                !symbolic::eq(index, symbolic::add(origin, symbolic::mul(coefficient, inner->indvar())))) {
                 throw InvalidSDFGException(
-                    "GPUOffloadReduceDispatcher: accumulator '" + r.container + "' is indexed by '" +
-                    inner->indvar()->get_name() +
-                    "', the induction variable of a loop nested inside the reduce body; the per-thread "
-                    "reduction model holds a single partial per accumulator, not one per inner-loop index. "
-                    "Parallelize the inner loop as an enclosing map, or reduce into a scalar."
+                    "GPUOffloadReduceDispatcher: accumulator '" + r.container +
+                    "' requires a constant positive affine inner-loop footprint for '" + inner->indvar()->get_name() +
+                    "' (count=" + (count.is_null() ? "unknown" : count->__str__()) + ", stride=" +
+                    (stride.is_null() ? "unknown" : stride->__str__()) + ", coefficient=" + coefficient->__str__() + ")"
+                );
+            }
+            base = SymEngine::subs(base, {{inner->indvar(), inner->init()}});
+            span = symbolic::
+                add(span, symbolic::mul(coefficient, symbolic::mul(stride, symbolic::sub(count, symbolic::one()))));
+            multi_output = true;
+        }
+        if (!multi_output) continue;
+        for (auto* loop : index_loop_analysis.descendants(&node_)) {
+            auto* inner = dynamic_cast<structured_control_flow::StructuredLoop*>(loop);
+            if (inner && symbolic::uses(base, inner->indvar())) {
+                throw InvalidSDFGException("GPUOffloadReduceDispatcher: accumulator footprint depends on an inner loop"
                 );
             }
         }
+        if (symbolic::uses(base, node_.indvar())) {
+            throw InvalidSDFGException(
+                "GPUOffloadReduceDispatcher: accumulator footprint depends on the reduction variable"
+            );
+        }
+        multi_output_layouts_.emplace(
+            r.container, AccumulatorLayout{base, SymEngine::rcp_static_cast<const SymEngine::Integer>(span)->as_int()}
+        );
     }
 }
 
@@ -784,7 +814,15 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_publish(
         }
         std::string reg_name = "__daisy_reduce_reg_" + r.container;
         std::string smem_name = partials_buffer_name(r.container);
-        stream << smem_name << "[" << lin_tid << "] = " << reg_name << ";" << std::endl;
+        auto layout = multi_output_layouts_.find(r.container);
+        if (layout == multi_output_layouts_.end()) {
+            stream << smem_name << "[" << lin_tid << "] = " << reg_name << ";" << std::endl;
+        } else {
+            std::string slot = "__daisy_reduce_slot_" + r.container;
+            stream << "for (int " << slot << " = 0; " << slot << " < " << layout->second.extent << "; ++" << slot
+                   << ") " << smem_name << "[(" << lin_tid << ") * " << layout->second.extent << " + " << slot
+                   << "] = " << reg_name << "[" << slot << "];" << std::endl;
+        }
     }
     // No sync here: the combine's leading __syncthreads() (emit_block_tree) makes every
     // thread's published slot visible before any neighbour slot is read.
@@ -829,6 +867,28 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_declarations(
         std::string reg_name = "__daisy_reduce_reg_" + r.container;
         std::string smem_name = partials_buffer_name(r.container);
 
+        auto layout = multi_output_layouts_.find(r.container);
+        if (layout != multi_output_layouts_.end()) {
+            std::string slot = "__daisy_reduce_slot_" + r.container;
+            bool register_partial = strategy != ReduceStrategy::Shared ||
+                                    uses_register_partial(target_level, r.container);
+            if (register_partial) {
+                stream << ctype << " " << reg_name << "[" << layout->second.extent << "];" << std::endl;
+                stream << "for (int " << slot << " = 0; " << slot << " < " << layout->second.extent << "; ++" << slot
+                       << ") " << reg_name << "[" << slot << "] = " << identity << ";" << std::endl;
+            }
+            if (strategy == ReduceStrategy::Shared && !has_enclosing_block_reduction(r.container)) {
+                stream << "__shared__ " << ctype << " " << smem_name << "[(" << block_size << ") * "
+                       << layout->second.extent << "];" << std::endl;
+                if (!register_partial) {
+                    stream << "for (int " << slot << " = 0; " << slot << " < " << layout->second.extent << "; ++"
+                           << slot << ") " << smem_name << "[(" << lin_tid << ") * " << layout->second.extent << " + "
+                           << slot << "] = " << identity << ";" << std::endl;
+                    declared_shared = true;
+                }
+            }
+            continue;
+        }
         if (strategy != ReduceStrategy::Shared) {
             // Register / Global: a per-thread (or per-lane) partial in a register.
             stream << ctype << " " << reg_name << " = " << identity << ";" << std::endl;
@@ -882,6 +942,16 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_shadow(
         std::string reg_name = "__daisy_reduce_reg_" + r.container;
         std::string smem_name = partials_buffer_name(r.container);
 
+        auto layout = multi_output_layouts_.find(r.container);
+        if (layout != multi_output_layouts_.end()) {
+            std::string storage =
+                strategy == ReduceStrategy::Shared && !uses_register_partial(target_level, r.container)
+                    ? "&" + smem_name + "[(" + lin_tid + ") * " + std::to_string(layout->second.extent) + "]"
+                    : reg_name;
+            stream << ctype << " *" << r.container << " = " << storage << " - ("
+                   << language_extension.expression(layout->second.base) << ");" << std::endl;
+            continue;
+        }
         std::string storage_lvalue = (strategy == ReduceStrategy::Shared &&
                                       !uses_register_partial(target_level, r.container))
                                          ? (smem_name + "[" + lin_tid + "]")
@@ -928,11 +998,26 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
 
     auto& type_analysis = analysis_manager_.get<analysis::TypeAnalysis>();
     for (const auto& r : node_.reductions()) {
+        if (strategy == ReduceStrategy::Shared && has_enclosing_block_reduction(r.container)) continue;
         auto prim = accumulator_primitive(sdfg_, type_analysis, r.container);
         std::string ctype = language_extension.primitive_type(prim);
         std::string reg_name = "__daisy_reduce_reg_" + r.container;
         std::string smem_name = partials_buffer_name(r.container);
         auto index = accumulator_index(node_.root(), r.container, node_.indvar());
+        auto layout = multi_output_layouts_.find(r.container);
+        bool multi_output = layout != multi_output_layouts_.end();
+        std::string shared_index = lin_tid;
+        std::string shared_stride = "1";
+        if (multi_output) {
+            std::string slot = "__daisy_reduce_slot_" + r.container;
+            stream << "for (int " << slot << " = 0; " << slot << " < " << layout->second.extent << "; ++" << slot
+                   << ") {" << std::endl;
+            stream.changeIndent(+4);
+            reg_name += "[" + slot + "]";
+            index = symbolic::add(layout->second.base, symbolic::symbol(slot));
+            shared_stride = std::to_string(layout->second.extent);
+            shared_index = "(" + lin_tid + ") * " + shared_stride + " + " + slot;
+        }
         std::string target = "reinterpret_cast<" + ctype + " *>(" + r.container + ")[" +
                              language_extension.expression(index) + "]";
 
@@ -975,7 +1060,7 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
                 // tiles, re-executing this publish once per tile, and each tile's warp
                 // result must fold into the identity-initialised slot instead of clobbering
                 // the previous tiles. For a single tile combine(identity, reg) == reg.
-                std::string slot = smem_name + "[" + lin_tid + "]";
+                std::string slot = smem_name + "[" + shared_index + "]";
                 stream << "if (lane == 0) {" << std::endl;
                 stream.setIndent(stream.indent() + 4);
                 stream << slot << " = " << combine_expr(r.operation, slot, reg_name) << ";" << std::endl;
@@ -1011,10 +1096,6 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
             // coverage passes and corrupt slots that later passes still accumulate into.
             // Instead, the outermost block level folds every reduced block axis exactly
             // once, after all coverage-loop iterations have finished accumulating.
-            if (has_enclosing_block_reduction(r.container)) {
-                continue;
-            }
-
             // Emit one halving tree over a block axis. Neighbours are `half * stride` flat
             // slots apart (stride 1/bx/bx*by for x/y/z); ceil-half + bound guard handles
             // non-power-of-two sizes. A nested warp publishes its per-warp result into the
@@ -1027,8 +1108,9 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
                 std::string tag = gpu::to_string(lvl);
                 std::string mvar = "__daisy_reduce_m_" + r.container + "_" + tag;
                 std::string hvar = "__daisy_reduce_half_" + r.container + "_" + tag;
-                std::string a = smem_name + "[" + lin_tid + "]";
-                std::string b = smem_name + "[" + lin_tid + " + " + hvar + " * " + a_stride + "]";
+                std::string a = smem_name + "[" + shared_index + "]";
+                std::string b = smem_name + "[" + shared_index + " + " + hvar + " * " + a_stride + " * " +
+                                shared_stride + "]";
                 stream << "__syncthreads();" << std::endl;
                 stream << "for (int " << mvar << " = " << a_dim << "; " << mvar << " > 1; ) {" << std::endl;
                 stream.setIndent(stream.indent() + 4);
@@ -1083,10 +1165,10 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
                 stream << r.container << " = " << smem_name << "[" << reduce_base_slot(language_extension, r.container)
                        << "];" << std::endl;
             } else {
-                std::string block_src = smem_name + "[" + lin_tid + "]";
+                std::string block_src = smem_name + "[" + shared_index + "]";
                 std::string leader = block_reduce_leader_condition(language_extension, r.container);
                 bool enclosed_by_reduction = has_enclosing_grid_reduction(r.container);
-                bool collides = !enclosed_by_reduction && block_result_collides_across_grid(index);
+                bool collides = !enclosed_by_reduction && (multi_output || block_result_collides_across_grid(index));
                 stream << "if (" << leader << ") {" << std::endl;
                 stream.setIndent(stream.indent() + 4);
                 if (collides) {
@@ -1119,8 +1201,12 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
             // select an atomic in address space 5) and unnecessary — only the outermost grid
             // level races across blocks. Combine plainly into that register; the outermost
             // level then atomically commits the folded result to global memory.
-            if (is_grid_level(target_level) && has_enclosing_grid_reduction(r.container)) {
+            if ((is_grid_level(target_level) || multi_output) && has_enclosing_grid_reduction(r.container)) {
                 stream << target << " = " << combine_expr(r.operation, target, reg_name) << ";" << std::endl;
+                if (multi_output) {
+                    stream.changeIndent(-4);
+                    stream << "}" << std::endl;
+                }
                 continue;
             }
 
@@ -1136,7 +1222,26 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
                                            has_nested_warp_reduction(r.container);
             bool redundant_threads = is_grid_level(target_level) && !fed_by_nested_reduction;
             if (redundant_threads) {
-                stream << "if (" << lin_tid << " == 0) {" << std::endl;
+                std::string leader = lin_tid + " == 0";
+                if (multi_output) {
+                    std::unordered_set<TargetLevel> mapped_axes;
+                    for (auto* loop : analysis_manager_.get<analysis::LoopAnalysis>().descendants(&node_)) {
+                        auto* map = dynamic_cast<structured_control_flow::Map*>(loop);
+                        if (map && map->schedule_type().category() ==
+                                       structured_control_flow::ScheduleTypeCategory::Offloader) {
+                            mapped_axes.insert(gpu::ScheduleType_GPU_Offload::target_level(map->schedule_type()));
+                        }
+                    }
+                    std::vector<std::string> conditions;
+                    for (auto level : {TargetLevel::X_BLOCK, TargetLevel::Y_BLOCK, TargetLevel::Z_BLOCK}) {
+                        if (!mapped_axes.contains(level)) {
+                            conditions
+                                .push_back("(" + language_extension.expression(get_target_level_idx(level)) + " == 0)");
+                        }
+                    }
+                    leader = conditions.empty() ? "true" : helpers::join(conditions, " && ");
+                }
+                stream << "if (" << leader << ") {" << std::endl;
                 stream.setIndent(stream.indent() + 4);
             }
             if (r.operation == ReductionOperation::Add && has_native_atomic_add(prim)) {
@@ -1151,6 +1256,10 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
                 stream.setIndent(stream.indent() - 4);
                 stream << "}" << std::endl;
             }
+        }
+        if (multi_output) {
+            stream.changeIndent(-4);
+            stream << "}" << std::endl;
         }
     }
 }
