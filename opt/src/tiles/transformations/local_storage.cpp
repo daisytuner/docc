@@ -953,32 +953,25 @@ void LocalStorage::emit_enclosing_cooperative_copy_in(
     auto* coop = tiles::find_block_scheduled_descendant(loop_, analysis_manager);
     auto& body = loop_.root();
     auto& first = body.at(0);
-    auto c_name = builder.find_new_name("__daisy_ls_coop_" + container_);
-    // Int32: sweeps [0, tile_total_size), a constant-bounded tile extent under the
-    // max_tile_elements budget; added to 64-bit bases in the global address.
-    builder.add_container(c_name, types::Scalar(types::PrimitiveType::Int32));
-    auto c = symbolic::symbol(c_name);
 
-    // Copy map: the block cooperatively splits the tile (one shared row, no slots).
-    auto& copy_map = builder.add_map_before(
-        body,
-        first,
-        c,
-        symbolic::Lt(c, buffer.tile_total_size()),
-        symbolic::integer(0),
-        symbolic::add(c, symbolic::integer(1)),
-        coop->schedule_type(),
-        loop_.debug_info()
+    // Source geometry as a Layout: apply_coords reproduces TileInfo::original_subset.
+    // A flat cooperative copy at the top of the body splits the tile (one shared row,
+    // no slots) across the block's threads.
+    tiles::TiledCopy plan;
+    plan.src = tile_info_.source_layout();
+
+    // Emit into a temporary scope inserted at the body front, then splice the copy
+    // map back out (via move_children/remove_child) so the block consumers below
+    // remain direct siblings — no extra nesting level.
+    int index = body.index(first);
+    auto& scope = builder.add_sequence_before(body, first, loop_.debug_info());
+    tiles::CopyContainers containers{container_, local_name_, &pointer_type, &buffer_type};
+    auto coop_sched = coop->schedule_type();
+    tiles::emit_into(
+        builder, scope, plan, containers, tiles::CopyDirection::In, buffer, &coop_sched, {}, {}, tiles::Coverage::Flat
     );
-
-    auto decomp = buffer.delinearize_tile(c);
-    auto& block = builder.add_block(copy_map.root());
-    auto& src = builder.add_access(block, container_);
-    auto& dst = builder.add_access(block, local_name_);
-    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
-    data_flow::Subset dst_subset = buffer.subset({}, decomp);
-    builder.add_computational_memlet(block, src, tasklet, "_in", tile_info_.original_subset(decomp), pointer_type);
-    builder.add_computational_memlet(block, tasklet, "_out", dst, dst_subset, buffer_type);
+    builder.move_children(scope, body, index + 1);
+    builder.remove_child(body, index);
 
     // Trailing barrier (after the copy, before the consumers) — no leading barrier,
     // the shared row is loaded once per block at body entry.
