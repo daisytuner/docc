@@ -8,6 +8,56 @@ from pathlib import Path
 import base64
 
 
+@pytest.fixture(autouse=True)
+def clean_daisy_env():
+    old_env = {key: value for key, value in os.environ.items() if key.startswith("__DAISY_")}
+    for key in list(old_env):
+        os.environ.pop(key, None)
+    yield
+    for key in list(os.environ):
+        if key.startswith("__DAISY_"):
+            os.environ.pop(key, None)
+    os.environ.update(old_env)
+
+
+def _resolve_cuda_events(metric_names):
+    if not metric_names:
+        return []
+
+    try:
+        process = subprocess.run(
+            ["papi_avail"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+        )
+    except FileNotFoundError:
+        pytest.skip("papi_avail is not available")
+
+    if process.returncode != 0:
+        pytest.skip("papi_avail failed to list CUDA events")
+
+    candidates = {}
+    for line in process.stdout.splitlines():
+        idx = line.find("nvml:::")
+        if idx < 0:
+            continue
+        event_name = line[idx:].split()[0]
+        for metric_name in metric_names:
+            suffix = f":{metric_name}"
+            if event_name.endswith(suffix):
+                candidates.setdefault(event_name[: -len(suffix)], {})[metric_name] = event_name
+
+    for prefix in sorted(candidates, key=lambda value: ("device_0" not in value, value)):
+        if all(metric_name in candidates[prefix] for metric_name in metric_names):
+            return [candidates[prefix][metric_name] for metric_name in metric_names]
+
+    pytest.skip(
+        "Required CUDA NVML events are unavailable: "
+        + ", ".join(metric_names)
+    )
+
+
 @pytest.mark.parametrize(
     "event",
     [
@@ -213,15 +263,13 @@ def test_instrumentation_aggregate(event):
 
 
 @pytest.mark.parametrize(
-    "event",
+    "metric_names",
     [
-        pytest.param(""),
-        pytest.param(
-            "nvml:::NVIDIA_GeForce_RTX_5060_Ti:device_0:gpu_utilization,nvml:::NVIDIA_GeForce_RTX_5060_Ti:device_0:memory_utilization"
-        ),
+        pytest.param((), id="no_cuda_events"),
+        pytest.param(("gpu_utilization", "memory_utilization"), id="nvml_utilization_events"),
     ],
 )
-def test_instrumentation_cuda(event):
+def test_instrumentation_cuda(metric_names):
     workdir = Path(__file__).parent / "applications"
 
     benchmark_path = workdir / "instrumentation_cuda_test.cu"
@@ -253,7 +301,8 @@ def test_instrumentation_cuda(event):
     ## THIS VERSION IS RUNNER-SPECIFIC and points to CI version of PAPI
     os.environ["__DAISY_PAPI_VERSION"] = "0x07020000"
     os.environ["__DAISY_INSTRUMENTATION_FILE"] = str(workdir / "data_cuda.json")
-    os.environ["__DAISY_INSTRUMENTATION_EVENTS_CUDA"] = event
+    event_names = _resolve_cuda_events(metric_names)
+    os.environ["__DAISY_INSTRUMENTATION_EVENTS_CUDA"] = ",".join(event_names)
     os.environ["__DAISY_INSTRUMENTATION_MODE"] = ""
 
     # Run benchmark
@@ -268,10 +317,6 @@ def test_instrumentation_cuda(event):
         print(stdout)
         print(stderr)
     assert process.returncode == 0
-
-    event_names = []
-    if event:
-        event_names = event.split(",")
 
     result = json.load(open(workdir / "data_cuda.json"))
     events = result["traceEvents"]
@@ -573,7 +618,7 @@ def test_instrumentation_manual(event):
         print(stderr)
     assert process.returncode == 0
 
-    result = json.load(open(workdir / "data_static.json"))
+    result = json.load(open(workdir / "data_manual.json"))
     events = result["traceEvents"]
     assert len(events) == 1
 
