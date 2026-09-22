@@ -40,6 +40,7 @@ void register_sdfg_dispatchers() {
         sdfg::codegen::register_default_dispatchers();
         sdfg::serializer::register_default_serializers();
         sdfg::einsum::register_einsum_plugin();
+        sdfg::parallelization::register_parallelization_plugin();
         sdfg::tiles::register_tiles_plugin();
         sdfg::omp::register_omp_plugin();
         sdfg::vectorize::register_vectorize_plugin();

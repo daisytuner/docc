@@ -1,4 +1,4 @@
-#include "sdfg/analysis/loop_carried_dependency_analysis.h"
+#include "sdfg/parallelization/analysis/loop_carried_dependency_analysis.h"
 
 #include <cassert>
 #include <map>
@@ -31,7 +31,7 @@
 #include "sdfg/types/scalar.h"
 
 namespace sdfg {
-namespace analysis {
+namespace parallelization {
 
 LoopCarriedDependencyAnalysis::LoopCarriedDependencyAnalysis(StructuredSDFG& sdfg)
     : Analysis(sdfg), node_(sdfg.root()) {}
@@ -39,9 +39,9 @@ LoopCarriedDependencyAnalysis::LoopCarriedDependencyAnalysis(StructuredSDFG& sdf
 LoopCarriedDependencyAnalysis::LoopCarriedDependencyAnalysis(StructuredSDFG& sdfg, structured_control_flow::Sequence& node)
     : Analysis(sdfg), node_(node) {}
 
-DataDependencyAnalysis& LoopCarriedDependencyAnalysis::detailed_dda() {
+analysis::DataDependencyAnalysis& LoopCarriedDependencyAnalysis::detailed_dda() {
     if (!detailed_dda_) {
-        detailed_dda_ = std::make_unique<DataDependencyAnalysis>(this->sdfg_, this->node_);
+        detailed_dda_ = std::make_unique<analysis::DataDependencyAnalysis>(this->sdfg_, this->node_);
         detailed_dda_->set_detailed(true);
     }
     return *detailed_dda_;
@@ -55,7 +55,7 @@ void LoopCarriedDependencyAnalysis::analyze_loop(
 
 namespace {
 
-bool is_undefined_user(User& user) {
+bool is_undefined_user(analysis::User& user) {
     // Mirror DDA::is_undefined_user — undefined users have a null vertex.
     return user.element() == nullptr;
 }
@@ -68,7 +68,7 @@ bool is_undefined_user(User& user) {
 // The returned vector is index-aligned with the user's underlying memlets:
 // for each memlet, either MLA's delinearized subset (when MLA succeeded) or
 // the memlet's original subset (linearized fallback).
-std::vector<data_flow::Subset> collect_subsets(User& user, MemoryLayoutAnalysis& mla) {
+std::vector<data_flow::Subset> collect_subsets(analysis::User& user, analysis::MemoryLayoutAnalysis& mla) {
     std::vector<data_flow::Subset> result;
     auto* access_node = dynamic_cast<data_flow::AccessNode*>(user.element());
     if (access_node == nullptr) {
@@ -76,7 +76,7 @@ std::vector<data_flow::Subset> collect_subsets(User& user, MemoryLayoutAnalysis&
         return result;
     }
     auto& graph = access_node->get_parent();
-    if (user.use() == Use::READ || user.use() == Use::VIEW) {
+    if (user.use() == analysis::Use::READ || user.use() == analysis::Use::VIEW) {
         for (auto& edge : graph.out_edges(*access_node)) {
             if (auto* acc = mla.access(edge)) {
                 result.push_back(acc->subset);
@@ -84,7 +84,7 @@ std::vector<data_flow::Subset> collect_subsets(User& user, MemoryLayoutAnalysis&
                 result.push_back(edge.subset());
             }
         }
-    } else if (user.use() == Use::WRITE || user.use() == Use::MOVE) {
+    } else if (user.use() == analysis::Use::WRITE || user.use() == analysis::Use::MOVE) {
         for (auto& edge : graph.in_edges(*access_node)) {
             if (auto* acc = mla.access(edge)) {
                 result.push_back(acc->subset);
@@ -106,10 +106,10 @@ std::vector<data_flow::Subset> collect_subsets(User& user, MemoryLayoutAnalysis&
 // undefined users (dependence exists, distance unrepresentable).
 symbolic::maps::DependenceDeltas pair_deltas(
     StructuredSDFG& sdfg,
-    User& previous,
-    User& current,
+    analysis::User& previous,
+    analysis::User& current,
     analysis::AnalysisManager& analysis_manager,
-    AssumptionsAnalysis& assumptions_analysis,
+    analysis::AssumptionsAnalysis& assumptions_analysis,
     structured_control_flow::StructuredLoop& loop
 ) {
     symbolic::maps::DependenceDeltas empty_result{true, "", {}};
@@ -135,9 +135,9 @@ symbolic::maps::DependenceDeltas pair_deltas(
     auto previous_subsets = collect_subsets(previous, mla);
     auto current_subsets = collect_subsets(current, mla);
 
-    auto previous_scope = Users::scope(&previous);
+    auto previous_scope = analysis::Users::scope(&previous);
     auto previous_assumptions = assumptions_analysis.get(*previous_scope, true);
-    auto current_scope = Users::scope(&current);
+    auto current_scope = analysis::Users::scope(&current);
     auto current_assumptions = assumptions_analysis.get(*current_scope, true);
 
     // Mark loop's indvar and all nested loop indvars as non-constant from this
@@ -255,11 +255,11 @@ void merge_deltas(LoopCarriedDependencyInfo& info, const symbolic::maps::Depende
     isl_ctx_free(ctx);
 }
 
-bool user_in_subtree(User& user, const structured_control_flow::ControlFlowNode& subtree) {
+bool user_in_subtree(analysis::User& user, const structured_control_flow::ControlFlowNode& subtree) {
     if (user.element() == nullptr) {
         return false;
     }
-    auto* scope = Users::scope(&user);
+    auto* scope = analysis::Users::scope(&user);
     while (scope != nullptr) {
         if (scope == &subtree) {
             return true;
@@ -375,7 +375,8 @@ void LoopCarriedDependencyAnalysis::run(analysis::AnalysisManager& analysis_mana
     // refinement to stay cheap; LCDA needs the refined coupled constraints
     // so that `dependence_deltas`'s ISL formulation can prove halo-style
     // patterns are non-loop-carried.
-    detailed_assumptions_ = std::make_unique<AssumptionsAnalysis>(this->sdfg_, /*with_branch_conditions=*/true);
+    detailed_assumptions_ =
+        std::make_unique<analysis::AssumptionsAnalysis>(this->sdfg_, /*with_branch_conditions=*/true);
     detailed_assumptions_->run(analysis_manager);
 
     // Drive entirely from DDA's reaching-definitions scaffold:
@@ -701,5 +702,5 @@ bool LoopCarriedDependencyAnalysis::is_reduction_only(structured_control_flow::S
     return true;
 }
 
-} // namespace analysis
+} // namespace parallelization
 } // namespace sdfg

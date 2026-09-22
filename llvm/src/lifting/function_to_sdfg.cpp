@@ -15,6 +15,7 @@
 #include <sdfg/analysis/users.h>
 #include <sdfg/builder/sdfg_builder.h>
 #include <sdfg/helpers/helpers.h>
+#include <sdfg/parallelization/passes/for_classification.h>
 #include <sdfg/passes/debug_info_propagation.h>
 #include <sdfg/passes/normalization/loop_normal_form.h>
 #include <sdfg/passes/opt_pipeline.h>
@@ -824,7 +825,7 @@ std::unique_ptr<sdfg::StructuredSDFG> FunctionToSDFG::simplify(std::unique_ptr<s
     dump_structured_sdfg(builder_opt.subject(), "14.dde");
 
     // Convert for loops into maps and reductions
-    sdfg::passes::ForClassificationPass map_conversion_pass;
+    sdfg::parallelization::ForClassificationPass map_conversion_pass;
     map_conversion_pass.run(builder_opt, analysis_manager);
 
     dump_structured_sdfg(builder_opt.subject(), "15.for_classification");

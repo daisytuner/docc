@@ -15,7 +15,6 @@ set(TEST_FILES
     analysis/data_dependency_analysis_test.cpp
     analysis/loop_analysis_info_test.cpp
     analysis/loop_analysis_test.cpp
-    analysis/loop_carried_dependency_analysis_test.cpp
     analysis/memory_layout_analysis_test.cpp
     analysis/type_analysis_test.cpp
     analysis/users_test.cpp
@@ -98,7 +97,6 @@ set(TEST_FILES
     passes/structured_control_flow/common_assignment_elimination_test.cpp
     passes/structured_control_flow/condition_elimination_test.cpp
     passes/structured_control_flow/dead_cfg_elimination_test.cpp
-    passes/structured_control_flow/for_classification_test.cpp
     passes/structured_control_flow/pointer_evolution_test.cpp
     passes/structured_control_flow/unique_loop_indvars_test.cpp
     passes/symbolic/symbol_evolution_test.cpp

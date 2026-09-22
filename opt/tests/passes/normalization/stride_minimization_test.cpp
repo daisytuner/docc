@@ -1,4 +1,5 @@
 #include "sdfg/passes/normalization/stride_minimization.h"
+#include "sdfg/parallelization/parallelization.h"
 #include "sdfg/passes/normalization/perfect_loop_distribution.h"
 
 #include <gtest/gtest.h>
@@ -599,7 +600,7 @@ TEST(StrideMinimizationTest, Polybench_gemm) {
     auto analysis_manager = std::make_unique<analysis::AnalysisManager>(builder->subject());
 
     // todo: get outermost loop
-    passes::Pipeline data_parallism = passes::Pipeline::data_parallelism();
+    passes::Pipeline data_parallism = parallelization::data_parallelism();
     data_parallism.run(*builder, *analysis_manager);
 
     // Pass
@@ -674,7 +675,7 @@ TEST(StrideMinimizationTest, Polybench_symm) {
     auto analysis_manager = std::make_unique<analysis::AnalysisManager>(builder->subject());
 
     // todo: get outermost loop
-    passes::Pipeline data_parallism = passes::Pipeline::data_parallelism();
+    passes::Pipeline data_parallism = parallelization::data_parallelism();
     data_parallism.run(*builder, *analysis_manager);
 
     // Pass
@@ -759,7 +760,7 @@ TEST(StrideMinimizationTest, Polybench_gemver) {
     auto analysis_manager = std::make_unique<analysis::AnalysisManager>(builder->subject());
 
     // todo: get outermost loop
-    passes::Pipeline data_parallism = passes::Pipeline::data_parallelism();
+    passes::Pipeline data_parallism = parallelization::data_parallelism();
     data_parallism.run(*builder, *analysis_manager);
 
     // Pass
@@ -837,7 +838,7 @@ TEST(StrideMinimizationTest, Polybench_gesummv) {
     auto analysis_manager = std::make_unique<analysis::AnalysisManager>(builder->subject());
 
     // todo: get outermost loop
-    passes::Pipeline data_parallism = passes::Pipeline::data_parallelism();
+    passes::Pipeline data_parallism = parallelization::data_parallelism();
     data_parallism.run(*builder, *analysis_manager);
 
     // Pass
@@ -881,7 +882,7 @@ TEST(StrideMinimizationTest, Polybench_syr2k) {
     auto analysis_manager = std::make_unique<analysis::AnalysisManager>(builder->subject());
 
     // todo: get outermost loop
-    passes::Pipeline data_parallism = passes::Pipeline::data_parallelism();
+    passes::Pipeline data_parallism = parallelization::data_parallelism();
     data_parallism.run(*builder, *analysis_manager);
 
     // Pass
@@ -963,7 +964,7 @@ TEST(StrideMinimizationTest, Polybench_syrk) {
     auto analysis_manager = std::make_unique<analysis::AnalysisManager>(builder->subject());
 
     // todo: get outermost loop
-    passes::Pipeline data_parallism = passes::Pipeline::data_parallelism();
+    passes::Pipeline data_parallism = parallelization::data_parallelism();
     data_parallism.run(*builder, *analysis_manager);
 
     // Pass
@@ -1044,7 +1045,7 @@ TEST(StrideMinimizationTest, Polybench_trmm) {
     auto analysis_manager = std::make_unique<analysis::AnalysisManager>(builder->subject());
 
     // todo: get outermost loop
-    passes::Pipeline data_parallism = passes::Pipeline::data_parallelism();
+    passes::Pipeline data_parallism = parallelization::data_parallelism();
     data_parallism.run(*builder, *analysis_manager);
 
     // Pass
@@ -1129,7 +1130,7 @@ TEST(StrideMinimizationTest, Polybench_atax) {
     auto analysis_manager = std::make_unique<analysis::AnalysisManager>(builder->subject());
 
     // todo: get outermost loop
-    passes::Pipeline data_parallism = passes::Pipeline::data_parallelism();
+    passes::Pipeline data_parallism = parallelization::data_parallelism();
     data_parallism.run(*builder, *analysis_manager);
 
     // Pass
@@ -1175,7 +1176,7 @@ TEST(StrideMinimizationTest, Polybench_bicg) {
     auto analysis_manager = std::make_unique<analysis::AnalysisManager>(builder->subject());
 
     // todo: get outermost loop
-    passes::Pipeline data_parallism = passes::Pipeline::data_parallelism();
+    passes::Pipeline data_parallism = parallelization::data_parallelism();
     data_parallism.run(*builder, *analysis_manager);
 
     // Pass
@@ -1216,7 +1217,7 @@ TEST(StrideMinimizationTest, Polybench_doitgen) {
     auto analysis_manager = std::make_unique<analysis::AnalysisManager>(builder->subject());
 
     // todo: get outermost loop
-    passes::Pipeline data_parallism = passes::Pipeline::data_parallelism();
+    passes::Pipeline data_parallism = parallelization::data_parallelism();
     data_parallism.run(*builder, *analysis_manager);
 
     // Pass
@@ -1292,7 +1293,7 @@ TEST(StrideMinimizationTest, Polybench_mvt) {
     auto analysis_manager = std::make_unique<analysis::AnalysisManager>(builder->subject());
 
     // todo: get outermost loop
-    passes::Pipeline data_parallism = passes::Pipeline::data_parallelism();
+    passes::Pipeline data_parallism = parallelization::data_parallelism();
     data_parallism.run(*builder, *analysis_manager);
 
     // Pass
@@ -1353,7 +1354,7 @@ TEST(StrideMinimizationTest, Polybench_cholesky) {
     auto analysis_manager = std::make_unique<analysis::AnalysisManager>(builder->subject());
 
     // todo: get outermost loop
-    passes::Pipeline data_parallism = passes::Pipeline::data_parallelism();
+    passes::Pipeline data_parallism = parallelization::data_parallelism();
     data_parallism.run(*builder, *analysis_manager);
 
     // Pass
@@ -1431,7 +1432,7 @@ TEST(StrideMinimizationTest, Polybench_fdtd_2d) {
 
     auto analysis_manager = std::make_unique<analysis::AnalysisManager>(builder->subject());
 
-    passes::Pipeline data_parallism = passes::Pipeline::data_parallelism();
+    passes::Pipeline data_parallism = parallelization::data_parallelism();
     data_parallism.run(*builder, *analysis_manager);
 
     // Pass

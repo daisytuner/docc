@@ -19,6 +19,7 @@
 #include <sdfg/codegen/instrumentation/instrumentation_plan.h>
 #include <sdfg/codegen/loop_report.h>
 #include <sdfg/einsum/einsum.h>
+#include <sdfg/parallelization/passes/for_classification.h>
 #include <sdfg/passes/dataflow/dead_data_elimination.h>
 #include <sdfg/passes/dataflow/local_buffer_reuse.h>
 #include <sdfg/passes/dataflow/tensor_to_pointer_conversion.h>
@@ -37,7 +38,6 @@
 #include <sdfg/passes/scheduler/scheduler_registry.h>
 #include <sdfg/passes/structured_control_flow/common_assignment_elimination.h>
 #include <sdfg/passes/structured_control_flow/condition_elimination.h>
-#include <sdfg/passes/structured_control_flow/for_classification.h>
 #include <sdfg/passes/structured_control_flow/pointer_evolution.h>
 #include <sdfg/passes/structured_control_flow/while_to_for_conversion.h>
 #include <sdfg/passes/symbolic/symbol_evolution.h>
@@ -341,7 +341,7 @@ void PyStructuredSDFG::simplify(const docc::target::TargetOptions& options) {
     ce.run(builder_opt, analysis_manager);
 
     // Convert for loops into maps and reductions
-    sdfg::passes::ForClassificationPass map_conversion_pass;
+    sdfg::parallelization::ForClassificationPass map_conversion_pass;
     map_conversion_pass.run(builder_opt, analysis_manager);
 
     // Move code out of maps where possible

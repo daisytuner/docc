@@ -34,6 +34,8 @@ set(TEST_FILES
     einsum/transformations/einsum_extend_test.cpp
     einsum/transformations/einsum_lift_test.cpp
     einsum/transformations/einsum_promotion_test.cpp
+    parallelization/analysis/loop_carried_dependency_analysis_test.cpp
+    parallelization/passes/for_classification_test.cpp
     rocm/blas/rocblas_test.cpp
     rocm/rocm_library_nodes_test.cpp
     rocm/rocm_mma_test.cpp

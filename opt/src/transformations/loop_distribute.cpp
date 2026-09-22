@@ -1,9 +1,9 @@
 #include "sdfg/transformations/loop_distribute.h"
 
 #include "sdfg/analysis/data_dependency_analysis.h"
-#include "sdfg/analysis/loop_carried_dependency_analysis.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/deepcopy/structured_sdfg_deep_copy.h"
+#include "sdfg/parallelization/analysis/loop_carried_dependency_analysis.h"
 
 namespace sdfg {
 namespace transformations {
@@ -78,7 +78,7 @@ bool LoopDistribute::can_be_applied(builder::StructuredSDFGBuilder& builder, ana
     //   - RAW pairs are safe iff writer and reader stay in the same group.
     //     A cross-group RAW would force the reader to see a different write
     //     after the groups are serialized.
-    auto& lcd = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& lcd = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
     if (!lcd.available(this->loop_)) {
         return false;
     }
@@ -123,7 +123,7 @@ bool LoopDistribute::can_be_applied(builder::StructuredSDFGBuilder& builder, ana
         if (w_group == r_group) continue; // intra-group, distribution preserves it
 
         // Cross-group pair.
-        if (pair.type == analysis::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_WRITE_WRITE) {
+        if (pair.type == parallelization::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_WRITE_WRITE) {
             continue; // WAW always safe under program-order-preserving split
         }
 

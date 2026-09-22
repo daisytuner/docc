@@ -13,7 +13,7 @@
 #include "sdfg/symbolic/maps.h"
 
 namespace sdfg {
-namespace analysis {
+namespace parallelization {
 
 enum LoopCarriedDependency {
     LOOP_CARRIED_DEPENDENCY_READ_WRITE,
@@ -41,8 +41,8 @@ struct LoopCarriedDependencyInfo {
  * later write in program order, respectively).
  */
 struct LoopCarriedDependencyPair {
-    User* writer;
-    User* reader;
+    analysis::User* writer;
+    analysis::User* reader;
     LoopCarriedDependency type;
     symbolic::maps::DependenceDeltas deltas;
 };
@@ -60,8 +60,8 @@ struct LoopCarriedDependencyPair {
  *            ∪ { (W₁,W₂, WAW, Δ_L(W₁,W₂)) : W₁,W₂ ∈ esc(L),
  *                                           cont(W₁) = cont(W₂), Δ ≠ ∅ }
  */
-class LoopCarriedDependencyAnalysis : public Analysis {
-    friend class AnalysisManager;
+class LoopCarriedDependencyAnalysis : public analysis::Analysis {
+    friend class analysis::AnalysisManager;
 
 private:
     structured_control_flow::Sequence& node_;
@@ -87,14 +87,14 @@ private:
     // (not through the shared `AnalysisManager` cache). LCDA needs the
     // precise symbolic-subset boundary information; the manager-cached DDA
     // runs in conservative mode for performance.
-    std::unique_ptr<DataDependencyAnalysis> detailed_dda_;
-    DataDependencyAnalysis& detailed_dda();
+    std::unique_ptr<analysis::DataDependencyAnalysis> detailed_dda_;
+    analysis::DataDependencyAnalysis& detailed_dda();
 
     // Owned, branch-condition-aware `AssumptionsAnalysis` instance constructed
     // manually for the same reason: the cheaper, manager-cached AA does not
     // refine assumptions across IfElse branches (needed for halo-style
     // coupled constraints).
-    std::unique_ptr<AssumptionsAnalysis> detailed_assumptions_;
+    std::unique_ptr<analysis::AssumptionsAnalysis> detailed_assumptions_;
 
     void analyze_loop(analysis::AnalysisManager& analysis_manager, structured_control_flow::StructuredLoop& loop);
 
@@ -185,5 +185,5 @@ public:
     bool is_reduction_only(structured_control_flow::StructuredLoop& loop) const;
 };
 
-} // namespace analysis
+} // namespace parallelization
 } // namespace sdfg

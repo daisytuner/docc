@@ -1,4 +1,4 @@
-#include "sdfg/analysis/loop_carried_dependency_analysis.h"
+#include "sdfg/parallelization/analysis/loop_carried_dependency_analysis.h"
 
 #include <gtest/gtest.h>
 
@@ -49,12 +49,12 @@ TEST(LoopCarriedDependencyAnalysisTest, Reduce_WriteScalar) {
     builder.add_computational_memlet(block, tasklet, "_out", b_out, {});
 
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& lcd = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& lcd = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
 
     EXPECT_TRUE(lcd.available(loop));
     auto& deps = lcd.dependencies(loop);
     ASSERT_EQ(deps.count("B"), 1u);
-    EXPECT_EQ(deps.at("B").type, analysis::LOOP_CARRIED_DEPENDENCY_WRITE_WRITE);
+    EXPECT_EQ(deps.at("B").type, parallelization::LOOP_CARRIED_DEPENDENCY_WRITE_WRITE);
     EXPECT_TRUE(lcd.has_loop_carried(loop));
     EXPECT_FALSE(lcd.has_loop_carried_raw(loop));
 
@@ -101,11 +101,11 @@ TEST(LoopCarriedDependencyAnalysisTest, Sum_RawOnScalar) {
     builder.add_computational_memlet(block, tasklet, "_out", b_out, {});
 
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& lcd = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& lcd = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
 
     auto& deps = lcd.dependencies(loop);
     ASSERT_EQ(deps.count("B"), 1u);
-    EXPECT_EQ(deps.at("B").type, analysis::LOOP_CARRIED_DEPENDENCY_READ_WRITE);
+    EXPECT_EQ(deps.at("B").type, parallelization::LOOP_CARRIED_DEPENDENCY_READ_WRITE);
     EXPECT_TRUE(lcd.has_loop_carried_raw(loop));
 
     // B = B + A[i] is an additive reduction on the scalar accumulator B.
@@ -158,11 +158,11 @@ TEST(LoopCarriedDependencyAnalysisTest, Fma_AddendAccumulator_IsReduction) {
     builder.add_computational_memlet(block, tasklet, "_out", b_out, {});
 
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& lcd = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& lcd = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
 
     auto& deps = lcd.dependencies(loop);
     ASSERT_EQ(deps.count("B"), 1u);
-    EXPECT_EQ(deps.at("B").type, analysis::LOOP_CARRIED_DEPENDENCY_READ_WRITE);
+    EXPECT_EQ(deps.at("B").type, parallelization::LOOP_CARRIED_DEPENDENCY_READ_WRITE);
 
     ASSERT_TRUE(lcd.has_reductions(loop));
     auto& reductions = lcd.reductions(loop);
@@ -213,11 +213,11 @@ TEST(LoopCarriedDependencyAnalysisTest, Fma_MultiplicandAccumulator_NotReduction
     builder.add_computational_memlet(block, tasklet, "_out", b_out, {});
 
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& lcd = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& lcd = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
 
     auto& deps = lcd.dependencies(loop);
     ASSERT_EQ(deps.count("B"), 1u);
-    EXPECT_EQ(deps.at("B").type, analysis::LOOP_CARRIED_DEPENDENCY_READ_WRITE);
+    EXPECT_EQ(deps.at("B").type, parallelization::LOOP_CARRIED_DEPENDENCY_READ_WRITE);
 
     // Accumulator on a multiplicand port => not a reduction.
     EXPECT_FALSE(lcd.has_reductions(loop));
@@ -259,7 +259,7 @@ TEST(LoopCarriedDependencyAnalysisTest, IndependentArrayWrite_NoCarry) {
     builder.add_computational_memlet(block, tasklet, "_out", a_out, {indvar}, edge_desc);
 
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& lcd = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& lcd = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
 
     EXPECT_TRUE(lcd.available(loop));
     EXPECT_FALSE(lcd.has_loop_carried(loop));
@@ -307,11 +307,11 @@ TEST(LoopCarriedDependencyAnalysisTest, Shift_Raw) {
     builder.add_computational_memlet(block, tasklet, "_out", a_out, {indvar}, edge_desc);
 
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& lcd = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& lcd = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
 
     auto& deps = lcd.dependencies(loop);
     ASSERT_EQ(deps.count("A"), 1u);
-    EXPECT_EQ(deps.at("A").type, analysis::LOOP_CARRIED_DEPENDENCY_READ_WRITE);
+    EXPECT_EQ(deps.at("A").type, parallelization::LOOP_CARRIED_DEPENDENCY_READ_WRITE);
     EXPECT_TRUE(lcd.has_loop_carried_raw(loop));
 
     // A[i] = A[i-1] is a genuine recurrence (shift), not a reorderable reduction.
@@ -357,12 +357,12 @@ TEST(LoopCarriedDependencyAnalysisTest, Last_1D) {
 
     // Analysis
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& analysis = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& analysis = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
     auto& dependencies = analysis.dependencies(loop);
 
     // Check
     EXPECT_EQ(dependencies.size(), 1);
-    EXPECT_EQ(dependencies.at("B").type, analysis::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_WRITE_WRITE);
+    EXPECT_EQ(dependencies.at("B").type, parallelization::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_WRITE_WRITE);
 }
 
 TEST(LoopCarriedDependencyAnalysisTest, Sum_1D) {
@@ -404,12 +404,12 @@ TEST(LoopCarriedDependencyAnalysisTest, Sum_1D) {
 
     // Analysis
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& analysis = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& analysis = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
     auto& dependencies = analysis.dependencies(loop);
 
     // Check
     EXPECT_EQ(dependencies.size(), 1);
-    EXPECT_EQ(dependencies.at("B").type, analysis::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_READ_WRITE);
+    EXPECT_EQ(dependencies.at("B").type, parallelization::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_READ_WRITE);
 
     // B = B + A[i] is an additive reduction.
     ASSERT_TRUE(analysis.has_reductions(loop));
@@ -456,12 +456,12 @@ TEST(LoopCarriedDependencyAnalysisTest, Shift_1D) {
 
     // Analysis
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& analysis = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& analysis = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
     auto& dependencies = analysis.dependencies(loop);
 
     // Check
     EXPECT_EQ(dependencies.size(), 1);
-    EXPECT_EQ(dependencies.at("A").type, analysis::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_READ_WRITE);
+    EXPECT_EQ(dependencies.at("A").type, parallelization::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_READ_WRITE);
 }
 
 TEST(LoopCarriedDependencyAnalysisTest, PartialSum_1D) {
@@ -502,12 +502,12 @@ TEST(LoopCarriedDependencyAnalysisTest, PartialSum_1D) {
 
     // Analysis
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& analysis = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& analysis = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
     auto& dependencies = analysis.dependencies(loop);
 
     // Check
     EXPECT_EQ(dependencies.size(), 1);
-    EXPECT_EQ(dependencies.at("A").type, analysis::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_READ_WRITE);
+    EXPECT_EQ(dependencies.at("A").type, parallelization::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_READ_WRITE);
 }
 
 TEST(LoopCarriedDependencyAnalysisTest, LoopLocal_1D) {
@@ -553,12 +553,12 @@ TEST(LoopCarriedDependencyAnalysisTest, LoopLocal_1D) {
 
     // Analysis
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& analysis = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& analysis = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
     auto& dependencies = analysis.dependencies(loop);
 
     // Check
     EXPECT_EQ(dependencies.size(), 1);
-    EXPECT_EQ(dependencies.at("tmp").type, analysis::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_WRITE_WRITE);
+    EXPECT_EQ(dependencies.at("tmp").type, parallelization::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_WRITE_WRITE);
 }
 
 TEST(LoopCarriedDependencyAnalysisTest, LoopLocal_Conditional) {
@@ -604,12 +604,12 @@ TEST(LoopCarriedDependencyAnalysisTest, LoopLocal_Conditional) {
 
     // Analysis
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& analysis = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& analysis = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
     auto& dependencies = analysis.dependencies(loop1);
 
     // Check
     EXPECT_EQ(dependencies.size(), 1);
-    EXPECT_EQ(dependencies.at("tmp").type, analysis::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_WRITE_WRITE);
+    EXPECT_EQ(dependencies.at("tmp").type, parallelization::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_WRITE_WRITE);
 }
 
 TEST(LoopCarriedDependencyAnalysisTest, LoopLocal_Conditional_Incomplete) {
@@ -652,12 +652,12 @@ TEST(LoopCarriedDependencyAnalysisTest, LoopLocal_Conditional_Incomplete) {
 
     // Analysis
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& analysis = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& analysis = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
     auto& dependencies = analysis.dependencies(loop1);
 
     // Check
     EXPECT_EQ(dependencies.size(), 1);
-    EXPECT_EQ(dependencies.at("tmp").type, analysis::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_READ_WRITE);
+    EXPECT_EQ(dependencies.at("tmp").type, parallelization::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_READ_WRITE);
 }
 
 TEST(LoopCarriedDependencyAnalysisTest, Store_1D) {
@@ -693,7 +693,7 @@ TEST(LoopCarriedDependencyAnalysisTest, Store_1D) {
 
     // Analysis
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& analysis = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& analysis = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
     auto& dependencies = analysis.dependencies(loop);
 
     // Check
@@ -736,7 +736,7 @@ TEST(LoopCarriedDependencyAnalysisTest, Copy_1D) {
 
     // Analysis
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& analysis = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& analysis = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
     auto& dependencies = analysis.dependencies(loop);
 
     // Check
@@ -780,7 +780,7 @@ TEST(LoopCarriedDependencyAnalysisTest, Map_1D) {
 
     // Analysis
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& analysis = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& analysis = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
     auto& dependencies = analysis.dependencies(loop);
 
     // Check
@@ -826,7 +826,7 @@ TEST(LoopCarriedDependencyAnalysisTest, Map_1D_Disjoint) {
 
     // Analysis
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& analysis = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& analysis = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
     auto& dependencies = analysis.dependencies(loop);
 
     // Check
@@ -870,7 +870,7 @@ TEST(LoopCarriedDependencyAnalysisTest, Map_1D_Strided) {
 
     // Analysis
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& analysis = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& analysis = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
     auto& dependencies = analysis.dependencies(loop);
 
     // Check
@@ -914,7 +914,7 @@ TEST(LoopCarriedDependencyAnalysisTest, Map_1D_Strided2) {
 
     // Analysis
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& analysis = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& analysis = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
     auto& dependencies = analysis.dependencies(loop);
 
     // Check
@@ -970,13 +970,13 @@ TEST(LoopCarriedDependencyAnalysisTest, Map_1D_Tiled) {
 
     // Analysis
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& analysis = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& analysis = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
     auto& dependencies1 = analysis.dependencies(loop_outer);
     auto& dependencies2 = analysis.dependencies(loop_inner);
 
     // Check
     EXPECT_EQ(dependencies1.size(), 1);
-    EXPECT_EQ(dependencies1.at("i").type, analysis::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_WRITE_WRITE);
+    EXPECT_EQ(dependencies1.at("i").type, parallelization::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_WRITE_WRITE);
     EXPECT_EQ(dependencies2.size(), 0);
 }
 
@@ -1040,13 +1040,13 @@ TEST(LoopCarriedDependencyAnalysisTest, Map_1D_Incomplete) {
 
     // Analysis
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& analysis = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& analysis = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
     auto& dependencies = analysis.dependencies(loop);
 
     // Check
     EXPECT_EQ(dependencies.size(), 2);
-    EXPECT_EQ(dependencies.at("tmp").type, analysis::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_WRITE_WRITE);
-    EXPECT_EQ(dependencies.at("k").type, analysis::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_WRITE_WRITE);
+    EXPECT_EQ(dependencies.at("tmp").type, parallelization::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_WRITE_WRITE);
+    EXPECT_EQ(dependencies.at("k").type, parallelization::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_WRITE_WRITE);
 }
 
 TEST(LoopCarriedDependencyAnalysisTest, MapParameterized_1D) {
@@ -1100,13 +1100,13 @@ TEST(LoopCarriedDependencyAnalysisTest, MapParameterized_1D) {
 
     // Analysis
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& analysis = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& analysis = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
     auto& dependencies = analysis.dependencies(loop);
 
     // Check
     // m == 0 -> all iterations access the same location
     EXPECT_EQ(dependencies.size(), 1);
-    EXPECT_EQ(dependencies.at("A").type, analysis::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_READ_WRITE);
+    EXPECT_EQ(dependencies.at("A").type, parallelization::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_READ_WRITE);
 }
 
 TEST(LoopCarriedDependencyAnalysisTest, Stencil_1D) {
@@ -1153,7 +1153,7 @@ TEST(LoopCarriedDependencyAnalysisTest, Stencil_1D) {
 
     // Analysis
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& analysis = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& analysis = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
     auto& dependencies = analysis.dependencies(loop);
 
     // Check
@@ -1207,12 +1207,12 @@ TEST(LoopCarriedDependencyAnalysisTest, Gather_1D) {
 
     // Analysis
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& analysis = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& analysis = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
     auto& dependencies = analysis.dependencies(loop);
 
     // Check
     EXPECT_EQ(dependencies.size(), 1);
-    EXPECT_EQ(dependencies.at("b").type, analysis::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_WRITE_WRITE);
+    EXPECT_EQ(dependencies.at("b").type, parallelization::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_WRITE_WRITE);
 }
 
 TEST(LoopCarriedDependencyAnalysisTest, Scatter_1D) {
@@ -1260,13 +1260,13 @@ TEST(LoopCarriedDependencyAnalysisTest, Scatter_1D) {
 
     // Analysis
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& analysis = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& analysis = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
     auto& dependencies = analysis.dependencies(loop);
 
     // Check
     EXPECT_EQ(dependencies.size(), 2);
-    EXPECT_EQ(dependencies.at("b").type, analysis::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_WRITE_WRITE);
-    EXPECT_EQ(dependencies.at("C").type, analysis::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_WRITE_WRITE);
+    EXPECT_EQ(dependencies.at("b").type, parallelization::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_WRITE_WRITE);
+    EXPECT_EQ(dependencies.at("C").type, parallelization::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_WRITE_WRITE);
 }
 
 TEST(LoopCarriedDependencyAnalysisTest, MapDeg2_1D) {
@@ -1304,7 +1304,7 @@ TEST(LoopCarriedDependencyAnalysisTest, MapDeg2_1D) {
 
     // Analysis
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& analysis = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& analysis = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
     auto& dependencies = analysis.dependencies(loop);
 
     // Check
@@ -1363,12 +1363,12 @@ TEST(LoopCarriedDependencyAnalysisTest, Map_2D) {
 
     // Analysis
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& analysis = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& analysis = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
 
     // Check
     auto& dependencies = analysis.dependencies(loop);
     EXPECT_EQ(dependencies.size(), 1);
-    EXPECT_EQ(dependencies.at("j").type, analysis::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_WRITE_WRITE);
+    EXPECT_EQ(dependencies.at("j").type, parallelization::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_WRITE_WRITE);
 
     // Check loop 2
     auto& dependencies_2 = analysis.dependencies(loop_2);
@@ -1426,16 +1426,16 @@ TEST(LoopCarriedDependencyAnalysisTest, PartialSumInner_2D) {
 
     // Analysis
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& analysis = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& analysis = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
     auto& dependencies1 = analysis.dependencies(loop1);
     auto& dependencies2 = analysis.dependencies(loop2);
 
     // Check
     EXPECT_EQ(dependencies1.size(), 1);
-    EXPECT_EQ(dependencies1.at("j").type, analysis::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_WRITE_WRITE);
+    EXPECT_EQ(dependencies1.at("j").type, parallelization::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_WRITE_WRITE);
 
     EXPECT_EQ(dependencies2.size(), 1);
-    EXPECT_EQ(dependencies2.at("B").type, analysis::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_READ_WRITE);
+    EXPECT_EQ(dependencies2.at("B").type, parallelization::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_READ_WRITE);
 
     // Inner j-loop: B[i] = A[i,j] + B[i] is an additive reduction (accumulator
     // B[i] is invariant w.r.t. the inner induction variable j).
@@ -1500,14 +1500,14 @@ TEST(LoopCarriedDependencyAnalysisTest, PartialSumOuter_2D) {
 
     // Analysis
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& analysis = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& analysis = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
     auto& dependencies1 = analysis.dependencies(loop1);
     auto& dependencies2 = analysis.dependencies(loop2);
 
     // Check
     EXPECT_EQ(dependencies1.size(), 2);
-    EXPECT_EQ(dependencies1.at("j").type, analysis::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_WRITE_WRITE);
-    EXPECT_EQ(dependencies1.at("B").type, analysis::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_READ_WRITE);
+    EXPECT_EQ(dependencies1.at("j").type, parallelization::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_WRITE_WRITE);
+    EXPECT_EQ(dependencies1.at("B").type, parallelization::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_READ_WRITE);
 
     EXPECT_EQ(dependencies2.size(), 0);
 }
@@ -1565,16 +1565,16 @@ TEST(LoopCarriedDependencyAnalysisTest, PartialSum_1D_Triangle) {
 
     // Analysis
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& analysis = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& analysis = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
     auto& dependencies1 = analysis.dependencies(loop1);
     auto& dependencies2 = analysis.dependencies(loop2);
 
     // Check
     EXPECT_EQ(dependencies1.size(), 2);
-    EXPECT_EQ(dependencies1.at("A").type, analysis::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_READ_WRITE);
-    EXPECT_EQ(dependencies1.at("j").type, analysis::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_WRITE_WRITE);
+    EXPECT_EQ(dependencies1.at("A").type, parallelization::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_READ_WRITE);
+    EXPECT_EQ(dependencies1.at("j").type, parallelization::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_WRITE_WRITE);
     EXPECT_EQ(dependencies2.size(), 1);
-    EXPECT_EQ(dependencies2.at("A").type, analysis::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_READ_WRITE);
+    EXPECT_EQ(dependencies2.at("A").type, parallelization::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_READ_WRITE);
 }
 
 TEST(LoopCarriedDependencyAnalysisTest, Transpose_2D) {
@@ -1628,14 +1628,14 @@ TEST(LoopCarriedDependencyAnalysisTest, Transpose_2D) {
 
     // Analysis
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& analysis = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& analysis = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
     auto& dependencies1 = analysis.dependencies(loop1);
     auto& dependencies2 = analysis.dependencies(loop2);
 
     // Check
     EXPECT_EQ(dependencies2.size(), 0);
     EXPECT_EQ(dependencies1.size(), 1);
-    EXPECT_EQ(dependencies1.at("j").type, analysis::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_WRITE_WRITE);
+    EXPECT_EQ(dependencies1.at("j").type, parallelization::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_WRITE_WRITE);
 }
 
 TEST(LoopCarriedDependencyAnalysisTest, TransposeTriangle_2D) {
@@ -1685,13 +1685,13 @@ TEST(LoopCarriedDependencyAnalysisTest, TransposeTriangle_2D) {
 
     // Analysis
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& analysis = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& analysis = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
     auto& dependencies1 = analysis.dependencies(loop1);
     auto& dependencies2 = analysis.dependencies(loop2);
 
     // Check
     EXPECT_EQ(dependencies1.size(), 1);
-    EXPECT_EQ(dependencies1.at("j").type, analysis::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_WRITE_WRITE);
+    EXPECT_EQ(dependencies1.at("j").type, parallelization::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_WRITE_WRITE);
     EXPECT_EQ(dependencies2.size(), 0);
 }
 
@@ -1742,13 +1742,13 @@ TEST(LoopCarriedDependencyAnalysisTest, TransposeTriangleWithDiagonal_2D) {
 
     // Analysis
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& analysis = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& analysis = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
     auto& dependencies1 = analysis.dependencies(loop1);
     auto& dependencies2 = analysis.dependencies(loop2);
 
     // Check
     EXPECT_EQ(dependencies1.size(), 1);
-    EXPECT_EQ(dependencies1.at("j").type, analysis::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_WRITE_WRITE);
+    EXPECT_EQ(dependencies1.at("j").type, parallelization::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_WRITE_WRITE);
     EXPECT_EQ(dependencies2.size(), 0);
 }
 
@@ -1799,15 +1799,15 @@ TEST(LoopCarriedDependencyAnalysisTest, TransposeSquare_2D) {
 
     // Analysis
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& analysis = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& analysis = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
     auto& dependencies1 = analysis.dependencies(loop1);
     auto& dependencies2 = analysis.dependencies(loop2);
 
     // Check
     EXPECT_EQ(dependencies2.size(), 0);
     EXPECT_EQ(dependencies1.size(), 2);
-    EXPECT_EQ(dependencies1.at("A").type, analysis::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_READ_WRITE);
-    EXPECT_EQ(dependencies1.at("j").type, analysis::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_WRITE_WRITE);
+    EXPECT_EQ(dependencies1.at("A").type, parallelization::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_READ_WRITE);
+    EXPECT_EQ(dependencies1.at("j").type, parallelization::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_WRITE_WRITE);
 }
 
 TEST(LoopCarriedDependencyAnalysisTest, ReductionWithLocalStorage) {
@@ -1910,16 +1910,16 @@ TEST(LoopCarriedDependencyAnalysisTest, ReductionWithLocalStorage) {
 
     // Analysis
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& analysis = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& analysis = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
     auto& dependencies1 = analysis.dependencies(loop1);
     auto& dependencies2 = analysis.dependencies(loop2);
 
     // Check
     EXPECT_EQ(dependencies1.size(), 2);
-    EXPECT_EQ(dependencies1.at("local").type, analysis::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_WRITE_WRITE);
-    EXPECT_EQ(dependencies1.at("j").type, analysis::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_WRITE_WRITE);
+    EXPECT_EQ(dependencies1.at("local").type, parallelization::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_WRITE_WRITE);
+    EXPECT_EQ(dependencies1.at("j").type, parallelization::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_WRITE_WRITE);
     EXPECT_EQ(dependencies2.size(), 1);
-    EXPECT_EQ(dependencies2.at("local").type, analysis::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_READ_WRITE);
+    EXPECT_EQ(dependencies2.at("local").type, parallelization::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_READ_WRITE);
 
     // The two inner combines (local[0] += ... and local[1] *= ...) write the
     // SAME container `local` with DIFFERENT operators. Reduction detection keys
@@ -2156,12 +2156,12 @@ TEST(LoopCarriedDependencyAnalysisTest, Cholesky_Full) {
 
     // Analysis
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& analysis = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& analysis = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
     auto& dependencies_j = analysis.dependencies(loop_j);
 
     // j-loop: A has RAW dependency (inner loop reads A[_i0+i*_s0], body writes A[j+i*_s0])
     EXPECT_NE(dependencies_j.find("A"), dependencies_j.end());
-    EXPECT_EQ(dependencies_j.at("A").type, analysis::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_READ_WRITE);
+    EXPECT_EQ(dependencies_j.at("A").type, parallelization::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_READ_WRITE);
 }
 
 // ============================================================================
@@ -2272,10 +2272,10 @@ TEST(LoopCarriedDependencyAnalysisTest, LU_Factorization_Diagnostic) {
     }
 
     analysis::AnalysisManager am(sdfg);
-    auto& lcd = am.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& lcd = am.get<parallelization::LoopCarriedDependencyAnalysis>();
 
-    auto kind_str = [](analysis::LoopCarriedDependency t) {
-        return t == analysis::LOOP_CARRIED_DEPENDENCY_READ_WRITE ? "RAW" : "WAW";
+    auto kind_str = [](parallelization::LoopCarriedDependency t) {
+        return t == parallelization::LOOP_CARRIED_DEPENDENCY_READ_WRITE ? "RAW" : "WAW";
     };
 
     auto dump_loop = [&](const char* name, structured_control_flow::StructuredLoop& loop) {
@@ -2389,7 +2389,7 @@ TEST(LoopCarriedDependencyAnalysisTest, IntSumReduction) {
     builder.add_computational_memlet(block, tasklet, "_out", s_out, {});
 
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& lcd = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& lcd = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
 
     ASSERT_TRUE(lcd.has_reductions(loop));
     ASSERT_EQ(lcd.reductions(loop).size(), 1u);
@@ -2432,7 +2432,7 @@ TEST(LoopCarriedDependencyAnalysisTest, IntMaxReduction) {
     builder.add_computational_memlet(block, tasklet, "_out", m_out, {});
 
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& lcd = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& lcd = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
 
     ASSERT_TRUE(lcd.has_reductions(loop));
     ASSERT_EQ(lcd.reductions(loop).size(), 1u);
@@ -2475,7 +2475,7 @@ TEST(LoopCarriedDependencyAnalysisTest, IntMinReduction) {
     builder.add_computational_memlet(block, tasklet, "_out", m_out, {});
 
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& lcd = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& lcd = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
 
     ASSERT_TRUE(lcd.has_reductions(loop));
     ASSERT_EQ(lcd.reductions(loop).size(), 1u);
@@ -2520,7 +2520,7 @@ TEST(LoopCarriedDependencyAnalysisTest, CMathFloatMaxReduction) {
     builder.add_computational_memlet(block, node, "_out", m_out, {}, base_desc);
 
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& lcd = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& lcd = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
 
     ASSERT_TRUE(lcd.has_reductions(loop));
     ASSERT_EQ(lcd.reductions(loop).size(), 1u);
@@ -2569,7 +2569,7 @@ TEST(LoopCarriedDependencyAnalysisTest, CMathFmaAddendReduction) {
     builder.add_computational_memlet(block, node, "_out", s_out, {}, base_desc);
 
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& lcd = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& lcd = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
 
     ASSERT_TRUE(lcd.has_reductions(loop));
     ASSERT_EQ(lcd.reductions(loop).size(), 1u);
@@ -2613,7 +2613,7 @@ TEST(LoopCarriedDependencyAnalysisTest, NonAssociativeSub_NotReduction) {
     builder.add_computational_memlet(block, tasklet, "_out", b_out, {});
 
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& lcd = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& lcd = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
 
     // RAW carry exists ...
     EXPECT_TRUE(lcd.has_loop_carried_raw(loop));
@@ -2672,7 +2672,7 @@ TEST(LoopCarriedDependencyAnalysisTest, FusedDistinctScalarReductions) {
     builder.add_computational_memlet(block2, tasklet2, "_out", p_out, {});
 
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& lcd = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& lcd = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
 
     ASSERT_TRUE(lcd.has_reductions(loop));
     ASSERT_EQ(lcd.reductions(loop).size(), 2u);
@@ -2736,7 +2736,7 @@ TEST(LoopCarriedDependencyAnalysisTest, MixedReductionAndRecurrence_NotReduction
     builder.add_computational_memlet(block2, tasklet2, "_out", c_out, {indvar}, edge_desc);
 
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& lcd = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& lcd = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
 
     ASSERT_TRUE(lcd.has_reductions(loop));
     ASSERT_EQ(lcd.reductions(loop).size(), 1u);
@@ -2783,7 +2783,7 @@ TEST(LoopCarriedDependencyAnalysisTest, PrefixSum_NotReduction) {
     builder.add_computational_memlet(block, tasklet, "_out", a_out, {indvar}, edge_desc);
 
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& lcd = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& lcd = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
 
     // RAW carry on A exists ...
     EXPECT_TRUE(lcd.has_loop_carried_raw(loop));
@@ -2845,7 +2845,7 @@ TEST(LoopCarriedDependencyAnalysisTest, LinearizedParametricReduction) {
     builder.add_computational_memlet(block, tasklet, "_out", c_out, {acc_addr_write}, edge_desc);
 
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& lcd = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& lcd = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
 
     ASSERT_TRUE(lcd.has_reductions(loop_j));
     ASSERT_EQ(lcd.reductions(loop_j).size(), 1u);
@@ -2898,7 +2898,7 @@ TEST(LoopCarriedDependencyAnalysisTest, LinearizedMultiDimReductionToScalar) {
     builder.add_computational_memlet(block, tasklet, "_out", sum_out, {});
 
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto& lcd = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& lcd = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
 
     ASSERT_TRUE(lcd.has_reductions(loop_j));
     ASSERT_EQ(lcd.reductions(loop_j).size(), 1u);

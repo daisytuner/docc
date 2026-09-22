@@ -155,16 +155,6 @@ Pipeline Pipeline::controlflow_simplification() {
     return p;
 };
 
-Pipeline Pipeline::data_parallelism() {
-    Pipeline p("DataParallelism");
-
-    p.register_pass<ForClassificationPass>();
-    p.register_pass<SymbolPropagation>();
-    p.register_pass<DeadDataElimination>();
-
-    return p;
-};
-
 Pipeline Pipeline::memory() {
     Pipeline p("Memory");
 

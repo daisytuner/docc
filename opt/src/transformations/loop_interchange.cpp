@@ -6,8 +6,8 @@
 #include <isl/set.h>
 
 #include "sdfg/analysis/data_dependency_analysis.h"
-#include "sdfg/analysis/loop_carried_dependency_analysis.h"
 #include "sdfg/exceptions.h"
+#include "sdfg/parallelization/analysis/loop_carried_dependency_analysis.h"
 #include "sdfg/structured_control_flow/for.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/symbolic/polynomials.h"
@@ -237,7 +237,7 @@ bool LoopInterchange::can_be_applied(builder::StructuredSDFGBuilder& builder, an
     }
 
     // For-For: check legality using dependence delta sets
-    auto& lcd = analysis_manager.get<analysis::LoopCarriedDependencyAnalysis>();
+    auto& lcd = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
 
     if (!lcd.available(outer_loop_) || !lcd.available(inner_loop_)) {
         return false;

@@ -32,6 +32,8 @@ set(SOURCE_FILES
     src/einsum/transformations/einsum_promotion.cpp
     src/einsum/transformations/einsum2dot.cpp
     src/einsum/transformations/einsum2gemm.cpp
+    src/parallelization/analysis/loop_carried_dependency_analysis.cpp
+    src/parallelization/passes/for_classification.cpp
     src/tiles/analysis/tile_analysis.cpp
     src/tiles/analysis/reduction_analysis.cpp
     src/tiles/layout.cpp
