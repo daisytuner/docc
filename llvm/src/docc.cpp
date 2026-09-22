@@ -8,6 +8,7 @@
 
 #include <sdfg/codegen/dispatchers/node_dispatcher_registry.h>
 #include <sdfg/einsum/einsum.h>
+#include <sdfg/parallelization/parallelization.h>
 #include <sdfg/plugins/plugins.h>
 #include <sdfg/targets/cuda/plugin.h>
 #include <sdfg/targets/memory/plugin.h>
