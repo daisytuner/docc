@@ -148,6 +148,25 @@ void DataDependencyAnalysis::visit_block(
                         }
                     }
 
+                    // A container feeding a library node's write-only pointer input is written
+                    // *through* that pointer. analysis::Users applies this regardless of the access
+                    // node's element type (e.g. an Array shared buffer staged by a TileCopyNode's
+                    // _dst); mirror it here so the get_user(READ) lookup below never diverges from
+                    // what Users registered (a divergence throws std::out_of_range).
+                    if (use == Use::READ) {
+                        for (auto& oedge : dataflow.out_edges(*access_node)) {
+                            auto* lib = dynamic_cast<data_flow::LibraryNode*>(&oedge.dst());
+                            if (lib == nullptr) {
+                                continue;
+                            }
+                            auto meta = lib->pointer_access_type(oedge);
+                            if (meta && meta->may_contain_writes() && !meta->may_contain_reads()) {
+                                use = Use::WRITE;
+                                break;
+                            }
+                        }
+                    }
+
                     if (use == Use::READ) {
                         auto current_user = users.get_user(access_node->data(), access_node, use);
 

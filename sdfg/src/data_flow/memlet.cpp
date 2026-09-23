@@ -100,9 +100,13 @@ void Memlet::validate(const Function& function) const {
                     }
                 } else {
                     auto& buffer_type = function.type(data_node->data());
-                    if (buffer_type.type_id() != types::TypeID::Pointer) {
+                    // A non-scalar tensor addresses a contiguous buffer via a base
+                    // pointer; a Pointer container or an addressable Array (e.g. a
+                    // __shared__ tile that decays to a pointer) both qualify.
+                    if (buffer_type.type_id() != types::TypeID::Pointer &&
+                        buffer_type.type_id() != types::TypeID::Array) {
                         throw InvalidSDFGException(
-                            "Memlet: Non-scalar tensors must reference pointer buffers. Base type: " +
+                            "Memlet: Non-scalar tensors must reference pointer or array buffers. Base type: " +
                             this->base_type_->print() + " Buffer type: " + buffer_type.print()
                         );
                     }

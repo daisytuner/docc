@@ -21,7 +21,8 @@ namespace transformations {
  *       compute from buf[p % stages]
  *
  * The shared buffer gains a leading `[stages]` axis indexed by `p % stages`.
- * The synchronous copy tasklets become CpAsyncCopyNode + PipelineCommitNode; a
+ * The cooperative copy's @ref tiles::TileCopyNode has its atom flipped to cp.async
+ * (its plan offset biased per stage) and gains a PipelineCommitNode; a
  * PipelineWaitNode fences each panel's reads. Only fires on CUDA (ROCm has no
  * portable cp.async), a compile-time-constant panel count >= @p stages, and a
  * genuinely block-cooperative shared tile — otherwise the extra buffer wastes

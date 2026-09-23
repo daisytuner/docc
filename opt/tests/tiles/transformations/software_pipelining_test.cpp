@@ -16,28 +16,79 @@
 #include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/targets/cuda/cuda.h"
-#include "sdfg/tiles/library_nodes/async_copy_node.h"
+#include "sdfg/tiles/library_nodes/pipeline_node.h"
+#include "sdfg/tiles/library_nodes/tile_copy_node.h"
 #include "sdfg/types/array.h"
 
 using namespace sdfg;
 
 namespace {
 
-// Builds: GPU map over i { for k in [0,K) { copy A[k] -> buf[1][2]; compute buf[1][2] -> C } }
-// Returns the panel loop (the `for k`).
-structured_control_flow::For& build(builder::StructuredSDFGBuilder& builder, int K, bool shared = true) {
+constexpr long TILE = 8; // elements staged per panel (one buffer slot)
+
+// Add a cooperative copy-in TileCopyNode block to @p parent: it stages the panel-k
+// slice A[k*TILE .. k*TILE + TILE) into buf[0..TILE) (dst stride 1). @p src_stride
+// > 1 makes the source non-contiguous (defeats vector widening). The buffer memlet
+// is a bare pointer (empty subset); the address lives in the plan.
+tiles::TileCopyNode& add_copy(
+    builder::StructuredSDFGBuilder& builder,
+    structured_control_flow::Sequence& parent,
+    const std::string& src,
+    const std::string& dst,
+    const types::IType& ptr,
+    long src_stride = 1
+) {
+    auto& b = builder.add_block(parent);
+    auto& s = builder.add_access(b, src);
+    auto& d = builder.add_access(b, dst);
+    auto k = symbolic::symbol("k");
+    tiles::TiledCopy plan;
+    plan.src = tiles::
+        Layout({symbolic::integer(TILE)}, {symbolic::integer(src_stride)}, symbolic::mul(k, symbolic::integer(TILE)));
+    plan.dst = tiles::Layout({symbolic::integer(TILE)}, {symbolic::integer(1)}, symbolic::integer(0));
+    plan.atom = tiles::CopyAtom::ScalarSync;
+    auto& node = builder.add_library_node<
+        tiles::TileCopyNode>(b, DebugInfo(), data_flow::ImplementationType_NONE, plan, tiles::CopyDirection::In, 4);
+    builder.add_computational_memlet(b, d, node, "_dst", {}, ptr);
+    builder.add_computational_memlet(b, s, node, "_src", {}, ptr);
+    return static_cast<tiles::TileCopyNode&>(node);
+}
+
+// A scalar compute block reading buf[0] into C (the consumer the copy feeds).
+void add_compute(
+    builder::StructuredSDFGBuilder& builder,
+    structured_control_flow::Sequence& parent,
+    const std::string& buf,
+    const types::IType& buf_type
+) {
+    auto& b = builder.add_block(parent);
+    auto& r = builder.add_access(b, buf);
+    auto& tk = builder.add_tasklet(b, data_flow::TaskletCode::assign, "_out", {"_in"});
+    auto& c = builder.add_access(b, "C");
+    builder.add_computational_memlet(b, r, tk, "_in", {symbolic::integer(0)}, buf_type);
+    builder.add_computational_memlet(b, tk, "_out", c, {}, types::Scalar(types::PrimitiveType::Float));
+}
+
+// GPU map over i { for k in [0,K) { stage A -> buf (TileCopyNode); compute buf -> C } }.
+// Returns the panel loop (the `for k`). src_stride/wrap tune the copy shape.
+structured_control_flow::For& build(
+    builder::StructuredSDFGBuilder& builder,
+    int K,
+    bool shared = true,
+    long src_stride = 1,
+    bool wrap = false,
+    long pad = 0
+) {
     auto& root = builder.subject().root();
     types::Scalar f(types::PrimitiveType::Float);
     types::Pointer aptr(f);
     types::Scalar u64(types::PrimitiveType::UInt64);
-
-    types::Array buf_inner(f, symbolic::integer(8));
     types::Array buf_type(
         shared ? types::StorageType::NV_Shared() : types::StorageType::CPU_Stack(),
         0,
         "",
-        buf_inner,
-        symbolic::integer(4)
+        f,
+        symbolic::integer(TILE + pad)
     );
 
     builder.add_container("A", aptr, true);
@@ -58,7 +109,6 @@ structured_control_flow::For& build(builder::StructuredSDFGBuilder& builder, int
         symbolic::add(i, symbolic::integer(1)),
         cuda_sched
     );
-
     auto k = symbolic::symbol("k");
     auto& kloop = builder.add_for(
         gmap.root(),
@@ -68,34 +118,20 @@ structured_control_flow::For& build(builder::StructuredSDFGBuilder& builder, int
         symbolic::add(k, symbolic::integer(1))
     );
 
-    {
-        auto& b = builder.add_block(kloop.root());
-        auto& a = builder.add_access(b, "A");
-        auto& tk = builder.add_tasklet(b, data_flow::TaskletCode::assign, "_out", {"_in"});
-        auto& bufw = builder.add_access(b, "buf");
-        builder.add_computational_memlet(b, a, tk, "_in", {k}, aptr);
-        builder.add_computational_memlet(b, tk, "_out", bufw, {symbolic::integer(1), symbolic::integer(2)}, buf_type);
-    }
-    {
-        auto& b = builder.add_block(kloop.root());
-        auto& bufr = builder.add_access(b, "buf");
-        auto& tk = builder.add_tasklet(b, data_flow::TaskletCode::assign, "_out", {"_in"});
-        auto& c = builder.add_access(b, "C");
-        builder.add_computational_memlet(b, bufr, tk, "_in", {symbolic::integer(1), symbolic::integer(2)}, buf_type);
-        builder.add_computational_memlet(b, tk, "_out", c, {}, f);
-    }
+    structured_control_flow::Sequence& body = wrap ? builder.add_sequence(kloop.root()) : kloop.root();
+    add_copy(builder, body, "A", "buf", aptr, src_stride);
+    add_compute(builder, body, "buf", buf_type);
     return static_cast<structured_control_flow::For&>(gmap.root().at(0));
 }
 
-// Two cooperative shared operands (buf, buf2), each staged by its own copy
-// block, both consumed by the compute. Returns the panel loop.
+// Two cooperative shared operands (buf, buf2), each staged by its own TileCopyNode,
+// both consumed by the compute. Returns the panel loop.
 structured_control_flow::For& build_two(builder::StructuredSDFGBuilder& builder, int K) {
     auto& root = builder.subject().root();
     types::Scalar f(types::PrimitiveType::Float);
     types::Pointer aptr(f);
     types::Scalar u64(types::PrimitiveType::UInt64);
-    types::Array buf_inner(f, symbolic::integer(8));
-    types::Array buf_type(types::StorageType::NV_Shared(), 0, "", buf_inner, symbolic::integer(4));
+    types::Array buf_type(types::StorageType::NV_Shared(), 0, "", f, symbolic::integer(TILE));
 
     builder.add_container("A", aptr, true);
     builder.add_container("B", aptr, true);
@@ -125,111 +161,29 @@ structured_control_flow::For& build_two(builder::StructuredSDFGBuilder& builder,
         symbolic::integer(0),
         symbolic::add(k, symbolic::integer(1))
     );
-    std::vector<std::pair<std::string, std::string>> ops = {{"A", "buf"}, {"B", "buf2"}};
-    for (auto& names : ops) {
-        auto& b = builder.add_block(kloop.root());
-        auto& src = builder.add_access(b, names.first);
-        auto& tk = builder.add_tasklet(b, data_flow::TaskletCode::assign, "_out", {"_in"});
-        auto& w = builder.add_access(b, names.second);
-        builder.add_computational_memlet(b, src, tk, "_in", {k}, aptr);
-        builder.add_computational_memlet(b, tk, "_out", w, {symbolic::integer(1), symbolic::integer(2)}, buf_type);
-    }
+    add_copy(builder, kloop.root(), "A", "buf", aptr);
+    add_copy(builder, kloop.root(), "B", "buf2", aptr);
     {
         auto& b = builder.add_block(kloop.root());
         auto& r1 = builder.add_access(b, "buf");
         auto& r2 = builder.add_access(b, "buf2");
         auto& tk = builder.add_tasklet(b, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
         auto& c = builder.add_access(b, "C");
-        builder.add_computational_memlet(b, r1, tk, "_in1", {symbolic::integer(1), symbolic::integer(2)}, buf_type);
-        builder.add_computational_memlet(b, r2, tk, "_in2", {symbolic::integer(1), symbolic::integer(2)}, buf_type);
+        builder.add_computational_memlet(b, r1, tk, "_in1", {symbolic::integer(0)}, buf_type);
+        builder.add_computational_memlet(b, r2, tk, "_in2", {symbolic::integer(0)}, buf_type);
         builder.add_computational_memlet(b, tk, "_out", c, {}, f);
     }
     return static_cast<structured_control_flow::For&>(gmap.root().at(0));
 }
 
-// A panel loop whose body has a cooperative-copy Map (X_BLOCK over c in [0,COOP))
-// writing buf[c] from A[src_coeff*c], then a compute reading buf. Returns the
-// panel loop. src_coeff>1 makes the source non-contiguous in c.
-structured_control_flow::For&
-build_coop(builder::StructuredSDFGBuilder& builder, int K, int COOP, int src_coeff = 1, bool wrap = false) {
-    auto& root = builder.subject().root();
-    types::Scalar f(types::PrimitiveType::Float);
-    types::Pointer aptr(f);
-    types::Scalar u64(types::PrimitiveType::UInt64);
-    types::Array buf_type(types::StorageType::NV_Shared(), 0, "", f, symbolic::integer(COOP));
-
-    builder.add_container("A", aptr, true);
-    builder.add_container("buf", buf_type);
-    builder.add_container("C", f, true);
-    builder.add_container("i", u64);
-    builder.add_container("k", u64);
-    builder.add_container("c", u64);
-
-    auto mk_sched = [&]() {
-        auto s = cuda::ScheduleType_CUDA::create();
-        cuda::ScheduleType_CUDA::dimension(s, cuda::CUDADimension::X);
-        cuda::ScheduleType_CUDA::block_size(s, symbolic::integer(32));
-        return s;
-    };
-    auto i = symbolic::symbol("i");
-    auto& gmap = builder.add_map(
-        root,
-        i,
-        symbolic::Lt(i, symbolic::integer(64)),
-        symbolic::integer(0),
-        symbolic::add(i, symbolic::integer(1)),
-        mk_sched()
-    );
-    auto k = symbolic::symbol("k");
-    auto& kloop = builder.add_for(
-        gmap.root(),
-        k,
-        symbolic::Lt(k, symbolic::integer(K)),
-        symbolic::integer(0),
-        symbolic::add(k, symbolic::integer(1))
-    );
-    auto c = symbolic::symbol("c");
-    // A wrapper Sequence around the copy+compute reproduces the real-codegen shape
-    // where the panel body is a single nested Sequence (both operands + compute in
-    // one scope); the pipeline must still peel only the copy, not the compute.
-    structured_control_flow::Sequence& panel_body = wrap ? builder.add_sequence(kloop.root()) : kloop.root();
-    auto& coop = builder.add_map(
-        panel_body,
-        c,
-        symbolic::Lt(c, symbolic::integer(COOP)),
-        symbolic::integer(0),
-        symbolic::add(c, symbolic::integer(1)),
-        mk_sched()
-    );
-    {
-        auto& b = builder.add_block(coop.root());
-        auto& a = builder.add_access(b, "A");
-        auto& tk = builder.add_tasklet(b, data_flow::TaskletCode::assign, "_out", {"_in"});
-        auto& bufw = builder.add_access(b, "buf");
-        builder.add_computational_memlet(b, a, tk, "_in", {symbolic::mul(symbolic::integer(src_coeff), c)}, aptr);
-        builder.add_computational_memlet(b, tk, "_out", bufw, {c}, buf_type);
-    }
-    {
-        auto& b = builder.add_block(panel_body);
-        auto& bufr = builder.add_access(b, "buf");
-        auto& tk = builder.add_tasklet(b, data_flow::TaskletCode::assign, "_out", {"_in"});
-        auto& cc = builder.add_access(b, "C");
-        builder.add_computational_memlet(b, bufr, tk, "_in", {symbolic::integer(0)}, buf_type);
-        builder.add_computational_memlet(b, tk, "_out", cc, {}, f);
-    }
-    return static_cast<structured_control_flow::For&>(gmap.root().at(0));
-}
-
-// Like build(), but the shared copy-in is nested inside a boundary-guard IfElse
-// (as StreamK's ragged panel produces). A shared write inside a conditional still
-// stages a shared tile, so the staging gate must descend into the IfElse.
+// Like build(), but the cooperative copy-in is nested inside a boundary-guard
+// IfElse (as StreamK's ragged panel produces). Returns the panel loop.
 structured_control_flow::For& build_guarded(builder::StructuredSDFGBuilder& builder, int K) {
     auto& root = builder.subject().root();
     types::Scalar f(types::PrimitiveType::Float);
     types::Pointer aptr(f);
     types::Scalar u64(types::PrimitiveType::UInt64);
-    types::Array buf_inner(f, symbolic::integer(8));
-    types::Array buf_type(types::StorageType::NV_Shared(), 0, "", buf_inner, symbolic::integer(4));
+    types::Array buf_type(types::StorageType::NV_Shared(), 0, "", f, symbolic::integer(TILE));
 
     builder.add_container("A", aptr, true);
     builder.add_container("buf", buf_type);
@@ -249,7 +203,6 @@ structured_control_flow::For& build_guarded(builder::StructuredSDFGBuilder& buil
         symbolic::add(i, symbolic::integer(1)),
         cuda_sched
     );
-
     auto k = symbolic::symbol("k");
     auto& kloop = builder.add_for(
         gmap.root(),
@@ -259,26 +212,61 @@ structured_control_flow::For& build_guarded(builder::StructuredSDFGBuilder& buil
         symbolic::add(k, symbolic::integer(1))
     );
 
-    // Boundary-guarded cooperative copy-in: buf[1][2] = A[k] under `if (k < K)`.
-    {
-        auto& if_else = builder.add_if_else(kloop.root());
-        auto& guarded = builder.add_case(if_else, symbolic::Lt(k, symbolic::integer(K)));
-        auto& b = builder.add_block(guarded);
-        auto& a = builder.add_access(b, "A");
-        auto& tk = builder.add_tasklet(b, data_flow::TaskletCode::assign, "_out", {"_in"});
-        auto& bufw = builder.add_access(b, "buf");
-        builder.add_computational_memlet(b, a, tk, "_in", {k}, aptr);
-        builder.add_computational_memlet(b, tk, "_out", bufw, {symbolic::integer(1), symbolic::integer(2)}, buf_type);
-    }
-    {
-        auto& b = builder.add_block(kloop.root());
-        auto& bufr = builder.add_access(b, "buf");
-        auto& tk = builder.add_tasklet(b, data_flow::TaskletCode::assign, "_out", {"_in"});
-        auto& c = builder.add_access(b, "C");
-        builder.add_computational_memlet(b, bufr, tk, "_in", {symbolic::integer(1), symbolic::integer(2)}, buf_type);
-        builder.add_computational_memlet(b, tk, "_out", c, {}, f);
-    }
+    auto& if_else = builder.add_if_else(kloop.root());
+    auto& guarded = builder.add_case(if_else, symbolic::Lt(k, symbolic::integer(K)));
+    add_copy(builder, guarded, "A", "buf", aptr);
+    add_compute(builder, kloop.root(), "buf", buf_type);
     return static_cast<structured_control_flow::For&>(gmap.root().at(0));
+}
+
+// Count TileCopyNodes with the cp.async atom in a subtree.
+size_t count_cp_async(structured_control_flow::ControlFlowNode& scope) {
+    size_t n = 0;
+    std::function<void(structured_control_flow::ControlFlowNode&)> scan =
+        [&](structured_control_flow::ControlFlowNode& node) {
+            if (auto* b = dynamic_cast<structured_control_flow::Block*>(&node)) {
+                for (auto& dn : b->dataflow().nodes()) {
+                    if (auto* tc = dynamic_cast<tiles::TileCopyNode*>(&dn)) {
+                        if (tc->atom() == tiles::CopyAtom::CpAsync) n++;
+                    }
+                }
+            } else if (auto* ie = dynamic_cast<structured_control_flow::IfElse*>(&node)) {
+                for (size_t i = 0; i < ie->size(); i++) scan(ie->at(i).first);
+            } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&node)) {
+                for (size_t i = 0; i < seq->size(); i++) scan(seq->at(i));
+            } else if (auto* map = dynamic_cast<structured_control_flow::Map*>(&node)) {
+                scan(map->root());
+            } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&node)) {
+                scan(loop->root());
+            }
+        };
+    scan(scope);
+    return n;
+}
+
+// Count TileCopyNodes with a given transfer width in a subtree.
+size_t count_bytes(structured_control_flow::ControlFlowNode& scope, size_t bytes) {
+    size_t n = 0;
+    std::function<void(structured_control_flow::ControlFlowNode&)> scan =
+        [&](structured_control_flow::ControlFlowNode& node) {
+            if (auto* b = dynamic_cast<structured_control_flow::Block*>(&node)) {
+                for (auto& dn : b->dataflow().nodes()) {
+                    if (auto* tc = dynamic_cast<tiles::TileCopyNode*>(&dn)) {
+                        if (tc->atom() == tiles::CopyAtom::CpAsync && tc->bytes() == bytes) n++;
+                    }
+                }
+            } else if (auto* ie = dynamic_cast<structured_control_flow::IfElse*>(&node)) {
+                for (size_t i = 0; i < ie->size(); i++) scan(ie->at(i).first);
+            } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&node)) {
+                for (size_t i = 0; i < seq->size(); i++) scan(seq->at(i));
+            } else if (auto* map = dynamic_cast<structured_control_flow::Map*>(&node)) {
+                scan(map->root());
+            } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&node)) {
+                scan(loop->root());
+            }
+        };
+    scan(scope);
+    return n;
 }
 
 } // namespace
@@ -299,38 +287,17 @@ TEST(SoftwarePipeliningTest, SingleOperandStagesOnlyFirstBuffer) {
     EXPECT_TRUE(symbolic::eq(buf->num_elements(), symbolic::integer(2)));
     auto* buf2 = dynamic_cast<const types::Array*>(&sdfg.type("buf2"));
     ASSERT_NE(buf2, nullptr);
-    EXPECT_TRUE(symbolic::eq(buf2->num_elements(), symbolic::integer(4))); // unchanged (no stage axis)
+    EXPECT_TRUE(symbolic::eq(buf2->num_elements(), symbolic::integer(TILE))); // unchanged (no stage axis)
 
-    // Exactly one cp.async operand (buf); buf2 keeps its synchronous copy.
-    size_t async = 0;
-    std::function<void(structured_control_flow::ControlFlowNode&)> scan =
-        [&](structured_control_flow::ControlFlowNode& n) {
-            if (auto* b = dynamic_cast<structured_control_flow::Block*>(&n)) {
-                for (auto& node : b->dataflow().nodes()) {
-                    if (dynamic_cast<tiles::CpAsyncCopyNode*>(&node) != nullptr) {
-                        async++;
-                    }
-                }
-            } else if (auto* ie = dynamic_cast<structured_control_flow::IfElse*>(&n)) {
-                for (size_t i = 0; i < ie->size(); i++) {
-                    scan(ie->at(i).first);
-                }
-            } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&n)) {
-                for (size_t i = 0; i < seq->size(); i++) {
-                    scan(seq->at(i));
-                }
-            } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&n)) {
-                scan(loop->root());
-            }
-        };
+    // Exactly one buffer is prefetched via cp.async (prologue + in-loop = 2 copies);
+    // buf2 keeps its synchronous copy.
     auto& map_body = static_cast<structured_control_flow::Sequence&>(*kloop.get_parent());
-    scan(map_body);
-    EXPECT_EQ(async, 2u); // one prologue + one in-loop, for buf only
+    EXPECT_EQ(count_cp_async(map_body), 2u);
 }
 
 TEST(SoftwarePipeliningTest, VectorizeStridesCoopMapAndWidensCpAsync) {
     builder::StructuredSDFGBuilder builder("sp", FunctionType_CPU);
-    auto& kloop = build_coop(builder, /*K=*/4, /*COOP=*/8);
+    auto& kloop = build(builder, /*K=*/4);
     auto& sdfg = builder.subject();
     analysis::AnalysisManager am(sdfg);
     transformations::SoftwarePipelining sp(kloop, 2, /*single_operand=*/false);
@@ -344,45 +311,15 @@ TEST(SoftwarePipeliningTest, VectorizeStridesCoopMapAndWidensCpAsync) {
     ASSERT_TRUE(tv.can_be_applied(builder, am));
     tv.apply(builder, am);
 
-    size_t async = 0, bytes16 = 0, strided4 = 0;
-    std::function<void(structured_control_flow::ControlFlowNode&)> scan =
-        [&](structured_control_flow::ControlFlowNode& n) {
-            if (auto* b = dynamic_cast<structured_control_flow::Block*>(&n)) {
-                for (auto& node : b->dataflow().nodes()) {
-                    if (auto* cp = dynamic_cast<tiles::CpAsyncCopyNode*>(&node)) {
-                        async++;
-                        if (cp->bytes() == 16) {
-                            bytes16++;
-                        }
-                    }
-                }
-            } else if (auto* ie = dynamic_cast<structured_control_flow::IfElse*>(&n)) {
-                for (size_t i = 0; i < ie->size(); i++) {
-                    scan(ie->at(i).first);
-                }
-            } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&n)) {
-                for (size_t i = 0; i < seq->size(); i++) {
-                    scan(seq->at(i));
-                }
-            } else if (auto* map = dynamic_cast<structured_control_flow::Map*>(&n)) {
-                if (!map->stride().is_null() && map->stride()->as_int() == 4) {
-                    strided4++;
-                }
-                scan(map->root());
-            } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&n)) {
-                scan(loop->root());
-            }
-        };
+    // The contiguous fp32 tile (TILE=8, multiple of 4) widens to a 16-byte float4.
     auto& map_body = static_cast<structured_control_flow::Sequence&>(*kloop.get_parent());
-    scan(map_body);
-    EXPECT_EQ(async, 2u); // prologue + in-loop
-    EXPECT_EQ(bytes16, 2u); // both widened to float4
-    EXPECT_EQ(strided4, 2u); // both coop maps strided by 4
+    EXPECT_EQ(count_bytes(map_body, 16), 2u);
+    EXPECT_EQ(count_bytes(map_body, 4), 0u);
 }
 
 TEST(SoftwarePipeliningTest, VectorizeRejectsNonContiguousSource) {
     builder::StructuredSDFGBuilder builder("sp", FunctionType_CPU);
-    auto& kloop = build_coop(builder, /*K=*/4, /*COOP=*/8, /*src_coeff=*/2); // A[2c] -> not contiguous
+    auto& kloop = build(builder, /*K=*/4, /*shared=*/true, /*src_stride=*/2); // A[2c] -> not contiguous
     auto& sdfg = builder.subject();
     analysis::AnalysisManager am(sdfg);
     transformations::SoftwarePipelining sp(kloop, 2, /*single_operand=*/false);
@@ -391,42 +328,13 @@ TEST(SoftwarePipeliningTest, VectorizeRejectsNonContiguousSource) {
     auto* omap = dynamic_cast<structured_control_flow::StructuredLoop*>(kloop.get_parent()->get_parent());
     ASSERT_NE(omap, nullptr);
     transformations::TileVectorizer tv(*omap);
-    tv.can_be_applied(builder, am);
+    ASSERT_TRUE(tv.can_be_applied(builder, am));
     tv.apply(builder, am);
 
-    // The non-contiguous source must keep scalar (4-byte) cp.async and unit-stride
-    // coop maps — the widening guard must not fire.
-    size_t bytes4 = 0, bytes16 = 0, strided4 = 0;
-    std::function<void(structured_control_flow::ControlFlowNode&)> scan =
-        [&](structured_control_flow::ControlFlowNode& n) {
-            if (auto* b = dynamic_cast<structured_control_flow::Block*>(&n)) {
-                for (auto& node : b->dataflow().nodes()) {
-                    if (auto* cp = dynamic_cast<tiles::CpAsyncCopyNode*>(&node)) {
-                        (cp->bytes() == 16 ? bytes16 : bytes4)++;
-                    }
-                }
-            } else if (auto* ie = dynamic_cast<structured_control_flow::IfElse*>(&n)) {
-                for (size_t i = 0; i < ie->size(); i++) {
-                    scan(ie->at(i).first);
-                }
-            } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&n)) {
-                for (size_t i = 0; i < seq->size(); i++) {
-                    scan(seq->at(i));
-                }
-            } else if (auto* map = dynamic_cast<structured_control_flow::Map*>(&n)) {
-                if (!map->stride().is_null() && map->stride()->as_int() == 4) {
-                    strided4++;
-                }
-                scan(map->root());
-            } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&n)) {
-                scan(loop->root());
-            }
-        };
+    // Non-unit source stride: the cp.async must not widen, staying at 4 bytes.
     auto& map_body = static_cast<structured_control_flow::Sequence&>(*kloop.get_parent());
-    scan(map_body);
-    EXPECT_EQ(bytes16, 0u);
-    EXPECT_EQ(bytes4, 2u);
-    EXPECT_EQ(strided4, 0u);
+    EXPECT_EQ(count_bytes(map_body, 16), 0u);
+    EXPECT_EQ(count_bytes(map_body, 4), 2u);
 }
 
 TEST(SoftwarePipeliningTest, CanBeApplied) {
@@ -443,7 +351,7 @@ TEST(SoftwarePipeliningTest, CanBeApplied) {
 // panel: no overlap). Assert exactly one block writes the compute output C.
 TEST(SoftwarePipeliningTest, WrapperSequenceDoesNotShiftCompute) {
     builder::StructuredSDFGBuilder builder("sp", FunctionType_CPU);
-    auto& kloop = build_coop(builder, /*K=*/4, /*COOP=*/8, /*src_coeff=*/1, /*wrap=*/true);
+    auto& kloop = build(builder, /*K=*/4, /*shared=*/true, /*src_stride=*/1, /*wrap=*/true);
     auto& sdfg = builder.subject();
     analysis::AnalysisManager am(sdfg);
     transformations::SoftwarePipelining sp(kloop, 2, /*single_operand=*/false);
@@ -500,7 +408,7 @@ TEST(SoftwarePipeliningTest, GuardedCopyInStagesShared) {
     ASSERT_TRUE(sp.can_be_applied(builder, am));
     sp.apply(builder, am);
 
-    // buf gained the leading [2] stage axis; inner is the original [4].
+    // buf gained the leading [2] stage axis; inner is the original [TILE].
     auto* outer = dynamic_cast<const types::Array*>(&sdfg.type("buf"));
     ASSERT_NE(outer, nullptr);
     EXPECT_TRUE(symbolic::eq(outer->num_elements(), symbolic::integer(2)));
@@ -518,41 +426,38 @@ TEST(SoftwarePipeliningTest, StagesBufferAndReindexes) {
     ASSERT_TRUE(sp.can_be_applied(builder, am));
     sp.apply(builder, am);
 
-    // buf gained a leading [2] axis; inner is the original [4][8].
+    // buf gained a leading [2] axis; inner is the original [TILE].
     auto* outer = dynamic_cast<const types::Array*>(&sdfg.type("buf"));
     ASSERT_NE(outer, nullptr);
     EXPECT_TRUE(symbolic::eq(outer->num_elements(), symbolic::integer(2)));
     EXPECT_TRUE(outer->storage_type().is_nv_shared());
     auto* inner = dynamic_cast<const types::Array*>(&outer->element_type());
     ASSERT_NE(inner, nullptr);
-    EXPECT_TRUE(symbolic::eq(inner->num_elements(), symbolic::integer(4)));
+    EXPECT_TRUE(symbolic::eq(inner->num_elements(), symbolic::integer(TILE)));
 
     // A prologue sequence was inserted before the loop.
     ASSERT_EQ(map_body.size(), 2u);
     auto* prologue = dynamic_cast<structured_control_flow::Sequence*>(&map_body.at(0));
     ASSERT_NE(prologue, nullptr);
 
-    // Prologue prefetches panel 0 via cp.async + commits it. The dst reference
-    // memlet addresses a fixed stage slot (leading index independent of k).
-    size_t prologue_async = 0, prologue_commit = 0;
+    // Prologue prefetches panel 0 via cp.async + commits it. The staged copy is a
+    // TileCopyNode whose buffer memlet is a bare pointer (address in the plan).
+    size_t prologue_async = count_cp_async(*prologue);
+    size_t prologue_commit = 0;
     for (size_t i = 0; i < prologue->size(); i++) {
         auto* b = dynamic_cast<structured_control_flow::Block*>(&prologue->at(i));
         if (b == nullptr) {
             continue;
         }
         for (auto& node : b->dataflow().nodes()) {
-            if (dynamic_cast<tiles::CpAsyncCopyNode*>(&node) != nullptr) {
-                prologue_async++;
-            }
             if (dynamic_cast<tiles::PipelineCommitNode*>(&node) != nullptr) {
                 prologue_commit++;
             }
         }
         for (auto* acc : b->dataflow().data_nodes()) {
             if (acc->data() == "buf") {
-                for (auto& m : b->dataflow().out_edges(*acc)) { // address-of buf[stage]
-                    ASSERT_EQ(m.subset().size(), 3u);
-                    EXPECT_TRUE(symbolic::atoms(m.subset().at(0)).empty());
+                for (auto& m : b->dataflow().out_edges(*acc)) { // bare pointer into the node
+                    EXPECT_EQ(m.subset().size(), 0u);
                 }
             }
         }
@@ -564,15 +469,13 @@ TEST(SoftwarePipeliningTest, StagesBufferAndReindexes) {
     // the compute block still reads buf at the current stage mod(k,2).
     auto& loop_body = kloop.root();
     bool has_guarded_copy = false;
-    size_t loop_async = 0, loop_commit = 0, loop_wait = 0;
+    size_t loop_async = count_cp_async(loop_body);
+    size_t loop_commit = 0, loop_wait = 0;
     auto stage = symbolic::mod(symbolic::symbol("k"), symbolic::integer(2));
     std::function<void(structured_control_flow::ControlFlowNode&)> scan =
         [&](structured_control_flow::ControlFlowNode& n) {
             if (auto* b = dynamic_cast<structured_control_flow::Block*>(&n)) {
                 for (auto& node : b->dataflow().nodes()) {
-                    if (dynamic_cast<tiles::CpAsyncCopyNode*>(&node) != nullptr) {
-                        loop_async++;
-                    }
                     if (dynamic_cast<tiles::PipelineCommitNode*>(&node) != nullptr) {
                         loop_commit++;
                     }
@@ -585,10 +488,7 @@ TEST(SoftwarePipeliningTest, StagesBufferAndReindexes) {
                         continue;
                     }
                     for (auto& m : b->dataflow().out_edges(*acc)) { // compute read of buf
-                        if (m.dst_conn() == "ref") {
-                            continue; // address-of for the cp.async prefetch
-                        }
-                        if (m.subset().size() == 3u && !symbolic::atoms(m.subset().at(0)).empty()) {
+                        if (m.subset().size() == 2u && !symbolic::atoms(m.subset().at(0)).empty()) {
                             EXPECT_TRUE(symbolic::eq(m.subset().at(0), stage));
                         }
                     }
@@ -615,4 +515,57 @@ TEST(SoftwarePipeliningTest, StagesBufferAndReindexes) {
     // Two waits: the guarded prefetch's wait (keep stages-1 in flight) in the
     // `then` branch, and the tail drain wait (keep 0) in the `else` branch.
     EXPECT_EQ(loop_wait, 2u);
+}
+
+// Regression: a Padded double-buffer's stage bias must use the buffer's per-stage
+// element count (padding included), not the plan's logical tile size — otherwise
+// stage 1 addresses the wrong offset (silent wrong results, e.g. the StreamK GEMM).
+TEST(SoftwarePipeliningTest, PaddedBufferStageBiasUsesBufferStride) {
+    constexpr long PAD = 5; // buffer per-stage stride = TILE + PAD > the logical tile TILE
+    builder::StructuredSDFGBuilder builder("sp_pad", FunctionType_CPU);
+    auto& kloop = build(builder, /*K=*/4, /*shared=*/true, /*src_stride=*/1, /*wrap=*/false, /*pad=*/PAD);
+    auto& sdfg = builder.subject();
+    analysis::AnalysisManager am(sdfg);
+    transformations::SoftwarePipelining sp(kloop, 2);
+    ASSERT_TRUE(sp.can_be_applied(builder, am));
+    sp.apply(builder, am);
+
+    // Collect every TileCopyNode's biased buffer offset.
+    std::vector<symbolic::Expression> offsets;
+    std::function<void(structured_control_flow::ControlFlowNode&)> collect =
+        [&](structured_control_flow::ControlFlowNode& node) {
+            if (auto* b = dynamic_cast<structured_control_flow::Block*>(&node)) {
+                for (auto& dn : b->dataflow().nodes()) {
+                    if (auto* tc = dynamic_cast<tiles::TileCopyNode*>(&dn)) {
+                        offsets.push_back(tc->plan().dst.offset());
+                    }
+                }
+            } else if (auto* ie = dynamic_cast<structured_control_flow::IfElse*>(&node)) {
+                for (size_t i = 0; i < ie->size(); i++) collect(ie->at(i).first);
+            } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&node)) {
+                for (size_t i = 0; i < seq->size(); i++) collect(seq->at(i));
+            } else if (auto* map = dynamic_cast<structured_control_flow::Map*>(&node)) {
+                collect(map->root());
+            } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&node)) {
+                collect(loop->root());
+            }
+        };
+    collect(sdfg.root());
+    ASSERT_FALSE(offsets.empty());
+
+    // Some biased buffer offset must carry the padded per-stage stride (TILE + PAD)
+    // as its stage coefficient — never the logical tile size (TILE), which was the
+    // pre-fix bug. (mod() stays opaque symbolically, so match the coefficient.)
+    const std::string padded = std::to_string(TILE + PAD);
+    const std::string logical = std::to_string(TILE);
+    bool found_padded_stride = false;
+    for (const auto& off : offsets) {
+        const std::string s = off->__str__();
+        if (s.find(padded) != std::string::npos) {
+            found_padded_stride = true;
+        }
+        EXPECT_EQ(s.find(logical), std::string::npos)
+            << "stage bias used the logical tile size (" << logical << "), not the padded stride: " << s;
+    }
+    EXPECT_TRUE(found_padded_stride) << "no stage offset used the padded per-stage buffer stride";
 }

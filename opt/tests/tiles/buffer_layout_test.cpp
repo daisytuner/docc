@@ -155,6 +155,20 @@ TEST(BufferLayoutTest, Swizzle_MultiDimTileBlock) {
     expect_consistent({2}, {2, 4}, tiles::BufferKind::Swizzle);
 }
 
+// Transposed: dense, but the tile axes are stored column-major (reversed).
+TEST(BufferLayoutTest, Transposed_NoSlots) { expect_consistent({}, {3, 4}, tiles::BufferKind::Transposed); }
+TEST(BufferLayoutTest, Transposed_WithSlots) { expect_consistent({2}, {4, 8}, tiles::BufferKind::Transposed); }
+// The reversed axes physically swap a 2D tile: axes() is [N, M] for a tile [M, N].
+TEST(BufferLayoutTest, Transposed_ReversesAxes) {
+    tiles::PackedBuffer pb{{}, {symbolic::integer(3), symbolic::integer(4)}, tiles::BufferKind::Transposed};
+    auto axes = pb.axes();
+    ASSERT_EQ(axes.size(), 2u);
+    EXPECT_EQ(eval(axes[0]), 4); // N
+    EXPECT_EQ(eval(axes[1]), 3); // M
+    // Element (m=1, n=2) lands at physical [n=2][m=1] -> 2*3 + 1 = 7.
+    EXPECT_EQ(eval(pb.layout().apply_coords({symbolic::integer(1), symbolic::integer(2)})), 7);
+}
+
 // ---- lane-contiguity: the predicate that replaces the MultiDim-vs-flat fork ----
 // A padding/swizzle-free buffer (Linearized, or a plain MultiDim) is lane-contiguous
 // under the natural flat thread order — DMA-legal. Padding and swizzling break it,
@@ -229,10 +243,6 @@ TEST(BufferLayoutTest, ScalarMethods) {
     };
     EXPECT_EQ(eval(pb.total_size()), 24);
     EXPECT_EQ(eval(pb.tile_total_size()), 12);
-    auto d = pb.delinearize_tile(symbolic::integer(7)); // row-major over {3,4}: {1, 3}
-    ASSERT_EQ(d.size(), 2u);
-    EXPECT_EQ(eval(d[0]), 1);
-    EXPECT_EQ(eval(d[1]), 3);
 }
 TEST(BufferLayoutTest, InnerStride) {
     // Even natural block -> next odd; coop span -> congruent mod 32, multiple of 4.

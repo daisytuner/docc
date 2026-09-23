@@ -17,10 +17,10 @@
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
-#include "sdfg/tiles/library_nodes/async_copy_node.h"
+#include "sdfg/tiles/library_nodes/pipeline_node.h"
+#include "sdfg/tiles/library_nodes/tile_copy_node.h"
 #include "sdfg/tiles/tile.h"
 #include "sdfg/tiles/tile_target_registry.h"
-#include "sdfg/tiles/vectorize/copy_widen.h"
 #include "sdfg/types/array.h"
 #include "sdfg/types/pointer.h"
 #include "sdfg/types/scalar.h"
@@ -44,6 +44,44 @@ bool is_shared_container(const Function& sdfg, const std::string& name) {
     }
 }
 
+// The TileCopyNode in @p block, or nullptr.
+tiles::TileCopyNode* tile_copy_node_in(structured_control_flow::Block& block) {
+    for (auto& node : block.dataflow().nodes()) {
+        if (auto* n = dynamic_cast<tiles::TileCopyNode*>(&node)) {
+            return n;
+        }
+    }
+    return nullptr;
+}
+
+// True if @p acc's container is written in @p block: either an ordinary in-edge
+// (a tasklet/copy writes it) or the access feeds a TileCopyNode's `_dst` pointer
+// (the node writes through it, so the pointer is an out-edge, not an in-edge).
+bool access_is_written(data_flow::DataFlowGraph& df, data_flow::AccessNode& acc) {
+    if (df.in_degree(acc) > 0) {
+        return true;
+    }
+    for (auto& e : df.out_edges(acc)) {
+        if (dynamic_cast<tiles::TileCopyNode*>(&e.dst()) != nullptr && e.dst_conn() == "_dst") {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Element count of a (possibly nested-array) buffer type — the per-stage stride
+// once a [stages] dimension is prepended. Counts padding, so a Padded buffer's
+// consecutive stages are biased by the true memory stride, not the logical tile.
+symbolic::Expression buffer_element_count(const types::IType& type) {
+    symbolic::Expression prod = symbolic::integer(1);
+    const types::IType* cur = &type;
+    while (auto* arr = dynamic_cast<const types::Array*>(cur)) {
+        prod = symbolic::mul(prod, arr->num_elements());
+        cur = &arr->element_type();
+    }
+    return prod;
+}
+
 // True if any access node in the block writes to a shared container.
 bool block_writes_shared(const Function& sdfg, structured_control_flow::Block& block) {
     auto& df = block.dataflow();
@@ -52,7 +90,7 @@ bool block_writes_shared(const Function& sdfg, structured_control_flow::Block& b
         if (acc == nullptr || !is_shared_container(sdfg, acc->data())) {
             continue;
         }
-        if (df.in_degree(*acc) > 0) {
+        if (access_is_written(df, *acc)) {
             return true;
         }
     }
@@ -97,7 +135,7 @@ bool block_writes_any(structured_control_flow::Block& block, const std::set<std:
         if (acc == nullptr || names.count(acc->data()) == 0) {
             continue;
         }
-        if (df.in_degree(*acc) > 0) {
+        if (access_is_written(df, *acc)) {
             return true;
         }
     }
@@ -232,7 +270,7 @@ void SoftwarePipelining::apply(builder::StructuredSDFGBuilder& builder, analysis
     std::set<std::string> buffers;
     visitor::for_each_block(loop_.root(), [&](structured_control_flow::Block& b) {
         for (auto* acc : b.dataflow().data_nodes()) {
-            if (is_shared_container(sdfg, acc->data()) && b.dataflow().in_degree(*acc) > 0) {
+            if (is_shared_container(sdfg, acc->data()) && access_is_written(b.dataflow(), *acc)) {
                 buffers.insert(acc->data());
             }
         }
@@ -249,6 +287,12 @@ void SoftwarePipelining::apply(builder::StructuredSDFGBuilder& builder, analysis
     }
     for (const auto& name : pipelined) {
         auto staged = prepend_stage_dim(sdfg.type(name), stages_);
+        // A TileCopyNode addresses the buffer through its plan (its `_dst` memlet is a
+        // bare pointer with no subset), so double-buffering biases the node's plan
+        // offset by stage_idx * per-stage buffer stride (padding included) instead of
+        // reindexing that memlet.
+        const auto stage_stride = buffer_element_count(sdfg.type(name));
+        std::vector<tiles::TileCopyNode*> nodes_to_bias;
         visitor::for_each_block(loop_.root(), [&](structured_control_flow::Block& b) {
             auto& dfg = b.dataflow();
             for (auto* acc : dfg.data_nodes()) {
@@ -262,13 +306,23 @@ void SoftwarePipelining::apply(builder::StructuredSDFGBuilder& builder, analysis
                     m.set_base_type(*staged);
                 };
                 for (auto& m : dfg.out_edges(*acc)) {
-                    reindex(m);
+                    if (auto* tc = dynamic_cast<tiles::TileCopyNode*>(&m.dst())) {
+                        nodes_to_bias.push_back(tc); // node writes via plan, not this memlet
+                    } else {
+                        reindex(m);
+                    }
                 }
                 for (auto& m : dfg.in_edges(*acc)) {
                     reindex(m);
                 }
             }
         });
+        for (auto* tc : nodes_to_bias) {
+            auto plan = tc->plan();
+            auto biased = symbolic::add(plan.dst.offset(), symbolic::mul(stage_idx, stage_stride));
+            plan.dst = tiles::Layout(plan.dst.shape(), plan.dst.strides(), biased);
+            tc->set_plan(plan);
+        }
         builder.change_type(name, *staged);
     }
 
@@ -359,8 +413,8 @@ void SoftwarePipelining::apply(builder::StructuredSDFGBuilder& builder, analysis
     );
 
     // ---- Step 3: convert the synchronous copies to cp.async ----------------
-    // Every shared-writing assign becomes a CpAsyncCopyNode (address-of src/dst
-    // via reference memlets). The node degrades to a synchronous copy on ROCm.
+    // A whole-copy TileCopyNode switches its atom to CpAsync (its dispatcher emits
+    // the async transfer, degrading to a synchronous copy on non-CDNA targets).
     std::vector<structured_control_flow::Block*> copy_blocks;
     auto collect = [&](structured_control_flow::Block& b) {
         if (block_writes_any(b, pipelined)) {
@@ -370,23 +424,25 @@ void SoftwarePipelining::apply(builder::StructuredSDFGBuilder& builder, analysis
     visitor::for_each_block(prologue, collect);
     visitor::for_each_block(body, collect);
     for (auto* b : copy_blocks) {
-        // Minimal legal cp.async (narrow types coalesce to 4 bytes); TileVectorizer
-        // widens further for performance.
-        tiles::rewrite_cooperative_copy(builder, *b, /*allow_vectorize=*/false, tiles::CopyTransfer::CpAsync, impl);
+        if (auto* tc = tile_copy_node_in(*b)) {
+            tc->set_atom(tiles::CopyAtom::CpAsync);
+        }
     }
 
     // CUDA counts commit groups, but CDNA waits on the flat vmcnt counter, where
     // one stage expands to (sum of cp.async bytes / 4) individual global->LDS
     // loads per lane. Record that per-stage word count so the ROCm/CDNA wait can
     // emit vmcnt(keep_outstanding * loads_per_group). One loop iteration prefetches
-    // exactly one stage, so summing the body's CpAsyncCopyNodes gives the group
+    // exactly one stage, so summing the body's cp.async widths gives the group
     // size (a coverage loop that runs >1x per lane only makes this an under-count,
     // which over-waits — safe, never early).
     size_t loads_per_group = 0;
     visitor::for_each_block(body, [&](structured_control_flow::Block& b) {
         for (auto& node : b.dataflow().nodes()) {
-            if (auto* cp = dynamic_cast<tiles::CpAsyncCopyNode*>(&node)) {
-                loads_per_group += cp->bytes() / 4;
+            if (auto* tc = dynamic_cast<tiles::TileCopyNode*>(&node)) {
+                if (tc->atom() == tiles::CopyAtom::CpAsync) {
+                    loads_per_group += tc->bytes() / 4;
+                }
             }
         }
     });

@@ -37,12 +37,9 @@ struct Swizzle {
 /// `Swizzle` placement. `MultiDim`/`Linearized`/`Padded` use an identity swizzle.
 struct ComposedLayout {
     Swizzle swizzle;
-    Layout layout;
+    Layout layout{symbolic::MultiExpression{}};
 
-    /// `apply(i) = swizzle.apply(layout.apply(i))`.
-    symbolic::Expression apply(const symbolic::Expression& index) const;
-
-    /// `apply_coords(c) = swizzle.apply(layout.apply_coords(c))`.
+    /// `apply_coords(c) = swizzle.apply(layout.resolve_element(c))`.
     symbolic::Expression apply_coords(const symbolic::MultiExpression& coords) const;
 
     bool is_plain() const { return swizzle.is_identity(); }

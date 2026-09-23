@@ -55,10 +55,12 @@ The remaining complexity consists of variants of it:
 Identifying which accesses form compile-time-bounded regions inside a loop is implemented in `MemoryLayoutAnalysis`.
 Classifying those regions into schedule- and storage-level-aware tiles is implemented in `TileAnalysis`.
 
-## The Layout Algebra
+## The Layout
 
 A *layout* is the function mapping tile elements to their memory locations.
-Represented as `(shape, stride, offset)`, layouts compose and normalize under a small set of operations, and their legality — injectivity and exact cover — is checkable symbolically.
+Represented as `(shape, strides, offset)`, it denotes an affine map. The tiles module
+uses `math::tensor::TensorLayout` as the single source of truth for this type
+(`tiles::Layout` is an alias); a coordinate is addressed via `resolve_element`.
 
 **Definition (Layout).** A layout of rank $d$ is a triple $L = (\mathbf{s}, \mathbf{t}, o)$ with a *shape* $\mathbf{s} \in \mathbb{N}^d$, a *stride* $\mathbf{t} \in \mathbb{Z}^d$, and an *offset* $o \in \mathbb{Z}$. It denotes the affine map
 
@@ -68,27 +70,7 @@ under the *colexicographic* convention: dim $0$ varies fastest.
 
 > **Intuition.** $\mathbf{s}$ is *how many* elements lie along each dim, $\mathbf{t}$ is *how far apart* they sit in memory, and $o$ is *where the tile starts*. Consider the $32\times 32$ tile above. Row-major addressing places element $(i, j)$ at $1024 \cdot i + j$, so the tile's top-left corner $(i_{\text{outer}}, j_{\text{outer}})$ lies at offset $o = 1024 \cdot i_{\text{outer}} + j_{\text{outer}}$. Within the tile, dim $0$ (the column $j$) steps by $1$ and dim $1$ (the row $i$) by $1024$ — one full row — giving stride $(1, 1024)$.
 
-Two derived quantities matter:
-
-- the **size** $\lvert L \rvert = \prod_k s_k$ — the number of coordinates (its *domain*);
-- the **cosize** $\operatorname{co} L = o + \sum_k (s_k - 1)\, t_k + 1$ — the extent of memory it touches (the smallest buffer that holds its image).
-
-Always $\lvert L \rvert \le \operatorname{co} L$, with equality exactly when $L$ is a dense, gap-free block.
-
-**Definition (injective, bijective).** $L$ is *injective* if $L(x) = L(y) \Rightarrow x = y$, and *bijective* if additionally its image is exactly $[o,\, o + \lvert L \rvert)$ — a dense permutation.
-
-> **Intuition.** Injectivity is the *no-double-write* property: a destination layout must not map two tile coordinates to the same slot. Bijectivity is *exact cover*: a `(thread, value)` partition of a tile must map onto every element exactly once. `is_injective` / `is_bijective` decide these conservatively, returning `false` whenever the symbolic side-condition cannot be established.
-
-**The operations.** Two total operators combine and normalize layouts:
-
-| Operation | Notation | Meaning | Intuition |
-|---|---|---|---|
-| Concatenation | `A ++ B` | append `B`'s dims at absolute strides | place two layouts side by side without rescaling |
-| Coalesce | `coalesce(A)` | merge contiguous dims, drop size-1 dims | canonical normal form; $\operatorname{coalesce}(A)(i) = A(i)$ |
-
-Coalesce is idempotent and function-preserving, giving every layout a canonical representative.
-
-> **Remark.** Concatenation is how a `(thread, value)` partition is assembled: `partition = A ++ B` places the value layout beside the thread layout, and `is_bijective` then checks that the pair covers the tile exactly. In the SDFG setting the loop nest itself expresses the tiling hierarchy (via strip-mining and loop interchange), so the layout only needs to describe a single flat region rather than carry a nested structure of its own.
+`TensorLayout::total_elements()` is the coordinate count $\prod_k s_k$ and `resolve_element` evaluates the map above; `MultiDim`, `Linearized`, and `Transposed` buffers are affine layouts, while `Padded` and `Swizzle` add a shared-memory bank-conflict placement on top.
 
 ## Schedules and Memory Levels
 
@@ -133,7 +115,7 @@ When the minimum level is achieved *without* a buffer — a subgroup sharing thr
 
 ## The Tile API: Build Your Own Transformations
 
-`LocalStorage` is one transformation built on the tile algebra; the same API supports others (double buffering, asynchronous pipelines, custom packings). All types below are pure values with no SDFG state, so a movement plan is assembled and only the final `emit` step modifies the graph.
+`LocalStorage` is one transformation built on the tile algebra; the same API supports others (double buffering, asynchronous pipelines, custom packings). All types below are pure values with no SDFG state, so a movement plan is assembled and only the final `TileCopyNode` emission modifies the graph.
 
 - **`Tile`** — the output of `TileAnalysis`. It pairs the tile's *source layout* (`TileInfo::source_layout()`, the global gather geometry) with the classified schedule axes and reports `required_space()` (the minimum level from the previous section). It is the input to a transformation: one staged region, described geometrically and schedule-classified.
 
@@ -143,19 +125,19 @@ When the minimum level is achieved *without* a buffer — a subgroup sharing thr
   - **`Linearized`** — the same data as a single flat axis. Required by the CDNA asynchronous `global_load_lds` DMA, which writes lane-contiguous from a wave-uniform base and therefore requires a flat, lane-ordered buffer. A pure (affine) layout.
   - **`Padded`** — inflates the per-slot inner stride to a value coprime with 32, so that a warp's per-slot accesses map to *distinct* shared-memory banks (a bank is `address mod 32`; collisions serialize). The layout remains affine; only the padding amount is a hardware heuristic rather than a consequence of the geometry.
   - **`Swizzle`** — XORs the inner index with the slot index, distributing banks without unused columns. Since XOR is non-linear, this placement lies *outside* the affine algebra: a `Swizzle` functor composed with a `Layout` (`ComposedLayout = swizzle ∘ layout`), applied identically to writes and reads and therefore a pure relabelling of storage locations.
+  - **`Transposed`** — dense, but the tile axes are stored *column-major* (reversed), so a logical `[M][N]` tile lives physically as `[N][M]`. A consumer that reads `buf[m][n]` then walks memory in the orthogonal direction (coalesced/​bank-friendly reads for the transposed operand) without a separate transpose pass. Still affine — only the tile strides are permuted — and, like the swizzle, applied identically to the copy and the read.
 
-  `MultiDim` and `Linearized` are pure affine layouts (selected for correctness and the DMA constraint); `Padded` and `Swizzle` are bank-conflict-avoidance placements for shared memory.
+  `MultiDim`, `Linearized`, and `Transposed` are pure affine layouts; `Padded` and `Swizzle` are bank-conflict-avoidance placements for shared memory.
 
-- **`TiledCopy`** — the *movement plan*: four layouts `(src, dst, thread, value)` and a *copy atom* (`ScalarSync`, `VectorSync`, `CpAsync`, or the CDNA `LaneContiguousDMA`). `src` and `dst` are the global and buffer geometries; `(thread, value)` partition the tile across the lanes. Its `verify(elem_bytes)` establishes correctness before any device code is generated: a copy is valid iff
+- **`TiledCopy`** — the *movement plan*: two geometry layouts `src` (global) and `dst` (buffer), a *copy atom* (`ScalarSync`, `VectorSync`, or `CpAsync`), and an optional `dst_swizzle` (the XOR placement carried on the buffer offset). `src` maps a tile coordinate to the global element and `dst` to the local-buffer slot; the atom fixes the per-lane transfer.
 
-  1. source and destination span the same tile, $\lvert \text{src} \rvert = \lvert \text{dst} \rvert$;
-  2. the partition `value ++ thread` is *bijective* onto the tile (exact cover);
-  3. the destination is *injective* (no double-write); and
-  4. the atom's width and contiguity constraints hold — including *lane-contiguity* (`dst ∘ thread` unit-stride) for the CDNA DMA.
+- **`TileCopyNode`** — the plan materialized as *one library node*, the only step that modifies the graph. A transformation assembles a `TiledCopy` and emits a single `TileCopyNode`; its backend dispatcher lowers the whole cooperative copy (the thread-strided staging loop, the atom's transfer, and the boundary guard) at codegen time. Two rules keep the node self-contained:
 
-  These conditions reduce two classes of GPU faults — a `cp.async` with an illegal transfer width and a lane-scrambled `global_load_lds` — to host-side unit tests.
+  - **Bare-pointer memlets.** The `{_dst, _src}` inputs are empty-subset computational memlets — plain base pointers, *not* a dereference. All addressing lives in the plan (`src`/`dst` layouts, offsets, `dst_swizzle`), so `symbols()`/`replace()` rewrite the plan directly and a pass (double-buffering, pipelining) can retarget the copy by editing the plan without touching surrounding control flow.
+  - **Cooperation modes.** `coop_axes` selects how the block splits the tile: empty = *whole-block* (every thread strides the flat tile — a slot-free cooperative tile or the lane-contiguous DMA); a subset = *per-thread-slot* (each thread stages its own slot over the listed spatial axes, so a mixed per-thread + cooperative tile composes with the ragged per-thread guard). A `Swizzle` buffer rides on `dst_swizzle`, applied identically to the copy write and the compute read.
 
-- **`emit` / `emit_into`** — the only step that modifies the graph: it materializes a verified `TiledCopy` into the SDFG (the coverage map, the guarded element copy, and optional barriers). A transformation assembles the four objects above and passes the plan to `emit`.
+  `SoftwarePipelining` double-buffers a node by biasing `plan.dst.offset` per stage and flipping the atom to `CpAsync`; `TileVectorizer` widens it by mutating the atom/bytes — both derive legality from the plan, never from a sibling subgraph.
+
 
 ## Adding a Target: the `TileTarget` Interface
 

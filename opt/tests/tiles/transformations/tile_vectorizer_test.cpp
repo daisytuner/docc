@@ -14,44 +14,17 @@
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/targets/cuda/cuda.h"
 #include "sdfg/targets/gpu/gpu_schedule_type.h"
-#include "sdfg/tiles/library_nodes/async_copy_node.h"
+#include "sdfg/tiles/library_nodes/tile_copy_node.h"
 #include "sdfg/tiles/transformations/local_storage.h"
 
 using namespace sdfg;
 using transformations::LocalStorage;
 using transformations::TileVectorizer;
 
-namespace {
-
-// Count 16-byte VectorCopyNodes and leftover scalar `assign` staging tasklets in a
-// subtree.
-void count(structured_control_flow::ControlFlowNode& n, size_t& vec16, size_t& assigns) {
-    if (auto* blk = dynamic_cast<structured_control_flow::Block*>(&n)) {
-        for (auto& node : blk->dataflow().nodes()) {
-            if (auto* v = dynamic_cast<tiles::VectorCopyNode*>(&node)) {
-                if (v->bytes() == 16u) vec16++;
-            }
-            if (auto* tk = dynamic_cast<data_flow::Tasklet*>(&node)) {
-                if (tk->code() == data_flow::TaskletCode::assign) assigns++;
-            }
-        }
-    } else if (auto* s = dynamic_cast<structured_control_flow::Sequence*>(&n)) {
-        for (size_t x = 0; x < s->size(); ++x) count(s->at(x), vec16, assigns);
-    } else if (auto* m = dynamic_cast<structured_control_flow::Map*>(&n)) {
-        count(m->root(), vec16, assigns);
-    } else if (auto* f = dynamic_cast<structured_control_flow::StructuredLoop*>(&n)) {
-        count(f->root(), vec16, assigns);
-    } else if (auto* ie = dynamic_cast<structured_control_flow::IfElse*>(&n)) {
-        for (size_t x = 0; x < ie->size(); ++x) count(ie->at(x).first, vec16, assigns);
-    }
-}
-
-} // namespace
-
-// A fully-covering 2D fp32 cooperative copy (scalar, as LocalStorage emits it) is
-// widened by TileVectorizer to a synchronous 16-byte VectorCopyNode (float4): the
-// inner tile coord is unit-stride in source and buffer, and the flat coverage (128)
-// / row (32) are multiples of 4. No scalar assign copy should remain.
+// A fully-covering 2D fp32 cooperative copy (a scalar TileCopyNode, as LocalStorage
+// emits it) is widened by TileVectorizer to a 16-byte VectorSync float4: the inner
+// tile coord is unit-stride in source and buffer, and the flat coverage (128) / row
+// (32) are multiples of 4.
 TEST(TileVectorizerTest, WidensContiguousScalarCopyToFloat4) {
     builder::StructuredSDFGBuilder builder("tv_f4", FunctionType_CPU);
     auto& seq = builder.subject().root();
@@ -99,22 +72,37 @@ TEST(TileVectorizerTest, WidensContiguousScalarCopyToFloat4) {
     builder.add_computational_memlet(block, t, "_out", c_out, {b}, ptr);
 
     analysis::AnalysisManager am(builder.subject());
-    // Stage A cooperatively as a scalar copy (LocalStorage no longer vectorizes).
+    // Stage A cooperatively as a scalar TileCopyNode (LocalStorage no longer vectorizes).
     LocalStorage ls(loop_i, a_in);
     ASSERT_TRUE(ls.can_be_applied(builder, am));
     ls.apply(builder, am);
 
-    size_t vec16_before = 0, assigns_before = 0;
-    count(map_b.root(), vec16_before, assigns_before);
-    EXPECT_EQ(vec16_before, 0u) << "LocalStorage must emit only scalar copies";
-    EXPECT_GE(assigns_before, 1u);
+    // Find the staged copy node; it starts scalar.
+    tiles::TileCopyNode* copy = nullptr;
+    std::function<void(structured_control_flow::ControlFlowNode&)> find =
+        [&](structured_control_flow::ControlFlowNode& n) {
+            if (auto* blk = dynamic_cast<structured_control_flow::Block*>(&n)) {
+                for (auto& node : blk->dataflow().nodes()) {
+                    if (auto* tc = dynamic_cast<tiles::TileCopyNode*>(&node)) copy = tc;
+                }
+            } else if (auto* s = dynamic_cast<structured_control_flow::Sequence*>(&n)) {
+                for (size_t x = 0; x < s->size(); ++x) find(s->at(x));
+            } else if (auto* m = dynamic_cast<structured_control_flow::Map*>(&n)) {
+                find(m->root());
+            } else if (auto* f = dynamic_cast<structured_control_flow::StructuredLoop*>(&n)) {
+                find(f->root());
+            } else if (auto* ie = dynamic_cast<structured_control_flow::IfElse*>(&n)) {
+                for (size_t x = 0; x < ie->size(); ++x) find(ie->at(x).first);
+            }
+        };
+    find(map_b.root());
+    ASSERT_NE(copy, nullptr) << "LocalStorage must emit a TileCopyNode for the cooperative tile";
+    EXPECT_EQ(copy->atom(), tiles::CopyAtom::ScalarSync) << "LocalStorage must emit a scalar copy";
 
     TileVectorizer tv(map_b);
     ASSERT_TRUE(tv.can_be_applied(builder, am));
     tv.apply(builder, am);
 
-    size_t vec16 = 0, assigns = 0;
-    count(map_b.root(), vec16, assigns);
-    EXPECT_EQ(vec16, 1u) << "contiguous fp32 cooperative copy must widen to a float4 VectorCopyNode";
-    EXPECT_EQ(assigns, 0u) << "no scalar assign copy should remain for the staged tile";
+    EXPECT_EQ(copy->atom(), tiles::CopyAtom::VectorSync) << "contiguous fp32 cooperative copy must widen";
+    EXPECT_EQ(copy->bytes(), 16u) << "fp32 coalesces to a 16-byte float4 transfer";
 }

@@ -1,96 +1,81 @@
 #include "sdfg/tiles/tiled_copy.h"
 
-#include <string>
+#include "sdfg/symbolic/extreme_values.h"
 
 namespace sdfg {
 namespace tiles {
 
-namespace {
-
-bool is_int(const symbolic::Expression& e) { return SymEngine::is_a<SymEngine::Integer>(*e); }
-long long as_ll(const symbolic::Expression& e) {
-    return SymEngine::rcp_static_cast<const SymEngine::Integer>(e)->as_int();
-}
-
-bool prov_eq(const symbolic::Expression& a, const symbolic::Expression& b) {
-    if (is_int(a) && is_int(b)) {
-        return as_ll(a) == as_ll(b);
-    }
-    return symbolic::eq(symbolic::simplify(a), symbolic::simplify(b));
-}
-
-/// Integer size of a layout, or -1 when not a compile-time constant.
-long long size_int(const Layout& l) {
-    auto s = l.size();
-    return is_int(s) ? as_ll(s) : -1;
-}
-
-/// True when the value run is unit-stride when viewed through @p over (so the
-/// per-lane footprint is a single contiguous chunk in that space).
-bool contiguous_over(const Layout& over, const Layout& value) {
-    const long long v = size_int(value);
-    if (v <= 1) {
-        return true;
-    }
-    auto step =
-        symbolic::sub(over.apply(value.apply(symbolic::integer(1))), over.apply(value.apply(symbolic::integer(0))));
-    return prov_eq(step, symbolic::integer(1));
-}
-
-} // namespace
-
-Layout TiledCopy::partition() const { return concat(value, thread); }
-
-bool is_lane_contiguous(const Layout& dst, const Layout& thread) {
-    if (size_int(thread) < 2) {
-        return true; // a 0/1-lane partition is contiguous by default
-    }
-    auto step =
-        symbolic::sub(dst.apply(thread.apply(symbolic::integer(1))), dst.apply(thread.apply(symbolic::integer(0))));
-    return prov_eq(step, symbolic::integer(1));
-}
-
-std::optional<std::string> TiledCopy::verify(size_t elem_bytes) const {
-    if (!prov_eq(src.size(), dst.size())) {
-        return "src/dst tile size mismatch";
-    }
-    Layout part = partition();
-    if (!prov_eq(part.size(), src.size())) {
-        return "partition size != tile size";
-    }
-    if (!part.is_bijective()) {
-        return "partition is not a bijection onto the tile (elements skipped or double-copied)";
-    }
-    if (!dst.is_injective()) {
-        return "destination layout double-writes a buffer slot";
-    }
-
-    const long long width = size_int(value) * static_cast<long long>(elem_bytes);
-    switch (atom) {
-        case CopyAtom::ScalarSync:
-            break;
-        case CopyAtom::VectorSync:
-        case CopyAtom::CpAsync:
-            if (!contiguous_over(src, value) || !contiguous_over(dst, value)) {
-                return "vector/async value run is not contiguous in src and dst";
-            }
-            if (width != 4 && width != 8 && width != 16) {
-                return "transfer width " + std::to_string(width) + " not in {4,8,16}";
-            }
-            break;
-        case CopyAtom::LaneContiguousDMA: {
-            if (width != 4) {
-                return "lane-contiguous DMA requires a 4-byte per-lane transfer";
-            }
-            // Consecutive lanes must land on consecutive dst slots (the
-            // global_load_lds constraint).
-            if (!is_lane_contiguous(dst, thread)) {
-                return "lane-contiguous DMA: consecutive lanes are not consecutive in dst";
-            }
-            break;
+// Row-major delinearization of a flat index into per-dim coordinates (dim 0 slowest).
+symbolic::MultiExpression delinearize_rowmajor(const symbolic::Expression& flat, const symbolic::MultiExpression& sizes) {
+    symbolic::MultiExpression coords;
+    symbolic::Expression remainder = flat;
+    for (size_t i = 0; i < sizes.size(); ++i) {
+        if (i + 1 < sizes.size()) {
+            symbolic::Expression divisor = symbolic::integer(1);
+            for (size_t j = i + 1; j < sizes.size(); ++j) divisor = symbolic::mul(divisor, sizes[j]);
+            coords.push_back(symbolic::div(remainder, divisor));
+            remainder = symbolic::mod(remainder, divisor);
+        } else {
+            coords.push_back(remainder);
         }
     }
-    return std::nullopt;
+    return coords;
+}
+
+symbolic::Condition TileGuard::predicate(const symbolic::MultiExpression& coords) const {
+    symbolic::Condition guard = SymEngine::boolTrue;
+    for (const auto& d : dims) {
+        auto global = symbolic::add(d.base, coords.at(d.axis));
+        guard = symbolic::And(guard, symbolic::Le(global, d.max));
+    }
+    return guard;
+}
+
+symbolic::Condition TileGuard::predicate(const symbolic::Expression& flat) const {
+    return predicate(delinearize_rowmajor(flat, tile_sizes));
+}
+
+void TileGuard::collect_symbols(symbolic::SymbolSet& set) const {
+    for (const auto& s : tile_sizes) {
+        for (const auto& a : symbolic::atoms(s)) set.insert(a);
+    }
+    for (const auto& d : dims) {
+        for (const auto& a : symbolic::atoms(d.base)) set.insert(a);
+        for (const auto& a : symbolic::atoms(d.max)) set.insert(a);
+    }
+}
+
+void TileGuard::replace_symbols(const symbolic::ExpressionMapping& replacements) {
+    for (auto& s : tile_sizes) {
+        s = symbolic::subs(s, replacements);
+    }
+    for (auto& d : dims) {
+        d.base = symbolic::subs(d.base, replacements);
+        d.max = symbolic::subs(d.max, replacements);
+    }
+}
+
+bool TileGuard::discharge(const symbolic::SymbolSet& parameters, const symbolic::Assumptions& assumptions) {
+    if (assumptions.empty()) {
+        return false;
+    }
+    std::vector<Dim> kept;
+    for (const auto& d : dims) {
+        // Worst case over the sweep: the coordinate at its maximum (size - 1). If
+        // `base + (size - 1) <= max` is provable, the dim never overshoots.
+        auto size = d.axis < tile_sizes.size() ? tile_sizes.at(d.axis) : symbolic::Expression(SymEngine::null);
+        symbolic::Expression probe = size.is_null() ? d.base
+                                                    : symbolic::add(d.base, symbolic::sub(size, symbolic::integer(1)));
+        if (symbolic::is_le(probe, d.max, parameters, assumptions, /*tight=*/true)) {
+            continue;
+        }
+        kept.push_back(d);
+    }
+    if (kept.size() == dims.size()) {
+        return false;
+    }
+    dims = std::move(kept);
+    return true;
 }
 
 } // namespace tiles

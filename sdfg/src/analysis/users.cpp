@@ -122,6 +122,23 @@ std::pair<graph::Vertex, graph::Vertex> Users::traverse(data_flow::DataFlowGraph
                         }
                     }
 
+                    // A container feeding a library node's write-only pointer input is
+                    // written *through* that pointer (the node addresses it internally),
+                    // so the out-edge is a write, not a read.
+                    if (use == Use::READ) {
+                        for (auto& oedge : dataflow.out_edges(*access_node)) {
+                            auto* lib = dynamic_cast<data_flow::LibraryNode*>(&oedge.dst());
+                            if (lib == nullptr) {
+                                continue;
+                            }
+                            auto meta = lib->pointer_access_type(oedge);
+                            if (meta && meta->may_contain_writes() && !meta->may_contain_reads()) {
+                                use = Use::WRITE;
+                                break;
+                            }
+                        }
+                    }
+
                     auto v = boost::add_vertex(this->graph_);
                     this->add_user(std::make_unique<User>(v, access_node->data(), access_node, use));
 

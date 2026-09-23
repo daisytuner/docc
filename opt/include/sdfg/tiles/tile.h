@@ -121,7 +121,7 @@ public:
 /// the copy direction. The buffer placement and copy atom are derived from this.
 class Tile {
     std::string container_;
-    Layout source_;
+    Layout source_{symbolic::MultiExpression{}};
     std::vector<TileAxis> axes_; ///< enclosing parallel axes, innermost-first
     bool reads_ = false;
     bool writes_ = false;

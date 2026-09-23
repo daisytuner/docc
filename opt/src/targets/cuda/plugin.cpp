@@ -6,7 +6,8 @@
 #include "sdfg/targets/cuda/cuda.h"
 #include "sdfg/targets/cuda/cuda_offload_dispatcher_strategy.h"
 #include "sdfg/targets/cuda/cuda_reduce_dispatcher.h"
-#include "sdfg/targets/cuda/tiles/async_copy_node.h"
+#include "sdfg/targets/cuda/tiles/pipeline_node.h"
+#include "sdfg/targets/cuda/tiles/tile_copy_node.h"
 #include "sdfg/targets/gpu/gpu_offload_map_dispatcher.h"
 #include "sdfg/targets/gpu/gpu_offload_reduce_dispatcher.h"
 #include "sdfg/targets/gpu/gpu_tile_target.h"
@@ -281,31 +282,7 @@ void register_cuda_plugin(plugins::Context& context) {
         }
     );
 
-    // Async copy / pipeline primitives (software pipelining)
-    libNodeDispatcherRegistry.register_library_node_dispatcher(
-        ::sdfg::tiles::LibraryNodeType_CpAsyncCopy,
-        ImplementationType_CUDA,
-        [](codegen::LanguageExtension& language_extension,
-           const Function& function,
-           const data_flow::DataFlowGraph& data_flow_graph,
-           const data_flow::LibraryNode& node) {
-            return std::make_unique<cuda::tiles::CpAsyncCopyNodeDispatcher>(
-                language_extension, function, data_flow_graph, dynamic_cast<const ::sdfg::tiles::CpAsyncCopyNode&>(node)
-            );
-        }
-    );
-    libNodeDispatcherRegistry.register_library_node_dispatcher(
-        ::sdfg::tiles::LibraryNodeType_VectorCopy,
-        ImplementationType_CUDA,
-        [](codegen::LanguageExtension& language_extension,
-           const Function& function,
-           const data_flow::DataFlowGraph& data_flow_graph,
-           const data_flow::LibraryNode& node) {
-            return std::make_unique<cuda::tiles::VectorCopyNodeDispatcher>(
-                language_extension, function, data_flow_graph, dynamic_cast<const ::sdfg::tiles::VectorCopyNode&>(node)
-            );
-        }
-    );
+    // Pipeline primitives (software pipelining)
     libNodeDispatcherRegistry.register_library_node_dispatcher(
         ::sdfg::tiles::LibraryNodeType_PipelineCommit,
         ImplementationType_CUDA,
@@ -330,6 +307,19 @@ void register_cuda_plugin(plugins::Context& context) {
            const data_flow::LibraryNode& node) {
             return std::make_unique<cuda::tiles::PipelineWaitNodeDispatcher>(
                 language_extension, function, data_flow_graph, dynamic_cast<const ::sdfg::tiles::PipelineWaitNode&>(node)
+            );
+        }
+    );
+
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
+        ::sdfg::tiles::LibraryNodeType_TileCopy,
+        ImplementationType_CUDA,
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<cuda::tiles::TileCopyNodeDispatcher>(
+                language_extension, function, data_flow_graph, dynamic_cast<const ::sdfg::tiles::TileCopyNode&>(node)
             );
         }
     );
