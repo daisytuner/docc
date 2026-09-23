@@ -16,6 +16,7 @@
 #include <sdfg/structured_control_flow/if_else.h>
 #include <sdfg/structured_control_flow/map.h>
 #include <sdfg/structured_control_flow/while.h>
+#include <sdfg/symbolic/extreme_values.h>
 #include <sdfg/symbolic/symbolic.h>
 #include <sdfg/types/type.h>
 #include <sdfg/visitor/structured_sdfg_visitor.h>
@@ -300,6 +301,15 @@ void GPUOffloadReduceDispatcher::validate_before_dispatch(analysis::AnalysisMana
             auto coefficient =
                 symbolic::expand(symbolic::sub(SymEngine::subs(base, {{inner->indvar(), symbolic::one()}}), origin));
             auto count = inner->num_iterations();
+            if (!count.is_null() && !SymEngine::is_a<SymEngine::Integer>(*count)) {
+                auto& assumptions_analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
+                symbolic::BoundAnalysis
+                    bounds(assumptions_analysis.parameters(), assumptions_analysis.get(*inner), true);
+                auto interval = bounds.bound(count);
+                if (interval.has_lower() && interval.has_upper() && symbolic::eq(interval.lower, interval.upper)) {
+                    count = interval.lower;
+                }
+            }
             auto stride = inner->stride();
             auto positive_integer = [](const symbolic::Expression& expression) {
                 return !expression.is_null() && SymEngine::is_a<SymEngine::Integer>(*expression) &&
