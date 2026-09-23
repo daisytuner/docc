@@ -1100,7 +1100,7 @@ def _free(backend, builder, dev_ptr, name):
 
 
 def build_tiled_matmul(backend, guarded, varied_band, reduction_position):
-    """Reproduce the nine-loop 512/64/8 matmul nests from debug_test_{1,2}.json.
+    """Scale the nine-loop matmul nests from debug_test_{1,2}.json to 32/8/2.
 
     The guarded form retains every enclosing upper bound as an And condition;
     the exact-tile form retains only the nearest bound. Each band is i, j, k
@@ -1123,13 +1123,13 @@ def build_tiled_matmul(backend, guarded, varied_band, reduction_position):
         (
             "grid",
             "_tile0",
-            "64",
+            "8",
             (TargetLevel.Z_GRID, TargetLevel.Y_GRID, TargetLevel.X_GRID),
         ),
         (
             "block",
             "_tile1",
-            "8",
+            "2",
             (TargetLevel.Z_BLOCK, TargetLevel.Y_BLOCK, TargetLevel.X_BLOCK),
         ),
         ("sequential", "", "1", (None, None, None)),
@@ -1138,7 +1138,7 @@ def build_tiled_matmul(backend, guarded, varied_band, reduction_position):
         for axis in axes:
             builder.add_container(axis + suffix, Scalar(PrimitiveType.Int32), False)
 
-    nbytes = f"512 * 512 * {FLOAT_BYTES}"
+    nbytes = f"32 * 32 * {FLOAT_BYTES}"
     for name in arguments:
         _alloc(backend, builder, dev_ptr, name, nbytes)
         _h2d(backend, builder, dev_ptr, name, nbytes)
@@ -1153,9 +1153,9 @@ def build_tiled_matmul(backend, guarded, varied_band, reduction_position):
             axis = axes[axis_index]
             indvar = axis + suffix
             start = ("0", axis + "_tile0", axis + "_tile1")[band_index]
-            bounds = ("512", f"64 + {axis}_tile0", f"8 + {axis}_tile1")
+            bounds = ("32", f"8 + {axis}_tile0", f"2 + {axis}_tile1")
             level = levels[axis_index]
-            schedule = None if level is None else backend.schedule(level, 8)
+            schedule = None if level is None else backend.schedule(level, 4)
             if axis == "_k0":
                 loop = builder.begin_reduce(
                     indvar,
@@ -1184,10 +1184,10 @@ def build_tiled_matmul(backend, guarded, varied_band, reduction_position):
     tasklet = builder.add_tasklet(
         block, TaskletCode.fp_fma, ["_in1", "_in2", "_in3"], ["_out"]
     )
-    builder.add_memlet(block, left, "", tasklet, "_in1", "512*_i1 + _k0")
-    builder.add_memlet(block, right, "", tasklet, "_in2", "_j1 + 512*_k0")
-    builder.add_memlet(block, accumulator, "", tasklet, "_in3", "512*_i1 + _j1")
-    builder.add_memlet(block, tasklet, "_out", output, "", "512*_i1 + _j1")
+    builder.add_memlet(block, left, "", tasklet, "_in1", "32*_i1 + _k0")
+    builder.add_memlet(block, right, "", tasklet, "_in2", "_j1 + 32*_k0")
+    builder.add_memlet(block, accumulator, "", tasklet, "_in3", "32*_i1 + _j1")
+    builder.add_memlet(block, tasklet, "_out", output, "", "32*_i1 + _j1")
 
     for axis in reversed(loop_axes):
         if axis == "_k0":
@@ -2349,9 +2349,9 @@ def register(namespace, backend):
         compiled = _compile(backend, sdfg, tmp_path / "tiled_matmul")
 
         rng = np.random.default_rng(22)
-        left = rng.integers(-2, 3, size=(512, 512)).astype(np.float32)
-        right = rng.integers(-2, 3, size=(512, 512)).astype(np.float32)
-        output = np.zeros((512, 512), dtype=np.float32)
+        left = rng.integers(-2, 3, size=(32, 32)).astype(np.float32)
+        right = rng.integers(-2, 3, size=(32, 32)).astype(np.float32)
+        output = np.zeros((32, 32), dtype=np.float32)
         compiled(left.ravel(), right.ravel(), output.ravel())
         np.testing.assert_array_equal(output, left @ right)
 
