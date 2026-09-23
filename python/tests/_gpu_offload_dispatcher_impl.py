@@ -1099,6 +1099,107 @@ def _free(backend, builder, dev_ptr, name):
     )
 
 
+def build_tiled_matmul(backend, guarded, varied_band, reduction_position):
+    """Reproduce the nine-loop 512/64/8 matmul nests from debug_test_{1,2}.json.
+
+    The guarded form retains every enclosing upper bound as an And condition;
+    the exact-tile form retains only the nearest bound. Each band is i, j, k
+    by default. Move k within just varied_band, keeping the other bands and
+    each loop's GPU axis unchanged. The nine band/position pairs intentionally
+    include the original innermost-reduction order three times.
+
+    Only host/device transfers wrap the static kernel; no scheduling or tiling
+    transformation is run.
+    """
+    assert varied_band in ("grid", "block", "sequential")
+    assert reduction_position in ("outer", "middle", "inner")
+    builder = StructuredSDFGBuilder("offload_tiled_matmul")
+    arguments = ("args_0", "args_1", "mm")
+    dev_ptr = _declare_common(
+        backend, builder, arguments, [_dev(name) for name in arguments]
+    )
+    axes = ("_i1", "_j1", "_k0")
+    bands = (
+        (
+            "grid",
+            "_tile0",
+            "64",
+            (TargetLevel.Z_GRID, TargetLevel.Y_GRID, TargetLevel.X_GRID),
+        ),
+        (
+            "block",
+            "_tile1",
+            "8",
+            (TargetLevel.Z_BLOCK, TargetLevel.Y_BLOCK, TargetLevel.X_BLOCK),
+        ),
+        ("sequential", "", "1", (None, None, None)),
+    )
+    for _band, suffix, _step, _levels in bands:
+        for axis in axes:
+            builder.add_container(axis + suffix, Scalar(PrimitiveType.Int32), False)
+
+    nbytes = f"512 * 512 * {FLOAT_BYTES}"
+    for name in arguments:
+        _alloc(backend, builder, dev_ptr, name, nbytes)
+        _h2d(backend, builder, dev_ptr, name, nbytes)
+
+    loop_axes = []
+    for band_index, (band, suffix, step, levels) in enumerate(bands):
+        order = [0, 1, 2]
+        if band == varied_band:
+            order.remove(2)
+            order.insert(("outer", "middle", "inner").index(reduction_position), 2)
+        for axis_index in order:
+            axis = axes[axis_index]
+            indvar = axis + suffix
+            start = ("0", axis + "_tile0", axis + "_tile1")[band_index]
+            bounds = ("512", f"64 + {axis}_tile0", f"8 + {axis}_tile1")
+            level = levels[axis_index]
+            schedule = None if level is None else backend.schedule(level, 8)
+            if axis == "_k0":
+                loop = builder.begin_reduce(
+                    indvar,
+                    start,
+                    bounds[band_index],
+                    step,
+                    [("add", _dev("mm"))],
+                    schedule,
+                )
+            else:
+                loop = builder.begin_map(
+                    indvar, start, bounds[band_index], step, schedule
+                )
+            if guarded and band_index > 0:
+                conditions = [
+                    f"({indvar} < {bound})" for bound in bounds[: band_index + 1]
+                ]
+                builder.set_loop_condition(loop, f"And({', '.join(conditions)})")
+            loop_axes.append(axis)
+
+    block = builder.add_block()
+    left = builder.add_access(block, _dev("args_0"))
+    right = builder.add_access(block, _dev("args_1"))
+    accumulator = builder.add_access(block, _dev("mm"))
+    output = builder.add_access(block, _dev("mm"))
+    tasklet = builder.add_tasklet(
+        block, TaskletCode.fp_fma, ["_in1", "_in2", "_in3"], ["_out"]
+    )
+    builder.add_memlet(block, left, "", tasklet, "_in1", "512*_i1 + _k0")
+    builder.add_memlet(block, right, "", tasklet, "_in2", "_j1 + 512*_k0")
+    builder.add_memlet(block, accumulator, "", tasklet, "_in3", "512*_i1 + _j1")
+    builder.add_memlet(block, tasklet, "_out", output, "", "512*_i1 + _j1")
+
+    for axis in reversed(loop_axes):
+        if axis == "_k0":
+            builder.end_reduce()
+        else:
+            builder.end_map()
+    _d2h(backend, builder, dev_ptr, "mm", nbytes)
+    for name in arguments:
+        _free(backend, builder, dev_ptr, name)
+    return builder.move()
+
+
 def build_sibling_nest(backend, parent, sib, containers, siblings):
     """Parent grid map (or None) whose body holds several sibling sub-nests.
 
@@ -2238,6 +2339,22 @@ def register(namespace, backend):
         }[op](axis=1)
         np.testing.assert_allclose(accumulator, expected, rtol=1e-4, atol=1e-4)
 
+    @pytest.mark.parametrize(
+        "guarded", [True, False], ids=["debug_test_1_guarded", "debug_test_2_exact"]
+    )
+    @pytest.mark.parametrize("varied_band", ["grid", "block", "sequential"])
+    @pytest.mark.parametrize("reduction_position", ["outer", "middle", "inner"])
+    def test_tiled_matmul(guarded, varied_band, reduction_position, tmp_path):
+        sdfg = build_tiled_matmul(backend, guarded, varied_band, reduction_position)
+        compiled = _compile(backend, sdfg, tmp_path / "tiled_matmul")
+
+        rng = np.random.default_rng(22)
+        left = rng.integers(-2, 3, size=(512, 512)).astype(np.float32)
+        right = rng.integers(-2, 3, size=(512, 512)).astype(np.float32)
+        output = np.zeros((512, 512), dtype=np.float32)
+        compiled(left.ravel(), right.ravel(), output.ravel())
+        np.testing.assert_array_equal(output, left @ right)
+
     _multi_scns = make_multi_reduction_scenarios(ws)
 
     @pytest.mark.parametrize(
@@ -2344,6 +2461,7 @@ def register(namespace, backend):
         test_map_nest=test_map_nest,
         test_reduce_nest=test_reduce_nest,
         test_reduce_first_multi_output=test_reduce_first_multi_output,
+        test_tiled_matmul=test_tiled_matmul,
         test_multi_reduction_one_node=test_multi_reduction_one_node,
         test_reduce_different_vars=test_reduce_different_vars,
         test_sibling_nest=test_sibling_nest,

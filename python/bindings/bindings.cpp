@@ -550,6 +550,22 @@ PYBIND11_MODULE(_sdfg, m) {
         )
         .def("end_reduce", &PyStructuredSDFGBuilder::end_reduce)
         .def(
+            "set_loop_condition",
+            [](PyStructuredSDFGBuilder& builder,
+               sdfg::structured_control_flow::StructuredLoop& loop,
+               const std::string& condition) {
+                auto parsed = sdfg::symbolic::parse(condition);
+                auto boolean = SymEngine::rcp_dynamic_cast<const SymEngine::Boolean>(parsed);
+                if (boolean.is_null()) {
+                    throw std::invalid_argument("Loop condition must be a boolean expression");
+                }
+                builder.builder().update_loop(loop, loop.indvar(), boolean, loop.init(), loop.update());
+            },
+            py::arg("loop"),
+            py::arg("condition"),
+            "Set a loop's boolean condition without changing its iteration variable, start or step"
+        )
+        .def(
             "add_assignments",
             &PyStructuredSDFGBuilder::add_assignments,
             py::arg("lhs"),
