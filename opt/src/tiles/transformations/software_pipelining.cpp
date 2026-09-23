@@ -69,6 +69,19 @@ bool access_is_written(data_flow::DataFlowGraph& df, data_flow::AccessNode& acc)
     return false;
 }
 
+// Element count of a (possibly nested-array) buffer type — the per-stage stride
+// once a [stages] dimension is prepended. Counts padding, so a Padded buffer's
+// consecutive stages are biased by the true memory stride, not the logical tile.
+symbolic::Expression buffer_element_count(const types::IType& type) {
+    symbolic::Expression prod = symbolic::integer(1);
+    const types::IType* cur = &type;
+    while (auto* arr = dynamic_cast<const types::Array*>(cur)) {
+        prod = symbolic::mul(prod, arr->num_elements());
+        cur = &arr->element_type();
+    }
+    return prod;
+}
+
 // True if any access node in the block writes to a shared container.
 bool block_writes_shared(const Function& sdfg, structured_control_flow::Block& block) {
     auto& df = block.dataflow();
@@ -276,7 +289,9 @@ void SoftwarePipelining::apply(builder::StructuredSDFGBuilder& builder, analysis
         auto staged = prepend_stage_dim(sdfg.type(name), stages_);
         // A TileCopyNode addresses the buffer through its plan (its `_dst` memlet is a
         // bare pointer with no subset), so double-buffering biases the node's plan
-        // offset by stage_idx * tile_total instead of reindexing that memlet.
+        // offset by stage_idx * per-stage buffer stride (padding included) instead of
+        // reindexing that memlet.
+        const auto stage_stride = buffer_element_count(sdfg.type(name));
         std::vector<tiles::TileCopyNode*> nodes_to_bias;
         visitor::for_each_block(loop_.root(), [&](structured_control_flow::Block& b) {
             auto& dfg = b.dataflow();
@@ -304,7 +319,7 @@ void SoftwarePipelining::apply(builder::StructuredSDFGBuilder& builder, analysis
         });
         for (auto* tc : nodes_to_bias) {
             auto plan = tc->plan();
-            auto biased = symbolic::add(plan.dst.offset(), symbolic::mul(stage_idx, plan.src.total_elements()));
+            auto biased = symbolic::add(plan.dst.offset(), symbolic::mul(stage_idx, stage_stride));
             plan.dst = tiles::Layout(plan.dst.shape(), plan.dst.strides(), biased);
             tc->set_plan(plan);
         }

@@ -71,14 +71,24 @@ void add_compute(
 
 // GPU map over i { for k in [0,K) { stage A -> buf (TileCopyNode); compute buf -> C } }.
 // Returns the panel loop (the `for k`). src_stride/wrap tune the copy shape.
-structured_control_flow::For&
-build(builder::StructuredSDFGBuilder& builder, int K, bool shared = true, long src_stride = 1, bool wrap = false) {
+structured_control_flow::For& build(
+    builder::StructuredSDFGBuilder& builder,
+    int K,
+    bool shared = true,
+    long src_stride = 1,
+    bool wrap = false,
+    long pad = 0
+) {
     auto& root = builder.subject().root();
     types::Scalar f(types::PrimitiveType::Float);
     types::Pointer aptr(f);
     types::Scalar u64(types::PrimitiveType::UInt64);
     types::Array buf_type(
-        shared ? types::StorageType::NV_Shared() : types::StorageType::CPU_Stack(), 0, "", f, symbolic::integer(TILE)
+        shared ? types::StorageType::NV_Shared() : types::StorageType::CPU_Stack(),
+        0,
+        "",
+        f,
+        symbolic::integer(TILE + pad)
     );
 
     builder.add_container("A", aptr, true);
@@ -505,4 +515,57 @@ TEST(SoftwarePipeliningTest, StagesBufferAndReindexes) {
     // Two waits: the guarded prefetch's wait (keep stages-1 in flight) in the
     // `then` branch, and the tail drain wait (keep 0) in the `else` branch.
     EXPECT_EQ(loop_wait, 2u);
+}
+
+// Regression: a Padded double-buffer's stage bias must use the buffer's per-stage
+// element count (padding included), not the plan's logical tile size — otherwise
+// stage 1 addresses the wrong offset (silent wrong results, e.g. the StreamK GEMM).
+TEST(SoftwarePipeliningTest, PaddedBufferStageBiasUsesBufferStride) {
+    constexpr long PAD = 5; // buffer per-stage stride = TILE + PAD > the logical tile TILE
+    builder::StructuredSDFGBuilder builder("sp_pad", FunctionType_CPU);
+    auto& kloop = build(builder, /*K=*/4, /*shared=*/true, /*src_stride=*/1, /*wrap=*/false, /*pad=*/PAD);
+    auto& sdfg = builder.subject();
+    analysis::AnalysisManager am(sdfg);
+    transformations::SoftwarePipelining sp(kloop, 2);
+    ASSERT_TRUE(sp.can_be_applied(builder, am));
+    sp.apply(builder, am);
+
+    // Collect every TileCopyNode's biased buffer offset.
+    std::vector<symbolic::Expression> offsets;
+    std::function<void(structured_control_flow::ControlFlowNode&)> collect =
+        [&](structured_control_flow::ControlFlowNode& node) {
+            if (auto* b = dynamic_cast<structured_control_flow::Block*>(&node)) {
+                for (auto& dn : b->dataflow().nodes()) {
+                    if (auto* tc = dynamic_cast<tiles::TileCopyNode*>(&dn)) {
+                        offsets.push_back(tc->plan().dst.offset());
+                    }
+                }
+            } else if (auto* ie = dynamic_cast<structured_control_flow::IfElse*>(&node)) {
+                for (size_t i = 0; i < ie->size(); i++) collect(ie->at(i).first);
+            } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&node)) {
+                for (size_t i = 0; i < seq->size(); i++) collect(seq->at(i));
+            } else if (auto* map = dynamic_cast<structured_control_flow::Map*>(&node)) {
+                collect(map->root());
+            } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&node)) {
+                collect(loop->root());
+            }
+        };
+    collect(sdfg.root());
+    ASSERT_FALSE(offsets.empty());
+
+    // Some biased buffer offset must carry the padded per-stage stride (TILE + PAD)
+    // as its stage coefficient — never the logical tile size (TILE), which was the
+    // pre-fix bug. (mod() stays opaque symbolically, so match the coefficient.)
+    const std::string padded = std::to_string(TILE + PAD);
+    const std::string logical = std::to_string(TILE);
+    bool found_padded_stride = false;
+    for (const auto& off : offsets) {
+        const std::string s = off->__str__();
+        if (s.find(padded) != std::string::npos) {
+            found_padded_stride = true;
+        }
+        EXPECT_EQ(s.find(logical), std::string::npos)
+            << "stage bias used the logical tile size (" << logical << "), not the padded stride: " << s;
+    }
+    EXPECT_TRUE(found_padded_stride) << "no stage offset used the padded per-stage buffer stride";
 }
