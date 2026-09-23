@@ -276,12 +276,12 @@ void emit_cooperative_copy_loop(
     }
 
     stream << "{" << std::endl;
-    stream << "unsigned __tc_n = " << n << ";" << std::endl;
-    stream << "unsigned __tc_tid = " << tid << ";" << std::endl;
+    stream << "int __tc_n = " << n << ";" << std::endl;
+    stream << "int __tc_tid = " << tid << ";" << std::endl;
 
     const std::string step = factor > 1 ? " * " + std::to_string(factor) : "";
-    stream << "for (unsigned __tc_c = __tc_tid" << step << "; __tc_c < " << size << "; __tc_c += __tc_n" << step
-           << ") {" << std::endl;
+    stream << "for (int __tc_c = __tc_tid" << step << "; __tc_c < " << size << "; __tc_c += __tc_n" << step << ") {"
+           << std::endl;
 
     const auto coords = delinearize_rowmajor(c, plan.src.shape());
     types::Pointer elem_ptr{types::Scalar(elem)};

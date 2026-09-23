@@ -352,7 +352,7 @@ TEST(TileCopyNodeTest, CudaCooperativeDispatcherEmitsThreadStridedLoop) {
 
     const std::string code = stream.str();
     EXPECT_NE(code.find("threadIdx.x + threadIdx.y * (blockDim.x)"), std::string::npos) << code;
-    EXPECT_NE(code.find("for (unsigned __tc_c = __tc_tid; __tc_c < 64; __tc_c += __tc_n)"), std::string::npos) << code;
+    EXPECT_NE(code.find("for (int __tc_c = __tc_tid; __tc_c < 64; __tc_c += __tc_n)"), std::string::npos) << code;
     EXPECT_NE(code.find("] = (reinterpret_cast<float *>"), std::string::npos) << code;
 }
 
