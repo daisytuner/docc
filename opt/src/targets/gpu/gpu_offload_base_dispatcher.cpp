@@ -15,9 +15,11 @@
 #include <sdfg/types/type.h>
 
 #include "sdfg/analysis/arguments_analysis.h"
+#include "sdfg/serializer/json_serializer.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/targets/gpu/gpu_map_utils.h"
 #include "sdfg/targets/gpu/gpu_offload_schedule_type.h"
+#include "sdfg/visualizer/dot_visualizer.h"
 
 namespace sdfg {
 namespace gpu {
@@ -59,6 +61,8 @@ void GPUOffloadBaseDispatcher::emit_lib_dependency_includes(
     }
 }
 
+static int viz_count = 0;
+
 void GPUOffloadBaseDispatcher::dispatch_node(
     codegen::PrettyPrinter& main_stream,
     codegen::PrettyPrinter& globals_stream,
@@ -72,6 +76,12 @@ void GPUOffloadBaseDispatcher::dispatch_node(
 
     auto& used_arguments = arguments_analysis.arguments(analysis_manager, node_);
     auto& locals = arguments_analysis.locals(analysis_manager, node_);
+
+    // TODO remove me!!!
+    visualizer::DotVisualizer::writeToFile(sdfg_, "debug_test_" + std::to_string(viz_count) + ".dot");
+    serializer::JSONSerializer::writeToFile(sdfg_, "debug_test_" + std::to_string(viz_count) + ".json");
+    viz_count++;
+    // TODO remove me!!!
 
     this->validate_before_dispatch(analysis_manager);
 

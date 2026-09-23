@@ -29,6 +29,7 @@
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/targets/gpu/gpu_map_utils.h"
 #include "sdfg/targets/gpu/gpu_offload_schedule_type.h"
+#include "sdfg/visualizer/dot_visualizer.h"
 
 #include <algorithm>
 #include <sdfg/data_flow/access_node.h>
@@ -297,12 +298,17 @@ void GPUOffloadReduceDispatcher::validate_before_dispatch(analysis::AnalysisMana
                        SymEngine::rcp_static_cast<const SymEngine::Integer>(expression)->as_int() > 0;
             };
             if (!positive_integer(count) || !positive_integer(stride) || !positive_integer(coefficient) ||
-                !symbolic::eq(index, symbolic::add(origin, symbolic::mul(coefficient, inner->indvar())))) {
+                !symbolic::
+                    eq(symbolic::expand(index),
+                       symbolic::expand(symbolic::add(origin, symbolic::mul(coefficient, inner->indvar()))))) {
                 throw InvalidSDFGException(
                     "GPUOffloadReduceDispatcher: accumulator '" + r.container +
                     "' requires a constant positive affine inner-loop footprint for '" + inner->indvar()->get_name() +
                     "' (count=" + (count.is_null() ? "unknown" : count->__str__()) + ", stride=" +
-                    (stride.is_null() ? "unknown" : stride->__str__()) + ", coefficient=" + coefficient->__str__() + ")"
+                    (stride.is_null() ? "unknown" : stride->__str__()) + ", coefficient=" + coefficient->__str__() +
+                    ", index=(" + symbolic::expand(index)->__str__() + "), origin+coefficient*inner_indvar=(" +
+                    symbolic::expand(symbolic::add(origin, symbolic::mul(coefficient, inner->indvar())))->__str__() +
+                    "))"
                 );
             }
             base = SymEngine::subs(base, {{inner->indvar(), inner->init()}});
