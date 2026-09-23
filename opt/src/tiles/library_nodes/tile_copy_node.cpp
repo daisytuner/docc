@@ -68,13 +68,14 @@ TileCopyNode::TileCopyNode(
     CopyDirection direction,
     size_t bytes,
     TileGuard guard,
-    std::vector<int> coop_axes
+    std::vector<int> coop_axes,
+    symbolic::Expression coop_threads
 )
     : data_flow::LibraryNode(
           element_id, debug_info, vertex, parent, LibraryNodeType_TileCopy, {}, {"_dst", "_src"}, true, implementation_type
       ),
       plan_(std::move(plan)), direction_(direction), bytes_(bytes), guard_(std::move(guard)),
-      coop_axes_(std::move(coop_axes)) {}
+      coop_axes_(std::move(coop_axes)), coop_threads_(std::move(coop_threads)) {}
 
 void TileCopyNode::validate(const Function& function) const { data_flow::LibraryNode::validate(function); }
 
@@ -98,7 +99,8 @@ std::unique_ptr<data_flow::DataFlowNode> TileCopyNode::
         direction_,
         bytes_,
         guard_,
-        coop_axes_
+        coop_axes_,
+        coop_threads_
     ));
 }
 
@@ -154,6 +156,9 @@ nlohmann::json TileCopyNodeSerializer::serialize(const sdfg::data_flow::LibraryN
         );
     }
     j["coop_axes"] = node.coop_axes();
+    if (!node.coop_threads().is_null()) {
+        j["coop_threads"] = serializer::JSONSerializer::expression(node.coop_threads());
+    }
     return j;
 }
 
@@ -186,6 +191,10 @@ data_flow::LibraryNode& TileCopyNodeSerializer::deserialize(
     if (j.contains("coop_axes")) {
         coop_axes = j.at("coop_axes").get<std::vector<int>>();
     }
+    symbolic::Expression coop_threads;
+    if (j.contains("coop_threads")) {
+        coop_threads = symbolic::parse(j.at("coop_threads").get<std::string>());
+    }
     return builder.add_library_node<TileCopyNode>(
         parent,
         DebugInfo(),
@@ -194,7 +203,8 @@ data_flow::LibraryNode& TileCopyNodeSerializer::deserialize(
         direction,
         j.at("bytes").get<size_t>(),
         guard,
-        coop_axes
+        coop_axes,
+        coop_threads
     );
 }
 
@@ -276,12 +286,27 @@ void emit_cooperative_copy_loop(
     }
 
     stream << "{" << std::endl;
-    stream << "int __tc_n = " << n << ";" << std::endl;
     stream << "int __tc_tid = " << tid << ";" << std::endl;
 
-    const std::string step = factor > 1 ? " * " + std::to_string(factor) : "";
-    stream << "for (int __tc_c = __tc_tid" << step << "; __tc_c < " << size << "; __tc_c += __tc_n" << step << ") {"
-           << std::endl;
+    // When the cooperating thread count is known, emit a from-zero loop whose trip
+    // count `ceil(size/(threads*factor))` is a symbolic expression that folds to a
+    // constant (block dims are compile-time) the backend can unroll — restoring
+    // memory-level parallelism (esp. where cp.async degrades to a synchronous copy).
+    // Otherwise fall back to a runtime thread-strided loop.
+    const bool unrolled = !node.coop_threads().is_null();
+    if (unrolled) {
+        const std::string ct = language_extension.expression(node.coop_threads());
+        const std::string f = std::to_string(factor);
+        stream << "for (int __tc_i = 0; __tc_i < ((" << size << ") + (" << ct << ") * " << f << " - 1) / ((" << ct
+               << ") * " << f << "); __tc_i++) {" << std::endl;
+        stream << "int __tc_c = " << f << " * (__tc_i * (" << ct << ") + __tc_tid);" << std::endl;
+        stream << "if (__tc_c < " << size << ") {" << std::endl;
+    } else {
+        stream << "int __tc_n = " << n << ";" << std::endl;
+        const std::string step = factor > 1 ? " * " + std::to_string(factor) : "";
+        stream << "for (int __tc_c = __tc_tid" << step << "; __tc_c < " << size << "; __tc_c += __tc_n" << step << ") {"
+               << std::endl;
+    }
 
     const auto coords = delinearize_rowmajor(c, plan.src.shape());
     types::Pointer elem_ptr{types::Scalar(elem)};
@@ -308,6 +333,9 @@ void emit_cooperative_copy_loop(
         stmt = "if (" + language_extension.expression(node.guard().predicate(coords)) + ") { " + stmt + " }";
     }
     stream << stmt << std::endl;
+    if (unrolled) {
+        stream << "}" << std::endl; // close the `__tc_c < size` bounds guard
+    }
     stream << "}" << std::endl;
     stream << "}" << std::endl;
 }

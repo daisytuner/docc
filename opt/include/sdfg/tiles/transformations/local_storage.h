@@ -134,6 +134,7 @@ private:
         tiles::TiledCopy plan;
         std::vector<int> coop_axes;
         tiles::TileGuard guard;
+        symbolic::Expression coop_threads; ///< symbolic cooperating thread count (null = unknown)
     };
 
     /// Build the complete movement plan for the staged tile from its geometry.

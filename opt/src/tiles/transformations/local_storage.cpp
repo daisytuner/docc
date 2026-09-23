@@ -991,6 +991,43 @@ LocalStorage::BuiltCopy LocalStorage::build_tiled_copy(
         out.guard = tile_boundary_guard(analysis_manager, guard_scope, vsizes);
     }
 
+    // Symbolic cooperating thread count over the dispatcher's coop axes (empty =
+    // whole block, which also includes the per-thread-slot threads): the schedule's
+    // parallel_size product. It folds to a constant so the copy loop gets a constant
+    // trip count the backend can unroll; a non-constant (0) parallel_size leaves it
+    // null (runtime loop).
+    {
+        symbolic::Expression threads = symbolic::integer(1);
+        bool known = true;
+        auto mul_axis = [&](const tiles::TileAxis& d) {
+            if (d.schedule().level() != tiles::Level::Group) {
+                return;
+            }
+            auto ps = d.schedule().parallel_size();
+            if (symbolic::eq(ps, symbolic::integer(0))) {
+                known = false;
+            } else {
+                threads = symbolic::mul(threads, ps);
+            }
+        };
+        for (const auto& d : plan_.cooperative_axes()) {
+            mul_axis(d);
+        }
+        if (out.coop_axes.empty()) {
+            for (const auto& d : plan_.private_axes()) {
+                mul_axis(d);
+            }
+        }
+        // Only a genuine cooperative count (>1 thread) drives the unrollable loop. A
+        // product of 1 means no cooperating axis resolved here (e.g. a whole-block
+        // copy whose block size is a kernel-global property, not a tile axis) — leave
+        // it null so codegen keeps the correct runtime thread-strided loop rather than
+        // a degenerate 1-thread sweep.
+        if (known && !symbolic::eq(threads, symbolic::integer(1))) {
+            out.coop_threads = threads;
+        }
+    }
+
     return out;
 }
 
@@ -1024,7 +1061,7 @@ void LocalStorage::emit_copy_node(
     auto& src_acc = builder.add_access(copy_block, copy_in ? container_ : local_name_);
     const size_t bytes = types::bit_width(pointer_type.primitive_type()) / 8;
     auto& node = builder.add_library_node<tiles::TileCopyNode>(
-        copy_block, loop_.debug_info(), impl, copy.plan, direction, bytes, copy.guard, copy.coop_axes
+        copy_block, loop_.debug_info(), impl, copy.plan, direction, bytes, copy.guard, copy.coop_axes, copy.coop_threads
     );
     builder.add_computational_memlet(copy_block, dst_acc, node, "_dst", {}, pointer_type);
     builder.add_computational_memlet(copy_block, src_acc, node, "_src", {}, pointer_type);

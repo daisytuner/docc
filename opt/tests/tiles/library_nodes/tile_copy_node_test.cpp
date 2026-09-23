@@ -356,6 +356,51 @@ TEST(TileCopyNodeTest, CudaCooperativeDispatcherEmitsThreadStridedLoop) {
     EXPECT_NE(code.find("] = (reinterpret_cast<float *>"), std::string::npos) << code;
 }
 
+// With a known cooperating thread count, the loop gets a fixed (unrollable) trip
+// count over `__tc_i` instead of the runtime thread-strided form.
+TEST(TileCopyNodeTest, CudaCooperativeDispatcherEmitsFixedCountLoopWhenThreadsKnown) {
+    auto builder = make_builder();
+    types::Scalar elem(types::PrimitiveType::Float);
+    types::Pointer ptr(elem);
+    types::Array buf_type(elem, symbolic::integer(64));
+    builder.add_container("g", ptr);
+    builder.add_container("buf", buf_type);
+
+    auto& block = builder.add_block(builder.subject().root());
+    auto& g = builder.add_access(block, "g");
+    auto& buf = builder.add_access(block, "buf");
+    tiles::TiledCopy plan;
+    plan.src = tiles::Layout({symbolic::integer(64)}, {symbolic::integer(1)}, symbolic::integer(0));
+    plan.dst = tiles::Layout({symbolic::integer(64)}, {symbolic::integer(1)}, symbolic::integer(0));
+    plan.atom = tiles::CopyAtom::ScalarSync;
+    // coop_threads = 32 (symbolic, folds) -> 64 elems / 32 threads = 2 iterations.
+    auto& node = static_cast<tiles::TileCopyNode&>(builder.add_library_node<tiles::TileCopyNode>(
+        block,
+        DebugInfo(),
+        data_flow::ImplementationType_NONE,
+        plan,
+        tiles::CopyDirection::In,
+        4,
+        tiles::TileGuard{},
+        std::vector<int>{},
+        symbolic::integer(32)
+    ));
+    builder.add_computational_memlet(block, buf, node, "_dst", {}, ptr);
+    builder.add_computational_memlet(block, g, node, "_src", {}, ptr);
+
+    codegen::CUDALanguageExtension le(builder.subject());
+    cuda::tiles::TileCopyNodeDispatcher dispatcher(le, builder.subject(), block.dataflow(), node);
+    codegen::PrettyPrinter stream, globals;
+    codegen::CodeSnippetFactory snippets;
+    dispatcher.dispatch(stream, globals, snippets);
+
+    const std::string code = stream.str();
+    EXPECT_NE(code.find("for (int __tc_i = 0; __tc_i < ((64) + (32) * 1 - 1) / ((32) * 1); __tc_i++)"), std::string::npos)
+        << code;
+    EXPECT_NE(code.find("__tc_c = 1 * (__tc_i * (32) + __tc_tid)"), std::string::npos) << code;
+    EXPECT_NE(code.find("if (__tc_c < 64)"), std::string::npos) << code;
+}
+
 TEST(TileCopyNodeTest, CudaVectorAtomEmitsWidenedTransfer) {
     auto builder = make_builder();
     types::Scalar elem(types::PrimitiveType::Float);

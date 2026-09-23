@@ -37,6 +37,11 @@ class TileCopyNode : public data_flow::LibraryNode {
     /// into `plan.dst`/`plan.src` offsets) while these axes split the tile — compatible
     /// with a ragged per-thread guard, unlike a whole-block fill.
     std::vector<int> coop_axes_;
+    /// Symbolic count of cooperating threads over @ref coop_axes_ (the schedule's
+    /// parallel_size product; null = unknown). When set, the dispatcher emits a
+    /// from-zero copy loop whose trip count `ceil(size/(threads*factor))` folds to a
+    /// constant the backend can unroll; null falls back to a runtime thread-strided loop.
+    symbolic::Expression coop_threads_;
 
 public:
     TileCopyNode(
@@ -49,7 +54,8 @@ public:
         CopyDirection direction,
         size_t bytes,
         TileGuard guard = {},
-        std::vector<int> coop_axes = {}
+        std::vector<int> coop_axes = {},
+        symbolic::Expression coop_threads = {}
     );
 
     const TiledCopy& plan() const { return plan_; }
@@ -73,6 +79,9 @@ public:
     }
 
     const std::vector<int>& coop_axes() const { return coop_axes_; }
+
+    /// Symbolic cooperating thread count (null = unknown; runtime loop).
+    const symbolic::Expression& coop_threads() const { return coop_threads_; }
 
 
     void validate(const Function& function) const override;
