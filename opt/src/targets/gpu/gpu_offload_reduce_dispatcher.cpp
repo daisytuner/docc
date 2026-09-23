@@ -277,20 +277,28 @@ GPUOffloadReduceDispatcher::GPUOffloadReduceDispatcher(
 
 void GPUOffloadReduceDispatcher::validate_before_dispatch(analysis::AnalysisManager& analysis_manager) {
     auto& index_loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
+    std::vector<structured_control_flow::StructuredLoop*> inner_loops;
+    for (auto* descendant : index_loop_analysis.descendants(&node_)) {
+        if (auto* inner = dynamic_cast<structured_control_flow::StructuredLoop*>(descendant)) {
+            inner_loops.push_back(inner);
+        }
+    }
+    std::sort(inner_loops.begin(), inner_loops.end(), [&](auto* left, auto* right) {
+        return index_loop_analysis.ancestors(left).size() > index_loop_analysis.ancestors(right).size();
+    });
     multi_output_layouts_.clear();
     for (const auto& r : node_.reductions()) {
         auto index = accumulator_index(node_.root(), r.container, node_.indvar());
         auto base = index;
         symbolic::Expression span = symbolic::one();
         bool multi_output = false;
-        for (auto* descendant : index_loop_analysis.descendants(&node_)) {
-            auto* inner = dynamic_cast<structured_control_flow::StructuredLoop*>(descendant);
-            if (inner == nullptr || !symbolic::uses(index, inner->indvar())) {
+        for (auto* inner : inner_loops) {
+            if (!symbolic::uses(base, inner->indvar())) {
                 continue;
             }
-            auto origin = SymEngine::subs(index, {{inner->indvar(), symbolic::zero()}});
+            auto origin = SymEngine::subs(base, {{inner->indvar(), symbolic::zero()}});
             auto coefficient =
-                symbolic::expand(symbolic::sub(SymEngine::subs(index, {{inner->indvar(), symbolic::one()}}), origin));
+                symbolic::expand(symbolic::sub(SymEngine::subs(base, {{inner->indvar(), symbolic::one()}}), origin));
             auto count = inner->num_iterations();
             auto stride = inner->stride();
             auto positive_integer = [](const symbolic::Expression& expression) {
@@ -299,14 +307,14 @@ void GPUOffloadReduceDispatcher::validate_before_dispatch(analysis::AnalysisMana
             };
             if (!positive_integer(count) || !positive_integer(stride) || !positive_integer(coefficient) ||
                 !symbolic::
-                    eq(symbolic::expand(index),
+                    eq(symbolic::expand(base),
                        symbolic::expand(symbolic::add(origin, symbolic::mul(coefficient, inner->indvar()))))) {
                 throw InvalidSDFGException(
                     "GPUOffloadReduceDispatcher: accumulator '" + r.container +
                     "' requires a constant positive affine inner-loop footprint for '" + inner->indvar()->get_name() +
                     "' (count=" + (count.is_null() ? "unknown" : count->__str__()) + ", stride=" +
                     (stride.is_null() ? "unknown" : stride->__str__()) + ", coefficient=" + coefficient->__str__() +
-                    ", index=(" + symbolic::expand(index)->__str__() + "), origin+coefficient*inner_indvar=(" +
+                    ", index=(" + symbolic::expand(base)->__str__() + "), origin+coefficient*inner_indvar=(" +
                     symbolic::expand(symbolic::add(origin, symbolic::mul(coefficient, inner->indvar())))->__str__() +
                     "))"
                 );
@@ -320,7 +328,10 @@ void GPUOffloadReduceDispatcher::validate_before_dispatch(analysis::AnalysisMana
         for (auto* loop : index_loop_analysis.descendants(&node_)) {
             auto* inner = dynamic_cast<structured_control_flow::StructuredLoop*>(loop);
             if (inner && symbolic::uses(base, inner->indvar())) {
-                throw InvalidSDFGException("GPUOffloadReduceDispatcher: accumulator footprint depends on an inner loop"
+                throw InvalidSDFGException(
+                    "GPUOffloadReduceDispatcher: accumulator '" + r.container + "' footprint base '" + base->__str__() +
+                    "' depends on inner loop '" + inner->indvar()->get_name() + "' inside reduction '" +
+                    node_.indvar()->get_name() + "'"
                 );
             }
         }
