@@ -77,12 +77,6 @@ void GPUOffloadBaseDispatcher::dispatch_node(
     auto& used_arguments = arguments_analysis.arguments(analysis_manager, node_);
     auto& locals = arguments_analysis.locals(analysis_manager, node_);
 
-    // TODO remove me!!!
-    visualizer::DotVisualizer::writeToFile(sdfg_, "debug_test_" + std::to_string(viz_count) + ".dot");
-    serializer::JSONSerializer::writeToFile(sdfg_, "debug_test_" + std::to_string(viz_count) + ".json");
-    viz_count++;
-    // TODO remove me!!!
-
     this->validate_before_dispatch(analysis_manager);
 
     // filter indvar
