@@ -36,19 +36,18 @@ set(SOURCE_FILES
     src/parallelization/passes/for_classification.cpp
     src/tiles/analysis/tile_analysis.cpp
     src/tiles/analysis/reduction_analysis.cpp
-    src/tiles/layout.cpp
     src/tiles/locality.cpp
     src/tiles/swizzle.cpp
     src/tiles/tile.cpp
     src/tiles/buffer_layout.cpp
     src/tiles/tiled_copy.cpp
-    src/tiles/tiled_copy_emit.cpp
-    src/tiles/library_nodes/async_copy_node.cpp
+    src/tiles/library_nodes/pipeline_node.cpp
+    src/tiles/library_nodes/tile_copy_node.cpp
     src/tiles/transformations/local_storage.cpp
     src/tiles/transformations/software_pipelining.cpp
     src/tiles/transformations/tile_fusion.cpp
+    src/tiles/transformations/tile_guard_normalization.cpp
     src/tiles/transformations/tile_vectorizer.cpp
-    src/tiles/vectorize/copy_widen.cpp
     src/passes/code_motion/extended_block_hoisting.cpp
     src/passes/code_motion/extended_block_sorting.cpp
     src/passes/collapse_pass.cpp
@@ -93,7 +92,8 @@ set(SOURCE_FILES
     src/targets/cuda/blas/dot.cpp
     src/targets/cuda/blas/gemm.cpp
     src/targets/cuda/blas/utils.cpp
-    src/targets/cuda/tiles/async_copy_node.cpp
+    src/targets/cuda/tiles/pipeline_node.cpp
+    src/targets/cuda/tiles/tile_copy_node.cpp
     src/targets/cuda/cuda_data_offloading_node.cpp
     src/targets/cuda/cuda_map_dispatcher.cpp
     src/targets/cuda/cuda_offload_dispatcher_strategy.cpp
@@ -123,7 +123,8 @@ set(SOURCE_FILES
     src/targets/rocm/blas/gemm_handtuned.cpp
     src/targets/rocm/blas/gemm.cpp
     src/targets/rocm/blas/utils.cpp
-    src/targets/rocm/tiles/async_copy_node.cpp
+    src/targets/rocm/tiles/pipeline_node.cpp
+    src/targets/rocm/tiles/tile_copy_node.cpp
     src/targets/rocm/math/tensor/batched_matmul_expander.cpp
     src/targets/rocm/math/tensor/concat_expander.cpp
     src/targets/rocm/plugin.cpp

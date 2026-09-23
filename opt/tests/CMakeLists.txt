@@ -14,10 +14,9 @@ set(TEST_FILES
     tiles/tile_analysis_test.cpp
     tiles/reduction_analysis_test.cpp
     tiles/locality_test.cpp
-    tiles/tiled_copy_test.cpp
     tiles/buffer_layout_test.cpp
-    tiles/tiled_copy_emit_test.cpp
-    tiles/library_nodes/async_copy_node_test.cpp
+    tiles/library_nodes/pipeline_node_test.cpp
+    tiles/library_nodes/tile_copy_node_test.cpp
     tiles/transformations/tile_fusion_test.cpp
     tiles/transformations/software_pipelining_test.cpp
     tiles/transformations/tile_vectorizer_test.cpp

@@ -26,14 +26,14 @@ TileAxis axis(Role r, Level lvl) {
 TEST(TileTest, RequiredSpacePicksCoarsestCooperative) {
     // Fully private -> registers.
     {
-        Tile t("", Layout{}, {axis(Role::Private, Level::Group)}, /*reads=*/true, /*writes=*/false);
+        Tile t("", Layout({}), {axis(Role::Private, Level::Group)}, /*reads=*/true, /*writes=*/false);
         EXPECT_FALSE(t.cooperative());
         EXPECT_EQ(t.required_space(), Space::Register);
     }
 
     // Block-cooperative (private grid axis) -> shared.
     {
-        Tile t("", Layout{}, {axis(Role::Private, Level::Device), axis(Role::Cooperative, Level::Group)}, true, false);
+        Tile t("", Layout({}), {axis(Role::Private, Level::Device), axis(Role::Cooperative, Level::Group)}, true, false);
         EXPECT_TRUE(t.cooperative());
         EXPECT_EQ(t.required_space(), Space::Shared);
         EXPECT_EQ(t.cooperative_axes().size(), 1u);
@@ -43,14 +43,17 @@ TEST(TileTest, RequiredSpacePicksCoarsestCooperative) {
     // Grid-cooperative dominates -> global.
     {
         Tile
-            t("", Layout{}, {axis(Role::Cooperative, Level::Device), axis(Role::Cooperative, Level::Group)}, true, false
-            );
+            t("",
+              Layout({}),
+              {axis(Role::Cooperative, Level::Device), axis(Role::Cooperative, Level::Group)},
+              true,
+              false);
         EXPECT_EQ(t.required_space(), Space::Global);
     }
 
     // Warp-cooperative only -> registers (shuffle).
     {
-        Tile t("", Layout{}, {axis(Role::Cooperative, Level::Subgroup)}, true, false);
+        Tile t("", Layout({}), {axis(Role::Cooperative, Level::Subgroup)}, true, false);
         EXPECT_EQ(t.required_space(), Space::Register);
     }
 }

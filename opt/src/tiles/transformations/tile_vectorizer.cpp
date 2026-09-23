@@ -11,10 +11,10 @@
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
-#include "sdfg/tiles/library_nodes/async_copy_node.h"
+#include "sdfg/tiles/library_nodes/pipeline_node.h"
+#include "sdfg/tiles/library_nodes/tile_copy_node.h"
 #include "sdfg/tiles/tile.h"
 #include "sdfg/tiles/tile_target_registry.h"
-#include "sdfg/tiles/vectorize/copy_widen.h"
 
 namespace sdfg {
 namespace transformations {
@@ -24,49 +24,81 @@ namespace {
 using structured_control_flow::Block;
 using structured_control_flow::ControlFlowNode;
 
-// A GPU thread-scheduled map — the coverage map that drives a cooperative copy.
-bool is_gpu_coverage_map(structured_control_flow::Map& map) {
-    return tiles::AxisSchedule::classify_level(map.schedule_type()).has_value();
-}
-
-// The copy library node in @p block (CpAsync or VectorCopy), or nullptr.
-data_flow::LibraryNode* copy_node_in(Block& block) {
+// The whole-copy TileCopyNode in @p block, or nullptr.
+tiles::TileCopyNode* tile_copy_node_in(Block& block) {
     for (auto& node : block.dataflow().nodes()) {
-        if (dynamic_cast<tiles::CpAsyncCopyNode*>(&node) || dynamic_cast<tiles::VectorCopyNode*>(&node)) {
-            return dynamic_cast<data_flow::LibraryNode*>(&node);
+        if (auto* n = dynamic_cast<tiles::TileCopyNode*>(&node)) {
+            return n;
         }
     }
     return nullptr;
 }
 
-// Does @p block hold a single scalar `assign` copy (one in, one out, both access
-// nodes)? That is the shape LocalStorage emits before any widening.
-bool is_scalar_copy(Block& block) {
-    auto& df = block.dataflow();
-    data_flow::Tasklet* tk = nullptr;
-    for (auto& node : df.nodes()) {
-        if (auto* t = dynamic_cast<data_flow::Tasklet*>(&node)) {
-            if (tk != nullptr) {
-                return false; // more than one tasklet
-            }
-            tk = t;
-        }
-    }
-    if (tk == nullptr || tk->code() != data_flow::TaskletCode::assign) {
+// Widen a scalar/async TileCopyNode to the widest legal vector transfer, deriving
+// contiguity/alignment from the plan layouts: the inner (fastest) tile dim must be
+// unit-stride on both sides, the inner extent and total must be a multiple of the
+// coalescing factor, and the outer source strides must keep each inner run
+// factor-aligned. A ScalarSync copy becomes VectorSync; a (pipelined) CpAsync copy
+// keeps its atom and only widens the transfer. Mutates atom/bytes; true if widened.
+bool widen_tile_copy_node(tiles::TileCopyNode& node) {
+    if (node.atom() != tiles::CopyAtom::ScalarSync && node.atom() != tiles::CopyAtom::CpAsync) {
         return false;
     }
-    size_t ins = 0, outs = 0;
-    for (auto& m : df.in_edges(*tk)) {
-        ins++;
-        if (dynamic_cast<data_flow::AccessNode*>(&m.src()) == nullptr) return false;
+    const auto& plan = node.plan();
+    if (plan.src.dims() == 0) {
+        return false;
     }
-    for (auto& m : df.out_edges(*tk)) {
-        outs++;
-        if (dynamic_cast<data_flow::AccessNode*>(&m.dst()) == nullptr) return false;
+    // A swizzled buffer XORs the inner offset, so consecutive tile coords are not
+    // consecutive in the buffer: a widened vector/async move would scatter.
+    if (!plan.dst_swizzle.is_identity()) {
+        return false;
     }
-    return ins == 1 && outs == 1;
+    if (!symbolic::eq(plan.src.strides().back(), symbolic::integer(1)) ||
+        !symbolic::eq(plan.dst.strides().back(), symbolic::integer(1))) {
+        return false;
+    }
+    auto* inner_i = dynamic_cast<const SymEngine::Integer*>(plan.src.shape().back().get());
+    auto total = plan.src.total_elements();
+    auto* total_i = dynamic_cast<const SymEngine::Integer*>(total.get());
+    if (inner_i == nullptr || total_i == nullptr) {
+        return false;
+    }
+    const long long inner_n = inner_i->as_int();
+    const long long total_n = total_i->as_int();
+    const size_t elem_bytes = node.bytes();
+    if (elem_bytes == 0) {
+        return false;
+    }
+    for (size_t width : {size_t{16}, size_t{8}}) {
+        if (width <= elem_bytes || width % elem_bytes != 0) {
+            continue;
+        }
+        const long long factor = static_cast<long long>(width / elem_bytes);
+        if (inner_n % factor != 0 || total_n % factor != 0) {
+            continue;
+        }
+        bool outer_ok = true;
+        for (size_t d = 0; d + 1 < plan.src.strides().size(); ++d) {
+            auto* s = dynamic_cast<const SymEngine::Integer*>(plan.src.strides()[d].get());
+            if (s == nullptr || s->as_int() % factor != 0) {
+                outer_ok = false;
+                break;
+            }
+        }
+        if (!outer_ok) {
+            continue;
+        }
+        node.set_bytes(width);
+        if (node.atom() == tiles::CopyAtom::ScalarSync) {
+            node.set_atom(tiles::CopyAtom::VectorSync);
+        }
+        return true;
+    }
+    return false;
 }
 
+// Does @p block hold a single scalar `assign` copy (one in, one out, both access
+// nodes)? That is the shape LocalStorage emits before any widening.
 // The nearest enclosing sequential (non-Map) loop — the pipeline panel loop.
 structured_control_flow::StructuredLoop* enclosing_panel_loop(ControlFlowNode& from) {
     ControlFlowNode* n = from.get_parent();
@@ -81,14 +113,14 @@ structured_control_flow::StructuredLoop* enclosing_panel_loop(ControlFlowNode& f
     return nullptr;
 }
 
-// Sum the cp.async transfer words (bytes / 4) over @p scope's blocks.
+// Sum the cp.async transfer words (bytes / 4) over @p scope's TileCopyNodes.
 size_t sum_cp_async_words(ControlFlowNode& scope) {
     size_t words = 0;
     std::function<void(ControlFlowNode&)> walk = [&](ControlFlowNode& n) {
         if (auto* block = dynamic_cast<Block*>(&n)) {
             for (auto& node : block->dataflow().nodes()) {
-                if (auto* cp = dynamic_cast<tiles::CpAsyncCopyNode*>(&node)) {
-                    words += cp->bytes() / 4;
+                if (auto* tc = dynamic_cast<tiles::TileCopyNode*>(&node)) {
+                    if (tc->atom() == tiles::CopyAtom::CpAsync) words += tc->bytes() / 4;
                 }
             }
         } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&n)) {
@@ -112,24 +144,22 @@ TileVectorizer::TileVectorizer(structured_control_flow::StructuredLoop& loop) : 
 std::string TileVectorizer::name() const { return "TileVectorizer"; }
 
 bool TileVectorizer::can_be_applied(builder::StructuredSDFGBuilder&, analysis::AnalysisManager&) {
-    // Applicable when the subtree holds at least one cooperative copy to widen: a
-    // scalar copy under a GPU coverage map, or an already-lowered copy node.
+    // Applicable when the subtree holds at least one widenable cooperative copy: a
+    // TileCopyNode whose atom is still ScalarSync or (pipelined) CpAsync.
     bool found = false;
     std::function<void(ControlFlowNode&)> scan = [&](ControlFlowNode& n) {
         if (found) {
             return;
         }
-        if (auto* map = dynamic_cast<structured_control_flow::Map*>(&n)) {
-            if (is_gpu_coverage_map(*map)) {
-                for (size_t j = 0; j < map->root().size(); j++) {
-                    if (auto* b = dynamic_cast<Block*>(&map->root().at(j))) {
-                        if (copy_node_in(*b) != nullptr || is_scalar_copy(*b)) {
-                            found = true;
-                            return;
-                        }
-                    }
+        if (auto* block = dynamic_cast<Block*>(&n)) {
+            if (auto* tc = tile_copy_node_in(*block)) {
+                if (tc->atom() == tiles::CopyAtom::ScalarSync || tc->atom() == tiles::CopyAtom::CpAsync) {
+                    found = true;
+                    return;
                 }
             }
+        }
+        if (auto* map = dynamic_cast<structured_control_flow::Map*>(&n)) {
             scan(map->root());
         } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&n)) {
             for (size_t i = 0; i < seq->size(); i++) scan(seq->at(i));
@@ -144,24 +174,16 @@ bool TileVectorizer::can_be_applied(builder::StructuredSDFGBuilder&, analysis::A
 }
 
 void TileVectorizer::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
-    // Collect targets first (widening mutates the graph): scalar copy blocks (with
-    // the resolved backend impl for the node they become) and existing copy nodes.
-    std::vector<std::pair<Block*, data_flow::ImplementationType>> scalar_copies;
-    std::vector<std::pair<Block*, data_flow::LibraryNode*>> node_copies;
+    // Collect the copy nodes first (widening mutates the graph), then widen each to
+    // the widest legal vector/async transfer.
+    std::vector<tiles::TileCopyNode*> tile_copies;
     std::function<void(ControlFlowNode&)> collect = [&](ControlFlowNode& n) {
-        if (auto* map = dynamic_cast<structured_control_flow::Map*>(&n)) {
-            if (is_gpu_coverage_map(*map)) {
-                auto impl = tiles::TileTargetRegistry::instance().implementation_type(map->schedule_type().value());
-                for (size_t j = 0; j < map->root().size(); j++) {
-                    if (auto* b = dynamic_cast<Block*>(&map->root().at(j))) {
-                        if (auto* cn = copy_node_in(*b)) {
-                            node_copies.emplace_back(b, cn);
-                        } else if (is_scalar_copy(*b)) {
-                            scalar_copies.emplace_back(b, impl);
-                        }
-                    }
-                }
+        if (auto* block = dynamic_cast<Block*>(&n)) {
+            if (auto* tc = tile_copy_node_in(*block)) {
+                tile_copies.push_back(tc);
             }
+        }
+        if (auto* map = dynamic_cast<structured_control_flow::Map*>(&n)) {
             collect(map->root());
         } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&n)) {
             for (size_t i = 0; i < seq->size(); i++) collect(seq->at(i));
@@ -173,13 +195,8 @@ void TileVectorizer::apply(builder::StructuredSDFGBuilder& builder, analysis::An
     };
     collect(loop_.root());
 
-    for (auto& [block, node] : node_copies) {
-        auto* cp = dynamic_cast<tiles::CpAsyncCopyNode*>(node);
-        size_t cur = cp ? cp->bytes() : static_cast<tiles::VectorCopyNode*>(node)->bytes();
-        tiles::widen_existing_copy(builder, *block, *node, cur);
-    }
-    for (auto& [block, impl] : scalar_copies) {
-        tiles::rewrite_cooperative_copy(builder, *block, /*allow_vectorize=*/true, tiles::CopyTransfer::VectorSync, impl);
+    for (auto* tc : tile_copies) {
+        widen_tile_copy_node(*tc);
     }
 
     // Recompute each pipeline wait's loads_per_group from the (now widened) cp.async

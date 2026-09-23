@@ -144,7 +144,12 @@ std::optional<tiles::Tile> build_tile(
 
     auto axes = tiles::TileAxis::enclosing(loop, mt.min_subset);
     const auto summary = TileAnalysis::summarize(sdfg, loop, container);
-    return tiles::Tile(container, tiles::Layout::from_tensor(tl), std::move(axes), summary.reads, summary.writes);
+    // TensorLayout is row-major (dim 0 outermost); the tiles geometry is colex
+    // (dim 0 fastest), so reverse the mode order at the boundary.
+    symbolic::MultiExpression shape(tl.shape().rbegin(), tl.shape().rend());
+    symbolic::MultiExpression stride(tl.strides().rbegin(), tl.strides().rend());
+    tiles::Layout source(shape, stride, tl.offset());
+    return tiles::Tile(container, source, std::move(axes), summary.reads, summary.writes);
 }
 
 } // namespace

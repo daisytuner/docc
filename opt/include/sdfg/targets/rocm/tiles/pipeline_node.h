@@ -1,42 +1,10 @@
 #pragma once
 
-#include "sdfg/tiles/library_nodes/async_copy_node.h"
+#include "sdfg/tiles/library_nodes/pipeline_node.h"
 
 namespace sdfg {
 namespace rocm {
 namespace tiles {
-
-class CpAsyncCopyNodeDispatcher : public codegen::LibraryNodeDispatcher {
-public:
-    CpAsyncCopyNodeDispatcher(
-        codegen::LanguageExtension& language_extension,
-        const Function& function,
-        const data_flow::DataFlowGraph& data_flow_graph,
-        const ::sdfg::tiles::CpAsyncCopyNode& node
-    );
-
-    void dispatch_code_with_edges(
-        codegen::CodegenOutput& out,
-        std::vector<codegen::DispatchInput>& inputs,
-        std::vector<codegen::DispatchOutput>& outputs
-    ) override;
-};
-
-class VectorCopyNodeDispatcher : public codegen::LibraryNodeDispatcher {
-public:
-    VectorCopyNodeDispatcher(
-        codegen::LanguageExtension& language_extension,
-        const Function& function,
-        const data_flow::DataFlowGraph& data_flow_graph,
-        const ::sdfg::tiles::VectorCopyNode& node
-    );
-
-    void dispatch_code_with_edges(
-        codegen::CodegenOutput& out,
-        std::vector<codegen::DispatchInput>& inputs,
-        std::vector<codegen::DispatchOutput>& outputs
-    ) override;
-};
 
 class PipelineCommitNodeDispatcher : public codegen::LibraryNodeDispatcher {
 public:

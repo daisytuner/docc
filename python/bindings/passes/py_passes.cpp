@@ -7,6 +7,7 @@
 #include <sdfg/passes/scheduler/loop_scheduling_pass.h>
 #include <sdfg/passes/symbolic/symbol_promotion.h>
 #include <sdfg/passes/symbolic/symbol_propagation.h>
+#include <sdfg/tiles/transformations/tile_guard_normalization.h>
 #include <sdfg/transformations/recorder.h>
 
 #include "analysis/py_analysis.h"
@@ -65,6 +66,21 @@ void register_passes(py::module& m) {
         .def("__repr__", [](SyncConditionPropagation& self) {
             std::ostringstream oss;
             oss << "<SyncConditionPropagation name='" << self.name() << "'>";
+            return oss.str();
+        });
+
+    // TileGuardNormalization pass
+    py::class_<sdfg::tiles::TileGuardNormalization, Pass>(m, "TileGuardNormalization")
+        .def(
+            py::init<>(),
+            "Create a tile-copy guard normalization pass.\n\n"
+            "Re-discharges every TileCopyNode's ragged boundary guard against the\n"
+            "current assumptions, dropping guard dims a later pass (loop peeling,\n"
+            "condition propagation) has proven fully covering."
+        )
+        .def("__repr__", [](sdfg::tiles::TileGuardNormalization& self) {
+            std::ostringstream oss;
+            oss << "<TileGuardNormalization name='" << self.name() << "'>";
             return oss.str();
         });
 

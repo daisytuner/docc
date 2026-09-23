@@ -92,7 +92,7 @@ public:
             shape.append(tile_eval_const(s));
         }
         d["shape"] = shape;
-        d["size"] = tile_eval_const(layout.size());
+        d["size"] = tile_eval_const(layout.total_elements());
         return d;
     }
 };
