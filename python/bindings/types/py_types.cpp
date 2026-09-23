@@ -1,6 +1,7 @@
 #include "py_types.h"
 
 #include <sdfg/symbolic/symbolic.h>
+#include <sdfg/tiles/buffer_layout.h>
 #include <sdfg/types/array.h>
 #include <sdfg/types/pointer.h>
 #include <sdfg/types/scalar.h>
@@ -81,6 +82,14 @@ void register_types(py::module& m) {
             }),
             py::arg("element_type"),
             py::arg("num_elements")
+        )
+        .def(
+            py::init([](const IType& element_type, const std::string& num_elements, const StorageType& storage_type) {
+                return new Array(storage_type, 0, "", element_type, sdfg::symbolic::parse(num_elements));
+            }),
+            py::arg("element_type"),
+            py::arg("num_elements"),
+            py::arg("storage_type")
         )
         .def_property_readonly("element_type", &Array::element_type)
         .def_property_readonly("num_elements", [](const Array& self) { return self.num_elements()->__str__(); });
@@ -198,4 +207,46 @@ void register_types(py::module& m) {
         )
         .def("is_contiguous", &Tensor::is_contiguous)
         .def("is_tight", &Tensor::is_tight);
+
+    // Canonical packed-buffer geometry from the tiles module: given a tile shape
+    // and a BufferKind ("MultiDim"/"Transposed"/"Padded"/"Linearized"), return the
+    // buffer's affine layout as a Tensor — so callers don't hand-roll strides.
+    m.def(
+        "tile_buffer_layout",
+        [](const Scalar& element_type,
+           const std::vector<std::string>& tile_sizes,
+           const std::string& kind,
+           const std::vector<std::string>& slot_sizes) -> Tensor* {
+            sdfg::symbolic::MultiExpression tiles_e, slots_e;
+            for (const auto& s : tile_sizes) tiles_e.push_back(sdfg::symbolic::parse(s));
+            for (const auto& s : slot_sizes) slots_e.push_back(sdfg::symbolic::parse(s));
+            sdfg::tiles::BufferKind bk;
+            if (kind == "MultiDim")
+                bk = sdfg::tiles::BufferKind::MultiDim;
+            else if (kind == "Transposed")
+                bk = sdfg::tiles::BufferKind::Transposed;
+            else if (kind == "Padded")
+                bk = sdfg::tiles::BufferKind::Padded;
+            else if (kind == "Linearized")
+                bk = sdfg::tiles::BufferKind::Linearized;
+            else if (kind == "Swizzle")
+                bk = sdfg::tiles::BufferKind::Swizzle;
+            else
+                throw std::invalid_argument("tile_buffer_layout: unknown BufferKind '" + kind + "'");
+            sdfg::symbolic::Expression inner = sdfg::symbolic::integer(1);
+            for (const auto& e : tiles_e) inner = sdfg::symbolic::mul(inner, e);
+            auto composed = sdfg::tiles::buffer_layout(slots_e, tiles_e, bk, inner);
+            if (!composed.swizzle.is_identity()) {
+                throw std::invalid_argument(
+                    "tile_buffer_layout: Swizzle is non-affine; carry it via the copy's dst_swizzle instead"
+                );
+            }
+            return new Tensor(element_type, composed.layout);
+        },
+        py::arg("element_type"),
+        py::arg("tile_sizes"),
+        py::arg("kind") = "MultiDim",
+        py::arg("slot_sizes") = std::vector<std::string>{},
+        "Canonical packed-buffer geometry (from tiles::buffer_layout) as a Tensor."
+    );
 }
