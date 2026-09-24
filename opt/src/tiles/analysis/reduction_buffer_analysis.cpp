@@ -338,9 +338,19 @@ ReductionBufferInfo ReductionBufferAnalysis::
         if (symbolic::uses(base, reduction.indvar())) {
             throw InvalidSDFGException("footprint origin depends on the reduction variable");
         }
-        const types::IType* type = &sdfg_.type(container);
-        if (auto* pointer = dynamic_cast<const types::Pointer*>(type); pointer && !pointer->has_pointee_type()) {
-            type = analysis_manager_->get<analysis::TypeAnalysis>().get_outer_type(container);
+        auto& type_analysis = analysis_manager_->get<analysis::TypeAnalysis>();
+        const types::IType* type = type_analysis.get_outer_type(container);
+        if (!type && materialized) {
+            const auto& properties = reduction.schedule_type().properties();
+            for (const auto& prefix : {"reduction_private.", "reduction_shared."}) {
+                auto reference = properties.find(prefix + container);
+                if (reference != properties.end() && sdfg_.exists(reference->second)) {
+                    type = type_analysis.get_outer_type(reference->second);
+                    if (type) {
+                        break;
+                    }
+                }
+            }
         }
         if (!type) {
             throw InvalidSDFGException("unresolved accumulator element type");

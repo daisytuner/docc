@@ -12,6 +12,7 @@
 #include "sdfg/structured_control_flow/reduce.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/cuda/cuda.h"
+#include "sdfg/targets/cuda/cuda_data_offloading_node.h"
 #include "sdfg/targets/cuda/cuda_offload_dispatcher_strategy.h"
 #include "sdfg/targets/gpu/gpu_offload_reduce_dispatcher.h"
 #include "sdfg/targets/gpu/gpu_offload_schedule_type.h"
@@ -89,7 +90,8 @@ static std::string dispatch_block_reduce(
     bool declare_partials = false,
     bool nested = false,
     tiles::ReductionBufferInfo* buffer_info = nullptr,
-    bool materialize = true
+    bool materialize = true,
+    bool opaque_accumulator = false
 ) {
     builder::StructuredSDFGBuilder builder("red", FunctionType_CPU);
     auto& root = builder.subject().root();
@@ -101,6 +103,21 @@ static std::string dispatch_block_reduce(
     builder.add_container("i", int_desc);
     builder.add_container("A", pointer_type);
     builder.add_container("acc", pointer_type);
+    if (opaque_accumulator) {
+        builder.change_type("acc", types::Pointer(types::StorageType::NV_Generic(), 0, ""));
+        offloading::add_offloading_block<CUDADataOffloadingNode>(
+            builder,
+            root,
+            "acc",
+            "acc",
+            offloading::DataTransferDirection::NONE,
+            offloading::BufferLifecycle::ALLOC,
+            builder.subject().type("acc"),
+            DebugInfo(),
+            symbolic::integer(4),
+            symbolic::zero()
+        );
+    }
     if (declare_partials) {
         types::Array partials_type(types::StorageType::NV_Shared(), 0, "", base_desc, symbolic::integer(32));
         builder.add_container(partial_container, partials_type);
@@ -154,12 +171,24 @@ static std::string dispatch_block_reduce(
     if (materialize) {
         passes::ReductionSharedMemoryDelinearization reduction_buffers;
         reduction_buffers.run(builder, analysis_manager);
+        if (opaque_accumulator) {
+            EXPECT_FALSE(static_cast<const types::Pointer&>(builder.subject().type("acc")).has_pointee_type());
+            EXPECT_FALSE(reduction_buffers.run(builder, analysis_manager));
+            auto clone = builder.subject().clone();
+            EXPECT_NO_THROW(clone->validate());
+            analysis::AnalysisManager cloned_manager(*clone);
+            auto& cloned_reduce = static_cast<structured_control_flow::Reduce&>(clone->root().at(1));
+            const auto& cloned_info =
+                cloned_manager.get<tiles::ReductionBufferAnalysis>().require(cloned_reduce, "acc");
+            EXPECT_EQ(cloned_info.primitive, types::PrimitiveType::Float);
+        }
         if (nested) {
             EXPECT_NO_THROW(builder.subject().validate());
             auto clone = builder.subject().clone();
             EXPECT_NO_THROW(clone->validate());
             analysis::AnalysisManager cloned_manager(*clone);
-            auto& cloned_reduce = static_cast<structured_control_flow::Reduce&>(clone->root().at(0));
+            auto& cloned_reduce =
+                static_cast<structured_control_flow::Reduce&>(clone->root().at(opaque_accumulator ? 1 : 0));
             const auto& cloned_info =
                 cloned_manager.get<tiles::ReductionBufferAnalysis>().require(cloned_reduce, "acc");
             for (const auto& builtin : {symbolic::threadIdx_x(), symbolic::threadIdx_y(), symbolic::threadIdx_z()}) {
@@ -188,6 +217,17 @@ static std::string dispatch_block_reduce(
     codegen::PrettyPrinter main_stream;
     codegen::PrettyPrinter globals_stream;
     codegen::CodeSnippetFactory library_snippet_factory;
+    if (opaque_accumulator) {
+        auto& allocation = static_cast<structured_control_flow::Block&>(root.at(0));
+        auto* malloc_node = *allocation.dataflow().library_nodes().begin();
+        CUDADataOffloadingNodeDispatcher
+            allocation_dispatcher(language_extension, builder.subject(), allocation.dataflow(), *malloc_node);
+        codegen::PrettyPrinter allocation_stream;
+        allocation_dispatcher.dispatch(allocation_stream, globals_stream, library_snippet_factory);
+        EXPECT_EQ(language_extension.declaration("acc", builder.subject().type("acc")), "void* acc");
+        EXPECT_NE(allocation_stream.str().find("void* _dev;"), std::string::npos);
+        EXPECT_NE(allocation_stream.str().find("acc = _dev;"), std::string::npos);
+    }
     if (!materialize) {
         serializer::JSONSerializer serializer;
         const auto before = serializer.serialize(builder.subject());
@@ -217,12 +257,28 @@ static std::string dispatch_block_reduce(
     EXPECT_NE(source_snippet, nullptr);
     EXPECT_NE(header_snippet, nullptr);
     EXPECT_EQ(globals_stream.str().find("threadIdx."), std::string::npos);
+    if (opaque_accumulator) {
+        EXPECT_NE(globals_stream.str().find("void* __restrict__ acc"), std::string::npos);
+        EXPECT_NE(source_snippet->stream().str().find("reinterpret_cast<float *>(acc)[0]"), std::string::npos);
+    }
     return source_snippet->stream().str();
 }
 
 // Default block level → shared-memory halving tree, no atomics.
 TEST(CUDAOffloadReduceDispatcherTest, UnmaterializedReductionIsRejectedWithoutMutation) {
     dispatch_block_reduce(std::nullopt, "", false, false, nullptr, false);
+}
+
+TEST(CUDAOffloadReduceDispatcherTest, MaterializationPreservesOpaqueAccumulator) {
+    dispatch_block_reduce(std::nullopt, "", false, false, nullptr, true, true);
+}
+
+TEST(CUDAOffloadReduceDispatcherTest, NestedSharedPreservesOpaqueAccumulator) {
+    dispatch_block_reduce(std::nullopt, "", false, true, nullptr, true, true);
+}
+
+TEST(CUDAOffloadReduceDispatcherTest, GlobalPreservesOpaqueAccumulator) {
+    dispatch_block_reduce(gpu::ReduceStrategy::Global, "", false, false, nullptr, true, true);
 }
 
 TEST(CUDAOffloadReduceDispatcherTest, BlockLevelDefaultsToSharedTree) {

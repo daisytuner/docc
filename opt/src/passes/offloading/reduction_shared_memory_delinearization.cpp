@@ -180,12 +180,6 @@ bool ReductionSharedMemoryDelinearization::
         };
         declare(plan.info.private_buffer, *plan.info.private_bytes, false);
         declare(plan.info.shared_buffer, *plan.info.shared_bytes, true);
-        auto* pointer = dynamic_cast<const types::Pointer*>(&sdfg.type(plan.container));
-        if (pointer && !pointer->has_pointee_type()) {
-            builder.change_type(
-                plan.container, types::Pointer(pointer->storage_type(), 0, "", types::Scalar(*plan.info.primitive))
-            );
-        }
         auto schedule = plan.reduction->schedule_type();
         if (!plan.info.private_buffer.empty()) {
             schedule.set_property("reduction_private." + plan.container, plan.info.private_buffer);
