@@ -73,7 +73,7 @@ public:
     void dump_debug(const std::string& type, bool dump_dot = true, bool dump_json = true);
 
     void dump(
-        const std::string& path,
+        const std::filesystem::path& path,
         const std::string& type = "",
         bool dump_dot = false,
         bool dump_json = true,

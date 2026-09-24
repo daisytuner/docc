@@ -4,6 +4,8 @@
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/library_node.h"
+#include "sdfg/einsum/einsum_node.h"
+#include "sdfg/einsum/einsum_state.h"
 #include "sdfg/optimization_report/pass_report_consumer.h"
 #include "sdfg/passes/pass.h"
 #include "sdfg/structured_control_flow/block.h"
@@ -12,9 +14,31 @@
 namespace sdfg {
 namespace einsum {
 
+
 class EinsumDetectionPass : public passes::Pass {
 public:
     virtual std::string name() override { return "EinsumDetectionPass"; }
+
+    static bool find_einsum_core_ops(
+        EinsumTracker& state,
+        builder::StructuredSDFGBuilder& builder,
+        analysis::AnalysisManager& analysis_manager,
+        structured_control_flow::Block& block
+    );
+
+    static bool consume_input_operations(
+        EinsumTracker& state,
+        builder::StructuredSDFGBuilder& builder,
+        analysis::AnalysisManager& analysis_manager,
+        std::list<einsum::EinsumNode*>& queue
+    );
+
+    static bool consume_surrounding_loops(
+        EinsumTracker& state,
+        builder::StructuredSDFGBuilder& builder,
+        analysis::AnalysisManager& analysis_manager,
+        std::list<einsum::EinsumNode*> einsum_queue
+    );
 
     virtual bool run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
 };

@@ -225,6 +225,22 @@ std::optional<types::PrimitiveType> MatMulNode::uniform_quantization(const data_
     }
 }
 
+types::PrimitiveType MatMulNode::input_quantization() const {
+    if (fixed_quantization_ != QUANTIZATION_MATCH_INPUTS) {
+        return fixed_quantization_;
+    } else {
+        return this->primitive_type(get_parent());
+    }
+}
+
+types::PrimitiveType MatMulNode::output_quantization() const {
+    if (fixed_quantization_ != QUANTIZATION_MATCH_INPUTS) {
+        return fixed_quantization_;
+    } else {
+        return this->primitive_type(get_parent());
+    }
+}
+
 std::string MatMulNode::toStr() const {
     std::stringstream ss;
     ss << "MatMul(";
@@ -552,6 +568,24 @@ passes::LibNodeExpander::ExpandOutcome MatMulNode::expand(passes::LibNodeExpande
         // this libnode) or could not be transformed into a form that can be used as if
         return context.unable();
     }
+}
+
+data_flow::PointerAccessType MatMulNode::pointer_access_type(int input_idx) const {
+    if (input_idx == Y_INPUT_IDX) {
+        auto output_type = output_quantization();
+        return data_flow::PointerAccessMeta::create_generic(
+            data_flow::ConvexAccessPattern::create(layout_y_.max_accessed_byte_offset_from_ptr(output_type), false),
+            data_flow::ConvexAccessPattern::create(layout_y_.max_accessed_byte_offset_from_ptr(output_type), false),
+            true
+        );
+    } else if (input_idx == A_INPUT_IDX || input_idx == B_INPUT_IDX) {
+        auto input_type = input_quantization();
+        return data_flow::PointerAccessMeta::
+            create_read_only(layout_a_.max_accessed_byte_offset_from_ptr(input_type), true);
+    } else {
+        throw std::invalid_argument("MatMulNode: Invalid input index for pointer access type");
+    }
+    return TensorNode::pointer_access_type(input_idx);
 }
 
 nlohmann::json MatMulNodeSerializer::serialize(const data_flow::LibraryNode& library_node) {
