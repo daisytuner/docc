@@ -45,10 +45,14 @@ ComposedLayout buffer_layout(
         shape.push_back(slot_sizes[i]);
         stride.push_back(symbolic::mul(per_slot_block, product_of(slot_sizes, i + 1, slot_sizes.size())));
     }
-    // Tile dims (innermost): row-major within one per-slot block.
+    // Tile dims within one per-slot block: row-major, or column-major (dim 0
+    // fastest) for the transposed placement.
     for (size_t j = 0; j < tile_sizes.size(); ++j) {
         shape.push_back(tile_sizes[j]);
-        stride.push_back(product_of(tile_sizes, j + 1, tile_sizes.size()));
+        stride.push_back(
+            kind == BufferKind::Transposed ? product_of(tile_sizes, 0, j)
+                                           : product_of(tile_sizes, j + 1, tile_sizes.size())
+        );
     }
     Layout base(shape, stride, symbolic::integer(0));
 
@@ -97,27 +101,15 @@ symbolic::Expression PackedBuffer::inner_stride() const {
     return total;
 }
 
-std::vector<symbolic::Expression> PackedBuffer::delinearize_tile(const symbolic::Expression& flat) const {
-    std::vector<symbolic::Expression> decomp;
-    symbolic::Expression remainder = flat;
-    for (size_t i = 0; i < tile_sizes.size(); ++i) {
-        if (i + 1 < tile_sizes.size()) {
-            auto divisor = product_of(tile_sizes, i + 1, tile_sizes.size());
-            decomp.push_back(symbolic::div(remainder, divisor));
-            remainder = symbolic::mod(remainder, divisor);
-        } else {
-            decomp.push_back(remainder);
-        }
-    }
-    return decomp;
-}
-
 symbolic::MultiExpression PackedBuffer::axes() const {
     symbolic::MultiExpression out = slot_sizes;
     symbolic::Expression tile_total = product_of(tile_sizes, 0, tile_sizes.size());
     switch (kind) {
         case BufferKind::MultiDim:
             out.insert(out.end(), tile_sizes.begin(), tile_sizes.end());
+            break;
+        case BufferKind::Transposed:
+            out.insert(out.end(), tile_sizes.rbegin(), tile_sizes.rend());
             break;
         case BufferKind::Padded:
             out.push_back(inner_stride()); // one flat, padded per-slot block
@@ -137,6 +129,9 @@ symbolic::MultiExpression PackedBuffer::
     switch (kind) {
         case BufferKind::MultiDim:
             out.insert(out.end(), tile_indices.begin(), tile_indices.end());
+            break;
+        case BufferKind::Transposed:
+            out.insert(out.end(), tile_indices.rbegin(), tile_indices.rend());
             break;
         case BufferKind::Padded:
             out.push_back(rowmajor(tile_sizes, tile_indices));

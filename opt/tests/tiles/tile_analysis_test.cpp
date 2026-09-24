@@ -15,6 +15,28 @@
 
 using namespace sdfg;
 
+namespace {
+
+// Merge contiguous modes and drop unit modes so tests can assert on the layout's
+// essential structure independent of MLA's delinearization.
+tiles::Layout coalesce_modes(const tiles::Layout& a) {
+    symbolic::MultiExpression ns, nd;
+    for (size_t k = 0; k < static_cast<size_t>(a.dims()); ++k) {
+        if (symbolic::eq(a.shape()[k], symbolic::integer(1))) {
+            continue;
+        }
+        if (!ns.empty() && symbolic::eq(a.strides()[k], symbolic::mul(nd.back(), ns.back()))) {
+            ns.back() = symbolic::mul(ns.back(), a.shape()[k]);
+        } else {
+            ns.push_back(a.shape()[k]);
+            nd.push_back(a.strides()[k]);
+        }
+    }
+    return tiles::Layout(std::move(ns), std::move(nd), a.offset());
+}
+
+} // namespace
+
 // Sequential nest: no parallel axes, so the tile is private (registers).
 TEST(TileAnalysisTest, Sequential_NoAxes) {
     builder::StructuredSDFGBuilder builder("ta_seq", FunctionType_CPU);
@@ -56,9 +78,9 @@ TEST(TileAnalysisTest, Sequential_NoAxes) {
     EXPECT_EQ(tile->required_space(), tiles::Space::Register);
     EXPECT_TRUE(tile->reads());
     // Source: contiguous extent-8 tile, offset 0.
-    ASSERT_EQ(tile->source().rank(), 1u);
+    ASSERT_EQ(tile->source().dims(), 1);
     EXPECT_TRUE(symbolic::eq(tile->source().shape()[0], symbolic::integer(8)));
-    EXPECT_TRUE(symbolic::eq(tile->source().stride()[0], symbolic::integer(1)));
+    EXPECT_TRUE(symbolic::eq(tile->source().strides()[0], symbolic::integer(1)));
     EXPECT_TRUE(symbolic::eq(tile->source().offset(), symbolic::integer(0)));
 }
 
@@ -112,10 +134,10 @@ TEST(TileAnalysisTest, GpuPerThread_PrivateRegisters) {
     EXPECT_EQ(tile->required_space(), tiles::Space::Register);
     // Source offset folds the per-thread base i*8; the varying dim is extent-8.
     // (MLA delinearizes into an extent-1 i-mode + extent-8 t-mode; coalesce drops it.)
-    auto src = tiles::coalesce(tile->source());
-    ASSERT_EQ(src.rank(), 1u);
+    auto src = coalesce_modes(tile->source());
+    ASSERT_EQ(src.dims(), 1);
     EXPECT_TRUE(symbolic::eq(src.shape()[0], symbolic::integer(8)));
-    EXPECT_TRUE(symbolic::eq(src.stride()[0], symbolic::integer(1)));
+    EXPECT_TRUE(symbolic::eq(src.strides()[0], symbolic::integer(1)));
     EXPECT_TRUE(symbolic::eq(tile->source().offset(), symbolic::mul(i, symbolic::integer(8))));
 }
 
@@ -232,12 +254,12 @@ TEST(TileAnalysisTest, Box2D_MultiDimSource) {
     EXPECT_EQ(tile->required_space(), tiles::Space::Register);
     EXPECT_TRUE(tile->reads());
     // Colex source: inner j-mode (extent 32, stride 1), outer i-mode (extent 64, stride N).
-    auto src = tiles::coalesce(tile->source());
-    ASSERT_EQ(src.rank(), 2u);
+    auto src = coalesce_modes(tile->source());
+    ASSERT_EQ(src.dims(), 2);
     EXPECT_TRUE(symbolic::eq(src.shape()[0], symbolic::integer(32)));
-    EXPECT_TRUE(symbolic::eq(src.stride()[0], symbolic::integer(1)));
+    EXPECT_TRUE(symbolic::eq(src.strides()[0], symbolic::integer(1)));
     EXPECT_TRUE(symbolic::eq(src.shape()[1], symbolic::integer(64)));
-    EXPECT_TRUE(symbolic::eq(src.stride()[1], N));
+    EXPECT_TRUE(symbolic::eq(src.strides()[1], N));
     EXPECT_TRUE(symbolic::eq(tile->source().offset(), symbolic::add(symbolic::mul(N, i_tile), j_tile)));
 }
 
@@ -278,10 +300,10 @@ TEST(TileAnalysisTest, StridedColumn_WriteDirection) {
     EXPECT_FALSE(tile->reads());
     EXPECT_TRUE(tile->axes().empty());
     // Column is strided: coalesced source is extent-4, stride-8 (row length), at col 3.
-    auto src = tiles::coalesce(tile->source());
-    ASSERT_EQ(src.rank(), 1u);
+    auto src = coalesce_modes(tile->source());
+    ASSERT_EQ(src.dims(), 1);
     EXPECT_TRUE(symbolic::eq(src.shape()[0], symbolic::integer(4)));
-    EXPECT_TRUE(symbolic::eq(src.stride()[0], symbolic::integer(8)));
+    EXPECT_TRUE(symbolic::eq(src.strides()[0], symbolic::integer(8)));
     EXPECT_TRUE(symbolic::eq(tile->source().offset(), symbolic::integer(3)));
 }
 
@@ -327,10 +349,10 @@ TEST(TileAnalysisTest, Halo1D_OverApproxSource) {
     const auto* tile = ta.tile(i_loop, "A");
     ASSERT_NE(tile, nullptr);
     EXPECT_TRUE(tile->reads());
-    auto src = tiles::coalesce(tile->source());
-    ASSERT_EQ(src.rank(), 1u);
+    auto src = coalesce_modes(tile->source());
+    ASSERT_EQ(src.dims(), 1);
     EXPECT_TRUE(symbolic::eq(src.shape()[0], symbolic::integer(10))); // IT(8) + 2*radius(1)
-    EXPECT_TRUE(symbolic::eq(src.stride()[0], symbolic::integer(1)));
+    EXPECT_TRUE(symbolic::eq(src.strides()[0], symbolic::integer(1)));
     EXPECT_TRUE(symbolic::eq(tile->source().offset(), symbolic::sub(i_tile, symbolic::one())));
 }
 

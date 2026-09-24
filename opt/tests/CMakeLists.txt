@@ -14,10 +14,9 @@ set(TEST_FILES
     tiles/tile_analysis_test.cpp
     tiles/reduction_analysis_test.cpp
     tiles/locality_test.cpp
-    tiles/tiled_copy_test.cpp
     tiles/buffer_layout_test.cpp
-    tiles/tiled_copy_emit_test.cpp
-    tiles/library_nodes/async_copy_node_test.cpp
+    tiles/library_nodes/pipeline_node_test.cpp
+    tiles/library_nodes/tile_copy_node_test.cpp
     tiles/transformations/tile_fusion_test.cpp
     tiles/transformations/software_pipelining_test.cpp
     tiles/transformations/tile_vectorizer_test.cpp
@@ -51,6 +50,7 @@ set(TEST_FILES
     passes/offloading/data_transfer_minimization_pass_test.cpp
     passes/offloading/device_buffer_reuse_pass_test.cpp
     passes/offloading/gpu_nested_offload_pass_test.cpp
+    analysis/data_dependency_tile_copy_test.cpp
     passes/tiling_pass_test.cpp
     transformations/offloading/cuda_parallelize_nested_map_test.cpp
     transformations/offloading/rocm_parallelize_nested_map_test.cpp

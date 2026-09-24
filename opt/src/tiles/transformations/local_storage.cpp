@@ -23,11 +23,10 @@
 #include "sdfg/symbolic/extreme_values.h"
 #include "sdfg/tiles/analysis/reduction_buffer_analysis.h"
 #include "sdfg/tiles/analysis/tile_analysis.h"
-#include "sdfg/tiles/library_nodes/async_copy_node.h"
+#include "sdfg/tiles/library_nodes/tile_copy_node.h"
 #include "sdfg/tiles/locality.h"
 #include "sdfg/tiles/tile.h"
 #include "sdfg/tiles/tile_target_registry.h"
-#include "sdfg/tiles/tiled_copy_emit.h"
 #include "sdfg/types/array.h"
 #include "sdfg/types/pointer.h"
 #include "sdfg/types/scalar.h"
@@ -228,21 +227,7 @@ tiles::Layout LocalStorage::TileInfo::source_layout() const {
 
 std::vector<symbolic::Expression> LocalStorage::TileInfo::original_subset(const std::vector<symbolic::Expression>&
                                                                               tile_indices) const {
-    return {source_layout().apply_coords(tile_indices)};
-}
-
-std::vector<symbolic::Expression> LocalStorage::TileInfo::flat_original_subset(
-    const std::vector<symbolic::Expression>& slot_indvars,
-    const std::vector<symbolic::Expression>& slot_values,
-    const std::vector<symbolic::Expression>& tile_indices
-) const {
-    // The gather address for a flat element: original_subset with each slot indvar
-    // replaced by its value for the delinearized slot index (init + stride*idx).
-    auto lin = original_subset(tile_indices).at(0);
-    for (size_t s = 0; s < slot_indvars.size(); s++) {
-        lin = symbolic::subs(lin, slot_indvars.at(s), slot_values.at(s));
-    }
-    return {lin};
+    return {source_layout().resolve_element(tile_indices, /*require_to_element=*/false)};
 }
 
 std::vector<symbolic::Expression> LocalStorage::TileInfo::local_index(const std::vector<symbolic::Expression>&
@@ -269,11 +254,11 @@ bool LocalStorage::has_side_effect(structured_control_flow::StructuredLoop& loop
             if (dynamic_cast<data_flow::BarrierLocalNode*>(lib_node)) {
                 continue;
             }
-            // A cooperative copy (cp.async / vector) moves data through no_capture
-            // pointers precisely described by pointer_access_type, so the per-container
-            // alias analysis already accounts for it; it cannot independently reach the
+            // A cooperative TileCopyNode moves data through no_capture pointers
+            // precisely described by pointer_access_type, so the per-container alias
+            // analysis already accounts for it; it cannot independently reach the
             // localized container. Its side_effect flag only keeps DCE from dropping it.
-            if (dynamic_cast<tiles::CpAsyncCopyNode*>(lib_node) || dynamic_cast<tiles::VectorCopyNode*>(lib_node)) {
+            if (dynamic_cast<tiles::TileCopyNode*>(lib_node)) {
                 continue;
             }
             if (lib_node->side_effect()) {
@@ -603,6 +588,10 @@ void LocalStorage::apply_prepared(builder::StructuredSDFGBuilder& builder, analy
         // Fully flat, thread-linear staging for the CDNA async global->LDS DMA
         // (global_load_lds writes lane-contiguous from a wave-uniform base).
         buffer.kind = tiles::BufferKind::Linearized;
+    } else if (transpose_layout_ && storage_type_.is_nv_shared() && slot_sizes.empty()) {
+        // Cooperative (no-slot) tile stored column-major, so consumers read it
+        // transposed. A pure affine relabelling — no padding, no per-thread slot.
+        buffer.kind = tiles::BufferKind::Transposed;
     } else if (storage_type_.is_nv_shared() && !slot_sizes.empty()) {
         buffer.kind = tiles::BufferKind::Padded;
         if (swizzle_layout_) {
@@ -670,33 +659,63 @@ void LocalStorage::apply_prepared(builder::StructuredSDFGBuilder& builder, analy
     builder.add_container(local_name_, buffer_type);
 
     if (storage_type_.is_nv_shared()) {
-        if (lane_contiguous_) {
-            // Fully flat thread-linear staging: a full-block cooperative copy whose
-            // dst is lane-contiguous, so SoftwarePipelining's async global_load_lds
-            // lands correctly on CDNA.
-            emit_lane_contiguous_copy_in(
-                builder,
+        if (plan_.enclosing_cooperative()) {
+            // Stage the row once at the top of the localized GPU map's body; the
+            // (sibling) block consumers below read the shared buffer.
+            auto* coop = tiles::find_block_scheduled_descendant(loop_, analysis_manager);
+            auto impl = tiles::TileTargetRegistry::instance().implementation_type(coop->schedule_type().value());
+            auto& body = loop_.root();
+            auto copy = build_tiled_copy(
                 analysis_manager,
-                *parent,
+                body,
                 buffer,
-                buffer_type,
                 pointer_type,
                 slot_sizes,
+                slot_indices,
                 slot_indvars,
                 slot_inits,
                 slot_strides
             );
-        } else if (plan_.enclosing_cooperative()) {
-            // Stage the row once at the top of the localized GPU map's body; the
-            // (sibling) block consumers below read the shared buffer.
-            emit_enclosing_cooperative_copy_in(builder, analysis_manager, buffer, buffer_type, pointer_type);
+            emit_copy_node(
+                builder,
+                body,
+                body.at(0),
+                /*after=*/false,
+                copy,
+                impl,
+                pointer_type,
+                tiles::CopyDirection::In,
+                /*leading_barrier=*/false,
+                /*trailing_barrier=*/true
+            );
         } else {
-            // Read-only cooperative tile: cooperative copy-in + barrier(s), no writeback.
-            // A per-thread slot prefix means the shared row is re-staged per kernel
-            // coverage iteration, so guard it with a leading barrier too.
-            bool leading_barrier = !slot_indices.empty();
-            emit_cooperative_copy_in(
-                builder, analysis_manager, *parent, buffer, buffer_type, pointer_type, slot_indices, leading_barrier
+            // Cooperative copy-in before the loop. A per-thread slot prefix re-stages
+            // the tile each coverage iteration, so a leading barrier guards the
+            // overwrite against the previous iteration's outstanding reads.
+            auto* coop_map = find_cooperative_offload_map(loop_, plan_.cooperative_axes());
+            auto impl = tiles::TileTargetRegistry::instance().implementation_type(coop_map->schedule_type().value());
+            auto copy = build_tiled_copy(
+                analysis_manager,
+                *parent,
+                buffer,
+                pointer_type,
+                slot_sizes,
+                slot_indices,
+                slot_indvars,
+                slot_inits,
+                slot_strides
+            );
+            emit_copy_node(
+                builder,
+                *parent,
+                loop_,
+                /*after=*/false,
+                copy,
+                impl,
+                pointer_type,
+                tiles::CopyDirection::In,
+                /*leading_barrier=*/!slot_indices.empty(),
+                /*trailing_barrier=*/true
             );
         }
     } else {
@@ -775,19 +794,38 @@ void LocalStorage::emit_private_copy(
     const types::IType& pointer_type,
     bool writeback
 ) {
+    if (!atomic_merge_) {
+        // Plain copy: the unified dense whole-block TileCopyNode (its reference
+        // dispatcher emits a vectorizable per-mode loop). Copy-in stages before the
+        // loop, copy-out writes back after it; no barriers on the private path.
+        auto copy = build_tiled_copy(analysis_manager, parent, buffer, pointer_type, {}, {}, {}, {}, {});
+        emit_copy_node(
+            builder,
+            parent,
+            loop_,
+            /*after=*/writeback,
+            copy,
+            data_flow::ImplementationType_NONE,
+            pointer_type,
+            writeback ? tiles::CopyDirection::Out : tiles::CopyDirection::In,
+            /*leading_barrier=*/false,
+            /*trailing_barrier=*/false
+        );
+        return;
+    }
+
+    // Atomic-merge path: a per-element gather with atomic accumulation (or a
+    // zero-init) that the tile copy node does not yet express, so build it directly.
     auto varying_dims = tile_info_.varying_dims();
     auto varying_dim_sizes = tile_info_.varying_sizes();
-
     int index = parent.index(loop_) + (writeback ? 1 : 0);
     auto& scope = writeback ? builder.add_sequence_after(parent, loop_, loop_.debug_info())
                             : builder.add_sequence_before(parent, loop_, loop_.debug_info());
 
     // Element-predicate the global access: the over-approximated tile may address
-    // out-of-bounds global memory on ragged blocks. Skip those elements (the buffer
-    // slots they'd fill are never consumed — the compute's own boundary handling
-    // guards them). Provably in-bounds conjuncts (a fully-covering tile) are dropped
-    // so the interior copy vectorizes. Parameterized on the copy indices so it
-    // composes with the tiles emitter (which owns the indvars).
+    // out-of-bounds global memory on ragged blocks. Skip those elements (their buffer
+    // slots are never consumed). Provably in-bounds conjuncts (a fully-covering tile)
+    // are dropped so the interior copy vectorizes.
     std::vector<symbolic::Expression> incl_uppers;
     for (const auto& s : varying_dim_sizes) {
         incl_uppers
@@ -799,33 +837,6 @@ void LocalStorage::emit_private_copy(
         return boundary_guard(idx, params, discharge);
     };
 
-    if (!atomic_merge_) {
-        // Plain copy: delegate to the tiles emitter. The source geometry (a Layout
-        // whose apply_coords reproduces TileInfo::original_subset) gathers the global
-        // element; the dense MultiDim buffer is addressed by the coordinate tuple.
-        tiles::TiledCopy plan;
-        plan.src = tile_info_.source_layout();
-
-        tiles::CopyContainers containers{container_, local_name_, &pointer_type, &buffer_type};
-        tiles::emit_into(
-            builder,
-            scope,
-            plan,
-            containers,
-            writeback ? tiles::CopyDirection::Out : tiles::CopyDirection::In,
-            buffer,
-            nullptr,
-            {},
-            guard_of
-        );
-
-        builder.move_children(scope, parent, index + 1);
-        builder.remove_child(parent, index);
-        return;
-    }
-
-    // Atomic-merge path: a per-element gather with atomic accumulation (or a
-    // zero-init) that the tiles emitter does not yet express, so build it directly.
     structured_control_flow::Sequence* current = &scope;
     std::vector<symbolic::Expression> indvars;
     for (size_t i = 0; i < varying_dims.size(); i++) {
@@ -929,217 +940,193 @@ void LocalStorage::emit_private_copy(
     builder.remove_child(parent, index);
 }
 
-void LocalStorage::emit_cooperative_copy_in(
-    builder::StructuredSDFGBuilder& builder,
+tiles::TileGuard LocalStorage::tile_boundary_guard(
     analysis::AnalysisManager& analysis_manager,
-    structured_control_flow::Sequence& parent,
-    const tiles::PackedBuffer& buffer,
-    const types::IType& buffer_type,
-    const types::IType& pointer_type,
-    const std::vector<symbolic::Expression>& slot_indices,
-    bool leading_barrier
+    structured_control_flow::Sequence& guard_scope,
+    const std::vector<symbolic::Expression>& vsizes
 ) {
-    // Parallelize the copy over a genuine cooperative axis. In a mixed
-    // per-thread+cooperative tile the immediate enclosing map is a per-thread axis
-    // (the slot axis); striding the copy along it would leave each slot only
-    // partially filled. find_cooperative_offload_map picks the cooperative axis
-    // whose threads split the tile (guaranteed non-null by can_be_applied).
-    auto coop_dims = plan_.cooperative_axes();
-    structured_control_flow::Map* coop_map = find_cooperative_offload_map(loop_, coop_dims);
-
-    // A leading barrier prevents a re-staged (per-thread) tile from being
-    // overwritten while the previous coverage iteration's reads are outstanding.
-    if (leading_barrier) {
-        auto& pre_block = builder.add_block_before(parent, loop_, loop_.debug_info());
-        builder.add_library_node<data_flow::BarrierLocalNode>(pre_block, DebugInfo());
-    }
-
-    // Source geometry as a Layout: apply_coords reproduces TileInfo::original_subset.
-    tiles::TiledCopy plan;
-    plan.src = tile_info_.source_layout();
-
-    // Per-tile-dim boundary guard (upper = extent - 1); the flat coverage
-    // delinearizes the copy index into these dims before evaluating.
-    std::vector<symbolic::Expression> incl_uppers;
-    for (const auto& s : tile_info_.varying_sizes()) {
-        incl_uppers
-            .push_back(s.is_null() ? symbolic::Expression(SymEngine::null) : symbolic::sub(s, symbolic::integer(1)));
+    // One boundary dim per varying tile axis: `base + tile_coord <= max`. The
+    // discharge (against the scope assumptions) drops dims whose worst-case
+    // coordinate `base + size - 1` is provably in bounds, so a fully-covering tile
+    // carries no guard. A later pass can re-discharge more dims via normalize_guard.
+    tiles::TileGuard guard;
+    guard.tile_sizes = vsizes;
+    auto vdims = tile_info_.varying_dims();
+    for (size_t v = 0; v < vdims.size() && v < vsizes.size(); ++v) {
+        size_t d = vdims[v];
+        if (d >= tile_info_.maxes.size() || tile_info_.maxes[d].is_null()) {
+            continue;
+        }
+        guard.dims.push_back({v, tile_info_.bases[d], tile_info_.maxes[d]});
     }
     auto params = analysis_manager.get<analysis::AssumptionsAnalysis>().parameters();
-    auto guard_of = [&](const std::vector<symbolic::Expression>& idx) {
-        auto discharge = build_copy_discharge_assumptions(analysis_manager, parent, idx, incl_uppers);
-        return boundary_guard(idx, params, discharge);
-    };
-
-    // Cooperative copy: a single flat map carrying the cooperative axis's offload
-    // schedule splits the tile across the threads; the packed buffer places each
-    // element (MultiDim/Padded/Swizzle) faithfully for every rank.
-    int index = parent.index(loop_);
-    auto& scope = builder.add_sequence_before(parent, loop_, loop_.debug_info());
-    tiles::CopyContainers containers{container_, local_name_, &pointer_type, &buffer_type};
-    auto coop_sched = coop_map->schedule_type();
-    tiles::emit_into(
-        builder,
-        scope,
-        plan,
-        containers,
-        tiles::CopyDirection::In,
-        buffer,
-        &coop_sched,
-        slot_indices,
-        guard_of,
-        tiles::Coverage::Flat
-    );
-    builder.move_children(scope, parent, index + 1);
-    builder.remove_child(parent, index);
-
-    // Barrier so every thread's load is visible before the tile is consumed.
-    auto& barrier_block = builder.add_block_before(parent, loop_, loop_.debug_info());
-    builder.add_library_node<data_flow::BarrierLocalNode>(barrier_block, DebugInfo());
+    auto assums = build_copy_discharge_assumptions(analysis_manager, guard_scope, {}, {});
+    guard.discharge(params, assums);
+    return guard;
 }
 
-void LocalStorage::emit_enclosing_cooperative_copy_in(
-    builder::StructuredSDFGBuilder& builder,
+LocalStorage::BuiltCopy LocalStorage::build_tiled_copy(
     analysis::AnalysisManager& analysis_manager,
+    structured_control_flow::Sequence& guard_scope,
     const tiles::PackedBuffer& buffer,
-    const types::IType& buffer_type,
-    const types::IType& pointer_type
-) {
-    // A block-scheduled consumer in the body supplies the copy schedule (verified in
-    // can_be_applied). The staged row is loaded once at the top of the body, then a
-    // barrier makes it visible before the sibling consumers read it.
-    auto* coop = tiles::find_block_scheduled_descendant(loop_, analysis_manager);
-    auto& body = loop_.root();
-    auto& first = body.at(0);
-    auto c_name = builder.find_new_name("__daisy_ls_coop_" + container_);
-    // Int32: sweeps [0, tile_total_size), a constant-bounded tile extent under the
-    // max_tile_elements budget; added to 64-bit bases in the global address.
-    builder.add_container(c_name, types::Scalar(types::PrimitiveType::Int32));
-    auto c = symbolic::symbol(c_name);
-
-    // Copy map: the block cooperatively splits the tile (one shared row, no slots).
-    auto& copy_map = builder.add_map_before(
-        body,
-        first,
-        c,
-        symbolic::Lt(c, buffer.tile_total_size()),
-        symbolic::integer(0),
-        symbolic::add(c, symbolic::integer(1)),
-        coop->schedule_type(),
-        loop_.debug_info()
-    );
-
-    auto decomp = buffer.delinearize_tile(c);
-    auto& block = builder.add_block(copy_map.root());
-    auto& src = builder.add_access(block, container_);
-    auto& dst = builder.add_access(block, local_name_);
-    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
-    data_flow::Subset dst_subset = buffer.subset({}, decomp);
-    builder.add_computational_memlet(block, src, tasklet, "_in", tile_info_.original_subset(decomp), pointer_type);
-    builder.add_computational_memlet(block, tasklet, "_out", dst, dst_subset, buffer_type);
-
-    // Trailing barrier (after the copy, before the consumers) — no leading barrier,
-    // the shared row is loaded once per block at body entry.
-    auto& barrier_block = builder.add_block_before(body, first, loop_.debug_info());
-    builder.add_library_node<data_flow::BarrierLocalNode>(barrier_block, DebugInfo());
-}
-
-void LocalStorage::emit_lane_contiguous_copy_in(
-    builder::StructuredSDFGBuilder& builder,
-    analysis::AnalysisManager& analysis_manager,
-    structured_control_flow::Sequence& parent,
-    const tiles::PackedBuffer& buffer,
-    const types::IType& buffer_type,
     const types::IType& pointer_type,
     const std::vector<symbolic::Expression>& slot_sizes,
+    const std::vector<symbolic::Expression>& slot_indices,
     const std::vector<symbolic::Expression>& slot_indvars,
     const std::vector<symbolic::Expression>& slot_inits,
     const std::vector<symbolic::Expression>& slot_strides
 ) {
-    // Leading barrier: the flat tile is re-staged each panel, so guard the overwrite
-    // against the previous panel's outstanding reads.
-    auto& pre = builder.add_block_before(parent, loop_, loop_.debug_info());
-    builder.add_library_node<data_flow::BarrierLocalNode>(pre, DebugInfo());
+    BuiltCopy out;
+    auto& plan = out.plan;
+    auto vsizes = tile_info_.varying_sizes();
+    plan.atom = tiles::CopyAtom::ScalarSync;
 
-    // Flat thread id over the full block (x fastest) + block size, from every
-    // block-level offload dim (both cooperative and per-thread/slot). The whole
-    // block cooperatively sweeps the tile in thread-linear order.
-    struct BlockDim {
-        symbolic::Expression tid;
-        long long width;
-        int order;
-    };
-    std::vector<BlockDim> bdims;
-    for (const auto& d : plan_.axes()) {
-        if (d.schedule().level() != tiles::Level::Group) {
-            continue;
+    if (buffer.kind == tiles::BufferKind::Linearized) {
+        // Lane-contiguous flat staging (CDNA async global->LDS). Fold the slot
+        // indvars (threadIdx) out of the source offset into leading affine dims, so
+        // the whole block sweeps [slot ++ tile] thread-linearly into a flat buffer;
+        // the node references no per-thread symbol and codegen emits an unguarded
+        // full-block sweep. coop_axes empty => whole block; guard subsumed by the
+        // flat bound.
+        auto src_tile = tile_info_.source_layout();
+        symbolic::ExpressionMapping to_init;
+        for (size_t s = 0; s < slot_indvars.size(); ++s) {
+            to_init[slot_indvars.at(s)] = slot_inits.at(s);
         }
-        long long w =
-            static_cast<long long>(SymEngine::rcp_static_cast<const SymEngine::Integer>(d.schedule().parallel_size())
-                                       ->as_int());
-        auto tid =
-            symbolic::mod(symbolic::div(symbolic::sub(d.indvar(), d.init()), d.stride()), d.schedule().parallel_size());
-        bdims.push_back({tid, w, static_cast<int>(d.schedule().spatial_axis())});
-    }
-    std::sort(bdims.begin(), bdims.end(), [](const BlockDim& a, const BlockDim& b) { return a.order < b.order; });
-    symbolic::Expression flat_tid = symbolic::integer(0);
-    long long blk = 1;
-    for (const auto& b : bdims) {
-        flat_tid = symbolic::add(flat_tid, symbolic::mul(b.tid, symbolic::integer(blk)));
-        blk *= b.width;
+        auto offset_folded = symbolic::subs(src_tile.offset(), to_init);
+        std::vector<symbolic::Expression> slot_folded_strides;
+        for (size_t s = 0; s < slot_indvars.size(); ++s) {
+            symbolic::ExpressionMapping advance = to_init;
+            advance[slot_indvars.at(s)] = symbolic::add(slot_inits.at(s), slot_strides.at(s));
+            slot_folded_strides.push_back(symbolic::sub(symbolic::subs(src_tile.offset(), advance), offset_folded));
+        }
+        symbolic::MultiExpression src_shape = slot_sizes;
+        src_shape.insert(src_shape.end(), vsizes.begin(), vsizes.end());
+        symbolic::MultiExpression src_stride = slot_folded_strides;
+        src_stride.insert(src_stride.end(), src_tile.strides().begin(), src_tile.strides().end());
+        symbolic::MultiExpression dst_stride(src_shape.size());
+        symbolic::Expression run = symbolic::integer(1);
+        for (int d = static_cast<int>(src_shape.size()) - 1; d >= 0; --d) {
+            dst_stride[d] = run;
+            run = symbolic::mul(run, src_shape[d]);
+        }
+        plan.src = tiles::Layout(src_shape, src_stride, offset_folded);
+        plan.dst = tiles::Layout(src_shape, dst_stride, symbolic::integer(0));
+        // Whole-block flat sweep bounded by the flat size — no per-element guard.
+        out.guard = {};
+    } else if (!slot_indices.empty()) {
+        // Per-thread-slot (Padded/Swizzle): each thread stages its own slot (source
+        // uses its own thread index; the slot prefix folds into the buffer offset)
+        // while the cooperating Group spatial axes split the tile. Referencing the
+        // slot index but not the coop index lets codegen guard by `i < N` only, so
+        // every coop thread participates even when the coop axis is ragged. A Swizzle
+        // buffer XORs the (slot ++ tile) offset, composed on plan.dst via dst_swizzle.
+        plan.src = tile_info_.source_layout();
+        auto full_dst = buffer.layout().layout;
+        std::vector<symbolic::Expression> prefix_coords = slot_indices;
+        for (size_t d = 0; d < vsizes.size(); ++d) {
+            prefix_coords.push_back(symbolic::integer(0));
+        }
+        auto slot_prefix = full_dst.resolve_element(prefix_coords, /*require_to_element=*/false);
+        std::vector<symbolic::Expression>
+            tile_strides(full_dst.strides().begin() + slot_indices.size(), full_dst.strides().end());
+        plan.dst = tiles::Layout(vsizes, tile_strides, slot_prefix);
+        plan.dst_swizzle = buffer.layout().swizzle;
+        for (const auto& d : plan_.cooperative_axes()) {
+            if (d.schedule().level() == tiles::Level::Group) {
+                out.coop_axes.push_back(static_cast<int>(d.schedule().spatial_axis()));
+            }
+        }
+        std::sort(out.coop_axes.begin(), out.coop_axes.end());
+        out.guard = tile_boundary_guard(analysis_manager, guard_scope, vsizes);
+    } else {
+        // Dense whole-block (MultiDim or Transposed, no slots): the buffer's affine
+        // layout is the physical tile placement (row- or column-major); every block
+        // thread strides the flat tile.
+        plan.src = tile_info_.source_layout();
+        plan.dst = buffer.layout().layout;
+        plan.dst_swizzle = buffer.layout().swizzle;
+        out.guard = tile_boundary_guard(analysis_manager, guard_scope, vsizes);
     }
 
-    long long total =
-        static_cast<long long>(SymEngine::rcp_static_cast<const SymEngine::Integer>(buffer.total_size())->as_int());
+    // Symbolic cooperating thread count over the dispatcher's coop axes (empty =
+    // whole block, which also includes the per-thread-slot threads): the schedule's
+    // parallel_size product. It folds to a constant so the copy loop gets a constant
+    // trip count the backend can unroll; a non-constant (0) parallel_size leaves it
+    // null (runtime loop).
+    {
+        symbolic::Expression threads = symbolic::integer(1);
+        bool known = true;
+        auto mul_axis = [&](const tiles::TileAxis& d) {
+            if (d.schedule().level() != tiles::Level::Group) {
+                return;
+            }
+            auto ps = d.schedule().parallel_size();
+            if (symbolic::eq(ps, symbolic::integer(0))) {
+                known = false;
+            } else {
+                threads = symbolic::mul(threads, ps);
+            }
+        };
+        for (const auto& d : plan_.cooperative_axes()) {
+            mul_axis(d);
+        }
+        if (out.coop_axes.empty()) {
+            for (const auto& d : plan_.private_axes()) {
+                mul_axis(d);
+            }
+        }
+        // Only a genuine cooperative count (>1 thread) drives the unrollable loop. A
+        // product of 1 means no cooperating axis resolved here (e.g. a whole-block
+        // copy whose block size is a kernel-global property, not a tile axis) — leave
+        // it null so codegen keeps the correct runtime thread-strided loop rather than
+        // a degenerate 1-thread sweep.
+        if (known && !symbolic::eq(threads, symbolic::integer(1))) {
+            out.coop_threads = threads;
+        }
+    }
 
-    // Coverage loop: each thread strides the flat tile from flat_tid by blk. The
-    // loop index c is the flat position itself (init = flat_tid, step = blk), so it
-    // stays an opaque symbol in the delinearized indices below. This is essential:
-    // the gather substitutes the slot indvar (threadIdx) with its delinearized value,
-    // and if c were the expanded (flat_tid + blk*it) form it would still contain the
-    // slot indvar inside the delinearized tile indices, which the substitution would
-    // then corrupt. The `c < total` bound also subsumes the ragged-tail guard.
-    auto c_name = builder.find_new_name("__daisy_ls_lc_" + container_);
-    builder.add_container(c_name, types::Scalar(types::PrimitiveType::Int32));
-    auto c = symbolic::symbol(c_name);
-    auto& cov = builder.add_for_before(
-        parent,
-        loop_,
-        c,
-        symbolic::Lt(c, symbolic::integer(total)),
-        flat_tid,
-        symbolic::add(c, symbolic::integer(blk)),
-        loop_.debug_info()
+    return out;
+}
+
+void LocalStorage::emit_copy_node(
+    builder::StructuredSDFGBuilder& builder,
+    structured_control_flow::Sequence& scope,
+    structured_control_flow::ControlFlowNode& anchor,
+    bool after,
+    const BuiltCopy& copy,
+    const data_flow::ImplementationType& impl,
+    const types::IType& pointer_type,
+    tiles::CopyDirection direction,
+    bool leading_barrier,
+    bool trailing_barrier
+) {
+    // Insert each new block adjacent to the anchor; consecutive before-inserts stack
+    // in call order (each lands just before the anchor, pushing prior ones up).
+    auto add_block = [&]() -> structured_control_flow::Block& {
+        return after ? builder.add_block_after(scope, anchor, loop_.debug_info())
+                     : builder.add_block_before(scope, anchor, loop_.debug_info());
+    };
+
+    if (leading_barrier) {
+        builder.add_library_node<data_flow::BarrierLocalNode>(add_block(), DebugInfo());
+    }
+
+    const bool copy_in = direction == tiles::CopyDirection::In;
+    auto& copy_block = add_block();
+    // _dst is the write target (In: buffer, Out: global); _src the read source.
+    auto& dst_acc = builder.add_access(copy_block, copy_in ? local_name_ : container_);
+    auto& src_acc = builder.add_access(copy_block, copy_in ? container_ : local_name_);
+    const size_t bytes = types::bit_width(pointer_type.primitive_type()) / 8;
+    auto& node = builder.add_library_node<tiles::TileCopyNode>(
+        copy_block, loop_.debug_info(), impl, copy.plan, direction, bytes, copy.guard, copy.coop_axes, copy.coop_threads
     );
-    structured_control_flow::Sequence* copy_body = &cov.root();
+    builder.add_computational_memlet(copy_block, dst_acc, node, "_dst", {}, pointer_type);
+    builder.add_computational_memlet(copy_block, src_acc, node, "_src", {}, pointer_type);
 
-    // Delinearize c over [slot_sizes ++ tile_sizes] (row-major): slot_idx select the
-    // per-thread base offset, tile_idx the within-tile position.
-    std::vector<symbolic::Expression> combined = slot_sizes;
-    combined.insert(combined.end(), buffer.tile_sizes.begin(), buffer.tile_sizes.end());
-    std::vector<symbolic::Expression> idx(combined.size());
-    symbolic::Expression rem = c;
-    for (int i = static_cast<int>(combined.size()) - 1; i >= 0; i--) {
-        idx[i] = symbolic::mod(rem, combined[i]);
-        rem = symbolic::div(rem, combined[i]);
+    if (trailing_barrier) {
+        builder.add_library_node<data_flow::BarrierLocalNode>(add_block(), DebugInfo());
     }
-    std::vector<symbolic::Expression> slot_values;
-    for (size_t s = 0; s < slot_sizes.size(); s++) {
-        slot_values.push_back(symbolic::add(slot_inits.at(s), symbolic::mul(slot_strides.at(s), idx.at(s))));
-    }
-    std::vector<symbolic::Expression> tile_idx(idx.begin() + slot_sizes.size(), idx.end());
-    auto src_subset = tile_info_.flat_original_subset(slot_indvars, slot_values, tile_idx);
-
-    auto& block = builder.add_block(*copy_body);
-    auto& src = builder.add_access(block, container_);
-    auto& dst = builder.add_access(block, local_name_);
-    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
-    builder.add_computational_memlet(block, src, tasklet, "_in", src_subset, pointer_type);
-    builder.add_computational_memlet(block, tasklet, "_out", dst, {c}, buffer_type);
-
-    // Trailing barrier: publish the staged tile before the consumers read it.
-    auto& post = builder.add_block_before(parent, loop_, loop_.debug_info());
-    builder.add_library_node<data_flow::BarrierLocalNode>(post, DebugInfo());
 }
 
 void LocalStorage::rewrite_body(
@@ -1197,6 +1184,7 @@ void LocalStorage::to_json(nlohmann::json& j) const {
     serializer_full.storage_type_to_json(j["parameters"]["storage_type"], storage_type_);
     j["parameters"]["swizzle_layout"] = swizzle_layout_;
     j["parameters"]["lane_contiguous"] = lane_contiguous_;
+    j["parameters"]["transpose_layout"] = transpose_layout_;
 
     serializer::JSONSerializer ser_flat(false);
     j["subgraph"] = nlohmann::json::object();
@@ -1240,7 +1228,12 @@ LocalStorage LocalStorage::from_json(builder::StructuredSDFGBuilder& builder, co
         lane_contiguous = desc["parameters"]["lane_contiguous"].get<bool>();
     }
 
-    return LocalStorage(*loop, *access_node, swizzle_layout, lane_contiguous);
+    bool transpose_layout = false;
+    if (desc.contains("parameters") && desc["parameters"].contains("transpose_layout")) {
+        transpose_layout = desc["parameters"]["transpose_layout"].get<bool>();
+    }
+
+    return LocalStorage(*loop, *access_node, swizzle_layout, lane_contiguous, transpose_layout);
 }
 
 } // namespace transformations

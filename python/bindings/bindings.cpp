@@ -950,6 +950,22 @@ PYBIND11_MODULE(_sdfg, m) {
             py::return_value_policy::reference
         )
         .def(
+            "add_tile_copy_node",
+            &PyStructuredSDFGBuilder::add_tile_copy_node,
+            py::arg("buffer_name"),
+            py::arg("global_name"),
+            py::arg("global_layout"),
+            py::arg("buffer_layout"),
+            py::arg("pointer_type"),
+            py::arg("direction") = "in",
+            py::arg("implementation") = "",
+            py::arg("debug_info") = sdfg::DebugInfo(),
+            py::return_value_policy::reference,
+            "Add a whole-block cooperative TileCopyNode staging one tile between a "
+            "global container and a local (shared/LDS) buffer; direction 'in' "
+            "(global->buffer) or 'out'."
+        )
+        .def(
             "add_fill_op",
             &PyStructuredSDFGBuilder::add_fill_op,
             py::arg("X"),

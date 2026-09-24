@@ -32,9 +32,12 @@
 #include "sdfg/passes/debug_info_propagation.h"
 #include "sdfg/targets/cuda/cuda_data_offloading_node.h"
 #include "sdfg/targets/rocm/rocm_data_offloading_node.h"
+#include "sdfg/tiles/library_nodes/tile_copy_node.h"
+#include "sdfg/tiles/tiled_copy.h"
 #include "sdfg/types/pointer.h"
 #include "sdfg/types/scalar.h"
 #include "sdfg/types/type.h"
+#include "sdfg/types/utils.h"
 #include "sdfg/visualizer/dot_visualizer.h"
 
 using namespace sdfg::structured_control_flow;
@@ -2108,6 +2111,37 @@ sdfg::data_flow::LibraryNode& PyStructuredSDFGBuilder::add_matmul_op(
     builder_.add_computational_memlet(block, B_access, libnode, "B", {}, B_type, debug_info);
     builder_.add_computational_memlet(block, Y_access, libnode, "Y", {}, Y_type, debug_info);
     return libnode;
+}
+
+sdfg::data_flow::LibraryNode& PyStructuredSDFGBuilder::add_tile_copy_node(
+    const std::string& buffer_name,
+    const std::string& global_name,
+    const sdfg::types::Tensor& global_layout,
+    const sdfg::types::Tensor& buffer_layout,
+    const sdfg::types::IType& pointer_type,
+    const std::string& direction,
+    const std::string& implementation,
+    const sdfg::DebugInfo& debug_info
+) {
+    const bool copy_in = direction != "out";
+    sdfg::tiles::TiledCopy plan;
+    plan.src = global_layout.layout(); // plan.src is always the global geometry
+    plan.dst = buffer_layout.layout(); // plan.dst is always the buffer geometry
+    plan.atom = sdfg::tiles::CopyAtom::ScalarSync;
+    const auto dir = copy_in ? sdfg::tiles::CopyDirection::In : sdfg::tiles::CopyDirection::Out;
+    const size_t bytes = sdfg::types::bit_width(pointer_type.primitive_type()) / 8;
+    sdfg::data_flow::ImplementationType impl(implementation);
+
+    auto& block = builder_.add_block(current_sequence(), {}, debug_info);
+    // _dst is the write target (In: buffer, Out: global); _src the read source.
+    auto& dst_acc = builder_.add_access(block, copy_in ? buffer_name : global_name, debug_info);
+    auto& src_acc = builder_.add_access(block, copy_in ? global_name : buffer_name, debug_info);
+    auto& node = builder_.add_library_node<sdfg::tiles::TileCopyNode>(
+        block, debug_info, impl, plan, dir, bytes, sdfg::tiles::TileGuard{}, std::vector<int>{}
+    );
+    builder_.add_computational_memlet(block, dst_acc, node, "_dst", {}, pointer_type, debug_info);
+    builder_.add_computational_memlet(block, src_acc, node, "_src", {}, pointer_type, debug_info);
+    return node;
 }
 
 void PyStructuredSDFGBuilder::add_fill_op(

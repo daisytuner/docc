@@ -25,7 +25,7 @@
 #include "sdfg/targets/gpu/gpu_schedule_type.h"
 #include "sdfg/tiles/analysis/reduction_buffer_analysis.h"
 #include "sdfg/tiles/analysis/tile_analysis.h"
-#include "sdfg/tiles/library_nodes/async_copy_node.h"
+#include "sdfg/tiles/library_nodes/tile_copy_node.h"
 #include "sdfg/tiles/locality.h"
 #include "sdfg/transformations/loop_tiling.h"
 #include "sdfg/types/array.h"
@@ -1412,6 +1412,20 @@ bool block_uses(structured_control_flow::Block& block, const std::string& name) 
     return false;
 }
 
+/// True if @p node is a Block holding a TileCopyNode (the whole-copy staging node).
+bool is_tile_copy_block(structured_control_flow::ControlFlowNode& node) {
+    auto* blk = dynamic_cast<structured_control_flow::Block*>(&node);
+    if (blk == nullptr) {
+        return false;
+    }
+    for (auto& n : blk->dataflow().nodes()) {
+        if (dynamic_cast<tiles::TileCopyNode*>(&n)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // The copy block may be wrapped in a boundary-guard IfElse (element predication
 // of the global access). Unwrap it to reach the underlying copy Block.
 structured_control_flow::Block* copy_block_of(structured_control_flow::ControlFlowNode& node) {
@@ -1465,12 +1479,10 @@ TEST(LocalStorageTest, Apply_In_Array) {
     ASSERT_TRUE(builder.subject().exists(buf));
     EXPECT_TRUE(builder.subject().type(buf) == types::Array(elem, symbolic::integer(8)));
 
-    // Structure: [copy_in_loop, main_loop].
+    // Structure: [copy_in_block (TileCopyNode), main_loop].
     auto& root = builder.subject().root();
     ASSERT_EQ(root.size(), 2u);
-    auto* copy_loop = dyn_cast<structured_control_flow::Map*>(&root.at(0));
-    ASSERT_NE(copy_loop, nullptr);
-    EXPECT_TRUE(symbolic::eq(copy_loop->condition(), symbolic::Lt(copy_loop->indvar(), symbolic::integer(8))));
+    EXPECT_TRUE(is_tile_copy_block(root.at(0)));
     auto* main_loop = dyn_cast<structured_control_flow::For*>(&root.at(1));
     ASSERT_NE(main_loop, nullptr);
 
@@ -1519,16 +1531,15 @@ TEST(LocalStorageTest, Apply_Out_WriteOnly) {
     auto buf = xform.local_container();
     ASSERT_TRUE(builder.subject().exists(buf));
 
-    // Structure: [main_loop, writeback_loop] — no copy-in.
+    // Structure: [main_loop, writeback_block (TileCopyNode)] — no copy-in.
     auto& root = builder.subject().root();
     ASSERT_EQ(root.size(), 2u);
     auto* main_loop = dyn_cast<structured_control_flow::For*>(&root.at(0));
     ASSERT_NE(main_loop, nullptr);
-    auto* wb_loop = dyn_cast<structured_control_flow::Map*>(&root.at(1));
-    ASSERT_NE(wb_loop, nullptr);
+    ASSERT_TRUE(is_tile_copy_block(root.at(1)));
 
-    // Writeback reads the buffer and writes C (copy may be boundary-guarded).
-    auto* wb_block = copy_block_of(wb_loop->root().at(0));
+    // Writeback reads the buffer and writes C.
+    auto* wb_block = dyn_cast<structured_control_flow::Block*>(&root.at(1));
     ASSERT_NE(wb_block, nullptr);
     EXPECT_TRUE(block_uses(*wb_block, buf));
     EXPECT_TRUE(block_uses(*wb_block, "C"));
@@ -1572,12 +1583,12 @@ TEST(LocalStorageTest, Apply_Out_ReadWrite) {
 
     auto buf = xform.local_container();
 
-    // Structure: [copy_in_loop, main_loop, writeback_loop].
+    // Structure: [copy_in_block, main_loop, writeback_block] (both copies are nodes).
     auto& root = builder.subject().root();
     ASSERT_EQ(root.size(), 3u);
-    EXPECT_NE(dyn_cast<structured_control_flow::Map*>(&root.at(0)), nullptr);
+    EXPECT_TRUE(is_tile_copy_block(root.at(0)));
     EXPECT_NE(dyn_cast<structured_control_flow::For*>(&root.at(1)), nullptr);
-    EXPECT_NE(dyn_cast<structured_control_flow::Map*>(&root.at(2)), nullptr);
+    EXPECT_TRUE(is_tile_copy_block(root.at(2)));
 
     auto* main_loop = dyn_cast<structured_control_flow::For*>(&root.at(1));
     ASSERT_NE(main_loop, nullptr);
@@ -2210,11 +2221,17 @@ TEST(LocalStorageTest, Apply_EnclosingCooperativeStaging) {
     ASSERT_TRUE(builder.subject().exists(buf));
     EXPECT_TRUE(builder.subject().type(buf).storage_type().is_nv_shared());
 
-    // Grid body is now [copy_map (offload), barrier, map_j1, map_j2].
+    // Grid body is now [copy_block (TileCopyNode), barrier, map_j1, map_j2].
     ASSERT_EQ(map_row.root().size(), 4u);
-    auto* copy_map = dyn_cast<structured_control_flow::Map*>(&map_row.root().at(0));
-    ASSERT_NE(copy_map, nullptr);
-    EXPECT_EQ(copy_map->schedule_type().category(), structured_control_flow::ScheduleTypeCategory::Offloader);
+    auto* copy_block = dyn_cast<structured_control_flow::Block*>(&map_row.root().at(0));
+    ASSERT_NE(copy_block, nullptr);
+    bool has_tile_copy = false;
+    for (auto& node : copy_block->dataflow().nodes()) {
+        if (dynamic_cast<tiles::TileCopyNode*>(&node)) {
+            has_tile_copy = true;
+        }
+    }
+    EXPECT_TRUE(has_tile_copy);
     EXPECT_NE(dyn_cast<structured_control_flow::Block*>(&map_row.root().at(1)), nullptr); // barrier
     EXPECT_NE(dyn_cast<structured_control_flow::Map*>(&map_row.root().at(2)), nullptr);
     EXPECT_NE(dyn_cast<structured_control_flow::Map*>(&map_row.root().at(3)), nullptr);
@@ -2370,11 +2387,18 @@ TEST(LocalStorageTest, Apply_Cooperative_Shared) {
     ASSERT_TRUE(builder.subject().exists(buf));
     EXPECT_TRUE(builder.subject().type(buf).storage_type().is_nv_shared());
 
-    // The kernel-map body is now [copy_map (offload), barrier, k-loop].
+    // The kernel-map body is [copy_block (TileCopyNode), barrier, k-loop]: the whole
+    // cooperative copy is one node whose dispatcher emits the staging loop.
     ASSERT_EQ(map_i.root().size(), 3u);
-    auto* copy_map = dyn_cast<structured_control_flow::Map*>(&map_i.root().at(0));
-    ASSERT_NE(copy_map, nullptr);
-    EXPECT_EQ(copy_map->schedule_type().category(), structured_control_flow::ScheduleTypeCategory::Offloader);
+    auto* copy_block = dyn_cast<structured_control_flow::Block*>(&map_i.root().at(0));
+    ASSERT_NE(copy_block, nullptr);
+    bool has_tile_copy = false;
+    for (auto& node : copy_block->dataflow().nodes()) {
+        if (dynamic_cast<tiles::TileCopyNode*>(&node)) {
+            has_tile_copy = true;
+        }
+    }
+    EXPECT_TRUE(has_tile_copy);
     EXPECT_NE(dyn_cast<structured_control_flow::Block*>(&map_i.root().at(1)), nullptr); // barrier block
     EXPECT_NE(dyn_cast<structured_control_flow::For*>(&map_i.root().at(2)), nullptr);
 
@@ -2442,11 +2466,11 @@ TEST(LocalStorageTest, TileInfo_SourceLayout) {
     ti.strides = {M, symbolic::integer(1)};
     ti.offset = off;
     auto layout = ti.source_layout();
-    ASSERT_EQ(layout.rank(), 1u); // only the varying dim
+    ASSERT_EQ(layout.dims(), 1); // only the varying dim
     EXPECT_TRUE(symbolic::eq(layout.shape()[0], symbolic::integer(4)));
-    EXPECT_TRUE(symbolic::eq(layout.stride()[0], symbolic::integer(1)));
-    // apply_coords == original_subset.
-    EXPECT_TRUE(symbolic::eq(layout.apply_coords({j}), ti.original_subset({j})[0]));
+    EXPECT_TRUE(symbolic::eq(layout.strides()[0], symbolic::integer(1)));
+    // resolve_element == original_subset.
+    EXPECT_TRUE(symbolic::eq(layout.resolve_element({j}, /*require_to_element=*/false), ti.original_subset({j})[0]));
 }
 
 /**
@@ -2519,16 +2543,104 @@ TEST(LocalStorageTest, Apply_Cooperative_Mixed) {
         builder.subject().type(buf) == types::Array(types::Array(elem, symbolic::integer(36)), symbolic::integer(8))
     );
 
-    // The cooperative map body is [leading barrier, copy_map, trailing barrier, k-loop].
+    // The cooperative map body is [leading barrier, copy_block (TileCopyNode), trailing
+    // barrier, k-loop]: the mixed copy is one per-thread-slot node.
     ASSERT_EQ(map_j.root().size(), 4u);
     EXPECT_NE(dyn_cast<structured_control_flow::Block*>(&map_j.root().at(0)), nullptr);
-    auto* copy_map = dyn_cast<structured_control_flow::Map*>(&map_j.root().at(1));
-    ASSERT_NE(copy_map, nullptr);
-    EXPECT_EQ(copy_map->schedule_type().category(), structured_control_flow::ScheduleTypeCategory::Offloader);
+    EXPECT_TRUE(is_tile_copy_block(map_j.root().at(1)));
     EXPECT_NE(dyn_cast<structured_control_flow::Block*>(&map_j.root().at(2)), nullptr);
     EXPECT_NE(dyn_cast<structured_control_flow::For*>(&map_j.root().at(3)), nullptr);
 
     // The body reads the shared buffer, not A.
+    auto* main_block = dyn_cast<structured_control_flow::Block*>(&loop_k.root().at(0));
+    ASSERT_NE(main_block, nullptr);
+    EXPECT_TRUE(block_uses(*main_block, buf));
+    EXPECT_FALSE(block_uses(*main_block, "A"));
+}
+
+/**
+ * Apply_Cooperative_Mixed_Swizzle: same mixed shape, but swizzle_layout=true with a
+ * power-of-two tile block (16). The buffer is the natural (unpadded) [slot][block]
+ * and the per-thread-slot TileCopyNode carries the XOR swizzle on its dst offset.
+ */
+TEST(LocalStorageTest, Apply_Cooperative_Mixed_Swizzle) {
+    builder::StructuredSDFGBuilder builder("ls_coop_mixed_sw", FunctionType_CPU);
+    auto& seq = builder.subject().root();
+    types::Scalar loop_var(types::PrimitiveType::Int32);
+    types::Scalar elem(types::PrimitiveType::Float);
+    types::Pointer ptr(elem);
+    auto i = symbolic::symbol("i");
+    auto j = symbolic::symbol("j");
+    auto k = symbolic::symbol("k");
+    auto N = symbolic::symbol("N");
+    auto M = symbolic::symbol("M");
+    builder.add_container("N", loop_var, true);
+    builder.add_container("M", loop_var, true);
+    builder.add_container("A", ptr, true);
+    builder.add_container("C", ptr, true);
+    builder.add_container("i", loop_var);
+    builder.add_container("j", loop_var);
+    builder.add_container("k", loop_var);
+
+    auto sched_i = gpu::ScheduleType_GPU_Offload::create<
+        cuda::ScheduleType_CUDA_Offload>(gpu::TargetLevel::X_BLOCK, symbolic::integer(8));
+    auto sched_j = gpu::ScheduleType_GPU_Offload::create<
+        cuda::ScheduleType_CUDA_Offload>(gpu::TargetLevel::Y_BLOCK, symbolic::integer(4));
+    auto& map_i =
+        builder
+            .add_map(seq, i, symbolic::Lt(i, N), symbolic::integer(0), symbolic::add(i, symbolic::integer(1)), sched_i);
+    auto& map_j = builder.add_map(
+        map_i.root(), j, symbolic::Lt(j, M), symbolic::integer(0), symbolic::add(j, symbolic::integer(1)), sched_j
+    );
+    auto& loop_k = builder.add_for(
+        map_j.root(),
+        k,
+        symbolic::Lt(k, symbolic::integer(16)),
+        symbolic::integer(0),
+        symbolic::add(k, symbolic::integer(1))
+    );
+
+    auto& block = builder.add_block(loop_k.root());
+    auto& c_in = builder.add_access(block, "C");
+    auto& a_in = builder.add_access(block, "A");
+    auto& c_out = builder.add_access(block, "C");
+    auto& t = builder.add_tasklet(block, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
+    builder.add_computational_memlet(block, c_in, t, "_in1", {symbolic::add(symbolic::mul(i, M), j)}, ptr);
+    builder
+        .add_computational_memlet(block, a_in, t, "_in2", {symbolic::add(symbolic::mul(i, symbolic::integer(16)), k)}, ptr);
+    builder.add_computational_memlet(block, t, "_out", c_out, {symbolic::add(symbolic::mul(i, M), j)}, ptr);
+
+    analysis::AnalysisManager am(builder.subject());
+    LocalStorage xform(loop_k, a_in, /*swizzle*/ true);
+    ASSERT_TRUE(xform.can_be_applied(builder, am));
+    EXPECT_TRUE(xform.storage_type().is_nv_shared());
+    xform.apply(builder, am);
+
+    auto buf = xform.local_container();
+    ASSERT_TRUE(builder.subject().exists(buf));
+    // Swizzle buffer = [slot(8)] x [natural block(16)] (no padding).
+    EXPECT_TRUE(
+        builder.subject().type(buf) == types::Array(types::Array(elem, symbolic::integer(16)), symbolic::integer(8))
+    );
+
+    // Same node-based staging: [leading barrier, copy_block (TileCopyNode), trailing
+    // barrier, k-loop].
+    ASSERT_EQ(map_j.root().size(), 4u);
+    EXPECT_NE(dyn_cast<structured_control_flow::Block*>(&map_j.root().at(0)), nullptr);
+    EXPECT_TRUE(is_tile_copy_block(map_j.root().at(1)));
+    EXPECT_NE(dyn_cast<structured_control_flow::Block*>(&map_j.root().at(2)), nullptr);
+    EXPECT_NE(dyn_cast<structured_control_flow::For*>(&map_j.root().at(3)), nullptr);
+
+    // The staged copy node carries a non-identity XOR swizzle on its dst.
+    auto* copy = copy_block_of(map_j.root().at(1));
+    ASSERT_NE(copy, nullptr);
+    const tiles::TileCopyNode* node = nullptr;
+    for (auto* ln : copy->dataflow().library_nodes()) {
+        if (auto* tc = dynamic_cast<const tiles::TileCopyNode*>(ln)) node = tc;
+    }
+    ASSERT_NE(node, nullptr);
+    EXPECT_FALSE(node->plan().dst_swizzle.is_identity());
+
     auto* main_block = dyn_cast<structured_control_flow::Block*>(&loop_k.root().at(0));
     ASSERT_NE(main_block, nullptr);
     EXPECT_TRUE(block_uses(*main_block, buf));
@@ -2605,21 +2717,21 @@ TEST(LocalStorageTest, Apply_LaneContiguous_FlatStaging) {
     ASSERT_NE(arr, nullptr);
     EXPECT_EQ(dynamic_cast<const types::Array*>(&arr->element_type()), nullptr);
 
-    // Body = [leading barrier, coverage For (strided sweep), trailing barrier, k-loop].
+    // Body = [leading barrier, copy_block (TileCopyNode, whole-block flat sweep),
+    // trailing barrier, k-loop].
     ASSERT_EQ(map_j.root().size(), 4u);
     EXPECT_NE(dyn_cast<structured_control_flow::Block*>(&map_j.root().at(0)), nullptr);
-    auto* cov = dyn_cast<structured_control_flow::For*>(&map_j.root().at(1));
-    ASSERT_NE(cov, nullptr);
+    EXPECT_TRUE(is_tile_copy_block(map_j.root().at(1)));
     EXPECT_NE(dyn_cast<structured_control_flow::Block*>(&map_j.root().at(2)), nullptr);
     EXPECT_NE(dyn_cast<structured_control_flow::For*>(&map_j.root().at(3)), nullptr);
 
-    // The staged copy writes the buffer by a single flat index.
-    auto* copy = copy_block_of(cov->root().at(0));
+    // The staged copy writes the buffer through a bare pointer memlet (no subset).
+    auto* copy = copy_block_of(map_j.root().at(1));
     ASSERT_NE(copy, nullptr);
     ASSERT_TRUE(block_uses(*copy, buf));
     for (auto& edge : copy->dataflow().edges()) {
         auto* d = dynamic_cast<const data_flow::AccessNode*>(&edge.dst());
-        if (d && d->data() == buf) EXPECT_EQ(edge.subset().size(), 1u);
+        if (d && d->data() == buf) EXPECT_EQ(edge.subset().size(), 0u);
     }
 
     // The body reads the shared buffer, not A.
@@ -2713,6 +2825,92 @@ TEST(LocalStorageTest, Apply_Cooperative_2DTile_FullTile_NoGuard) {
 }
 
 /**
+ * Apply_Cooperative_2DTile_Transposed: the same cooperative 2D tile, but
+ * transpose_layout=true stores it column-major — the buffer's tile axes are
+ * reversed ([K][I] for a logical [I][K] tile) and the staged copy is a single
+ * TileCopyNode whose dst carries the transposed (column-major) strides.
+ */
+TEST(LocalStorageTest, Apply_Cooperative_2DTile_Transposed) {
+    builder::StructuredSDFGBuilder builder("ls_coop_2d_transposed", FunctionType_CPU);
+    auto& seq = builder.subject().root();
+    types::Scalar loop_var(types::PrimitiveType::Int32);
+    types::Scalar elem(types::PrimitiveType::Float);
+    types::Pointer ptr(elem);
+    auto b = symbolic::symbol("b");
+    auto i = symbolic::symbol("i");
+    auto k = symbolic::symbol("k");
+    auto N = symbolic::symbol("N");
+    builder.add_container("N", loop_var, true);
+    builder.add_container("A", ptr, true);
+    builder.add_container("C", ptr, true);
+    builder.add_container("b", loop_var);
+    builder.add_container("i", loop_var);
+    builder.add_container("k", loop_var);
+
+    auto sched_b = gpu::ScheduleType_GPU_Offload::create<
+        cuda::ScheduleType_CUDA_Offload>(gpu::TargetLevel::X_BLOCK, symbolic::integer(32));
+    auto& map_b =
+        builder
+            .add_map(seq, b, symbolic::Lt(b, N), symbolic::integer(0), symbolic::add(b, symbolic::integer(1)), sched_b);
+    auto& loop_i = builder.add_for(
+        map_b.root(),
+        i,
+        symbolic::Lt(i, symbolic::integer(4)),
+        symbolic::integer(0),
+        symbolic::add(i, symbolic::integer(1))
+    );
+    auto& loop_k = builder.add_for(
+        loop_i.root(),
+        k,
+        symbolic::Lt(k, symbolic::integer(32)),
+        symbolic::integer(0),
+        symbolic::add(k, symbolic::integer(1))
+    );
+
+    auto& block = builder.add_block(loop_k.root());
+    auto& c_in = builder.add_access(block, "C");
+    auto& a_in = builder.add_access(block, "A");
+    auto& c_out = builder.add_access(block, "C");
+    auto& t = builder.add_tasklet(block, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
+    builder.add_computational_memlet(block, c_in, t, "_in1", {b}, ptr);
+    builder
+        .add_computational_memlet(block, a_in, t, "_in2", {symbolic::add(symbolic::mul(i, symbolic::integer(32)), k)}, ptr);
+    builder.add_computational_memlet(block, t, "_out", c_out, {b}, ptr);
+
+    analysis::AnalysisManager am(builder.subject());
+    LocalStorage xform(loop_i, a_in, /*swizzle*/ false, /*lane_contiguous*/ false, /*transpose_layout*/ true);
+    ASSERT_TRUE(xform.can_be_applied(builder, am));
+    EXPECT_TRUE(xform.storage_type().is_nv_shared());
+    xform.apply(builder, am);
+
+    auto buf = xform.local_container();
+    ASSERT_TRUE(builder.subject().exists(buf));
+    // Column-major: the logical [4][32] tile is stored transposed as [32][4].
+    EXPECT_TRUE(
+        builder.subject().type(buf) == types::Array(types::Array(elem, symbolic::integer(4)), symbolic::integer(32))
+    );
+
+    // The staged copy is a TileCopyNode; the body reads the shared buffer, not A.
+    bool has_copy_node = false;
+    std::function<void(structured_control_flow::ControlFlowNode&)> find =
+        [&](structured_control_flow::ControlFlowNode& n) {
+            if (auto* blk = dynamic_cast<structured_control_flow::Block*>(&n)) {
+                for (auto* ln : blk->dataflow().library_nodes()) {
+                    if (dynamic_cast<tiles::TileCopyNode*>(ln)) has_copy_node = true;
+                }
+            } else if (auto* s = dynamic_cast<structured_control_flow::Sequence*>(&n)) {
+                for (size_t x = 0; x < s->size(); ++x) find(s->at(x));
+            } else if (auto* m = dynamic_cast<structured_control_flow::Map*>(&n)) {
+                find(m->root());
+            } else if (auto* f = dynamic_cast<structured_control_flow::StructuredLoop*>(&n)) {
+                find(f->root());
+            }
+        };
+    find(map_b.root());
+    EXPECT_TRUE(has_copy_node);
+}
+
+/**
  * Apply_Cooperative_Mixed_CoopOuter: the 2D-block GEMM shape. The tile is
  * cooperative along the OUTER GPU block dim (j) and per-thread along the INNER,
  * immediately-enclosing dim (i). This is exactly what LocalStorage v1 rejected
@@ -2787,18 +2985,11 @@ TEST(LocalStorageTest, Apply_Cooperative_Mixed_CoopOuter) {
         builder.subject().type(buf) == types::Array(types::Array(elem, symbolic::integer(36)), symbolic::integer(8))
     );
 
-    // The copy sits in the immediately-enclosing (per-thread) map's body:
-    // [leading barrier, copy_map, trailing barrier, k-loop].
+    // The copy sits in the immediately-enclosing (per-thread) map's body as a single
+    // per-thread-slot TileCopyNode: [leading barrier, copy_block, trailing barrier, k-loop].
     ASSERT_EQ(map_i.root().size(), 4u);
     EXPECT_NE(dyn_cast<structured_control_flow::Block*>(&map_i.root().at(0)), nullptr);
-    auto* copy_map = dyn_cast<structured_control_flow::Map*>(&map_i.root().at(1));
-    ASSERT_NE(copy_map, nullptr);
-    EXPECT_EQ(copy_map->schedule_type().category(), structured_control_flow::ScheduleTypeCategory::Offloader);
-    // The copy must be parallelized over the cooperative axis j (X_BLOCK, width 4),
-    // NOT the per-thread immediate parent i (Y_BLOCK, width 8).
-    EXPECT_EQ(gpu::gpu_target_level(copy_map->schedule_type()), gpu::TargetLevel::X_BLOCK);
-    EXPECT_TRUE(symbolic::eq(gpu::ScheduleType_GPU_Offload::parallel_size(copy_map->schedule_type()), symbolic::integer(4))
-    );
+    EXPECT_TRUE(is_tile_copy_block(map_i.root().at(1)));
     EXPECT_NE(dyn_cast<structured_control_flow::Block*>(&map_i.root().at(2)), nullptr);
     EXPECT_NE(dyn_cast<structured_control_flow::For*>(&map_i.root().at(3)), nullptr);
 

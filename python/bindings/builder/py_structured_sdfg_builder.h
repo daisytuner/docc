@@ -506,6 +506,23 @@ public:
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
 
+    /// Add a whole-block cooperative TileCopyNode staging one tile between a global
+    /// container and a local (e.g. shared/LDS) buffer. @p global_layout / @p
+    /// buffer_layout are the source/destination geometries (plan.src / plan.dst);
+    /// @p direction is "in" (global->buffer) or "out" (buffer->global). @p
+    /// implementation selects the backend dispatcher ("ROCM"/"CUDA"/"" for the
+    /// sequential reference). The `{_dst,_src}` memlets are bare pointers.
+    sdfg::data_flow::LibraryNode& add_tile_copy_node(
+        const std::string& buffer_name,
+        const std::string& global_name,
+        const sdfg::types::Tensor& global_layout,
+        const sdfg::types::Tensor& buffer_layout,
+        const sdfg::types::IType& pointer_type,
+        const std::string& direction,
+        const std::string& implementation,
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+
     void add_fill_op(
         const std::string& X,
         const sdfg::types::Scalar& X_type,

@@ -7,21 +7,18 @@ namespace transformations {
 
 /**
  * @brief Widen every cooperative shared-staging copy in a subtree to the widest
- *        legal vector transfer, orthogonally to how the copy was produced.
+ *        legal vector transfer.
  *
- * Runs after LocalStorage (which emits scalar copies) and, optionally, after
- * SoftwarePipelining (which turns them into minimal-width cp.async). For each
- * copy under a GPU coverage map it either:
- *   - lowers a scalar `assign` tasklet to a synchronous @ref tiles::VectorCopyNode
- *     (float4/float2), or
- *   - re-strides an existing @ref tiles::CpAsyncCopyNode / @ref tiles::VectorCopyNode
- *     to a wider transfer,
- * whenever the copied run is provably contiguous and aligned. Pipelined regions
- * have their @ref tiles::PipelineWaitNode `loads_per_group` recomputed from the
- * widened cp.async widths so the vmcnt fence stays correct.
+ * Runs after LocalStorage (which emits a scalar @ref tiles::TileCopyNode) and,
+ * optionally, after SoftwarePipelining (which flips the node's atom to cp.async).
+ * For each @ref tiles::TileCopyNode it widens the transfer — a ScalarSync copy
+ * becomes VectorSync, a CpAsync copy keeps its atom — whenever the copied run is
+ * provably contiguous and aligned (derived from the plan layouts). Pipelined
+ * regions have their @ref tiles::PipelineWaitNode `loads_per_group` recomputed
+ * from the widened cp.async widths so the vmcnt fence stays correct.
  *
  * This is the single place vectorization happens; it is always safe to run (a
- * no-op when nothing widens) and composes with any copy representation.
+ * no-op when nothing widens).
  */
 class TileVectorizer : public Transformation {
     structured_control_flow::StructuredLoop& loop_;

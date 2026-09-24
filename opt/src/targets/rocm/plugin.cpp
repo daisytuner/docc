@@ -10,7 +10,8 @@
 #include "sdfg/targets/rocm/rocm_mma_dispatcher.h"
 #include "sdfg/targets/rocm/rocm_offload_dispatcher_strategy.h"
 #include "sdfg/targets/rocm/rocm_reduce_dispatcher.h"
-#include "sdfg/targets/rocm/tiles/async_copy_node.h"
+#include "sdfg/targets/rocm/tiles/pipeline_node.h"
+#include "sdfg/targets/rocm/tiles/tile_copy_node.h"
 #include "sdfg/tiles/tile_target_registry.h"
 
 namespace sdfg::rocm {
@@ -286,26 +287,14 @@ void register_rocm_plugin(plugins::Context& context) {
     );
     // Async copy / pipeline primitives (software pipelining)
     libNodeDispatcherRegistry.register_library_node_dispatcher(
-        ::sdfg::tiles::LibraryNodeType_CpAsyncCopy,
+        ::sdfg::tiles::LibraryNodeType_TileCopy,
         ImplementationType_ROCM,
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
            const data_flow::LibraryNode& node) {
-            return std::make_unique<rocm::tiles::CpAsyncCopyNodeDispatcher>(
-                language_extension, function, data_flow_graph, dynamic_cast<const ::sdfg::tiles::CpAsyncCopyNode&>(node)
-            );
-        }
-    );
-    libNodeDispatcherRegistry.register_library_node_dispatcher(
-        ::sdfg::tiles::LibraryNodeType_VectorCopy,
-        ImplementationType_ROCM,
-        [](codegen::LanguageExtension& language_extension,
-           const Function& function,
-           const data_flow::DataFlowGraph& data_flow_graph,
-           const data_flow::LibraryNode& node) {
-            return std::make_unique<rocm::tiles::VectorCopyNodeDispatcher>(
-                language_extension, function, data_flow_graph, dynamic_cast<const ::sdfg::tiles::VectorCopyNode&>(node)
+            return std::make_unique<rocm::tiles::TileCopyNodeDispatcher>(
+                language_extension, function, data_flow_graph, dynamic_cast<const ::sdfg::tiles::TileCopyNode&>(node)
             );
         }
     );

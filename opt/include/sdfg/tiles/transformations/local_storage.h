@@ -19,6 +19,7 @@
 #include "sdfg/tiles/analysis/tile_analysis.h"
 #include "sdfg/tiles/buffer_layout.h"
 #include "sdfg/tiles/locality.h"
+#include "sdfg/tiles/tiled_copy.h"
 #include "sdfg/transformations/transformation.h"
 #include "sdfg/types/type.h"
 
@@ -66,16 +67,6 @@ public:
         /// Per-varying-dim local tile index (@p access_subset[d] - base[d]) for a
         /// body access. Pure; unit-testable.
         std::vector<symbolic::Expression> local_index(const std::vector<symbolic::Expression>& access_subset) const;
-
-        /// Container linear address for the *full flat* tile (slots folded in):
-        /// substitutes each @p slot_indvars[s] with @p slot_values[s] (the indvar's
-        /// value for the delinearized slot index), yielding the gather address for a
-        /// lane-contiguous cooperative copy. Pure; unit-testable.
-        std::vector<symbolic::Expression> flat_original_subset(
-            const std::vector<symbolic::Expression>& slot_indvars,
-            const std::vector<symbolic::Expression>& slot_values,
-            const std::vector<symbolic::Expression>& tile_indices
-        ) const;
     };
 
     /// True if any library node in @p loop's body has side effects (may touch
@@ -92,7 +83,8 @@ private:
     tiles::LocalityPlan plan_; ///< Schedule classification (populated by can_be_applied)
     bool swizzle_layout_ = false; ///< XOR-swizzle the NV_Shared inner index instead of padding it
     bool lane_contiguous_ = false; ///< Lay the NV_Shared tile thread-linearly (flat, no slots) for the CDNA async
-                                   ///< global->LDS DMA, which writes lane-contiguous from a wave-uniform base.
+    bool transpose_layout_ = false; ///< Store the (no-slot) NV_Shared tile column-major (reversed tile axes)
+                                    ///< global->LDS DMA, which writes lane-contiguous from a wave-uniform base.
     std::unordered_set<const data_flow::Memlet*> group_memlets_; ///< Memlets in the selected tile group
     std::vector<structured_control_flow::Reduce*> reduce_retargets_; ///< non-cooperative Reduce nodes to retarget in
                                                                      ///< apply()
@@ -138,8 +130,9 @@ private:
         const symbolic::Assumptions& assums = {}
     ) const;
 
-    /// Private/CPU path: a nested sequential copy nest around the loop (copy-in
-    /// when @p writeback is false, copy-out when true).
+    /// Private/CPU path: copy-in (when @p writeback is false) or copy-out (true).
+    /// A plain copy routes through the unified TileCopyNode; a grid-reduction
+    /// accumulator uses the atomic-merge nest.
     void emit_private_copy(
         builder::StructuredSDFGBuilder& builder,
         analysis::AnalysisManager& analysis_manager,
@@ -150,48 +143,56 @@ private:
         bool writeback
     );
 
-    /// Cooperative GPU path: a flattened copy-in Map carrying the cooperative
-    /// dim's offload schedule, followed by a barrier (read-only, no writeback).
-    /// @p slot_indices are the per-thread buffer-slot indices (threadIdx.<axis>);
-    /// @p leading_barrier adds a pre-copy barrier for re-staged (per-thread) tiles.
-    void emit_cooperative_copy_in(
-        builder::StructuredSDFGBuilder& builder,
-        analysis::AnalysisManager& analysis_manager,
-        structured_control_flow::Sequence& parent,
-        const tiles::PackedBuffer& buffer,
-        const types::IType& buffer_type,
-        const types::IType& pointer_type,
-        const std::vector<symbolic::Expression>& slot_indices,
-        bool leading_barrier
-    );
+    /// The realized movement plan for the staged tile: the value-level TiledCopy,
+    /// the spatial axes that cooperatively split it (empty = whole-block), and the
+    /// ragged-boundary guard over the dispatcher's flat index.
+    struct BuiltCopy {
+        tiles::TiledCopy plan;
+        std::vector<int> coop_axes;
+        tiles::TileGuard guard;
+        symbolic::Expression coop_threads; ///< symbolic cooperating thread count (null = unknown)
+    };
 
-    /// Stage the tile once at the top of the localized GPU map's body (a
-    /// block-scheduled copy map + trailing barrier), so the block consumers below
-    /// read the shared buffer. Used for the enclosing-cooperative case.
-    void emit_enclosing_cooperative_copy_in(
-        builder::StructuredSDFGBuilder& builder,
+    /// Build the complete movement plan for the staged tile from its geometry.
+    /// The buffer kind selects the placement — dense whole-block (MultiDim),
+    /// per-thread-slot (Padded/Swizzle, with the swizzle riding on the plan), or
+    /// lane-contiguous flat (Linearized) — so this is the single place the copy's
+    /// data-movement logic lives; callers only choose placement, direction, and
+    /// barriers. @p guard_scope supplies the assumptions that discharge the guard.
+    BuiltCopy build_tiled_copy(
         analysis::AnalysisManager& analysis_manager,
+        structured_control_flow::Sequence& guard_scope,
         const tiles::PackedBuffer& buffer,
-        const types::IType& buffer_type,
-        const types::IType& pointer_type
-    );
-
-    /// Lane-contiguous cooperative path (CDNA async global->LDS): a full-block
-    /// thread-linear copy into a flat buffer, so `dst = buf[flat_tid + BLK*iter]`
-    /// is lane-contiguous (required by global_load_lds, which ignores per-lane
-    /// destinations). Gathers via TileInfo::flat_original_subset from the
-    /// delinearized flat index. @p slot_* describe the folded per-thread dims.
-    void emit_lane_contiguous_copy_in(
-        builder::StructuredSDFGBuilder& builder,
-        analysis::AnalysisManager& analysis_manager,
-        structured_control_flow::Sequence& parent,
-        const tiles::PackedBuffer& buffer,
-        const types::IType& buffer_type,
         const types::IType& pointer_type,
         const std::vector<symbolic::Expression>& slot_sizes,
+        const std::vector<symbolic::Expression>& slot_indices,
         const std::vector<symbolic::Expression>& slot_indvars,
         const std::vector<symbolic::Expression>& slot_inits,
         const std::vector<symbolic::Expression>& slot_strides
+    );
+
+    /// Emit a built copy as a single TileCopyNode in a fresh block placed before
+    /// (or, when @p after, after) @p anchor in @p scope, wiring _dst/_src per
+    /// @p direction, with optional leading/trailing barriers.
+    void emit_copy_node(
+        builder::StructuredSDFGBuilder& builder,
+        structured_control_flow::Sequence& scope,
+        structured_control_flow::ControlFlowNode& anchor,
+        bool after,
+        const BuiltCopy& copy,
+        const data_flow::ImplementationType& impl,
+        const types::IType& pointer_type,
+        tiles::CopyDirection direction,
+        bool leading_barrier,
+        bool trailing_barrier
+    );
+
+    /// Ragged-boundary guard for the tile @p vsizes: one @ref tiles::TileGuard::Dim
+    /// per varying dim whose worst-case coordinate is not provably in bounds.
+    tiles::TileGuard tile_boundary_guard(
+        analysis::AnalysisManager& analysis_manager,
+        structured_control_flow::Sequence& guard_scope,
+        const std::vector<symbolic::Expression>& vsizes
     );
 
     /// Redirect every container access in the loop body to the local buffer,
@@ -217,16 +218,20 @@ public:
      * @param lane_contiguous The NV_Shared tile is laid out flat and thread-linear
      *        (slots folded, no padding), staged by a full-block cooperative copy.
      *        Required by the CDNA async global->LDS DMA (`global_load_lds`).
+     * @param transpose_layout Store a cooperative (no-slot) NV_Shared tile
+     *        column-major (its tile axes reversed), so consumers read it transposed
+     *        without a separate pass. A pure affine relabelling of storage.
      */
     LocalStorage(
         structured_control_flow::StructuredLoop& loop,
         const data_flow::AccessNode& access_node,
         bool swizzle_layout = false,
-        bool lane_contiguous = false
+        bool lane_contiguous = false,
+        bool transpose_layout = false
     )
         : loop_(loop), access_node_(access_node), container_(access_node.data()),
           storage_type_(types::StorageType::CPU_Stack()), swizzle_layout_(swizzle_layout),
-          lane_contiguous_(lane_contiguous) {}
+          lane_contiguous_(lane_contiguous), transpose_layout_(transpose_layout) {}
 
     std::string name() const override { return "LocalStorage"; }
 
