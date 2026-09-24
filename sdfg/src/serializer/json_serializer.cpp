@@ -277,6 +277,9 @@ void JSONSerializer::structured_loop_to_json(nlohmann::json& j, const structured
             nlohmann::json reduction_json;
             reduction_json["op"] = structured_control_flow::reduction_operation_to_string(reduction.operation);
             reduction_json["container"] = reduction.container;
+            if (!reduction.original_index.is_null()) {
+                reduction_json["original_index"] = expression(reduction.original_index);
+            }
             j["reductions"].push_back(reduction_json);
         }
     }
@@ -1051,7 +1054,10 @@ void JSONSerializer::json_to_reduce_node(
         assert(reduction_json["container"].is_string());
         reductions.push_back(structured_control_flow::ReductionInfo{
             structured_control_flow::reduction_operation_from_string(reduction_json["op"].get<std::string>()),
-            reduction_json["container"].get<std::string>()
+            reduction_json["container"].get<std::string>(),
+            reduction_json.contains("original_index")
+                ? symbolic::parse(reduction_json["original_index"].get<std::string>())
+                : symbolic::Expression(SymEngine::null)
         });
     }
 

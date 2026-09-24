@@ -20,7 +20,8 @@ void ArgumentsAnalysis::find_arguments_and_locals(
 
     std::unordered_map<std::string, DataRwFlags> all_containers;
     for (auto& user : scope_users.uses()) {
-        if (user->container() == symbolic::__nullptr__()->get_name()) {
+        if (user->container() == symbolic::__nullptr__()->get_name() ||
+            symbolic::is_nv(symbolic::symbol(user->container()))) {
             continue;
         }
 

@@ -51,6 +51,7 @@
 #include "sdfg/data_flow/library_nodes/stdlib/memcpy.h"
 #include "sdfg/data_flow/library_nodes/stdlib/memmove.h"
 #include "sdfg/element.h"
+#include "sdfg/passes/offloading/reduction_shared_memory_delinearization.h"
 #include "sdfg/structured_control_flow/return.h"
 #include "sdfg/structured_sdfg.h"
 #include "sdfg/targets/cuda/cuda_data_offloading_node.h"
@@ -381,6 +382,11 @@ bool CodeGenerationPass::generate_code(
 
         // Generate code
         sdfg::analysis::AnalysisManager analysis_manager(*part_sdfg);
+
+        // Finalize each split graph before instrumentation and code generation.
+        sdfg::builder::StructuredSDFGBuilder builder(*part_sdfg);
+        sdfg::passes::ReductionSharedMemoryDelinearization reduction_buffers;
+        reduction_buffers.run(builder, analysis_manager);
 
         // Determine instrumentation plan
         std::unique_ptr<sdfg::codegen::InstrumentationPlan> instrumentation_plan;

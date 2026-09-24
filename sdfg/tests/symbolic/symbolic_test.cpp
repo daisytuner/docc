@@ -9,6 +9,43 @@ TEST(SymbolicTest, Symbols) {
     EXPECT_EQ(x->get_name(), "x");
 }
 
+TEST(SymbolicTest, GpuBuiltinsUseSymbolicEquality) {
+    for (const auto& builtin :
+         {symbolic::threadIdx_x(),
+          symbolic::threadIdx_y(),
+          symbolic::threadIdx_z(),
+          symbolic::blockIdx_x(),
+          symbolic::blockIdx_y(),
+          symbolic::blockIdx_z(),
+          symbolic::blockDim_x(),
+          symbolic::blockDim_y(),
+          symbolic::blockDim_z(),
+          symbolic::gridDim_x(),
+          symbolic::gridDim_y(),
+          symbolic::gridDim_z()}) {
+        EXPECT_TRUE(symbolic::is_nv(builtin));
+        EXPECT_TRUE(symbolic::is_nv(symbolic::symbol(builtin->get_name())));
+        EXPECT_TRUE(symbolic::eq(symbolic::parse(builtin->get_name()), builtin));
+    }
+    EXPECT_FALSE(symbolic::is_nv(symbolic::symbol("threadIdx")));
+    EXPECT_FALSE(symbolic::is_nv(symbolic::symbol("threadIdx.w")));
+    EXPECT_FALSE(symbolic::is_nv(symbolic::symbol("ordinary_index")));
+}
+
+TEST(SymbolicTest, GpuBuiltinExpressionsRoundTrip) {
+    auto expression = symbolic::
+        add(symbolic::threadIdx_x(),
+            symbolic::mul(symbolic::blockDim_x(), symbolic::add(symbolic::threadIdx_y(), symbolic::threadIdx_z())));
+    expression = symbolic::add(expression, symbolic::symbol("__daisy_parse_gpu_0"));
+    expression = symbolic::add(expression, symbolic::symbol("__daisy_parse_gpu__0"));
+    EXPECT_TRUE(symbolic::eq(symbolic::parse(expression->__str__()), expression));
+    EXPECT_TRUE(symbolic::
+                    eq(symbolic::parse("threadIdx.x + 1.5"),
+                       symbolic::add(symbolic::threadIdx_x(), symbolic::parse("1.5"))));
+    EXPECT_TRUE(symbolic::eq(symbolic::parse("threadIdx_x"), symbolic::symbol("threadIdx_x")));
+    EXPECT_THROW(symbolic::parse("threadIdx.xx"), SymEngine::SymEngineException);
+}
+
 TEST(SymbolicTest, Integers) {
     auto num = symbolic::integer(-2);
     EXPECT_EQ(num->as_int(), -2);

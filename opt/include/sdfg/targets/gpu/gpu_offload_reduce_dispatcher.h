@@ -9,6 +9,7 @@
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/gpu/gpu_offload_base_dispatcher.h"
 #include "sdfg/targets/gpu/gpu_offload_schedule_type.h"
+#include "sdfg/targets/gpu/gpu_reduce_layout.h"
 #include "sdfg/types/type.h"
 
 
@@ -19,11 +20,7 @@ class GPUOffloadReduceDispatcher : public GPUOffloadBaseDispatcher {
 protected:
     structured_control_flow::Reduce& node_;
 
-    struct AccumulatorLayout {
-        symbolic::Expression base;
-        int64_t extent;
-    };
-    std::map<std::string, AccumulatorLayout> multi_output_layouts_;
+    std::map<std::string, ReductionLayout> multi_output_layouts_;
 
     void dispatch_kernel_body(
         codegen::NestedCodeSnippetFactory& kernel_snippet_factory,
@@ -114,8 +111,8 @@ protected:
         TargetLevel target_level
     );
 
-    void dispatch_reduction_shadow(
-        codegen::LanguageExtension& language_extension, codegen::PrettyPrinter& stream, TargetLevel target_level
+    std::string reduction_target(
+        codegen::LanguageExtension& language_extension, const std::string& container, symbolic::Expression index
     );
 
     void dispatch_reduction_combine(

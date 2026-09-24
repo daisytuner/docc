@@ -36,6 +36,7 @@ set(SOURCE_FILES
     src/parallelization/passes/for_classification.cpp
     src/tiles/analysis/tile_analysis.cpp
     src/tiles/analysis/reduction_analysis.cpp
+    src/tiles/analysis/reduction_buffer_analysis.cpp
     src/tiles/layout.cpp
     src/tiles/locality.cpp
     src/tiles/swizzle.cpp
@@ -71,6 +72,7 @@ set(SOURCE_FILES
     src/passes/offloading/device_resident_arg_promotion_pass.cpp
     src/passes/offloading/gpu_loop_reordering_pass.cpp
     src/passes/offloading/gpu_nested_offload_pass.cpp
+    src/passes/offloading/reduction_shared_memory_delinearization.cpp
     src/passes/offloading/gpu_nested_parallelization_pass.cpp
     src/passes/offloading/rocm_library_node_expansion_pass.cpp
     src/passes/offloading/rocm_library_node_rewriter_pass.cpp
@@ -113,6 +115,7 @@ set(SOURCE_FILES
     src/targets/gpu/gpu_offload_map_dispatcher.cpp
     src/targets/gpu/gpu_offload_reduce_dispatcher.cpp
     src/targets/gpu/gpu_reduce_dispatcher.cpp
+    src/targets/gpu/gpu_reduce_layout.cpp
     src/targets/gpu/math/tensor/conv_expander.cpp
     src/targets/offloading/external_offloading_node.cpp
     src/targets/offloading/utils.cpp

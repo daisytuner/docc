@@ -5,9 +5,9 @@
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/cuda/cuda_data_offloading_node.h"
-#include "sdfg/targets/gpu/gpu_schedule_type.h"
 #include "sdfg/targets/offloading/data_offloading_node.h"
 #include "sdfg/targets/rocm/rocm_data_offloading_node.h"
+#include "sdfg/tiles/analysis/reduction_buffer_analysis.h"
 #include "sdfg/transformations/transformation.h"
 #include "symengine/symengine_rcp.h"
 
@@ -43,8 +43,31 @@ bool GPUOffloadTransform<OffloaderNodeType>::
         return false;
     }
 
-    return true;
+    return reduction_buffers_supported(analysis_manager);
 };
+
+template<typename OffloaderNodeType>
+bool GPUOffloadTransform<OffloaderNodeType>::reduction_buffers_supported(analysis::AnalysisManager& analysis_manager) {
+    auto& buffers = analysis_manager.get<tiles::ReductionBufferAnalysis>();
+    for (auto* reduction : buffers.affected_reductions(loop_)) {
+        for (const auto& entry : reduction->reductions()) {
+            if (!entry.original_index.is_null()) {
+                return false;
+            }
+        }
+    }
+    return buffers.supports_schedule(loop_, transformed_schedule_type());
+}
+
+template<typename OffloaderNodeType>
+void GPUOffloadTransform<
+    OffloaderNodeType>::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+    if (!reduction_buffers_supported(analysis_manager)) {
+        throw InvalidSDFGException("GPUOffloadTransform: unsupported proposed reduction footprint");
+    }
+    OffloadTransform::apply(builder, analysis_manager);
+    analysis_manager.invalidate_all();
+}
 
 template<typename OffloaderNodeType>
 void GPUOffloadTransform<OffloaderNodeType>::add_device_buffer(
@@ -263,6 +286,10 @@ GPUOffloadTransform<OffloaderNodeType> GPUOffloadTransform<
 // from_json returns it by value, so members are instantiated individually instead.
 template bool GPUOffloadTransform<
     cuda::CUDADataOffloadingNode>::can_be_applied(builder::StructuredSDFGBuilder&, analysis::AnalysisManager&);
+template void GPUOffloadTransform<
+    cuda::CUDADataOffloadingNode>::apply(builder::StructuredSDFGBuilder&, analysis::AnalysisManager&);
+template void GPUOffloadTransform<
+    rocm::ROCMDataOffloadingNode>::apply(builder::StructuredSDFGBuilder&, analysis::AnalysisManager&);
 template void GPUOffloadTransform<cuda::CUDADataOffloadingNode>::
     add_device_buffer(builder::StructuredSDFGBuilder&, std::string, std::string, symbolic::Expression);
 template void GPUOffloadTransform<cuda::CUDADataOffloadingNode>::allocate_device_arg(

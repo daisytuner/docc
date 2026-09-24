@@ -21,6 +21,7 @@
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/structured_sdfg.h"
 #include "sdfg/symbolic/extreme_values.h"
+#include "sdfg/tiles/analysis/reduction_buffer_analysis.h"
 #include "sdfg/tiles/analysis/tile_analysis.h"
 #include "sdfg/tiles/library_nodes/async_copy_node.h"
 #include "sdfg/tiles/locality.h"
@@ -285,6 +286,56 @@ bool LocalStorage::has_side_effect(structured_control_flow::StructuredLoop& loop
 }
 
 bool LocalStorage::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+    return prepare(builder, analysis_manager) && reduction_buffers_supported(builder, analysis_manager);
+}
+
+// Preview the prepared rewrite on a clone, including accumulator retargeting and grid-owner demotion.
+bool LocalStorage::
+    reduction_buffers_supported(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+    auto& buffers = analysis_manager.get<tiles::ReductionBufferAnalysis>();
+    if (buffers.is_partial_buffer(container_)) {
+        return false;
+    }
+    const auto affected = buffers.affected_reductions(loop_);
+    if (affected.empty()) {
+        return true;
+    }
+    std::unordered_set<size_t> affected_ids;
+    for (auto* reduction : affected) {
+        affected_ids.insert(reduction->element_id());
+        for (const auto& entry : reduction->reductions()) {
+            if (entry.container == container_ && !entry.original_index.is_null()) {
+                return false;
+            }
+        }
+    }
+    auto snapshot = builder.subject().clone();
+    builder::StructuredSDFGBuilder proposed_builder(*snapshot);
+    auto* loop =
+        dyn_cast<structured_control_flow::StructuredLoop*>(proposed_builder.find_element_by_id(loop_.element_id()));
+    auto* access = dyn_cast<data_flow::AccessNode*>(proposed_builder.find_element_by_id(access_node_.element_id()));
+    if (!loop || !access) {
+        return false;
+    }
+    analysis::AnalysisManager proposed_manager(
+        *snapshot,
+        analysis_manager.get<analysis::AssumptionsAnalysis>().get(builder.subject().root()),
+        analysis_manager.options()
+    );
+    LocalStorage proposed(*loop, *access, swizzle_layout_, lane_contiguous_);
+    if (!proposed.prepare(proposed_builder, proposed_manager)) {
+        return false;
+    }
+    proposed.apply_prepared(proposed_builder, proposed_manager);
+    for (const auto& [key, info] : buffers.estimate(*snapshot)) {
+        if (affected_ids.contains(key.first) && info.status != tiles::ReductionBufferStatus::Exact) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool LocalStorage::prepare(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     auto& sdfg = builder.subject();
     tile_info_ = TileInfo{};
     group_memlets_.clear();
@@ -493,6 +544,13 @@ bool LocalStorage::can_be_applied(builder::StructuredSDFGBuilder& builder, analy
 }
 
 void LocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+    if (!can_be_applied(builder, analysis_manager)) {
+        throw InvalidTransformationException("LocalStorage: unsupported tile or proposed reduction footprint");
+    }
+    apply_prepared(builder, analysis_manager);
+}
+
+void LocalStorage::apply_prepared(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     auto* parent = dyn_cast<structured_control_flow::Sequence*>(loop_.get_parent());
     if (!parent) {
         throw InvalidTransformationException("LocalStorage: parent of loop must be a Sequence");

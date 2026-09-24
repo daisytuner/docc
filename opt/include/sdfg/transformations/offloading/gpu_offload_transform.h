@@ -22,6 +22,8 @@ public:
 
     bool can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
 
+    void apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
+
     void to_json(nlohmann::json& j) const override;
 
     static GPUOffloadTransform<OffloaderNodeType>
@@ -30,6 +32,8 @@ public:
 protected:
     const symbolic::Integer parallel_size_;
     gpu::TargetLevel target_level_;
+
+    bool reduction_buffers_supported(analysis::AnalysisManager& analysis_manager);
 
     types::StorageType local_device_storage_type() override {
         return types::StorageType(

@@ -12,6 +12,8 @@
 #include "sdfg/data_flow/library_nodes/stdlib/memset.h"
 #include "sdfg/data_flow/tasklet.h"
 #include "sdfg/function.h"
+#include "sdfg/passes/offloading/reduction_shared_memory_delinearization.h"
+#include "sdfg/serializer/json_serializer.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/for.h"
 #include "sdfg/structured_control_flow/map.h"
@@ -21,6 +23,7 @@
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/cuda/cuda.h"
 #include "sdfg/targets/gpu/gpu_schedule_type.h"
+#include "sdfg/tiles/analysis/reduction_buffer_analysis.h"
 #include "sdfg/tiles/analysis/tile_analysis.h"
 #include "sdfg/tiles/library_nodes/async_copy_node.h"
 #include "sdfg/tiles/locality.h"
@@ -1923,6 +1926,26 @@ TEST(LocalStorageTest, CanApply_CooperativeReductionAccumulator_Rejects) {
     analysis::AnalysisManager am(builder.subject());
     LocalStorage xform(reduce_j, acc_out);
     EXPECT_FALSE(xform.can_be_applied(builder, am));
+    const auto reduction_before = am.get<tiles::ReductionBufferAnalysis>().require(reduce_j, "acc");
+    serializer::JSONSerializer serializer;
+    const auto before_staging = serializer.serialize(builder.subject());
+    LocalStorage input_staging(map_row, x_in);
+    ASSERT_TRUE(input_staging.can_be_applied(builder, am));
+    EXPECT_EQ(serializer.serialize(builder.subject()), before_staging);
+    input_staging.apply(builder, am);
+    const auto reduction_after = am.get<tiles::ReductionBufferAnalysis>().require(reduce_j, "acc");
+    EXPECT_EQ(reduction_after.private_bytes, reduction_before.private_bytes);
+    EXPECT_EQ(reduction_after.shared_bytes, reduction_before.shared_bytes);
+    EXPECT_EQ(reduction_after.shared_owner, reduction_before.shared_owner);
+    passes::ReductionSharedMemoryDelinearization packing;
+    ASSERT_TRUE(packing.run_pass(builder, am));
+    const auto materialized = serializer.serialize(builder.subject());
+    EXPECT_FALSE(xform.can_be_applied(builder, am));
+    EXPECT_THROW(xform.apply(builder, am), transformations::InvalidTransformationException);
+    LocalStorage partial_retarget(reduce_j, acc_out);
+    EXPECT_FALSE(partial_retarget.can_be_applied(builder, am));
+    EXPECT_THROW(partial_retarget.apply(builder, am), transformations::InvalidTransformationException);
+    EXPECT_EQ(serializer.serialize(builder.subject()), materialized);
 }
 
 // =====================================================================

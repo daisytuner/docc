@@ -1,4 +1,5 @@
 #include "sdfg/targets/gpu/gpu_offload_base_dispatcher.h"
+#include "sdfg/tiles/analysis/reduction_buffer_analysis.h"
 
 #include <string>
 #include <unordered_map>
@@ -15,11 +16,9 @@
 #include <sdfg/types/type.h>
 
 #include "sdfg/analysis/arguments_analysis.h"
-#include "sdfg/serializer/json_serializer.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/targets/gpu/gpu_map_utils.h"
 #include "sdfg/targets/gpu/gpu_offload_schedule_type.h"
-#include "sdfg/visualizer/dot_visualizer.h"
 
 namespace sdfg {
 namespace gpu {
@@ -130,6 +129,9 @@ void GPUOffloadBaseDispatcher::dispatch_node(
     auto warps = target_level_indvars(node_, analysis_manager, TargetLevel::WARP);
 
     for (auto& var : scope_variables_unfiltered) {
+        if (analysis_manager.get<tiles::ReductionBufferAnalysis>().is_partial_buffer(var)) {
+            continue;
+        }
         if (x_grids.find(symbolic::symbol(var)) == x_grids.end() &&
             y_grids.find(symbolic::symbol(var)) == y_grids.end() &&
             z_grids.find(symbolic::symbol(var)) == z_grids.end() &&

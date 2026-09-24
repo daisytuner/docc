@@ -16,6 +16,7 @@
 #include "sdfg/targets/cuda/cuda.h"
 #include "sdfg/targets/gpu/gpu_map_utils.h"
 #include "sdfg/targets/rocm/rocm.h"
+#include "sdfg/tiles/analysis/reduction_buffer_analysis.h"
 #include "symengine/symengine_rcp.h"
 
 namespace sdfg {
@@ -300,15 +301,19 @@ bool GPUOffloadNestedLoop<
         return false;
     }
 
-    return true;
+    return analysis_manager.get<tiles::ReductionBufferAnalysis>()
+        .supports_schedule(loop_, GPUType::template create<GPUType>(target_level_, parallel_size_));
 }
 
 template<typename GPUType>
 void GPUOffloadNestedLoop<
     GPUType>::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+    auto new_schedule = GPUType::template create<GPUType>(target_level_, parallel_size_);
+    if (!analysis_manager.get<tiles::ReductionBufferAnalysis>().supports_schedule(loop_, new_schedule)) {
+        throw InvalidSDFGException("GPUOffloadNestedLoop: unsupported proposed reduction footprint");
+    }
     auto plan = gpu::analyze_nested_fold(loop_, target_level_, analysis_manager);
 
-    auto new_schedule = GPUType::template create<GPUType>(target_level_, parallel_size_);
     builder.update_schedule_type(loop_, new_schedule);
 
     auto barrier_precedes = [](structured_control_flow::Sequence& sequence,

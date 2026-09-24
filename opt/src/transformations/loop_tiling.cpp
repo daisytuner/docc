@@ -3,7 +3,9 @@
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/symbolic/symbolic.h"
+#include "sdfg/tiles/analysis/reduction_buffer_analysis.h"
 
+#include <set>
 #include <symengine/integer.h>
 
 namespace sdfg {
@@ -40,10 +42,50 @@ bool LoopTiling::can_be_applied(builder::StructuredSDFGBuilder& builder, analysi
     if (this->tile_size_ <= 1) {
         return false;
     }
-    return loop_.is_contiguous();
+    return loop_.is_contiguous() && reduction_buffers_supported(builder, analysis_manager, {tile_size_});
 };
 
+// Apply all proposed tile levels to a clone before checking affected reduction footprints.
+bool LoopTiling::reduction_buffers_supported(
+    builder::StructuredSDFGBuilder& builder,
+    analysis::AnalysisManager& analysis_manager,
+    const std::vector<size_t>& tile_sizes
+) const {
+    auto& buffers = analysis_manager.get<tiles::ReductionBufferAnalysis>();
+    const auto affected = buffers.affected_reductions(loop_);
+    if (affected.empty()) {
+        return true;
+    }
+    std::set<size_t> affected_ids;
+    for (auto* reduction : affected) {
+        affected_ids.insert(reduction->element_id());
+        for (const auto& entry : reduction->reductions()) {
+            if (!entry.original_index.is_null()) {
+                return false;
+            }
+        }
+    }
+    auto snapshot = builder.subject().clone();
+    builder::StructuredSDFGBuilder proposed(*snapshot);
+    auto* inner = dyn_cast<structured_control_flow::StructuredLoop*>(proposed.find_element_by_id(loop_.element_id()));
+    for (auto size : tile_sizes) {
+        auto& outer = tile_loop(proposed, *inner, size, simplify_bounds_);
+        if (dyn_cast<structured_control_flow::Reduce*>(&outer)) {
+            affected_ids.insert(outer.element_id());
+        }
+    }
+    for (const auto& [key, info] : buffers.estimate(*snapshot)) {
+        if (affected_ids.contains(key.first) && info.status != tiles::ReductionBufferStatus::Exact) {
+            return false;
+        }
+    }
+    return true;
+}
+
 void LoopTiling::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+    if (!can_be_applied(builder, analysis_manager)) {
+        throw InvalidSDFGException("LoopTiling: unsupported loop or proposed reduction footprint");
+    }
     outer_loop_ = &tile_loop(builder, loop_, this->tile_size_, this->simplify_bounds_);
     inner_loop_ = &loop_;
 

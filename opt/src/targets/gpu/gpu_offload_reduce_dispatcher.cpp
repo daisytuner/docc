@@ -2,10 +2,7 @@
 
 #include <iostream>
 #include <sdfg/analysis/analysis.h>
-#include <sdfg/analysis/assumptions_analysis.h>
-#include <sdfg/analysis/base_user_visitor.h>
 #include <sdfg/analysis/loop_analysis.h>
-#include <sdfg/analysis/type_analysis.h>
 #include <sdfg/analysis/users.h>
 #include <sdfg/builder/structured_sdfg_builder.h>
 #include <sdfg/codegen/dispatchers/sequence_dispatcher.h>
@@ -21,16 +18,14 @@
 #include <sdfg/types/type.h>
 #include <sdfg/visitor/structured_sdfg_visitor.h>
 #include <string>
-#include <unordered_map>
 #include <unordered_set>
 
 
-#include "sdfg/analysis/arguments_analysis.h"
 #include "sdfg/element.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/targets/gpu/gpu_map_utils.h"
 #include "sdfg/targets/gpu/gpu_offload_schedule_type.h"
-#include "sdfg/visualizer/dot_visualizer.h"
+#include "sdfg/tiles/analysis/reduction_buffer_analysis.h"
 
 #include <algorithm>
 #include <sdfg/data_flow/access_node.h>
@@ -120,34 +115,6 @@ std::string combine_expr(ReductionOperation op, const std::string& a, const std:
     throw InvalidSDFGException("GPUOffloadReduceDispatcher: unknown reduction operation");
 }
 
-// Scalar element type of a reduction accumulator (device pointer to scalar, or scalar).
-//
-// The accumulator's declared container type is often an opaque device pointer (a
-// `Pointer()` with no pointee) because the offload transform clones the host array's
-// pointer-like type without carrying its element type. In that case the element type is
-// not recoverable from the pointer itself; it lives on the memlets that access the
-// container. We therefore consult the type analysis, which reconstructs the outer type
-// from those memlets, and peel it down to the innermost scalar element.
-types::PrimitiveType
-accumulator_primitive(const StructuredSDFG& sdfg, analysis::TypeAnalysis& type_analysis, const std::string& container) {
-    const types::IType* type = &sdfg.type(container);
-
-    if (auto* ptr = dynamic_cast<const types::Pointer*>(type); ptr != nullptr && !ptr->has_pointee_type()) {
-        if (const types::IType* resolved = type_analysis.get_outer_type(container)) {
-            type = resolved;
-        }
-    }
-
-    const types::IType& element = types::peel_to_innermost_element(*type);
-    if (auto* scalar = dynamic_cast<const types::Scalar*>(&element)) {
-        return scalar->primitive_type();
-    }
-    throw InvalidSDFGException(
-        "GPUOffloadReduceDispatcher: could not resolve scalar element type for reduction accumulator '" + container +
-        "'"
-    );
-}
-
 // Whether the runtime provides a native atomicAdd overload for this primitive.
 bool has_native_atomic_add(types::PrimitiveType prim) {
     const size_t width = types::bit_width(prim);
@@ -161,100 +128,6 @@ bool has_native_atomic_add(types::PrimitiveType prim) {
         return true;
     }
     return false;
-}
-
-// Single, indvar-invariant index with which `container` is accessed in the reduce body.
-//
-// The body is walked with the shared user-visitor so every control-flow construct is
-// covered (IfElse branches, While/loop bodies, nested loops); a hand-rolled walk is
-// easy to leave incomplete, and a missed access spuriously reports "not accessed"
-// (e.g. maxpool's guarded `if (x > acc) acc = x`).
-class AccumulatorIndexCollector : public analysis::BaseUserVisitor {
-public:
-    explicit AccumulatorIndexCollector(std::string container) : container_(std::move(container)) {}
-
-    bool found() const { return found_; }
-    symbolic::Expression index() const { return index_; }
-
-    void
-    use_as_src_node(const std::string& container, const data_flow::AccessNode&, const data_flow::Memlet& edge, const structured_control_flow::Block&)
-        override {
-        record(container, edge);
-    }
-    void
-    use_as_dst_node(const std::string& container, const data_flow::AccessNode&, const data_flow::Memlet& edge, const structured_control_flow::Block&)
-        override {
-        record(container, edge);
-    }
-
-    void use_as_symbol_read(
-        const std::string&,
-        const structured_control_flow::ControlFlowNode*,
-        const Element*,
-        SymbolReadLocation,
-        int,
-        symbolic::Expression
-    ) override {}
-    void use_as_symbol_write(
-        const symbolic::Symbol&, const structured_control_flow::ControlFlowNode*, const Element*, SymbolWriteLocation
-    ) override {}
-    void use_as_return_src(const std::string&, const structured_control_flow::Return&) override {}
-
-private:
-    void record(const std::string& container, const data_flow::Memlet& edge) {
-        if (container != container_) {
-            return;
-        }
-        // A scalar accumulator is accessed by name (empty subset); treat it as a single slot
-        // at index 0. An array accumulator is accessed as container[i] (subset size 1).
-        // Anything else (multi-dimensional) is not a single-slot reduction target.
-        symbolic::Expression candidate;
-        if (edge.subset().empty()) {
-            candidate = symbolic::zero();
-        } else if (edge.subset().size() == 1) {
-            candidate = edge.subset()[0];
-        } else {
-            throw InvalidSDFGException(
-                "GPUOffloadReduceDispatcher: accumulator '" + container_ + "' has an unsupported " +
-                std::to_string(edge.subset().size()) +
-                "-dimensional access; only scalar or one-dimensional accumulator accesses are supported"
-            );
-        }
-        if (!found_) {
-            index_ = candidate;
-            found_ = true;
-        } else if (!symbolic::eq(index_, candidate)) {
-            throw InvalidSDFGException(
-                "GPUOffloadReduceDispatcher: accumulator '" + container_ +
-                "' is accessed with inconsistent indices in the reduce body"
-            );
-        }
-    }
-
-    std::string container_;
-    bool found_ = false;
-    symbolic::Expression index_ = SymEngine::null;
-};
-
-symbolic::Expression accumulator_index(
-    structured_control_flow::Sequence& root, const std::string& container, const symbolic::Symbol& indvar
-) {
-    AccumulatorIndexCollector collector(container);
-    collector.visit(root);
-
-    if (!collector.found()) {
-        throw InvalidSDFGException(
-            "GPUOffloadReduceDispatcher: accumulator '" + container + "' is not accessed in the reduce body"
-        );
-    }
-    auto index = collector.index();
-    if (symbolic::uses(index, indvar)) {
-        throw InvalidSDFGException(
-            "GPUOffloadReduceDispatcher: accumulator '" + container + "' index depends on the reduction variable '" +
-            indvar->get_name() + "'; this is a scatter, not a reduction into a single slot"
-        );
-    }
-    return index;
 }
 
 } // namespace
@@ -277,82 +150,16 @@ GPUOffloadReduceDispatcher::GPUOffloadReduceDispatcher(
 
 
 void GPUOffloadReduceDispatcher::validate_before_dispatch(analysis::AnalysisManager& analysis_manager) {
-    auto& index_loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
-    std::vector<structured_control_flow::StructuredLoop*> inner_loops;
-    for (auto* descendant : index_loop_analysis.descendants(&node_)) {
-        if (auto* inner = dynamic_cast<structured_control_flow::StructuredLoop*>(descendant)) {
-            inner_loops.push_back(inner);
-        }
-    }
-    std::sort(inner_loops.begin(), inner_loops.end(), [&](auto* left, auto* right) {
-        return index_loop_analysis.ancestors(left).size() > index_loop_analysis.ancestors(right).size();
-    });
+    auto& buffers = analysis_manager.get<tiles::ReductionBufferAnalysis>();
     multi_output_layouts_.clear();
-    for (const auto& r : node_.reductions()) {
-        auto index = accumulator_index(node_.root(), r.container, node_.indvar());
-        auto base = index;
-        symbolic::Expression span = symbolic::one();
-        bool multi_output = false;
-        for (auto* inner : inner_loops) {
-            if (!symbolic::uses(base, inner->indvar())) {
-                continue;
-            }
-            auto origin = SymEngine::subs(base, {{inner->indvar(), symbolic::zero()}});
-            auto coefficient =
-                symbolic::expand(symbolic::sub(SymEngine::subs(base, {{inner->indvar(), symbolic::one()}}), origin));
-            auto count = inner->num_iterations();
-            if (!count.is_null() && !SymEngine::is_a<SymEngine::Integer>(*count)) {
-                auto& assumptions_analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
-                symbolic::BoundAnalysis
-                    bounds(assumptions_analysis.parameters(), assumptions_analysis.get(*inner), true);
-                auto interval = bounds.bound(count);
-                if (interval.has_lower() && interval.has_upper() && symbolic::eq(interval.lower, interval.upper)) {
-                    count = interval.lower;
-                }
-            }
-            auto stride = inner->stride();
-            auto positive_integer = [](const symbolic::Expression& expression) {
-                return !expression.is_null() && SymEngine::is_a<SymEngine::Integer>(*expression) &&
-                       SymEngine::rcp_static_cast<const SymEngine::Integer>(expression)->as_int() > 0;
-            };
-            if (!positive_integer(count) || !positive_integer(stride) || !positive_integer(coefficient) ||
-                !symbolic::
-                    eq(symbolic::expand(base),
-                       symbolic::expand(symbolic::add(origin, symbolic::mul(coefficient, inner->indvar()))))) {
-                throw InvalidSDFGException(
-                    "GPUOffloadReduceDispatcher: accumulator '" + r.container +
-                    "' requires a constant positive affine inner-loop footprint for '" + inner->indvar()->get_name() +
-                    "' (count=" + (count.is_null() ? "unknown" : count->__str__()) + ", stride=" +
-                    (stride.is_null() ? "unknown" : stride->__str__()) + ", coefficient=" + coefficient->__str__() +
-                    ", index=(" + symbolic::expand(base)->__str__() + "), origin+coefficient*inner_indvar=(" +
-                    symbolic::expand(symbolic::add(origin, symbolic::mul(coefficient, inner->indvar())))->__str__() +
-                    "))"
-                );
-            }
-            base = SymEngine::subs(base, {{inner->indvar(), inner->init()}});
-            span = symbolic::
-                add(span, symbolic::mul(coefficient, symbolic::mul(stride, symbolic::sub(count, symbolic::one()))));
-            multi_output = true;
+    for (const auto& reduction : node_.reductions()) {
+        const auto& result = buffers.require(node_, reduction.container);
+        if (!result.materialized) {
+            throw InvalidSDFGException("GPU reduction requires materialized partial buffers");
         }
-        if (!multi_output) continue;
-        for (auto* loop : index_loop_analysis.descendants(&node_)) {
-            auto* inner = dynamic_cast<structured_control_flow::StructuredLoop*>(loop);
-            if (inner && symbolic::uses(base, inner->indvar())) {
-                throw InvalidSDFGException(
-                    "GPUOffloadReduceDispatcher: accumulator '" + r.container + "' footprint base '" + base->__str__() +
-                    "' depends on inner loop '" + inner->indvar()->get_name() + "' inside reduction '" +
-                    node_.indvar()->get_name() + "'"
-                );
-            }
+        if (result.multi_output) {
+            multi_output_layouts_.emplace(reduction.container, *result.layout);
         }
-        if (symbolic::uses(base, node_.indvar())) {
-            throw InvalidSDFGException(
-                "GPUOffloadReduceDispatcher: accumulator footprint depends on the reduction variable"
-            );
-        }
-        multi_output_layouts_.emplace(
-            r.container, AccumulatorLayout{base, SymEngine::rcp_static_cast<const SymEngine::Integer>(span)->as_int()}
-        );
     }
 }
 
@@ -498,15 +305,11 @@ void GPUOffloadReduceDispatcher::dispatch_kernel_body(
     }
 
 
-    // Redirect accumulator accesses in the body onto this level's private/shared partials.
-    this->dispatch_reduction_shadow(kernel_language_extension, kernel_source_stream, target_level);
-
     // Body
     codegen::SequenceDispatcher dispatcher(
         kernel_language_extension, sdfg_, analysis_manager_, node_.root(), instrumentation_plan_, arg_capture_plan_
     );
     dispatcher.dispatch(kernel_source_stream, kernel_header_stream, kernel_snippet_factory);
-
 
     // Free managed scope variables
     for (auto& local : scope_variables) {
@@ -752,8 +555,7 @@ symbolic::Expression GPUOffloadReduceDispatcher::reduce_block_size_product() {
 }
 
 std::string GPUOffloadReduceDispatcher::partials_buffer_name(const std::string& container) {
-    std::string placed = gpu::ScheduleType_GPU_Offload::partial_container(node_.schedule_type());
-    return placed.empty() ? ("__daisy_reduce_smem_" + container) : placed;
+    return analysis_manager_.get<tiles::ReductionBufferAnalysis>().require(node_, container).shared_buffer;
 }
 
 bool GPUOffloadReduceDispatcher::is_scalar_accumulator(const std::string& container) {
@@ -839,11 +641,12 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_publish(
         if (!uses_register_partial(target_level, r.container)) {
             continue;
         }
-        std::string reg_name = "__daisy_reduce_reg_" + r.container;
+        std::string reg_name =
+            analysis_manager_.get<tiles::ReductionBufferAnalysis>().require(node_, r.container).private_buffer;
         std::string smem_name = partials_buffer_name(r.container);
         auto layout = multi_output_layouts_.find(r.container);
         if (layout == multi_output_layouts_.end()) {
-            stream << smem_name << "[" << lin_tid << "] = " << reg_name << ";" << std::endl;
+            stream << smem_name << "[" << lin_tid << "] = " << reg_name << "[0];" << std::endl;
         } else {
             std::string slot = "__daisy_reduce_slot_" + r.container;
             stream << "for (int " << slot << " = 0; " << slot << " < " << layout->second.extent << "; ++" << slot
@@ -861,149 +664,71 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_declarations(
     codegen::CodeSnippetFactory& library_snippet_factory,
     TargetLevel target_level
 ) {
-    const ReduceStrategy strategy = gpu::ScheduleType_GPU_Offload::partial_storage(node_.schedule_type());
-
-    // Every thread of a (possibly multi-dimensional) block owns a distinct shared slot,
-    // addressed by its flat thread index; the buffer spans the whole block (x * y * z).
-    // Sizing to the full flat thread count (rather than only this reduction's own block
-    // axes) keeps every thread's slot distinct even when the reduction is nested inside a
-    // map over another block dimension, which would otherwise alias slots and race.
-    // A warp nested inside the block publishes its result into its lane-0 slot and leaves
-    // the rest at identity, so the same per-thread layout serves warp and non-warp blocks.
     std::string lin_tid = reduce_linear_thread_index(language_extension);
-    // Compile-time constant: __shared__ arrays may not be variable-length. The launched
-    // blockDim equals the product of the block levels' parallel_size, so this constant
-    // matches blockDim.x*blockDim.y*blockDim.z while remaining a constant expression.
-    std::string block_size = language_extension.expression(reduce_block_size_product());
-
-    bool needs_cstdint = false;
-    bool needs_cmath = false;
     bool declared_shared = false;
-
-    auto& type_analysis = analysis_manager_.get<analysis::TypeAnalysis>();
-    for (const auto& r : node_.reductions()) {
-        auto prim = accumulator_primitive(sdfg_, type_analysis, r.container);
-        std::string ctype = language_extension.primitive_type(prim);
-        std::string identity = identity_literal(r.operation, prim);
-        if (types::is_floating_point(prim)) {
-            needs_cmath = true;
-        } else {
-            needs_cstdint = true;
+    auto& buffer_analysis = analysis_manager_.get<tiles::ReductionBufferAnalysis>();
+    for (const auto& entry : node_.reductions()) {
+        const auto& buffer = buffer_analysis.require(node_, entry.container);
+        auto ctype = language_extension.primitive_type(*buffer.primitive);
+        auto identity = identity_literal(entry.operation, *buffer.primitive);
+        auto slot = "__daisy_reduce_slot_" + entry.container;
+        if (*buffer.private_bytes) {
+            stream << ctype << " " << buffer.private_buffer << "[" << buffer.layout->extent << "];" << std::endl;
+            stream << "for (int " << slot << " = 0; " << slot << " < " << buffer.layout->extent << "; ++" << slot
+                   << ") " << buffer.private_buffer << "[" << slot << "] = " << identity << ";" << std::endl;
         }
-
-        std::string reg_name = "__daisy_reduce_reg_" + r.container;
-        std::string smem_name = partials_buffer_name(r.container);
-
-        auto layout = multi_output_layouts_.find(r.container);
-        if (layout != multi_output_layouts_.end()) {
-            std::string slot = "__daisy_reduce_slot_" + r.container;
-            bool register_partial = strategy != ReduceStrategy::Shared ||
-                                    uses_register_partial(target_level, r.container);
-            if (register_partial) {
-                stream << ctype << " " << reg_name << "[" << layout->second.extent << "];" << std::endl;
-                stream << "for (int " << slot << " = 0; " << slot << " < " << layout->second.extent << "; ++" << slot
-                       << ") " << reg_name << "[" << slot << "] = " << identity << ";" << std::endl;
-            }
-            if (strategy == ReduceStrategy::Shared && !has_enclosing_block_reduction(r.container)) {
-                stream << "__shared__ " << ctype << " " << smem_name << "[(" << block_size << ") * "
-                       << layout->second.extent << "];" << std::endl;
-                if (!register_partial) {
-                    stream << "for (int " << slot << " = 0; " << slot << " < " << layout->second.extent << "; ++"
-                           << slot << ") " << smem_name << "[(" << lin_tid << ") * " << layout->second.extent << " + "
-                           << slot << "] = " << identity << ";" << std::endl;
-                    declared_shared = true;
-                }
-            }
+        if (!*buffer.shared_bytes) {
             continue;
         }
-        if (strategy != ReduceStrategy::Shared) {
-            // Register / Global: a per-thread (or per-lane) partial in a register.
-            stream << ctype << " " << reg_name << " = " << identity << ";" << std::endl;
-        } else if (uses_register_partial(target_level, r.container)) {
-            // Block shared, but accumulate the body in a per-thread register partial and
-            // publish it to shared once after the coverage loop (dispatch_reduction_publish),
-            // so the FMA chain is not serialized through shared memory. No pre-coverage init
-            // or sync: the publish fills every slot and syncs before the combine reads them.
-            stream << ctype << " " << reg_name << " = " << identity << ";" << std::endl;
-            stream << "__shared__ " << ctype << " " << smem_name << "[" << block_size << "];" << std::endl;
-        } else if (!has_enclosing_block_reduction(r.container)) {
-            // Only the outermost block level owning this container declares the single shared
-            // buffer; every inner block level folds into that same buffer. Declaring one per
-            // level would create same-named shadows of which only the innermost is populated,
-            // while the outer identity-filled buffers clobber the result on write-back.
+        stream << "__shared__ " << ctype << " " << buffer.shared_buffer << "["
+               << *buffer.shared_bytes / *buffer.element_bytes << "];" << std::endl;
+        if (!*buffer.private_bytes) {
             declared_shared = true;
-            stream << "__shared__ " << ctype << " " << smem_name << "[" << block_size << "];" << std::endl;
-            stream << smem_name << "[" << lin_tid << "] = " << identity << ";" << std::endl;
+            stream << "for (int " << slot << " = 0; " << slot << " < " << buffer.layout->extent << "; ++" << slot
+                   << ") " << buffer.shared_buffer << "[(" << lin_tid << ") * " << buffer.layout->extent << " + "
+                   << slot << "] = " << identity << ";" << std::endl;
         }
     }
-
-    // Publishers and readers of the shared partials live in different threads.
     if (declared_shared) {
         stream << "__syncthreads();" << std::endl;
     }
-    // if (needs_cstdint) {
-    //     library_snippet_factory.add_global("#include <cstdint>");
-    // }
-    // if (needs_cmath) {
-    //     library_snippet_factory.add_global("#include <cmath>");
-    // }
 }
 
-void GPUOffloadReduceDispatcher::dispatch_reduction_shadow(
-    codegen::LanguageExtension& language_extension, codegen::PrettyPrinter& stream, TargetLevel target_level
+std::string GPUOffloadReduceDispatcher::reduction_target(
+    codegen::LanguageExtension& language_extension, const std::string& container, symbolic::Expression index
 ) {
-    const bool block = is_block_level(target_level);
-    const ReduceStrategy strategy = gpu::ScheduleType_GPU_Offload::partial_storage(node_.schedule_type());
-    std::string lin_tid = reduce_linear_thread_index(language_extension);
-
-    auto& type_analysis = analysis_manager_.get<analysis::TypeAnalysis>();
-    for (const auto& r : node_.reductions()) {
-        // For warp-nested block reductions the accumulation is emitted by the nested
-        // warp level, so the block level only owns the shared buffer, not the body.
-        if (block && has_nested_warp_reduction(r.container)) {
+    auto& loops = analysis_manager_.get<analysis::LoopAnalysis>();
+    auto& buffer_analysis = analysis_manager_.get<tiles::ReductionBufferAnalysis>();
+    std::vector<structured_control_flow::Reduce*> parents;
+    for (auto* node : loops.ancestors(&node_)) {
+        auto* parent = dyn_cast<structured_control_flow::Reduce*>(node);
+        if (!parent || parent->schedule_type().category() != structured_control_flow::ScheduleTypeCategory::Offloader) {
             continue;
         }
-
-        auto prim = accumulator_primitive(sdfg_, type_analysis, r.container);
-        std::string ctype = language_extension.primitive_type(prim);
-        std::string reg_name = "__daisy_reduce_reg_" + r.container;
-        std::string smem_name = partials_buffer_name(r.container);
-
-        auto layout = multi_output_layouts_.find(r.container);
-        if (layout != multi_output_layouts_.end()) {
-            std::string storage =
-                strategy == ReduceStrategy::Shared && !uses_register_partial(target_level, r.container)
-                    ? "&" + smem_name + "[(" + lin_tid + ") * " + std::to_string(layout->second.extent) + "]"
-                    : reg_name;
-            stream << ctype << " *" << r.container << " = " << storage << " - ("
-                   << language_extension.expression(layout->second.base) << ");" << std::endl;
-            continue;
-        }
-        std::string storage_lvalue = (strategy == ReduceStrategy::Shared &&
-                                      !uses_register_partial(target_level, r.container))
-                                         ? (smem_name + "[" + lin_tid + "]")
-                                         : reg_name;
-
-        if (is_scalar_accumulator(r.container)) {
-            // Scalar accumulator: the body accesses it by name, so alias it (a C++ reference)
-            // onto this level's partial instead of a pointer offset by an index. The partial
-            // was identity-initialised in the declarations; correctness of reading it as the
-            // running value relies on the accumulator's init equalling the operator identity
-            // (e.g. -INF for max, 0 for sum), which holds for the pooling accumulators that
-            // produce scalar reduction targets.
-            stream << ctype << " &" << r.container << " = " << storage_lvalue << ";" << std::endl;
-            continue;
-        }
-
-        std::string storage = "&" + storage_lvalue;
-        auto index = accumulator_index(node_.root(), r.container, node_.indvar());
-        if (symbolic::eq(index, symbolic::zero())) {
-            stream << ctype << " *" << r.container << " = " << storage << ";" << std::endl;
-        } else {
-            stream << ctype << " *" << r.container << " = " << storage << " - (" << language_extension.expression(index)
-                   << ");" << std::endl;
+        for (const auto& entry : parent->reductions()) {
+            if (entry.container == container) {
+                parents.push_back(parent);
+            }
         }
     }
+    std::sort(parents.begin(), parents.end(), [&](auto* left, auto* right) {
+        return loops.ancestors(left).size() > loops.ancestors(right).size();
+    });
+    for (auto* parent : parents) {
+        const auto& buffer = buffer_analysis.require(*parent, container);
+        if (!buffer.private_buffer.empty()) {
+            return buffer.private_buffer + "[" + language_extension.expression(buffer.layout->pack(index)) + "]";
+        }
+        if (*buffer.shared_bytes) {
+            auto slot = symbolic::
+                add(symbolic::mul(buffer.linear_thread_index, symbolic::integer(buffer.layout->extent)),
+                    buffer.layout->pack(index));
+            return buffer.shared_buffer + "[" + language_extension.expression(slot) + "]";
+        }
+    }
+    auto primitive = *buffer_analysis.require(node_, container).primitive;
+    return "reinterpret_cast<" + language_extension.primitive_type(primitive) + " *>(" + container + ")[" +
+           language_extension.expression(index) + "]";
 }
 
 void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
@@ -1023,16 +748,19 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
     std::string warp_size =
         language_extension.expression(get_target_level_dim(TargetLevel::WARP, strategy_->get_warp_size()));
 
-    auto& type_analysis = analysis_manager_.get<analysis::TypeAnalysis>();
+    auto& buffer_analysis = analysis_manager_.get<tiles::ReductionBufferAnalysis>();
     for (const auto& r : node_.reductions()) {
         if (strategy == ReduceStrategy::Shared && has_enclosing_block_reduction(r.container)) continue;
-        auto prim = accumulator_primitive(sdfg_, type_analysis, r.container);
+        auto prim = *buffer_analysis.require(node_, r.container).primitive;
         std::string ctype = language_extension.primitive_type(prim);
-        std::string reg_name = "__daisy_reduce_reg_" + r.container;
+        std::string reg_name = buffer_analysis.require(node_, r.container).private_buffer;
         std::string smem_name = partials_buffer_name(r.container);
-        auto index = accumulator_index(node_.root(), r.container, node_.indvar());
+        auto index = buffer_analysis.require(node_, r.container).accumulator_index;
         auto layout = multi_output_layouts_.find(r.container);
         bool multi_output = layout != multi_output_layouts_.end();
+        if (!multi_output) {
+            reg_name += "[0]";
+        }
         std::string shared_index = lin_tid;
         std::string shared_stride = "1";
         if (multi_output) {
@@ -1041,12 +769,11 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
                    << ") {" << std::endl;
             stream.changeIndent(+4);
             reg_name += "[" + slot + "]";
-            index = symbolic::add(layout->second.base, symbolic::symbol(slot));
+            index = layout->second.unpack(symbolic::symbol(slot));
             shared_stride = std::to_string(layout->second.extent);
             shared_index = "(" + lin_tid + ") * " + shared_stride + " + " + slot;
         }
-        std::string target = "reinterpret_cast<" + ctype + " *>(" + r.container + ")[" +
-                             language_extension.expression(index) + "]";
+        std::string target = reduction_target(language_extension, r.container, index);
 
         // A scalar accumulator is a per-thread private reduction target; it has no global
         // slot and grid-level combine (cross-block atomics) is meaningless for it. The
@@ -1087,7 +814,7 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
                 // tiles, re-executing this publish once per tile, and each tile's warp
                 // result must fold into the identity-initialised slot instead of clobbering
                 // the previous tiles. For a single tile combine(identity, reg) == reg.
-                std::string slot = smem_name + "[" + shared_index + "]";
+                std::string slot = target;
                 stream << "if (lane == 0) {" << std::endl;
                 stream.setIndent(stream.indent() + 4);
                 stream << slot << " = " << combine_expr(r.operation, slot, reg_name) << ";" << std::endl;
