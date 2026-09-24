@@ -29,6 +29,12 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::handle_expand(
     auto input_type = node.uniform_quantization(node.get_parent()).value();
     auto output_type = input_type;
 
+    auto new_impl_type = arch_->mma_support()->get_matmul_impl_type(*arch_, mma_tiling);
+
+    if (!new_impl_type.has_value()) {
+        return context.unable();
+    }
+
     auto standalone = context.replacement_requires_access_nodes({InputUse::Scalar, InputUse::Scalar, InputUse::Scalar});
 
     if (standalone) {
@@ -117,7 +123,7 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::handle_expand(
             inner_node.layout_y() = add_to_offset(node.layout_y(), add);
         }
 
-        set_implementation_type_mma(inner_node, mma_tiling);
+        inner_node.set_implementation_type(new_impl_type.value());
         inner_node.set_fixed_quantization(input_type);
 
         types::Scalar input_scalar_type(input_type);
@@ -159,6 +165,76 @@ math::tensor::TensorLayout GpuMmaExpander::
     add_to_offset(const math::tensor::TensorLayout& layout, const symbolic::Expression& offset_add) const {
     auto new_offset = symbolic::add(layout.offset(), offset_add);
     return {layout.shape(), layout.strides(), new_offset};
+}
+
+bool GpuMmaExpander::matches_possible_mma_pattern(const math::tensor::MatMulNode& node) const {
+    auto* mma_arch = arch_->mma_support();
+    if (!mma_arch) {
+        return false;
+    }
+    GpuMmaTiling dummy_tiling;
+    if (mma_arch->get_matmul_impl_type(*arch_, dummy_tiling)) {
+        return false;
+    }
+
+    // basic sanity checks
+    auto& dims_a = node.layout_a();
+    auto& dims_b = node.layout_b();
+    if (dims_a.dims() != 2 || dims_b.dims() != 2) {
+        return false;
+    }
+
+    if (!symbolic::eq(dims_a.get_dim(1), dims_b.get_dim(0))) {
+        // K dimension must match
+        return false;
+    }
+
+    auto layout_a = dims_a.is_2d_col_or_row_major();
+    auto layout_b = dims_b.is_2d_col_or_row_major();
+    if (layout_a == math::tensor::TensorLayout::LAYOUT_OTHER || layout_b == math::tensor::TensorLayout::LAYOUT_OTHER ||
+        node.layout_y().is_2d_col_or_row_major() == math::tensor::TensorLayout::LAYOUT_OTHER) {
+        // only support row-major or col-major layout
+        return false;
+    }
+
+    auto& m = dims_a.get_dim(0);
+    auto& n = dims_b.get_dim(1);
+    auto& k = dims_a.get_dim(1);
+
+    auto m_blocks = GpuMmaSupport::get_integer_block_count(m, mma_arch->mma_block_m);
+    auto n_blocks = GpuMmaSupport::get_integer_block_count(n, mma_arch->mma_block_n);
+    auto k_blocks = GpuMmaSupport::get_integer_block_count(k, mma_arch->mma_block_k);
+
+    if (!m_blocks || !n_blocks || !k_blocks) {
+        return false;
+    }
+
+    if (!mma_arch->valid_block_counts(mma_arch->mma_block_m, m_blocks, n_blocks, k_blocks)) {
+        return false;
+    }
+
+    auto input_type = node.uniform_quantization(node.get_parent());
+    auto output_type = input_type;
+
+    if (!input_type || !output_type || input_type.value() == types::PrimitiveType::Void ||
+        output_type.value() == types::PrimitiveType::Void) {
+        return false;
+    }
+
+    return mma_arch->supported_types(input_type.value(), output_type.value());
+}
+
+GpuMmaTiling GpuMmaExpander::get_mma_tiling(const symbolic::MultiExpression& res_shape) const {
+    auto* mma_arch = arch_->mma_support();
+    if (!mma_arch) {
+        throw std::runtime_error("No MMA architecture available for this GPU target.");
+    }
+
+    return mma_arch->get_mma_tiling(res_shape);
+}
+
+ScheduleType GpuMmaExpander::get_schedule_type(gpu::TargetLevel dim, const symbolic::Integer& size) const {
+    return gpu::ScheduleType_GPU_Offload::create(*arch_, dim, size);
 }
 
 } // namespace sdfg::gpu

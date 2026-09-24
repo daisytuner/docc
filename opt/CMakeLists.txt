@@ -96,6 +96,7 @@ set(SOURCE_FILES
     src/targets/cuda/blas/utils.cpp
     src/targets/cuda/tiles/pipeline_node.cpp
     src/targets/cuda/tiles/tile_copy_node.cpp
+    src/targets/cuda/cuda_arch.cpp
     src/targets/cuda/cuda_data_offloading_node.cpp
     src/targets/cuda/cuda_map_dispatcher.cpp
     src/targets/cuda/cuda_offload_dispatcher_strategy.cpp
@@ -108,6 +109,7 @@ set(SOURCE_FILES
     src/targets/cuda/stdlib/memcpy.cpp
     src/targets/cuda/stdlib/memset.cpp
     src/targets/gpu/gpu_arch.cpp
+    src/targets/gpu/gpu_mma_einsum_transform.cpp
     src/targets/gpu/gpu_map_utils.cpp
     src/targets/gpu/gpu_mma_dispatcher.cpp
     src/targets/gpu/gpu_mma_expander.cpp
@@ -135,7 +137,6 @@ set(SOURCE_FILES
     src/targets/rocm/rocm_data_offloading_node.cpp
     src/targets/rocm/rocm_map_dispatcher.cpp
     src/targets/rocm/rocm_mma_dispatcher.cpp
-    src/targets/rocm/rocm_mma_expander.cpp
     src/targets/rocm/rocm_mma_transform.cpp
     src/targets/rocm/rocm_offload_dispatcher_strategy.cpp
     src/targets/rocm/rocm_reduce_dispatcher.cpp
