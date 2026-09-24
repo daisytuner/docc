@@ -471,8 +471,17 @@ class PyTorchProgram(DoccProgram):
             exported_program: torch.export.ExportedProgram = torch.export.export(
                 self.gm, self.example_input
             )
+            decomp_table = torch.export.default_decompositions()
+            for _sdpa_name in (
+                "scaled_dot_product_attention",
+                "_scaled_dot_product_flash_attention",
+                "_scaled_dot_product_efficient_attention",
+            ):
+                _sdpa_op = getattr(torch.ops.aten, _sdpa_name, None)
+                if _sdpa_op is not None:
+                    decomp_table.pop(_sdpa_op.default, None)
             ir: torch.export.ExportedProgram = exported_program.run_decompositions(
-                decomp_table=None
+                decomp_table=decomp_table
             )
 
         # Dump the IR to a file for inspection

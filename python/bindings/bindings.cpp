@@ -950,6 +950,38 @@ PYBIND11_MODULE(_sdfg, m) {
             "(global->buffer) or 'out'."
         )
         .def(
+            "add_attention_op",
+            &PyStructuredSDFGBuilder::add_attention_op,
+            py::arg("O"),
+            py::arg("O_type"),
+            py::arg("Q"),
+            py::arg("Q_type"),
+            py::arg("K"),
+            py::arg("K_type"),
+            py::arg("V"),
+            py::arg("V_type"),
+            py::arg("scale"),
+            py::arg("is_causal"),
+            py::arg("debug_info") = sdfg::DebugInfo()
+        )
+        .def(
+            "add_attention_masked_op",
+            &PyStructuredSDFGBuilder::add_attention_masked_op,
+            py::arg("O"),
+            py::arg("O_type"),
+            py::arg("Q"),
+            py::arg("Q_type"),
+            py::arg("K"),
+            py::arg("K_type"),
+            py::arg("V"),
+            py::arg("V_type"),
+            py::arg("M"),
+            py::arg("M_type"),
+            py::arg("scale"),
+            py::arg("is_causal"),
+            py::arg("debug_info") = sdfg::DebugInfo()
+        )
+        .def(
             "add_fill_op",
             &PyStructuredSDFGBuilder::add_fill_op,
             py::arg("X"),

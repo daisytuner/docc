@@ -475,6 +475,36 @@ public:
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
 
+    void add_attention_op(
+        const std::string& O,
+        const sdfg::types::Tensor& O_type,
+        const std::string& Q,
+        const sdfg::types::Tensor& Q_type,
+        const std::string& K,
+        const sdfg::types::Tensor& K_type,
+        const std::string& V,
+        const sdfg::types::Tensor& V_type,
+        double scale,
+        bool is_causal,
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+
+    void add_attention_masked_op(
+        const std::string& O,
+        const sdfg::types::Tensor& O_type,
+        const std::string& Q,
+        const sdfg::types::Tensor& Q_type,
+        const std::string& K,
+        const sdfg::types::Tensor& K_type,
+        const std::string& V,
+        const sdfg::types::Tensor& V_type,
+        const std::string& M,
+        const sdfg::types::Tensor& M_type,
+        double scale,
+        bool is_causal,
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+
     void add_index_op(
         const std::string& Y,
         const sdfg::types::Tensor& Y_type,

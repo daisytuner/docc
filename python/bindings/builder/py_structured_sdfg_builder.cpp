@@ -17,6 +17,7 @@
 #include "sdfg/data_flow/library_nodes/math/cmath/cmath_node.h"
 #include "sdfg/data_flow/library_nodes/math/math.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/arange_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/attention_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/broadcast_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/conv_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/cast_node.h"
@@ -2142,6 +2143,72 @@ sdfg::data_flow::LibraryNode& PyStructuredSDFGBuilder::add_tile_copy_node(
     builder_.add_computational_memlet(block, dst_acc, node, "_dst", {}, pointer_type, debug_info);
     builder_.add_computational_memlet(block, src_acc, node, "_src", {}, pointer_type, debug_info);
     return node;
+}
+
+void PyStructuredSDFGBuilder::add_attention_op(
+    const std::string& O,
+    const sdfg::types::Tensor& O_type,
+    const std::string& Q,
+    const sdfg::types::Tensor& Q_type,
+    const std::string& K,
+    const sdfg::types::Tensor& K_type,
+    const std::string& V,
+    const sdfg::types::Tensor& V_type,
+    double scale,
+    bool is_causal,
+    const sdfg::DebugInfo& debug_info
+) {
+    auto& block = builder_.add_block(current_sequence(), {}, debug_info);
+    auto& O_access = builder_.add_access(block, O, debug_info);
+    auto& Q_access = builder_.add_access(block, Q, debug_info);
+    auto& K_access = builder_.add_access(block, K, debug_info);
+    auto& V_access = builder_.add_access(block, V, debug_info);
+    auto& libnode = builder_.add_library_node<sdfg::math::tensor::AttentionNode>(
+        block, debug_info, O_type.layout(), Q_type.layout(), K_type.layout(), V_type.layout(), scale, is_causal
+    );
+    builder_.add_computational_memlet(block, O_access, libnode, "O", {}, O_type, debug_info);
+    builder_.add_computational_memlet(block, Q_access, libnode, "Q", {}, Q_type, debug_info);
+    builder_.add_computational_memlet(block, K_access, libnode, "K", {}, K_type, debug_info);
+    builder_.add_computational_memlet(block, V_access, libnode, "V", {}, V_type, debug_info);
+}
+
+void PyStructuredSDFGBuilder::add_attention_masked_op(
+    const std::string& O,
+    const sdfg::types::Tensor& O_type,
+    const std::string& Q,
+    const sdfg::types::Tensor& Q_type,
+    const std::string& K,
+    const sdfg::types::Tensor& K_type,
+    const std::string& V,
+    const sdfg::types::Tensor& V_type,
+    const std::string& M,
+    const sdfg::types::Tensor& M_type,
+    double scale,
+    bool is_causal,
+    const sdfg::DebugInfo& debug_info
+) {
+    auto& block = builder_.add_block(current_sequence(), {}, debug_info);
+    auto& O_access = builder_.add_access(block, O, debug_info);
+    auto& Q_access = builder_.add_access(block, Q, debug_info);
+    auto& K_access = builder_.add_access(block, K, debug_info);
+    auto& V_access = builder_.add_access(block, V, debug_info);
+    auto& M_access = builder_.add_access(block, M, debug_info);
+    auto& libnode = builder_.add_library_node<sdfg::math::tensor::AttentionNode>(
+        block,
+        debug_info,
+        O_type.layout(),
+        Q_type.layout(),
+        K_type.layout(),
+        V_type.layout(),
+        M_type.layout(),
+        scale,
+        is_causal
+    );
+    builder_.add_computational_memlet(block, O_access, libnode, "O", {}, O_type, debug_info);
+    builder_.add_computational_memlet(block, Q_access, libnode, "Q", {}, Q_type, debug_info);
+    builder_.add_computational_memlet(block, K_access, libnode, "K", {}, K_type, debug_info);
+    builder_.add_computational_memlet(block, V_access, libnode, "V", {}, V_type, debug_info);
+    builder_.add_computational_memlet(block, M_access, libnode, "M", {}, M_type, debug_info);
 }
 
 void PyStructuredSDFGBuilder::add_fill_op(
