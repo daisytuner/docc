@@ -4,6 +4,7 @@
 
 #include "sdfg/exceptions.h"
 #include "sdfg/serializer/json_serializer.h"
+#include "sdfg/targets/gpu/gpu_arch.h"
 #include "sdfg/targets/gpu/gpu_types.h"
 
 namespace sdfg {
@@ -222,6 +223,14 @@ public:
         target_level(schedule_type, target_level_);
         parallel_size(schedule_type, parallel_size_);
         return schedule_type;
+    }
+
+    static structured_control_flow::ScheduleType
+    create(const GpuArch& arch, const TargetLevel& target_level_, const symbolic::Integer& parallel_size_) {
+        auto sched_type = arch.create_schedule_type();
+        target_level(sched_type, target_level_);
+        parallel_size(sched_type, parallel_size_);
+        return sched_type;
     }
 };
 

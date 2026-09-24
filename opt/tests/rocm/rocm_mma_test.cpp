@@ -1,4 +1,4 @@
-#include "sdfg/targets/rocm/rocm_mma_expander.h"
+#include "sdfg/targets/gpu/gpu_mma_expander.h"
 
 #include <gtest/gtest.h>
 #include <sdfg/serializer/json_serializer.h>
@@ -183,8 +183,7 @@ TEST(ROCMMMATest, 1K_1K_1K_16x16_gfx1201) {
 
     EXPECT_NO_THROW(builder.subject().validate());
 
-    passes::expansion::
-        expand_single_node(builder, block, matmul_node, gpu::rocm::RocmMmaExpander(gpu::rocm::ROCM_ARCH_GFX1201));
+    passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&gpu::rocm::ROCM_ARCH_GFX1201));
 
     dump_sdfg(builder.subject(), "1.expanded");
 
@@ -206,8 +205,7 @@ TEST(ROCMMMATest, 1K_1K_1K_32x32_gfx1201) {
 
     EXPECT_NO_THROW(builder.subject().validate());
 
-    passes::expansion::
-        expand_single_node(builder, block, matmul_node, gpu::rocm::RocmMmaExpander(gpu::rocm::ROCM_ARCH_GFX1201));
+    passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&gpu::rocm::ROCM_ARCH_GFX1201));
 
     dump_sdfg(builder.subject(), "1.expanded");
 
@@ -229,8 +227,7 @@ TEST(ROCMMMATest, 1K_1K_1K_64x64_gfx1201) {
 
     EXPECT_NO_THROW(builder.subject().validate());
 
-    passes::expansion::
-        expand_single_node(builder, block, matmul_node, gpu::rocm::RocmMmaExpander(gpu::rocm::ROCM_ARCH_GFX1201));
+    passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&gpu::rocm::ROCM_ARCH_GFX1201));
 
     dump_sdfg(builder.subject(), "1.expanded");
 
@@ -252,8 +249,7 @@ TEST(ROCMMMATest, 1K_1K_1K_64x64_gfx90a) {
 
     EXPECT_NO_THROW(builder.subject().validate());
 
-    passes::expansion::
-        expand_single_node(builder, block, matmul_node, gpu::rocm::RocmMmaExpander(gpu::rocm::ROCM_ARCH_GFX90A));
+    passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&gpu::rocm::ROCM_ARCH_GFX1201));
 
     dump_sdfg(builder.subject(), "1.expanded");
 

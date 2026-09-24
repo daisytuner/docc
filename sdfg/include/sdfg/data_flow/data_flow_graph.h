@@ -110,6 +110,7 @@ public:
     };
 
     const data_flow::Memlet* in_edge_for_connector(const data_flow::CodeNode& node, const std::string& conn) const;
+    data_flow::Memlet* in_edge_for_connector(const data_flow::CodeNode& node, const std::string& conn);
 
     /**
      * @deprecated AccessNodes can have multiple input edges, because the node is not an operation, it is almost
@@ -122,6 +123,7 @@ public:
      * access node. Suitable for situations where more than 1 edge are not supported anyway.
      */
     const data_flow::Memlet* in_edge_if_single(const data_flow::AccessNode& node) const;
+    data_flow::Memlet* in_edge_if_single(const data_flow::AccessNode& node);
 
 
     std::vector<data_flow::Memlet*> in_edges_by_connector(const data_flow::CodeNode& node);

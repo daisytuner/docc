@@ -124,6 +124,7 @@ public:
      */
     symbolic::Expression n() const;
 
+    [[deprecated("Use uniform_quantization() or input/output_quantization() instead")]]
     QuantizationType quantization() const {
         return quantization(get_parent());
     }
@@ -131,6 +132,7 @@ public:
     /**
      * type of the math calculations. May be inferred or fixed.
      */
+    [[deprecated("Use uniform_quantization() or input/output_quantization() instead")]]
     QuantizationType quantization(const data_flow::DataFlowGraph& dataflow) const;
 
     /**
@@ -138,6 +140,9 @@ public:
      * for input & output and math
      */
     std::optional<QuantizationType> uniform_quantization(const data_flow::DataFlowGraph& dataflow) const;
+
+    types::PrimitiveType input_quantization() const;
+    types::PrimitiveType output_quantization() const;
 
     /**
      * configuration of the type for the math calculations, independent of current input types etc.
@@ -214,6 +219,8 @@ public:
     bool supports_integer_types() const override {
         return true;
     }
+
+    data_flow::PointerAccessType pointer_access_type(int input_idx) const override;
 };
 
 /**
