@@ -5,7 +5,8 @@
 namespace sdfg::codegen {
 
 CodeSnippetFactory::CodeSnippetFactory(const std::pair<std::filesystem::path, std::filesystem::path>* config)
-    : output_path_(config ? config->first : "."), header_path_(config ? config->second : "") {}
+    : output_path_(config ? config->first : "."), header_path_(config ? config->second : "") {
+}
 
 
 CodeSnippet& CodeSnippetFactory::require(const std::string& name, const std::string& extension, bool as_file) {
@@ -24,17 +25,29 @@ CodeSnippet& CodeSnippetFactory::require(const std::string& name, const std::str
 std::unordered_map<std::string, CodeSnippet>::iterator CodeSnippetFactory::find(const std::string& name) {
     return snippets_.find(name);
 }
-const std::unordered_map<std::string, CodeSnippet>& CodeSnippetFactory::snippets() const { return snippets_; }
+const std::unordered_map<std::string, CodeSnippet>& CodeSnippetFactory::snippets() const {
+    return snippets_;
+}
 
-void CodeSnippetFactory::add_setup(const std::string& snippet) { setup_snippets_.insert(snippet); }
+void CodeSnippetFactory::add_setup(const std::string& snippet) {
+    setup_snippets_.insert(snippet);
+}
 
-void CodeSnippetFactory::add_teardown(const std::string& snippet) { teardown_snippets_.insert(snippet); }
+void CodeSnippetFactory::add_teardown(const std::string& snippet) {
+    teardown_snippets_.insert(snippet);
+}
 
-void CodeSnippetFactory::add_global(const std::string& snippet) { globals_snippets_.insert(snippet); }
+void CodeSnippetFactory::add_global(const std::string& snippet) {
+    globals_snippets_.insert(snippet);
+}
 
-const std::unordered_set<std::string>& CodeSnippetFactory::setup_snippets() const { return setup_snippets_; }
+const std::unordered_set<std::string>& CodeSnippetFactory::setup_snippets() const {
+    return setup_snippets_;
+}
 
-const std::unordered_set<std::string>& CodeSnippetFactory::teardown_snippets() const { return teardown_snippets_; }
+const std::unordered_set<std::string>& CodeSnippetFactory::teardown_snippets() const {
+    return teardown_snippets_;
+}
 
 std::vector<const LibDependency*> CodeSnippetFactory::get_used_lib_dependencies() const {
     std::vector<const LibDependency*> dependencies;
@@ -51,7 +64,9 @@ std::vector<const LibDependency*> CodeSnippetFactory::get_used_lib_dependencies(
     return dependencies;
 }
 
-const std::unordered_set<std::string>& CodeSnippetFactory::globals_snippets() const { return globals_snippets_; }
+const std::unordered_set<std::string>& CodeSnippetFactory::globals_snippets() const {
+    return globals_snippets_;
+}
 
 void CodeSnippetFactory::add_available_dependency(const LibDependency* dependency) {
     dependencies_.emplace(dependency, DependencyState{.used = false, .runtime_available = true});
@@ -108,6 +123,7 @@ bool CodeSnippetFactory::require_dependency(const LibDependency* dependency) {
 
 NestedCodeSnippetFactory::NestedCodeSnippetFactory(const std::pair<std::filesystem::path, std::filesystem::path>* config
 )
-    : CodeSnippetFactory(config) {}
+    : CodeSnippetFactory(config) {
+}
 
 } // namespace sdfg::codegen

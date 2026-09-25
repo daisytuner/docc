@@ -15,7 +15,8 @@ template<typename T>
 struct PtrMetaDeleter {
     bool should_delete_;
 
-    PtrMetaDeleter(bool should_delete = true) : should_delete_(should_delete) {}
+    PtrMetaDeleter(bool should_delete = true) : should_delete_(should_delete) {
+    }
 
     void operator()(T* ptr) const {
         if (should_delete_) {
@@ -62,13 +63,20 @@ private:
     bool not_sparse_ = false;
 
 public:
-    ConvexAccessPattern(symbolic::Expression size, bool not_sparse = false) : size_(size), not_sparse_(not_sparse) {}
+    ConvexAccessPattern(symbolic::Expression size, bool not_sparse = false) : size_(size), not_sparse_(not_sparse) {
+    }
 
-    symbolic::Expression size() const { return size_; }
+    symbolic::Expression size() const {
+        return size_;
+    }
 
-    bool empty() const override { return symbolic::null_safe_eq(size_, symbolic::zero()); }
+    bool empty() const override {
+        return symbolic::null_safe_eq(size_, symbolic::zero());
+    }
 
-    bool every_element_accessed() const override { return not_sparse_; }
+    bool every_element_accessed() const override {
+        return not_sparse_;
+    }
 
     void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override {
         size_ = symbolic::subs(size_, old_expression, new_expression);
@@ -86,15 +94,22 @@ public:
 
 class NoAccessPattern : public MemoryAccessPattern {
 private:
-    NoAccessPattern() {}
+    NoAccessPattern() {
+    }
 
 public:
-    bool empty() const override { return true; }
+    bool empty() const override {
+        return true;
+    }
 
-    bool every_element_accessed() const override { return true; }
+    bool every_element_accessed() const override {
+        return true;
+    }
 
-    void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override {}
-    void replace(const symbolic::ExpressionMapping& replacements) override {}
+    void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override {
+    }
+    void replace(const symbolic::ExpressionMapping& replacements) override {
+    }
 
     static MemoryAccessPatternType instance();
 
@@ -171,12 +186,20 @@ public:
      * the user will only use it for blocking accesses to the underlying data and not keep a reference to the data in
      * any way. Like a Rust temporary borrow for the duration of the LibNode and no more.
      */
-    bool no_capture() const override { return no_capture_; }
+    bool no_capture() const override {
+        return no_capture_;
+    }
 
-    bool may_contain_reads() const override { return true; }
-    bool may_contain_writes() const override { return false; }
+    bool may_contain_reads() const override {
+        return true;
+    }
+    bool may_contain_writes() const override {
+        return false;
+    }
 
-    bool invalidated_after() const override { return false; }
+    bool invalidated_after() const override {
+        return false;
+    }
 
     /**
      * Describes which elements behind the pointer are actually read
@@ -212,12 +235,20 @@ public:
 
     MemoryAccessPatternType access_read_pattern() const override;
 
-    bool no_capture() const override { return no_capture_; }
+    bool no_capture() const override {
+        return no_capture_;
+    }
 
-    bool may_contain_reads() const override { return false; }
-    bool may_contain_writes() const override { return true; }
+    bool may_contain_reads() const override {
+        return false;
+    }
+    bool may_contain_writes() const override {
+        return true;
+    }
 
-    bool invalidated_after() const override { return false; }
+    bool invalidated_after() const override {
+        return false;
+    }
 
     void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override;
     void replace(const symbolic::ExpressionMapping& replacements) override;
@@ -249,13 +280,17 @@ public:
 
     MemoryAccessPatternType access_write_pattern() const override;
 
-    bool no_capture() const override { return no_capture_; }
+    bool no_capture() const override {
+        return no_capture_;
+    }
 
     bool may_contain_reads() const override;
 
     bool may_contain_writes() const override;
 
-    bool invalidated_after() const override { return false; }
+    bool invalidated_after() const override {
+        return false;
+    }
 
     void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override;
     void replace(const symbolic::ExpressionMapping& replacements) override;
@@ -273,18 +308,32 @@ public:
  */
 class PointerInvalidate : public PointerAccessMeta {
 public:
-    bool no_capture() const override { return true; }
+    bool no_capture() const override {
+        return true;
+    }
 
-    bool may_contain_reads() const override { return false; }
-    bool may_contain_writes() const override { return false; }
+    bool may_contain_reads() const override {
+        return false;
+    }
+    bool may_contain_writes() const override {
+        return false;
+    }
 
-    bool invalidated_after() const override { return true; }
+    bool invalidated_after() const override {
+        return true;
+    }
 
-    MemoryAccessPatternType access_read_pattern() const override { return NoAccessPattern::instance(); }
-    MemoryAccessPatternType access_write_pattern() const override { return NoAccessPattern::instance(); }
+    MemoryAccessPatternType access_read_pattern() const override {
+        return NoAccessPattern::instance();
+    }
+    MemoryAccessPatternType access_write_pattern() const override {
+        return NoAccessPattern::instance();
+    }
 
-    void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override {}
-    void replace(const symbolic::ExpressionMapping& replacements) override {}
+    void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override {
+    }
+    void replace(const symbolic::ExpressionMapping& replacements) override {
+    }
 
     PointerAccessType clone() const override;
 

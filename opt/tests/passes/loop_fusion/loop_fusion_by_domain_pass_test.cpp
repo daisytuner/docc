@@ -27,7 +27,8 @@ using namespace sdfg::passes::loop_fusion;
 class MultiNestBuilder {
 public:
     builder::StructuredSDFGBuilder& builder;
-    MultiNestBuilder(builder::StructuredSDFGBuilder& builder) : builder(builder) {}
+    MultiNestBuilder(builder::StructuredSDFGBuilder& builder) : builder(builder) {
+    }
 
     ScheduleType sched_ = ScheduleType_Sequential::create();
     Sequence& root = builder.subject().root();

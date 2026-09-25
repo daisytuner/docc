@@ -35,9 +35,15 @@ struct Context {
     }
 
     // Dispatchers
-    codegen::NodeDispatcherRegistry& get_node_dispatcher_registry() { return node_dispatcher_registry; }
-    codegen::MapDispatcherRegistry& get_map_dispatcher_registry() { return map_dispatcher_registry; }
-    codegen::ReduceDispatcherRegistry& get_reduce_dispatcher_registry() { return reduce_dispatcher_registry; }
+    codegen::NodeDispatcherRegistry& get_node_dispatcher_registry() {
+        return node_dispatcher_registry;
+    }
+    codegen::MapDispatcherRegistry& get_map_dispatcher_registry() {
+        return map_dispatcher_registry;
+    }
+    codegen::ReduceDispatcherRegistry& get_reduce_dispatcher_registry() {
+        return reduce_dispatcher_registry;
+    }
     codegen::LibraryNodeDispatcherRegistry& get_library_node_dispatcher_registry() {
         return library_node_dispatcher_registry;
     }
@@ -54,12 +60,18 @@ struct Context {
     // Schedulers
     /// @deprecated
     passes::scheduler::SchedulerRegistry& scheduler_registry;
-    passes::scheduler::SchedulerRegistry& get_scheduler_registry() { return scheduler_registry; }
+    passes::scheduler::SchedulerRegistry& get_scheduler_registry() {
+        return scheduler_registry;
+    }
 
     // Tile targets
-    tiles::TileTargetRegistry& get_tile_target_registry() { return tile_target_registry_; }
+    tiles::TileTargetRegistry& get_tile_target_registry() {
+        return tile_target_registry_;
+    }
 
-    OptionRegistry& option_registry() { return option_registry_; }
+    OptionRegistry& option_registry() {
+        return option_registry_;
+    }
 
 protected:
     std::unordered_map<std::string, docc::target::DoccTarget*> available_targets;
@@ -81,7 +93,8 @@ public:
           node_dispatcher_registry(node_dispatcher_registry), map_dispatcher_registry(map_dispatcher_registry),
           reduce_dispatcher_registry(reduce_dispatcher_registry),
           library_node_dispatcher_registry(library_node_dispatcher_registry), scheduler_registry(scheduler_registry),
-          tile_target_registry_(tile_target_registry) {}
+          tile_target_registry_(tile_target_registry) {
+    }
 
     static Context global_context() {
         return Context{

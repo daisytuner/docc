@@ -10,7 +10,9 @@ DeadReferenceElimination::DeadReferenceElimination()
 
       };
 
-std::string DeadReferenceElimination::name() { return "DeadReferenceElimination"; };
+std::string DeadReferenceElimination::name() {
+    return "DeadReferenceElimination";
+};
 
 bool DeadReferenceElimination::
     run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {

@@ -28,7 +28,8 @@ template<typename T>
 struct ConditionalDeleter {
     bool should_delete_;
 
-    ConditionalDeleter(bool should_delete = true) : should_delete_(should_delete) {}
+    ConditionalDeleter(bool should_delete = true) : should_delete_(should_delete) {
+    }
 
     void operator()(T* ptr) const {
         if (should_delete_) {

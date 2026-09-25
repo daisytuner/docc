@@ -137,9 +137,15 @@ std::pair<Expression, Expression> polynomial_div(const Expression& offset, const
     // Collect symbols for polynomial conversion
     SymbolVec symbols;
     SymbolSet atom_set;
-    for (auto& s : symbolic::atoms(offset)) atom_set.insert(s);
-    for (auto& s : symbolic::atoms(stride)) atom_set.insert(s);
-    for (auto& s : atom_set) symbols.push_back(s);
+    for (auto& s : symbolic::atoms(offset)) {
+        atom_set.insert(s);
+    }
+    for (auto& s : symbolic::atoms(stride)) {
+        atom_set.insert(s);
+    }
+    for (auto& s : atom_set) {
+        symbols.push_back(s);
+    }
 
     auto poly_stride = polynomial(stride, symbols);
     if (poly_stride == SymEngine::null) {
@@ -156,7 +162,9 @@ std::pair<Expression, Expression> polynomial_div(const Expression& offset, const
         };
         if (SymEngine::is_a<SymEngine::Add>(*expanded)) {
             auto add = SymEngine::rcp_static_cast<const SymEngine::Add>(expanded);
-            for (auto& term : add->get_args()) process_term(term);
+            for (auto& term : add->get_args()) {
+                process_term(term);
+            }
         } else {
             process_term(expanded);
         }

@@ -18,11 +18,16 @@ StructuredSDFG::StructuredSDFG(const std::string& name, FunctionType type, const
 };
 
 StructuredSDFG::StructuredSDFG(const std::string& name, FunctionType type)
-    : StructuredSDFG(name, type, types::Scalar(types::PrimitiveType::Void)) {}
+    : StructuredSDFG(name, type, types::Scalar(types::PrimitiveType::Void)) {
+}
 
-const structured_control_flow::Sequence& StructuredSDFG::root() const { return *this->root_; };
+const structured_control_flow::Sequence& StructuredSDFG::root() const {
+    return *this->root_;
+};
 
-structured_control_flow::Sequence& StructuredSDFG::root() { return *this->root_; };
+structured_control_flow::Sequence& StructuredSDFG::root() {
+    return *this->root_;
+};
 
 std::unique_ptr<StructuredSDFG> StructuredSDFG::clone() const {
     serializer::JSONSerializer serializer;

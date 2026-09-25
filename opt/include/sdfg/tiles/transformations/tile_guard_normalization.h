@@ -19,7 +19,9 @@ class TileGuardNormalization : public passes::Pass {
 public:
     TileGuardNormalization() = default;
 
-    std::string name() override { return "TileGuardNormalization"; }
+    std::string name() override {
+        return "TileGuardNormalization";
+    }
 
     bool run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
 };

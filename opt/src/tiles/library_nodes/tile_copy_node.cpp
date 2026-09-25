@@ -24,8 +24,12 @@ const char* atom_to_string(CopyAtom atom) {
 }
 
 CopyAtom atom_from_string(const std::string& s) {
-    if (s == "vector_sync") return CopyAtom::VectorSync;
-    if (s == "cp_async") return CopyAtom::CpAsync;
+    if (s == "vector_sync") {
+        return CopyAtom::VectorSync;
+    }
+    if (s == "cp_async") {
+        return CopyAtom::CpAsync;
+    }
     return CopyAtom::ScalarSync;
 }
 
@@ -75,9 +79,12 @@ TileCopyNode::TileCopyNode(
           element_id, debug_info, vertex, parent, LibraryNodeType_TileCopy, {}, {"_dst", "_src"}, true, implementation_type
       ),
       plan_(std::move(plan)), direction_(direction), bytes_(bytes), guard_(std::move(guard)),
-      coop_axes_(std::move(coop_axes)), coop_threads_(std::move(coop_threads)) {}
+      coop_axes_(std::move(coop_axes)), coop_threads_(std::move(coop_threads)) {
+}
 
-void TileCopyNode::validate(const Function& function) const { data_flow::LibraryNode::validate(function); }
+void TileCopyNode::validate(const Function& function) const {
+    data_flow::LibraryNode::validate(function);
+}
 
 symbolic::SymbolSet TileCopyNode::symbols() const {
     symbolic::SymbolSet set;
@@ -346,7 +353,8 @@ TileCopyNodeDispatcher::TileCopyNodeDispatcher(
     const data_flow::DataFlowGraph& data_flow_graph,
     const TileCopyNode& node
 )
-    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
+}
 
 void TileCopyNodeDispatcher::dispatch_code_with_edges(
     codegen::CodegenOutput& out,

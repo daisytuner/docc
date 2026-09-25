@@ -25,7 +25,8 @@ UpsampleBilinear2DNode::UpsampleBilinear2DNode(
 )
     : TensorNode(element_id, debug_info, vertex, parent, LibraryNodeType_UpsampleBilinear2D, {}, {"Y", "X"}, impl_type),
       input_shape_(input_shape), output_shape_(output_shape), align_corners_(align_corners),
-      scale_factors_(scale_factors) {}
+      scale_factors_(scale_factors) {
+}
 
 void UpsampleBilinear2DNode::validate(const Function& function) const {
     TensorNode::validate(function);

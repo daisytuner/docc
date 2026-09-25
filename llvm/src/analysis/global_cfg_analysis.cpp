@@ -28,8 +28,9 @@ static llvm::ExitOnError ExitOnErr{"[docc_llvm_plugin] error: "};
 
 llvm::cl::opt<bool> docc_debug_glbl("docc-debug-glbl");
 
-#define DOCC_DEBUG(X) \
-    if (docc_debug_glbl) X
+#define DOCC_DEBUG(X)    \
+    if (docc_debug_glbl) \
+    X
 
 static llvm::cl::opt<bool> IncludeAllIntrinsics(
     "docc-include-all-intrinsics",
@@ -39,7 +40,9 @@ static llvm::cl::opt<bool> IncludeAllIntrinsics(
 
 namespace docc::analysis {
 
-bool GlobalCFGAnalysis::available(AnalysisManager &am) { return SDFGRegistry::is_link_time(am); }
+bool GlobalCFGAnalysis::available(AnalysisManager &am) {
+    return SDFGRegistry::is_link_time(am);
+}
 
 const std::vector<GlobalCFGNode *> *GlobalCFGAnalysis::getExitPoints(llvm::GlobalValue::GUID id) const {
     auto it = ExitPoints_.find(id);
@@ -63,7 +66,8 @@ public:
     SDFGRegistry &registry_;
 
     GlobalCFGBuilder(GlobalCFGAnalysis &CFG, llvm::ModuleSummaryIndex &CombinedIndex, SDFGRegistry &registry)
-        : CFG_(CFG), CombinedIndex_(CombinedIndex), registry_(registry) {}
+        : CFG_(CFG), CombinedIndex_(CombinedIndex), registry_(registry) {
+    }
 
     GlobalCFGNode &addNode(uint32_t modId, int64_t funcId = -1L);
     void addModule(uint32_t modId, llvm::Module &Mod);
@@ -226,7 +230,8 @@ private:
         stack_.emplace(scope, new_node);
     }
 
-    void commit(SdfgVisState &state) {}
+    void commit(SdfgVisState &state) {
+    }
 
     void leaveScope(sdfg::structured_control_flow::ControlFlowNode &scope) {
         assert(&stack_.top().current_scope == &scope);
@@ -347,7 +352,9 @@ void GlobalCFGBuilder::addModule(uint32_t modId, llvm::Module &Mod) {
     // Create nodes for all basic blocks in the module
     llvm::DenseMap<llvm::BasicBlock *, GlobalCFGNode *> Nodes;
     for (llvm::Function &Func : Mod) {
-        if (Func.isDeclaration()) continue;
+        if (Func.isDeclaration()) {
+            continue;
+        }
 
         auto func_name = Func.getName();
 
@@ -438,7 +445,9 @@ void GlobalCFGBuilder::addBasicBlockEdges(
 
     for (llvm::Instruction &I : *BB) {
         ++insnId;
-        if (PrevWasNoReturn) break;
+        if (PrevWasNoReturn) {
+            break;
+        }
 
         if (auto *Call = llvm::dyn_cast<llvm::CallBase>(&I)) {
             // Function-pointer call
@@ -568,7 +577,9 @@ void GlobalCFGAnalysis::addEntryPoint(llvm::GlobalValue::GUID Id, GlobalCFGNode 
 
 GlobalCFGNode *GlobalCFGAnalysis::findNodeExternallyVisible(llvm::StringRef Name) const {
     auto It = EntryPoints_.find(llvm::GlobalValue::getGUIDAssumingExternalLinkage(Name));
-    if (It == EntryPoints_.end()) return nullptr;
+    if (It == EntryPoints_.end()) {
+        return nullptr;
+    }
     return It->second;
 }
 
@@ -586,8 +597,11 @@ static std::unique_ptr<llvm::MemoryBuffer> loadFile(llvm::StringRef Path) {
 }
 
 static bool isNullHash(const llvm::ModuleHash &Hash) {
-    for (auto Component : Hash)
-        if (Component != 0) return false;
+    for (auto Component : Hash) {
+        if (Component != 0) {
+            return false;
+        }
+    }
     return true;
 }
 
@@ -628,7 +642,9 @@ void GlobalCFGAnalysis::run(AnalysisManager &am) {
     //    DOCC_WAIT_FOR_DEBUGGER("GlobalCFGBuilder");
 
     for (const auto &Entry : CombinedIndex->modulePaths()) {
-        if (isNullHash(Entry.second)) continue; // [Regular LTO] pseudo-module
+        if (isNullHash(Entry.second)) {
+            continue; // [Regular LTO] pseudo-module
+        }
         llvm::StringRef Path = Entry.first();
         std::unique_ptr<llvm::Module> Mod = registry.get_module(Path.str(), Ctx_);
 

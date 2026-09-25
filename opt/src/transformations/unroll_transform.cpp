@@ -11,7 +11,9 @@ namespace transformations {
 
 UnrollTransform::UnrollTransform(structured_control_flow::StructuredLoop& loop) : loop_(loop) {};
 
-std::string UnrollTransform::name() const { return "UnrollTransform"; };
+std::string UnrollTransform::name() const {
+    return "UnrollTransform";
+};
 
 /// True if `expr` is a strictly positive integer constant.
 static bool is_positive_int(const symbolic::Expression& expr) {

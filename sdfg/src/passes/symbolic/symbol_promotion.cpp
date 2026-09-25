@@ -412,7 +412,9 @@ SymbolPromotion::SymbolPromotion()
 
       };
 
-std::string SymbolPromotion::name() { return "SymbolPromotion"; };
+std::string SymbolPromotion::name() {
+    return "SymbolPromotion";
+};
 
 bool SymbolPromotion::run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     bool applied = false;

@@ -48,9 +48,12 @@ static size_t perfectly_nested_map_depth(structured_control_flow::Map& map) {
 // ---------------------------------------------------------------------------
 
 CollapseToDepth::CollapseToDepth(structured_control_flow::Map& loop, size_t target_loops)
-    : loop_(loop), target_loops_(target_loops) {}
+    : loop_(loop), target_loops_(target_loops) {
+}
 
-std::string CollapseToDepth::name() const { return "CollapseToDepth"; }
+std::string CollapseToDepth::name() const {
+    return "CollapseToDepth";
+}
 
 bool CollapseToDepth::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     if (target_loops_ < 1 || target_loops_ > 2) {

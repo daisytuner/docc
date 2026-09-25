@@ -105,7 +105,9 @@ bool decompose_by_stride(
     // additive terms (e.g. `j*N + j`) decompose into multiple groups.
     SymEngine::vec_basic terms;
     if (SymEngine::is_a<SymEngine::Add>(*expr)) {
-        for (const auto& a : expr->get_args()) terms.push_back(a);
+        for (const auto& a : expr->get_args()) {
+            terms.push_back(a);
+        }
     } else {
         terms.push_back(expr);
     }
@@ -140,7 +142,9 @@ bool decompose_by_stride(
 
         SymEngine::vec_basic factors;
         if (SymEngine::is_a<SymEngine::Mul>(*term)) {
-            for (const auto& f : term->get_args()) factors.push_back(f);
+            for (const auto& f : term->get_args()) {
+                factors.push_back(f);
+            }
         } else {
             factors.push_back(term);
         }
@@ -203,7 +207,9 @@ std::optional<sdfg::symbolic::DelinearizeResult> delinearize_affine(
     namespace sym = sdfg::symbolic;
     const sym::Assumptions& assums = bounds.assums();
 
-    auto is_zero = [](const sym::Expression& e) { return sym::eq(sym::simplify(sym::expand(e)), sym::zero()); };
+    auto is_zero = [](const sym::Expression& e) {
+        return sym::eq(sym::simplify(sym::expand(e)), sym::zero());
+    };
     // Sign / non-negativity proofs must keep the parameters (`N`, `_s0`, ...)
     // symbolic so coupled bounds cancel (e.g. `upper(j) = N - 3` makes
     // `N - 2 - j >= 1`). The `AssumptionsBounds` BoundAnalysis is built with
@@ -254,7 +260,9 @@ std::optional<sdfg::symbolic::DelinearizeResult> delinearize_affine(
     auto is_affine_index = [&](const sym::Expression& idx) -> bool {
         sym::SymbolVec iv(indvars_set.begin(), indvars_set.end());
         auto p = sym::polynomial(idx, iv);
-        if (p.is_null()) return false;
+        if (p.is_null()) {
+            return false;
+        }
         return !sym::affine_coefficients(p).empty();
     };
 
@@ -266,7 +274,9 @@ std::optional<sdfg::symbolic::DelinearizeResult> delinearize_affine(
     for (auto& [raw_stride, raw_index] : raw_groups) {
         auto [sign, stride] = normalize_sign(raw_stride);
         sym::Expression index = sym::simplify(sym::expand(sym::mul(sign, raw_index)));
-        if (sym::eq(index, sym::zero())) continue;
+        if (sym::eq(index, sym::zero())) {
+            continue;
+        }
         if (!is_affine_index(index)) {
             return std::nullopt; // product of induction variables -> not row-major affine
         }
@@ -278,7 +288,9 @@ std::optional<sdfg::symbolic::DelinearizeResult> delinearize_affine(
                 break;
             }
         }
-        if (!merged) groups.push_back({stride, index});
+        if (!merged) {
+            groups.push_back({stride, index});
+        }
     }
     if (groups.empty()) {
         return std::nullopt;
@@ -309,8 +321,12 @@ std::optional<sdfg::symbolic::DelinearizeResult> delinearize_affine(
     bool has_unit_stride = false;
     bool has_parametric_stride = false;
     for (auto& g : groups) {
-        if (sym::eq(g.stride, sym::one())) has_unit_stride = true;
-        if (!SymEngine::is_a<SymEngine::Integer>(*g.stride)) has_parametric_stride = true;
+        if (sym::eq(g.stride, sym::one())) {
+            has_unit_stride = true;
+        }
+        if (!SymEngine::is_a<SymEngine::Integer>(*g.stride)) {
+            has_parametric_stride = true;
+        }
     }
     if (!has_unit_stride && has_parametric_stride) {
         groups.push_back({sym::one(), sym::zero()});
@@ -324,9 +340,15 @@ std::optional<sdfg::symbolic::DelinearizeResult> delinearize_affine(
         return is_zero(r);
     };
     std::stable_sort(groups.begin(), groups.end(), [&](const DimGroup& A, const DimGroup& B) {
-        if (sym::eq(A.stride, B.stride)) return false;
-        if (divides(B.stride, A.stride)) return true; // A is a multiple of B -> A outer
-        if (divides(A.stride, B.stride)) return false; // B is a multiple of A -> B outer
+        if (sym::eq(A.stride, B.stride)) {
+            return false;
+        }
+        if (divides(B.stride, A.stride)) {
+            return true; // A is a multiple of B -> A outer
+        }
+        if (divides(A.stride, B.stride)) {
+            return false; // B is a multiple of A -> B outer
+        }
         return false; // incomparable -> caught below
     });
 
@@ -365,7 +387,9 @@ std::optional<sdfg::symbolic::DelinearizeResult> delinearize_affine(
     //     against non-terminating symbolic cases.
     for (size_t t = m; t-- > 1;) {
         auto [d, r] = sym::polynomial_div(groups[t - 1].stride, groups[t].stride);
-        if (!is_zero(r)) continue; // not a clean ratio (shouldn't happen after step 5)
+        if (!is_zero(r)) {
+            continue; // not a clean ratio (shouldn't happen after step 5)
+        }
         int guard = 0;
         while (index_negative(groups[t].index) && guard++ < 64) {
             groups[t].index = sym::simplify(sym::expand(sym::add(groups[t].index, d)));
@@ -474,7 +498,9 @@ DelinearizeResult delinearize(const Expression& expr, AssumptionsBounds& bounds)
     // stride * const_part`, and addends that touch no indvar are constants
     // relative to the access pattern and naturally belong in the offset.
     for (auto& [stride, index] : groups) {
-        if (!SymEngine::is_a<SymEngine::Add>(*index)) continue;
+        if (!SymEngine::is_a<SymEngine::Add>(*index)) {
+            continue;
+        }
         Expression idx_part = symbolic::zero();
         Expression const_part = symbolic::zero();
         for (const auto& addend : index->get_args()) {
@@ -502,7 +528,11 @@ DelinearizeResult delinearize(const Expression& expr, AssumptionsBounds& bounds)
     // already accounted for in the offset).
     groups.erase(
         std::remove_if(
-            groups.begin(), groups.end(), [](const auto& g) { return symbolic::eq(g.second, symbolic::zero()); }
+            groups.begin(),
+            groups.end(),
+            [](const auto& g) {
+                return symbolic::eq(g.second, symbolic::zero());
+            }
         ),
         groups.end()
     );
@@ -520,14 +550,18 @@ DelinearizeResult delinearize(const Expression& expr, AssumptionsBounds& bounds)
     // `j*N + j` (strides {N, 1}, both >= 1) remain unmerged as 2 dims.
     auto stride_is_free_standing = [&](const Expression& s) -> bool {
         auto lb = ba_loose.lower_bound(s);
-        if (lb == SymEngine::null) return false;
+        if (lb == SymEngine::null) {
+            return false;
+        }
         return symbolic::is_true(symbolic::Ge(lb, symbolic::one()));
     };
     {
         // Collect indices that have any non-free-standing sibling.
         std::vector<Expression> merge_indices;
         for (size_t a = 0; a < groups.size(); ++a) {
-            if (stride_is_free_standing(groups[a].first)) continue;
+            if (stride_is_free_standing(groups[a].first)) {
+                continue;
+            }
             // Skip if no sibling shares this index.
             bool has_sibling = false;
             for (size_t b = 0; b < groups.size(); ++b) {
@@ -536,7 +570,9 @@ DelinearizeResult delinearize(const Expression& expr, AssumptionsBounds& bounds)
                     break;
                 }
             }
-            if (!has_sibling) continue;
+            if (!has_sibling) {
+                continue;
+            }
             bool already = false;
             for (auto& mi : merge_indices) {
                 if (symbolic::eq(mi, groups[a].second)) {
@@ -544,7 +580,9 @@ DelinearizeResult delinearize(const Expression& expr, AssumptionsBounds& bounds)
                     break;
                 }
             }
-            if (!already) merge_indices.push_back(groups[a].second);
+            if (!already) {
+                merge_indices.push_back(groups[a].second);
+            }
         }
         // For each such index, sum all groups with that index into one.
         for (const auto& idx : merge_indices) {
@@ -690,9 +728,13 @@ DelinearizeResult delinearize(const Expression& expr, AssumptionsBounds& bounds)
                 bool changed = false;
                 SymbolSet r_atoms = symbolic::atoms(r);
                 for (auto& s : r_atoms) {
-                    if (stride_atoms.count(s)) continue;
+                    if (stride_atoms.count(s)) {
+                        continue;
+                    }
                     auto it = assums.find(s);
-                    if (it == assums.end()) continue;
+                    if (it == assums.end()) {
+                        continue;
+                    }
                     // Combine ALL known upper bounds (tight + listed) by taking
                     // their minimum. Using only tight_upper_bound() can drop
                     // important problem-specific bounds (e.g. j20 <= N-i-1
@@ -703,17 +745,23 @@ DelinearizeResult delinearize(const Expression& expr, AssumptionsBounds& bounds)
                     Expression ub_s = is_finite(it->second.tight_upper_bound()) ? it->second.tight_upper_bound()
                                                                                 : Expression(SymEngine::null);
                     for (auto& b : it->second.upper_bounds()) {
-                        if (!is_finite(b)) continue;
+                        if (!is_finite(b)) {
+                            continue;
+                        }
                         ub_s = ub_s.is_null() ? b : symbolic::min(ub_s, b);
                     }
-                    if (ub_s.is_null()) continue;
+                    if (ub_s.is_null()) {
+                        continue;
+                    }
                     Expression r_new = symbolic::simplify(symbolic::expand(symbolic::subs(r, s, ub_s)));
                     if (!symbolic::eq(r_new, r)) {
                         r = r_new;
                         changed = true;
                     }
                 }
-                if (!changed) break;
+                if (!changed) {
+                    break;
+                }
             }
             // Min-aware `is_gt` API helper proves `stride > min(...)` by
             // proving `stride > a_i` for some Min arg.
@@ -788,13 +836,23 @@ DelinearizeResult delinearize(const Expression& expr, AssumptionsBounds& bounds)
             if (SymEngine::is_a<SymEngine::Integer>(*best_stride)) {
                 long long b_stride = SymEngine::rcp_static_cast<const SymEngine::Integer>(best_stride)->as_int();
                 for (size_t k = 0; k < groups.size(); ++k) {
-                    if (static_cast<int>(k) == best_idx) continue;
+                    if (static_cast<int>(k) == best_idx) {
+                        continue;
+                    }
                     const auto& other = groups[k];
-                    if (!SymEngine::is_a<SymEngine::Integer>(*other.first)) continue;
+                    if (!SymEngine::is_a<SymEngine::Integer>(*other.first)) {
+                        continue;
+                    }
                     long long o_stride = SymEngine::rcp_static_cast<const SymEngine::Integer>(other.first)->as_int();
-                    if (o_stride <= 0 || o_stride >= b_stride) continue;
-                    if (b_stride % o_stride != 0) continue;
-                    if (symbolic::eq(other.second, best_index)) continue;
+                    if (o_stride <= 0 || o_stride >= b_stride) {
+                        continue;
+                    }
+                    if (b_stride % o_stride != 0) {
+                        continue;
+                    }
+                    if (symbolic::eq(other.second, best_index)) {
+                        continue;
+                    }
                     merge_target = static_cast<int>(k);
                     merge_factor = b_stride / o_stride;
                     break;

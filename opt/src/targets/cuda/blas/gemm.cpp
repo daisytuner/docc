@@ -11,7 +11,8 @@ GEMMNodeDispatcher_CUBLASWithTransfers::GEMMNodeDispatcher_CUBLASWithTransfers(
     const data_flow::DataFlowGraph& data_flow_graph,
     const math::blas::GEMMNode& node
 )
-    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
+}
 
 
 void add_guard_clause(
@@ -115,7 +116,8 @@ GEMMNodeDispatcher_CUBLASWithoutTransfers::GEMMNodeDispatcher_CUBLASWithoutTrans
     const data_flow::DataFlowGraph& data_flow_graph,
     const math::blas::GEMMNode& node
 )
-    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
+}
 
 void GEMMNodeDispatcher_CUBLASWithoutTransfers::dispatch_code(
     codegen::PrettyPrinter& stream,

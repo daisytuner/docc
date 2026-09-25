@@ -16,7 +16,8 @@ namespace passes {
 
 ExtendedBlockHoisting::
     ExtendedBlockHoisting(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager)
-    : BlockHoisting(builder, analysis_manager) {}
+    : BlockHoisting(builder, analysis_manager) {
+}
 
 bool ExtendedBlockHoisting::is_libnode_allowed(
     structured_control_flow::Sequence& body, data_flow::DataFlowGraph& dfg, data_flow::LibraryNode* libnode

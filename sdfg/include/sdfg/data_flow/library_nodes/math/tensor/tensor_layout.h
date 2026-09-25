@@ -38,10 +38,16 @@ public:
         const symbolic::Expression offset = symbolic::integer(0)
     );
 
-    const symbolic::MultiExpression& shape() const { return shape_; }
-    const symbolic::MultiExpression& strides() const { return strides_; }
+    const symbolic::MultiExpression& shape() const {
+        return shape_;
+    }
+    const symbolic::MultiExpression& strides() const {
+        return strides_;
+    }
 
-    const symbolic::Expression& offset() const { return offset_; }
+    const symbolic::Expression& offset() const {
+        return offset_;
+    }
 
     void serialize_to_json(nlohmann::json& j) const;
 
@@ -65,25 +71,35 @@ public:
      *
      * @param i the dimension / entry in shape. 0 is outermost
      */
-    const symbolic::Expression& get_dim(int i) const { return shape_.at(i); }
+    const symbolic::Expression& get_dim(int i) const {
+        return shape_.at(i);
+    }
     /**
      *
      * @param i 0 is innermost dim, 1 next level out etc.
      */
-    symbolic::Expression get_dim_innermost(int i) const { return shape_.at(shape_.size() - 1 - i); }
+    symbolic::Expression get_dim_innermost(int i) const {
+        return shape_.at(shape_.size() - 1 - i);
+    }
 
     /**
      *
      * @param i the dimension / entry in strides. 0 is outermost
      */
-    symbolic::Expression get_stride(int i) const { return strides_.at(i); }
+    symbolic::Expression get_stride(int i) const {
+        return strides_.at(i);
+    }
     /**
      *
      * @param i 0 is innermost dim, 1 next level out etc.
      */
-    symbolic::Expression get_stride_innermost(int i) const { return strides_.at(strides_.size() - 1 - i); }
+    symbolic::Expression get_stride_innermost(int i) const {
+        return strides_.at(strides_.size() - 1 - i);
+    }
 
-    int dims() const { return shape_.size(); }
+    int dims() const {
+        return shape_.size();
+    }
 
     bool is_scalar() const;
 

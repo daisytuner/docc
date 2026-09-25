@@ -226,12 +226,18 @@ inline sdfg::DebugInfo get_debug_info(llvm::Region& region) {
 
 // Grab a DebugLoc from the value itself (if Instruction), or from one of its users.
 inline sdfg::DebugInfo bestEffortLoc(const llvm::Value& V) {
-    if (auto* I = llvm::dyn_cast<llvm::Instruction>(&V)) return get_debug_info(*I);
+    if (auto* I = llvm::dyn_cast<llvm::Instruction>(&V)) {
+        return get_debug_info(*I);
+    }
 
     // Try users that are instructions with a location (common when V is an Argument or Constant).
-    for (const llvm::User* U : V.users())
-        if (auto* I = llvm::dyn_cast<llvm::Instruction>(U))
-            if (auto DL = I->getDebugLoc()) return get_debug_info(*I);
+    for (const llvm::User* U : V.users()) {
+        if (auto* I = llvm::dyn_cast<llvm::Instruction>(U)) {
+            if (auto DL = I->getDebugLoc()) {
+                return get_debug_info(*I);
+            }
+        }
+    }
 
     return sdfg::DebugInfo(); // nothing found
 }
@@ -241,7 +247,7 @@ inline std::vector<std::string> get_recorded_driver_flags(const llvm::Module& M)
     // It makes no sense to merge them all, including multiple compiler-executables
     std::vector<std::string> Flags;
 
-    if (auto* CMD = M.getNamedMetadata("llvm.commandline"))
+    if (auto* CMD = M.getNamedMetadata("llvm.commandline")) {
         for (llvm::MDNode* Op : CMD->operands()) {
             auto* S = llvm::dyn_cast<llvm::MDString>(Op->getOperand(0));
             if (S) {
@@ -254,6 +260,7 @@ inline std::vector<std::string> get_recorded_driver_flags(const llvm::Module& M)
                 }
             }
         }
+    }
     return Flags;
 }
 

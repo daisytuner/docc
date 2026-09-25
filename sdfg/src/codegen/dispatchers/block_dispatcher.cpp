@@ -42,7 +42,8 @@ AssignmentDispatcher::AssignmentDispatcher(
     ArgCapturePlan& arg_capture_plan
 )
     : NodeDispatcher(language_extension, sdfg, analysis_manager, node, instrumentation_plan, arg_capture_plan),
-      node_(node) {}
+      node_(node) {
+}
 
 void AssignmentDispatcher::dispatch_node(
     PrettyPrinter& main_stream, PrettyPrinter& globals_stream, CodeSnippetFactory& library_snippet_factory

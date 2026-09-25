@@ -6,7 +6,8 @@
 namespace sdfg::passes {
 
 DebugDumpPass::DebugDumpPass(const std::string& name, bool dump_json, bool dump_dot)
-    : name_(name), dump_json_(dump_json), dump_dot_(dump_dot) {}
+    : name_(name), dump_json_(dump_json), dump_dot_(dump_dot) {
+}
 
 bool DebugDumpPass::run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     bool dumped = false;

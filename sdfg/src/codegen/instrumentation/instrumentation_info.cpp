@@ -14,23 +14,40 @@ InstrumentationInfo::InstrumentationInfo(
     const std::unordered_map<std::string, std::string>& metrics
 )
     : element_id_(element_id), element_desc_(element_desc), target_type_(target_type), event_type_(event_type),
-      loop_info_(loop_info), metrics_(metrics) {}
+      loop_info_(loop_info), metrics_(metrics) {
+}
 
-size_t InstrumentationInfo::element_id() const { return element_id_; }
+size_t InstrumentationInfo::element_id() const {
+    return element_id_;
+}
 
-const std::string& InstrumentationInfo::element_desc() const { return element_desc_; }
+const std::string& InstrumentationInfo::element_desc() const {
+    return element_desc_;
+}
 
-const TargetType& InstrumentationInfo::target_type() const { return target_type_; }
+const TargetType& InstrumentationInfo::target_type() const {
+    return target_type_;
+}
 
-InstrumentationEventType InstrumentationInfo::event_type() const { return event_type_; }
+InstrumentationEventType InstrumentationInfo::event_type() const {
+    return event_type_;
+}
 
-const analysis::LoopInfo& InstrumentationInfo::loop_info() const { return loop_info_; }
+const analysis::LoopInfo& InstrumentationInfo::loop_info() const {
+    return loop_info_;
+}
 
-const std::unordered_map<std::string, std::string>& InstrumentationInfo::metrics() const { return metrics_; }
+const std::unordered_map<std::string, std::string>& InstrumentationInfo::metrics() const {
+    return metrics_;
+}
 
-bool InstrumentationInfo::sampling() const { return sampling_; }
+bool InstrumentationInfo::sampling() const {
+    return sampling_;
+}
 
-void InstrumentationInfo::set_sampling(bool sampling) { sampling_ = sampling; }
+void InstrumentationInfo::set_sampling(bool sampling) {
+    sampling_ = sampling;
+}
 
 } // namespace codegen
 } // namespace sdfg

@@ -63,7 +63,9 @@ bool all_extents_integer(const analysis::MemoryTile& tile) {
 }
 
 /// Tile extents (as a copy) for concise assertions.
-symbolic::MultiExpression extents_of(const analysis::MemoryTileGroup& group) { return group.tile.extents_approx(); }
+symbolic::MultiExpression extents_of(const analysis::MemoryTileGroup& group) {
+    return group.tile.extents_approx();
+}
 /// Tile layout strides (as a vector) for concise assertions.
 std::vector<symbolic::Expression> strides_of(const analysis::MemoryTileGroup& group) {
     return {group.tile.layout.strides().begin(), group.tile.layout.strides().end()};
@@ -2709,7 +2711,9 @@ TEST(LocalStorageTest, Apply_Cooperative_Mixed_Swizzle) {
     ASSERT_NE(copy, nullptr);
     const tiles::TileCopyNode* node = nullptr;
     for (auto* ln : copy->dataflow().library_nodes()) {
-        if (auto* tc = dynamic_cast<const tiles::TileCopyNode*>(ln)) node = tc;
+        if (auto* tc = dynamic_cast<const tiles::TileCopyNode*>(ln)) {
+            node = tc;
+        }
     }
     ASSERT_NE(node, nullptr);
     EXPECT_FALSE(node->plan().dst_swizzle.is_identity());
@@ -2804,7 +2808,9 @@ TEST(LocalStorageTest, Apply_LaneContiguous_FlatStaging) {
     ASSERT_TRUE(block_uses(*copy, buf));
     for (auto& edge : copy->dataflow().edges()) {
         auto* d = dynamic_cast<const data_flow::AccessNode*>(&edge.dst());
-        if (d && d->data() == buf) EXPECT_EQ(edge.subset().size(), 0u);
+        if (d && d->data() == buf) {
+            EXPECT_EQ(edge.subset().size(), 0u);
+        }
     }
 
     // The body reads the shared buffer, not A.
@@ -2886,7 +2892,9 @@ TEST(LocalStorageTest, Apply_Cooperative_2DTile_FullTile_NoGuard) {
                 guards++;
             }
             if (auto* s = dynamic_cast<structured_control_flow::Sequence*>(&n)) {
-                for (size_t x = 0; x < s->size(); ++x) count(s->at(x));
+                for (size_t x = 0; x < s->size(); ++x) {
+                    count(s->at(x));
+                }
             } else if (auto* m = dynamic_cast<structured_control_flow::Map*>(&n)) {
                 count(m->root());
             } else if (auto* f = dynamic_cast<structured_control_flow::StructuredLoop*>(&n)) {
@@ -2969,10 +2977,14 @@ TEST(LocalStorageTest, Apply_Cooperative_2DTile_Transposed) {
         [&](structured_control_flow::ControlFlowNode& n) {
             if (auto* blk = dynamic_cast<structured_control_flow::Block*>(&n)) {
                 for (auto* ln : blk->dataflow().library_nodes()) {
-                    if (dynamic_cast<tiles::TileCopyNode*>(ln)) has_copy_node = true;
+                    if (dynamic_cast<tiles::TileCopyNode*>(ln)) {
+                        has_copy_node = true;
+                    }
                 }
             } else if (auto* s = dynamic_cast<structured_control_flow::Sequence*>(&n)) {
-                for (size_t x = 0; x < s->size(); ++x) find(s->at(x));
+                for (size_t x = 0; x < s->size(); ++x) {
+                    find(s->at(x));
+                }
             } else if (auto* m = dynamic_cast<structured_control_flow::Map*>(&n)) {
                 find(m->root());
             } else if (auto* f = dynamic_cast<structured_control_flow::StructuredLoop*>(&n)) {

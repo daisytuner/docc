@@ -15,7 +15,9 @@ class TensorToPointerConversion : public visitor::NonStoppingStructuredSDFGVisit
 public:
     TensorToPointerConversion(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager);
 
-    static std::string name() { return "TensorToPointerConversion"; }
+    static std::string name() {
+        return "TensorToPointerConversion";
+    }
 
     virtual bool accept(structured_control_flow::Block& block) override;
 };

@@ -36,25 +36,44 @@ GEMMNode::GEMMNode(
           implementation_type,
           precision
       ),
-      layout_(layout), trans_a_(trans_a), trans_b_(trans_b), m_(m), n_(n), k_(k), lda_(lda), ldb_(ldb), ldc_(ldc) {}
+      layout_(layout), trans_a_(trans_a), trans_b_(trans_b), m_(m), n_(n), k_(k), lda_(lda), ldb_(ldb), ldc_(ldc) {
+}
 
-BLAS_Layout GEMMNode::layout() const { return this->layout_; };
+BLAS_Layout GEMMNode::layout() const {
+    return this->layout_;
+};
 
-BLAS_Transpose GEMMNode::trans_a() const { return this->trans_a_; };
+BLAS_Transpose GEMMNode::trans_a() const {
+    return this->trans_a_;
+};
 
-BLAS_Transpose GEMMNode::trans_b() const { return this->trans_b_; };
+BLAS_Transpose GEMMNode::trans_b() const {
+    return this->trans_b_;
+};
 
-symbolic::Expression GEMMNode::m() const { return this->m_; };
+symbolic::Expression GEMMNode::m() const {
+    return this->m_;
+};
 
-symbolic::Expression GEMMNode::n() const { return this->n_; };
+symbolic::Expression GEMMNode::n() const {
+    return this->n_;
+};
 
-symbolic::Expression GEMMNode::k() const { return this->k_; };
+symbolic::Expression GEMMNode::k() const {
+    return this->k_;
+};
 
-symbolic::Expression GEMMNode::lda() const { return this->lda_; };
+symbolic::Expression GEMMNode::lda() const {
+    return this->lda_;
+};
 
-symbolic::Expression GEMMNode::ldb() const { return this->ldb_; };
+symbolic::Expression GEMMNode::ldb() const {
+    return this->ldb_;
+};
 
-symbolic::Expression GEMMNode::ldc() const { return this->ldc_; };
+symbolic::Expression GEMMNode::ldc() const {
+    return this->ldc_;
+};
 
 symbolic::SymbolSet GEMMNode::symbols() const {
     symbolic::SymbolSet syms;
@@ -99,7 +118,9 @@ void GEMMNode::replace(const symbolic::ExpressionMapping& replacements) {
     this->ldc_ = symbolic::subs(this->ldc_, replacements);
 };
 
-void GEMMNode::validate(const Function& function) const { BLASNode::validate(function); }
+void GEMMNode::validate(const Function& function) const {
+    BLASNode::validate(function);
+}
 
 passes::LibNodeExpander::ExpandOutcome GEMMNode::
     expand(passes::LibNodeExpander::ExpandContext& context, structured_control_flow::Block& block) {
@@ -445,7 +466,8 @@ GEMMNodeDispatcher_BLAS::GEMMNodeDispatcher_BLAS(
     const data_flow::DataFlowGraph& data_flow_graph,
     const GEMMNode& node
 )
-    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
+}
 
 void GEMMNodeDispatcher_BLAS::dispatch_code_with_edges(
     codegen::CodegenOutput& out,

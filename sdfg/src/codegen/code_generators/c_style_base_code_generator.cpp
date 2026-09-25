@@ -46,9 +46,13 @@ void CStyleBaseCodeGenerator::dispatch_header(PrettyPrinter& out) {
     dispatch_header_structures(out);
 }
 
-void CStyleBaseCodeGenerator::dispatch_includes() { dispatch_header_includes(this->includes_stream_); }
+void CStyleBaseCodeGenerator::dispatch_includes() {
+    dispatch_header_includes(this->includes_stream_);
+}
 
-void CStyleBaseCodeGenerator::dispatch_structures() { dispatch_header_structures(this->classes_stream_); }
+void CStyleBaseCodeGenerator::dispatch_structures() {
+    dispatch_header_structures(this->classes_stream_);
+}
 
 bool CStyleBaseCodeGenerator::emit_main_source(std::ostream& out, const std::filesystem::path& header_path) {
     out << "#include \"" << header_path.filename().string() << "\"" << std::endl;

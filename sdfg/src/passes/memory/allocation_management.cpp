@@ -10,7 +10,8 @@ namespace passes {
 
 AllocationManagement::
     AllocationManagement(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager)
-    : NonStoppingStructuredSDFGVisitor(builder, analysis_manager) {}
+    : NonStoppingStructuredSDFGVisitor(builder, analysis_manager) {
+}
 
 bool AllocationManagement::can_be_applied_allocation(data_flow::DataFlowGraph& graph, data_flow::LibraryNode& library_node) {
     symbolic::Expression allocation_size = SymEngine::null;

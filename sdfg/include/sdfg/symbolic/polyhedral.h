@@ -52,8 +52,12 @@ public:
     IslCtx(IslCtx&& other) noexcept;
     IslCtx& operator=(IslCtx&& other) noexcept;
 
-    isl_ctx* get() const { return ctx_; }
-    explicit operator bool() const { return ctx_ != nullptr; }
+    isl_ctx* get() const {
+        return ctx_;
+    }
+    explicit operator bool() const {
+        return ctx_ != nullptr;
+    }
 
 private:
     isl_ctx* ctx_;
@@ -68,14 +72,20 @@ private:
 template<typename T, T* (*FreeFn)(T*)>
 class IslHandle {
 public:
-    IslHandle() : ptr_(nullptr) {}
-    explicit IslHandle(T* ptr) : ptr_(ptr) {}
-    ~IslHandle() { reset(); }
+    IslHandle() : ptr_(nullptr) {
+    }
+    explicit IslHandle(T* ptr) : ptr_(ptr) {
+    }
+    ~IslHandle() {
+        reset();
+    }
 
     IslHandle(const IslHandle&) = delete;
     IslHandle& operator=(const IslHandle&) = delete;
 
-    IslHandle(IslHandle&& other) noexcept : ptr_(other.ptr_) { other.ptr_ = nullptr; }
+    IslHandle(IslHandle&& other) noexcept : ptr_(other.ptr_) {
+        other.ptr_ = nullptr;
+    }
     IslHandle& operator=(IslHandle&& other) noexcept {
         if (this != &other) {
             reset();
@@ -86,7 +96,9 @@ public:
     }
 
     /// Borrow the raw pointer without transferring ownership.
-    T* get() const { return ptr_; }
+    T* get() const {
+        return ptr_;
+    }
 
     /// Relinquish ownership to the caller (e.g. before passing to an ISL
     /// function that *takes* the object). The handle becomes empty.
@@ -104,7 +116,9 @@ public:
         ptr_ = p;
     }
 
-    explicit operator bool() const { return ptr_ != nullptr; }
+    explicit operator bool() const {
+        return ptr_ != nullptr;
+    }
 
 private:
     T* ptr_;

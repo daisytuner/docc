@@ -15,8 +15,10 @@ struct DataRwFlags {
     bool is_output;
 
     DataRwFlags(bool is_explicit_input, bool is_input, bool is_output)
-        : is_explicit_input(is_explicit_input), is_input(is_input), is_output(is_output) {}
-    DataRwFlags() : is_explicit_input(false), is_input(false), is_output(false) {}
+        : is_explicit_input(is_explicit_input), is_input(is_input), is_output(is_output) {
+    }
+    DataRwFlags() : is_explicit_input(false), is_input(false), is_output(false) {
+    }
     DataRwFlags(const DataRwFlags& copy) = default;
     ~DataRwFlags() = default;
     DataRwFlags& operator=(const DataRwFlags& other) = default;
@@ -49,10 +51,13 @@ struct RegionArgument : public DataRwFlags {
     bool is_ptr;
 
     RegionArgument(bool is_explicit_input, bool is_input, bool is_output, bool scalar, bool ptr)
-        : DataRwFlags(is_explicit_input, is_input, is_output), is_scalar(scalar), is_ptr(ptr) {}
-    RegionArgument(DataRwFlags rwFlags, bool scalar, bool ptr) : DataRwFlags(rwFlags), is_scalar(scalar), is_ptr(ptr) {}
+        : DataRwFlags(is_explicit_input, is_input, is_output), is_scalar(scalar), is_ptr(ptr) {
+    }
+    RegionArgument(DataRwFlags rwFlags, bool scalar, bool ptr) : DataRwFlags(rwFlags), is_scalar(scalar), is_ptr(ptr) {
+    }
 
-    RegionArgument() : is_scalar(false), is_ptr(false) {}
+    RegionArgument() : is_scalar(false), is_ptr(false) {
+    }
 
     RegionArgument(const RegionArgument& copy) = default;
 
@@ -92,7 +97,9 @@ private:
 public:
     ArgumentsAnalysis(StructuredSDFG& sdfg);
 
-    std::string name() const override { return "ArgumentsAnalysis"; }
+    std::string name() const override {
+        return "ArgumentsAnalysis";
+    }
 
     void run(analysis::AnalysisManager& analysis_manager) override;
 

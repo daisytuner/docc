@@ -47,9 +47,12 @@ private:
 
 public:
     PyTileAnalysis(sdfg::analysis::AnalysisManager& manager)
-        : manager_(manager), analysis_(manager.get<sdfg::tiles::TileAnalysis>()) {}
+        : manager_(manager), analysis_(manager.get<sdfg::tiles::TileAnalysis>()) {
+    }
 
-    sdfg::tiles::TileAnalysis& analysis() { return analysis_; }
+    sdfg::tiles::TileAnalysis& analysis() {
+        return analysis_;
+    }
 
     /// The tile of @p container at loop @p loop (a loop node from LoopAnalysis), or None. The dict is
     /// {container, reads, writes, cooperative, space, num_axes, shape, size}; `space` is the required

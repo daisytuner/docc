@@ -48,7 +48,8 @@ public:
           tensor_shape({symbolic::integer(1), symbolic::integer(64), symbolic::integer(32), symbolic::integer(32)}),
           tensor_type(element_desc, tensor_shape), malloc_size(symbolic::integer(1 * 64 * 32 * 32 * 4)) // 4 bytes per
                                                                                                         // float
-    {}
+    {
+    }
 
     void setup_containers() {
         builder.add_container("ptr1", ptr_desc);
@@ -261,7 +262,8 @@ public:
                   symbolic::integer(64), symbolic::integer(64), symbolic::integer(3), symbolic::integer(3)
               }
           ),
-          malloc_size(symbolic::integer(1 * 64 * 32 * 32 * 4)) {}
+          malloc_size(symbolic::integer(1 * 64 * 32 * 32 * 4)) {
+    }
 
     void setup_containers() {
         for (int i = 1; i <= 5; i++) {

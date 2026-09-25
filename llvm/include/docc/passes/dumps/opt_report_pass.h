@@ -15,9 +15,12 @@ private:
     std::shared_ptr<docc::passes::PassReportCollector> report_;
 
 public:
-    explicit OPTReportPass(std::shared_ptr<docc::passes::PassReportCollector> report) : report_(std::move(report)) {}
+    explicit OPTReportPass(std::shared_ptr<docc::passes::PassReportCollector> report) : report_(std::move(report)) {
+    }
 
-    static bool available(analysis::AnalysisManager &AM) { return true; }
+    static bool available(analysis::AnalysisManager &AM) {
+        return true;
+    }
 
     llvm::PreservedAnalyses run(llvm::Module &Module, llvm::ModuleAnalysisManager &MAM, analysis::AnalysisManager &AM);
 };

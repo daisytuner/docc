@@ -13,9 +13,12 @@ namespace sdfg {
 namespace transformations {
 
 ROCMParallelizeNestedMap::ROCMParallelizeNestedMap(structured_control_flow::StructuredLoop& loop, size_t block_size)
-    : loop_(loop), block_size_(block_size) {}
+    : loop_(loop), block_size_(block_size) {
+}
 
-std::string ROCMParallelizeNestedMap::name() const { return "ROCMParallelizeNestedMap"; }
+std::string ROCMParallelizeNestedMap::name() const {
+    return "ROCMParallelizeNestedMap";
+}
 
 bool ROCMParallelizeNestedMap::
     can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {

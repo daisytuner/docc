@@ -192,9 +192,12 @@ std::unique_ptr<types::IType> prepend_stage_dim(const types::IType& buf, size_t 
 } // namespace
 
 SoftwarePipelining::SoftwarePipelining(structured_control_flow::StructuredLoop& loop, size_t stages, bool single_operand)
-    : loop_(loop), stages_(stages), single_operand_(single_operand) {}
+    : loop_(loop), stages_(stages), single_operand_(single_operand) {
+}
 
-std::string SoftwarePipelining::name() const { return "SoftwarePipelining"; }
+std::string SoftwarePipelining::name() const {
+    return "SoftwarePipelining";
+}
 
 bool SoftwarePipelining::
     can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {

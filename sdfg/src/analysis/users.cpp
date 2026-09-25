@@ -27,11 +27,17 @@ User::User(graph::Vertex vertex, const std::string& container, Element* element,
 
       };
 
-Use User::use() const { return this->use_; };
+Use User::use() const {
+    return this->use_;
+};
 
-std::string& User::container() { return this->container_; };
+std::string& User::container() {
+    return this->container_;
+};
 
-Element* User::element() { return this->element_; };
+Element* User::element() {
+    return this->element_;
+};
 
 const std::vector<data_flow::Subset>& User::subsets() const {
     if (this->subsets_cached_) {
@@ -82,11 +88,17 @@ ForUser::ForUser(
 
       };
 
-bool ForUser::is_init() const { return this->is_init_; };
+bool ForUser::is_init() const {
+    return this->is_init_;
+};
 
-bool ForUser::is_condition() const { return this->is_condition_; };
+bool ForUser::is_condition() const {
+    return this->is_condition_;
+};
 
-bool ForUser::is_update() const { return this->is_update_; };
+bool ForUser::is_update() const {
+    return this->is_update_;
+};
 
 std::pair<graph::Vertex, graph::Vertex> Users::traverse(data_flow::DataFlowGraph& dataflow) {
     graph::Vertex first = boost::graph_traits<graph::Graph>::null_vertex();
@@ -619,7 +631,9 @@ std::list<User*> Users::uses(const std::string& container) const {
     return us;
 };
 
-size_t Users::num_uses(const std::string& container) const { return this->uses(container).size(); };
+size_t Users::num_uses(const std::string& container) const {
+    return this->uses(container).size();
+};
 
 std::list<User*> Users::writes() const {
     std::list<User*> us;
@@ -633,9 +647,13 @@ std::list<User*> Users::writes() const {
     return us;
 };
 
-const std::list<User*>& Users::writes(const std::string& container) const { return this->writes_.at(container); };
+const std::list<User*>& Users::writes(const std::string& container) const {
+    return this->writes_.at(container);
+};
 
-size_t Users::num_writes(const std::string& container) const { return this->writes(container).size(); };
+size_t Users::num_writes(const std::string& container) const {
+    return this->writes(container).size();
+};
 
 std::list<User*> Users::reads() const {
     std::list<User*> us;
@@ -649,9 +667,13 @@ std::list<User*> Users::reads() const {
     return us;
 };
 
-const std::list<User*>& Users::reads(const std::string& container) const { return this->reads_.at(container); };
+const std::list<User*>& Users::reads(const std::string& container) const {
+    return this->reads_.at(container);
+};
 
-size_t Users::num_reads(const std::string& container) const { return this->reads(container).size(); };
+size_t Users::num_reads(const std::string& container) const {
+    return this->reads(container).size();
+};
 
 std::list<User*> Users::views() const {
     std::list<User*> us;
@@ -665,9 +687,13 @@ std::list<User*> Users::views() const {
     return us;
 };
 
-const std::list<User*>& Users::views(const std::string& container) const { return this->views_.at(container); };
+const std::list<User*>& Users::views(const std::string& container) const {
+    return this->views_.at(container);
+};
 
-size_t Users::num_views(const std::string& container) const { return this->views(container).size(); };
+size_t Users::num_views(const std::string& container) const {
+    return this->views(container).size();
+};
 
 std::list<User*> Users::moves() const {
     std::list<User*> us;
@@ -681,9 +707,13 @@ std::list<User*> Users::moves() const {
     return us;
 };
 
-const std::list<User*>& Users::moves(const std::string& container) const { return this->moves_.at(container); };
+const std::list<User*>& Users::moves(const std::string& container) const {
+    return this->moves_.at(container);
+};
 
-size_t Users::num_moves(const std::string& container) const { return this->moves(container).size(); };
+size_t Users::num_moves(const std::string& container) const {
+    return this->moves(container).size();
+};
 
 structured_control_flow::ControlFlowNode* Users::scope(User* user) {
     if (auto data_node = dynamic_cast<data_flow::DataFlowNode*>(user->element())) {

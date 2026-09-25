@@ -23,11 +23,14 @@ protected:
 
 public:
     LanguageExtension(sdfg::Function& function, const std::string& external_prefix)
-        : function_(function), external_prefix_(external_prefix) {}
+        : function_(function), external_prefix_(external_prefix) {
+    }
 
     virtual ~LanguageExtension() = default;
 
-    const std::string& external_prefix() const { return this->external_prefix_; }
+    const std::string& external_prefix() const {
+        return this->external_prefix_;
+    }
 
     virtual const std::string language() const = 0;
 

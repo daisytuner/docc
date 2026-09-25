@@ -42,7 +42,9 @@ using CUDADimension = gpu::GPUDimension;
  */
 class ScheduleType_CUDA_Offload : public gpu::ScheduleType_GPU_Offload {
 public:
-    static const std::string value() { return "CUDA_Offload"; }
+    static const std::string value() {
+        return "CUDA_Offload";
+    }
 };
 
 /**
@@ -53,8 +55,12 @@ public:
  */
 class ScheduleType_CUDA : public gpu::ScheduleType_GPU_Base<ScheduleType_CUDA> {
 public:
-    static const std::string value() { return "CUDA"; }
-    static symbolic::Integer default_block_size_x() { return symbolic::integer(32); }
+    static const std::string value() {
+        return "CUDA";
+    }
+    static symbolic::Integer default_block_size_x() {
+        return symbolic::integer(32);
+    }
 };
 
 inline codegen::TargetType TargetType_CUDA_Offload{ScheduleType_CUDA_Offload::value()};

@@ -61,14 +61,20 @@ void CUDAOffloadDispatcherStrategy::dispatch_kernel_launch_error_check(
     check_cuda_kernel_launch_errors(stream, language_extension, false);
 }
 
-int CUDAOffloadDispatcherStrategy::get_warp_size() const { return CUDA_WARP_SIZE; }
+int CUDAOffloadDispatcherStrategy::get_warp_size() const {
+    return CUDA_WARP_SIZE;
+}
 
 bool CUDAOffloadDispatcherStrategy::is_device_pointer_storage(const types::StorageType& storage) const {
     return storage.is_nv_generic();
 }
 
-std::string CUDAOffloadDispatcherStrategy::kernel_file_extension() const { return KERNEL_SNIPPET_FILE_EXT; }
-std::string CUDAOffloadDispatcherStrategy::kernel_header_file_extension() const { return KERNEL_SNIPPET_HEADER_EXT; }
+std::string CUDAOffloadDispatcherStrategy::kernel_file_extension() const {
+    return KERNEL_SNIPPET_FILE_EXT;
+}
+std::string CUDAOffloadDispatcherStrategy::kernel_header_file_extension() const {
+    return KERNEL_SNIPPET_HEADER_EXT;
+}
 
 void CUDAOffloadDispatcherStrategy::emit_target_header_declarations(codegen::PrettyPrinter& kernel_header_stream) {
     // fp16/bf16 atomics (e.g. split-K accumulate) use the __half / __nv_bfloat16

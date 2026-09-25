@@ -23,9 +23,13 @@ public:
         const data_flow::ImplementationType& impl_type = data_flow::ImplementationType_NONE
     );
 
-    int tensor_input_count() const override { return 2; }
+    int tensor_input_count() const override {
+        return 2;
+    }
 
-    int mandatory_input_count() const override { return 2; }
+    int mandatory_input_count() const override {
+        return 2;
+    }
 
     ElementOutput expand_operation_dataflow(
         builder::StructuredSDFGBuilder& builder,
@@ -34,7 +38,9 @@ public:
         types::PrimitiveType expected_type
     ) override;
 
-    bool supports_integer_types() const override { return false; }
+    bool supports_integer_types() const override {
+        return false;
+    }
 
     std::unique_ptr<data_flow::DataFlowNode>
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const override;

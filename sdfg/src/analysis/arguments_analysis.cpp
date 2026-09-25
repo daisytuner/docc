@@ -112,15 +112,21 @@ void ArgumentsAnalysis::collect_arg_sizes(
             symbolic::Expression malloc_size = SymEngine::null;
             for (auto* user : users.writes(argument)) {
                 auto* access_node = dynamic_cast<data_flow::AccessNode*>(user->element());
-                if (!access_node) continue;
+                if (!access_node) {
+                    continue;
+                }
                 auto& graph = access_node->get_parent();
                 for (auto& iedge : graph.in_edges(*access_node)) {
                     auto* malloc_node = dynamic_cast<const stdlib::MallocNode*>(&iedge.src());
-                    if (!malloc_node) continue;
+                    if (!malloc_node) {
+                        continue;
+                    }
                     malloc_size = malloc_node->size();
                     break;
                 }
-                if (!malloc_size.is_null()) break;
+                if (!malloc_size.is_null()) {
+                    break;
+                }
             }
 
             // If malloc size is known, use it directly — skip range analysis
@@ -189,9 +195,11 @@ void ArgumentsAnalysis::collect_arg_sizes(
     known_sizes_.insert({&node, true});
 }
 
-ArgumentsAnalysis::ArgumentsAnalysis(StructuredSDFG& sdfg) : Analysis(sdfg) {}
+ArgumentsAnalysis::ArgumentsAnalysis(StructuredSDFG& sdfg) : Analysis(sdfg) {
+}
 
-void ArgumentsAnalysis::run(analysis::AnalysisManager& analysis_manager) {}
+void ArgumentsAnalysis::run(analysis::AnalysisManager& analysis_manager) {
+}
 
 const std::map<std::string, RegionArgument>& ArgumentsAnalysis::
     arguments(analysis::AnalysisManager& analysis_manager, structured_control_flow::ControlFlowNode& node) {

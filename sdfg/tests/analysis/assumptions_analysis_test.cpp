@@ -595,8 +595,12 @@ TEST(AssumptionsAnalysisTest, IfElse_BranchConditionPropagated) {
     bool has_three_lb = false;
     bool has_zero_lb = false;
     for (const auto& lb : i_assumptions.lower_bounds()) {
-        if (symbolic::eq(lb, three)) has_three_lb = true;
-        if (symbolic::eq(lb, symbolic::zero())) has_zero_lb = true;
+        if (symbolic::eq(lb, three)) {
+            has_three_lb = true;
+        }
+        if (symbolic::eq(lb, symbolic::zero())) {
+            has_zero_lb = true;
+        }
     }
     EXPECT_TRUE(has_zero_lb) << "Loop-derived lower bound `0` should still be present.";
     EXPECT_TRUE(has_three_lb) << "Branch condition `i >= 3` should add `3` as a lower bound of `i`.";
@@ -606,8 +610,12 @@ TEST(AssumptionsAnalysisTest, IfElse_BranchConditionPropagated) {
     auto N_minus_4 = symbolic::sub(N, four);
     auto N_minus_1 = symbolic::sub(N, symbolic::one());
     for (const auto& ub : i_assumptions.upper_bounds()) {
-        if (symbolic::eq(ub, N_minus_4)) has_N_minus_4_ub = true;
-        if (symbolic::eq(ub, N_minus_1)) has_N_minus_1_ub = true;
+        if (symbolic::eq(ub, N_minus_4)) {
+            has_N_minus_4_ub = true;
+        }
+        if (symbolic::eq(ub, N_minus_1)) {
+            has_N_minus_1_ub = true;
+        }
     }
     EXPECT_TRUE(has_N_minus_1_ub) << "Loop-derived upper bound `N - 1` should still be present.";
     EXPECT_TRUE(has_N_minus_4_ub)
@@ -698,7 +706,9 @@ TEST(AssumptionsAnalysisTest, IfElse_NegatedConjunctionNotPropagated) {
 // Helper: check whether `set` contains an expression value-equal to `target`.
 static bool contains_expr(const symbolic::ExpressionSet& set, const symbolic::Expression& target) {
     for (const auto& e : set) {
-        if (symbolic::eq(e, target)) return true;
+        if (symbolic::eq(e, target)) {
+            return true;
+        }
     }
     return false;
 }
@@ -1001,10 +1011,14 @@ TEST(AssumptionsAnalysisTest, IfElse_SingleIndvar_DoesNotEmitConstraint) {
     bool has_three_lb = false;
     bool has_seven_ub = false;
     for (const auto& lb : i_assum.lower_bounds()) {
-        if (symbolic::eq(lb, symbolic::integer(3))) has_three_lb = true;
+        if (symbolic::eq(lb, symbolic::integer(3))) {
+            has_three_lb = true;
+        }
     }
     for (const auto& ub : i_assum.upper_bounds()) {
-        if (symbolic::eq(ub, symbolic::integer(7))) has_seven_ub = true;
+        if (symbolic::eq(ub, symbolic::integer(7))) {
+            has_seven_ub = true;
+        }
     }
     EXPECT_TRUE(has_three_lb);
     EXPECT_TRUE(has_seven_ub);
@@ -1094,7 +1108,9 @@ TEST(AssumptionsAnalysisTest, TileNest_StrideTightAndCoupledConstraintEnableProo
     auto tight = symbolic::add(it, symbolic::integer(60));
     bool has_tight_ub = false;
     for (const auto& ub_e : i_assum.upper_bounds()) {
-        if (symbolic::eq(ub_e, tight)) has_tight_ub = true;
+        if (symbolic::eq(ub_e, tight)) {
+            has_tight_ub = true;
+        }
     }
     EXPECT_TRUE(has_tight_ub) << "Expected stride-tight upper bound `it + 60` on i.";
 
@@ -1102,7 +1118,9 @@ TEST(AssumptionsAnalysisTest, TileNest_StrideTightAndCoupledConstraintEnableProo
     auto constraint = symbolic::expand(symbolic::sub(i, tight));
     bool has_constraint = false;
     for (const auto& c : i_assum.constraints()) {
-        if (symbolic::eq(c, constraint)) has_constraint = true;
+        if (symbolic::eq(c, constraint)) {
+            has_constraint = true;
+        }
     }
     EXPECT_TRUE(has_constraint) << "Expected coupled constraint `i - it - 60` on i.";
 

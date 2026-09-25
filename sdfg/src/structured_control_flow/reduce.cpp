@@ -51,7 +51,9 @@ Reduce::Reduce(
     : StructuredLoop(element_id, debug_info, parent, indvar, init, update, condition, schedule_type),
       reductions_(std::move(reductions)) {};
 
-bool Reduce::accept(visitor::ActualStructuredSDFGVisitor& visitor) { return visitor.visit(*this); }
+bool Reduce::accept(visitor::ActualStructuredSDFGVisitor& visitor) {
+    return visitor.visit(*this);
+}
 
 void Reduce::validate(const Function& function) const {
     StructuredLoop::validate(function);
@@ -107,7 +109,9 @@ void Reduce::replace(const symbolic::ExpressionMapping& replacements) {
     }
 }
 
-const std::vector<ReductionInfo>& Reduce::reductions() const { return this->reductions_; };
+const std::vector<ReductionInfo>& Reduce::reductions() const {
+    return this->reductions_;
+};
 
 void Reduce::original_index(const std::string& container, symbolic::Expression index) {
     for (auto& reduction : reductions_) {

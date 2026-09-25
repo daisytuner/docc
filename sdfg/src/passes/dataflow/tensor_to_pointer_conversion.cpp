@@ -14,7 +14,8 @@ namespace passes {
 
 TensorToPointerConversion::
     TensorToPointerConversion(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager)
-    : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager) {}
+    : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager) {
+}
 
 bool TensorToPointerConversion::accept(structured_control_flow::Block& block) {
     bool applied = false;

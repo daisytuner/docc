@@ -67,15 +67,21 @@ void ROCMOffloadDispatcherStrategy::dispatch_kernel_launch_error_check(
     check_rocm_kernel_launch_errors(stream, language_extension);
 }
 
-int ROCMOffloadDispatcherStrategy::get_warp_size() const { return rocm_wavefront_size(); }
+int ROCMOffloadDispatcherStrategy::get_warp_size() const {
+    return rocm_wavefront_size();
+}
 
 bool ROCMOffloadDispatcherStrategy::is_device_pointer_storage(const types::StorageType& storage) const {
     return storage.is_amd_generic();
 }
 
-std::string ROCMOffloadDispatcherStrategy::kernel_file_extension() const { return KERNEL_SNIPPET_FILE_EXT; }
+std::string ROCMOffloadDispatcherStrategy::kernel_file_extension() const {
+    return KERNEL_SNIPPET_FILE_EXT;
+}
 
-std::string ROCMOffloadDispatcherStrategy::kernel_header_file_extension() const { return KERNEL_SNIPPET_HEADER_EXT; }
+std::string ROCMOffloadDispatcherStrategy::kernel_header_file_extension() const {
+    return KERNEL_SNIPPET_HEADER_EXT;
+}
 
 std::string ROCMOffloadDispatcherStrategy::warp_shuffle_xor(const std::string& value, const std::string& lane_mask)
     const {

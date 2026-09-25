@@ -73,7 +73,9 @@ public:
      */
     virtual bool is_symbol() const override;
 
-    bool is_pointer_like() const override { return true; }
+    bool is_pointer_like() const override {
+        return true;
+    }
 
     /**
      * @brief Gets the number of parameters

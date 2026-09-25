@@ -16,9 +16,12 @@
 namespace sdfg {
 namespace transformations {
 
-MapCollapse::MapCollapse(structured_control_flow::Map& loop, size_t count) : loop_(loop), count_(count) {}
+MapCollapse::MapCollapse(structured_control_flow::Map& loop, size_t count) : loop_(loop), count_(count) {
+}
 
-std::string MapCollapse::name() const { return "MapCollapse"; }
+std::string MapCollapse::name() const {
+    return "MapCollapse";
+}
 
 bool MapCollapse::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     // Criterion: count must be at least 2
@@ -194,7 +197,9 @@ bool MapCollapse::check_imperfect(analysis::AnalysisManager& analysis_manager) {
     // loop-control accesses need no special handling here - they are simply locals.
     auto& arguments_analysis = analysis_manager.get<analysis::ArgumentsAnalysis>();
     const auto& locals = arguments_analysis.locals(analysis_manager, loop_);
-    auto is_local = [&locals](const std::string& container) { return locals.count(container) != 0; };
+    auto is_local = [&locals](const std::string& container) {
+        return locals.count(container) != 0;
+    };
 
     std::vector<std::unordered_set<std::string>> writes(n);
     std::vector<std::unordered_set<std::string>> reads(n);

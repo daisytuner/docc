@@ -30,7 +30,9 @@ constexpr bool is_H2D(const DataTransferDirection& transfer_direction) {
 
 enum class BufferLifecycle : int8_t { FREE = -1, NO_CHANGE = 0, ALLOC = 1 };
 
-constexpr bool is_FREE(const BufferLifecycle& buffer_lifecycle) { return (buffer_lifecycle == BufferLifecycle::FREE); }
+constexpr bool is_FREE(const BufferLifecycle& buffer_lifecycle) {
+    return (buffer_lifecycle == BufferLifecycle::FREE);
+}
 
 constexpr bool is_NO_CHANGE(const BufferLifecycle& buffer_lifecycle) {
     return (buffer_lifecycle == BufferLifecycle::NO_CHANGE);

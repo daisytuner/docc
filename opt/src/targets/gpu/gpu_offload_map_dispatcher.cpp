@@ -38,7 +38,8 @@ GPUOffloadMapDispatcher::GPUOffloadMapDispatcher(
 )
     : GPUOffloadBaseDispatcher(
           language_extension, sdfg, analysis_manager, node, instrumentation_plan, arg_capture_plan, std::move(strategy)
-      ) {}
+      ) {
+}
 
 void GPUOffloadMapDispatcher::dispatch_kernel_body(
     codegen::NestedCodeSnippetFactory& library_snippet_factory,
@@ -142,7 +143,9 @@ void GPUOffloadMapDispatcher::dispatch_kernel_body(
     std::string type_coverage;
     if (resolved_trip >= 0 && psize_int > 0) {
         long long cov = (resolved_trip + psize_int - 1) / psize_int;
-        if (cov < 1) cov = 1;
+        if (cov < 1) {
+            cov = 1;
+        }
         coverage_bound = std::to_string(cov);
         type_coverage = kernel_language_extension.primitive_type(
             cov <= std::numeric_limits<int>::max() ? types::PrimitiveType::Int32 : types::PrimitiveType::Int64

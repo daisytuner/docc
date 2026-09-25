@@ -35,9 +35,13 @@ public:
         const data_flow::Subset& output_subset
     ) override;
 
-    std::string identity(types::PrimitiveType primitive_type) const override { return ""; }
+    std::string identity(types::PrimitiveType primitive_type) const override {
+        return "";
+    }
 
-    bool supports_integer_types() const override { return false; }
+    bool supports_integer_types() const override {
+        return false;
+    }
 
     std::unique_ptr<data_flow::DataFlowNode>
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const override;

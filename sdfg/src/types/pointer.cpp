@@ -13,7 +13,9 @@ Pointer::Pointer(StorageType storage_type, size_t alignment, const std::string& 
 Pointer::Pointer(StorageType storage_type, size_t alignment, const std::string& initializer, const IType& pointee_type)
     : IType(storage_type, alignment, initializer), pointee_type_(pointee_type.clone()) {};
 
-bool Pointer::has_pointee_type() const { return this->pointee_type_.has_value(); };
+bool Pointer::has_pointee_type() const {
+    return this->pointee_type_.has_value();
+};
 
 std::unique_ptr<IType> Pointer::clone() const {
     if (this->has_pointee_type()) {
@@ -24,7 +26,9 @@ std::unique_ptr<IType> Pointer::clone() const {
     }
 };
 
-TypeID Pointer::type_id() const { return TypeID::Pointer; };
+TypeID Pointer::type_id() const {
+    return TypeID::Pointer;
+};
 
 PrimitiveType Pointer::primitive_type() const {
     if (this->has_pointee_type()) {
@@ -34,9 +38,13 @@ PrimitiveType Pointer::primitive_type() const {
     }
 };
 
-bool Pointer::is_symbol() const { return true; };
+bool Pointer::is_symbol() const {
+    return true;
+};
 
-const IType& Pointer::pointee_type() const { return *this->pointee_type_.value(); };
+const IType& Pointer::pointee_type() const {
+    return *this->pointee_type_.value();
+};
 
 bool Pointer::operator==(const IType& other) const {
     if (auto pointer_type = dynamic_cast<const Pointer*>(&other)) {

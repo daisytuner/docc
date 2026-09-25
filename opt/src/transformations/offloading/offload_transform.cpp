@@ -21,7 +21,8 @@ namespace transformations {
 
 
 OffloadTransform::OffloadTransform(structured_control_flow::StructuredLoop& loop, bool allow_dynamic_sizes)
-    : loop_(loop), allow_dynamic_sizes_(allow_dynamic_sizes) {}
+    : loop_(loop), allow_dynamic_sizes_(allow_dynamic_sizes) {
+}
 
 
 bool OffloadTransform::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
@@ -33,7 +34,9 @@ bool OffloadTransform::can_be_applied(builder::StructuredSDFGBuilder& builder, a
     // Already-scheduled loops (e.g. tuned cutouts returned from remote tuning) must not be
     // offloaded again, which would nest device buffers (double offloading).
     if (loop_.schedule_type().category() != structured_control_flow::ScheduleTypeCategory::None) {
-        if (report_) report_->transform_impossible(this, "already scheduled");
+        if (report_) {
+            report_->transform_impossible(this, "already scheduled");
+        }
         DEBUG_PRINTLN("Cannot apply transform: loop already carries a non-sequential schedule");
         return false;
     }
@@ -43,7 +46,9 @@ bool OffloadTransform::can_be_applied(builder::StructuredSDFGBuilder& builder, a
     auto& arguments_analysis = analysis_manager.get<analysis::ArgumentsAnalysis>();
 
     if (!arguments_analysis.inferred_types(analysis_manager, this->loop_)) {
-        if (report_) report_->transform_impossible(this, "unranged args");
+        if (report_) {
+            report_->transform_impossible(this, "unranged args");
+        }
         DEBUG_PRINTLN("Cannot apply transform: argument types not inferred");
         return false;
     }
@@ -53,17 +58,23 @@ bool OffloadTransform::can_be_applied(builder::StructuredSDFGBuilder& builder, a
     for (auto& [argument, meta] : arguments) {
         auto base_type = analysis::TypeAnalysis(sdfg, &loop_, analysis_manager).get_outer_type(argument);
         if (base_type == nullptr) {
-            if (report_) report_->transform_impossible(this, "cannot infer type");
+            if (report_) {
+                report_->transform_impossible(this, "cannot infer type");
+            }
             DEBUG_PRINTLN("Cannot apply transform: argument type cannot be inferred");
             return false;
         }
         if (!types::is_contiguous_type(*base_type, sdfg)) {
-            if (report_) report_->transform_impossible(this, "type is not contiguous");
+            if (report_) {
+                report_->transform_impossible(this, "type is not contiguous");
+            }
             DEBUG_PRINTLN("Cannot apply transform: argument type is not contiguous");
             return false;
         }
         if (meta.is_scalar && meta.is_output) {
-            if (report_) report_->transform_impossible(this, "scalar output");
+            if (report_) {
+                report_->transform_impossible(this, "scalar output");
+            }
             DEBUG_PRINTLN("Cannot apply transform: map writes to scalar argument");
             return false;
         }
@@ -75,7 +86,9 @@ bool OffloadTransform::can_be_applied(builder::StructuredSDFGBuilder& builder, a
     // and `num_iterations()` already accounts for both when computing the grid
     // geometry.
     if (loop_.num_iterations().is_null()) {
-        if (report_) report_->transform_impossible(this, "cannot determine num iterations");
+        if (report_) {
+            report_->transform_impossible(this, "cannot determine num iterations");
+        }
         DEBUG_PRINTLN("Cannot apply transform: cannot determine number of iterations for map");
         return false;
     }
@@ -83,14 +96,18 @@ bool OffloadTransform::can_be_applied(builder::StructuredSDFGBuilder& builder, a
     // Criterion: Map cannot write to scalar arguments
     for (auto& [argument, meta] : arguments) {
         if (meta.is_scalar && meta.is_output) {
-            if (report_) report_->transform_impossible(this, "scalar output");
+            if (report_) {
+                report_->transform_impossible(this, "scalar output");
+            }
             DEBUG_PRINTLN("Cannot apply transform: map writes to scalar argument");
             return false;
         }
     }
 
     if (!arguments_analysis.argument_size_known(analysis_manager, this->loop_, allow_dynamic_sizes_)) {
-        if (report_) report_->transform_impossible(this, "args not understood");
+        if (report_) {
+            report_->transform_impossible(this, "args not understood");
+        }
         DEBUG_PRINTLN("Cannot apply transform: argument sizes not known");
         return false;
     }
@@ -98,12 +115,16 @@ bool OffloadTransform::can_be_applied(builder::StructuredSDFGBuilder& builder, a
     // Criterion: Map cannot contain function calls with side effects (e.g. library nodes that write to memory)
     SideEffectFinder side_effect_finder(sdfg, analysis_manager, this->loop_);
     if (side_effect_finder.visit()) {
-        if (report_) report_->transform_impossible(this, "side effects");
+        if (report_) {
+            report_->transform_impossible(this, "side effects");
+        }
         DEBUG_PRINTLN("Cannot apply transform: map contains library nodes with side effects");
         return false;
     }
 
-    if (report_) report_->transform_possible(this);
+    if (report_) {
+        report_->transform_possible(this);
+    }
     return true;
 }
 
@@ -165,7 +186,9 @@ void OffloadTransform::apply(builder::StructuredSDFGBuilder& builder, analysis::
         }
     }
 
-    if (report_) report_->transform_applied(this);
+    if (report_) {
+        report_->transform_applied(this);
+    }
 }
 
 void OffloadTransform::handle_device_setup_and_teardown(
@@ -214,7 +237,8 @@ bool ::sdfg::transformations::SideEffectFinder::visit() {
 ::sdfg::transformations::SideEffectFinder::SideEffectFinder(
     StructuredSDFG& sdfg, analysis::AnalysisManager& analysis_manager, structured_control_flow::StructuredLoop& loop
 )
-    : visitor::ImmutableStructuredSDFGVisitor(sdfg, analysis_manager), loop_(loop) {}
+    : visitor::ImmutableStructuredSDFGVisitor(sdfg, analysis_manager), loop_(loop) {
+}
 
 } // namespace transformations
 } // namespace sdfg

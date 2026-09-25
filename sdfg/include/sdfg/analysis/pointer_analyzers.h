@@ -38,7 +38,8 @@ class PointerEscapeAnalyzer : public virtual BaseUserAnalyzer {
     Policy& policy_;
 
 public:
-    PointerEscapeAnalyzer(const StructuredSDFG& sdfg, Policy& policy) : sdfg_(sdfg), policy_(policy) {}
+    PointerEscapeAnalyzer(const StructuredSDFG& sdfg, Policy& policy) : sdfg_(sdfg), policy_(policy) {
+    }
 
     void use_as_return_src(const std::string& container, const Return& ret) override {
         if (sdfg_.type(container).type_id() == types::TypeID::Pointer) {
@@ -81,10 +82,12 @@ public:
         const data_flow::AccessNode& node,
         const data_flow::Memlet& edge,
         const Block& block
-    ) override {}
+    ) override {
+    }
     void use_as_symbol_write(
         const symbolic::Symbol& container, const ControlFlowNode* node, const Element* user, SymbolWriteLocation loc
-    ) override {}
+    ) override {
+    }
 };
 
 template<typename P>
@@ -99,7 +102,8 @@ class PointerOverwriteAnalyzer : public BaseUserAnalyzer {
     Policy& policy_;
 
 public:
-    PointerOverwriteAnalyzer(const StructuredSDFG& sdfg, Policy& policy) : sdfg_(sdfg), policy_(policy) {}
+    PointerOverwriteAnalyzer(const StructuredSDFG& sdfg, Policy& policy) : sdfg_(sdfg), policy_(policy) {
+    }
 
     void use_as_dst_node(
         const std::string& container,
@@ -124,13 +128,15 @@ public:
         }
     }
 
-    void use_as_return_src(const std::string& container, const Return& ret) override {}
+    void use_as_return_src(const std::string& container, const Return& ret) override {
+    }
     void use_as_src_node(
         const std::string& container,
         const data_flow::AccessNode& node,
         const data_flow::Memlet& edge,
         const Block& block
-    ) override {}
+    ) override {
+    }
     void use_as_symbol_read(
         const std::string& container,
         const ControlFlowNode* node,
@@ -138,7 +144,8 @@ public:
         SymbolReadLocation loc,
         int loc_index,
         symbolic::Expression expr
-    ) override {}
+    ) override {
+    }
 };
 
 template<typename P>
@@ -157,7 +164,8 @@ class PointerUsedAnalyzer : public BaseUserAnalyzer {
     Policy& policy_;
 
 public:
-    PointerUsedAnalyzer(const StructuredSDFG& sdfg, Policy& policy) : sdfg_(sdfg), policy_(policy) {}
+    PointerUsedAnalyzer(const StructuredSDFG& sdfg, Policy& policy) : sdfg_(sdfg), policy_(policy) {
+    }
 
     void use_as_src_node(
         const std::string& container,
@@ -183,9 +191,11 @@ public:
 
     void use_as_symbol_write(
         const symbolic::Symbol& container, const ControlFlowNode* node, const Element* user, SymbolWriteLocation loc
-    ) override {}
+    ) override {
+    }
 
-    void use_as_return_src(const std::string& container, const Return& ret) override {}
+    void use_as_return_src(const std::string& container, const Return& ret) override {
+    }
 
     void use_as_symbol_read(
         const std::string& container,
@@ -194,7 +204,8 @@ public:
         SymbolReadLocation loc,
         int loc_index,
         symbolic::Expression expr
-    ) override {}
+    ) override {
+    }
 };
 
 

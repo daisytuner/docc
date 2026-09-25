@@ -15,23 +15,31 @@ void register_code_node(py::module& m) {
     py::class_<CodeNode, DataFlowNode>(m, "CodeNode")
         .def_property_readonly(
             "inputs",
-            [](const CodeNode& node) -> const std::vector<std::string>& { return node.inputs(); },
+            [](const CodeNode& node) -> const std::vector<std::string>& {
+                return node.inputs();
+            },
             "Get the input connector names"
         )
         .def_property_readonly(
             "outputs",
-            [](const CodeNode& node) -> const std::vector<std::string>& { return node.outputs(); },
+            [](const CodeNode& node) -> const std::vector<std::string>& {
+                return node.outputs();
+            },
             "Get the output connector names"
         )
         .def(
             "input",
-            [](const CodeNode& node, size_t index) -> const std::string& { return node.inputs().at(index); },
+            [](const CodeNode& node, size_t index) -> const std::string& {
+                return node.inputs().at(index);
+            },
             py::arg("index"),
             "Get input connector name at index"
         )
         .def(
             "output",
-            [](const CodeNode& node, size_t index) -> const std::string& { return node.outputs().at(index); },
+            [](const CodeNode& node, size_t index) -> const std::string& {
+                return node.outputs().at(index);
+            },
             py::arg("index"),
             "Get output connector name at index"
         )
@@ -39,12 +47,16 @@ void register_code_node(py::module& m) {
             std::ostringstream oss;
             oss << "<CodeNode id=" << node.element_id() << " inputs=[";
             for (size_t i = 0; i < node.inputs().size(); ++i) {
-                if (i > 0) oss << ", ";
+                if (i > 0) {
+                    oss << ", ";
+                }
                 oss << "'" << node.inputs()[i] << "'";
             }
             oss << "] outputs=[";
             for (size_t i = 0; i < node.outputs().size(); ++i) {
-                if (i > 0) oss << ", ";
+                if (i > 0) {
+                    oss << ", ";
+                }
                 oss << "'" << node.outputs()[i] << "'";
             }
             oss << "]>";
@@ -64,12 +76,16 @@ void register_code_node(py::module& m) {
     py::class_<LibraryNode, CodeNode>(m, "LibraryNode")
         .def_property_readonly(
             "code",
-            [](const LibraryNode& node) -> std::string { return node.code().value(); },
+            [](const LibraryNode& node) -> std::string {
+                return node.code().value();
+            },
             "Get the library node operation code"
         )
         .def_property_readonly(
             "implementation_type",
-            [](const LibraryNode& node) -> std::string { return node.implementation_type().value(); },
+            [](const LibraryNode& node) -> std::string {
+                return node.implementation_type().value();
+            },
             "Get the implementation type"
         )
         .def_property_readonly("side_effect", &LibraryNode::side_effect, "Check if this node has side effects")

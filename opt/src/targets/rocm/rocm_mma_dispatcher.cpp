@@ -6,7 +6,9 @@
 
 namespace sdfg::gpu::rocm {
 
-const GpuMmaSupport* RocmMmaMatmulDispatcher::get_mma_arch() const { return ROCM_ARCH_GFX1201.mma_support(); }
+const GpuMmaSupport* RocmMmaMatmulDispatcher::get_mma_arch() const {
+    return ROCM_ARCH_GFX1201.mma_support();
+}
 
 void RocmMmaMatmulDispatcher::emit_block_frag_declaration(
     codegen::CodegenOutput& out,

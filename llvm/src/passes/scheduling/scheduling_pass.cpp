@@ -18,7 +18,8 @@ SchedulingPass::SchedulingPass(
 )
     : scheduler_registry_(scheduler_registry),
       force_synchronous_(force_synchronous || DOCC_FORCE_SYNCHRONOUS_OFFLOADING),
-      dump_visualization_(dump_visualization), transfer_opt_(transfer_opt), report_(report) {}
+      dump_visualization_(dump_visualization), transfer_opt_(transfer_opt), report_(report) {
+}
 
 llvm::PreservedAnalyses SchedulingPass::
     run(llvm::Module& Module, llvm::ModuleAnalysisManager& MAM, analysis::AnalysisManager& AM) {
@@ -39,7 +40,9 @@ llvm::PreservedAnalyses SchedulingPass::
     registry.for_each_sdfg_modifiable(Module, [&](analysis::SDFGHolder&, sdfg::StructuredSDFG& sdfg) {
         sdfg::builder::StructuredSDFGBuilder builder(sdfg);
         sdfg::analysis::AnalysisManager analysis_manager(builder.subject());
-        if (report_) report_->in_scope(&builder.subject());
+        if (report_) {
+            report_->in_scope(&builder.subject());
+        }
 
         if (target != "tenstorrent" && remote_tuning) {
             auto category = docc::DOCC_TRANSFERTUNE_CATEGORY.getValue();
@@ -57,7 +60,9 @@ llvm::PreservedAnalyses SchedulingPass::
         loop_scheduling_pass.run(builder, analysis_manager);
     });
 
-    if (report_) report_->no_scope();
+    if (report_) {
+        report_->no_scope();
+    }
     return llvm::PreservedAnalyses::all();
 }
 

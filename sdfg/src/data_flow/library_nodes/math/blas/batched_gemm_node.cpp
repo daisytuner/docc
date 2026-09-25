@@ -42,33 +42,60 @@ BatchedGEMMNode::BatchedGEMMNode(
           precision
       ),
       layout_(layout), trans_a_(trans_a), trans_b_(trans_b), batch_count_(batch_count), m_(m), n_(n), k_(k), lda_(lda),
-      ldb_(ldb), ldc_(ldc), stride_a_(stride_a), stride_b_(stride_b), stride_c_(stride_c) {}
+      ldb_(ldb), ldc_(ldc), stride_a_(stride_a), stride_b_(stride_b), stride_c_(stride_c) {
+}
 
-BLAS_Layout BatchedGEMMNode::layout() const { return this->layout_; }
+BLAS_Layout BatchedGEMMNode::layout() const {
+    return this->layout_;
+}
 
-BLAS_Transpose BatchedGEMMNode::trans_a() const { return this->trans_a_; }
+BLAS_Transpose BatchedGEMMNode::trans_a() const {
+    return this->trans_a_;
+}
 
-BLAS_Transpose BatchedGEMMNode::trans_b() const { return this->trans_b_; }
+BLAS_Transpose BatchedGEMMNode::trans_b() const {
+    return this->trans_b_;
+}
 
-symbolic::Expression BatchedGEMMNode::batch_count() const { return this->batch_count_; }
+symbolic::Expression BatchedGEMMNode::batch_count() const {
+    return this->batch_count_;
+}
 
-symbolic::Expression BatchedGEMMNode::m() const { return this->m_; }
+symbolic::Expression BatchedGEMMNode::m() const {
+    return this->m_;
+}
 
-symbolic::Expression BatchedGEMMNode::n() const { return this->n_; }
+symbolic::Expression BatchedGEMMNode::n() const {
+    return this->n_;
+}
 
-symbolic::Expression BatchedGEMMNode::k() const { return this->k_; }
+symbolic::Expression BatchedGEMMNode::k() const {
+    return this->k_;
+}
 
-symbolic::Expression BatchedGEMMNode::lda() const { return this->lda_; }
+symbolic::Expression BatchedGEMMNode::lda() const {
+    return this->lda_;
+}
 
-symbolic::Expression BatchedGEMMNode::ldb() const { return this->ldb_; }
+symbolic::Expression BatchedGEMMNode::ldb() const {
+    return this->ldb_;
+}
 
-symbolic::Expression BatchedGEMMNode::ldc() const { return this->ldc_; }
+symbolic::Expression BatchedGEMMNode::ldc() const {
+    return this->ldc_;
+}
 
-symbolic::Expression BatchedGEMMNode::stride_a() const { return this->stride_a_; }
+symbolic::Expression BatchedGEMMNode::stride_a() const {
+    return this->stride_a_;
+}
 
-symbolic::Expression BatchedGEMMNode::stride_b() const { return this->stride_b_; }
+symbolic::Expression BatchedGEMMNode::stride_b() const {
+    return this->stride_b_;
+}
 
-symbolic::Expression BatchedGEMMNode::stride_c() const { return this->stride_c_; }
+symbolic::Expression BatchedGEMMNode::stride_c() const {
+    return this->stride_c_;
+}
 
 symbolic::SymbolSet BatchedGEMMNode::symbols() const {
     symbolic::SymbolSet syms;
@@ -133,7 +160,9 @@ void BatchedGEMMNode::replace(const symbolic::ExpressionMapping& replacements) {
     this->stride_c_ = symbolic::subs(this->stride_c_, replacements);
 }
 
-void BatchedGEMMNode::validate(const Function& function) const { BLASNode::validate(function); }
+void BatchedGEMMNode::validate(const Function& function) const {
+    BLASNode::validate(function);
+}
 
 symbolic::Expression BatchedGEMMNode::flop() const {
     // batch_count * (2*m*n*k) approximately

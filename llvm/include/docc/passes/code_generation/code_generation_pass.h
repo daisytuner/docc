@@ -66,7 +66,9 @@ private:
 public:
     CodeGenerationPass();
 
-    static bool available(analysis::AnalysisManager &AM) { return analysis::SDFGRegistry::is_link_time(AM); }
+    static bool available(analysis::AnalysisManager &AM) {
+        return analysis::SDFGRegistry::is_link_time(AM);
+    }
 
     llvm::PreservedAnalyses run(llvm::Module &Module, llvm::ModuleAnalysisManager &MAM, analysis::AnalysisManager &AM);
 

@@ -24,7 +24,9 @@ private:
 public:
     PerfectLoopDistributionPass();
 
-    std::string name() override { return "PerfectLoopDistribution"; };
+    std::string name() override {
+        return "PerfectLoopDistribution";
+    };
 
     virtual bool run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
 };

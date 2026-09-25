@@ -17,7 +17,9 @@ class TrivialReferenceConversion : public visitor::NonStoppingStructuredSDFGVisi
 public:
     TrivialReferenceConversion(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager);
 
-    static std::string name() { return "TrivialReferenceConversion"; }
+    static std::string name() {
+        return "TrivialReferenceConversion";
+    }
 
     virtual bool accept(structured_control_flow::Block& block) override;
 };

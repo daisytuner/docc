@@ -5,9 +5,12 @@
 namespace sdfg::gpu::rocm {
 
 RocmMmaTransform::RocmMmaTransform(sdfg::math::tensor::MatMulNode& node, const sdfg::gpu::rocm::RocmArch* arch)
-    : node_(node), arch_(arch) {}
+    : node_(node), arch_(arch) {
+}
 
-std::string RocmMmaTransform::name() const { return "RocmMmaTransform"; }
+std::string RocmMmaTransform::name() const {
+    return "RocmMmaTransform";
+}
 
 bool RocmMmaTransform::can_be_applied(sdfg::builder::StructuredSDFGBuilder&, sdfg::analysis::AnalysisManager&) {
     // Search the parents up until we find a map with the ROCm offloaded schedule type.
@@ -38,7 +41,9 @@ void RocmMmaTransform::apply(sdfg::builder::StructuredSDFGBuilder& builder, sdfg
     expanded_ = outcome.expanded;
 }
 
-bool RocmMmaTransform::expanded() const { return expanded_; }
+bool RocmMmaTransform::expanded() const {
+    return expanded_;
+}
 
 void RocmMmaTransform::to_json(nlohmann::json& j) const {
     j["transformation_type"] = name();

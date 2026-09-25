@@ -187,9 +187,12 @@ void CUBLASDataTransferExtraction::create_copy_from_device_with_deallocation(
     );
 }
 
-CUBLASDataTransferExtraction::CUBLASDataTransferExtraction(math::blas::BLASNode& blas_node) : blas_node_(blas_node) {}
+CUBLASDataTransferExtraction::CUBLASDataTransferExtraction(math::blas::BLASNode& blas_node) : blas_node_(blas_node) {
+}
 
-std::string CUBLASDataTransferExtraction::name() const { return "CUBLASDataTransferExtraction"; }
+std::string CUBLASDataTransferExtraction::name() const {
+    return "CUBLASDataTransferExtraction";
+}
 
 bool CUBLASDataTransferExtraction::
     can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {

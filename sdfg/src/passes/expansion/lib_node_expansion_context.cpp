@@ -20,7 +20,9 @@ public:
         context->expanded_ = true;
     }
 
-    builder::StructuredSDFGBuilder& builder() override { return context_->builder_; }
+    builder::StructuredSDFGBuilder& builder() override {
+        return context_->builder_;
+    }
 
     structured_control_flow::Sequence& replace_with_sequence() override {
         auto child_idx = context_->child_idx_;
@@ -85,7 +87,9 @@ public:
         return context_->builder_.add_access(block, org->data(), org->debug_info());
     }
 
-    LibNodeExpander::ExpandOutcome successfully_expanded() override { return LibNodeExpander::ExpandOutcome(true); }
+    LibNodeExpander::ExpandOutcome successfully_expanded() override {
+        return LibNodeExpander::ExpandOutcome(true);
+    }
 };
 
 void LibNodeExpansionContext::cleanup() {
@@ -148,8 +152,12 @@ LibNodeExpander::ExpandOutcome LibNodeExpansionContext::successfully_modified_no
     return LibNodeExpander::ExpandOutcome(true);
 }
 
-LibNodeExpander::ExpandOutcome LibNodeExpansionContext::unable() { return LibNodeExpander::ExpandOutcome(false); }
+LibNodeExpander::ExpandOutcome LibNodeExpansionContext::unable() {
+    return LibNodeExpander::ExpandOutcome(false);
+}
 
-LibNodeExpander::ExpandOutcome LibNodeExpansionContext::unapplicable() { return LibNodeExpander::ExpandOutcome(false); }
+LibNodeExpander::ExpandOutcome LibNodeExpansionContext::unapplicable() {
+    return LibNodeExpander::ExpandOutcome(false);
+}
 
 } // namespace sdfg::passes::expansion

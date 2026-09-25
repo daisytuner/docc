@@ -6,7 +6,8 @@
 namespace sdfg::visitor {
 
 
-StructuredSDFGWalker::Iterator::Iterator(ControlFlowNode* node, int32_t idx) : node_(node), idx_(idx) {}
+StructuredSDFGWalker::Iterator::Iterator(ControlFlowNode* node, int32_t idx) : node_(node), idx_(idx) {
+}
 
 std::pair<ControlFlowNode&, StructuredSDFGWalker::Scope> StructuredSDFGWalker::Iterator::operator*() const {
     auto scoped = (idx_ & SCOPE_MASK);
@@ -33,11 +34,17 @@ bool StructuredSDFGWalker::Iterator::operator!=(const Iterator& other) const {
     return node_ != other.node_ || idx_ != other.idx_;
 }
 
-StructuredSDFGWalker::Iterator& StructuredSDFGWalker::Iterator::operator++() { return next_internal(true); }
+StructuredSDFGWalker::Iterator& StructuredSDFGWalker::Iterator::operator++() {
+    return next_internal(true);
+}
 
-StructuredSDFGWalker::Iterator& StructuredSDFGWalker::Iterator::next() { return next_internal(true); }
+StructuredSDFGWalker::Iterator& StructuredSDFGWalker::Iterator::next() {
+    return next_internal(true);
+}
 
-StructuredSDFGWalker::Iterator& StructuredSDFGWalker::Iterator::next_no_descend() { return next_internal(false); }
+StructuredSDFGWalker::Iterator& StructuredSDFGWalker::Iterator::next_no_descend() {
+    return next_internal(false);
+}
 
 StructuredSDFGWalker::Iterator& StructuredSDFGWalker::Iterator::next_internal(bool descend) {
     auto* node = node_;

@@ -67,7 +67,9 @@ public:
      * @brief Get the name of the container holding the rotated (original) value
      * @return The container name, or empty string if not yet applied
      */
-    const std::string& rotated_container_name() const { return rotated_container_name_; }
+    const std::string& rotated_container_name() const {
+        return rotated_container_name_;
+    }
 };
 
 } // namespace transformations

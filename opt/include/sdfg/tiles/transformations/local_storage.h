@@ -111,13 +111,19 @@ private:
     void apply_prepared(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager);
 
     /// Copy the tile in before the loop iff the container is read there.
-    bool needs_copy_in() const { return container_read_; }
+    bool needs_copy_in() const {
+        return container_read_;
+    }
 
     /// Copy the tile back after the loop iff the container is written there.
-    bool needs_copy_out() const { return container_written_; }
+    bool needs_copy_out() const {
+        return container_written_;
+    }
 
     /// Hard capacity guard: max scalar slots the local buffer may occupy.
-    size_t max_tile_elements() const { return 1u << 16; }
+    size_t max_tile_elements() const {
+        return 1u << 16;
+    }
 
     /// Element-predicate a global copy: AND over varying dims of `base[d] +
     /// tile_index <= maxes[d]`, so the over-approximated tile skips out-of-bounds
@@ -231,9 +237,12 @@ public:
     )
         : loop_(loop), access_node_(access_node), container_(access_node.data()),
           storage_type_(types::StorageType::CPU_Stack()), swizzle_layout_(swizzle_layout),
-          lane_contiguous_(lane_contiguous), transpose_layout_(transpose_layout) {}
+          lane_contiguous_(lane_contiguous), transpose_layout_(transpose_layout) {
+    }
 
-    std::string name() const override { return "LocalStorage"; }
+    std::string name() const override {
+        return "LocalStorage";
+    }
 
     /**
      * @brief Precondition check: verifies the container is a pointer used in the
@@ -254,13 +263,19 @@ public:
     static LocalStorage from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& j);
 
     /// Name of the created local buffer (valid after apply()).
-    const std::string& local_container() const { return local_name_; }
+    const std::string& local_container() const {
+        return local_name_;
+    }
 
     /// Tile info (valid after can_be_applied() returns true).
-    const TileInfo& tile_info() const { return tile_info_; }
+    const TileInfo& tile_info() const {
+        return tile_info_;
+    }
 
     /// Storage type of the local buffer.
-    const types::StorageType& storage_type() const { return storage_type_; }
+    const types::StorageType& storage_type() const {
+        return storage_type_;
+    }
 };
 
 } // namespace transformations

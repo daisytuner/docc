@@ -20,7 +20,8 @@ struct TransferArg {
         const sdfg::symbolic::Expression& data_size,
         const sdfg::analysis::RegionArgument& meta
     )
-        : name(name), type(type), data_size(data_size), meta(meta) {}
+        : name(name), type(type), data_size(data_size), meta(meta) {
+    }
 };
 
 } // namespace docc::offloading

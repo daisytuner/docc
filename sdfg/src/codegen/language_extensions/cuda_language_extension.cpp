@@ -102,7 +102,9 @@ std::string CUDALanguageExtension::
         std::stringstream params;
         for (size_t i = 0; i < function_type->num_params(); ++i) {
             params << declaration("", function_type->param_type(symbolic::integer(i)));
-            if (i + 1 < function_type->num_params()) params << ", ";
+            if (i + 1 < function_type->num_params()) {
+                params << ", ";
+            }
         }
         if (function_type->is_var_arg()) {
             if (function_type->num_params() > 0) {

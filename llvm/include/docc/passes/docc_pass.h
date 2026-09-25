@@ -17,7 +17,8 @@ namespace passes {
 template<typename PassT>
 class DOCCPass : public llvm::PassInfoMixin<DOCCPass<PassT>> {
 public:
-    DOCCPass(PassT Impl, analysis::AnalysisManager &AM) : Impl_(std::move(Impl)), AM_(AM) {}
+    DOCCPass(PassT Impl, analysis::AnalysisManager &AM) : Impl_(std::move(Impl)), AM_(AM) {
+    }
 
     template<typename... Ts>
     llvm::PreservedAnalyses run(llvm::Module &Mod, llvm::ModuleAnalysisManager &MAM) {

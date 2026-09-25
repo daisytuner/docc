@@ -43,13 +43,17 @@ Reduce* find_reduce(ControlFlowNode& node) {
     }
     if (auto* seq = dynamic_cast<Sequence*>(&node)) {
         for (size_t i = 0; i < seq->size(); ++i) {
-            if (auto* found = find_reduce(seq->at(i))) return found;
+            if (auto* found = find_reduce(seq->at(i))) {
+                return found;
+            }
         }
     } else if (auto* loop = dynamic_cast<StructuredLoop*>(&node)) {
         return find_reduce(loop->root());
     } else if (auto* if_else = dynamic_cast<IfElse*>(&node)) {
         for (size_t i = 0; i < if_else->size(); ++i) {
-            if (auto* found = find_reduce(if_else->at(i).first)) return found;
+            if (auto* found = find_reduce(if_else->at(i).first)) {
+                return found;
+            }
         }
     }
     return nullptr;
@@ -67,9 +71,12 @@ bool is_constant_trip(const symbolic::Expression& iterations) {
 } // namespace
 
 StreamK::StreamK(structured_control_flow::StructuredLoop& grid_loop, size_t num_blocks)
-    : grid_loop_(grid_loop), num_blocks_(num_blocks) {}
+    : grid_loop_(grid_loop), num_blocks_(num_blocks) {
+}
 
-std::string StreamK::name() const { return "StreamK"; }
+std::string StreamK::name() const {
+    return "StreamK";
+}
 
 bool StreamK::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     (void) builder;
@@ -224,7 +231,9 @@ void StreamK::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisM
     std::vector<sym::Expression> tile_offset(num_dims);
     for (size_t i = 0; i < num_dims; ++i) {
         sym::Expression divisor = sym::integer(1);
-        for (size_t j = i + 1; j < num_dims; ++j) divisor = sym::mul(divisor, trips[j]);
+        for (size_t j = i + 1; j < num_dims; ++j) {
+            divisor = sym::mul(divisor, trips[j]);
+        }
         sym::Expression index = sym::mod(sym::div(t, divisor), trips[i]);
         tile_offset[i] = sym::mul(index, steps[i]);
     }

@@ -74,7 +74,9 @@ public:
         return static_cast<OpenMPSchedule>(std::stoi(schedule.properties().at("omp_schedule")));
     }
 
-    static const std::string value() { return "CPU_PARALLEL"; }
+    static const std::string value() {
+        return "CPU_PARALLEL";
+    }
 
     static structured_control_flow::ScheduleType create() {
         return structured_control_flow::ScheduleType(value(), structured_control_flow::ScheduleTypeCategory::Parallelizer);

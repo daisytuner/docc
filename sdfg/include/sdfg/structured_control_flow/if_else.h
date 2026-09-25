@@ -58,9 +58,13 @@ public:
     IfElse(const IfElse& node) = delete;
     IfElse& operator=(const IfElse&) = delete;
 
-    ElementType type_id() const override { return ElementType::IfElse; }
+    ElementType type_id() const override {
+        return ElementType::IfElse;
+    }
 
-    static bool classof(const Element& element) { return element.type_id() == ElementType::IfElse; }
+    static bool classof(const Element& element) {
+        return element.type_id() == ElementType::IfElse;
+    }
 
     bool accept(visitor::ActualStructuredSDFGVisitor& visitor) override;
 

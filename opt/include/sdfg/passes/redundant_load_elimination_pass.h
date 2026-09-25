@@ -15,7 +15,9 @@ public:
         size_t optimized = 0;
     };
 
-    std::string name() override { return "MemoryDependency"; }
+    std::string name() override {
+        return "MemoryDependency";
+    }
 
     bool run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
 };

@@ -28,7 +28,9 @@ protected:
     bool is_libnode_block(structured_control_flow::Block& next_block);
 
 public:
-    virtual std::string name() override { return "BlockSorting"; }
+    virtual std::string name() override {
+        return "BlockSorting";
+    }
 
     bool bubble_up(
         builder::StructuredSDFGBuilder& builder,

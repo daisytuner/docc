@@ -3,7 +3,8 @@
 namespace sdfg {
 namespace passes {
 
-DebugInfoPropagation::DebugInfoPropagation() : Pass() {}
+DebugInfoPropagation::DebugInfoPropagation() : Pass() {
+}
 
 void DebugInfoPropagation::propagate(structured_control_flow::ControlFlowNode* current) {
     auto current_debug_info = current->debug_info();
@@ -52,7 +53,9 @@ bool DebugInfoPropagation::run_pass(builder::StructuredSDFGBuilder& builder, ana
     return true;
 }
 
-std::string DebugInfoPropagation::name() { return "DebugInfoPropagation"; }
+std::string DebugInfoPropagation::name() {
+    return "DebugInfoPropagation";
+}
 
 } // namespace passes
 } // namespace sdfg

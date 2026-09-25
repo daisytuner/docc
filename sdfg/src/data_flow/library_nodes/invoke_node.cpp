@@ -27,9 +27,13 @@ InvokeNode::InvokeNode(
     this->outputs_.push_back("_unwind"); // Add unwind output
 }
 
-const std::string& InvokeNode::callee_name() const { return this->callee_name_; }
+const std::string& InvokeNode::callee_name() const {
+    return this->callee_name_;
+}
 
-bool InvokeNode::is_void(const Function& sdfg) const { return outputs_.size() == 1 || outputs_.at(0) != "_ret"; }
+bool InvokeNode::is_void(const Function& sdfg) const {
+    return outputs_.size() == 1 || outputs_.at(0) != "_ret";
+}
 
 bool InvokeNode::is_indirect_call(const Function& sdfg) const {
     auto& type = sdfg.type(this->callee_name_);
@@ -65,16 +69,20 @@ void InvokeNode::validate(const Function& function) const {
     }
 }
 
-symbolic::SymbolSet InvokeNode::symbols() const { return {symbolic::symbol(this->callee_name_)}; }
+symbolic::SymbolSet InvokeNode::symbols() const {
+    return {symbolic::symbol(this->callee_name_)};
+}
 
 std::unique_ptr<data_flow::DataFlowNode> InvokeNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
     return std::make_unique<InvokeNode>(element_id, debug_info_, vertex, parent, callee_name_, outputs_, inputs_);
 }
 
-void InvokeNode::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {}
+void InvokeNode::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
+}
 
-void InvokeNode::replace(const symbolic::ExpressionMapping& replacements) {}
+void InvokeNode::replace(const symbolic::ExpressionMapping& replacements) {
+}
 
 nlohmann::json InvokeNodeSerializer::serialize(const data_flow::LibraryNode& library_node) {
     const InvokeNode& node = static_cast<const InvokeNode&>(library_node);
@@ -118,7 +126,8 @@ InvokeNodeDispatcher::InvokeNodeDispatcher(
     const data_flow::DataFlowGraph& data_flow_graph,
     const InvokeNode& node
 )
-    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
+}
 
 void InvokeNodeDispatcher::dispatch_code(
     codegen::PrettyPrinter& stream,

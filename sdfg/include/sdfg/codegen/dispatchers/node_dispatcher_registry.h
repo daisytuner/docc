@@ -85,7 +85,9 @@ public:
         return nullptr;
     }
 
-    size_t size() const { return factory_map_.size(); }
+    size_t size() const {
+        return factory_map_.size();
+    }
 };
 
 std::unique_ptr<NodeDispatcher> create_dispatcher(
@@ -135,7 +137,9 @@ public:
         return nullptr;
     }
 
-    size_t size() const { return factory_map_.size(); }
+    size_t size() const {
+        return factory_map_.size();
+    }
 };
 
 using ReduceDispatcherFn = std::function<std::unique_ptr<
@@ -177,7 +181,9 @@ public:
         return nullptr;
     }
 
-    size_t size() const { return factory_map_.size(); }
+    size_t size() const {
+        return factory_map_.size();
+    }
 };
 
 using LibraryNodeDispatcherFn = std::function<std::unique_ptr<
@@ -271,7 +277,9 @@ public:
         return nullptr;
     }
 
-    size_t size() const { return factory_map_.size(); }
+    size_t size() const {
+        return factory_map_.size();
+    }
 };
 
 void register_default_dispatchers();

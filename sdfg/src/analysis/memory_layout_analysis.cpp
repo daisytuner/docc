@@ -28,15 +28,23 @@ namespace {
 constexpr const char* kUnboundedName = "__unbounded__";
 
 bool is_unbounded_dim(const symbolic::Expression& e) {
-    if (e.is_null()) return false;
-    if (!SymEngine::is_a<SymEngine::Symbol>(*e)) return false;
+    if (e.is_null()) {
+        return false;
+    }
+    if (!SymEngine::is_a<SymEngine::Symbol>(*e)) {
+        return false;
+    }
     return SymEngine::down_cast<const SymEngine::Symbol&>(*e).get_name() == kUnboundedName;
 }
 
 bool depends_on_unbounded(const symbolic::Expression& e) {
-    if (e.is_null()) return false;
+    if (e.is_null()) {
+        return false;
+    }
     for (const auto& a : symbolic::atoms(e)) {
-        if (is_unbounded_dim(a)) return true;
+        if (is_unbounded_dim(a)) {
+            return true;
+        }
     }
     return false;
 }
@@ -93,8 +101,10 @@ void collect_descendant_guard_conditions(
 }
 } // namespace
 
-MemoryLayoutAnalysis::MemoryLayoutAnalysis(StructuredSDFG& sdfg) : Analysis(sdfg) {}
-MemoryLayoutAnalysis::MemoryLayoutAnalysis(StructuredSDFG& sdfg, const Options& options) : Analysis(sdfg, options) {}
+MemoryLayoutAnalysis::MemoryLayoutAnalysis(StructuredSDFG& sdfg) : Analysis(sdfg) {
+}
+MemoryLayoutAnalysis::MemoryLayoutAnalysis(StructuredSDFG& sdfg, const Options& options) : Analysis(sdfg, options) {
+}
 
 void MemoryLayoutAnalysis::run(analysis::AnalysisManager& analysis_manager) {
     accesses_.clear();
@@ -424,14 +434,22 @@ void MemoryLayoutAnalysis::merge_scope_layouts(
     // silently consume as truth.
     auto has_narrowing = [&](const symbolic::Symbol& sym) -> bool {
         auto it = narrowing_assumptions.find(sym);
-        if (it == narrowing_assumptions.end()) return false;
+        if (it == narrowing_assumptions.end()) {
+            return false;
+        }
         return !it->second.lower_bounds().empty() || !it->second.upper_bounds().empty();
     };
     auto bounds_are_sound = [&](const symbolic::Expression& expr) -> bool {
         for (const auto& sym : symbolic::atoms(expr)) {
-            if (parameters.contains(sym)) continue;
-            if (excluded_indvars.contains(sym)) continue;
-            if (!has_narrowing(sym)) return false;
+            if (parameters.contains(sym)) {
+                continue;
+            }
+            if (excluded_indvars.contains(sym)) {
+                continue;
+            }
+            if (!has_narrowing(sym)) {
+                return false;
+            }
         }
         return true;
     };
@@ -444,12 +462,16 @@ void MemoryLayoutAnalysis::merge_scope_layouts(
     symbolic::BoundAnalysis ba_loose(parameters, assumptions, false, bound_budget);
     auto bound_lb = [&](const symbolic::Expression& e) -> symbolic::Expression {
         auto r = ba_tight.lower_bound(e);
-        if (r.is_null()) r = ba_loose.lower_bound(e);
+        if (r.is_null()) {
+            r = ba_loose.lower_bound(e);
+        }
         return r;
     };
     auto bound_ub = [&](const symbolic::Expression& e) -> symbolic::Expression {
         auto r = ba_tight.upper_bound(e);
-        if (r.is_null()) r = ba_loose.upper_bound(e);
+        if (r.is_null()) {
+            r = ba_loose.upper_bound(e);
+        }
         return r;
     };
 
@@ -458,7 +480,9 @@ void MemoryLayoutAnalysis::merge_scope_layouts(
     collect_direct_child_scopes(scope, direct_child_scopes);
 
     for (auto& [container, memlets] : all_container_groups) {
-        if (memlets.empty()) continue;
+        if (memlets.empty()) {
+            continue;
+        }
 
         std::vector<const MemoryTile*> inner_tiles;
         for (const auto* child : direct_child_scopes) {
@@ -483,7 +507,9 @@ void MemoryLayoutAnalysis::merge_scope_layouts(
             max_indices.resize(ndims);
 
             for (const auto* tile : inner_tiles) {
-                if (tile->min_subset.size() != ndims) continue;
+                if (tile->min_subset.size() != ndims) {
+                    continue;
+                }
                 for (size_t d = 0; d < ndims; ++d) {
                     min_indices[d].push_back(tile->min_subset[d]);
                     max_indices[d].push_back(tile->max_subset[d]);
@@ -497,7 +523,9 @@ void MemoryLayoutAnalysis::merge_scope_layouts(
             std::vector<const MemoryTileGroup*> inner_groups;
             for (const auto* child : direct_child_scopes) {
                 auto it = tile_groups_.find({child, container});
-                if (it == tile_groups_.end()) continue;
+                if (it == tile_groups_.end()) {
+                    continue;
+                }
                 for (const auto& g : it->second) {
                     inner_groups.push_back(&g);
                 }
@@ -512,7 +540,9 @@ void MemoryLayoutAnalysis::merge_scope_layouts(
                 std::vector<OuterGroupEntry> outer_partitions;
 
                 for (const auto* ig : inner_groups) {
-                    if (ig->tile.min_subset.size() != ndims) continue;
+                    if (ig->tile.min_subset.size() != ndims) {
+                        continue;
+                    }
 
                     // Compute base: minimum of the inner group's min_subset per dim
                     data_flow::Subset base;
@@ -525,7 +555,9 @@ void MemoryLayoutAnalysis::merge_scope_layouts(
                         }
                         base.push_back(symbolic::simplify(lb));
                     }
-                    if (!base_ok) continue;
+                    if (!base_ok) {
+                        continue;
+                    }
 
                     // Find matching partition (same base OR constant-offset base)
                     bool found = false;
@@ -573,11 +605,15 @@ void MemoryLayoutAnalysis::merge_scope_layouts(
                             }
                             d_max = d_max.is_null() ? ub : symbolic::max(d_max, ub);
                         }
-                        if (!grp_bounded) break;
+                        if (!grp_bounded) {
+                            break;
+                        }
                         grp_min.push_back(symbolic::simplify(d_min));
                         grp_max.push_back(symbolic::simplify(d_max));
                     }
-                    if (!grp_bounded) continue;
+                    if (!grp_bounded) {
+                        continue;
+                    }
 
                     // Collect all memlets from constituent groups
                     std::vector<const data_flow::Memlet*> grp_memlets;
@@ -620,7 +656,9 @@ void MemoryLayoutAnalysis::merge_scope_layouts(
                         break;
                     }
                 }
-                if (!consistent) break;
+                if (!consistent) {
+                    break;
+                }
 
                 // Collect indices for each dimension. In the raw-access path,
                 // min and max indices are identical (both are `acc.subset[d]`),
@@ -637,13 +675,17 @@ void MemoryLayoutAnalysis::merge_scope_layouts(
                 }
             }
 
-            if (!consistent) continue;
+            if (!consistent) {
+                continue;
+            }
 
             // Compute tile groups for raw memlets
             compute_tile_groups(scope, container, memlets, reference_layout, ndims, ba_tight, ba_loose);
         }
 
-        if (ndims == 0) continue;
+        if (ndims == 0) {
+            continue;
+        }
 
         // Bound each candidate index individually via the reused BoundAnalysis
         // (memoized across all per-dim queries below) and combine the per-index
@@ -684,7 +726,9 @@ void MemoryLayoutAnalysis::merge_scope_layouts(
                     dim_max = dim_max.is_null() ? ub : symbolic::max(dim_max, ub);
                 }
             }
-            if (!all_bounded) break;
+            if (!all_bounded) {
+                break;
+            }
 
             if (!fused) {
                 for (const auto& idx : max_indices[d]) {
@@ -699,14 +743,18 @@ void MemoryLayoutAnalysis::merge_scope_layouts(
                     }
                     dim_max = dim_max.is_null() ? ub : symbolic::max(dim_max, ub);
                 }
-                if (!all_bounded) break;
+                if (!all_bounded) {
+                    break;
+                }
             }
 
             min_subset.push_back(symbolic::simplify(dim_min));
             max_subset.push_back(symbolic::simplify(dim_max));
         }
 
-        if (!all_bounded) continue;
+        if (!all_bounded) {
+            continue;
+        }
 
         // Store this scope's tile with the original memory layout. `first_dim_bounded`
         // mirrors the underlying layout: false whenever shape[0] is the unbounded sentinel.
@@ -741,12 +789,16 @@ void MemoryLayoutAnalysis::compute_tile_groups(
     // expressions bounded there hit instantly when re-encountered here.
     auto bound_lb = [&](const symbolic::Expression& e) -> symbolic::Expression {
         auto r = ba_tight.lower_bound(e);
-        if (r.is_null()) r = ba_loose.lower_bound(e);
+        if (r.is_null()) {
+            r = ba_loose.lower_bound(e);
+        }
         return r;
     };
     auto bound_ub = [&](const symbolic::Expression& e) -> symbolic::Expression {
         auto r = ba_tight.upper_bound(e);
-        if (r.is_null()) r = ba_loose.upper_bound(e);
+        if (r.is_null()) {
+            r = ba_loose.upper_bound(e);
+        }
         return r;
     };
 
@@ -761,7 +813,9 @@ void MemoryLayoutAnalysis::compute_tile_groups(
 
     for (const auto* memlet_ptr : memlets) {
         auto& acc = accesses_.at(memlet_ptr);
-        if (acc.subset.size() != ndims) continue;
+        if (acc.subset.size() != ndims) {
+            continue;
+        }
 
         // Compute per-dimension base (minimum)
         data_flow::Subset base;
@@ -774,12 +828,16 @@ void MemoryLayoutAnalysis::compute_tile_groups(
             }
             base.push_back(symbolic::simplify(lb));
         }
-        if (!base_ok) continue;
+        if (!base_ok) {
+            continue;
+        }
 
         // Find existing group with same base
         bool found = false;
         for (auto& group : groups) {
-            if (group.base.size() != ndims) continue;
+            if (group.base.size() != ndims) {
+                continue;
+            }
             bool match = true;
             for (size_t d = 0; d < ndims; ++d) {
                 if (!symbolic::eq(group.base[d], base[d])) {
@@ -798,7 +856,9 @@ void MemoryLayoutAnalysis::compute_tile_groups(
         }
     }
 
-    if (groups.empty()) return;
+    if (groups.empty()) {
+        return;
+    }
 
     // Merge groups whose bases differ only by integer constants.
     // E.g. stencil bases [i-1, j], [i, j], [i+1, j] should merge (constant offsets in dim0).
@@ -861,7 +921,9 @@ void MemoryLayoutAnalysis::compute_tile_groups(
                     dim_min = symbolic::min(dim_min, lb);
                 }
             }
-            if (!all_bounded) break;
+            if (!all_bounded) {
+                break;
+            }
 
             for (const auto& idx : max_indices[d]) {
                 auto ub = bound_ub(idx);
@@ -875,13 +937,17 @@ void MemoryLayoutAnalysis::compute_tile_groups(
                     dim_max = symbolic::max(dim_max, ub);
                 }
             }
-            if (!all_bounded) break;
+            if (!all_bounded) {
+                break;
+            }
 
             min_subset.push_back(symbolic::simplify(dim_min));
             max_subset.push_back(symbolic::simplify(dim_max));
         }
 
-        if (!all_bounded) continue;
+        if (!all_bounded) {
+            continue;
+        }
 
         MemoryTile tile{
             container, min_subset, max_subset, reference_layout, !layout_has_unbounded_first_dim(reference_layout)

@@ -14,7 +14,8 @@ namespace serializer {
 
 class CutoutSerializer : public JSONSerializer {
 public:
-    CutoutSerializer() {}
+    CutoutSerializer() {
+    }
 
     nlohmann::json serialize(
         const sdfg::StructuredSDFG& sdfg,

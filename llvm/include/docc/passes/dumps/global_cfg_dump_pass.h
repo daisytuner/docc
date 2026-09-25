@@ -11,7 +11,8 @@ private:
     const std::string *out_path_;
 
 public:
-    GlobalCFGPrinterPass(const std::string *out_path = nullptr) : out_path_(out_path) {}
+    GlobalCFGPrinterPass(const std::string *out_path = nullptr) : out_path_(out_path) {
+    }
 
     static bool available(analysis::AnalysisManager &AM) {
         return analysis::AnalysisManager::available<analysis::GlobalCFGAnalysis>(AM);

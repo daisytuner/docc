@@ -22,7 +22,8 @@ ReduceNode::ReduceNode(
     bool keepdims
 )
     : TensorNode(element_id, debug_info, vertex, parent, code, {}, {"Y", "X"}, data_flow::ImplementationType_NONE),
-      shape_(shape), axes_(axes), keepdims_(keepdims) {}
+      shape_(shape), axes_(axes), keepdims_(keepdims) {
+}
 
 void ReduceNode::validate(const Function& function) const {
     TensorNode::validate(function);
@@ -110,7 +111,9 @@ data_flow::PointerAccessType ReduceNode::pointer_access_type(int input_idx) cons
 std::ostream& operator<<(std::ostream& os, const std::vector<int64_t>& list) {
     os << "[";
     for (size_t i = 0; i < list.size(); ++i) {
-        if (i > 0) os << ", ";
+        if (i > 0) {
+            os << ", ";
+        }
         os << list[i];
     }
     os << "]";

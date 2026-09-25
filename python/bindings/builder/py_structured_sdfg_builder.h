@@ -39,7 +39,9 @@ public:
     PyStructuredSDFGBuilder(sdfg::plugins::Context& ctx, const std::string& name, const sdfg::types::IType& return_type);
     PyStructuredSDFGBuilder(PyStructuredSDFG& sdfg);
 
-    sdfg::builder::StructuredSDFGBuilder& builder() { return builder_; }
+    sdfg::builder::StructuredSDFGBuilder& builder() {
+        return builder_;
+    }
 
     sdfg::plugins::Context& docc_context() const;
 

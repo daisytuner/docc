@@ -20,7 +20,8 @@ ErfNode::ErfNode(
 )
     : ElementWiseDataflowTensorNode(
           element_id, debug_info, vertex, parent, LibraryNodeType_Erf, shape, "Y", {"X"}, quantization, impl_type
-      ) {}
+      ) {
+}
 
 ElementWiseDataflowTensorNode::ElementOutput ErfNode::expand_operation_dataflow(
     builder::StructuredSDFGBuilder& builder,

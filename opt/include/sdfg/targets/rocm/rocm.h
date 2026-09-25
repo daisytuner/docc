@@ -42,7 +42,9 @@ using ROCMDimension = gpu::GPUDimension;
  */
 class ScheduleType_ROCM_Offload : public gpu::ScheduleType_GPU_Offload {
 public:
-    static const std::string value() { return "ROCM_Offload"; }
+    static const std::string value() {
+        return "ROCM_Offload";
+    }
 };
 
 /**
@@ -53,8 +55,12 @@ public:
  */
 class ScheduleType_ROCM : public gpu::ScheduleType_GPU_Base<ScheduleType_ROCM> {
 public:
-    static const std::string value() { return "ROCM"; }
-    static symbolic::Integer default_block_size_x() { return symbolic::integer(64); }
+    static const std::string value() {
+        return "ROCM";
+    }
+    static symbolic::Integer default_block_size_x() {
+        return symbolic::integer(64);
+    }
 };
 
 inline codegen::TargetType TargetType_ROCM_Offload{ScheduleType_ROCM_Offload::value()};

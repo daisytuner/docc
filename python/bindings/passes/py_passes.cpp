@@ -115,5 +115,7 @@ void register_passes(py::module& m) {
             py::arg("recorder"),
             "Attach a Recorder to capture the scheduling transformations."
         )
-        .def("__repr__", [](scheduler::LoopSchedulingPass&) { return "<LoopSchedulingPass>"; });
+        .def("__repr__", [](scheduler::LoopSchedulingPass&) {
+            return "<LoopSchedulingPass>";
+        });
 }

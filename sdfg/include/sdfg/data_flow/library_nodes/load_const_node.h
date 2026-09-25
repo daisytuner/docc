@@ -45,10 +45,13 @@ class InMemoryConstSource : public ConstSource {
     std::vector<uint8_t> data_;
 
 public:
-    InMemoryConstSource(std::vector<uint8_t>&& data) : data_(std::move(data)) {}
-    InMemoryConstSource(int size) : data_(size) {}
+    InMemoryConstSource(std::vector<uint8_t>&& data) : data_(std::move(data)) {
+    }
+    InMemoryConstSource(int size) : data_(size) {
+    }
     template<class InputIt>
-    InMemoryConstSource(InputIt begin, InputIt end) : data_(begin, end) {}
+    InMemoryConstSource(InputIt begin, InputIt end) : data_(begin, end) {
+    }
 
 
     std::unique_ptr<ConstSource> clone() const override {
@@ -56,16 +59,30 @@ public:
         return std::make_unique<InMemoryConstSource>(std::move(data));
     }
 
-    bool is_inlineable() const override { return true; }
-    byte_iterator inline_begin() const override { return data_.begin(); }
-    byte_iterator inline_end() const override { return data_.end(); }
+    bool is_inlineable() const override {
+        return true;
+    }
+    byte_iterator inline_begin() const override {
+        return data_.begin();
+    }
+    byte_iterator inline_end() const override {
+        return data_.end();
+    }
 
-    size_t num_bytes() const override { return data_.size(); }
+    size_t num_bytes() const override {
+        return data_.size();
+    }
 
-    bool in_external_file() const override { return false; }
-    const std::filesystem::path& filename() const override { throw std::runtime_error("no external file"); }
+    bool in_external_file() const override {
+        return false;
+    }
+    const std::filesystem::path& filename() const override {
+        throw std::runtime_error("no external file");
+    }
 
-    std::string toStr() const override { return "InMemory(" + std::to_string(data_.size()) + " B)"; }
+    std::string toStr() const override {
+        return "InMemory(" + std::to_string(data_.size()) + " B)";
+    }
 };
 
 /**
@@ -78,22 +95,35 @@ class RawFileConstSource : public ConstSource {
 
 public:
     RawFileConstSource(std::filesystem::path filename, size_t num_bytes)
-        : filename_(std::move(filename)), num_bytes_(num_bytes) {}
+        : filename_(std::move(filename)), num_bytes_(num_bytes) {
+    }
     // virtual bool read_data(void* output) override;
 
     std::unique_ptr<ConstSource> clone() const override {
         return std::make_unique<RawFileConstSource>(filename_, num_bytes_);
     }
 
-    bool is_inlineable() const override { return false; }
+    bool is_inlineable() const override {
+        return false;
+    }
 
-    bool in_external_file() const override { return true; }
-    const std::filesystem::path& filename() const override { return filename_; }
+    bool in_external_file() const override {
+        return true;
+    }
+    const std::filesystem::path& filename() const override {
+        return filename_;
+    }
 
-    byte_iterator inline_begin() const override { throw std::runtime_error("inlining not supported"); }
-    byte_iterator inline_end() const override { throw std::runtime_error("inlining not supported"); }
+    byte_iterator inline_begin() const override {
+        throw std::runtime_error("inlining not supported");
+    }
+    byte_iterator inline_end() const override {
+        throw std::runtime_error("inlining not supported");
+    }
 
-    size_t num_bytes() const override { return num_bytes_; }
+    size_t num_bytes() const override {
+        return num_bytes_;
+    }
 
     std::string toStr() const override {
         return "RawFile(" + filename_.string() + ", " + std::to_string(num_bytes_) + " B)";

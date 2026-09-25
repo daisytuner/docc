@@ -211,13 +211,21 @@ CMathNode::CMathNode(
     }
 }
 
-CMathFunction CMathNode::function() const { return this->function_; }
+CMathFunction CMathNode::function() const {
+    return this->function_;
+}
 
-types::PrimitiveType CMathNode::primitive_type() const { return this->primitive_type_; }
+types::PrimitiveType CMathNode::primitive_type() const {
+    return this->primitive_type_;
+}
 
-std::string CMathNode::name() const { return get_cmath_intrinsic_name(this->function_, this->primitive_type_); }
+std::string CMathNode::name() const {
+    return get_cmath_intrinsic_name(this->function_, this->primitive_type_);
+}
 
-symbolic::SymbolSet CMathNode::symbols() const { return {}; }
+symbolic::SymbolSet CMathNode::symbols() const {
+    return {};
+}
 
 data_flow::PointerAccessType CMathNode::pointer_access_type(int input_idx) const {
     // Every input is a scalar value read; the node never captures the pointer.
@@ -231,7 +239,9 @@ void CMathNode::replace(const symbolic::Expression old_expression, const symboli
     return;
 }
 
-void CMathNode::replace(const symbolic::ExpressionMapping& replacements) { return; }
+void CMathNode::replace(const symbolic::ExpressionMapping& replacements) {
+    return;
+}
 
 void CMathNode::validate(const Function& function) const {
     MathNode::validate(function);
@@ -322,7 +332,9 @@ std::unique_ptr<data_flow::DataFlowNode> CMathNode::
     );
 }
 
-symbolic::Expression CMathNode::flop() const { return symbolic::integer(cmath_function_to_flop(this->function_)); }
+symbolic::Expression CMathNode::flop() const {
+    return symbolic::integer(cmath_function_to_flop(this->function_));
+}
 
 std::string CMathNode::toStr() const {
     return LibraryNode::toStr() + "(" + get_cmath_intrinsic_name(this->function_, this->primitive_type_) + ")";
@@ -402,7 +414,8 @@ CMathNodeDispatcher::CMathNodeDispatcher(
     const data_flow::DataFlowGraph& data_flow_graph,
     const CMathNode& node
 )
-    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
+}
 
 void CMathNodeDispatcher::dispatch_code(
     codegen::PrettyPrinter& stream,

@@ -751,8 +751,12 @@ TEST(SymbolEvolutionTest, CoEvolving_FixpointRewrites) {
     for (size_t k = 0; k < loop.root().size(); ++k) {
         auto* tr = dyn_cast<AssignmentBlock*>(&loop.root().at(k));
         if (tr) {
-            if (tr->assignments().find(a) != tr->assignments().end()) a_rewritten = true;
-            if (tr->assignments().find(b) != tr->assignments().end()) b_rewritten = true;
+            if (tr->assignments().find(a) != tr->assignments().end()) {
+                a_rewritten = true;
+            }
+            if (tr->assignments().find(b) != tr->assignments().end()) {
+                b_rewritten = true;
+            }
         }
     }
     EXPECT_TRUE(a_rewritten);

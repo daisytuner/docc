@@ -20,7 +20,8 @@ SqrtNode::SqrtNode(
 )
     : ElementWiseDataflowTensorNode(
           element_id, debug_info, vertex, parent, LibraryNodeType_Sqrt, shape, "Y", {"X"}, quantization, impl_type
-      ) {}
+      ) {
+}
 
 ElementWiseDataflowTensorNode::ElementOutput SqrtNode::expand_operation_dataflow(
     builder::StructuredSDFGBuilder& builder,

@@ -11,7 +11,9 @@
 namespace sdfg {
 namespace parallelization {
 
-std::string ForClassificationPass::name() { return "ForClassification"; }
+std::string ForClassificationPass::name() {
+    return "ForClassification";
+}
 
 ForClassificationPass::Classification ForClassificationPass::classify(
     builder::StructuredSDFGBuilder& builder,

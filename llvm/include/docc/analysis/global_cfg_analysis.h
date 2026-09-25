@@ -25,7 +25,8 @@ enum class CfgSpecialType { None = 0, H2D, D2H, ErrorHandling, Return };
 
 struct GlobalCFGNode {
     GlobalCFGNode(Vertex V, uint32_t modId, int64_t funcId)
-        : Vertex_(V), node_id_(next_node_id++), modId_(modId), funcId_(funcId) {}
+        : Vertex_(V), node_id_(next_node_id++), modId_(modId), funcId_(funcId) {
+    }
     void print(llvm::raw_ostream &OS);
 
     Vertex Vertex_;
@@ -98,7 +99,8 @@ struct GlobalCFGEdge {
         bool incRet = false,
         int32_t toEvtIdx = -1
     )
-        : Edge_(E), Type_(type), From_(from), To_(to), fromEvtIdx_(fromEvtIdx), toEvtIdx_(toEvtIdx), incRet_(incRet) {}
+        : Edge_(E), Type_(type), From_(from), To_(to), fromEvtIdx_(fromEvtIdx), toEvtIdx_(toEvtIdx), incRet_(incRet) {
+    }
 
     Edge Edge_;
     EdgeType Type_;
@@ -118,10 +120,18 @@ public:
 
     void run(AnalysisManager &AM) override;
 
-    const Graph &getGraph() const { return Graph_; }
-    const GlobalCFGEdge &getEdge(Edge E) const { return *Edges_.at(E); }
-    const GlobalCFGNode &getNode(Vertex V) const { return *Nodes_.at(V); }
-    const GlobalCFGNode *getEntryPoint(llvm::StringRef Name) const { return findNodeExternallyVisible(Name); }
+    const Graph &getGraph() const {
+        return Graph_;
+    }
+    const GlobalCFGEdge &getEdge(Edge E) const {
+        return *Edges_.at(E);
+    }
+    const GlobalCFGNode &getNode(Vertex V) const {
+        return *Nodes_.at(V);
+    }
+    const GlobalCFGNode *getEntryPoint(llvm::StringRef Name) const {
+        return findNodeExternallyVisible(Name);
+    }
     const std::vector<GlobalCFGNode *> *getExitPoints(llvm::GlobalValue::GUID id) const;
     const std::vector<GlobalCFGNode *> *getExitPoints(llvm::StringRef name) const;
 

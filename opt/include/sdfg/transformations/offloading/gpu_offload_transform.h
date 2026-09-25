@@ -115,8 +115,10 @@ protected:
         symbolic::Expression page_size
     ) override;
 
-    void setup_device(builder::StructuredSDFGBuilder& builder, Block& global_alloc_block) override {}
-    void teardown_device(builder::StructuredSDFGBuilder& builder, Block& global_alloc_block) override {}
+    void setup_device(builder::StructuredSDFGBuilder& builder, Block& global_alloc_block) override {
+    }
+    void teardown_device(builder::StructuredSDFGBuilder& builder, Block& global_alloc_block) override {
+    }
 };
 
 } // namespace gpu

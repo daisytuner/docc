@@ -37,48 +37,90 @@ Assumption& Assumption::operator=(const Assumption& a) {
     return *this;
 };
 
-const Symbol Assumption::symbol() const { return this->symbol_; };
+const Symbol Assumption::symbol() const {
+    return this->symbol_;
+};
 
-const ExpressionSet& Assumption::lower_bounds() const { return this->lower_bounds_; }
+const ExpressionSet& Assumption::lower_bounds() const {
+    return this->lower_bounds_;
+}
 
-void Assumption::add_lower_bound(const Expression lb) { this->lower_bounds_.insert(lb); }
+void Assumption::add_lower_bound(const Expression lb) {
+    this->lower_bounds_.insert(lb);
+}
 
-bool Assumption::contains_lower_bound(const Expression lb) { return this->lower_bounds_.contains(lb); }
+bool Assumption::contains_lower_bound(const Expression lb) {
+    return this->lower_bounds_.contains(lb);
+}
 
-bool Assumption::remove_lower_bound(const Expression lb) { return this->lower_bounds_.erase(lb) > 0; }
+bool Assumption::remove_lower_bound(const Expression lb) {
+    return this->lower_bounds_.erase(lb) > 0;
+}
 
 
-const ExpressionSet& Assumption::upper_bounds() const { return this->upper_bounds_; }
+const ExpressionSet& Assumption::upper_bounds() const {
+    return this->upper_bounds_;
+}
 
-void Assumption::add_upper_bound(const Expression ub) { this->upper_bounds_.insert(ub); }
+void Assumption::add_upper_bound(const Expression ub) {
+    this->upper_bounds_.insert(ub);
+}
 
-bool Assumption::contains_upper_bound(const Expression ub) { return this->upper_bounds_.contains(ub); }
+bool Assumption::contains_upper_bound(const Expression ub) {
+    return this->upper_bounds_.contains(ub);
+}
 
-bool Assumption::remove_upper_bound(const Expression ub) { return this->upper_bounds_.erase(ub) > 0; }
+bool Assumption::remove_upper_bound(const Expression ub) {
+    return this->upper_bounds_.erase(ub) > 0;
+}
 
-const Expression Assumption::tight_lower_bound() const { return this->tight_lower_bound_; }
+const Expression Assumption::tight_lower_bound() const {
+    return this->tight_lower_bound_;
+}
 
-void Assumption::tight_lower_bound(const Expression tight_lb) { this->tight_lower_bound_ = tight_lb; }
+void Assumption::tight_lower_bound(const Expression tight_lb) {
+    this->tight_lower_bound_ = tight_lb;
+}
 
-const Expression Assumption::tight_upper_bound() const { return this->tight_upper_bound_; }
+const Expression Assumption::tight_upper_bound() const {
+    return this->tight_upper_bound_;
+}
 
-void Assumption::tight_upper_bound(const Expression tight_ub) { this->tight_upper_bound_ = tight_ub; }
+void Assumption::tight_upper_bound(const Expression tight_ub) {
+    this->tight_upper_bound_ = tight_ub;
+}
 
-const ExpressionSet& Assumption::constraints() const { return this->constraints_; }
+const ExpressionSet& Assumption::constraints() const {
+    return this->constraints_;
+}
 
-void Assumption::add_constraint(const Expression c) { this->constraints_.insert(c); }
+void Assumption::add_constraint(const Expression c) {
+    this->constraints_.insert(c);
+}
 
-bool Assumption::contains_constraint(const Expression c) { return this->constraints_.contains(c); }
+bool Assumption::contains_constraint(const Expression c) {
+    return this->constraints_.contains(c);
+}
 
-bool Assumption::remove_constraint(const Expression c) { return this->constraints_.erase(c) > 0; }
+bool Assumption::remove_constraint(const Expression c) {
+    return this->constraints_.erase(c) > 0;
+}
 
-bool Assumption::constant() const { return constant_; };
+bool Assumption::constant() const {
+    return constant_;
+};
 
-void Assumption::constant(bool constant) { constant_ = constant; };
+void Assumption::constant(bool constant) {
+    constant_ = constant;
+};
 
-const Expression Assumption::map() const { return map_; };
+const Expression Assumption::map() const {
+    return map_;
+};
 
-void Assumption::map(const Expression map) { map_ = map; };
+void Assumption::map(const Expression map) {
+    map_ = map;
+};
 
 Assumption Assumption::create(const Symbol symbol, const types::IType& type) {
     if (auto scalar_type = dynamic_cast<const types::Scalar*>(&type)) {

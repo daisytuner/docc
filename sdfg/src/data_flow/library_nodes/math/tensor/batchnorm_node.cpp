@@ -29,7 +29,8 @@ BatchNormNode::BatchNormNode(
           {"Batch", "Var", "E", "Gamma", "Beta", "epsilon", "B_out"},
           std::move(impl_type)
       ),
-      layout_(std::move(layout)), quantization_(quantization) {}
+      layout_(std::move(layout)), quantization_(quantization) {
+}
 
 symbolic::SymbolSet BatchNormNode::symbols() const {
     symbolic::SymbolSet syms;
@@ -37,15 +38,21 @@ symbolic::SymbolSet BatchNormNode::symbols() const {
     return syms;
 }
 
-types::PrimitiveType BatchNormNode::quantization() const { return quantization_; }
+types::PrimitiveType BatchNormNode::quantization() const {
+    return quantization_;
+}
 
-void BatchNormNode::set_quantization(const types::PrimitiveType quant) { quantization_ = quant; }
+void BatchNormNode::set_quantization(const types::PrimitiveType quant) {
+    quantization_ = quant;
+}
 
 void BatchNormNode::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
     layout_.replace_symbols(old_expression, new_expression);
 }
 
-void BatchNormNode::replace(const symbolic::ExpressionMapping& replacements) { layout_.replace_symbols(replacements); }
+void BatchNormNode::replace(const symbolic::ExpressionMapping& replacements) {
+    layout_.replace_symbols(replacements);
+}
 
 std::unique_ptr<data_flow::DataFlowNode> BatchNormNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
@@ -54,7 +61,9 @@ std::unique_ptr<data_flow::DataFlowNode> BatchNormNode::
     ));
 }
 
-std::string BatchNormNode::toStr() const { return "BatchNorm(" + layout_.toStr() + ")"; }
+std::string BatchNormNode::toStr() const {
+    return "BatchNorm(" + layout_.toStr() + ")";
+}
 
 passes::LibNodeExpander::ExpandOutcome BatchNormNode::
     expand(passes::LibNodeExpander::ExpandContext& context, structured_control_flow::Block& block) {

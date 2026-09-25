@@ -11,7 +11,8 @@
 namespace sdfg {
 namespace analysis {
 
-LoopAnalysis::LoopAnalysis(StructuredSDFG& sdfg) : Analysis(sdfg), loops_(), loop_tree_() {}
+LoopAnalysis::LoopAnalysis(StructuredSDFG& sdfg) : Analysis(sdfg), loops_(), loop_tree_() {
+}
 
 void LoopAnalysis::init_new_loop_info(
     LoopState& info,

@@ -186,7 +186,9 @@ private:
 public:
     LoopAnalysis(StructuredSDFG& sdfg);
 
-    std::string name() const override { return "LoopAnalysis"; }
+    std::string name() const override {
+        return "LoopAnalysis";
+    }
 
     void run(analysis::AnalysisManager& analysis_manager) override;
 

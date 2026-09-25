@@ -23,17 +23,29 @@ public:
     CodeSnippet(const std::string& name, const std::string& extension, bool as_file)
         : extension_(extension), as_file_(as_file), name_(name) {};
 
-    PrettyPrinter& stream() { return stream_; }
+    PrettyPrinter& stream() {
+        return stream_;
+    }
 
-    const PrettyPrinter& stream() const { return stream_; }
+    const PrettyPrinter& stream() const {
+        return stream_;
+    }
 
-    const std::string& extension() const { return extension_; }
+    const std::string& extension() const {
+        return extension_;
+    }
 
-    bool is_as_file() const { return as_file_; }
+    bool is_as_file() const {
+        return as_file_;
+    }
 
-    const std::string& name() const { return name_; }
+    const std::string& name() const {
+        return name_;
+    }
 
-    std::filesystem::path filename() const { return name_ + "." + extension_; }
+    std::filesystem::path filename() const {
+        return name_ + "." + extension_;
+    }
 };
 
 class LibDependency {
@@ -81,8 +93,12 @@ public:
 
     const std::unordered_map<std::string, CodeSnippet>& snippets() const;
 
-    const std::filesystem::path& output_path() const { return output_path_; }
-    const std::filesystem::path& header_path() const { return header_path_; }
+    const std::filesystem::path& output_path() const {
+        return output_path_;
+    }
+    const std::filesystem::path& header_path() const {
+        return header_path_;
+    }
 
     virtual void add_setup(const std::string& snippet);
     virtual void add_teardown(const std::string& snippet);

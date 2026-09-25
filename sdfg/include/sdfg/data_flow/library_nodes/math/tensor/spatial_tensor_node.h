@@ -60,13 +60,25 @@ public:
         const std::vector<symbolic::Expression>& dilations
     );
 
-    const std::vector<symbolic::Expression>& shape() const { return shape_; }
-    const std::vector<symbolic::Expression>& kernel_shape() const { return kernel_shape_; }
-    const std::vector<symbolic::Expression>& strides() const { return strides_; }
-    const std::vector<symbolic::Expression>& pads() const { return pads_; }
-    const std::vector<symbolic::Expression>& dilations() const { return dilations_; }
+    const std::vector<symbolic::Expression>& shape() const {
+        return shape_;
+    }
+    const std::vector<symbolic::Expression>& kernel_shape() const {
+        return kernel_shape_;
+    }
+    const std::vector<symbolic::Expression>& strides() const {
+        return strides_;
+    }
+    const std::vector<symbolic::Expression>& pads() const {
+        return pads_;
+    }
+    const std::vector<symbolic::Expression>& dilations() const {
+        return dilations_;
+    }
 
-    QuantizationType quantization() const { return quantization(get_parent()); }
+    QuantizationType quantization() const {
+        return quantization(get_parent());
+    }
 
     /**
      * type of the math calculations. May be inferred or fixed.

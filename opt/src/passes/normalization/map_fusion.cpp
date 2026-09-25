@@ -14,7 +14,8 @@ MapFusion::MapFusion(
     bool allow_prod_into_cons
 )
     : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager), allow_init_hoist_(allow_init_hoist),
-      allow_prod_into_cons_(allow_prod_into_cons) {}
+      allow_prod_into_cons_(allow_prod_into_cons) {
+}
 
 bool MapFusion::accept(structured_control_flow::Sequence& node) {
     bool applied = false;

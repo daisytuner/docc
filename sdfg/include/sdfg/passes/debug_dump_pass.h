@@ -13,7 +13,9 @@ private:
 public:
     DebugDumpPass(const std::string& name, bool dump_json = true, bool dump_dot = true);
 
-    std::string name() override { return "DebugDumpPass"; }
+    std::string name() override {
+        return "DebugDumpPass";
+    }
 
     bool run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
 

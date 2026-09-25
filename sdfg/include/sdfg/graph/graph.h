@@ -39,9 +39,13 @@ struct DFSVisitor : boost::default_dfs_visitor {
 
     DFSVisitor(std::list<Edge>& back_edges, std::list<Vertex>& nodes) : nodes_(nodes), back_edges_(back_edges) {};
 
-    void discover_vertex(Vertex v, const Graph& g) { nodes_.push_back(v); };
+    void discover_vertex(Vertex v, const Graph& g) {
+        nodes_.push_back(v);
+    };
 
-    void back_edge(Edge e, const Graph& g) { back_edges_.push_back(e); };
+    void back_edge(Edge e, const Graph& g) {
+        back_edges_.push_back(e);
+    };
 };
 
 const ReverseGraph reverse(const Graph& graph);

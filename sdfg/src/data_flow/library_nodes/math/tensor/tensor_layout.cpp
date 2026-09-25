@@ -103,9 +103,13 @@ void TensorLayout::replace_symbols(const symbolic::ExpressionMapping& replacemen
     offset_ = symbolic::subs(offset_, replacements);
 }
 
-symbolic::Expression TensorLayout::total_elements() const { return SymEngine::mul(shape_); }
+symbolic::Expression TensorLayout::total_elements() const {
+    return SymEngine::mul(shape_);
+}
 
-symbolic::MultiExpression TensorLayout::linear_strides() const { return std::move(linear_strides(shape_)); }
+symbolic::MultiExpression TensorLayout::linear_strides() const {
+    return std::move(linear_strides(shape_));
+}
 
 symbolic::Expression TensorLayout::resolve_element(const symbolic::MultiExpression& indices, bool require_to_element)
     const {
@@ -129,7 +133,9 @@ symbolic::Expression TensorLayout::resolve_element(const symbolic::MultiExpressi
     return addr;
 }
 
-bool TensorLayout::is_scalar() const { return shape_.empty(); }
+bool TensorLayout::is_scalar() const {
+    return shape_.empty();
+}
 
 TensorLayout TensorLayout::deserialize_from_json(const nlohmann::json& j) {
     symbolic::MultiExpression shape;
@@ -150,7 +156,9 @@ TensorLayout TensorLayout::deserialize_from_json(const nlohmann::json& j) {
 std::ostream& TensorLayout::emit_symbolic_list(std::ostream& stream, const symbolic::MultiExpression& list) {
     stream << "[";
     for (size_t i = 0; i < list.size(); ++i) {
-        if (i > 0) stream << ", ";
+        if (i > 0) {
+            stream << ", ";
+        }
         stream << list.at(i)->__str__();
     }
     stream << "]";
@@ -189,7 +197,9 @@ bool TensorLayout::has_linear_accesses_no_padding(
     return has_linear_accesses(shape, strides) && symbolic::eq(offset, symbolic::zero());
 }
 
-bool TensorLayout::has_linear_accesses() const { return has_linear_accesses(shape_, strides_); }
+bool TensorLayout::has_linear_accesses() const {
+    return has_linear_accesses(shape_, strides_);
+}
 
 bool TensorLayout::has_linear_accesses_no_padding() const {
     return has_linear_accesses_no_padding(shape_, strides_, offset_);
@@ -271,7 +281,9 @@ std::unique_ptr<TensorLayout> TensorLayout::flip(size_t axis) const {
     return std::make_unique<TensorLayout>(this->shape_, new_strides, new_offset);
 }
 
-std::unique_ptr<TensorLayout> TensorLayout::unsqueeze(size_t axis) const { return this->newaxis(axis); }
+std::unique_ptr<TensorLayout> TensorLayout::unsqueeze(size_t axis) const {
+    return this->newaxis(axis);
+}
 
 std::unique_ptr<TensorLayout> TensorLayout::squeeze(size_t axis) const {
     if (axis >= this->shape_.size()) {

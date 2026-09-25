@@ -137,25 +137,41 @@ PyStructuredSDFG PyStructuredSDFG::from_sdfg(sdfg::plugins::Context& ctx, std::u
     return PyStructuredSDFG(ctx, sdfg);
 }
 
-std::string PyStructuredSDFG::name() const { return sdfg_->name(); }
+std::string PyStructuredSDFG::name() const {
+    return sdfg_->name();
+}
 
 void PyStructuredSDFG::set_output_dir(const std::filesystem::path& dir) {
     sdfg_->add_metadata("output_dir", dir.string());
 }
 
-sdfg::plugins::Context& PyStructuredSDFG::docc_context() const { return docc_context_; }
+sdfg::plugins::Context& PyStructuredSDFG::docc_context() const {
+    return docc_context_;
+}
 
-const sdfg::types::IType& PyStructuredSDFG::return_type() const { return sdfg_->return_type(); }
+const sdfg::types::IType& PyStructuredSDFG::return_type() const {
+    return sdfg_->return_type();
+}
 
-const sdfg::types::IType& PyStructuredSDFG::type(const std::string& name) const { return sdfg_->type(name); }
+const sdfg::types::IType& PyStructuredSDFG::type(const std::string& name) const {
+    return sdfg_->type(name);
+}
 
-bool PyStructuredSDFG::exists(const std::string& name) const { return sdfg_->exists(name); }
+bool PyStructuredSDFG::exists(const std::string& name) const {
+    return sdfg_->exists(name);
+}
 
-bool PyStructuredSDFG::is_argument(const std::string& name) const { return sdfg_->is_argument(name); }
+bool PyStructuredSDFG::is_argument(const std::string& name) const {
+    return sdfg_->is_argument(name);
+}
 
-bool PyStructuredSDFG::is_transient(const std::string& name) const { return sdfg_->is_transient(name); }
+bool PyStructuredSDFG::is_transient(const std::string& name) const {
+    return sdfg_->is_transient(name);
+}
 
-std::vector<std::string> PyStructuredSDFG::arguments() const { return sdfg_->arguments(); }
+std::vector<std::string> PyStructuredSDFG::arguments() const {
+    return sdfg_->arguments();
+}
 
 pybind11::dict PyStructuredSDFG::containers() const {
     pybind11::dict result;
@@ -165,7 +181,9 @@ pybind11::dict PyStructuredSDFG::containers() const {
     return result;
 }
 
-void PyStructuredSDFG::validate() { sdfg_->validate(); }
+void PyStructuredSDFG::validate() {
+    sdfg_->validate();
+}
 
 void PyStructuredSDFG::einsum() {
     sdfg::passes::CompileStatistics::enter_stage_if_enabled("einsum");
@@ -497,7 +515,9 @@ void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options, bool
         }
     }
 
-    auto mapped = schedulers | std::views::transform([&](auto& n) { return n.get(); });
+    auto mapped = schedulers | std::views::transform([&](auto& n) {
+                      return n.get();
+                  });
     std::vector<sdfg::passes::scheduler::LoopScheduler*> unwrapped_schedulers(mapped.begin(), mapped.end());
 
     sdfg::passes::scheduler::LoopSchedulingPass loop_scheduling_pass(unwrapped_schedulers, nullptr);

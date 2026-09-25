@@ -236,7 +236,9 @@ TEST(LoopShiftTest, IndvarUsedInAccessNode) {
     // Find incoming edge to A access node
     for (auto& edge : dataflow.edges()) {
         auto& subset = edge.subset();
-        if (subset.empty()) continue; // skip non-memlet edges
+        if (subset.empty()) {
+            continue; // skip non-memlet edges
+        }
         ASSERT_EQ(subset.size(), 1);
         // The subset should now use __i_orig__ instead of i
         EXPECT_TRUE(symbolic::uses(subset[0], shift.shifted_container_name()));

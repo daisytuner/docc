@@ -21,13 +21,20 @@ AllocaNode::AllocaNode(
           true,
           data_flow::ImplementationType_NONE
       ),
-      size_(size) {}
+      size_(size) {
+}
 
-const symbolic::Expression AllocaNode::size() const { return size_; }
+const symbolic::Expression AllocaNode::size() const {
+    return size_;
+}
 
-void AllocaNode::validate(const Function& function) const { LibraryNode::validate(function); }
+void AllocaNode::validate(const Function& function) const {
+    LibraryNode::validate(function);
+}
 
-symbolic::SymbolSet AllocaNode::symbols() const { return symbolic::atoms(this->size_); }
+symbolic::SymbolSet AllocaNode::symbols() const {
+    return symbolic::atoms(this->size_);
+}
 
 std::unique_ptr<data_flow::DataFlowNode> AllocaNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
@@ -80,7 +87,8 @@ AllocaNodeDispatcher::AllocaNodeDispatcher(
     const data_flow::DataFlowGraph& data_flow_graph,
     const AllocaNode& node
 )
-    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
+}
 
 void AllocaNodeDispatcher::dispatch_code(
     codegen::PrettyPrinter& stream,

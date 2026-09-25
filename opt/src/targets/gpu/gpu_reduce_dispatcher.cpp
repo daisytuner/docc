@@ -68,18 +68,30 @@ std::string identity_literal(ReductionOperation op, types::PrimitiveType prim) {
     if (op == ReductionOperation::Min) {
         // identity for Min is the type maximum
         if (is_unsigned) {
-            if (width == 32) return "UINT32_MAX";
-            if (width == 64) return "UINT64_MAX";
+            if (width == 32) {
+                return "UINT32_MAX";
+            }
+            if (width == 64) {
+                return "UINT64_MAX";
+            }
         } else {
-            if (width == 32) return "INT32_MAX";
-            if (width == 64) return "INT64_MAX";
+            if (width == 32) {
+                return "INT32_MAX";
+            }
+            if (width == 64) {
+                return "INT64_MAX";
+            }
         }
     } else { // Max -> identity is the type minimum
         if (is_unsigned) {
             return "0";
         }
-        if (width == 32) return "INT32_MIN";
-        if (width == 64) return "INT64_MIN";
+        if (width == 32) {
+            return "INT32_MIN";
+        }
+        if (width == 64) {
+            return "INT64_MIN";
+        }
     }
 
     throw InvalidSDFGException("GPUReduceDispatcher: unsupported integer width for min/max reduction");

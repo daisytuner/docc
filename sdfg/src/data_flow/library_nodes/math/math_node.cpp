@@ -14,7 +14,8 @@ MathNode::MathNode(
     const data_flow::ImplementationType& implementation_type,
     bool side_effects
 )
-    : LibraryNode(element_id, debug_info, vertex, parent, code, outputs, inputs, side_effects, implementation_type) {}
+    : LibraryNode(element_id, debug_info, vertex, parent, code, outputs, inputs, side_effects, implementation_type) {
+}
 
 } // namespace math
 } // namespace sdfg

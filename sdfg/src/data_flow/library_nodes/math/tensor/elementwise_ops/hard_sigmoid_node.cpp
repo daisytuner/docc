@@ -29,7 +29,8 @@ HardSigmoidNode::HardSigmoidNode(
           {"Y", "alpha", "beta"},
           quantization,
           impl_type
-      ) {}
+      ) {
+}
 
 ElementWiseDataflowTensorNode::ElementOutput HardSigmoidNode::expand_operation_dataflow(
     builder::StructuredSDFGBuilder& builder,

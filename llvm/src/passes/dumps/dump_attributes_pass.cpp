@@ -70,9 +70,12 @@ llvm::PreservedAnalyses DumpAttributesPass::
     return llvm::PreservedAnalyses::all();
 }
 
-AttributesAnalysis::AttributesAnalysis(sdfg::StructuredSDFG& sdfg) : sdfg::analysis::Analysis(sdfg) {}
+AttributesAnalysis::AttributesAnalysis(sdfg::StructuredSDFG& sdfg) : sdfg::analysis::Analysis(sdfg) {
+}
 
-std::string AttributesAnalysis::name() const { return "AttributesAnalysis"; }
+std::string AttributesAnalysis::name() const {
+    return "AttributesAnalysis";
+}
 
 void AttributesAnalysis::run(sdfg::analysis::AnalysisManager& analysis_manager) {
     this->attributes_ = analysis::Attributes();
@@ -470,7 +473,9 @@ void AttributesAnalysis::run(sdfg::analysis::AnalysisManager& analysis_manager) 
     }
 }
 
-const analysis::Attributes& AttributesAnalysis::get() { return attributes_; }
+const analysis::Attributes& AttributesAnalysis::get() {
+    return attributes_;
+}
 
 analysis::ArgumentAttributes AttributesAnalysis::empty() {
     return {

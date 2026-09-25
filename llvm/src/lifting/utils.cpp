@@ -84,7 +84,9 @@ bool is_literal(const llvm::Value* value) {
     return llvm::isa<llvm::ConstantData>(value) || llvm::isa<llvm::ConstantAggregate>(value);
 }
 
-bool is_null_pointer(const llvm::Value* value) { return llvm::dyn_cast<llvm::ConstantPointerNull>(value) != nullptr; }
+bool is_null_pointer(const llvm::Value* value) {
+    return llvm::dyn_cast<llvm::ConstantPointerNull>(value) != nullptr;
+}
 
 bool is_symbol(const llvm::Value* value) {
     return llvm::isa<llvm::ConstantInt>(value) || llvm::isa<llvm::ConstantPointerNull>(value);
@@ -225,21 +227,27 @@ std::string as_initializer(const llvm::Constant* initializer) {
         std::string result = "{";
         for (size_t i = 0; i < const_array->getNumOperands(); ++i) {
             result += as_initializer(const_array->getOperand(i));
-            if (i + 1 < const_array->getNumOperands()) result += ", ";
+            if (i + 1 < const_array->getNumOperands()) {
+                result += ", ";
+            }
         }
         return result + "}";
     } else if (auto* const_struct = llvm::dyn_cast<llvm::ConstantStruct>(initializer)) {
         std::string result = "{";
         for (size_t i = 0; i < const_struct->getNumOperands(); ++i) {
             result += as_initializer(const_struct->getOperand(i));
-            if (i + 1 < const_struct->getNumOperands()) result += ", ";
+            if (i + 1 < const_struct->getNumOperands()) {
+                result += ", ";
+            }
         }
         return result + "}";
     } else if (auto* const_vector = llvm::dyn_cast<llvm::ConstantVector>(initializer)) {
         std::string result = "{";
         for (size_t i = 0; i < const_vector->getNumOperands(); ++i) { // FIX ①
             result += as_initializer(const_vector->getOperand(i));
-            if (i + 1 < const_vector->getNumOperands()) result += ", "; // FIX ②
+            if (i + 1 < const_vector->getNumOperands()) {
+                result += ", "; // FIX ②
+            }
         }
         return result + "}";
     }
@@ -255,13 +263,17 @@ std::string as_initializer(const llvm::Constant* initializer) {
             for (unsigned i = 0; i < const_data_array->getNumElements(); ++i) {
                 auto element = const_data_array->getElementAsConstant(i);
                 result += as_literal(llvm::dyn_cast<llvm::ConstantData>(element));
-                if (i + 1 < const_data_array->getNumElements()) result += ", ";
+                if (i + 1 < const_data_array->getNumElements()) {
+                    result += ", ";
+                }
             }
         } else if (elemTy->isFloatingPointTy()) {
             for (unsigned i = 0; i < const_data_array->getNumElements(); ++i) {
                 auto element = const_data_array->getElementAsConstant(i);
                 result += as_literal(llvm::dyn_cast<llvm::ConstantData>(element));
-                if (i + 1 < const_data_array->getNumElements()) result += ", ";
+                if (i + 1 < const_data_array->getNumElements()) {
+                    result += ", ";
+                }
             }
         } else {
             throw NotImplementedException(
@@ -279,13 +291,17 @@ std::string as_initializer(const llvm::Constant* initializer) {
             for (unsigned i = 0; i < const_data_vector->getNumElements(); ++i) {
                 auto element = const_data_vector->getElementAsConstant(i);
                 result += as_literal(llvm::dyn_cast<llvm::ConstantData>(element));
-                if (i + 1 < const_data_vector->getNumElements()) result += ", ";
+                if (i + 1 < const_data_vector->getNumElements()) {
+                    result += ", ";
+                }
             }
         } else if (elemTy->isFloatingPointTy()) {
             for (unsigned i = 0; i < const_data_vector->getNumElements(); ++i) {
                 auto element = const_data_vector->getElementAsConstant(i);
                 result += as_literal(llvm::dyn_cast<llvm::ConstantData>(element));
-                if (i + 1 < const_data_vector->getNumElements()) result += ", ";
+                if (i + 1 < const_data_vector->getNumElements()) {
+                    result += ", ";
+                }
             }
         } else {
             throw NotImplementedException(
@@ -304,27 +320,35 @@ std::string as_initializer(const llvm::Constant* initializer) {
         llvm::Type* ty = const_zero->getType();
 
         // Helper lambda: fabricate the same “zero” as an explicit Constant
-        auto null_of = [&](llvm::Type* subTy) -> llvm::Constant* { return llvm::Constant::getNullValue(subTy); };
+        auto null_of = [&](llvm::Type* subTy) -> llvm::Constant* {
+            return llvm::Constant::getNullValue(subTy);
+        };
 
         if (auto* arrTy = llvm::dyn_cast<llvm::ArrayType>(ty)) {
             std::string result = "{";
             for (uint64_t i = 0; i < arrTy->getNumElements(); ++i) {
                 result += as_initializer(null_of(arrTy->getElementType()));
-                if (i + 1 < arrTy->getNumElements()) result += ", ";
+                if (i + 1 < arrTy->getNumElements()) {
+                    result += ", ";
+                }
             }
             return result + "}";
         } else if (auto* structTy = llvm::dyn_cast<llvm::StructType>(ty)) {
             std::string result = "{";
             for (unsigned i = 0; i < structTy->getNumElements(); ++i) {
                 result += as_initializer(null_of(structTy->getElementType(i)));
-                if (i + 1 < structTy->getNumElements()) result += ", ";
+                if (i + 1 < structTy->getNumElements()) {
+                    result += ", ";
+                }
             }
             return result + "}";
         } else if (auto* vecTy = llvm::dyn_cast<llvm::VectorType>(ty)) {
             std::string result = "{";
             for (unsigned i = 0; i < vecTy->getElementCount().getFixedValue(); ++i) {
                 result += as_initializer(null_of(vecTy->getElementType()));
-                if (i + 1 < vecTy->getElementCount().getFixedValue()) result += ", ";
+                if (i + 1 < vecTy->getElementCount().getFixedValue()) {
+                    result += ", ";
+                }
             }
             return result + "}";
         }

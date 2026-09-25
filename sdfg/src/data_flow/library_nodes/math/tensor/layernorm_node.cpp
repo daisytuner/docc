@@ -101,7 +101,8 @@ LayerNormNode::LayerNormNode(
       ),
       normalized_shape_(normalized_shape), elementwise_affine_(false), bias_(false), y_layout_(y_layout),
       mean_layout_(mean_layout), rstd_layout_(rstd_layout), x_layout_(x_layout), gamma_layout_(std::nullopt),
-      beta_layout_(std::nullopt), fixed_quantization_(quantization) {}
+      beta_layout_(std::nullopt), fixed_quantization_(quantization) {
+}
 
 LayerNormNode::LayerNormNode(
     size_t element_id,
@@ -129,7 +130,8 @@ LayerNormNode::LayerNormNode(
       ),
       normalized_shape_(normalized_shape), elementwise_affine_(true), bias_(false), y_layout_(y_layout),
       mean_layout_(mean_layout), rstd_layout_(rstd_layout), x_layout_(x_layout), gamma_layout_(gamma_layout),
-      beta_layout_(std::nullopt), fixed_quantization_(quantization) {}
+      beta_layout_(std::nullopt), fixed_quantization_(quantization) {
+}
 
 LayerNormNode::LayerNormNode(
     size_t element_id,
@@ -158,9 +160,12 @@ LayerNormNode::LayerNormNode(
       ),
       normalized_shape_(normalized_shape), elementwise_affine_(true), bias_(true), y_layout_(y_layout),
       mean_layout_(mean_layout), rstd_layout_(rstd_layout), x_layout_(x_layout), gamma_layout_(gamma_layout),
-      beta_layout_(beta_layout), fixed_quantization_(quantization) {}
+      beta_layout_(beta_layout), fixed_quantization_(quantization) {
+}
 
-const symbolic::MultiExpression& LayerNormNode::normalized_shape() const { return this->normalized_shape_; }
+const symbolic::MultiExpression& LayerNormNode::normalized_shape() const {
+    return this->normalized_shape_;
+}
 
 symbolic::MultiExpression LayerNormNode::non_normalized_shape() const {
     long long dims = this->x_layout_.dims() - this->normalized_shape_.size();
@@ -172,25 +177,45 @@ symbolic::MultiExpression LayerNormNode::non_normalized_shape() const {
     return result;
 }
 
-bool LayerNormNode::elementwise_affine() const { return this->elementwise_affine_; }
+bool LayerNormNode::elementwise_affine() const {
+    return this->elementwise_affine_;
+}
 
-bool LayerNormNode::bias() const { return this->bias_; }
+bool LayerNormNode::bias() const {
+    return this->bias_;
+}
 
-const TensorLayout& LayerNormNode::y_layout() const { return this->y_layout_; }
+const TensorLayout& LayerNormNode::y_layout() const {
+    return this->y_layout_;
+}
 
-const TensorLayout& LayerNormNode::mean_layout() const { return this->mean_layout_; }
+const TensorLayout& LayerNormNode::mean_layout() const {
+    return this->mean_layout_;
+}
 
-const TensorLayout& LayerNormNode::rstd_layout() const { return this->rstd_layout_; }
+const TensorLayout& LayerNormNode::rstd_layout() const {
+    return this->rstd_layout_;
+}
 
-const TensorLayout& LayerNormNode::x_layout() const { return this->x_layout_; }
+const TensorLayout& LayerNormNode::x_layout() const {
+    return this->x_layout_;
+}
 
-const std::optional<TensorLayout>& LayerNormNode::gamma_layout() const { return this->gamma_layout_; }
+const std::optional<TensorLayout>& LayerNormNode::gamma_layout() const {
+    return this->gamma_layout_;
+}
 
-const std::optional<TensorLayout>& LayerNormNode::beta_layout() const { return this->beta_layout_; }
+const std::optional<TensorLayout>& LayerNormNode::beta_layout() const {
+    return this->beta_layout_;
+}
 
-QuantizationType LayerNormNode::quantization() const { return this->fixed_quantization_; }
+QuantizationType LayerNormNode::quantization() const {
+    return this->fixed_quantization_;
+}
 
-void LayerNormNode::set_quantization(const QuantizationType quant) { this->fixed_quantization_ = quant; }
+void LayerNormNode::set_quantization(const QuantizationType quant) {
+    this->fixed_quantization_ = quant;
+}
 
 void LayerNormNode::validate(const Function& function) const {
     auto& graph = this->get_parent();
@@ -365,7 +390,9 @@ void LayerNormNode::validate(const Function& function) const {
     }
 }
 
-bool LayerNormNode::supports_integer_types() const { return false; }
+bool LayerNormNode::supports_integer_types() const {
+    return false;
+}
 
 using Dir = passes::LibNodeExpander::InputUse;
 

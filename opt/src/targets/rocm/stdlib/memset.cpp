@@ -9,7 +9,8 @@ MemsetNodeDispatcher_ROCMWithTransfers::MemsetNodeDispatcher_ROCMWithTransfers(
     const data_flow::DataFlowGraph& data_flow_graph,
     const sdfg::stdlib::MemsetNode& node
 )
-    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
+}
 
 void MemsetNodeDispatcher_ROCMWithTransfers::dispatch_code(
     codegen::PrettyPrinter& stream,
@@ -46,7 +47,8 @@ MemsetNodeDispatcher_ROCMWithoutTransfers::MemsetNodeDispatcher_ROCMWithoutTrans
     const data_flow::DataFlowGraph& data_flow_graph,
     const sdfg::stdlib::MemsetNode& node
 )
-    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
+}
 
 void MemsetNodeDispatcher_ROCMWithoutTransfers::dispatch_code_with_edges(
     codegen::CodegenOutput& out,

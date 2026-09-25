@@ -68,7 +68,9 @@ void LiftingReport::add_failed_lift(const sdfg::DebugInfo& dbg_info, const std::
     instance.add_failed_lift_internal(dbg_info, reason, element);
 }
 
-void LiftingReport::dump_report(std::filesystem::path report_path) { instance.dump_report_internal(report_path); }
+void LiftingReport::dump_report(std::filesystem::path report_path) {
+    instance.dump_report_internal(report_path);
+}
 
 } // namespace lifting
 } // namespace docc

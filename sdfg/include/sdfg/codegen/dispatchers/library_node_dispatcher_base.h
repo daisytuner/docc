@@ -13,7 +13,8 @@ public:
         const data_flow::DataFlowGraph& data_flow_graph,
         const NodeType& node
     )
-        : LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+        : LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
+    }
 
     virtual ~LibraryNodeDispatcherBase() = default;
 

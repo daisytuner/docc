@@ -58,17 +58,33 @@ public:
         symbolic::Expression coop_threads = {}
     );
 
-    const TiledCopy& plan() const { return plan_; }
-    void set_plan(TiledCopy plan) { plan_ = std::move(plan); }
+    const TiledCopy& plan() const {
+        return plan_;
+    }
+    void set_plan(TiledCopy plan) {
+        plan_ = std::move(plan);
+    }
 
-    CopyDirection direction() const { return direction_; }
-    CopyAtom atom() const { return plan_.atom; }
-    void set_atom(CopyAtom atom) { plan_.atom = atom; }
+    CopyDirection direction() const {
+        return direction_;
+    }
+    CopyAtom atom() const {
+        return plan_.atom;
+    }
+    void set_atom(CopyAtom atom) {
+        plan_.atom = atom;
+    }
 
-    size_t bytes() const { return bytes_; }
-    void set_bytes(size_t bytes) { bytes_ = bytes; }
+    size_t bytes() const {
+        return bytes_;
+    }
+    void set_bytes(size_t bytes) {
+        bytes_ = bytes;
+    }
 
-    const TileGuard& guard() const { return guard_; }
+    const TileGuard& guard() const {
+        return guard_;
+    }
 
     /// Re-discharge the boundary guard against @p assumptions (dims proven fully
     /// covering are dropped), so a fullness proof from a later pass — loop peeling,
@@ -78,10 +94,14 @@ public:
         return guard_.discharge(parameters, assumptions);
     }
 
-    const std::vector<int>& coop_axes() const { return coop_axes_; }
+    const std::vector<int>& coop_axes() const {
+        return coop_axes_;
+    }
 
     /// Symbolic cooperating thread count (null = unknown; runtime loop).
-    const symbolic::Expression& coop_threads() const { return coop_threads_; }
+    const symbolic::Expression& coop_threads() const {
+        return coop_threads_;
+    }
 
 
     void validate(const Function& function) const override;

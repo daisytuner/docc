@@ -21,11 +21,16 @@ PipelineCommitNode::PipelineCommitNode(
 )
     : data_flow::LibraryNode(
           element_id, debug_info, vertex, parent, LibraryNodeType_PipelineCommit, {}, {}, true, implementation_type
-      ) {}
+      ) {
+}
 
-void PipelineCommitNode::validate(const Function& function) const { data_flow::LibraryNode::validate(function); }
+void PipelineCommitNode::validate(const Function& function) const {
+    data_flow::LibraryNode::validate(function);
+}
 
-symbolic::SymbolSet PipelineCommitNode::symbols() const { return {}; }
+symbolic::SymbolSet PipelineCommitNode::symbols() const {
+    return {};
+}
 
 std::unique_ptr<data_flow::DataFlowNode> PipelineCommitNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
@@ -33,9 +38,11 @@ std::unique_ptr<data_flow::DataFlowNode> PipelineCommitNode::
         new PipelineCommitNode(element_id, this->debug_info_, vertex, parent, this->implementation_type_)
     );
 }
-void PipelineCommitNode::replace(const symbolic::Expression, const symbolic::Expression) {}
+void PipelineCommitNode::replace(const symbolic::Expression, const symbolic::Expression) {
+}
 
-void PipelineCommitNode::replace(const symbolic::ExpressionMapping&) {}
+void PipelineCommitNode::replace(const symbolic::ExpressionMapping&) {
+}
 
 // ============================== PipelineWaitNode =============================
 
@@ -51,11 +58,16 @@ PipelineWaitNode::PipelineWaitNode(
     : data_flow::LibraryNode(
           element_id, debug_info, vertex, parent, LibraryNodeType_PipelineWait, {}, {}, true, implementation_type
       ),
-      keep_outstanding_(keep_outstanding), loads_per_group_(loads_per_group) {}
+      keep_outstanding_(keep_outstanding), loads_per_group_(loads_per_group) {
+}
 
-void PipelineWaitNode::validate(const Function& function) const { data_flow::LibraryNode::validate(function); }
+void PipelineWaitNode::validate(const Function& function) const {
+    data_flow::LibraryNode::validate(function);
+}
 
-symbolic::SymbolSet PipelineWaitNode::symbols() const { return {}; }
+symbolic::SymbolSet PipelineWaitNode::symbols() const {
+    return {};
+}
 
 std::unique_ptr<data_flow::DataFlowNode> PipelineWaitNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
@@ -63,9 +75,11 @@ std::unique_ptr<data_flow::DataFlowNode> PipelineWaitNode::
         element_id, this->debug_info_, vertex, parent, this->implementation_type_, keep_outstanding_, loads_per_group_
     ));
 }
-void PipelineWaitNode::replace(const symbolic::Expression, const symbolic::Expression) {}
+void PipelineWaitNode::replace(const symbolic::Expression, const symbolic::Expression) {
+}
 
-void PipelineWaitNode::replace(const symbolic::ExpressionMapping&) {}
+void PipelineWaitNode::replace(const symbolic::ExpressionMapping&) {
+}
 
 // ============================== Serializers ==================================
 

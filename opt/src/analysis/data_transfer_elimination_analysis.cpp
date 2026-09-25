@@ -18,9 +18,12 @@ void OffloadHolder::remove_d2h_parts() {
     updates_on_host = false;
 }
 
-OffloadState::OffloadState(DataTransferEliminationCandidateCollector& collector) : collector_(collector) {}
+OffloadState::OffloadState(DataTransferEliminationCandidateCollector& collector) : collector_(collector) {
+}
 
-void OffloadState::found_escape(const std::string& container) { kills_containers_.insert(container); }
+void OffloadState::found_escape(const std::string& container) {
+    kills_containers_.insert(container);
+}
 
 void OffloadState::found_ptr_write(const std::string& container, const data_flow::Memlet* memlet) {
     kills_containers_.insert(container);

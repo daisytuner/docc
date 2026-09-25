@@ -6,7 +6,8 @@ namespace sdfg {
 namespace passes {
 
 TilingPass::TilingPass(std::vector<structured_control_flow::StructuredLoop*>& loops, size_t tile_size)
-    : loops_(loops), tile_size_(tile_size) {}
+    : loops_(loops), tile_size_(tile_size) {
+}
 
 bool TilingPass::run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     if (loops_.empty() || tile_size_ <= 1) {

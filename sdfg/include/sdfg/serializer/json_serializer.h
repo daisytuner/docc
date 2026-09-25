@@ -37,7 +37,8 @@ private:
     );
 
 public:
-    JSONSerializer(bool recurse = true) : recurse_(recurse) {}
+    JSONSerializer(bool recurse = true) : recurse_(recurse) {
+    }
 
     bool skip_empty_transitions = false;
 

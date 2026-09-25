@@ -22,7 +22,8 @@ namespace tiles {
 using structured_control_flow::ControlFlowNode;
 using structured_control_flow::StructuredLoop;
 
-TileAnalysis::TileAnalysis(StructuredSDFG& sdfg) : analysis::Analysis(sdfg) {}
+TileAnalysis::TileAnalysis(StructuredSDFG& sdfg) : analysis::Analysis(sdfg) {
+}
 
 namespace {
 
@@ -35,16 +36,24 @@ struct ContainerAccessPolicy {
     bool aliased = false; ///< escaped, overwritten, or captured
 
     void on_escape(const std::string& c, const structured_control_flow::ControlFlowNode*, const Element*) {
-        if (c == container) aliased = true;
+        if (c == container) {
+            aliased = true;
+        }
     }
     void on_overwrite(const std::string& c, const structured_control_flow::ControlFlowNode*, const Element*) {
-        if (c == container) aliased = true;
+        if (c == container) {
+            aliased = true;
+        }
     }
     void on_read_via(const std::string& c, const structured_control_flow::ControlFlowNode*, const data_flow::Memlet*) {
-        if (c == container) reads = true;
+        if (c == container) {
+            reads = true;
+        }
     }
     void on_write_via(const std::string& c, const structured_control_flow::ControlFlowNode*, const data_flow::Memlet*) {
-        if (c == container) writes = true;
+        if (c == container) {
+            writes = true;
+        }
     }
 };
 
@@ -71,7 +80,8 @@ public:
     ContainerAccessVisitor(const StructuredSDFG& sdfg, ContainerAccessPolicy& policy)
         : analysis::PointerEscapeAnalyzer<ContainerAccessPolicy>(sdfg, policy),
           analysis::PointerOverwriteAnalyzer<ContainerAccessPolicy>(sdfg, policy),
-          analysis::PointerUsedAnalyzer<ContainerAccessPolicy>(sdfg, policy), policy_(policy) {}
+          analysis::PointerUsedAnalyzer<ContainerAccessPolicy>(sdfg, policy), policy_(policy) {
+    }
 
     void use_as_src_node(
         const std::string& c,
@@ -81,7 +91,9 @@ public:
     ) override {
         analysis::PointerEscapeAnalyzer<ContainerAccessPolicy>::use_as_src_node(c, n, e, b);
         analysis::PointerUsedAnalyzer<ContainerAccessPolicy>::use_as_src_node(c, n, e, b);
-        if (c == policy_.container) capture_check(e, e.dst());
+        if (c == policy_.container) {
+            capture_check(e, e.dst());
+        }
     }
     void use_as_dst_node(
         const std::string& c,
@@ -91,7 +103,9 @@ public:
     ) override {
         analysis::PointerOverwriteAnalyzer<ContainerAccessPolicy>::use_as_dst_node(c, n, e, b);
         analysis::PointerUsedAnalyzer<ContainerAccessPolicy>::use_as_dst_node(c, n, e, b);
-        if (c == policy_.container) capture_check(e, e.src());
+        if (c == policy_.container) {
+            capture_check(e, e.src());
+        }
     }
     void use_as_return_src(const std::string& c, const structured_control_flow::Return& r) override {
         analysis::PointerEscapeAnalyzer<ContainerAccessPolicy>::use_as_return_src(c, r);

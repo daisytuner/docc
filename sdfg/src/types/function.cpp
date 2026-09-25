@@ -11,21 +11,37 @@ Function::Function(
 )
     : IType(storage_type, alignment, initializer), return_type_(return_type.clone()), is_var_arg_(is_var_arg) {};
 
-PrimitiveType Function::primitive_type() const { return PrimitiveType::Void; }
+PrimitiveType Function::primitive_type() const {
+    return PrimitiveType::Void;
+}
 
-bool Function::is_symbol() const { return false; }
+bool Function::is_symbol() const {
+    return false;
+}
 
-size_t Function::num_params() const { return this->params_.size(); }
+size_t Function::num_params() const {
+    return this->params_.size();
+}
 
-const IType& Function::param_type(symbolic::Integer index) const { return *this->params_[index->as_int()]; }
+const IType& Function::param_type(symbolic::Integer index) const {
+    return *this->params_[index->as_int()];
+}
 
-void Function::add_param(const IType& param) { this->params_.push_back(param.clone()); }
+void Function::add_param(const IType& param) {
+    this->params_.push_back(param.clone());
+}
 
-const IType& Function::return_type() const { return *this->return_type_; }
+const IType& Function::return_type() const {
+    return *this->return_type_;
+}
 
-TypeID Function::type_id() const { return TypeID::Function; };
+TypeID Function::type_id() const {
+    return TypeID::Function;
+};
 
-bool Function::is_var_arg() const { return this->is_var_arg_; }
+bool Function::is_var_arg() const {
+    return this->is_var_arg_;
+}
 
 bool Function::operator==(const IType& other) const {
     auto other_function = dynamic_cast<const Function*>(&other);

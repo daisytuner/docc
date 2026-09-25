@@ -48,9 +48,13 @@ public:
     While(const While& node) = delete;
     While& operator=(const While&) = delete;
 
-    ElementType type_id() const override { return ElementType::While; }
+    ElementType type_id() const override {
+        return ElementType::While;
+    }
 
-    static bool classof(const Element& element) { return element.type_id() == ElementType::While; }
+    static bool classof(const Element& element) {
+        return element.type_id() == ElementType::While;
+    }
 
     bool accept(visitor::ActualStructuredSDFGVisitor& visitor) override;
 
@@ -95,9 +99,13 @@ private:
     static constexpr size_t REQUIRED_ELEMENT_IDS = 1;
 
 public:
-    ElementType type_id() const override { return ElementType::Break; }
+    ElementType type_id() const override {
+        return ElementType::Break;
+    }
 
-    static bool classof(const Element& element) { return element.type_id() == ElementType::Break; }
+    static bool classof(const Element& element) {
+        return element.type_id() == ElementType::Break;
+    }
 
     bool accept(visitor::ActualStructuredSDFGVisitor& visitor) override;
 
@@ -126,9 +134,13 @@ private:
     static constexpr size_t REQUIRED_ELEMENT_IDS = 1;
 
 public:
-    ElementType type_id() const override { return ElementType::Continue; }
+    ElementType type_id() const override {
+        return ElementType::Continue;
+    }
 
-    static bool classof(const Element& element) { return element.type_id() == ElementType::Continue; }
+    static bool classof(const Element& element) {
+        return element.type_id() == ElementType::Continue;
+    }
 
     bool accept(visitor::ActualStructuredSDFGVisitor& visitor) override;
 

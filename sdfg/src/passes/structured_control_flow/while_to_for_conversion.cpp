@@ -216,7 +216,9 @@ WhileToForConversion::WhileToForConversion()
 
       };
 
-std::string WhileToForConversion::name() { return "WhileToForConversion"; };
+std::string WhileToForConversion::name() {
+    return "WhileToForConversion";
+};
 
 bool WhileToForConversion::run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     bool applied = false;

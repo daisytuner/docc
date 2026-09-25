@@ -565,12 +565,16 @@ void register_transformations(py::module& m) {
         .def("save", &Recorder::save, py::arg("path"), "Save the recorded transformation history to a file")
         .def(
             "get_history",
-            [](const Recorder& self) { return self.get_history().dump(); },
+            [](const Recorder& self) {
+                return self.get_history().dump();
+            },
             "Get the transformation history as a JSON string"
         )
         .def_property_readonly(
             "history",
-            [](const Recorder& self) { return self.get_history().dump(); },
+            [](const Recorder& self) {
+                return self.get_history().dump();
+            },
             "Get the transformation history as a JSON string"
         )
         .def("__repr__", [](const Recorder& self) {

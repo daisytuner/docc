@@ -14,7 +14,9 @@ namespace analysis {
 
 class AssumptionsAnalysis : public Analysis {
 public:
-    std::string name() const override { return "AssumptionsAnalysis"; }
+    std::string name() const override {
+        return "AssumptionsAnalysis";
+    }
 
 private:
     // Data structures to hold assumptions

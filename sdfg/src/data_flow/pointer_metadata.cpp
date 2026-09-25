@@ -31,9 +31,13 @@ MemoryAccessPatternType NoAccessPattern::instance() {
     return instance->ref();
 }
 
-void NoAccessPattern::serialize_to_json(nlohmann::json& entry) { entry["type"] = "NoAccessPattern"; }
+void NoAccessPattern::serialize_to_json(nlohmann::json& entry) {
+    entry["type"] = "NoAccessPattern";
+}
 
-MemoryAccessPatternType NoAccessPattern::clone() const { return this->ref(); }
+MemoryAccessPatternType NoAccessPattern::clone() const {
+    return this->ref();
+}
 
 PointerAccessType PointerAccessMeta::ref() const {
     return std::unique_ptr<
@@ -62,7 +66,8 @@ PointerAccessType PointerAccessMeta::
         PtrAccessDeleter>(new PointerGenericAccess(std::move(read_pattern), std::move(write_pattern), no_capture));
 }
 
-PointerReadOnly::PointerReadOnly(symbolic::Expression size, bool no_capture) : size_(size), no_capture_(no_capture) {}
+PointerReadOnly::PointerReadOnly(symbolic::Expression size, bool no_capture) : size_(size), no_capture_(no_capture) {
+}
 
 MemoryAccessPatternType PointerReadOnly::access_read_pattern() const {
     if (size_.is_null()) {
@@ -72,7 +77,9 @@ MemoryAccessPatternType PointerReadOnly::access_read_pattern() const {
     }
 }
 
-MemoryAccessPatternType PointerReadOnly::access_write_pattern() const { return NoAccessPattern::instance(); }
+MemoryAccessPatternType PointerReadOnly::access_write_pattern() const {
+    return NoAccessPattern::instance();
+}
 
 void PointerReadOnly::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
     size_ = symbolic::subs(size_, old_expression, new_expression);
@@ -82,7 +89,9 @@ void PointerReadOnly::replace(const symbolic::ExpressionMapping& replacements) {
     size_ = SymEngine::subs(size_, replacements);
 }
 
-PointerAccessType PointerReadOnly::clone() const { return PointerAccessType(new PointerReadOnly(size_, no_capture_)); }
+PointerAccessType PointerReadOnly::clone() const {
+    return PointerAccessType(new PointerReadOnly(size_, no_capture_));
+}
 
 void PointerReadOnly::serialize_to_json(nlohmann::json& entry) {
     serializer::JSONSerializer serializer;
@@ -92,7 +101,8 @@ void PointerReadOnly::serialize_to_json(nlohmann::json& entry) {
 }
 
 PointerFullWriteOnly::PointerFullWriteOnly(symbolic::Expression size, bool no_capture)
-    : size_(size), no_capture_(no_capture) {}
+    : size_(size), no_capture_(no_capture) {
+}
 
 MemoryAccessPatternType PointerFullWriteOnly::access_write_pattern() const {
     if (size_.is_null()) {
@@ -102,7 +112,9 @@ MemoryAccessPatternType PointerFullWriteOnly::access_write_pattern() const {
     }
 }
 
-MemoryAccessPatternType PointerFullWriteOnly::access_read_pattern() const { return NoAccessPattern::instance(); }
+MemoryAccessPatternType PointerFullWriteOnly::access_read_pattern() const {
+    return NoAccessPattern::instance();
+}
 
 void PointerFullWriteOnly::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
     size_ = symbolic::subs(size_, old_expression, new_expression);
@@ -125,7 +137,8 @@ void PointerFullWriteOnly::serialize_to_json(nlohmann::json& entry) {
 
 PointerGenericAccess::
     PointerGenericAccess(MemoryAccessPatternType read_pattern, MemoryAccessPatternType write_pattern, bool no_capture)
-    : read_pattern_(std::move(read_pattern)), write_pattern_(std::move(write_pattern)), no_capture_(no_capture) {}
+    : read_pattern_(std::move(read_pattern)), write_pattern_(std::move(write_pattern)), no_capture_(no_capture) {
+}
 
 MemoryAccessPatternType PointerGenericAccess::access_read_pattern() const {
     return read_pattern_ ? read_pattern_->ref() : nullptr;
@@ -135,9 +148,13 @@ MemoryAccessPatternType PointerGenericAccess::access_write_pattern() const {
     return write_pattern_ ? write_pattern_->ref() : nullptr;
 }
 
-bool PointerGenericAccess::may_contain_reads() const { return !read_pattern_ || !read_pattern_->empty(); }
+bool PointerGenericAccess::may_contain_reads() const {
+    return !read_pattern_ || !read_pattern_->empty();
+}
 
-bool PointerGenericAccess::may_contain_writes() const { return !write_pattern_ || !write_pattern_->empty(); }
+bool PointerGenericAccess::may_contain_writes() const {
+    return !write_pattern_ || !write_pattern_->empty();
+}
 
 void PointerGenericAccess::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
     if (read_pattern_) {
@@ -174,9 +191,13 @@ void PointerGenericAccess::serialize_to_json(nlohmann::json& entry) {
     entry["no_capture"] = no_capture_;
 }
 
-PointerAccessType PointerInvalidate::clone() const { return PointerAccessType(new PointerInvalidate()); }
+PointerAccessType PointerInvalidate::clone() const {
+    return PointerAccessType(new PointerInvalidate());
+}
 
-void PointerInvalidate::serialize_to_json(nlohmann::json& entry) { entry["type"] = "PointerInvalidate"; }
+void PointerInvalidate::serialize_to_json(nlohmann::json& entry) {
+    entry["type"] = "PointerInvalidate";
+}
 
 PointerAccessType PointerAccessMetaSerializer::deserialize(const nlohmann::json& entry) {
     if (entry.is_null()) {

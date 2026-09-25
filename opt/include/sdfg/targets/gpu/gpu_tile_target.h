@@ -42,7 +42,8 @@ class GPUTileTarget : public TileTarget {
 public:
     GPUTileTarget(unsigned lane_width, std::string offload_value, data_flow::ImplementationType implementation_type)
         : lane_width_(lane_width), offload_value_(std::move(offload_value)),
-          implementation_type_(std::move(implementation_type)) {}
+          implementation_type_(std::move(implementation_type)) {
+    }
 
     std::optional<AxisSchedule> classify(const structured_control_flow::ScheduleType& sched) const override {
         if (sched.value() == offload_value_) {
@@ -96,9 +97,13 @@ public:
         return types::StorageType::CPU_Stack();
     }
 
-    unsigned lane_width() const override { return lane_width_; }
+    unsigned lane_width() const override {
+        return lane_width_;
+    }
 
-    data_flow::ImplementationType implementation_type() const override { return implementation_type_; }
+    data_flow::ImplementationType implementation_type() const override {
+        return implementation_type_;
+    }
 };
 
 } // namespace tiles

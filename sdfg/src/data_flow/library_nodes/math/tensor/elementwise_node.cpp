@@ -32,7 +32,8 @@ ElementWiseDataflowTensorNode::ElementWiseDataflowTensorNode(
           build_input_conns(modified_tensor_conn, tensor_inputs),
           impl_type
       ),
-      fixed_quantization_(quantization), shape_(shape) {}
+      fixed_quantization_(quantization), shape_(shape) {
+}
 
 std::vector<std::string> ElementWiseDataflowTensorNode::
     build_input_conns(const std::string& modified_tensor_conn, const std::vector<std::string>& tensor_inputs) {
@@ -43,7 +44,9 @@ std::vector<std::string> ElementWiseDataflowTensorNode::
     return input_conns;
 }
 
-types::PrimitiveType ElementWiseDataflowTensorNode::fixed_quantization() const { return fixed_quantization_; }
+types::PrimitiveType ElementWiseDataflowTensorNode::fixed_quantization() const {
+    return fixed_quantization_;
+}
 
 void ElementWiseDataflowTensorNode::set_fixed_quantization(const QuantizationType quant) {
     fixed_quantization_ = quant;

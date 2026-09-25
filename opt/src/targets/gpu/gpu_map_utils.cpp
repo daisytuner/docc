@@ -203,7 +203,9 @@ bool nested_parallelization_is_unsafe(
     // living outside, per ArgumentsAnalysis) is a hazard. Loop induction variables
     // are locals by definition, so this subsumes loop-control bookkeeping.
     const auto& locals = arguments_analysis.locals(analysis_manager, *outermost);
-    auto is_local = [&locals](const std::string& container) { return locals.count(container) != 0; };
+    auto is_local = [&locals](const std::string& container) {
+        return locals.count(container) != 0;
+    };
 
     // Collect the container reads and writes of a subtree. Views alias memory and
     // are treated conservatively as both a read and a write.
@@ -326,7 +328,9 @@ NestedFoldPlan analyze_nested_fold(
     auto& users = analysis_manager.get<analysis::Users>();
     auto& arguments_analysis = analysis_manager.get<analysis::ArgumentsAnalysis>();
     const auto& locals = arguments_analysis.locals(analysis_manager, *outermost);
-    auto is_local = [&locals](const std::string& container) { return locals.count(container) != 0; };
+    auto is_local = [&locals](const std::string& container) {
+        return locals.count(container) != 0;
+    };
 
     auto collect = [&](structured_control_flow::ControlFlowNode& node,
                        std::unordered_set<std::string>& writes,
@@ -510,7 +514,9 @@ bool is_block_level(TargetLevel target_level) {
            target_level == TargetLevel::Z_BLOCK;
 }
 
-bool is_warp_level(TargetLevel target_level) { return target_level == TargetLevel::WARP; }
+bool is_warp_level(TargetLevel target_level) {
+    return target_level == TargetLevel::WARP;
+}
 
 size_t perfectly_nested_depth(structured_control_flow::StructuredLoop* loop) {
     size_t depth = 0;

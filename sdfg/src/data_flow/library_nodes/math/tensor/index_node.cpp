@@ -55,11 +55,16 @@ IndexNode::IndexNode(
     const data_flow::ImplementationType& impl_type
 )
     : TensorNode(element_id, debug_info, vertex, parent, LibraryNodeType_Index, {}, make_index_inputs(indices), impl_type),
-      indices_(indices), y_layout_(y_layout), x_layout_(x_layout), index_layouts_(index_layouts) {}
+      indices_(indices), y_layout_(y_layout), x_layout_(x_layout), index_layouts_(index_layouts) {
+}
 
-long long IndexNode::num_indices() const { return this->indices_.size(); }
+long long IndexNode::num_indices() const {
+    return this->indices_.size();
+}
 
-const std::vector<long long>& IndexNode::indices() const { return this->indices_; }
+const std::vector<long long>& IndexNode::indices() const {
+    return this->indices_;
+}
 
 bool IndexNode::contiguous_indices() const {
     long long num_indices = this->num_indices();
@@ -71,11 +76,17 @@ bool IndexNode::contiguous_indices() const {
     return true;
 }
 
-const TensorLayout& IndexNode::y_layout() const { return this->y_layout_; }
+const TensorLayout& IndexNode::y_layout() const {
+    return this->y_layout_;
+}
 
-const TensorLayout& IndexNode::x_layout() const { return this->x_layout_; }
+const TensorLayout& IndexNode::x_layout() const {
+    return this->x_layout_;
+}
 
-const std::vector<TensorLayout>& IndexNode::index_layouts() const { return this->index_layouts_; }
+const std::vector<TensorLayout>& IndexNode::index_layouts() const {
+    return this->index_layouts_;
+}
 
 symbolic::MultiExpression IndexNode::common_indices_shape() const {
     long long num_indices = this->num_indices();
@@ -289,7 +300,9 @@ void IndexNode::validate(const Function& function) const {
     this->validate_shape_matches(dummy_shape, this->y_layout_, "IndexNode");
 }
 
-bool IndexNode::supports_integer_types() const { return true; }
+bool IndexNode::supports_integer_types() const {
+    return true;
+}
 
 using Dir = passes::LibNodeExpander::InputUse;
 
@@ -463,7 +476,9 @@ symbolic::SymbolSet IndexNode::symbols() const {
     return syms;
 }
 
-symbolic::Expression IndexNode::flop() const { return symbolic::zero(); }
+symbolic::Expression IndexNode::flop() const {
+    return symbolic::zero();
+}
 
 data_flow::PointerAccessType IndexNode::pointer_access_type(int input_idx) const {
     if (input_idx == Y_INPUT_IDX) {

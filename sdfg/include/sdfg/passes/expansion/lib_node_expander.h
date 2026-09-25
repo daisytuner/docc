@@ -11,7 +11,8 @@ public:
 
     struct ExpandOutcome {
         bool applied;
-        explicit ExpandOutcome(bool applied) : applied(applied) {}
+        explicit ExpandOutcome(bool applied) : applied(applied) {
+        }
     };
     virtual ~LibNodeExpander() = default;
 
@@ -24,7 +25,9 @@ public:
      * @param node
      * @return nullptr if not applicable
      */
-    virtual const LibNodeExpander* for_lib_node(const data_flow::LibraryNode& node) const { return this; }
+    virtual const LibNodeExpander* for_lib_node(const data_flow::LibraryNode& node) const {
+        return this;
+    }
 
     class AccessNodeExpand {
     public:
@@ -176,7 +179,8 @@ class CodeLibNodeExpander : public TypedLibNodeExpander<T> {
     const data_flow::LibraryNodeCode code_;
 
 public:
-    CodeLibNodeExpander(const data_flow::LibraryNodeCode& code) : code_(code) {}
+    CodeLibNodeExpander(const data_flow::LibraryNodeCode& code) : code_(code) {
+    }
 
     const LibNodeExpander* for_lib_node(const data_flow::LibraryNode& node) const override {
         if (node.code() == code_) {

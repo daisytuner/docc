@@ -103,7 +103,9 @@ std::vector<tiles::ReductionLoopDomain> projected_tile_domains(
 LoopTiling::LoopTiling(structured_control_flow::StructuredLoop& loop, size_t tile_size, bool simplify_bounds)
     : loop_(loop), tile_size_(tile_size), simplify_bounds_(simplify_bounds) {};
 
-std::string LoopTiling::name() const { return "LoopTiling"; };
+std::string LoopTiling::name() const {
+    return "LoopTiling";
+};
 
 bool LoopTiling::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     if (this->tile_size_ <= 1) {

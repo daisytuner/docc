@@ -113,7 +113,9 @@ extract_strict_upper_bound(const symbolic::Condition& condition, const symbolic:
         symbolic::Expression result = SymEngine::null;
         for (auto& arg : conj->get_container()) {
             auto bound = extract_strict_upper_bound(SymEngine::rcp_dynamic_cast<const SymEngine::Boolean>(arg), indvar);
-            if (bound == SymEngine::null) return SymEngine::null;
+            if (bound == SymEngine::null) {
+                return SymEngine::null;
+            }
             if (result == SymEngine::null) {
                 result = bound;
             } else {
@@ -132,19 +134,29 @@ extract_strict_upper_bound(const symbolic::Condition& condition, const symbolic:
 struct AffineDecomp {
     symbolic::Expression coefficient = SymEngine::null;
     symbolic::Expression constant = SymEngine::null;
-    explicit operator bool() const { return coefficient != SymEngine::null; }
+    explicit operator bool() const {
+        return coefficient != SymEngine::null;
+    }
 };
 
 static AffineDecomp check_affine(const symbolic::Expression& expr, const symbolic::Symbol& sym) {
     symbolic::SymbolVec syms = {sym};
     auto poly = symbolic::polynomial(expr, syms);
-    if (poly == SymEngine::null) return {};
+    if (poly == SymEngine::null) {
+        return {};
+    }
     auto coeffs = symbolic::affine_coefficients(poly);
-    if (coeffs.empty()) return {};
+    if (coeffs.empty()) {
+        return {};
+    }
     auto coeff = coeffs[sym];
     // Coefficient must be a positive integer
-    if (!SymEngine::is_a<SymEngine::Integer>(*coeff)) return {};
-    if (SymEngine::down_cast<const SymEngine::Integer&>(*coeff).as_int() <= 0) return {};
+    if (!SymEngine::is_a<SymEngine::Integer>(*coeff)) {
+        return {};
+    }
+    if (SymEngine::down_cast<const SymEngine::Integer&>(*coeff).as_int() <= 0) {
+        return {};
+    }
     return {coeff, coeffs[symbolic::symbol("__daisy_constant__")]};
 }
 
@@ -155,7 +167,9 @@ LoopInterchange::LoopInterchange(
 
       };
 
-std::string LoopInterchange::name() const { return "LoopInterchange"; };
+std::string LoopInterchange::name() const {
+    return "LoopInterchange";
+};
 
 // Build the loop headers shared by footprint preview and apply without mutating the graph.
 tiles::ReductionInterchangeProposal LoopInterchange::proposal() const {
@@ -328,8 +342,12 @@ bool LoopInterchange::can_be_applied(builder::StructuredSDFGBuilder& builder, an
             // Multi-dimensional delta set (>2): check if outer/inner indvars are involved
             bool has_outer = false, has_inner = false;
             for (auto& dim : deltas.dimensions) {
-                if (dim == outer_indvar_name) has_outer = true;
-                if (dim == inner_indvar_name) has_inner = true;
+                if (dim == outer_indvar_name) {
+                    has_outer = true;
+                }
+                if (dim == inner_indvar_name) {
+                    has_inner = true;
+                }
             }
             if (!has_outer && !has_inner) {
                 // Dependency is entirely on nested loop variables — safe for interchange

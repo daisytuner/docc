@@ -26,7 +26,8 @@ private:
     sdfg::transformations::Replayer replayer_;
 
 public:
-    PyReplayer() : replayer_() {}
+    PyReplayer() : replayer_() {
+    }
 
     void apply(PyStructuredSDFGBuilder& builder, PyAnalysisManager& analysis_manager, const std::string& desc) {
         nlohmann::json json_desc = nlohmann::json::parse(desc);
@@ -46,5 +47,7 @@ inline void register_replayer(py::module& m) {
             "Apply a transformation described by the given JSON description to the SDFG using the provided builder and "
             "analysis manager"
         )
-        .def("__repr__", [](const PyReplayer&) { return "<Replayer>"; });
+        .def("__repr__", [](const PyReplayer&) {
+            return "<Replayer>";
+        });
 }

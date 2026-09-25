@@ -70,7 +70,9 @@ void AtomicScalarOpNode::validate(const Function& function) const {
     verify_impl_exits();
 }
 
-symbolic::SymbolSet AtomicScalarOpNode::symbols() const { return {}; };
+symbolic::SymbolSet AtomicScalarOpNode::symbols() const {
+    return {};
+};
 
 std::unique_ptr<DataFlowNode> AtomicScalarOpNode::
     clone(size_t element_id, const graph::Vertex vertex, DataFlowGraph& parent) const {
@@ -257,7 +259,8 @@ AtomicScalarOpNodeDispatcher::AtomicScalarOpNodeDispatcher(
     const data_flow::DataFlowGraph& data_flow_graph,
     const AtomicScalarOpNode& node
 )
-    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
+}
 
 void AtomicScalarOpCPUNodeDispatcher::dispatch_code_with_edges(
     codegen::CodegenOutput& out,

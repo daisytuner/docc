@@ -103,7 +103,9 @@ public:
 
     LoopCarriedDependencyAnalysis(StructuredSDFG& sdfg, structured_control_flow::Sequence& node);
 
-    std::string name() const override { return "LoopCarriedDependencyAnalysis"; }
+    std::string name() const override {
+        return "LoopCarriedDependencyAnalysis";
+    }
 
     void run(analysis::AnalysisManager& analysis_manager) override;
 

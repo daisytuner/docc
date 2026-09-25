@@ -13,13 +13,20 @@
 namespace sdfg {
 namespace passes {
 
-Pipeline::Pipeline(const std::string& name) : Pass(), name_(name) {}
+Pipeline::Pipeline(const std::string& name) : Pass(), name_(name) {
+}
 
-void Pipeline::set_debug_logging(bool enable) { debug_logging_ = enable; }
+void Pipeline::set_debug_logging(bool enable) {
+    debug_logging_ = enable;
+}
 
-std::string Pipeline::name() { return this->name_; };
+std::string Pipeline::name() {
+    return this->name_;
+};
 
-size_t Pipeline::size() const { return this->passes_.size(); };
+size_t Pipeline::size() const {
+    return this->passes_.size();
+};
 
 bool Pipeline::run(builder::SDFGBuilder& builder) {
     CompileStatistics::enter_pipeline_if_enabled(name_);
@@ -67,13 +74,14 @@ bool Pipeline::run(builder::StructuredSDFGBuilder& builder, analysis::AnalysisMa
             uint32_t pass_iterations = 0;
             do {
                 if (debug_logging_) {
-                    if (output_dir.has_value())
+                    if (output_dir.has_value()) {
                         visualizer::DotVisualizer::writeToFile(
                             builder.subject(),
                             output_dir.value() /
                                 ("pipe_" + std::to_string(pass_iterations) + "_" + std::to_string(pass_idx) + "_" +
                                  pass->name() + "_" + std::to_string(pass_iterations) + ".sdfg.dot")
                         );
+                    }
                 }
                 applied_pass = pass->run(builder, analysis_manager);
                 applied_pipeline |= applied_pass;

@@ -78,24 +78,48 @@ std::string identity_literal(ReductionOperation op, types::PrimitiveType prim) {
     const bool is_unsigned = types::is_unsigned(prim);
     if (op == ReductionOperation::Min) {
         if (is_unsigned) {
-            if (width == 8) return "UINT8_MAX";
-            if (width == 16) return "UINT16_MAX";
-            if (width == 32) return "UINT32_MAX";
-            if (width == 64) return "UINT64_MAX";
+            if (width == 8) {
+                return "UINT8_MAX";
+            }
+            if (width == 16) {
+                return "UINT16_MAX";
+            }
+            if (width == 32) {
+                return "UINT32_MAX";
+            }
+            if (width == 64) {
+                return "UINT64_MAX";
+            }
         } else {
-            if (width == 8) return "INT8_MAX";
-            if (width == 16) return "INT16_MAX";
-            if (width == 32) return "INT32_MAX";
-            if (width == 64) return "INT64_MAX";
+            if (width == 8) {
+                return "INT8_MAX";
+            }
+            if (width == 16) {
+                return "INT16_MAX";
+            }
+            if (width == 32) {
+                return "INT32_MAX";
+            }
+            if (width == 64) {
+                return "INT64_MAX";
+            }
         }
     } else {
         if (is_unsigned) {
             return "0";
         }
-        if (width == 8) return "INT8_MIN";
-        if (width == 16) return "INT16_MIN";
-        if (width == 32) return "INT32_MIN";
-        if (width == 64) return "INT64_MIN";
+        if (width == 8) {
+            return "INT8_MIN";
+        }
+        if (width == 16) {
+            return "INT16_MIN";
+        }
+        if (width == 32) {
+            return "INT32_MIN";
+        }
+        if (width == 64) {
+            return "INT64_MIN";
+        }
     }
     throw InvalidSDFGException("GPUOffloadReduceDispatcher: unsupported integer width for min/max reduction");
 }
@@ -745,7 +769,9 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
         language_extension.expression(get_target_level_dim(TargetLevel::WARP, strategy_->get_warp_size()));
 
     for (const auto& r : node_.reductions()) {
-        if (strategy == ReduceStrategy::Shared && has_enclosing_block_reduction(r.container)) continue;
+        if (strategy == ReduceStrategy::Shared && has_enclosing_block_reduction(r.container)) {
+            continue;
+        }
         const auto& buffer = reduction_buffers_.at(r.container);
         auto prim = *buffer.primitive;
         std::string ctype = language_extension.primitive_type(prim);

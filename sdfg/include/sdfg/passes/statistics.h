@@ -102,9 +102,13 @@ public:
         }
     }
 
-    void enter_analysis(const std::string& name) { enter_scope(name, ANALYSIS_SCOPE); }
+    void enter_analysis(const std::string& name) {
+        enter_scope(name, ANALYSIS_SCOPE);
+    }
 
-    void exit_analysis() { exit_scope(); }
+    void exit_analysis() {
+        exit_scope();
+    }
 
     static void exit_analysis_if_enabled() {
         if (CompileStatistics::enabled_) {
@@ -120,7 +124,9 @@ public:
         }
     }
 
-    void enter_pass(const std::string& name) { enter_scope(name, PASS_SCOPE); }
+    void enter_pass(const std::string& name) {
+        enter_scope(name, PASS_SCOPE);
+    }
 
     static void exit_pass_if_enabled() {
         if (enabled_) {
@@ -129,7 +135,9 @@ public:
         }
     }
 
-    void exit_pass() { exit_scope(); }
+    void exit_pass() {
+        exit_scope();
+    }
 
     static void enter_pipeline_if_enabled(const std::string& name) {
         if (enabled_) {
@@ -138,7 +146,9 @@ public:
         }
     }
 
-    void enter_pipeline(const std::string& name) { enter_scope(name, PIPELINE_SCOPE); }
+    void enter_pipeline(const std::string& name) {
+        enter_scope(name, PIPELINE_SCOPE);
+    }
 
     static void exit_pipeline_if_enabled() {
         if (enabled_) {
@@ -147,7 +157,9 @@ public:
         }
     }
 
-    void exit_pipeline() { exit_scope(); }
+    void exit_pipeline() {
+        exit_scope();
+    }
 
     static void enter_stage_if_enabled(const std::string& name) {
         if (enabled_) {
@@ -156,7 +168,9 @@ public:
         }
     }
 
-    void enter_stage(const std::string& name) { enter_scope(name, STAGE_SCOPE); }
+    void enter_stage(const std::string& name) {
+        enter_scope(name, STAGE_SCOPE);
+    }
 
     static void exit_stage_if_enabled() {
         if (enabled_) {
@@ -165,7 +179,9 @@ public:
         }
     }
 
-    void exit_stage() { exit_scope(); }
+    void exit_stage() {
+        exit_scope();
+    }
 
     static void set_metric_if_enabled(const std::string& key, uint64_t value) {
         if (enabled_) {
@@ -181,9 +197,15 @@ public:
         }
     }
 
-    static bool enabled() { return enabled_; }
-    static void enable() { enabled_ = true; }
-    static void disable() { enabled_ = false; }
+    static bool enabled() {
+        return enabled_;
+    }
+    static void enable() {
+        enabled_ = true;
+    }
+    static void disable() {
+        enabled_ = false;
+    }
 
     std::string summary();
 
@@ -208,9 +230,15 @@ public:
         return codegen_statistics;
     }
 
-    bool enabled() { return enabled_; }
-    void enable() { enabled_ = true; }
-    void disable() { enabled_ = false; }
+    bool enabled() {
+        return enabled_;
+    }
+    void enable() {
+        enabled_ = true;
+    }
+    void disable() {
+        enabled_ = false;
+    }
 
     void add_codegen(const std::string& name, uint64_t milliseconds);
 

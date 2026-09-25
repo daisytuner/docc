@@ -24,7 +24,8 @@ class GpuMmaExpander : public passes::CodeLibNodeExpander<math::tensor::MatMulNo
 protected:
 
 public:
-    GpuMmaExpander() : CodeLibNodeExpander(math::tensor::LibraryNodeType_MatMul) {}
+    GpuMmaExpander() : CodeLibNodeExpander(math::tensor::LibraryNodeType_MatMul) {
+    }
     virtual ~GpuMmaExpander() = default;
     const LibNodeExpander* for_lib_node(const data_flow::LibraryNode& node) const override;
 

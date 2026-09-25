@@ -33,7 +33,9 @@ public:
      * @brief Set the report consumer for transformation feedback
      * @param report The report consumer
      */
-    virtual void set_report(PassReportConsumer* report) { report_ = report; }
+    virtual void set_report(PassReportConsumer* report) {
+        report_ = report;
+    }
 
     /**
      * @brief Get the name of this transformation
@@ -94,9 +96,12 @@ private:
     std::string message_;
 
 public:
-    explicit InvalidTransformationException(const std::string& message) : message_(message) {}
+    explicit InvalidTransformationException(const std::string& message) : message_(message) {
+    }
 
-    const char* what() const noexcept override { return message_.c_str(); }
+    const char* what() const noexcept override {
+        return message_.c_str();
+    }
 };
 
 /**
@@ -107,9 +112,12 @@ private:
     std::string message_;
 
 public:
-    explicit InvalidTransformationDescriptionException(const std::string& message) : message_(message) {}
+    explicit InvalidTransformationDescriptionException(const std::string& message) : message_(message) {
+    }
 
-    const char* what() const noexcept override { return message_.c_str(); }
+    const char* what() const noexcept override {
+        return message_.c_str();
+    }
 };
 
 } // namespace transformations

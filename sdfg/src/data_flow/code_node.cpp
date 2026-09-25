@@ -51,17 +51,29 @@ void CodeNode::validate(const Function& function) const {
     }
 }
 
-const std::vector<std::string>& CodeNode::outputs() const { return this->outputs_; };
+const std::vector<std::string>& CodeNode::outputs() const {
+    return this->outputs_;
+};
 
-const std::vector<std::string>& CodeNode::inputs() const { return this->inputs_; };
+const std::vector<std::string>& CodeNode::inputs() const {
+    return this->inputs_;
+};
 
-std::vector<std::string>& CodeNode::outputs() { return this->outputs_; };
+std::vector<std::string>& CodeNode::outputs() {
+    return this->outputs_;
+};
 
-std::vector<std::string>& CodeNode::inputs() { return this->inputs_; };
+std::vector<std::string>& CodeNode::inputs() {
+    return this->inputs_;
+};
 
-const std::string& CodeNode::output(size_t index) const { return this->outputs_.at(index); };
+const std::string& CodeNode::output(size_t index) const {
+    return this->outputs_.at(index);
+};
 
-const std::string& CodeNode::input(size_t index) const { return this->inputs_.at(index); };
+const std::string& CodeNode::input(size_t index) const {
+    return this->inputs_.at(index);
+};
 
 bool CodeNode::has_constant_input(size_t index) const {
     for (auto& iedge : this->get_parent().in_edges(*this)) {

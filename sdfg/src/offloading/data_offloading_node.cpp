@@ -31,7 +31,8 @@ DataOffloadingNode::DataOffloadingNode(
     : data_flow::LibraryNode(
           element_id, debug_info, vertex, parent, code, outputs, inputs, true, data_flow::ImplementationType_NONE
       ),
-      transfer_direction_(transfer_direction), buffer_lifecycle_(buffer_lifecycle), size_(std::move(size)) {}
+      transfer_direction_(transfer_direction), buffer_lifecycle_(buffer_lifecycle), size_(std::move(size)) {
+}
 
 DataOffloadingNode::DataOffloadingNode(
     size_t element_id,
@@ -54,7 +55,8 @@ DataOffloadingNode::DataOffloadingNode(
           transfer_direction,
           buffer_lifecycle,
           size
-      ) {}
+      ) {
+}
 
 std::vector<std::string> DataOffloadingNode::
     output_conns(DataTransferDirection transfer_direction, BufferLifecycle buffer_lifecycle) {
@@ -106,21 +108,37 @@ int DataOffloadingNode::dev_ptr_output_idx() const {
     }
 }
 
-const std::string& DataOffloadingNode::dev_in_conn() const { return inputs_.at(dev_ptr_input_idx()); }
+const std::string& DataOffloadingNode::dev_in_conn() const {
+    return inputs_.at(dev_ptr_input_idx());
+}
 
-const std::string& DataOffloadingNode::dev_out_conn() const { return outputs_.at(dev_ptr_output_idx()); }
+const std::string& DataOffloadingNode::dev_out_conn() const {
+    return outputs_.at(dev_ptr_output_idx());
+}
 
-const std::string& DataOffloadingNode::host_in_conn() const { return inputs_.at(host_ptr_input_idx()); }
+const std::string& DataOffloadingNode::host_in_conn() const {
+    return inputs_.at(host_ptr_input_idx());
+}
 
-DataTransferDirection DataOffloadingNode::transfer_direction() const { return this->transfer_direction_; }
+DataTransferDirection DataOffloadingNode::transfer_direction() const {
+    return this->transfer_direction_;
+}
 
-BufferLifecycle DataOffloadingNode::buffer_lifecycle() const { return this->buffer_lifecycle_; }
+BufferLifecycle DataOffloadingNode::buffer_lifecycle() const {
+    return this->buffer_lifecycle_;
+}
 
-const symbolic::Expression DataOffloadingNode::size() const { return this->size_; }
+const symbolic::Expression DataOffloadingNode::size() const {
+    return this->size_;
+}
 
-void DataOffloadingNode::set_size(const symbolic::Expression& size) { this->size_ = size; }
+void DataOffloadingNode::set_size(const symbolic::Expression& size) {
+    this->size_ = size;
+}
 
-const symbolic::Expression DataOffloadingNode::alloc_size() const { return this->size(); }
+const symbolic::Expression DataOffloadingNode::alloc_size() const {
+    return this->size();
+}
 
 symbolic::SymbolSet DataOffloadingNode::symbols() const {
     if (this->size().is_null()) {
@@ -168,7 +186,9 @@ std::string DataOffloadingNode::toStr() const {
     return res;
 }
 
-symbolic::Expression DataOffloadingNode::flop() const { return symbolic::zero(); }
+symbolic::Expression DataOffloadingNode::flop() const {
+    return symbolic::zero();
+}
 
 bool DataOffloadingNode::is_compatible_with(const DataOffloadingNode& other) const {
     if (code() != other.code()) {
@@ -208,15 +228,25 @@ bool DataOffloadingNode::equal_with(const DataOffloadingNode& other) const {
     return true; // add more checks in sub-classes
 }
 
-bool DataOffloadingNode::is_d2h() const { return is_D2H(this->transfer_direction()); }
+bool DataOffloadingNode::is_d2h() const {
+    return is_D2H(this->transfer_direction());
+}
 
-bool DataOffloadingNode::is_h2d() const { return is_H2D(this->transfer_direction()); }
+bool DataOffloadingNode::is_h2d() const {
+    return is_H2D(this->transfer_direction());
+}
 
-bool DataOffloadingNode::has_transfer() const { return this->is_d2h() || this->is_h2d(); }
+bool DataOffloadingNode::has_transfer() const {
+    return this->is_d2h() || this->is_h2d();
+}
 
-bool DataOffloadingNode::is_free() const { return is_FREE(this->buffer_lifecycle()); }
+bool DataOffloadingNode::is_free() const {
+    return is_FREE(this->buffer_lifecycle());
+}
 
-bool DataOffloadingNode::is_alloc() const { return is_ALLOC(this->buffer_lifecycle()); }
+bool DataOffloadingNode::is_alloc() const {
+    return is_ALLOC(this->buffer_lifecycle());
+}
 
 void DataOffloadingNode::remove_h2d() {
     if (this->is_h2d()) {
@@ -278,7 +308,9 @@ data_flow::EdgeRemoveOption DataOffloadingNode::
     }
 }
 
-bool DataOffloadingNode::update_edge_removed(const std::string& out_conn) { return false; }
+bool DataOffloadingNode::update_edge_removed(const std::string& out_conn) {
+    return false;
+}
 
 data_flow::EdgeRemoveOption DataOffloadingNode::
     can_remove_in_edge(const data_flow::DataFlowGraph& graph, const data_flow::Memlet* memlet) const {

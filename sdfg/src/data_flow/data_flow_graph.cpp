@@ -22,7 +22,8 @@
 namespace sdfg {
 namespace data_flow {
 
-DataFlowGraph::DataFlowGraph(Element* parent) : parent_(parent) {}
+DataFlowGraph::DataFlowGraph(Element* parent) : parent_(parent) {
+}
 
 void DataFlowGraph::validate(const Function& function) const {
     for (auto& node : this->nodes_) {
@@ -36,9 +37,13 @@ void DataFlowGraph::validate(const Function& function) const {
     }
 };
 
-const Element* DataFlowGraph::get_parent() const { return this->parent_; };
+const Element* DataFlowGraph::get_parent() const {
+    return this->parent_;
+};
 
-Element* DataFlowGraph::get_parent() { return this->parent_; };
+Element* DataFlowGraph::get_parent() {
+    return this->parent_;
+};
 
 const data_flow::Memlet* DataFlowGraph::in_edge_for_connector(const data_flow::CodeNode& node, const std::string& conn)
     const {

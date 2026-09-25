@@ -20,7 +20,8 @@ EluNode::EluNode(
 )
     : ElementWiseDataflowTensorNode(
           element_id, debug_info, vertex, parent, LibraryNodeType_Elu, shape, "Y", {"X", "alpha"}, quantization, impl_type
-      ) {}
+      ) {
+}
 
 ElementWiseDataflowTensorNode::ElementOutput EluNode::expand_operation_dataflow(
     builder::StructuredSDFGBuilder& builder,

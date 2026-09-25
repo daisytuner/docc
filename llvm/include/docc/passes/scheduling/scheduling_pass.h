@@ -27,7 +27,9 @@ public:
         sdfg::PassReportConsumer *report = nullptr
     );
 
-    static bool available(analysis::AnalysisManager &AM) { return true; }
+    static bool available(analysis::AnalysisManager &AM) {
+        return true;
+    }
 
     llvm::PreservedAnalyses run(llvm::Module &Module, llvm::ModuleAnalysisManager &MAM, analysis::AnalysisManager &AM);
 };

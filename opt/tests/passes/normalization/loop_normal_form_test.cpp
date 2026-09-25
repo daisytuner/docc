@@ -442,7 +442,9 @@ TEST(LoopNormalFormTest, NestedLoops) {
     structured_control_flow::For* inner = nullptr;
     for (size_t i = 0; i < outer->root().size(); ++i) {
         inner = dyn_cast<structured_control_flow::For*>(&outer->root().at(i));
-        if (inner) break;
+        if (inner) {
+            break;
+        }
     }
     ASSERT_NE(inner, nullptr);
 

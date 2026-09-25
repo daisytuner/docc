@@ -90,11 +90,17 @@ symbolic::Expression MatMulNode::k() const {
     return layout_a_.get_dim_innermost(0);
 }
 
-const TensorLayout& MatMulNode::layout_a() const { return layout_a_; }
+const TensorLayout& MatMulNode::layout_a() const {
+    return layout_a_;
+}
 
-const TensorLayout& MatMulNode::layout_b() const { return layout_b_; }
+const TensorLayout& MatMulNode::layout_b() const {
+    return layout_b_;
+}
 
-const TensorLayout& MatMulNode::layout_y() const { return layout_y_; }
+const TensorLayout& MatMulNode::layout_y() const {
+    return layout_y_;
+}
 
 TensorLayout MatMulNode::get_linear_result_layout(const TensorLayout& layout_a, const TensorLayout& layout_b) {
     // The result layout is derived from the last two dimensions of A and B
@@ -199,9 +205,13 @@ std::unique_ptr<data_flow::DataFlowNode> MatMulNode::
     ));
 }
 
-types::PrimitiveType MatMulNode::fixed_quantization() const { return fixed_quantization_; }
+types::PrimitiveType MatMulNode::fixed_quantization() const {
+    return fixed_quantization_;
+}
 
-void MatMulNode::set_fixed_quantization(const QuantizationType quant) { fixed_quantization_ = quant; }
+void MatMulNode::set_fixed_quantization(const QuantizationType quant) {
+    fixed_quantization_ = quant;
+}
 
 types::PrimitiveType MatMulNode::quantization(const data_flow::DataFlowGraph& data_flow_graph) const {
     if (fixed_quantization_ != QUANTIZATION_MATCH_INPUTS) {

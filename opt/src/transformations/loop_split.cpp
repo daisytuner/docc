@@ -13,7 +13,9 @@ namespace transformations {
 LoopSplit::LoopSplit(structured_control_flow::StructuredLoop& loop, const symbolic::Expression& split_point)
     : loop_(loop), split_point_(split_point) {};
 
-std::string LoopSplit::name() const { return "LoopSplit"; };
+std::string LoopSplit::name() const {
+    return "LoopSplit";
+};
 
 bool LoopSplit::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     // Loop must be contiguous (unit stride)

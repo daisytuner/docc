@@ -20,7 +20,8 @@ TileCopyNodeDispatcher::TileCopyNodeDispatcher(
     const data_flow::DataFlowGraph& data_flow_graph,
     const ::sdfg::tiles::TileCopyNode& node
 )
-    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
+}
 
 void TileCopyNodeDispatcher::dispatch_code_with_edges(
     codegen::CodegenOutput& out,

@@ -19,7 +19,8 @@ SubNode::SubNode(
 )
     : ElementWiseDataflowTensorNode(
           element_id, debug_info, vertex, parent, LibraryNodeType_Sub, shape, "C", {"A", "B"}, quantization, impl_type
-      ) {}
+      ) {
+}
 
 ElementWiseDataflowTensorNode::ElementOutput SubNode::expand_operation_dataflow(
     builder::StructuredSDFGBuilder& builder,

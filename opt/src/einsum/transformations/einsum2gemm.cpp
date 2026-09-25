@@ -30,9 +30,12 @@ bool Einsum2Gemm::check_matrix_indices(long long mat, const symbolic::Symbol& in
             symbolic::eq(this->einsum_node_.in_index(mat, 1), indvar2));
 }
 
-Einsum2Gemm::Einsum2Gemm(einsum::EinsumNode& einsum_node) : einsum_node_(einsum_node) {}
+Einsum2Gemm::Einsum2Gemm(einsum::EinsumNode& einsum_node) : einsum_node_(einsum_node) {
+}
 
-std::string Einsum2Gemm::name() const { return "Einsum2Gemm"; }
+std::string Einsum2Gemm::name() const {
+    return "Einsum2Gemm";
+}
 
 bool Einsum2Gemm::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     // Check dims

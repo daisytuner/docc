@@ -57,7 +57,8 @@ TaskletTensorNode::TaskletTensorNode(
           quantization,
           impl_type
       ),
-      tasklet_code_(tasklet_code) {}
+      tasklet_code_(tasklet_code) {
+}
 
 void TaskletTensorNode::validate(const Function& function) const {
     auto& graph = this->get_parent();
@@ -78,7 +79,9 @@ void TaskletTensorNode::validate(const Function& function) const {
     // Validate: inputs match type of operation (check A and B operands, skipping C)
     for (int i = 1; i < tensor_input_count(); ++i) {
         auto* iedge = graph.in_edge_for_connector(*this, inputs_.at(i));
-        if (!iedge) continue;
+        if (!iedge) {
+            continue;
+        }
         auto input_type = iedge->result_type(function);
         if (data_flow::is_integer(this->tasklet_code()) && !types::is_integer(input_type->primitive_type())) {
             throw InvalidSDFGException(
@@ -96,9 +99,13 @@ void TaskletTensorNode::validate(const Function& function) const {
     }
 }
 
-data_flow::TaskletCode TaskletTensorNode::tasklet_code() const { return this->tasklet_code_; }
+data_flow::TaskletCode TaskletTensorNode::tasklet_code() const {
+    return this->tasklet_code_;
+}
 
-bool TaskletTensorNode::supports_integer_types() const { return data_flow::is_integer(this->tasklet_code()); }
+bool TaskletTensorNode::supports_integer_types() const {
+    return data_flow::is_integer(this->tasklet_code());
+}
 
 ElementWiseDataflowTensorNode::ElementOutput TaskletTensorNode::expand_operation_dataflow(
     builder::StructuredSDFGBuilder& builder,

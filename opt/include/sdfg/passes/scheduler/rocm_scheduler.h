@@ -50,7 +50,9 @@ public:
         std::vector<structured_control_flow::StructuredLoop*>& scheduled_loops
     ) override;
 
-    static std::string target() { return "rocm"; };
+    static std::string target() {
+        return "rocm";
+    };
 
     std::unordered_set<ScheduleTypeCategory> compatible_types() override;
 };

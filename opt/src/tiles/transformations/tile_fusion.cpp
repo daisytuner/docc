@@ -51,7 +51,9 @@ structured_control_flow::Block* get_first_block(structured_control_flow::Sequenc
             return block;
         } else if (auto* loop = dyn_cast<structured_control_flow::StructuredLoop*>(&child)) {
             auto* result = get_first_block(loop->root());
-            if (result) return result;
+            if (result) {
+                return result;
+            }
         }
     }
     return nullptr;
@@ -60,9 +62,12 @@ structured_control_flow::Block* get_first_block(structured_control_flow::Sequenc
 } // namespace
 
 TileFusion::TileFusion(structured_control_flow::Map& first_map, structured_control_flow::Map& second_map)
-    : first_map_(first_map), second_map_(second_map) {}
+    : first_map_(first_map), second_map_(second_map) {
+}
 
-std::string TileFusion::name() const { return "TileFusion"; }
+std::string TileFusion::name() const {
+    return "TileFusion";
+}
 
 int TileFusion::compute_radius(
     const data_flow::Subset& producer_write_subset,
@@ -390,7 +395,9 @@ bool TileFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysi
                         // Deduplicate
                         bool found = false;
                         for (const auto& existing : consumer_read_subsets) {
-                            if (existing.size() != subset.size()) continue;
+                            if (existing.size() != subset.size()) {
+                                continue;
+                            }
                             bool match = true;
                             for (size_t d = 0; d < existing.size(); ++d) {
                                 if (!symbolic::eq(existing[d], subset[d])) {
@@ -468,10 +475,14 @@ bool TileFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysi
                 auto& dataflow = block->dataflow();
                 for (auto& node : dataflow.nodes()) {
                     auto* access = dynamic_cast<data_flow::AccessNode*>(&node);
-                    if (access == nullptr || access->data() != container) continue;
+                    if (access == nullptr || access->data() != container) {
+                        continue;
+                    }
                     if (dataflow.out_degree(*access) > 0) {
                         for (auto& memlet : dataflow.out_edges(*access)) {
-                            if (memlet.type() != data_flow::MemletType::Computational) continue;
+                            if (memlet.type() != data_flow::MemletType::Computational) {
+                                continue;
+                            }
                             read_memlets.push_back({&memlet});
                         }
                     }
@@ -961,10 +972,14 @@ void TileFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analys
             if (auto* block = dyn_cast<structured_control_flow::Block*>(&node)) {
                 auto& dfg = block->dataflow();
                 for (auto* access : dfg.data_nodes()) {
-                    if (access->data() != cyc.container) continue;
+                    if (access->data() != cyc.container) {
+                        continue;
+                    }
                     bool has_writes = dfg.in_degree(*access) > 0;
                     for (auto& memlet : dfg.out_edges(*access)) {
-                        if (memlet.type() != data_flow::MemletType::Computational) continue;
+                        if (memlet.type() != data_flow::MemletType::Computational) {
+                            continue;
+                        }
                         memlet.set_subset(rebase_to_buffer(memlet.subset()));
                         memlet.set_base_type(buf_type);
                     }
@@ -1061,7 +1076,9 @@ structured_control_flow::StructuredLoop* TileFusion::fused_loop() const {
     return fused_loop_;
 }
 
-int TileFusion::radius() const { return radius_; }
+int TileFusion::radius() const {
+    return radius_;
+}
 
 } // namespace transformations
 } // namespace sdfg

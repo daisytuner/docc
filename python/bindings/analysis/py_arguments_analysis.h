@@ -35,9 +35,12 @@ private:
 
 public:
     PyArgumentsAnalysis(sdfg::analysis::AnalysisManager& manager)
-        : manager_(manager), analysis_(manager.get<sdfg::analysis::ArgumentsAnalysis>()) {}
+        : manager_(manager), analysis_(manager.get<sdfg::analysis::ArgumentsAnalysis>()) {
+    }
 
-    sdfg::analysis::ArgumentsAnalysis& analysis() { return analysis_; }
+    sdfg::analysis::ArgumentsAnalysis& analysis() {
+        return analysis_;
+    }
 
     /// Total size in bytes of every argument at the given region, as a dict
     /// name -> int (or a string expression when the size is not constant).

@@ -156,7 +156,9 @@ void Lifting::visit_globals() {
 
 void Lifting::collect_globals(llvm::Function& function, std::unordered_set<llvm::GlobalObject*>& globals) {
     for (llvm::Instruction& I : llvm::instructions(function)) {
-        for (llvm::Use& U : I.operands()) Lifting::collect_globals(function, U.get(), globals);
+        for (llvm::Use& U : I.operands()) {
+            Lifting::collect_globals(function, U.get(), globals);
+        }
     }
 }
 
@@ -166,13 +168,17 @@ void Lifting::collect_globals(llvm::Function& function, llvm::Value* V, std::uno
 
     // If it is a ConstantExpr (GEP, bitcast, inttoptr, …) look at its operands.
     if (auto* CE = llvm::dyn_cast<llvm::ConstantExpr>(V)) {
-        for (llvm::Value* Op : CE->operands()) Lifting::collect_globals(function, Op, visited);
+        for (llvm::Value* Op : CE->operands()) {
+            Lifting::collect_globals(function, Op, visited);
+        }
         return;
     }
 
     // Aggregate constants (arrays, structs) can also hide ConstantExprs.
     if (auto* CA = llvm::dyn_cast<llvm::ConstantAggregate>(V)) {
-        for (llvm::Value* Op : CA->operands()) Lifting::collect_globals(function, Op, visited);
+        for (llvm::Value* Op : CA->operands()) {
+            Lifting::collect_globals(function, Op, visited);
+        }
         return;
     }
 

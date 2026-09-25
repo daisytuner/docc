@@ -98,9 +98,13 @@ public:
     // Enable detailed symbolic subset/disjointness checks. Off by default;
     // `LoopCarriedDependencyAnalysis` flips it on for its own manually
     // constructed instance.
-    void set_detailed(bool detailed) { detailed_ = detailed; }
+    void set_detailed(bool detailed) {
+        detailed_ = detailed;
+    }
 
-    std::string name() const override { return "DataDependencyAnalysis"; }
+    std::string name() const override {
+        return "DataDependencyAnalysis";
+    }
 
     void run(analysis::AnalysisManager& analysis_manager) override;
 

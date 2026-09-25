@@ -8,11 +8,16 @@ TrapNode::TrapNode(
 )
     : StdlibNode(
           element_id, debug_info, vertex, parent, LibraryNodeType_Trap, {}, {}, true, data_flow::ImplementationType_NONE
-      ) {}
+      ) {
+}
 
-void TrapNode::validate(const Function& function) const { LibraryNode::validate(function); }
+void TrapNode::validate(const Function& function) const {
+    LibraryNode::validate(function);
+}
 
-symbolic::SymbolSet TrapNode::symbols() const { return symbolic::SymbolSet(); }
+symbolic::SymbolSet TrapNode::symbols() const {
+    return symbolic::SymbolSet();
+}
 
 std::unique_ptr<data_flow::DataFlowNode> TrapNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
@@ -59,7 +64,8 @@ TrapNodeDispatcher::TrapNodeDispatcher(
     const data_flow::DataFlowGraph& data_flow_graph,
     const TrapNode& node
 )
-    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
+}
 
 void TrapNodeDispatcher::dispatch_code(
     codegen::PrettyPrinter& stream,

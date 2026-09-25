@@ -83,16 +83,22 @@ TEST(TileVectorizerTest, WidensContiguousScalarCopyToFloat4) {
         [&](structured_control_flow::ControlFlowNode& n) {
             if (auto* blk = dynamic_cast<structured_control_flow::Block*>(&n)) {
                 for (auto& node : blk->dataflow().nodes()) {
-                    if (auto* tc = dynamic_cast<tiles::TileCopyNode*>(&node)) copy = tc;
+                    if (auto* tc = dynamic_cast<tiles::TileCopyNode*>(&node)) {
+                        copy = tc;
+                    }
                 }
             } else if (auto* s = dynamic_cast<structured_control_flow::Sequence*>(&n)) {
-                for (size_t x = 0; x < s->size(); ++x) find(s->at(x));
+                for (size_t x = 0; x < s->size(); ++x) {
+                    find(s->at(x));
+                }
             } else if (auto* m = dynamic_cast<structured_control_flow::Map*>(&n)) {
                 find(m->root());
             } else if (auto* f = dynamic_cast<structured_control_flow::StructuredLoop*>(&n)) {
                 find(f->root());
             } else if (auto* ie = dynamic_cast<structured_control_flow::IfElse*>(&n)) {
-                for (size_t x = 0; x < ie->size(); ++x) find(ie->at(x).first);
+                for (size_t x = 0; x < ie->size(); ++x) {
+                    find(ie->at(x).first);
+                }
             }
         };
     find(map_b.root());

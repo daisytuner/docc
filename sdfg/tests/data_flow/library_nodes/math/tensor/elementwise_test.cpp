@@ -209,21 +209,24 @@ void TestBinary(std::vector<size_t> shape_dims, types::PrimitiveType expected_in
 #define REGISTER_UNARY_TEST(NodeType, Dim)                                    \
     TEST(ElementWiseTest, NodeType##_##Dim##D) {                              \
         std::vector<size_t> dims;                                             \
-        for (int i = 0; i < Dim; ++i) dims.push_back(32);                     \
+        for (int i = 0; i < Dim; ++i)                                         \
+            dims.push_back(32);                                               \
         TestUnary<math::tensor::NodeType>(dims, types::PrimitiveType::Int32); \
     }
 
 #define REGISTER_UNARY_TEST_OPT(NodeType, Dim, Opt)                                \
     TEST(ElementWiseTest, NodeType##_##Dim##D) {                                   \
         std::vector<size_t> dims;                                                  \
-        for (int i = 0; i < Dim; ++i) dims.push_back(32);                          \
+        for (int i = 0; i < Dim; ++i)                                              \
+            dims.push_back(32);                                                    \
         TestUnary<math::tensor::NodeType>(dims, types::PrimitiveType::Int32, Opt); \
     }
 
 #define REGISTER_BINARY_TEST(NodeType, Dim)                                    \
     TEST(ElementWiseTest, NodeType##_##Dim##D) {                               \
         std::vector<size_t> dims;                                              \
-        for (int i = 0; i < Dim; ++i) dims.push_back(32);                      \
+        for (int i = 0; i < Dim; ++i)                                          \
+            dims.push_back(32);                                                \
         TestBinary<math::tensor::NodeType>(dims, types::PrimitiveType::Int32); \
     }
 
@@ -407,7 +410,8 @@ void TestCast(std::vector<size_t> shape_dims) {
 #define REGISTER_CAST_TEST(SourceType, TargetType, Dim)                                     \
     TEST(ElementWiseTest, CastNode_##SourceType##_to_##TargetType##_##Dim##D) {             \
         std::vector<size_t> dims;                                                           \
-        for (int i = 0; i < Dim; ++i) dims.push_back(32);                                   \
+        for (int i = 0; i < Dim; ++i)                                                       \
+            dims.push_back(32);                                                             \
         TestCast<types::PrimitiveType::SourceType, types::PrimitiveType::TargetType>(dims); \
     }
 
@@ -535,7 +539,8 @@ void TestLogicalNot(std::vector<size_t> shape_dims) {
 #define REGISTER_LOGICAL_NOT_TEST(SourceType, Dim)                  \
     TEST(ElementWiseTest, LogicalNotNode_##SourceType##_##Dim##D) { \
         std::vector<size_t> dims;                                   \
-        for (int i = 0; i < Dim; ++i) dims.push_back(32);           \
+        for (int i = 0; i < Dim; ++i)                               \
+            dims.push_back(32);                                     \
         TestLogicalNot<types::PrimitiveType::SourceType>(dims);     \
     }
 

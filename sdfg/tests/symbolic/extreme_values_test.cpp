@@ -898,8 +898,12 @@ TEST(ExtremeValuesTest, ConstantParameterInCoefficient) {
 static symbolic::Assumption
 make_range(const symbolic::Symbol& s, const symbolic::Expression& lb, const symbolic::Expression& ub) {
     symbolic::Assumption a(s);
-    if (!lb.is_null()) a.add_lower_bound(lb);
-    if (!ub.is_null()) a.add_upper_bound(ub);
+    if (!lb.is_null()) {
+        a.add_lower_bound(lb);
+    }
+    if (!ub.is_null()) {
+        a.add_upper_bound(ub);
+    }
     return a;
 }
 

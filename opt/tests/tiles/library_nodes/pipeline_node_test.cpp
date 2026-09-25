@@ -7,7 +7,9 @@
 using namespace sdfg;
 
 namespace {
-builder::StructuredSDFGBuilder make_builder() { return builder::StructuredSDFGBuilder("async_test", FunctionType_CPU); }
+builder::StructuredSDFGBuilder make_builder() {
+    return builder::StructuredSDFGBuilder("async_test", FunctionType_CPU);
+}
 } // namespace
 
 inline data_flow::ImplementationType ImplementationType_DUMMY{"DUMMY"};

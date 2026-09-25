@@ -53,7 +53,9 @@ void check_name(const std::string& name) {
     }
 };
 
-size_t FunctionBuilder::new_element_id() const { return ++this->function().element_counter_; };
+size_t FunctionBuilder::new_element_id() const {
+    return ++this->function().element_counter_;
+};
 
 size_t FunctionBuilder::new_element_id_batch(size_t batch) const {
     auto& count = this->function().element_counter_;
@@ -87,7 +89,9 @@ void FunctionBuilder::replace_symbols(const symbolic::ExpressionMapping& replace
     }
 }
 
-void FunctionBuilder::set_return_type(const types::IType& type) const { this->function().return_type_ = type.clone(); };
+void FunctionBuilder::set_return_type(const types::IType& type) const {
+    this->function().return_type_ = type.clone();
+};
 
 const types::IType& FunctionBuilder::
     add_container(const std::string& name, const types::IType& type, bool is_argument, bool is_external) const {

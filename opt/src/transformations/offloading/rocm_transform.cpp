@@ -11,7 +11,9 @@
 namespace sdfg {
 namespace rocm {
 
-std::string ROCMTransform::name() const { return "ROCMTransform"; }
+std::string ROCMTransform::name() const {
+    return "ROCMTransform";
+}
 
 bool ROCMTransform::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     if (!OffloadTransform::can_be_applied(builder, analysis_manager)) {

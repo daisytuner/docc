@@ -20,21 +20,36 @@ LibraryNode::LibraryNode(
     const ImplementationType& implementation_type
 )
     : CodeNode(element_id, debug_info, vertex, parent, outputs, inputs), code_(code), side_effect_(side_effect),
-      implementation_type_(implementation_type) {}
+      implementation_type_(implementation_type) {
+}
 
-const LibraryNodeCode& LibraryNode::code() const { return this->code_; };
+const LibraryNodeCode& LibraryNode::code() const {
+    return this->code_;
+};
 
-const ImplementationType& LibraryNode::implementation_type() const { return this->implementation_type_; };
+const ImplementationType& LibraryNode::implementation_type() const {
+    return this->implementation_type_;
+};
 
-ImplementationType& LibraryNode::implementation_type() { return this->implementation_type_; };
+ImplementationType& LibraryNode::implementation_type() {
+    return this->implementation_type_;
+};
 
-void LibraryNode::set_implementation_type(const ImplementationType& impl_type) { implementation_type_ = impl_type; }
+void LibraryNode::set_implementation_type(const ImplementationType& impl_type) {
+    implementation_type_ = impl_type;
+}
 
-bool LibraryNode::side_effect() const { return this->side_effect_; };
+bool LibraryNode::side_effect() const {
+    return this->side_effect_;
+};
 
-std::string LibraryNode::toStr() const { return std::string(this->code_.value()); }
+std::string LibraryNode::toStr() const {
+    return std::string(this->code_.value());
+}
 
-symbolic::Expression LibraryNode::flop() const { return SymEngine::null; }
+symbolic::Expression LibraryNode::flop() const {
+    return SymEngine::null;
+}
 
 PointerAccessType LibraryNode::pointer_access_type(const Memlet& edge) const {
     auto& conn = edge.dst_conn();

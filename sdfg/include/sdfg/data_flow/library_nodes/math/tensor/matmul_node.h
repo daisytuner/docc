@@ -124,7 +124,9 @@ public:
      */
     symbolic::Expression n() const;
 
-    QuantizationType quantization() const { return quantization(get_parent()); }
+    QuantizationType quantization() const {
+        return quantization(get_parent());
+    }
 
     /**
      * type of the math calculations. May be inferred or fixed.
@@ -151,11 +153,17 @@ public:
 
     const TensorLayout& layout_y() const;
 
-    TensorLayout& layout_a() { return layout_a_; }
+    TensorLayout& layout_a() {
+        return layout_a_;
+    }
 
-    TensorLayout& layout_b() { return layout_b_; }
+    TensorLayout& layout_b() {
+        return layout_b_;
+    }
 
-    TensorLayout& layout_y() { return layout_y_; }
+    TensorLayout& layout_y() {
+        return layout_y_;
+    }
 
     static TensorLayout get_linear_result_layout(const TensorLayout& layout_a, const TensorLayout& layout_b);
 
@@ -198,7 +206,9 @@ public:
 
     symbolic::Expression flop() const override;
 
-    bool supports_integer_types() const override { return true; }
+    bool supports_integer_types() const override {
+        return true;
+    }
 };
 
 /**

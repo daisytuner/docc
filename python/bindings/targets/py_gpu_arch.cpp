@@ -44,6 +44,13 @@ void register_gpu_arch(py::module& m, sdfg::plugins::Context& context) {
             },
             "Return the value of DOCC_ROCM_ARCH, or None if it is unset."
         )
-        .def_property_readonly("name", [](const sdfg::gpu::rocm::RocmArch& self) { return self.name(); })
-        .def("__repr__", [](const sdfg::gpu::rocm::RocmArch& self) { return "<RocmArch '" + self.name() + "'>"; });
+        .def_property_readonly(
+            "name",
+            [](const sdfg::gpu::rocm::RocmArch& self) {
+                return self.name();
+            }
+        )
+        .def("__repr__", [](const sdfg::gpu::rocm::RocmArch& self) {
+            return "<RocmArch '" + self.name() + "'>";
+        });
 }

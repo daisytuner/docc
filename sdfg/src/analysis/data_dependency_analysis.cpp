@@ -497,10 +497,16 @@ void DataDependencyAnalysis::visit_for(
     // (writer -> readers) sets we are mutating.
     for (auto* open_read : undefined_for) {
         auto& type = this->sdfg_.type(open_read->container());
-        if (!dynamic_cast<const types::Scalar*>(&type)) continue;
+        if (!dynamic_cast<const types::Scalar*>(&type)) {
+            continue;
+        }
         for (auto& write_entry : open_definitions_for) {
-            if (write_entry.first->container() != open_read->container()) continue;
-            if (this->is_undefined_user(*write_entry.first)) continue;
+            if (write_entry.first->container() != open_read->container()) {
+                continue;
+            }
+            if (this->is_undefined_user(*write_entry.first)) {
+                continue;
+            }
             write_entry.second.insert(open_read);
         }
     }
@@ -866,8 +872,12 @@ bool DataDependencyAnalysis::fully_covered(
         bool covered = false;
         for (auto& w_entry : open_definitions) {
             auto* w = w_entry.first;
-            if (w->container() != current.container()) continue;
-            if (this->is_undefined_user(*w)) continue;
+            if (w->container() != current.container()) {
+                continue;
+            }
+            if (this->is_undefined_user(*w)) {
+                continue;
+            }
             auto& w_assumptions = assumptions_analysis.get(*Users::scope(w), true);
             symbolic::AssumptionsBounds w_bounds(w_assumptions);
             for (auto& w_subset : w->subsets()) {
@@ -876,9 +886,13 @@ bool DataDependencyAnalysis::fully_covered(
                     break;
                 }
             }
-            if (covered) break;
+            if (covered) {
+                break;
+            }
         }
-        if (!covered) return false;
+        if (!covered) {
+            return false;
+        }
     }
     return true;
 }

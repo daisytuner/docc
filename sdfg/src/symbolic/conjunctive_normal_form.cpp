@@ -10,12 +10,13 @@ namespace symbolic {
 
 CNF distribute_or(const CNF& C, const CNF& D) {
     CNF out;
-    for (auto& c : C)
+    for (auto& c : C) {
         for (auto& d : D) {
             auto clause = c;
             clause.insert(clause.end(), d.begin(), d.end());
             out.emplace_back(std::move(clause));
         }
+    }
     return out;
 }
 
@@ -232,20 +233,26 @@ bool comparisions_cover_domain(const std::vector<RelOp>& ops) {
                 zero = true;
                 break;
         }
-        if (neg && zero && pos) return true;
+        if (neg && zero && pos) {
+            return true;
+        }
     }
     return false;
 }
 
 bool is_tautology(const std::vector<symbolic::Condition>& clause) {
-    if (clause.empty()) return false;
+    if (clause.empty()) {
+        return false;
+    }
 
     // Structural simplification (handles complementary pairs like Gt/Le).
     auto disj = symbolic::__false__();
     for (auto& lit : clause) {
         disj = symbolic::Or(disj, lit);
     }
-    if (symbolic::is_true(disj)) return true;
+    if (symbolic::is_true(disj)) {
+        return true;
+    }
 
     // Relational coverage: group literals by canonical diff (modulo sign) and
     // check whether any group's operators cover the entire real line.
@@ -277,7 +284,9 @@ bool is_tautology(const std::vector<symbolic::Condition>& clause) {
         }
     }
     for (auto& ops : group_ops) {
-        if (comparisions_cover_domain(ops)) return true;
+        if (comparisions_cover_domain(ops)) {
+            return true;
+        }
     }
     return false;
 }

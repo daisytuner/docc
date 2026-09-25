@@ -116,13 +116,17 @@ public:
      * @brief Get the output channels
      * @return Number of output channels
      */
-    symbolic::Expression output_channels() const { return output_channels_; }
+    symbolic::Expression output_channels() const {
+        return output_channels_;
+    }
 
     /**
      * @brief Get the group count
      * @return Number of groups for grouped convolution
      */
-    symbolic::Expression group() const { return group_; }
+    symbolic::Expression group() const {
+        return group_;
+    }
 
     void validate(const Function& function) const override;
 
@@ -154,7 +158,9 @@ public:
 
     void replace(const symbolic::ExpressionMapping& replacements) override;
 
-    bool supports_integer_types() const override { return false; }
+    bool supports_integer_types() const override {
+        return false;
+    }
 
     std::unique_ptr<data_flow::DataFlowNode>
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const override;
