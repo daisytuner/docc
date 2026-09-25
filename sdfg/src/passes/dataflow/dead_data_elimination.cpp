@@ -35,7 +35,9 @@ protected:
 
 public:
     void on_escape(const std::string& container, const ControlFlowNode* node, const Element* user) {
-        if (user) blockers_[container].emplace(user, BlockerType::Escape);
+        if (user) {
+            blockers_[container].emplace(user, BlockerType::Escape);
+        }
     }
 
     void on_ptr_input_into_lib_node(
@@ -175,7 +177,9 @@ MemoryOwnershipAnalysis::MemoryOwnershipAnalysis(StructuredSDFG& sdfg)
     : sdfg_(sdfg), PointerEscapeAnalyzer(sdfg, *this), PointerOverwriteAnalyzer(sdfg, *this) {
 }
 
-bool MemoryOwnershipAnalysis::excusedEscape(const Element* element, const OwnedArea& area) { return false; }
+bool MemoryOwnershipAnalysis::excusedEscape(const Element* element, const OwnedArea& area) {
+    return false;
+}
 
 bool MemoryOwnershipAnalysis::excusedOverwrite(const Element* element, const OwnedArea& area) {
     auto* memlet = dynamic_cast<const data_flow::Memlet*>(element);
