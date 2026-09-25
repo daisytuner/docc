@@ -58,6 +58,10 @@ _codeql_build_dir/
 
 # Documentation
 docs/
+!/docs-site/docs/
+
+# torch.compile / @native intermediates
+/output/
 
 
 node_modules/

@@ -1,0 +1,186 @@
+name: Docs
+
+# Builds the docs site (Docusaurus + Doxygen C++ API) and deploys it to Cloud Run as docc-docs.
+# PRs only build and smoke-test the image; pushes to main (and manual runs on main) also deploy.
+
+on:
+  pull_request:
+    paths:
+      - "docs-site/**"
+      - "sdfg/include/**"
+      - "opt/include/**"
+      - "llvm/include/**"
+      - "mlir/include/**"
+      - "c-compile/include/**"
+      - "rpc/include/**"
+      - "rtl/include/**"
+      - "arg-capture-io/include/**"
+      - "targets/*/include/**"
+      - "VERSION"
+      - "LICENSE"
+      - "python/README.md"
+      - "tutorial/printf_target/target_tutorial.md"
+      - ".github/workflows/docs.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "docs-site/**"
+      - "sdfg/include/**"
+      - "opt/include/**"
+      - "llvm/include/**"
+      - "mlir/include/**"
+      - "c-compile/include/**"
+      - "rpc/include/**"
+      - "rtl/include/**"
+      - "arg-capture-io/include/**"
+      - "targets/*/include/**"
+      - "VERSION"
+      - "LICENSE"
+      - "python/README.md"
+      - "tutorial/printf_target/target_tutorial.md"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  GCP_PROJECT: daisy-367210
+  GCP_REGION: europe-west1
+  AR_REPO: europe-west1-docker.pkg.dev/daisy-367210/backend-cloud-repo
+  CLOUD_RUN_SERVICE: docc-docs
+  # Set the repo variable DOCS_NOINDEX=false once docc.daisytuner.com is live.
+  DOCS_NOINDEX: ${{ vars.DOCS_NOINDEX || 'true' }}
+
+jobs:
+  build:
+    name: Build and smoke-test docs image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docs-site/Dockerfile
+          build-args: DOCS_NOINDEX=${{ env.DOCS_NOINDEX }}
+          tags: docc-docs:ci
+          load: true
+          cache-from: type=gha,scope=docc-docs
+          cache-to: type=gha,mode=max,scope=docc-docs
+
+      - name: Smoke test
+        run: |
+          docker run -d --name docc-docs -p 8080:8080 docc-docs:ci
+          for _ in $(seq 1 30); do curl -fs -o /dev/null http://localhost:8080/ && break; sleep 1; done
+          fail=0
+          check() {
+            code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:8080$1")
+            echo "$1 -> $code (expected $2)"
+            [ "$code" = "$2" ] || fail=1
+          }
+          check / 200
+          check /docs/intro 200
+          check /docs/getting-started-python/build-from-source 200
+          check /api/index.html 200
+          check /robots.txt 200
+          check /does-not-exist 404
+          if [ "$fail" -ne 0 ]; then docker logs docc-docs; fi
+          docker rm -f docc-docs >/dev/null
+          exit "$fail"
+
+      # Served entirely from the cache of the previous build; only runs the final COPY.
+      - name: Export Doxygen warnings
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docs-site/Dockerfile
+          target: artifacts
+          build-args: DOCS_NOINDEX=${{ env.DOCS_NOINDEX }}
+          outputs: type=local,dest=ci-artifacts
+          cache-from: type=gha,scope=docc-docs
+
+      - name: Summarize Doxygen warnings
+        run: |
+          echo "Doxygen warnings: $(grep -c 'warning:' ci-artifacts/doxygen-warnings.log || true)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Doxygen warnings
+        uses: actions/upload-artifact@v4
+        with:
+          name: doxygen-warnings
+          path: ci-artifacts/doxygen-warnings.log
+          if-no-files-found: warn
+
+  deploy:
+    name: Deploy docs to Cloud Run
+    needs: build
+    # if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Resolve image tag
+        id: image
+        run: echo "ref=${AR_REPO}/${CLOUD_RUN_SERVICE}:$(tr -d '[:space:]' < VERSION)-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          credentials_json: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
+          token_format: access_token
+          service_account: firebase-adminsdk-vmikd@daisy-367210.iam.gserviceaccount.com
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.GCP_PROJECT }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Docker auth for Google Artifact Registry
+        uses: docker/login-action@v3
+        with:
+          registry: europe-west1-docker.pkg.dev
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docs-site/Dockerfile
+          platforms: linux/amd64
+          build-args: DOCS_NOINDEX=${{ env.DOCS_NOINDEX }}
+          push: true
+          tags: ${{ steps.image.outputs.ref }}
+          cache-from: type=gha,scope=docc-docs
+
+      # No --allow-unauthenticated: the service is already public and CI must not change its IAM policy.
+      # Keep flags in sync with docs-site/scripts/deploy-cloudrun.sh.
+      - name: Deploy to Cloud Run
+        id: deploy
+        uses: google-github-actions/deploy-cloudrun@v3
+        with:
+          service: ${{ env.CLOUD_RUN_SERVICE }}
+          image: ${{ steps.image.outputs.ref }}
+          region: ${{ env.GCP_REGION }}
+          project_id: ${{ env.GCP_PROJECT }}
+          flags: "--port 8080 --cpu 1 --memory 256Mi --min-instances 0 --max-instances 3 --concurrency 80"
+
+      - name: Check deployed site
+        env:
+          URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          curl -fsS -o /dev/null "$URL/"
+          curl -fsS -o /dev/null "$URL/api/index.html"
+          echo "Deployed ${{ steps.image.outputs.ref }} -> $URL" | tee -a "$GITHUB_STEP_SUMMARY"
