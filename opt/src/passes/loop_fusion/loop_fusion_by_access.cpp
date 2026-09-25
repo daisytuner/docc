@@ -161,8 +161,12 @@ std::vector<std::pair<symbolic::Symbol, symbolic::Expression>> LoopFusionByAcces
     isl_map* consumer_map = isl_map_read_from_str(ctx, consumer_map_str.c_str());
 
     if (!producer_map || !consumer_map) {
-        if (producer_map) isl_map_free(producer_map);
-        if (consumer_map) isl_map_free(consumer_map);
+        if (producer_map) {
+            isl_map_free(producer_map);
+        }
+        if (consumer_map) {
+            isl_map_free(consumer_map);
+        }
         isl_ctx_free(ctx);
         return {};
     }
@@ -225,8 +229,12 @@ std::vector<std::pair<symbolic::Symbol, symbolic::Expression>> LoopFusionByAcces
             isl_set_free(producer_range);
             isl_set_free(consumer_range);
         } else {
-            if (constrained_producer) isl_map_free(constrained_producer);
-            if (consumer_map_copy) isl_map_free(consumer_map_copy);
+            if (constrained_producer) {
+                isl_map_free(constrained_producer);
+            }
+            if (consumer_map_copy) {
+                isl_map_free(consumer_map_copy);
+            }
         }
     }
 
@@ -955,8 +963,12 @@ ComplexFusionResult LoopFusionByAccessWorker::apply_consumer_into_producer(Plan&
         data_flow::Subset original_write_subset;
         for (auto& node : producer_dataflow.nodes()) {
             auto* access = dynamic_cast<data_flow::AccessNode*>(&node);
-            if (access == nullptr || access->data() != candidate.container) continue;
-            if (producer_dataflow.in_degree(*access) == 0) continue;
+            if (access == nullptr || access->data() != candidate.container) {
+                continue;
+            }
+            if (producer_dataflow.in_degree(*access) == 0) {
+                continue;
+            }
 
             // This is the write access node — save the original subset, then redirect
             for (auto& in_edge : producer_dataflow.in_edges(*access)) {

@@ -20,12 +20,17 @@ private:
 
 public:
     PyUsers(sdfg::analysis::AnalysisManager& manager)
-        : manager_(manager), analysis_(manager.get<sdfg::analysis::Users>()) {}
+        : manager_(manager), analysis_(manager.get<sdfg::analysis::Users>()) {
+    }
 
-    sdfg::analysis::Users& analysis() { return analysis_; }
+    sdfg::analysis::Users& analysis() {
+        return analysis_;
+    }
 
     /**
      * @brief Get native pointer for cross-module plugin interop
      */
-    uintptr_t ptr() { return reinterpret_cast<uintptr_t>(&analysis_); }
+    uintptr_t ptr() {
+        return reinterpret_cast<uintptr_t>(&analysis_);
+    }
 };

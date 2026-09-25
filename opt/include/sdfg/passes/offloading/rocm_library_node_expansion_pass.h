@@ -13,9 +13,13 @@ class RocmExpansion : public visitor::NonStoppingStructuredSDFGVisitor {
 public:
     RocmExpansion(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager);
 
-    void set_report(PassReportConsumer* report) { report_ = report; }
+    void set_report(PassReportConsumer* report) {
+        report_ = report;
+    }
 
-    static std::string name() { return "RocmExpansion"; };
+    static std::string name() {
+        return "RocmExpansion";
+    };
 
     bool accept(structured_control_flow::Block& node) override;
 };

@@ -120,7 +120,9 @@ public:
     MemoryLayoutAnalysis(StructuredSDFG& sdfg);
     MemoryLayoutAnalysis(StructuredSDFG& sdfg, const Options& options);
 
-    std::string name() const override { return "MemoryLayoutAnalysis"; }
+    std::string name() const override {
+        return "MemoryLayoutAnalysis";
+    }
 
     /**
      * @brief Get the inferred memory layout for a memlet

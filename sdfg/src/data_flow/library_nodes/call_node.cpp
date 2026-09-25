@@ -24,11 +24,16 @@ CallNode::CallNode(
           true,
           data_flow::ImplementationType_NONE
       ),
-      callee_name_(callee_name), ptr_access_meta_(std::move(ptr_access_meta)) {}
+      callee_name_(callee_name), ptr_access_meta_(std::move(ptr_access_meta)) {
+}
 
-const std::string& CallNode::callee_name() const { return this->callee_name_; }
+const std::string& CallNode::callee_name() const {
+    return this->callee_name_;
+}
 
-bool CallNode::is_void(const Function& sdfg) const { return outputs_.empty() || outputs_.at(0) != "_ret"; }
+bool CallNode::is_void(const Function& sdfg) const {
+    return outputs_.empty() || outputs_.at(0) != "_ret";
+}
 
 bool CallNode::is_indirect_call(const Function& sdfg) const {
     auto& type = sdfg.type(this->callee_name_);
@@ -64,7 +69,9 @@ void CallNode::validate(const Function& function) const {
     }
 }
 
-symbolic::SymbolSet CallNode::symbols() const { return {symbolic::symbol(this->callee_name_)}; }
+symbolic::SymbolSet CallNode::symbols() const {
+    return {symbolic::symbol(this->callee_name_)};
+}
 
 std::unique_ptr<data_flow::DataFlowNode> CallNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
@@ -90,9 +97,13 @@ PointerAccessType CallNode::pointer_access_type(int input_idx) const {
     }
 }
 
-const std::vector<PointerAccessType>& CallNode::pointer_access_meta() const { return ptr_access_meta_; }
+const std::vector<PointerAccessType>& CallNode::pointer_access_meta() const {
+    return ptr_access_meta_;
+}
 
-std::string CallNode::toStr() const { return LibraryNode::toStr() + "('" + callee_name_ + "')"; }
+std::string CallNode::toStr() const {
+    return LibraryNode::toStr() + "('" + callee_name_ + "')";
+}
 
 void CallNode::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
     for (auto& meta : ptr_access_meta_) {
@@ -155,7 +166,8 @@ CallNodeDispatcher::CallNodeDispatcher(
     const data_flow::DataFlowGraph& data_flow_graph,
     const CallNode& node
 )
-    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
+}
 
 void CallNodeDispatcher::dispatch_code_with_edges(
     codegen::CodegenOutput& out,

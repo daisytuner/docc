@@ -19,7 +19,9 @@ namespace passes {
 
 class DumpAttributesPass : public llvm::PassInfoMixin<DumpAttributesPass> {
 public:
-    static bool available(analysis::AnalysisManager& AM) { return true; }
+    static bool available(analysis::AnalysisManager& AM) {
+        return true;
+    }
 
     llvm::PreservedAnalyses run(llvm::Module& Module, llvm::ModuleAnalysisManager& MAM, analysis::AnalysisManager& AM);
 };

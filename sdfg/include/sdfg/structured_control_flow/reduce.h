@@ -106,9 +106,13 @@ public:
     Reduce(const Reduce& node) = delete;
     Reduce& operator=(const Reduce&) = delete;
 
-    ElementType type_id() const override { return ElementType::Reduce; }
+    ElementType type_id() const override {
+        return ElementType::Reduce;
+    }
 
-    static bool classof(const Element& element) { return element.type_id() == ElementType::Reduce; }
+    static bool classof(const Element& element) {
+        return element.type_id() == ElementType::Reduce;
+    }
 
     bool accept(visitor::ActualStructuredSDFGVisitor& visitor) override;
 

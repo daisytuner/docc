@@ -10,10 +10,13 @@
 namespace sdfg {
 namespace passes {
 
-RemoveRedundantTransfersPass::RemoveRedundantTransfersPass() : Pass() {}
+RemoveRedundantTransfersPass::RemoveRedundantTransfersPass() : Pass() {
+}
 
 
-std::string RemoveRedundantTransfersPass::name() { return "RemoveRedundantTransfersPass"; };
+std::string RemoveRedundantTransfersPass::name() {
+    return "RemoveRedundantTransfersPass";
+};
 
 bool RemoveRedundantTransfersPass::
     run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {

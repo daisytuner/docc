@@ -21,13 +21,20 @@ MallocNode::MallocNode(
           true, // debatable. Its a big change and we may want it as a flag
           data_flow::ImplementationType_NONE
       ),
-      size_(size) {}
+      size_(size) {
+}
 
-const symbolic::Expression MallocNode::size() const { return size_; }
+const symbolic::Expression MallocNode::size() const {
+    return size_;
+}
 
-void MallocNode::validate(const Function& function) const { LibraryNode::validate(function); }
+void MallocNode::validate(const Function& function) const {
+    LibraryNode::validate(function);
+}
 
-symbolic::SymbolSet MallocNode::symbols() const { return symbolic::atoms(this->size_); }
+symbolic::SymbolSet MallocNode::symbols() const {
+    return symbolic::atoms(this->size_);
+}
 
 std::unique_ptr<data_flow::DataFlowNode> MallocNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
@@ -42,7 +49,9 @@ void MallocNode::replace(const symbolic::ExpressionMapping& replacements) {
     this->size_ = symbolic::subs(this->size_, replacements);
 }
 
-std::string MallocNode::toStr() const { return LibraryNode::toStr() + "(" + size_->__str__() + ")"; }
+std::string MallocNode::toStr() const {
+    return LibraryNode::toStr() + "(" + size_->__str__() + ")";
+}
 
 nlohmann::json MallocNodeSerializer::serialize(const data_flow::LibraryNode& library_node) {
     const MallocNode& node = static_cast<const MallocNode&>(library_node);
@@ -82,7 +91,8 @@ MallocNodeDispatcher::MallocNodeDispatcher(
     const data_flow::DataFlowGraph& data_flow_graph,
     const MallocNode& node
 )
-    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
+}
 
 void MallocNodeDispatcher::dispatch_code_with_edges(
     codegen::CodegenOutput& out,

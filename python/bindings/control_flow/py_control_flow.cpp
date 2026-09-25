@@ -47,14 +47,18 @@ void register_control_flow(py::module& m) {
         .def_property_readonly("size", &Sequence::size, "Get the number of children")
         .def(
             "at",
-            [](Sequence& seq, size_t i) -> ControlFlowNode& { return seq.at(i); },
+            [](Sequence& seq, size_t i) -> ControlFlowNode& {
+                return seq.at(i);
+            },
             py::arg("index"),
             py::return_value_policy::reference,
             "Get child and transition at index"
         )
         .def(
             "child",
-            [](Sequence& seq, size_t i) -> ControlFlowNode& { return seq.at(i); },
+            [](Sequence& seq, size_t i) -> ControlFlowNode& {
+                return seq.at(i);
+            },
             py::arg("index"),
             py::return_value_policy::reference,
             "Get child node at index"
@@ -73,12 +77,18 @@ void register_control_flow(py::module& m) {
         )
         .def(
             "index",
-            [](const Sequence& seq, const ControlFlowNode& child) -> int { return seq.index(child); },
+            [](const Sequence& seq, const ControlFlowNode& child) -> int {
+                return seq.index(child);
+            },
             py::arg("child"),
             "Find the index of a child node"
         )
         .def(
-            "__len__", [](const Sequence& seq) { return seq.size(); }, "Get the number of children"
+            "__len__",
+            [](const Sequence& seq) {
+                return seq.size();
+            },
+            "Get the number of children"
         )
         .def(
             "__getitem__",
@@ -102,7 +112,9 @@ void register_control_flow(py::module& m) {
     py::class_<Block, ControlFlowNode>(m, "Block")
         .def_property_readonly(
             "dataflow",
-            [](Block& block) -> sdfg::data_flow::DataFlowGraph& { return block.dataflow(); },
+            [](Block& block) -> sdfg::data_flow::DataFlowGraph& {
+                return block.dataflow();
+            },
             py::return_value_policy::reference,
             "Get the dataflow graph"
         )
@@ -139,14 +151,18 @@ void register_control_flow(py::module& m) {
         .def_property_readonly("size", &IfElse::size, "Get the number of cases")
         .def(
             "case",
-            [](IfElse& ifelse, size_t i) -> Sequence& { return ifelse.at(i).first; },
+            [](IfElse& ifelse, size_t i) -> Sequence& {
+                return ifelse.at(i).first;
+            },
             py::arg("index"),
             py::return_value_policy::reference,
             "Get case sequence at index"
         )
         .def(
             "condition",
-            [](const IfElse& ifelse, size_t i) -> std::string { return ifelse.at(i).second->__str__(); },
+            [](const IfElse& ifelse, size_t i) -> std::string {
+                return ifelse.at(i).second->__str__();
+            },
             py::arg("index"),
             "Get condition at index as string"
         )
@@ -175,7 +191,11 @@ void register_control_flow(py::module& m) {
         )
         .def_property_readonly("is_complete", &IfElse::is_complete, "Check if all cases are covered")
         .def(
-            "__len__", [](const IfElse& ifelse) { return ifelse.size(); }, "Get the number of cases"
+            "__len__",
+            [](const IfElse& ifelse) {
+                return ifelse.size();
+            },
+            "Get the number of cases"
         )
         .def("__repr__", [](const IfElse& ifelse) {
             std::ostringstream oss;
@@ -188,32 +208,44 @@ void register_control_flow(py::module& m) {
     py::class_<StructuredLoop, ControlFlowNode>(m, "StructuredLoop")
         .def_property_readonly(
             "indvar",
-            [](const StructuredLoop& loop) -> std::string { return loop.indvar()->__str__(); },
+            [](const StructuredLoop& loop) -> std::string {
+                return loop.indvar()->__str__();
+            },
             "Get the induction variable"
         )
         .def_property_readonly(
             "init",
-            [](const StructuredLoop& loop) -> std::string { return loop.init()->__str__(); },
+            [](const StructuredLoop& loop) -> std::string {
+                return loop.init()->__str__();
+            },
             "Get the initialization expression"
         )
         .def_property_readonly(
             "update",
-            [](const StructuredLoop& loop) -> std::string { return loop.update()->__str__(); },
+            [](const StructuredLoop& loop) -> std::string {
+                return loop.update()->__str__();
+            },
             "Get the update expression"
         )
         .def_property_readonly(
             "condition",
-            [](const StructuredLoop& loop) -> std::string { return loop.condition()->__str__(); },
+            [](const StructuredLoop& loop) -> std::string {
+                return loop.condition()->__str__();
+            },
             "Get the loop condition"
         )
         .def_property_readonly(
             "num_iterations",
-            [](const StructuredLoop& loop) { return loop.num_iterations()->__str__(); },
+            [](const StructuredLoop& loop) {
+                return loop.num_iterations()->__str__();
+            },
             "Get the number of iterations of the loop"
         )
         .def_property_readonly(
             "body",
-            [](StructuredLoop& loop) -> Sequence& { return loop.root(); },
+            [](StructuredLoop& loop) -> Sequence& {
+                return loop.root();
+            },
             py::return_value_policy::reference,
             "Get the loop body sequence"
         )
@@ -276,10 +308,18 @@ void register_control_flow(py::module& m) {
         .def_property_readonly("value", &ScheduleType::value, "Get the schedule type identifier")
         .def_property_readonly("category", &ScheduleType::category, "Get the schedule type category")
         .def_property_readonly(
-            "properties", [](const ScheduleType& st) { return st.properties(); }, "Get all schedule properties"
+            "properties",
+            [](const ScheduleType& st) {
+                return st.properties();
+            },
+            "Get all schedule properties"
         )
         .def_static(
-            "sequential", []() { return ScheduleType_Sequential::create(); }, "Create a sequential schedule type"
+            "sequential",
+            []() {
+                return ScheduleType_Sequential::create();
+            },
+            "Create a sequential schedule type"
         )
         .def_static(
             "omp",
@@ -376,7 +416,9 @@ void register_control_flow(py::module& m) {
     py::class_<While, ControlFlowNode>(m, "While")
         .def_property_readonly(
             "body",
-            [](While& w) -> Sequence& { return w.root(); },
+            [](While& w) -> Sequence& {
+                return w.root();
+            },
             py::return_value_policy::reference,
             "Get the loop body sequence"
         )

@@ -33,9 +33,15 @@ public:
 
     void validate(const Function& function) const override;
 
-    const std::vector<symbolic::Expression>& input_shape() const { return input_shape_; }
-    const std::vector<symbolic::Expression>& output_shape() const { return output_shape_; }
-    bool padded() const { return padded_; }
+    const std::vector<symbolic::Expression>& input_shape() const {
+        return input_shape_;
+    }
+    const std::vector<symbolic::Expression>& output_shape() const {
+        return output_shape_;
+    }
+    bool padded() const {
+        return padded_;
+    }
 
     symbolic::SymbolSet symbols() const override;
 
@@ -43,7 +49,9 @@ public:
 
     void replace(const symbolic::ExpressionMapping& replacements) override;
 
-    bool supports_integer_types() const override { return true; }
+    bool supports_integer_types() const override {
+        return true;
+    }
 
     passes::LibNodeExpander::ExpandOutcome
     expand(passes::LibNodeExpander::ExpandContext& context, structured_control_flow::Block& block) override;

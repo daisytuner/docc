@@ -50,7 +50,9 @@ std::unique_ptr<llvm::Region> FunctionToSDFG::expand_region(std::unique_ptr<llvm
     std::unique_ptr<llvm::Region> last_valid = nullptr;
     while (current) {
         auto res = this->can_be_applied(*current);
-        if (!res.first) break;
+        if (!res.first) {
+            break;
+        }
 
         last_valid = std::move(current);
         current = std::unique_ptr<llvm::Region>(last_valid->getExpandedRegion());
@@ -119,7 +121,8 @@ bool FunctionToSDFG::is_blacklisted(llvm::Function& F, bool apply_on_linkonce_od
 }
 
 FunctionToSDFG::FunctionToSDFG(llvm::Function& function, llvm::FunctionAnalysisManager& FAM, bool apply_on_linkonce_odr)
-    : function_(function), FAM_(FAM), sdfg_counter(0), apply_on_linkonce_odr_(apply_on_linkonce_odr) {}
+    : function_(function), FAM_(FAM), sdfg_counter(0), apply_on_linkonce_odr_(apply_on_linkonce_odr) {
+}
 
 std::vector<std::unique_ptr<sdfg::StructuredSDFG>> FunctionToSDFG::run() {
     auto& TLI = this->FAM_.getResult<llvm::TargetLibraryAnalysis>(this->function_);

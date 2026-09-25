@@ -60,10 +60,14 @@ void Tasklet::validate(const Function& function) const {
     }
 }
 
-TaskletCode Tasklet::code() const { return this->code_; };
+TaskletCode Tasklet::code() const {
+    return this->code_;
+};
 
 
-bool Tasklet::is_assign() const { return this->code_ == TaskletCode::assign; }
+bool Tasklet::is_assign() const {
+    return this->code_ == TaskletCode::assign;
+}
 
 bool Tasklet::is_trivial(const Function& function) const {
     if (!this->is_assign()) {
@@ -275,7 +279,9 @@ bool Tasklet::is_fptrunc(const Function& function) const {
     return true;
 }
 
-const std::string& Tasklet::output() const { return this->outputs_[0]; };
+const std::string& Tasklet::output() const {
+    return this->outputs_[0];
+};
 
 std::unique_ptr<DataFlowNode> Tasklet::clone(size_t element_id, const graph::Vertex vertex, DataFlowGraph& parent)
     const {
@@ -284,9 +290,11 @@ std::unique_ptr<DataFlowNode> Tasklet::clone(size_t element_id, const graph::Ver
     );
 };
 
-void Tasklet::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {}
+void Tasklet::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
+}
 
-void Tasklet::replace(const symbolic::ExpressionMapping& replacements) {}
+void Tasklet::replace(const symbolic::ExpressionMapping& replacements) {
+}
 
 EdgeRemoveOption Tasklet::can_remove_out_edge(const data_flow::DataFlowGraph& graph, const Memlet* memlet) const {
     if (graph.out_edges_for_connector(*this, memlet->src_conn()).size() > 1) {

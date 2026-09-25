@@ -41,9 +41,13 @@ public:
 
     sdfg::plugins::Context& docc_context() const;
 
-    sdfg::StructuredSDFG& sdfg() { return *sdfg_; }
+    sdfg::StructuredSDFG& sdfg() {
+        return *sdfg_;
+    }
 
-    sdfg::structured_control_flow::Sequence& root() { return sdfg_->root(); }
+    sdfg::structured_control_flow::Sequence& root() {
+        return sdfg_->root();
+    }
 
     const sdfg::types::IType& return_type() const;
 

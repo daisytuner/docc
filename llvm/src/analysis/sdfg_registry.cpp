@@ -41,8 +41,11 @@ namespace docc {
 namespace analysis {
 
 bool is_null_hash(const llvm::ModuleHash& Hash) {
-    for (auto Component : Hash)
-        if (Component != 0) return false;
+    for (auto Component : Hash) {
+        if (Component != 0) {
+            return false;
+        }
+    }
     return true;
 }
 
@@ -110,7 +113,9 @@ std::unique_ptr<llvm::MemoryBuffer> load_file(llvm::StringRef Path) {
     return std::move(*FileOrErr);
 }
 
-bool SDFGRegistry::is_link_time(AnalysisManager& AM) { return !IndexFile.empty(); }
+bool SDFGRegistry::is_link_time(AnalysisManager& AM) {
+    return !IndexFile.empty();
+}
 
 std::filesystem::path SDFGRegistry::docc_extract_dir(const llvm::Module& Module) {
     if (auto* S = llvm::dyn_cast_or_null<llvm::MDString>(Module.getModuleFlag("docc.extract.dir"))) {
@@ -250,7 +255,8 @@ void SDFGRegistry::dump_sdfgs(const llvm::Module& Module) {
     index_stream.close();
 }
 
-SDFGHolder::SDFGHolder(std::unique_ptr<sdfg::StructuredSDFG>& sdfg) : current_(std::move(sdfg)) {}
+SDFGHolder::SDFGHolder(std::unique_ptr<sdfg::StructuredSDFG>& sdfg) : current_(std::move(sdfg)) {
+}
 
 void SDFGRegistry::for_each_sdfg_modifiable(
     std::unordered_map<std::string, std::unique_ptr<SDFGHolder>>& map,

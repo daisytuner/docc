@@ -13,7 +13,9 @@
 namespace sdfg {
 namespace codegen {
 
-bool InstrumentationPlan::should_instrument(const Element& node) const { return this->nodes_.count(&node); }
+bool InstrumentationPlan::should_instrument(const Element& node) const {
+    return this->nodes_.count(&node);
+}
 
 void InstrumentationPlan::begin_instrumentation(
     const Element& node, PrettyPrinter& stream, LanguageExtension& language_extension, const InstrumentationInfo& info

@@ -14,9 +14,12 @@ namespace codegen {
 class ROCMLanguageExtension : public LanguageExtension {
 public:
     ROCMLanguageExtension(sdfg::Function& function, const std::string& external_prefix = "")
-        : LanguageExtension(function, external_prefix) {}
+        : LanguageExtension(function, external_prefix) {
+    }
 
-    const std::string language() const override { return "ROCM"; }
+    const std::string language() const override {
+        return "ROCM";
+    }
 
     std::string primitive_type(const types::PrimitiveType prim_type) override;
 

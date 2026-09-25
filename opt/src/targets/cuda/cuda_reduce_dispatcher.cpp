@@ -24,9 +24,13 @@ CUDAReduceDispatcher::CUDAReduceDispatcher(
     : gpu::GPUReduceDispatcher(language_extension, sdfg, analysis_manager, node, instrumentation_plan, arg_capture_plan) {
       };
 
-std::string CUDAReduceDispatcher::schedule_value() const { return ScheduleType_CUDA::value(); }
+std::string CUDAReduceDispatcher::schedule_value() const {
+    return ScheduleType_CUDA::value();
+}
 
-codegen::TargetType CUDAReduceDispatcher::target_type() const { return TargetType_CUDA; }
+codegen::TargetType CUDAReduceDispatcher::target_type() const {
+    return TargetType_CUDA;
+}
 
 std::unique_ptr<codegen::LanguageExtension> CUDAReduceDispatcher::create_device_language_extension() const {
     return std::make_unique<codegen::CUDALanguageExtension>(sdfg_);
@@ -36,14 +40,17 @@ bool CUDAReduceDispatcher::is_device_pointer_storage(const types::StorageType& s
     return storage.is_nv_generic();
 }
 
-std::string CUDAReduceDispatcher::kernel_file_extension() const { return "cu"; }
+std::string CUDAReduceDispatcher::kernel_file_extension() const {
+    return "cu";
+}
 
 void CUDAReduceDispatcher::emit_kernel_includes(codegen::CodeSnippetFactory& library_snippet_factory) const {
     library_snippet_factory.add_global("#include <cstdio>");
     library_snippet_factory.add_global("#include <math.h>");
 }
 
-void CUDAReduceDispatcher::emit_library_preamble(codegen::PrettyPrinter& /*library_stream*/) const {}
+void CUDAReduceDispatcher::emit_library_preamble(codegen::PrettyPrinter& /*library_stream*/) const {
+}
 
 void CUDAReduceDispatcher::emit_kernel_call(
     codegen::PrettyPrinter& main_stream,

@@ -25,7 +25,9 @@ llvm::PreservedAnalyses EinsumPass::
     registry.for_each_sdfg_modifiable(Module, [&](sdfg::StructuredSDFG& sdfg) {
         sdfg::builder::StructuredSDFGBuilder builder(sdfg);
         sdfg::analysis::AnalysisManager analysis_manager(builder.subject());
-        if (report_) report_->in_scope(&sdfg);
+        if (report_) {
+            report_->in_scope(&sdfg);
+        }
 
         // Run dataflow simplification pipeline, but ignore library nodes
         sdfg::passes::Pipeline dataflow_simplification = sdfg::passes::Pipeline::dataflow_simplification(true);
@@ -47,7 +49,9 @@ llvm::PreservedAnalyses EinsumPass::
         data_parallelism.run(builder, analysis_manager);
     });
 
-    if (report_) report_->no_scope();
+    if (report_) {
+        report_->no_scope();
+    }
 
     return llvm::PreservedAnalyses::all();
 }

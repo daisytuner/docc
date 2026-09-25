@@ -22,19 +22,33 @@ DebugInfo::DebugInfo(
       };
 
 
-bool DebugInfo::has() const { return this->has_; };
+bool DebugInfo::has() const {
+    return this->has_;
+};
 
-std::string DebugInfo::filename() const { return this->filename_; };
+std::string DebugInfo::filename() const {
+    return this->filename_;
+};
 
-std::string DebugInfo::function() const { return this->function_; };
+std::string DebugInfo::function() const {
+    return this->function_;
+};
 
-size_t DebugInfo::start_line() const { return this->start_line_; };
+size_t DebugInfo::start_line() const {
+    return this->start_line_;
+};
 
-size_t DebugInfo::start_column() const { return this->start_column_; };
+size_t DebugInfo::start_column() const {
+    return this->start_column_;
+};
 
-size_t DebugInfo::end_line() const { return this->end_line_; };
+size_t DebugInfo::end_line() const {
+    return this->end_line_;
+};
 
-size_t DebugInfo::end_column() const { return this->end_column_; };
+size_t DebugInfo::end_column() const {
+    return this->end_column_;
+};
 
 DebugInfo DebugInfo::merge(const DebugInfo& left, const DebugInfo& right) {
     if (!left.has()) {
@@ -81,11 +95,17 @@ DebugInfo DebugInfo::merge(const DebugInfo& left, const DebugInfo& right) {
 
 Element::Element(size_t element_id, const DebugInfo& debug_info) : element_id_(element_id), debug_info_(debug_info) {};
 
-size_t Element::element_id() const { return this->element_id_; };
+size_t Element::element_id() const {
+    return this->element_id_;
+};
 
-const DebugInfo& Element::debug_info() const { return this->debug_info_; };
+const DebugInfo& Element::debug_info() const {
+    return this->debug_info_;
+};
 
-void Element::set_debug_info(const DebugInfo& debug_info) { this->debug_info_ = debug_info; }
+void Element::set_debug_info(const DebugInfo& debug_info) {
+    this->debug_info_ = debug_info;
+}
 
 void Element::replace(const symbolic::ExpressionMapping& replacements) {
     for (auto& pair : replacements) {

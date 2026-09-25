@@ -21,11 +21,16 @@ MemcpyNode::MemcpyNode(
           true,
           data_flow::ImplementationType_NONE
       ),
-      count_(count) {}
+      count_(count) {
+}
 
-const symbolic::Expression MemcpyNode::count() const { return count_; }
+const symbolic::Expression MemcpyNode::count() const {
+    return count_;
+}
 
-void MemcpyNode::validate(const Function& function) const { LibraryNode::validate(function); }
+void MemcpyNode::validate(const Function& function) const {
+    LibraryNode::validate(function);
+}
 
 symbolic::SymbolSet MemcpyNode::symbols() const {
     auto count_symbols = symbolic::atoms(this->count_);
@@ -47,7 +52,9 @@ data_flow::PointerAccessType MemcpyNode::pointer_access_type(int input_idx) cons
     }
 }
 
-std::string MemcpyNode::toStr() const { return StdlibNode::toStr() + "(n: " + count_->__str__() + ")"; }
+std::string MemcpyNode::toStr() const {
+    return StdlibNode::toStr() + "(n: " + count_->__str__() + ")";
+}
 
 void MemcpyNode::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
     this->count_ = symbolic::subs(this->count_, old_expression, new_expression);
@@ -97,7 +104,8 @@ MemcpyNodeDispatcher::MemcpyNodeDispatcher(
     const data_flow::DataFlowGraph& data_flow_graph,
     const MemcpyNode& node
 )
-    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
+}
 
 void MemcpyNodeDispatcher::dispatch_code_with_edges(
     codegen::CodegenOutput& out,

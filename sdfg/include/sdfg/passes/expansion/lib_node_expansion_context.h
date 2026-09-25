@@ -27,7 +27,8 @@ public:
         data_flow::LibraryNode& node,
         const Options& options = Options::empty()
     )
-        : builder_(builder), parent_(parent), child_idx_(child_idx), block_(block), node_(node), options_(options) {}
+        : builder_(builder), parent_(parent), child_idx_(child_idx), block_(block), node_(node), options_(options) {
+    }
 
     std::unique_ptr<LibNodeExpander::AccessNodeExpand> replacement_requires_access_nodes(const std::vector<
                                                                                          LibNodeExpander::InputUse>&
@@ -38,11 +39,17 @@ public:
     LibNodeExpander::ExpandOutcome unable() override;
     LibNodeExpander::ExpandOutcome unapplicable() override;
 
-    const Options& options() const override { return options_; }
+    const Options& options() const override {
+        return options_;
+    }
 
-    bool expanded() const { return expanded_; }
+    bool expanded() const {
+        return expanded_;
+    }
 
-    bool dropped_block() const { return dropped_block_; }
+    bool dropped_block() const {
+        return dropped_block_;
+    }
 
     void cleanup();
 };

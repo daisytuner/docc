@@ -21,7 +21,8 @@ public:
         const data_flow::DataFlowGraph& data_flow_graph,
         const math::tensor::MatMulNode& node
     )
-        : GpuMmaMatmulDispatcher(language_extension, function, data_flow_graph, node) {}
+        : GpuMmaMatmulDispatcher(language_extension, function, data_flow_graph, node) {
+    }
 
     static GpuMmaTiling get_mma_tiling(const GpuMmaSupport* arch, const symbolic::MultiExpression& res_shape);
 
@@ -75,7 +76,9 @@ public:
         return &inst;
     }
 
-    std::string_view name() const override { return "rocwmma"; }
+    std::string_view name() const override {
+        return "rocwmma";
+    }
     void enumerate_includes(std::vector<std::string>& out_list) const override {
         out_list.push_back("rocwmma/rocwmma.hpp");
     }

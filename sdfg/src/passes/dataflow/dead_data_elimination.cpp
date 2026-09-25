@@ -16,7 +16,9 @@ DeadDataElimination::DeadDataElimination() : Pass(), legacy_removals_(true) {};
 
 DeadDataElimination::DeadDataElimination(bool legacy_removals) : Pass(), legacy_removals_(legacy_removals) {};
 
-std::string DeadDataElimination::name() { return "DeadDataElimination"; };
+std::string DeadDataElimination::name() {
+    return "DeadDataElimination";
+};
 
 /**
  * Simple escape policy that collects all escape and overwrite events
@@ -56,7 +58,8 @@ class MemoryOwnershipAnalysis : public analysis::BaseUserVisitor,
         const stdlib::FreeNode* node;
 
         FreeCluster(const Block* b, const data_flow::Memlet* i, const stdlib::FreeNode* free)
-            : block(b), in(i), node(free) {}
+            : block(b), in(i), node(free) {
+        }
     };
 
     struct OwnedArea {
@@ -67,7 +70,8 @@ class MemoryOwnershipAnalysis : public analysis::BaseUserVisitor,
         std::vector<FreeCluster> free_clusters;
 
         OwnedArea(data_flow::Memlet* p, structured_control_flow::Block* pb, symbolic::Expression as, bool ns)
-            : producer(p), producer_block(pb), allocation_size(std::move(as)), non_ssa(ns) {}
+            : producer(p), producer_block(pb), allocation_size(std::move(as)), non_ssa(ns) {
+        }
 
         void remove_from(builder::StructuredSDFGBuilder& builder) const;
     };
@@ -125,9 +129,13 @@ public:
         PointerOverwriteAnalyzer::use_as_return_src(container, ret);
     }
 
-    const std::unordered_set<std::string>& fully_owned_areas() const { return fully_owned_; }
+    const std::unordered_set<std::string>& fully_owned_areas() const {
+        return fully_owned_;
+    }
 
-    const OwnedArea& owned_area(const std::string& container) const { return originally_owned_data_.at(container); }
+    const OwnedArea& owned_area(const std::string& container) const {
+        return originally_owned_data_.at(container);
+    }
 
 private:
     static bool excusedEscape(const Element* element, const OwnedArea& area);
@@ -149,7 +157,8 @@ void MemoryOwnershipAnalysis::OwnedArea::remove_from(builder::StructuredSDFGBuil
 }
 
 MemoryOwnershipAnalysis::MemoryOwnershipAnalysis(StructuredSDFG& sdfg)
-    : sdfg_(sdfg), PointerEscapeAnalyzer(sdfg, *this), PointerOverwriteAnalyzer(sdfg, *this) {}
+    : sdfg_(sdfg), PointerEscapeAnalyzer(sdfg, *this), PointerOverwriteAnalyzer(sdfg, *this) {
+}
 
 bool MemoryOwnershipAnalysis::excusedEscape(const Element* element, const OwnedArea& area) {
     // An escape is excused if it matches the input edge of one of the free_clusters.
@@ -229,8 +238,9 @@ bool MemoryOwnershipAnalysis::visit(sdfg::structured_control_flow::Block& node) 
             auto* malloc_node = dynamic_cast<const stdlib::MallocNode*>(library_node);
             auto& alloc_size = malloc_node->size();
             auto output_conn = malloc_node->output(0);
-            auto oedges = dflow.out_edges(*malloc_node) |
-                          std::views::filter([&](const auto& e) { return e.src_conn() == output_conn; });
+            auto oedges = dflow.out_edges(*malloc_node) | std::views::filter([&](const auto& e) {
+                              return e.src_conn() == output_conn;
+                          });
             for (auto& oedge : oedges) {
                 auto* access_node = dynamic_cast<data_flow::AccessNode*>(&oedge.dst());
                 if (access_node && oedge.is_dst_write()) {
@@ -318,10 +328,12 @@ public:
         SymbolReadLocation loc,
         int loc_index,
         symbolic::Expression expr
-    ) override {}
+    ) override {
+    }
     void use_as_symbol_write(
         const symbolic::Symbol& container, const ControlFlowNode* node, const Element* user, SymbolWriteLocation loc
-    ) override {}
+    ) override {
+    }
     void use_as_src_node(
         const std::string& container,
         const data_flow::AccessNode& node,
@@ -334,11 +346,13 @@ public:
         const data_flow::Memlet& edge,
         const Block& block
     ) override;
-    void use_as_return_src(const std::string& container, const Return& ret) override {}
+    void use_as_return_src(const std::string& container, const Return& ret) override {
+    }
 };
 
 IndirectMemoryAccessFinder::IndirectMemoryAccessFinder(const std::unordered_set<std::string>& target_containers)
-    : target_containers_(target_containers) {}
+    : target_containers_(target_containers) {
+}
 
 void IndirectMemoryAccessFinder::use_as_src_node(
     const std::string& container, const data_flow::AccessNode& node, const data_flow::Memlet& edge, const Block& block

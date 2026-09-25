@@ -227,13 +227,19 @@ size_t count_cp_async(structured_control_flow::ControlFlowNode& scope) {
             if (auto* b = dynamic_cast<structured_control_flow::Block*>(&node)) {
                 for (auto& dn : b->dataflow().nodes()) {
                     if (auto* tc = dynamic_cast<tiles::TileCopyNode*>(&dn)) {
-                        if (tc->atom() == tiles::CopyAtom::CpAsync) n++;
+                        if (tc->atom() == tiles::CopyAtom::CpAsync) {
+                            n++;
+                        }
                     }
                 }
             } else if (auto* ie = dynamic_cast<structured_control_flow::IfElse*>(&node)) {
-                for (size_t i = 0; i < ie->size(); i++) scan(ie->at(i).first);
+                for (size_t i = 0; i < ie->size(); i++) {
+                    scan(ie->at(i).first);
+                }
             } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&node)) {
-                for (size_t i = 0; i < seq->size(); i++) scan(seq->at(i));
+                for (size_t i = 0; i < seq->size(); i++) {
+                    scan(seq->at(i));
+                }
             } else if (auto* map = dynamic_cast<structured_control_flow::Map*>(&node)) {
                 scan(map->root());
             } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&node)) {
@@ -252,13 +258,19 @@ size_t count_bytes(structured_control_flow::ControlFlowNode& scope, size_t bytes
             if (auto* b = dynamic_cast<structured_control_flow::Block*>(&node)) {
                 for (auto& dn : b->dataflow().nodes()) {
                     if (auto* tc = dynamic_cast<tiles::TileCopyNode*>(&dn)) {
-                        if (tc->atom() == tiles::CopyAtom::CpAsync && tc->bytes() == bytes) n++;
+                        if (tc->atom() == tiles::CopyAtom::CpAsync && tc->bytes() == bytes) {
+                            n++;
+                        }
                     }
                 }
             } else if (auto* ie = dynamic_cast<structured_control_flow::IfElse*>(&node)) {
-                for (size_t i = 0; i < ie->size(); i++) scan(ie->at(i).first);
+                for (size_t i = 0; i < ie->size(); i++) {
+                    scan(ie->at(i).first);
+                }
             } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&node)) {
-                for (size_t i = 0; i < seq->size(); i++) scan(seq->at(i));
+                for (size_t i = 0; i < seq->size(); i++) {
+                    scan(seq->at(i));
+                }
             } else if (auto* map = dynamic_cast<structured_control_flow::Map*>(&node)) {
                 scan(map->root());
             } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&node)) {
@@ -363,12 +375,18 @@ TEST(SoftwarePipeliningTest, WrapperSequenceDoesNotShiftCompute) {
         [&](structured_control_flow::ControlFlowNode& n) {
             if (auto* b = dynamic_cast<structured_control_flow::Block*>(&n)) {
                 for (auto* acc : b->dataflow().data_nodes()) {
-                    if (acc->data() == "C" && b->dataflow().in_degree(*acc) > 0) writes_C++;
+                    if (acc->data() == "C" && b->dataflow().in_degree(*acc) > 0) {
+                        writes_C++;
+                    }
                 }
             } else if (auto* ie = dynamic_cast<structured_control_flow::IfElse*>(&n)) {
-                for (size_t i = 0; i < ie->size(); i++) scan(ie->at(i).first);
+                for (size_t i = 0; i < ie->size(); i++) {
+                    scan(ie->at(i).first);
+                }
             } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&n)) {
-                for (size_t i = 0; i < seq->size(); i++) scan(seq->at(i));
+                for (size_t i = 0; i < seq->size(); i++) {
+                    scan(seq->at(i));
+                }
             } else if (auto* map = dynamic_cast<structured_control_flow::Map*>(&n)) {
                 scan(map->root());
             } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&n)) {
@@ -541,9 +559,13 @@ TEST(SoftwarePipeliningTest, PaddedBufferStageBiasUsesBufferStride) {
                     }
                 }
             } else if (auto* ie = dynamic_cast<structured_control_flow::IfElse*>(&node)) {
-                for (size_t i = 0; i < ie->size(); i++) collect(ie->at(i).first);
+                for (size_t i = 0; i < ie->size(); i++) {
+                    collect(ie->at(i).first);
+                }
             } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&node)) {
-                for (size_t i = 0; i < seq->size(); i++) collect(seq->at(i));
+                for (size_t i = 0; i < seq->size(); i++) {
+                    collect(seq->at(i));
+                }
             } else if (auto* map = dynamic_cast<structured_control_flow::Map*>(&node)) {
                 collect(map->root());
             } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&node)) {

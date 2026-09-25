@@ -120,17 +120,23 @@ size_t sum_cp_async_words(ControlFlowNode& scope) {
         if (auto* block = dynamic_cast<Block*>(&n)) {
             for (auto& node : block->dataflow().nodes()) {
                 if (auto* tc = dynamic_cast<tiles::TileCopyNode*>(&node)) {
-                    if (tc->atom() == tiles::CopyAtom::CpAsync) words += tc->bytes() / 4;
+                    if (tc->atom() == tiles::CopyAtom::CpAsync) {
+                        words += tc->bytes() / 4;
+                    }
                 }
             }
         } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&n)) {
-            for (size_t i = 0; i < seq->size(); i++) walk(seq->at(i));
+            for (size_t i = 0; i < seq->size(); i++) {
+                walk(seq->at(i));
+            }
         } else if (auto* map = dynamic_cast<structured_control_flow::Map*>(&n)) {
             walk(map->root());
         } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&n)) {
             walk(loop->root());
         } else if (auto* ie = dynamic_cast<structured_control_flow::IfElse*>(&n)) {
-            for (size_t i = 0; i < ie->size(); i++) walk(ie->at(i).first);
+            for (size_t i = 0; i < ie->size(); i++) {
+                walk(ie->at(i).first);
+            }
         }
     };
     walk(scope);
@@ -139,9 +145,12 @@ size_t sum_cp_async_words(ControlFlowNode& scope) {
 
 } // namespace
 
-TileVectorizer::TileVectorizer(structured_control_flow::StructuredLoop& loop) : loop_(loop) {}
+TileVectorizer::TileVectorizer(structured_control_flow::StructuredLoop& loop) : loop_(loop) {
+}
 
-std::string TileVectorizer::name() const { return "TileVectorizer"; }
+std::string TileVectorizer::name() const {
+    return "TileVectorizer";
+}
 
 bool TileVectorizer::can_be_applied(builder::StructuredSDFGBuilder&, analysis::AnalysisManager&) {
     // Applicable when the subtree holds at least one widenable cooperative copy: a
@@ -162,11 +171,15 @@ bool TileVectorizer::can_be_applied(builder::StructuredSDFGBuilder&, analysis::A
         if (auto* map = dynamic_cast<structured_control_flow::Map*>(&n)) {
             scan(map->root());
         } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&n)) {
-            for (size_t i = 0; i < seq->size(); i++) scan(seq->at(i));
+            for (size_t i = 0; i < seq->size(); i++) {
+                scan(seq->at(i));
+            }
         } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&n)) {
             scan(loop->root());
         } else if (auto* ie = dynamic_cast<structured_control_flow::IfElse*>(&n)) {
-            for (size_t i = 0; i < ie->size(); i++) scan(ie->at(i).first);
+            for (size_t i = 0; i < ie->size(); i++) {
+                scan(ie->at(i).first);
+            }
         }
     };
     scan(loop_.root());
@@ -186,11 +199,15 @@ void TileVectorizer::apply(builder::StructuredSDFGBuilder& builder, analysis::An
         if (auto* map = dynamic_cast<structured_control_flow::Map*>(&n)) {
             collect(map->root());
         } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&n)) {
-            for (size_t i = 0; i < seq->size(); i++) collect(seq->at(i));
+            for (size_t i = 0; i < seq->size(); i++) {
+                collect(seq->at(i));
+            }
         } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&n)) {
             collect(loop->root());
         } else if (auto* ie = dynamic_cast<structured_control_flow::IfElse*>(&n)) {
-            for (size_t i = 0; i < ie->size(); i++) collect(ie->at(i).first);
+            for (size_t i = 0; i < ie->size(); i++) {
+                collect(ie->at(i).first);
+            }
         }
     };
     collect(loop_.root());
@@ -212,20 +229,26 @@ void TileVectorizer::apply(builder::StructuredSDFGBuilder& builder, analysis::An
                 }
             }
         } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&n)) {
-            for (size_t i = 0; i < seq->size(); i++) gather(seq->at(i));
+            for (size_t i = 0; i < seq->size(); i++) {
+                gather(seq->at(i));
+            }
         } else if (auto* map = dynamic_cast<structured_control_flow::Map*>(&n)) {
             gather(map->root());
         } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&n)) {
             gather(loop->root());
         } else if (auto* ie = dynamic_cast<structured_control_flow::IfElse*>(&n)) {
-            for (size_t i = 0; i < ie->size(); i++) gather(ie->at(i).first);
+            for (size_t i = 0; i < ie->size(); i++) {
+                gather(ie->at(i).first);
+            }
         }
     };
     gather(loop_.root());
     for (auto& [panel, ws] : waits) {
         size_t words = sum_cp_async_words(panel->root());
         if (words > 0) {
-            for (auto* w : ws) w->set_loads_per_group(words);
+            for (auto* w : ws) {
+                w->set_loads_per_group(words);
+            }
         }
     }
 

@@ -116,7 +116,9 @@ public:
     static constexpr ElementType TypeGroup = ElementType::Tasklet | ElementType::LibraryNode;
 
     /// LLVM-style RTTI predicate: true if \p element is a CodeNode.
-    static bool classof(const Element& element) { return is_a(element.type_id(), TypeGroup); }
+    static bool classof(const Element& element) {
+        return is_a(element.type_id(), TypeGroup);
+    }
 
     CodeNode(const CodeNode& data_node) = delete;
     CodeNode& operator=(const CodeNode&) = delete;

@@ -6,20 +6,30 @@ namespace codegen {
 // Constructor
 PrettyPrinter::PrettyPrinter(int indent, bool frozen)
     : owned_stream(std::make_unique<std::stringstream>()), stream(*owned_stream.get()), indentSize(indent),
-      frozen_(frozen) {}
+      frozen_(frozen) {
+}
 
 PrettyPrinter::PrettyPrinter(std::ostream& stream, int indent, bool frozen)
-    : stream(stream), indentSize(indent), frozen_(frozen) {}
+    : stream(stream), indentSize(indent), frozen_(frozen) {
+}
 
 // Set the indentation level
-void PrettyPrinter::setIndent(int indent) { indentSize = indent; };
+void PrettyPrinter::setIndent(int indent) {
+    indentSize = indent;
+};
 
-int PrettyPrinter::indent() const { return indentSize; };
+int PrettyPrinter::indent() const {
+    return indentSize;
+};
 
-int PrettyPrinter::changeIndent(int delta) { return indentSize += delta; };
+int PrettyPrinter::changeIndent(int delta) {
+    return indentSize += delta;
+};
 
 // Get the underlying string
-std::string PrettyPrinter::str() const { return owned_stream->str(); };
+std::string PrettyPrinter::str() const {
+    return owned_stream->str();
+};
 
 // Clear the stringstream content
 void PrettyPrinter::clear() {
@@ -59,13 +69,21 @@ std::unique_ptr<types::IType> Reference::clone() const {
     return std::make_unique<Reference>(this->storage_type(), this->alignment(), this->initializer(), *this->reference_);
 };
 
-types::TypeID Reference::type_id() const { return types::TypeID::Reference; };
+types::TypeID Reference::type_id() const {
+    return types::TypeID::Reference;
+};
 
-types::PrimitiveType Reference::primitive_type() const { return this->reference_->primitive_type(); };
+types::PrimitiveType Reference::primitive_type() const {
+    return this->reference_->primitive_type();
+};
 
-bool Reference::is_symbol() const { return false; };
+bool Reference::is_symbol() const {
+    return false;
+};
 
-const types::IType& Reference::reference_type() const { return *this->reference_; };
+const types::IType& Reference::reference_type() const {
+    return *this->reference_;
+};
 
 bool Reference::operator==(const types::IType& other) const {
     if (auto reference = dynamic_cast<const Reference*>(&other)) {
@@ -75,7 +93,9 @@ bool Reference::operator==(const types::IType& other) const {
     }
 };
 
-std::string Reference::print() const { return "Reference(" + this->reference_->print() + ")"; };
+std::string Reference::print() const {
+    return "Reference(" + this->reference_->print() + ")";
+};
 
 void Reference::replace_symbols(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
     this->reference_->replace_symbols(old_expression, new_expression);

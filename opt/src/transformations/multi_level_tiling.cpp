@@ -31,9 +31,12 @@ MultiLevelTiling::MultiLevelTiling(
     structured_control_flow::StructuredLoop& loop, const std::vector<size_t>& tile_sizes, bool simplify_bounds
 )
     : LoopTiling(loop, extract_first_tile_size(tile_sizes), simplify_bounds),
-      additional_tile_sizes_(tile_sizes.begin() + 1, tile_sizes.end()), middle_loops_(tile_sizes.size() - 1, nullptr) {}
+      additional_tile_sizes_(tile_sizes.begin() + 1, tile_sizes.end()), middle_loops_(tile_sizes.size() - 1, nullptr) {
+}
 
-std::string MultiLevelTiling::name() const { return "MultiLevelTiling"; };
+std::string MultiLevelTiling::name() const {
+    return "MultiLevelTiling";
+};
 
 bool MultiLevelTiling::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     if (!LoopTiling::can_be_applied(builder, analysis_manager)) {

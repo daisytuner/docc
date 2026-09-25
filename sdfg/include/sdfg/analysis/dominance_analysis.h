@@ -17,7 +17,9 @@ protected:
 public:
     DominanceAnalysis(StructuredSDFG& sdfg);
 
-    std::string name() const override { return "DominanceAnalysis"; }
+    std::string name() const override {
+        return "DominanceAnalysis";
+    }
 
     bool dominates(User& user1, User& user2);
 

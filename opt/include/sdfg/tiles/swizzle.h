@@ -23,7 +23,9 @@ struct Swizzle {
     int base = 0; ///< M: low bit position left untouched below the field
     int shift = 0; ///< S: distance between the two fields (sign = direction)
 
-    bool is_identity() const { return bits == 0; }
+    bool is_identity() const {
+        return bits == 0;
+    }
 
     /// Permute a linear offset (a symbolic `bit_xor` of shifted/masked fields).
     symbolic::Expression apply(const symbolic::Expression& offset) const;
@@ -42,7 +44,9 @@ struct ComposedLayout {
     /// `apply_coords(c) = swizzle.apply(layout.resolve_element(c))`.
     symbolic::Expression apply_coords(const symbolic::MultiExpression& coords) const;
 
-    bool is_plain() const { return swizzle.is_identity(); }
+    bool is_plain() const {
+        return swizzle.is_identity();
+    }
 };
 
 } // namespace tiles

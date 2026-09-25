@@ -34,10 +34,13 @@ static llvm::cl::opt<std::string> LibEntrypoints(
                    "globalcfg. main is always included.")
 );
 
-static llvm::raw_ostream& warning() { return llvm::errs() << "[docc_llvm_plugin] warning: "; }
+static llvm::raw_ostream& warning() {
+    return llvm::errs() << "[docc_llvm_plugin] warning: ";
+}
 
-#define DOCC_DEBUG(X) \
-    if (docc_debug_glbl) X
+#define DOCC_DEBUG(X)    \
+    if (docc_debug_glbl) \
+    X
 
 using Graph = boost::adjacency_list<boost::listS, boost::listS, boost::bidirectionalS>;
 using Vertex = boost::graph_traits<Graph>::vertex_descriptor;
@@ -53,7 +56,9 @@ struct FunScope {
     FunScope(const analysis::GlobalCFGNode* node) : modId(node->modId_), funcId(node->funcId_) {};
 
     bool operator==(const FunScope& rhs) const {
-        if (modId != rhs.modId) return false;
+        if (modId != rhs.modId) {
+            return false;
+        }
         return funcId == rhs.funcId;
     }
 };
@@ -218,17 +223,23 @@ void GlobalCFGPrinterPass::dumpToConsole(llvm::Module& Mod, analysis::GlobalCFGA
     std::regex Filter(ViewNodes);
 
     for (auto& Func : Mod.functions()) {
-        if (Func.isDeclaration()) continue;
+        if (Func.isDeclaration()) {
+            continue;
+        }
         const analysis::GlobalCFGNode* EP = cfg.getEntryPoint(Func.getName());
-        if (EP == nullptr) continue;
+        if (EP == nullptr) {
+            continue;
+        }
 
         OS << "Entrypoint: " << EP->Name_ << "\n";
         auto [Nodes, Edges] = populateEntryPointSubgraph(cfg, EP);
-        for (const analysis::GlobalCFGNode* N : Nodes)
-            if (!N->Name_.empty())
+        for (const analysis::GlobalCFGNode* N : Nodes) {
+            if (!N->Name_.empty()) {
                 if (std::regex_match(N->Name_.data(), Filter)) {
                     OS << "  " << N->Name_ << "\n";
                 }
+            }
+        }
     }
 
     llvm::outs() << "==BEGIN DUMP_GLOBAL_CALLS_DFS==\n" << OS.str() << "==END   DUMP_GLOBAL_CALLS_DFS==\n";
@@ -459,7 +470,9 @@ static void printSubgraphDot(
                                    << " to " << E->To_->node_id_ << "\n";
             printNode(Errs, *E->From_);
         }
-        if (FromIt == Ids.end() || ToIt == Ids.end()) continue;
+        if (FromIt == Ids.end() || ToIt == Ids.end()) {
+            continue;
+        }
 
         uint32_t fromNodeId = Ids.at(E->From_);
         std::string FromId = E->fromEvtIdx_ < 0 ? std::to_string(fromNodeId)
@@ -514,7 +527,9 @@ void GlobalCFGPrinterPass::dumpToDotFile(const std::string& path, llvm::Module& 
 
     std::vector<llvm::StringRef> local_names;
     for (auto& Func : Mod.functions()) {
-        if (Func.isDeclaration()) continue;
+        if (Func.isDeclaration()) {
+            continue;
+        }
         local_names.push_back(Func.getName());
     }
 

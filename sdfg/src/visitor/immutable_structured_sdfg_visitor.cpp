@@ -5,9 +5,12 @@ namespace visitor {
 
 ImmutableStructuredSDFGVisitor::
     ImmutableStructuredSDFGVisitor(StructuredSDFG& sdfg, analysis::AnalysisManager& analysis_manager)
-    : sdfg_(sdfg), analysis_manager_(analysis_manager) {}
+    : sdfg_(sdfg), analysis_manager_(analysis_manager) {
+}
 
-bool ImmutableStructuredSDFGVisitor::visit() { return this->visit_internal(sdfg_.root()); }
+bool ImmutableStructuredSDFGVisitor::visit() {
+    return this->visit_internal(sdfg_.root());
+}
 
 bool ImmutableStructuredSDFGVisitor::visit_internal(structured_control_flow::Sequence& parent) {
     if (this->accept(parent)) {
@@ -89,27 +92,49 @@ bool ImmutableStructuredSDFGVisitor::visit_internal(structured_control_flow::Seq
     return false;
 };
 
-bool ImmutableStructuredSDFGVisitor::accept(structured_control_flow::Block& node) { return false; }
+bool ImmutableStructuredSDFGVisitor::accept(structured_control_flow::Block& node) {
+    return false;
+}
 
-bool ImmutableStructuredSDFGVisitor::accept(structured_control_flow::AssignmentBlock& node) { return false; }
+bool ImmutableStructuredSDFGVisitor::accept(structured_control_flow::AssignmentBlock& node) {
+    return false;
+}
 
-bool ImmutableStructuredSDFGVisitor::accept(structured_control_flow::Sequence& node) { return false; };
+bool ImmutableStructuredSDFGVisitor::accept(structured_control_flow::Sequence& node) {
+    return false;
+};
 
-bool ImmutableStructuredSDFGVisitor::accept(structured_control_flow::Return& node) { return false; };
+bool ImmutableStructuredSDFGVisitor::accept(structured_control_flow::Return& node) {
+    return false;
+};
 
-bool ImmutableStructuredSDFGVisitor::accept(structured_control_flow::IfElse& node) { return false; };
+bool ImmutableStructuredSDFGVisitor::accept(structured_control_flow::IfElse& node) {
+    return false;
+};
 
-bool ImmutableStructuredSDFGVisitor::accept(structured_control_flow::While& node) { return false; };
+bool ImmutableStructuredSDFGVisitor::accept(structured_control_flow::While& node) {
+    return false;
+};
 
-bool ImmutableStructuredSDFGVisitor::accept(structured_control_flow::Continue& node) { return false; };
+bool ImmutableStructuredSDFGVisitor::accept(structured_control_flow::Continue& node) {
+    return false;
+};
 
-bool ImmutableStructuredSDFGVisitor::accept(structured_control_flow::Break& node) { return false; };
+bool ImmutableStructuredSDFGVisitor::accept(structured_control_flow::Break& node) {
+    return false;
+};
 
-bool ImmutableStructuredSDFGVisitor::accept(structured_control_flow::For& node) { return false; };
+bool ImmutableStructuredSDFGVisitor::accept(structured_control_flow::For& node) {
+    return false;
+};
 
-bool ImmutableStructuredSDFGVisitor::accept(structured_control_flow::Map& node) { return false; };
+bool ImmutableStructuredSDFGVisitor::accept(structured_control_flow::Map& node) {
+    return false;
+};
 
-bool ImmutableStructuredSDFGVisitor::accept(structured_control_flow::Reduce& node) { return false; };
+bool ImmutableStructuredSDFGVisitor::accept(structured_control_flow::Reduce& node) {
+    return false;
+};
 
 } // namespace visitor
 } // namespace sdfg

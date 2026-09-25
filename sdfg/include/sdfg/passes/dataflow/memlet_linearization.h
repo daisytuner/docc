@@ -48,7 +48,9 @@ public:
      * @brief Returns the name of the pass
      * @return The string "MemletLinearization"
      */
-    static std::string name() { return "MemletLinearization"; }
+    static std::string name() {
+        return "MemletLinearization";
+    }
 
     /**
      * @brief Accepts a block and linearizes memlets in its dataflow graph

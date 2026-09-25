@@ -87,7 +87,9 @@ std::string CPPLanguageExtension::
         std::stringstream params;
         for (size_t i = 0; i < function_type->num_params(); ++i) {
             params << declaration("", function_type->param_type(symbolic::integer(i)));
-            if (i + 1 < function_type->num_params()) params << ", ";
+            if (i + 1 < function_type->num_params()) {
+                params << ", ";
+            }
         }
         if (function_type->is_var_arg()) {
             if (function_type->num_params() > 0) {
@@ -353,13 +355,16 @@ std::string CPPLanguageExtension::zero(const types::PrimitiveType prim_type) {
 }
 
 void CPPSymbolicPrinter::bvisit(const SymEngine::Infty& x) {
-    if (x.is_negative_infinity())
+    if (x.is_negative_infinity()) {
         str_ = "-INFINITY";
-    else if (x.is_positive_infinity())
+    } else if (x.is_positive_infinity()) {
         str_ = "INFINITY";
+    }
 };
 
-void CPPSymbolicPrinter::bvisit(const SymEngine::BooleanAtom& x) { str_ = x.get_val() ? "true" : "false"; };
+void CPPSymbolicPrinter::bvisit(const SymEngine::BooleanAtom& x) {
+    str_ = x.get_val() ? "true" : "false";
+};
 
 void CPPSymbolicPrinter::bvisit(const SymEngine::Symbol& x) {
     if (symbolic::is_nullptr(symbolic::symbol(x.get_name()))) {

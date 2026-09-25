@@ -70,7 +70,8 @@ public:
         const gpu::ReductionLayout& layout,
         symbolic::Expression offset
     )
-        : original_(original), buffer_(buffer), type_(type), layout_(layout), offset_(offset) {}
+        : original_(original), buffer_(buffer), type_(type), layout_(layout), offset_(offset) {
+    }
 
     bool visit(structured_control_flow::Reduce& reduction) override {
         if (is_offloaded_reduction(reduction) &&
@@ -110,7 +111,9 @@ public:
 
 } // namespace
 
-std::string ReductionSharedMemoryDelinearization::name() { return "ReductionSharedMemoryDelinearization"; }
+std::string ReductionSharedMemoryDelinearization::name() {
+    return "ReductionSharedMemoryDelinearization";
+}
 
 bool ReductionSharedMemoryDelinearization::
     run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {

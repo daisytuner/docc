@@ -16,7 +16,10 @@ private:
 
 public:
     PyDominanceAnalysis(sdfg::analysis::AnalysisManager& manager)
-        : manager_(manager), analysis_(manager.get<sdfg::analysis::DominanceAnalysis>()) {}
+        : manager_(manager), analysis_(manager.get<sdfg::analysis::DominanceAnalysis>()) {
+    }
 
-    sdfg::analysis::DominanceAnalysis& analysis() { return analysis_; }
+    sdfg::analysis::DominanceAnalysis& analysis() {
+        return analysis_;
+    }
 };

@@ -34,7 +34,9 @@ public:
 
     bool run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
 
-    std::string name() override { return "GPUNestedParallelizationPass"; }
+    std::string name() override {
+        return "GPUNestedParallelizationPass";
+    }
 };
 
 } // namespace passes

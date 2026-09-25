@@ -24,14 +24,18 @@ static bool is_driver_dump(const std::vector<std::string>& args) {
 }
 
 static bool is_cmake_compiler_id(const std::vector<std::string>& args) {
-    for (const auto& a : args)
-        if (a.find("CMakeCCompilerId") != std::string::npos || a.find("CMakeCXXCompilerId") != std::string::npos)
+    for (const auto& a : args) {
+        if (a.find("CMakeCCompilerId") != std::string::npos || a.find("CMakeCXXCompilerId") != std::string::npos) {
             return true;
+        }
+    }
     return false;
 }
 
 static bool is_docc_noop(const std::vector<std::string>& args) {
-    return std::any_of(args.begin(), args.end(), [](const std::string& arg) { return arg == "-docc-noop"; });
+    return std::any_of(args.begin(), args.end(), [](const std::string& arg) {
+        return arg == "-docc-noop";
+    });
 }
 
 static std::string add_docc_work_dir(std::vector<std::string>& args, bool alsoLinking = true) {
@@ -87,8 +91,11 @@ static void forward_docc_args(std::vector<std::string>& args, bool alsoLinking =
 static bool is_link_step(const std::vector<std::string>& args) {
     // Compile‑only options that suppress linking.
     constexpr const char* compile_only_flags[] = {"-c", "-S", "-E", "-emit-llvm"};
-    for (auto f : compile_only_flags)
-        if (std::find(args.begin(), args.end(), f) != args.end()) return false;
+    for (auto f : compile_only_flags) {
+        if (std::find(args.begin(), args.end(), f) != args.end()) {
+            return false;
+        }
+    }
     return true;
 }
 
@@ -116,8 +123,9 @@ int main(int argc, char* argv[]) {
         std::cout << "docc version: " << DOCC_LLVM_VERSION << std::endl;
         return EXIT_SUCCESS;
     }
-    if (docc::is_help(cmd) || is_preprocess_only(cmd) || is_driver_dump(cmd) || is_cmake_compiler_id(cmd))
+    if (docc::is_help(cmd) || is_preprocess_only(cmd) || is_driver_dump(cmd) || is_cmake_compiler_id(cmd)) {
         return docc::execvp_or_die(cmd);
+    }
 
     if (is_docc_noop(cmd)) { // coompletely skip ANY of our processing, just forward to clang
         auto clangArgs = docc::filter_non_docc_args(cmd);

@@ -134,15 +134,25 @@ TEST(EmbeddingRenormNodeTest, symbolic) {
     EXPECT_FALSE(symbols.contains(k));
 }
 
-TEST(EmbeddingRenormNodeTest, expand_l2_norm) { expand_with_norm_type("2.0"); }
+TEST(EmbeddingRenormNodeTest, expand_l2_norm) {
+    expand_with_norm_type("2.0");
+}
 
-TEST(EmbeddingRenormNodeTest, expand_l1_norm) { expand_with_norm_type("1.0"); }
+TEST(EmbeddingRenormNodeTest, expand_l1_norm) {
+    expand_with_norm_type("1.0");
+}
 
-TEST(EmbeddingRenormNodeTest, expand_l3_norm) { expand_with_norm_type("3.0"); }
+TEST(EmbeddingRenormNodeTest, expand_l3_norm) {
+    expand_with_norm_type("3.0");
+}
 
-TEST(EmbeddingRenormNodeTest, expand_fractional_norm) { expand_with_norm_type("0.5"); }
+TEST(EmbeddingRenormNodeTest, expand_fractional_norm) {
+    expand_with_norm_type("0.5");
+}
 
-TEST(EmbeddingRenormNodeTest, expand_inf_norm) { expand_with_norm_type("INFINITY"); }
+TEST(EmbeddingRenormNodeTest, expand_inf_norm) {
+    expand_with_norm_type("INFINITY");
+}
 
 TEST(EmbeddingRenormNodeTest, expand_2d_indices) {
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);

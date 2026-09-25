@@ -62,7 +62,9 @@ struct TileGuard {
     symbolic::MultiExpression tile_sizes; ///< tile extents (the delinearization domain)
     std::vector<Dim> dims; ///< un-discharged dims; empty ⇒ always valid
 
-    bool trivial() const { return dims.empty(); }
+    bool trivial() const {
+        return dims.empty();
+    }
 
     /// Predicate over explicit per-mode tile coordinates (one per @ref tile_sizes).
     symbolic::Condition predicate(const symbolic::MultiExpression& coords) const;

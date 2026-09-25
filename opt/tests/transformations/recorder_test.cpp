@@ -189,7 +189,9 @@ protected:
 
         analysis_manager_ = std::make_unique<analysis::AnalysisManager>(builder_->subject());
     }
-    void TearDown() override { analysis_manager_->invalidate<analysis::LoopAnalysis>(); };
+    void TearDown() override {
+        analysis_manager_->invalidate<analysis::LoopAnalysis>();
+    };
 };
 
 TEST_F(RecorderMultiTransformationTest, Apply_LoopInterchange) {
@@ -411,7 +413,9 @@ protected:
 
         analysis_manager_ = std::make_unique<analysis::AnalysisManager>(builder_->subject());
     }
-    void TearDown() override { analysis_manager_->invalidate<analysis::LoopAnalysis>(); };
+    void TearDown() override {
+        analysis_manager_->invalidate<analysis::LoopAnalysis>();
+    };
 };
 
 TEST_F(ReplayerTest, Replay_Transformations) {

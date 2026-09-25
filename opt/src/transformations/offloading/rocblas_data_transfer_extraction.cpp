@@ -187,9 +187,12 @@ void ROCBLASDataTransferExtraction::create_copy_from_device_with_deallocation(
     );
 }
 
-ROCBLASDataTransferExtraction::ROCBLASDataTransferExtraction(math::blas::BLASNode& blas_node) : blas_node_(blas_node) {}
+ROCBLASDataTransferExtraction::ROCBLASDataTransferExtraction(math::blas::BLASNode& blas_node) : blas_node_(blas_node) {
+}
 
-std::string ROCBLASDataTransferExtraction::name() const { return "ROCBLASDataTransferExtraction"; }
+std::string ROCBLASDataTransferExtraction::name() const {
+    return "ROCBLASDataTransferExtraction";
+}
 
 bool ROCBLASDataTransferExtraction::
     can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {

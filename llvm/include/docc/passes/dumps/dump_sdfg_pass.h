@@ -16,10 +16,13 @@ private:
 
 public:
     explicit DumpSDFGPass(std::string stage = "", bool dump_visualization = false)
-        : stage_(std::move(stage)), dump_visualization_(dump_visualization) {}
+        : stage_(std::move(stage)), dump_visualization_(dump_visualization) {
+    }
 
 
-    static bool available(analysis::AnalysisManager &AM) { return true; }
+    static bool available(analysis::AnalysisManager &AM) {
+        return true;
+    }
 
     llvm::PreservedAnalyses run(llvm::Module &Module, llvm::ModuleAnalysisManager &MAM, analysis::AnalysisManager &AM);
 };

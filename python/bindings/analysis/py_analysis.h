@@ -46,12 +46,16 @@ private:
 
 public:
     PyAnalysisManager(PyStructuredSDFG& sdfg)
-        : manager_(std::make_unique<sdfg::analysis::AnalysisManager>(sdfg.sdfg())) {}
+        : manager_(std::make_unique<sdfg::analysis::AnalysisManager>(sdfg.sdfg())) {
+    }
 
     PyAnalysisManager(PyStructuredSDFGBuilder& builder)
-        : manager_(std::make_unique<sdfg::analysis::AnalysisManager>(builder.builder().subject())) {}
+        : manager_(std::make_unique<sdfg::analysis::AnalysisManager>(builder.builder().subject())) {
+    }
 
-    sdfg::analysis::AnalysisManager& manager() { return *manager_; }
+    sdfg::analysis::AnalysisManager& manager() {
+        return *manager_;
+    }
 
     void invalidate_all() {
         // Clear cached wrappers
@@ -176,7 +180,9 @@ inline void register_analysis(py::module& m) {
             "Get the TypeAnalysis"
         )
         .def("users", &PyAnalysisManager::users, py::return_value_policy::reference_internal, "Get the Users analysis")
-        .def("__repr__", [](const PyAnalysisManager&) { return "<AnalysisManager>"; });
+        .def("__repr__", [](const PyAnalysisManager&) {
+            return "<AnalysisManager>";
+        });
 
     py::class_<PyArgumentsAnalysis>(m, "ArgumentsAnalysis")
         .def(
@@ -199,7 +205,9 @@ inline void register_analysis(py::module& m) {
             py::arg("node"),
             "Read/write classification of every argument at the given region"
         )
-        .def("__repr__", [](const PyArgumentsAnalysis&) { return "<ArgumentsAnalysis>"; });
+        .def("__repr__", [](const PyArgumentsAnalysis&) {
+            return "<ArgumentsAnalysis>";
+        });
 
     py::class_<PyAssumptionsAnalysis>(m, "AssumptionsAnalysis").def("__repr__", [](const PyAssumptionsAnalysis&) {
         return "<AssumptionsAnalysis>";
@@ -316,7 +324,9 @@ inline void register_analysis(py::module& m) {
             py::return_value_policy::reference,
             "Get all paths from the given loop to leaf loops in the loop tree"
         )
-        .def("__repr__", [](const PyLoopAnalysis&) { return "<LoopAnalysis>"; });
+        .def("__repr__", [](const PyLoopAnalysis&) {
+            return "<LoopAnalysis>";
+        });
 
     py::class_<PyTileAnalysis>(m, "TileAnalysis")
         .def(
@@ -326,7 +336,9 @@ inline void register_analysis(py::module& m) {
             py::arg("container"),
             "The tile of `container` at `loop` (a loop node from LoopAnalysis), or None."
         )
-        .def("__repr__", [](const PyTileAnalysis&) { return "<TileAnalysis>"; });
+        .def("__repr__", [](const PyTileAnalysis&) {
+            return "<TileAnalysis>";
+        });
 
     py::class_<PyTypeAnalysis>(m, "TypeAnalysis").def("__repr__", [](const PyTypeAnalysis&) {
         return "<TypeAnalysis>";
@@ -334,5 +346,7 @@ inline void register_analysis(py::module& m) {
 
     py::class_<PyUsers>(m, "Users")
         .def_property_readonly("_ptr", &PyUsers::ptr, "Get native pointer to Users analysis for external plugin use")
-        .def("__repr__", [](const PyUsers&) { return "<Users>"; });
+        .def("__repr__", [](const PyUsers&) {
+            return "<Users>";
+        });
 }

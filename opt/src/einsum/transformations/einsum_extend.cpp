@@ -23,9 +23,12 @@
 namespace sdfg {
 namespace einsum {
 
-EinsumExtend::EinsumExtend(einsum::EinsumNode& einsum_node) : einsum_node_(einsum_node), new_einsum_node_(nullptr) {}
+EinsumExtend::EinsumExtend(einsum::EinsumNode& einsum_node) : einsum_node_(einsum_node), new_einsum_node_(nullptr) {
+}
 
-std::string EinsumExtend::name() const { return "EinsumExtend"; }
+std::string EinsumExtend::name() const {
+    return "EinsumExtend";
+}
 
 bool EinsumExtend::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     // Skip EinsumNodes with dimensions
@@ -202,7 +205,9 @@ void EinsumExtend::apply(builder::StructuredSDFGBuilder& builder, analysis::Anal
     analysis_manager.invalidate_all();
 }
 
-einsum::EinsumNode* EinsumExtend::new_einsum_node() { return this->new_einsum_node_; }
+einsum::EinsumNode* EinsumExtend::new_einsum_node() {
+    return this->new_einsum_node_;
+}
 
 void EinsumExtend::to_json(nlohmann::json& j) const {
     j["transformation_type"] = this->name();

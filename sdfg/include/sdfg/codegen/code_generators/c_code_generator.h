@@ -19,7 +19,9 @@ protected:
 
     void dispatch_schedule() override;
 
-    LanguageExtension& language_extension() override { return language_extension_; }
+    LanguageExtension& language_extension() override {
+        return language_extension_;
+    }
 
 public:
     explicit CCodeGenerator(
@@ -38,7 +40,8 @@ public:
               std::move(library_snippet_factory),
               externals_prefix
           ),
-          language_extension_(sdfg, externals_prefix) {}
+          language_extension_(sdfg, externals_prefix) {
+    }
 
     std::string function_definition() override;
 

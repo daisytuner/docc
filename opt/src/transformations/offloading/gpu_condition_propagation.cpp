@@ -170,7 +170,9 @@ void GPUConditionPropagation::apply(builder::StructuredSDFGBuilder& builder, ana
     analysis_manager.invalidate_all();
 }
 
-std::string GPUConditionPropagation::name() const { return "GPUConditionPropagation"; };
+std::string GPUConditionPropagation::name() const {
+    return "GPUConditionPropagation";
+};
 
 void GPUConditionPropagation::to_json(nlohmann::json& j) const {
     j["transformation_type"] = this->name();
@@ -220,7 +222,8 @@ gpu_map_ids(structured_control_flow::StructuredLoop& root, analysis::AnalysisMan
 }
 
 GPUConditionPropagationScope::GPUConditionPropagationScope(structured_control_flow::StructuredLoop& root)
-    : root_(root) {}
+    : root_(root) {
+}
 
 bool GPUConditionPropagationScope::
     can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
@@ -252,7 +255,9 @@ void GPUConditionPropagationScope::
     analysis_manager.invalidate_all();
 }
 
-std::string GPUConditionPropagationScope::name() const { return "GPUConditionPropagationScope"; };
+std::string GPUConditionPropagationScope::name() const {
+    return "GPUConditionPropagationScope";
+};
 
 void GPUConditionPropagationScope::to_json(nlohmann::json& j) const {
     j["transformation_type"] = this->name();
@@ -284,7 +289,8 @@ GPUConditionPropagationScope GPUConditionPropagationScope::
 }
 
 BarrierFinder::BarrierFinder(builder::StructuredSDFGBuilder& builder, sdfg::analysis::AnalysisManager& analysis_manager)
-    : visitor::StructuredSDFGVisitor(builder, analysis_manager) {}
+    : visitor::StructuredSDFGVisitor(builder, analysis_manager) {
+}
 
 bool BarrierFinder::accept(structured_control_flow::Block& node) {
     for (auto& library_node : node.dataflow().nodes()) {

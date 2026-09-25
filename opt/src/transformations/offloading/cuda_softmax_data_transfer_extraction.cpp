@@ -124,9 +124,12 @@ void CUDASoftmaxDataTransferExtraction::create_copy_from_device_with_deallocatio
 }
 
 CUDASoftmaxDataTransferExtraction::CUDASoftmaxDataTransferExtraction(math::tensor::SoftmaxNode& softmax_node)
-    : softmax_node_(softmax_node) {}
+    : softmax_node_(softmax_node) {
+}
 
-std::string CUDASoftmaxDataTransferExtraction::name() const { return "CUDASoftmaxDataTransferExtraction"; }
+std::string CUDASoftmaxDataTransferExtraction::name() const {
+    return "CUDASoftmaxDataTransferExtraction";
+}
 
 bool CUDASoftmaxDataTransferExtraction::
     can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {

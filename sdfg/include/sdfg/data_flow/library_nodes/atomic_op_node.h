@@ -73,7 +73,9 @@ public:
     virtual std::string_view type_name() const = 0;
 
     /// The implementation type this impl corresponds to.
-    ImplementationType implementation_type() const { return StringEnum(std::string(this->type_name())); }
+    ImplementationType implementation_type() const {
+        return StringEnum(std::string(this->type_name()));
+    }
 
     /**
      * @brief Whether this implementation supports the given (data type, op) combination.
@@ -81,7 +83,8 @@ public:
     virtual bool supports(types::PrimitiveType data_type, AtomicOpType op) const = 0;
 
 protected:
-    AtomicScalarOpImpl() {}
+    AtomicScalarOpImpl() {
+    }
 };
 
 /**
@@ -105,8 +108,12 @@ public:
         const AtomicScalarOpImpl* impl
     );
 
-    types::PrimitiveType data_type() const { return data_type_; }
-    AtomicOpType atomic_op() const { return atomic_op_; }
+    types::PrimitiveType data_type() const {
+        return data_type_;
+    }
+    AtomicOpType atomic_op() const {
+        return atomic_op_;
+    }
 
     void switch_implementation(const AtomicScalarOpImpl& new_impl);
 
@@ -134,14 +141,19 @@ public:
     static constexpr const char* TYPE_NAME = "CPU";
     static const AtomicScalarOpCPUImpl* instance();
 
-    std::string_view type_name() const override { return TYPE_NAME; }
+    std::string_view type_name() const override {
+        return TYPE_NAME;
+    }
 
     bool supports(types::PrimitiveType data_type, AtomicOpType op) const override;
 
-    static ImplementationType implementation_type() { return {TYPE_NAME}; }
+    static ImplementationType implementation_type() {
+        return {TYPE_NAME};
+    }
 
 private:
-    AtomicScalarOpCPUImpl() : AtomicScalarOpImpl() {}
+    AtomicScalarOpCPUImpl() : AtomicScalarOpImpl() {
+    }
 };
 
 /**
@@ -162,14 +174,19 @@ public:
     static constexpr const char* TYPE_NAME = "CUDA";
     static const AtomicScalarOpCudaImpl* instance();
 
-    std::string_view type_name() const override { return TYPE_NAME; }
+    std::string_view type_name() const override {
+        return TYPE_NAME;
+    }
 
     bool supports(types::PrimitiveType data_type, AtomicOpType op) const override;
 
-    static ImplementationType implementation_type() { return {TYPE_NAME}; }
+    static ImplementationType implementation_type() {
+        return {TYPE_NAME};
+    }
 
 private:
-    AtomicScalarOpCudaImpl() : AtomicScalarOpGPUImpl() {}
+    AtomicScalarOpCudaImpl() : AtomicScalarOpGPUImpl() {
+    }
 };
 
 /// ROCm atomic implementation.
@@ -178,14 +195,19 @@ public:
     static constexpr const char* TYPE_NAME = "ROCm";
     static const AtomicScalarOpRocmImpl* instance();
 
-    std::string_view type_name() const override { return TYPE_NAME; }
+    std::string_view type_name() const override {
+        return TYPE_NAME;
+    }
 
     bool supports(types::PrimitiveType data_type, AtomicOpType op) const override;
 
-    static ImplementationType implementation_type() { return {TYPE_NAME}; }
+    static ImplementationType implementation_type() {
+        return {TYPE_NAME};
+    }
 
 private:
-    AtomicScalarOpRocmImpl() : AtomicScalarOpGPUImpl() {}
+    AtomicScalarOpRocmImpl() : AtomicScalarOpGPUImpl() {
+    }
 };
 
 class AtomicScalarOpNodeSerializer : public serializer::LibraryNodeSerializer {
@@ -217,7 +239,8 @@ public:
         const data_flow::DataFlowGraph& data_flow_graph,
         const data_flow::AtomicScalarOpNode& node
     )
-        : AtomicScalarOpNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+        : AtomicScalarOpNodeDispatcher(language_extension, function, data_flow_graph, node) {
+    }
 
     void dispatch_code_with_edges(
         codegen::CodegenOutput& out,
@@ -234,7 +257,8 @@ public:
         const data_flow::DataFlowGraph& data_flow_graph,
         const data_flow::AtomicScalarOpNode& node
     )
-        : AtomicScalarOpNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+        : AtomicScalarOpNodeDispatcher(language_extension, function, data_flow_graph, node) {
+    }
 
 public:
     void dispatch_code_with_edges(

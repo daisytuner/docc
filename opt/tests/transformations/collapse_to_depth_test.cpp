@@ -88,8 +88,12 @@ static structured_control_flow::Map& build_4d_nest(builder::StructuredSDFGBuilde
 static structured_control_flow::Map& build_5d_nest(builder::StructuredSDFGBuilder& builder) {
     auto& root = builder.subject().root();
     types::Scalar sym(types::PrimitiveType::UInt64);
-    for (auto* s : {"N", "M", "P", "Q", "R"}) builder.add_container(s, sym, true);
-    for (auto* s : {"i", "j", "k", "l", "m"}) builder.add_container(s, sym);
+    for (auto* s : {"N", "M", "P", "Q", "R"}) {
+        builder.add_container(s, sym, true);
+    }
+    for (auto* s : {"i", "j", "k", "l", "m"}) {
+        builder.add_container(s, sym);
+    }
 
     auto& m_i = add_map(builder, root, symbolic::symbol("i"), symbolic::symbol("N"));
     auto& m_j = add_map(builder, m_i.root(), symbolic::symbol("j"), symbolic::symbol("M"));

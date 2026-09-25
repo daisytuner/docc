@@ -12,7 +12,9 @@ Sequence::Sequence(size_t element_id, const DebugInfo& debug_info, ControlFlowNo
 
       };
 
-bool Sequence::accept(visitor::ActualStructuredSDFGVisitor& visitor) { return visitor.visit(*this); }
+bool Sequence::accept(visitor::ActualStructuredSDFGVisitor& visitor) {
+    return visitor.visit(*this);
+}
 
 void Sequence::validate(const Function& function) const {
     for (auto& child : this->children_) {
@@ -20,11 +22,17 @@ void Sequence::validate(const Function& function) const {
     }
 };
 
-size_t Sequence::size() const { return this->children_.size(); };
+size_t Sequence::size() const {
+    return this->children_.size();
+};
 
-const ControlFlowNode& Sequence::at(size_t i) const { return *this->children_.at(i); }
+const ControlFlowNode& Sequence::at(size_t i) const {
+    return *this->children_.at(i);
+}
 
-ControlFlowNode& Sequence::at(size_t i) { return *this->children_.at(i); }
+ControlFlowNode& Sequence::at(size_t i) {
+    return *this->children_.at(i);
+}
 
 int Sequence::index(const ControlFlowNode& child) const {
     for (size_t i = 0; i < this->children_.size(); i++) {

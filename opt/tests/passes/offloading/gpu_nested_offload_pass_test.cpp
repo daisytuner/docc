@@ -22,7 +22,9 @@ symbolic::Condition lt(const std::string& v, int64_t bound) {
     return symbolic::Lt(symbolic::symbol(v), symbolic::integer(bound));
 }
 
-symbolic::Expression step(const std::string& v) { return symbolic::add(symbolic::symbol(v), symbolic::integer(1)); }
+symbolic::Expression step(const std::string& v) {
+    return symbolic::add(symbolic::symbol(v), symbolic::integer(1));
+}
 
 // X_GRID schedule for the pre-offloaded outer map of the given GPU target.
 template<typename Sched>

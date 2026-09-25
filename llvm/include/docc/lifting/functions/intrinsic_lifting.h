@@ -245,7 +245,8 @@ public:
               pred_mapping,
               constants_mapping,
               anonymous_types_mapping
-          ) {}
+          ) {
+    }
 
     sdfg::control_flow::State& visit(
         const llvm::BasicBlock* block, const llvm::CallBase* instruction, sdfg::control_flow::State& current_state

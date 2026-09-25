@@ -101,7 +101,8 @@ protected:
     );
 
     /// Node-specific preconditions checked before any code is emitted (default: none).
-    virtual void validate_before_dispatch(analysis::AnalysisManager& analysis_manager) {}
+    virtual void validate_before_dispatch(analysis::AnalysisManager& analysis_manager) {
+    }
 
     virtual void dispatch_kernel_body(
         codegen::NestedCodeSnippetFactory& kernel_snippet_factory,

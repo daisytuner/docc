@@ -64,7 +64,8 @@ class AccumulatorIndexCollector : public analysis::BaseUserVisitor {
     }
 
 public:
-    explicit AccumulatorIndexCollector(const std::string& container) : container_(container) {}
+    explicit AccumulatorIndexCollector(const std::string& container) : container_(container) {
+    }
     symbolic::Expression index = SymEngine::null;
 
     void
@@ -84,11 +85,14 @@ public:
         SymbolReadLocation,
         int,
         symbolic::Expression
-    ) override {}
+    ) override {
+    }
     void use_as_symbol_write(
         const symbolic::Symbol&, const structured_control_flow::ControlFlowNode*, const Element*, SymbolWriteLocation
-    ) override {}
-    void use_as_return_src(const std::string&, const structured_control_flow::Return&) override {}
+    ) override {
+    }
+    void use_as_return_src(const std::string&, const structured_control_flow::Return&) override {
+    }
 };
 
 bool positive_integer(const symbolic::Expression& expression) {
@@ -437,9 +441,12 @@ ReductionLoopDomain ReductionLoopDomain::from_header(const symbolic::Symbol& ind
     return {indvar, header.init, count, stride};
 }
 
-ReductionBufferAnalysis::ReductionBufferAnalysis(StructuredSDFG& sdfg) : analysis::Analysis(sdfg) {}
+ReductionBufferAnalysis::ReductionBufferAnalysis(StructuredSDFG& sdfg) : analysis::Analysis(sdfg) {
+}
 
-std::string ReductionBufferAnalysis::name() const { return "ReductionBufferAnalysis"; }
+std::string ReductionBufferAnalysis::name() const {
+    return "ReductionBufferAnalysis";
+}
 
 void ReductionBufferAnalysis::run(analysis::AnalysisManager& analysis_manager) {
     analysis_manager_ = &analysis_manager;

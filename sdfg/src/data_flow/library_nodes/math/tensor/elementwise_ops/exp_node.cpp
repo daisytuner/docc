@@ -20,7 +20,8 @@ ExpNode::ExpNode(
 )
     : ElementWiseDataflowTensorNode(
           element_id, debug_info, vertex, parent, LibraryNodeType_Exp, shape, "Y", {"X"}, quantization, impl_type
-      ) {}
+      ) {
+}
 
 ElementWiseDataflowTensorNode::ElementOutput ExpNode::expand_operation_dataflow(
     builder::StructuredSDFGBuilder& builder,

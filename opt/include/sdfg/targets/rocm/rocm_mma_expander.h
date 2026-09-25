@@ -15,7 +15,8 @@ protected:
     void set_implementation_type_mma(math::tensor::MatMulNode& node, const GpuMmaTiling& mma_tiling) const override;
 
 public:
-    RocmMmaExpander(const RocmArch& arch) : GpuMmaExpander(), arch_(arch) {}
+    RocmMmaExpander(const RocmArch& arch) : GpuMmaExpander(), arch_(arch) {
+    }
 };
 
 } // namespace sdfg::gpu::rocm

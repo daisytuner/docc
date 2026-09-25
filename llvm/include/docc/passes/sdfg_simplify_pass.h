@@ -13,7 +13,9 @@ namespace passes {
 
 class SDFGSimplifyPass : public llvm::PassInfoMixin<SDFGSimplifyPass> {
 public:
-    static bool available(analysis::AnalysisManager &WPAM) { return true; }
+    static bool available(analysis::AnalysisManager &WPAM) {
+        return true;
+    }
 
     llvm::PreservedAnalyses run(llvm::Module &Module, llvm::ModuleAnalysisManager &MAM, analysis::AnalysisManager &WPAM);
 };

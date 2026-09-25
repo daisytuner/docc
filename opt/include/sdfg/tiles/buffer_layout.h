@@ -60,7 +60,9 @@ struct PackedBuffer {
     symbolic::MultiExpression
     subset(const symbolic::MultiExpression& slot_indices, const symbolic::MultiExpression& tile_indices) const;
     /// The scalar element offset as a (possibly swizzled) layout over `[slot ++ tile]`.
-    ComposedLayout layout() const { return buffer_layout(slot_sizes, tile_sizes, kind, inner_stride()); }
+    ComposedLayout layout() const {
+        return buffer_layout(slot_sizes, tile_sizes, kind, inner_stride());
+    }
 };
 
 } // namespace tiles

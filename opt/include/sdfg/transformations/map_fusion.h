@@ -161,7 +161,9 @@ class FusionConsumerSubsetVisitor : public visitor::ActualStructuredSDFGVisitor 
     std::unordered_map<std::string, std::vector<data_flow::Subset>> unique_subsets_per_container_;
 
 protected:
-    bool abort() { return true; }
+    bool abort() {
+        return true;
+    }
 
 public:
     FusionConsumerSubsetVisitor(std::unordered_map<std::string, const data_flow::Subset*>& target_containers);

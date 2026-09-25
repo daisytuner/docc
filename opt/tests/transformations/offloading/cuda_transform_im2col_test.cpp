@@ -57,8 +57,12 @@ constexpr long long kPatchesElems = static_cast<long long>(kN) * kHout * kHout *
 // _1 size in elements: N * Cin * Hin * Win
 constexpr long long kImageElems = static_cast<long long>(kN) * kCin * kHin * kHin;
 
-symbolic::Expression i(long long v) { return symbolic::integer(v); }
-symbolic::Symbol s(const std::string& n) { return symbolic::symbol(n); }
+symbolic::Expression i(long long v) {
+    return symbolic::integer(v);
+}
+symbolic::Symbol s(const std::string& n) {
+    return symbolic::symbol(n);
+}
 
 } // namespace
 

@@ -20,7 +20,8 @@ PipelineCommitNodeDispatcher::PipelineCommitNodeDispatcher(
     const data_flow::DataFlowGraph& data_flow_graph,
     const ::sdfg::tiles::PipelineCommitNode& node
 )
-    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
+}
 
 void PipelineCommitNodeDispatcher::
     dispatch(codegen::PrettyPrinter& stream, codegen::PrettyPrinter&, codegen::CodeSnippetFactory&) {
@@ -34,7 +35,8 @@ PipelineWaitNodeDispatcher::PipelineWaitNodeDispatcher(
     const data_flow::DataFlowGraph& data_flow_graph,
     const ::sdfg::tiles::PipelineWaitNode& node
 )
-    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
+}
 
 void PipelineWaitNodeDispatcher::
     dispatch(codegen::PrettyPrinter& stream, codegen::PrettyPrinter&, codegen::CodeSnippetFactory&) {

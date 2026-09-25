@@ -86,7 +86,9 @@ llvm::cl::opt<bool> codegen_dot_output(
     llvm::cl::init(false)
 );
 
-CodeGenerationPass::CodeGenerationPass() { add_subcomp_opts_from_arg(sub_compile_opts_); }
+CodeGenerationPass::CodeGenerationPass() {
+    add_subcomp_opts_from_arg(sub_compile_opts_);
+}
 
 void CodeGenerationPass::add_subcomp_opts_from_arg(std::vector<std::string>& out_opts) const {
     for (const auto& opt : DOCC_COMP_OPTS) {

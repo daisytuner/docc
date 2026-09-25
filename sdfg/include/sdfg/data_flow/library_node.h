@@ -136,9 +136,13 @@ public:
 
     virtual ~LibraryNode() = default;
 
-    ElementType type_id() const override { return ElementType::LibraryNode; }
+    ElementType type_id() const override {
+        return ElementType::LibraryNode;
+    }
 
-    static bool classof(const Element& element) { return element.type_id() == ElementType::LibraryNode; }
+    static bool classof(const Element& element) {
+        return element.type_id() == ElementType::LibraryNode;
+    }
 
     /**
      * @brief Get the operation code
@@ -192,7 +196,9 @@ public:
      * @param input_idx index of input that is a pointer.
      * @return Invalid if not asked about a pointer input
      */
-    virtual PointerAccessType pointer_access_type(int input_idx) const { return nullptr; }
+    virtual PointerAccessType pointer_access_type(int input_idx) const {
+        return nullptr;
+    }
 
     PointerAccessType pointer_access_type(const Memlet& edge) const;
 

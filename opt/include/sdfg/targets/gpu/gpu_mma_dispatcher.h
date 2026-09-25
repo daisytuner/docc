@@ -70,7 +70,8 @@ protected:
         )>& compute
     ) const;
 
-    virtual void emit_needed_declarations(codegen::CodegenOutput& out) const {}
+    virtual void emit_needed_declarations(codegen::CodegenOutput& out) const {
+    }
 
 public:
     GpuMmaMatmulDispatcher(
@@ -79,7 +80,8 @@ public:
         const data_flow::DataFlowGraph& data_flow_graph,
         const data_flow::LibraryNode& node
     )
-        : LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+        : LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
+    }
 
 
     void dispatch_code_with_edges(

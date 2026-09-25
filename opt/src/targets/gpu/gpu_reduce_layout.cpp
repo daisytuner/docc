@@ -30,7 +30,9 @@ ReductionLayout::ReductionLayout(symbolic::Expression origin, std::vector<Dimens
         extent *= dimension.count;
         span += dimension.stride * (dimension.count - 1);
     }
-    std::erase_if(dimensions, [](const auto& dimension) { return dimension.count == 1; });
+    std::erase_if(dimensions, [](const auto& dimension) {
+        return dimension.count == 1;
+    });
 }
 
 // Decode dense mixed-radix slots back into the original strided address space.

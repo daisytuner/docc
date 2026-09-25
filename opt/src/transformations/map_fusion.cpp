@@ -32,13 +32,18 @@ MapFusion::MapFusion(
     bool allow_prod_into_cons
 )
     : first_map_(first_map), second_loop_(second_loop), require_consecutive_(require_consecutive),
-      allow_init_hoist_(allow_init_hoist), allow_prod_into_cons_(allow_prod_into_cons) {}
+      allow_init_hoist_(allow_init_hoist), allow_prod_into_cons_(allow_prod_into_cons) {
+}
 
-std::string MapFusion::name() const { return "MapFusion"; }
+std::string MapFusion::name() const {
+    return "MapFusion";
+}
 
 using passes::loop_fusion::LoopFusionByAccessWorker;
 
-LoopFusionByAccessWorker::FusionDirection MapFusion::last_fusion_direction() const { return direction_; }
+LoopFusionByAccessWorker::FusionDirection MapFusion::last_fusion_direction() const {
+    return direction_;
+}
 
 bool MapFusion::find_write_location(
     structured_control_flow::StructuredLoop& loop,
@@ -236,7 +241,9 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
         while (auto* nested = dyn_cast<structured_control_flow::StructuredLoop*>(node)) {
             producer_loops_.push_back(nested);
             producer_body_ = &nested->root();
-            if (nested->root().size() == 0) return false;
+            if (nested->root().size() == 0) {
+                return false;
+            }
             node = &nested->root().at(0);
         }
         producer_block_ = dyn_cast<structured_control_flow::Block*>(node);
@@ -272,7 +279,9 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
         while (auto* nested = dyn_cast<structured_control_flow::StructuredLoop*>(node)) {
             consumer_loops_.push_back(nested);
             consumer_body_ = &nested->root();
-            if (nested->root().size() == 0) return false;
+            if (nested->root().size() == 0) {
+                return false;
+            }
             node = &nested->root().at(0);
         }
     } else {
@@ -398,7 +407,9 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
                     break;
                 }
             }
-            if (producer_reads_fusion) break;
+            if (producer_reads_fusion) {
+                break;
+            }
         }
         if (producer_reads_fusion) {
             direction_ = LoopFusionByAccessWorker::FusionDirection::ConsumerIntoProducer;
@@ -782,8 +793,12 @@ void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
             data_flow::Subset original_write_subset;
             for (auto& node : producer_dataflow.nodes()) {
                 auto* access = dynamic_cast<data_flow::AccessNode*>(&node);
-                if (access == nullptr || access->data() != candidate.container) continue;
-                if (producer_dataflow.in_degree(*access) == 0) continue;
+                if (access == nullptr || access->data() != candidate.container) {
+                    continue;
+                }
+                if (producer_dataflow.in_degree(*access) == 0) {
+                    continue;
+                }
 
                 // This is the write access node — save the original subset, then redirect
                 for (auto& in_edge : producer_dataflow.in_edges(*access)) {
@@ -1017,7 +1032,8 @@ FusionConsumerUpdateVisitor::FusionConsumerUpdateVisitor(
     const std::vector<passes::loop_fusion::FusionRegCandidate>& fusion_candidates,
     const std::vector<std::string>& candidate_temps
 )
-    : builder_(builder), fusion_candidates_(fusion_candidates), candidate_temps_(candidate_temps) {}
+    : builder_(builder), fusion_candidates_(fusion_candidates), candidate_temps_(candidate_temps) {
+}
 
 bool FusionConsumerUpdateVisitor::dispatch_partial_sequence(Sequence& node, size_t first, size_t end) {
     for (int i = first; i < end; ++i) {
@@ -1234,7 +1250,9 @@ bool ::sdfg::transformations::FusionConsumerSubsetVisitor::visit(sdfg::structure
             // Check if this subset is already in unique_subsets
             bool found = false;
             for (const auto& existing : unique_subsets) {
-                if (existing.size() != consumer_subset.size()) continue;
+                if (existing.size() != consumer_subset.size()) {
+                    continue;
+                }
                 bool match = true;
                 for (size_t d = 0; d < existing.size(); ++d) {
                     if (!symbolic::eq(existing[d], consumer_subset[d])) {
@@ -1259,7 +1277,8 @@ bool ::sdfg::transformations::FusionConsumerSubsetVisitor::visit(sdfg::structure
                                                                                   std::string,
                                                                                   const data_flow::Subset*>&
                                                                                       target_containers)
-    : target_containers_(target_containers) {}
+    : target_containers_(target_containers) {
+}
 
 } // namespace transformations
 } // namespace sdfg

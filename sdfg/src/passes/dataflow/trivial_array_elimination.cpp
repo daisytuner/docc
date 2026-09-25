@@ -11,7 +11,9 @@ TrivialArrayElimination::TrivialArrayElimination()
 
       };
 
-std::string TrivialArrayElimination::name() { return "TrivialArrayElimination"; };
+std::string TrivialArrayElimination::name() {
+    return "TrivialArrayElimination";
+};
 
 bool TrivialArrayElimination::
     run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {

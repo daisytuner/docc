@@ -14,9 +14,12 @@ namespace codegen {
 class CUDALanguageExtension : public LanguageExtension {
 public:
     CUDALanguageExtension(sdfg::Function& function, const std::string& external_prefix = "")
-        : LanguageExtension(function, external_prefix) {}
+        : LanguageExtension(function, external_prefix) {
+    }
 
-    const std::string language() const override { return "CUDA"; }
+    const std::string language() const override {
+        return "CUDA";
+    }
 
     std::string primitive_type(const types::PrimitiveType prim_type) override;
 

@@ -12,7 +12,9 @@ symbolic::MultiExpression delinearize_rowmajor(const symbolic::Expression& flat,
     for (size_t i = 0; i < sizes.size(); ++i) {
         if (i + 1 < sizes.size()) {
             symbolic::Expression divisor = symbolic::integer(1);
-            for (size_t j = i + 1; j < sizes.size(); ++j) divisor = symbolic::mul(divisor, sizes[j]);
+            for (size_t j = i + 1; j < sizes.size(); ++j) {
+                divisor = symbolic::mul(divisor, sizes[j]);
+            }
             coords.push_back(symbolic::div(remainder, divisor));
             remainder = symbolic::mod(remainder, divisor);
         } else {
@@ -37,11 +39,17 @@ symbolic::Condition TileGuard::predicate(const symbolic::Expression& flat) const
 
 void TileGuard::collect_symbols(symbolic::SymbolSet& set) const {
     for (const auto& s : tile_sizes) {
-        for (const auto& a : symbolic::atoms(s)) set.insert(a);
+        for (const auto& a : symbolic::atoms(s)) {
+            set.insert(a);
+        }
     }
     for (const auto& d : dims) {
-        for (const auto& a : symbolic::atoms(d.base)) set.insert(a);
-        for (const auto& a : symbolic::atoms(d.max)) set.insert(a);
+        for (const auto& a : symbolic::atoms(d.base)) {
+            set.insert(a);
+        }
+        for (const auto& a : symbolic::atoms(d.max)) {
+            set.insert(a);
+        }
     }
 }
 

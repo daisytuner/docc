@@ -98,7 +98,9 @@ constexpr ElementType operator&(ElementType lhs, ElementType rhs) {
     return static_cast<ElementType>(static_cast<uint64_t>(lhs) & static_cast<uint64_t>(rhs));
 }
 
-constexpr ElementType operator~(ElementType type) { return static_cast<ElementType>(~static_cast<uint64_t>(type)); }
+constexpr ElementType operator~(ElementType type) {
+    return static_cast<ElementType>(~static_cast<uint64_t>(type));
+}
 
 /// Tests whether \p type is contained in the category \p mask (efficient, branch-free type check).
 constexpr bool is_a(ElementType type, ElementType mask) {
@@ -182,7 +184,9 @@ public:
     /**
      * Returns the type of the element as a human-readable string.
      */
-    std::string_view element_type() const { return element_type_name(this->type_id()); }
+    std::string_view element_type() const {
+        return element_type_name(this->type_id());
+    }
 
     /**
      * Validates the element.

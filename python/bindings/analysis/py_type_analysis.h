@@ -16,7 +16,10 @@ private:
 
 public:
     PyTypeAnalysis(sdfg::analysis::AnalysisManager& manager)
-        : manager_(manager), analysis_(manager.get<sdfg::analysis::TypeAnalysis>()) {}
+        : manager_(manager), analysis_(manager.get<sdfg::analysis::TypeAnalysis>()) {
+    }
 
-    sdfg::analysis::TypeAnalysis& analysis() { return analysis_; }
+    sdfg::analysis::TypeAnalysis& analysis() {
+        return analysis_;
+    }
 };

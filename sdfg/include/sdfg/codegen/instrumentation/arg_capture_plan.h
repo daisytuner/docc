@@ -57,9 +57,12 @@ public:
             const structured_control_flow::ControlFlowNode*,
             std::unordered_map<std::string, CaptureVarPlan>>& nodes
     )
-        : sdfg_(sdfg), nodes_(nodes) {}
+        : sdfg_(sdfg), nodes_(nodes) {
+    }
 
-    bool is_empty() const { return nodes_.empty(); }
+    bool is_empty() const {
+        return nodes_.empty();
+    }
 
     bool should_instrument(const structured_control_flow::ControlFlowNode& node) const;
 

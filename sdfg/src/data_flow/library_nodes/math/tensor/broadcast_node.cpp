@@ -26,7 +26,8 @@ BroadcastNode::BroadcastNode(
           {"Y", "X"},
           data_flow::ImplementationType_NONE
       ),
-      input_shape_(input_shape), output_shape_(output_shape), padded_(padded) {}
+      input_shape_(input_shape), output_shape_(output_shape), padded_(padded) {
+}
 
 void BroadcastNode::validate(const Function& function) const {
     TensorNode::validate(function);

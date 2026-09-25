@@ -31,9 +31,12 @@ ArangeNode::ArangeNode(
           {"_out", "_start", "_end", "_step"},
           impl_type
       ),
-      shape_(shape) {}
+      shape_(shape) {
+}
 
-const std::vector<symbolic::Expression>& ArangeNode::shape() const { return shape_; }
+const std::vector<symbolic::Expression>& ArangeNode::shape() const {
+    return shape_;
+}
 
 void ArangeNode::validate(const Function& function) const {
     TensorNode::validate(function);
@@ -99,7 +102,9 @@ void ArangeNode::replace(const symbolic::ExpressionMapping& replacements) {
     }
 }
 
-bool ArangeNode::supports_integer_types() const { return true; }
+bool ArangeNode::supports_integer_types() const {
+    return true;
+}
 
 passes::LibNodeExpander::ExpandOutcome ArangeNode::
     expand(passes::LibNodeExpander::ExpandContext& context, structured_control_flow::Block& block) {

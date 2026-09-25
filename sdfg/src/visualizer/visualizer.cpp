@@ -63,12 +63,16 @@ constexpr const char* code_to_string(data_flow::TaskletCode c) {
 };
 
 std::string Visualizer::expression(const std::string expr) {
-    if (this->replacements_.empty()) return expr;
+    if (this->replacements_.empty()) {
+        return expr;
+    }
     std::string res = expr;
     size_t pos1 = 0, pos2 = 0;
     for (std::pair<const std::string, const std::string> replace : this->replacements_) {
         pos2 = res.find(replace.first);
-        if (pos2 == res.npos) continue;
+        if (pos2 == res.npos) {
+            continue;
+        }
         pos1 = 0;
         std::stringstream res_tmp;
         while (pos2 < res.npos) {
@@ -76,7 +80,9 @@ std::string Visualizer::expression(const std::string expr) {
             pos1 = pos2 + replace.first.size();
             pos2 = res.find(replace.first, pos1);
         }
-        if (pos1 < res.npos) res_tmp << res.substr(pos1);
+        if (pos1 < res.npos) {
+            res_tmp << res.substr(pos1);
+        }
         res = res_tmp.str();
     }
     return res;
@@ -120,7 +126,9 @@ void Visualizer::visualizeTasklet(data_flow::Tasklet const& tasklet) {
     if (tasklet.code() == data_flow::TaskletCode::assign) {
         this->stream_ << arguments.at(0);
     } else if (tasklet.code() == data_flow::TaskletCode::fp_fma) {
-        if (arguments.size() != 3) throw std::runtime_error("FMA requires 3 arguments");
+        if (arguments.size() != 3) {
+            throw std::runtime_error("FMA requires 3 arguments");
+        }
         this->stream_ << arguments.at(0) << " * " << arguments.at(1) << " + " << arguments.at(2);
     } else {
         this->stream_ << op << "(" << helpers::join(arguments, ", ") << ")";

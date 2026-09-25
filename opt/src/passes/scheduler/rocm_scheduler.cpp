@@ -146,7 +146,9 @@ void ROCMScheduler::post_schedule(
     analysis_manager.invalidate_all();
 }
 
-std::unordered_set<ScheduleTypeCategory> ROCMScheduler::compatible_types() { return {ScheduleTypeCategory::None}; }
+std::unordered_set<ScheduleTypeCategory> ROCMScheduler::compatible_types() {
+    return {ScheduleTypeCategory::None};
+}
 
 } // namespace scheduler
 } // namespace passes

@@ -28,7 +28,8 @@ TensorNode::TensorNode(
     const std::vector<std::string>& inputs,
     const data_flow::ImplementationType& impl_type
 )
-    : MathNode(element_id, debug_info, vertex, parent, code, outputs, inputs, impl_type, true) {}
+    : MathNode(element_id, debug_info, vertex, parent, code, outputs, inputs, impl_type, true) {
+}
 
 void TensorNode::verify_data_types(const data_flow::DataFlowGraph& graph) const {
     // Validate that all memlets have the same primitive type

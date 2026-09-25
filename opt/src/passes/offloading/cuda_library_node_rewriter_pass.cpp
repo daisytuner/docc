@@ -64,7 +64,8 @@ std::optional<data_flow::ImplementationType> CudaLibraryNodeRewriter::try_cublas
 
 CudaLibraryNodeRewriter::
     CudaLibraryNodeRewriter(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager)
-    : visitor::StructuredSDFGVisitor(builder, analysis_manager) {}
+    : visitor::StructuredSDFGVisitor(builder, analysis_manager) {
+}
 
 bool CudaLibraryNodeRewriter::accept(structured_control_flow::Block& node) {
     auto& dataflow = node.dataflow();

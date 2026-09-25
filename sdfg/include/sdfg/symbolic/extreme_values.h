@@ -59,19 +59,29 @@ struct Interval {
     Expression upper;
 
     /** @brief Returns true if both bounds failed */
-    bool failed() const { return lower.is_null() && upper.is_null(); }
+    bool failed() const {
+        return lower.is_null() && upper.is_null();
+    }
 
     /** @brief Returns true if the lower bound was computed */
-    bool has_lower() const { return !lower.is_null(); }
+    bool has_lower() const {
+        return !lower.is_null();
+    }
 
     /** @brief Returns true if the upper bound was computed */
-    bool has_upper() const { return !upper.is_null(); }
+    bool has_upper() const {
+        return !upper.is_null();
+    }
 
     /** @brief Creates an exact interval [expr, expr] for a constant or parameter */
-    static Interval exact(const Expression& expr) { return {expr, expr}; }
+    static Interval exact(const Expression& expr) {
+        return {expr, expr};
+    }
 
     /** @brief Creates a failure result */
-    static Interval failure() { return {SymEngine::null, SymEngine::null}; }
+    static Interval failure() {
+        return {SymEngine::null, SymEngine::null};
+    }
 };
 
 /**
@@ -137,7 +147,9 @@ private:
     // `visit_symbol`, whose state is context-dependent and must not be
     // reused, so they are recomputed every time.
     struct BasicHash {
-        size_t operator()(const Expression& e) const noexcept { return e->hash(); }
+        size_t operator()(const Expression& e) const noexcept {
+            return e->hash();
+        }
     };
     struct BasicEq {
         bool operator()(const Expression& a, const Expression& b) const noexcept {
@@ -336,11 +348,18 @@ class AssumptionsBounds {
 public:
     explicit AssumptionsBounds(const Assumptions& assums)
         : assums_(assums), loose_(empty_params(), assums, /*tight=*/false),
-          tight_(empty_params(), assums, /*tight=*/true) {}
+          tight_(empty_params(), assums, /*tight=*/true) {
+    }
 
-    const Assumptions& assums() const { return assums_; }
-    BoundAnalysis& loose() { return loose_; }
-    BoundAnalysis& tight() { return tight_; }
+    const Assumptions& assums() const {
+        return assums_;
+    }
+    BoundAnalysis& loose() {
+        return loose_;
+    }
+    BoundAnalysis& tight() {
+        return tight_;
+    }
 
 private:
     static const SymbolSet& empty_params() {

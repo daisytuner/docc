@@ -102,7 +102,9 @@ DeadCFGElimination::DeadCFGElimination(bool permissive)
 
       };
 
-std::string DeadCFGElimination::name() { return "DeadCFGElimination"; };
+std::string DeadCFGElimination::name() {
+    return "DeadCFGElimination";
+};
 
 bool DeadCFGElimination::run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     bool applied = false;

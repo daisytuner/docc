@@ -4,7 +4,8 @@ namespace sdfg {
 namespace codegen {
 
 LoopReport::LoopReport(sdfg::builder::StructuredSDFGBuilder& builder, sdfg::analysis::AnalysisManager& analysis_manager)
-    : sdfg::visitor::StructuredSDFGVisitor(builder, analysis_manager) {}
+    : sdfg::visitor::StructuredSDFGVisitor(builder, analysis_manager) {
+}
 
 bool LoopReport::accept(sdfg::structured_control_flow::Block& node) {
     auto& dataflow = node.dataflow();

@@ -68,7 +68,8 @@ public:
         builder::StructuredSDFGBuilder& builder,
         analysis::AnalysisManager& analysis_manager,
         std::vector<structured_control_flow::StructuredLoop*>& applicable_loops
-    ) {}
+    ) {
+    }
 
     /**
      * @brief Check if the scheduling transform can be applied to a loop.
@@ -106,15 +107,20 @@ public:
         builder::StructuredSDFGBuilder& builder,
         analysis::AnalysisManager& analysis_manager,
         std::vector<structured_control_flow::StructuredLoop*>& scheduled_loops
-    ) {}
+    ) {
+    }
 
-    virtual void set_report(PassReportConsumer* report) { report_ = report; }
+    virtual void set_report(PassReportConsumer* report) {
+        report_ = report;
+    }
 
     /**
      * @brief Attach an optional Recorder that captures each scheduling transform
      * applied via ``apply_schedule`` as a replayable descriptor.
      */
-    virtual void set_recorder(transformations::Recorder* recorder) { recorder_ = recorder; }
+    virtual void set_recorder(transformations::Recorder* recorder) {
+        recorder_ = recorder;
+    }
 
     virtual std::unordered_set<ScheduleTypeCategory> compatible_types() = 0;
 };

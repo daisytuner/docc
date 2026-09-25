@@ -15,7 +15,9 @@ LoopDistribute::
 LoopDistribute::LoopDistribute(structured_control_flow::StructuredLoop& loop)
     : LoopDistribute(loop, loop.root().at(0)) {};
 
-std::string LoopDistribute::name() const { return "LoopDistribute"; };
+std::string LoopDistribute::name() const {
+    return "LoopDistribute";
+};
 
 namespace {
 
@@ -27,7 +29,9 @@ bool user_in_subtree(analysis::User* user, const structured_control_flow::Contro
     }
     auto* scope = analysis::Users::scope(user);
     while (scope != nullptr) {
-        if (scope == &subtree) return true;
+        if (scope == &subtree) {
+            return true;
+        }
         scope = scope->get_parent();
     }
     return false;
@@ -96,9 +100,15 @@ bool LoopDistribute::can_be_applied(builder::StructuredSDFGBuilder& builder, ana
         return body.size();
     };
     auto group_of = [&](size_t piece) -> int {
-        if (piece == body.size()) return -1;
-        if (piece < child_idx) return 0; // prefix
-        if (piece == child_idx) return 1; // center
+        if (piece == body.size()) {
+            return -1;
+        }
+        if (piece < child_idx) {
+            return 0; // prefix
+        }
+        if (piece == child_idx) {
+            return 1; // center
+        }
         return 2; // suffix
     };
 
@@ -109,8 +119,12 @@ bool LoopDistribute::can_be_applied(builder::StructuredSDFGBuilder& builder, ana
     }
     for (auto& pair : lcd.pairs(this->loop_)) {
         const std::string& container = pair.writer->container();
-        if (container == indvar_name) continue;
-        if (pair.deltas.empty) continue; // defensive; pairs() should not store empties
+        if (container == indvar_name) {
+            continue;
+        }
+        if (pair.deltas.empty) {
+            continue; // defensive; pairs() should not store empties
+        }
 
         size_t w_piece = piece_of(pair.writer);
         size_t r_piece = piece_of(pair.reader);
@@ -120,7 +134,9 @@ bool LoopDistribute::can_be_applied(builder::StructuredSDFGBuilder& builder, ana
         }
         int w_group = group_of(w_piece);
         int r_group = group_of(r_piece);
-        if (w_group == r_group) continue; // intra-group, distribution preserves it
+        if (w_group == r_group) {
+            continue; // intra-group, distribution preserves it
+        }
 
         // Cross-group pair.
         if (pair.type == parallelization::LoopCarriedDependency::LOOP_CARRIED_DEPENDENCY_WRITE_WRITE) {
@@ -160,7 +176,9 @@ bool LoopDistribute::can_be_applied(builder::StructuredSDFGBuilder& builder, ana
     auto& users = analysis_manager.get<analysis::Users>();
     analysis::UsersView body_view(users, this->loop_.root());
     for (auto* writer : body_view.writes()) {
-        if (writer->container() == indvar_name) continue;
+        if (writer->container() == indvar_name) {
+            continue;
+        }
         if (lc_containers.find(writer->container()) == lc_containers.end()) {
             continue; // no LC dep on this container
         }
@@ -173,17 +191,27 @@ bool LoopDistribute::can_be_applied(builder::StructuredSDFGBuilder& builder, ana
                     break;
                 }
             }
-            if (any_nonempty) continue;
+            if (any_nonempty) {
+                continue;
+            }
         }
         size_t w_piece = piece_of(writer);
-        if (w_piece == body.size()) continue;
+        if (w_piece == body.size()) {
+            continue;
+        }
         for (auto* reader : dda.defines(*writer)) {
             size_t r_piece = piece_of(reader);
-            if (r_piece == body.size()) continue;
-            if (w_piece == r_piece) continue;
+            if (r_piece == body.size()) {
+                continue;
+            }
+            if (w_piece == r_piece) {
+                continue;
+            }
             int w_group = group_of(w_piece);
             int r_group = group_of(r_piece);
-            if (w_group == r_group) continue;
+            if (w_group == r_group) {
+                continue;
+            }
             // Cross-group intra-iter scalar RAW: unsafe under distribution.
             return false;
         }

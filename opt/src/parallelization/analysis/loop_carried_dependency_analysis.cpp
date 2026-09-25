@@ -34,10 +34,12 @@ namespace sdfg {
 namespace parallelization {
 
 LoopCarriedDependencyAnalysis::LoopCarriedDependencyAnalysis(StructuredSDFG& sdfg)
-    : Analysis(sdfg), node_(sdfg.root()) {}
+    : Analysis(sdfg), node_(sdfg.root()) {
+}
 
 LoopCarriedDependencyAnalysis::LoopCarriedDependencyAnalysis(StructuredSDFG& sdfg, structured_control_flow::Sequence& node)
-    : Analysis(sdfg), node_(node) {}
+    : Analysis(sdfg), node_(node) {
+}
 
 analysis::DataDependencyAnalysis& LoopCarriedDependencyAnalysis::detailed_dda() {
     if (!detailed_dda_) {
@@ -72,7 +74,9 @@ std::vector<data_flow::Subset> collect_subsets(analysis::User& user, analysis::M
     std::vector<data_flow::Subset> result;
     auto* access_node = dynamic_cast<data_flow::AccessNode*>(user.element());
     if (access_node == nullptr) {
-        for (auto& s : user.subsets()) result.push_back(s);
+        for (auto& s : user.subsets()) {
+            result.push_back(s);
+        }
         return result;
     }
     auto& graph = access_node->get_parent();
@@ -222,7 +226,9 @@ symbolic::maps::DependenceDeltas pair_deltas(
 }
 
 void merge_deltas(LoopCarriedDependencyInfo& info, const symbolic::maps::DependenceDeltas& add) {
-    if (add.empty) return;
+    if (add.empty) {
+        return;
+    }
     if (info.deltas.empty) {
         info.deltas = add;
         return;
@@ -245,10 +251,16 @@ void merge_deltas(LoopCarriedDependencyInfo& info, const symbolic::maps::Depende
             info.deltas.deltas_str = "";
             info.deltas.dimensions.clear();
         }
-        if (u) isl_set_free(u);
+        if (u) {
+            isl_set_free(u);
+        }
     } else {
-        if (s1) isl_set_free(s1);
-        if (s2) isl_set_free(s2);
+        if (s1) {
+            isl_set_free(s1);
+        }
+        if (s2) {
+            isl_set_free(s2);
+        }
         info.deltas.deltas_str = "";
         info.deltas.dimensions.clear();
     }
@@ -439,7 +451,9 @@ void LoopCarriedDependencyAnalysis::run(analysis::AnalysisManager& analysis_mana
                     continue;
                 }
                 auto deltas = pair_deltas(this->sdfg_, *write, *read, analysis_manager, *detailed_assumptions_, *loop);
-                if (deltas.empty) continue;
+                if (deltas.empty) {
+                    continue;
+                }
                 pair_list.push_back(LoopCarriedDependencyPair{write, read, LOOP_CARRIED_DEPENDENCY_READ_WRITE, deltas});
                 auto it = deps.find(read->container());
                 if (it == deps.end()) {
@@ -460,7 +474,9 @@ void LoopCarriedDependencyAnalysis::run(analysis::AnalysisManager& analysis_mana
                     continue;
                 }
                 auto deltas = pair_deltas(this->sdfg_, *w1, *w2, analysis_manager, *detailed_assumptions_, *loop);
-                if (deltas.empty) continue;
+                if (deltas.empty) {
+                    continue;
+                }
                 pair_list.push_back(LoopCarriedDependencyPair{w1, w2, LOOP_CARRIED_DEPENDENCY_WRITE_WRITE, deltas});
                 if (deps.find(w1->container()) == deps.end()) {
                     deps[w1->container()] = LoopCarriedDependencyInfo{LOOP_CARRIED_DEPENDENCY_WRITE_WRITE, deltas};
@@ -643,24 +659,34 @@ std::vector<const LoopCarriedDependencyPair*> LoopCarriedDependencyAnalysis::pai
 
 bool LoopCarriedDependencyAnalysis::has_loop_carried(structured_control_flow::StructuredLoop& loop) const {
     auto it = pairs_.find(&loop);
-    if (it == pairs_.end()) return false;
+    if (it == pairs_.end()) {
+        return false;
+    }
     return !it->second.empty();
 }
 
 bool LoopCarriedDependencyAnalysis::has_loop_carried_raw(structured_control_flow::StructuredLoop& loop) const {
     auto it = pairs_.find(&loop);
-    if (it == pairs_.end()) return false;
+    if (it == pairs_.end()) {
+        return false;
+    }
     for (auto& p : it->second) {
-        if (p.type == LOOP_CARRIED_DEPENDENCY_READ_WRITE) return true;
+        if (p.type == LOOP_CARRIED_DEPENDENCY_READ_WRITE) {
+            return true;
+        }
     }
     return false;
 }
 
 bool LoopCarriedDependencyAnalysis::has_loop_carried_hazard(structured_control_flow::StructuredLoop& loop) const {
     auto it = pairs_.find(&loop);
-    if (it == pairs_.end()) return false;
+    if (it == pairs_.end()) {
+        return false;
+    }
     for (auto& p : it->second) {
-        if (p.type != LOOP_CARRIED_DEPENDENCY_WRITE_WRITE) return true;
+        if (p.type != LOOP_CARRIED_DEPENDENCY_WRITE_WRITE) {
+            return true;
+        }
     }
     return false;
 }

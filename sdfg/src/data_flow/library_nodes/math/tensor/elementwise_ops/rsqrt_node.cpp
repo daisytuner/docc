@@ -19,7 +19,8 @@ RsqrtNode::RsqrtNode(
 )
     : ElementWiseDataflowTensorNode(
           element_id, debug_info, vertex, parent, LibraryNodeType_Rsqrt, shape, "Y", {"X"}, quantization, impl_type
-      ) {}
+      ) {
+}
 
 ElementWiseDataflowTensorNode::ElementOutput RsqrtNode::expand_operation_dataflow(
     builder::StructuredSDFGBuilder& builder,

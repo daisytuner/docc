@@ -52,9 +52,13 @@ public:
     Return(const Return& Return) = delete;
     Return& operator=(const Return&) = delete;
 
-    ElementType type_id() const override { return ElementType::Return; }
+    ElementType type_id() const override {
+        return ElementType::Return;
+    }
 
-    static bool classof(const Element& element) { return element.type_id() == ElementType::Return; }
+    static bool classof(const Element& element) {
+        return element.type_id() == ElementType::Return;
+    }
 
     bool accept(visitor::ActualStructuredSDFGVisitor& visitor) override;
 

@@ -77,7 +77,9 @@ symbolic::Expression PackedBuffer::total_size() const {
     return symbolic::mul(product_of(slot_sizes, 0, slot_sizes.size()), product_of(tile_sizes, 0, tile_sizes.size()));
 }
 
-symbolic::Expression PackedBuffer::tile_total_size() const { return product_of(tile_sizes, 0, tile_sizes.size()); }
+symbolic::Expression PackedBuffer::tile_total_size() const {
+    return product_of(tile_sizes, 0, tile_sizes.size());
+}
 
 symbolic::Expression PackedBuffer::inner_stride() const {
     auto total = tile_total_size();

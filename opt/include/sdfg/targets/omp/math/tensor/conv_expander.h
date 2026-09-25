@@ -9,7 +9,8 @@ namespace omp {
 
 class OMPConvExpander : public passes::CodeLibNodeExpander<math::tensor::ConvNode> {
 public:
-    OMPConvExpander() : passes::CodeLibNodeExpander<math::tensor::ConvNode>(math::tensor::LibraryNodeType_Conv) {}
+    OMPConvExpander() : passes::CodeLibNodeExpander<math::tensor::ConvNode>(math::tensor::LibraryNodeType_Conv) {
+    }
 
     virtual passes::LibNodeExpander::ExpandOutcome handle_expand(
         passes::LibNodeExpander::ExpandContext& context,

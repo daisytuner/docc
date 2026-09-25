@@ -14,7 +14,9 @@ namespace einsum {
 
 class EinsumDetectionPass : public passes::Pass {
 public:
-    virtual std::string name() override { return "EinsumDetectionPass"; }
+    virtual std::string name() override {
+        return "EinsumDetectionPass";
+    }
 
     virtual bool run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
 };
@@ -30,7 +32,9 @@ public:
         PassReportConsumer* report = nullptr
     );
 
-    static std::string name() { return "EinsumConversion"; }
+    static std::string name() {
+        return "EinsumConversion";
+    }
 
     virtual bool accept(structured_control_flow::Block& block) override;
 };
@@ -41,7 +45,9 @@ class EinsumLower : public visitor::StructuredSDFGVisitor {
 public:
     EinsumLower(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager);
 
-    static std::string name() { return "EinsumLower"; }
+    static std::string name() {
+        return "EinsumLower";
+    }
 
     virtual bool accept(structured_control_flow::Block& block) override;
 };
@@ -74,7 +80,9 @@ public:
      * @brief Get the pass name
      * @return Name of the pass
      */
-    static std::string name() { return "EinsumExpansion"; };
+    static std::string name() {
+        return "EinsumExpansion";
+    };
 
     /**
      * @brief Visit a block and attempt to expand its library nodes

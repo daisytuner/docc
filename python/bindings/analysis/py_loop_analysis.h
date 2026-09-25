@@ -23,14 +23,19 @@ private:
 
 public:
     PyLoopAnalysis(sdfg::analysis::AnalysisManager& manager)
-        : manager_(manager), analysis_(manager.get<sdfg::analysis::LoopAnalysis>()) {}
+        : manager_(manager), analysis_(manager.get<sdfg::analysis::LoopAnalysis>()) {
+    }
 
-    sdfg::analysis::LoopAnalysis& analysis() { return analysis_; }
+    sdfg::analysis::LoopAnalysis& analysis() {
+        return analysis_;
+    }
 
     /**
      * @brief Get all loops in the SDFG in DFS order
      */
-    std::vector<sdfg::structured_control_flow::ControlFlowNode*> loops() const { return analysis_.loops(); }
+    std::vector<sdfg::structured_control_flow::ControlFlowNode*> loops() const {
+        return analysis_.loops();
+    }
 
     /**
      * @brief Get loop information for a specific loop

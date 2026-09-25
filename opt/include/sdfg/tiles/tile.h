@@ -74,12 +74,24 @@ public:
     /// schedules, which cooperate at group level but cannot host a separate copy Map.
     static bool drives_cooperative_copy(const structured_control_flow::ScheduleType& sched);
 
-    bool has_scratchpad() const { return has_scratchpad_; }
-    Level level() const { return level_; }
-    Space space() const { return space_; }
-    unsigned spatial_axis() const { return spatial_axis_; }
-    const symbolic::Integer& parallel_size() const { return parallel_size_; }
-    bool needs_sync() const { return needs_sync_; }
+    bool has_scratchpad() const {
+        return has_scratchpad_;
+    }
+    Level level() const {
+        return level_;
+    }
+    Space space() const {
+        return space_;
+    }
+    unsigned spatial_axis() const {
+        return spatial_axis_;
+    }
+    const symbolic::Integer& parallel_size() const {
+        return parallel_size_;
+    }
+    bool needs_sync() const {
+        return needs_sync_;
+    }
 };
 
 /// One enclosing parallel loop of a tile: its schedule facts plus the tile-role
@@ -108,12 +120,24 @@ public:
     static std::vector<TileAxis>
     enclosing(structured_control_flow::StructuredLoop& loop, const symbolic::MultiExpression& bases);
 
-    const symbolic::Symbol& indvar() const { return indvar_; }
-    Role role() const { return role_; }
-    const AxisSchedule& schedule() const { return schedule_; }
-    const symbolic::Expression& init() const { return init_; }
-    const symbolic::Integer& stride() const { return stride_; }
-    bool cooperative() const { return role_ == Role::Cooperative; }
+    const symbolic::Symbol& indvar() const {
+        return indvar_;
+    }
+    Role role() const {
+        return role_;
+    }
+    const AxisSchedule& schedule() const {
+        return schedule_;
+    }
+    const symbolic::Expression& init() const {
+        return init_;
+    }
+    const symbolic::Integer& stride() const {
+        return stride_;
+    }
+    bool cooperative() const {
+        return role_ == Role::Cooperative;
+    }
 };
 
 /// A container's staged region: `source` maps a tile coordinate to the global
@@ -130,11 +154,21 @@ public:
     Tile() = default;
     Tile(std::string container, Layout source, std::vector<TileAxis> axes, bool reads, bool writes);
 
-    const std::string& container() const { return container_; }
-    const Layout& source() const { return source_; }
-    const std::vector<TileAxis>& axes() const { return axes_; }
-    bool reads() const { return reads_; }
-    bool writes() const { return writes_; }
+    const std::string& container() const {
+        return container_;
+    }
+    const Layout& source() const {
+        return source_;
+    }
+    const std::vector<TileAxis>& axes() const {
+        return axes_;
+    }
+    bool reads() const {
+        return reads_;
+    }
+    bool writes() const {
+        return writes_;
+    }
 
     bool cooperative() const;
     std::vector<TileAxis> cooperative_axes() const;

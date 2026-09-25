@@ -33,7 +33,8 @@ SoftmaxNode::SoftmaxNode(
     }
 }
 
-void SoftmaxNode::validate(const Function& function) const {}
+void SoftmaxNode::validate(const Function& function) const {
+}
 
 passes::LibNodeExpander::ExpandOutcome SoftmaxNode::expand(passes::LibNodeExpander::ExpandContext& context, Block& block) {
     auto& dataflow = this->get_parent();

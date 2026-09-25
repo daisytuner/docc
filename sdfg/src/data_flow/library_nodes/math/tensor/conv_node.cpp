@@ -177,7 +177,9 @@ symbolic::MultiExpression ConvNode::get_out_shape() {
     return out_shape;
 }
 
-bool ConvNode::has_bias() const { return with_bias_; }
+bool ConvNode::has_bias() const {
+    return with_bias_;
+}
 
 bool ConvNode::check_expandable(data_flow::DataFlowGraph& dfg, ConvExpandPrerequisits& boundary) const {
     if ((dfg.nodes().size() != 4 || dfg.edges().size() != 3) && (dfg.nodes().size() != 5 || dfg.edges().size() != 4)) {

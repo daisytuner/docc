@@ -55,7 +55,8 @@ CMathTensorNode::CMathTensorNode(
           quantization,
           impl_type
       ),
-      cmath_function_(cmath_function) {}
+      cmath_function_(cmath_function) {
+}
 
 void CMathTensorNode::validate(const Function& function) const {
     auto& graph = this->get_parent();
@@ -75,7 +76,9 @@ void CMathTensorNode::validate(const Function& function) const {
     }
 }
 
-cmath::CMathFunction CMathTensorNode::cmath_function() const { return this->cmath_function_; }
+cmath::CMathFunction CMathTensorNode::cmath_function() const {
+    return this->cmath_function_;
+}
 
 ElementWiseDataflowTensorNode::ElementOutput CMathTensorNode::expand_operation_dataflow(
     builder::StructuredSDFGBuilder& builder,

@@ -38,9 +38,12 @@
 namespace sdfg {
 namespace transformations {
 
-LoopUnitStride::LoopUnitStride(structured_control_flow::StructuredLoop& loop) : loop_(loop) {}
+LoopUnitStride::LoopUnitStride(structured_control_flow::StructuredLoop& loop) : loop_(loop) {
+}
 
-std::string LoopUnitStride::name() const { return "LoopUnitStride"; }
+std::string LoopUnitStride::name() const {
+    return "LoopUnitStride";
+}
 
 bool LoopUnitStride::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     // Require init == 0 (apply LoopShift first)
@@ -153,7 +156,9 @@ LoopUnitStride LoopUnitStride::from_json(builder::StructuredSDFGBuilder& builder
     return LoopUnitStride(*loop);
 }
 
-std::string LoopUnitStride::strided_container_name() const { return strided_container_name_; }
+std::string LoopUnitStride::strided_container_name() const {
+    return strided_container_name_;
+}
 
 } // namespace transformations
 } // namespace sdfg

@@ -14,7 +14,8 @@ namespace sdfg {
 namespace passes {
 
 CudaExpansion::CudaExpansion(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager)
-    : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager) {}
+    : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager) {
+}
 
 bool CudaExpansion::accept(structured_control_flow::Block& node) {
     auto& dataflow = node.dataflow();

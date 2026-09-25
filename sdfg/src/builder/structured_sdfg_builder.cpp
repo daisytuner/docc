@@ -46,8 +46,12 @@ std::unordered_set<const control_flow::State*> StructuredSDFGBuilder::
     auto dominates = [&](const control_flow::State* a, const control_flow::State* b) {
         const control_flow::State* curr = b;
         while (curr != nullptr) {
-            if (curr == a) return true;
-            if (dom_tree.find(curr) == dom_tree.end()) break;
+            if (curr == a) {
+                return true;
+            }
+            if (dom_tree.find(curr) == dom_tree.end()) {
+                break;
+            }
             curr = dom_tree.at(curr);
         }
         return false;
@@ -104,7 +108,9 @@ std::unordered_set<const control_flow::State*> StructuredSDFGBuilder::
             }
         }
 
-        if (!changed) break;
+        if (!changed) {
+            break;
+        }
     }
 
     return nodes;
@@ -383,7 +389,9 @@ void StructuredSDFGBuilder::structure_region(
     }
 }
 
-Function& StructuredSDFGBuilder::function() const { return static_cast<Function&>(*this->structured_sdfg_); };
+Function& StructuredSDFGBuilder::function() const {
+    return static_cast<Function&>(*this->structured_sdfg_);
+};
 
 StructuredSDFGBuilder::StructuredSDFGBuilder(StructuredSDFG& sdfg)
     : FunctionBuilder(), structured_sdfg_(&sdfg, owned(false)) {};
@@ -428,7 +436,9 @@ StructuredSDFGBuilder::StructuredSDFGBuilder(SDFG& sdfg)
     this->traverse(sdfg);
 };
 
-StructuredSDFG& StructuredSDFGBuilder::subject() const { return *this->structured_sdfg_; };
+StructuredSDFG& StructuredSDFGBuilder::subject() const {
+    return *this->structured_sdfg_;
+};
 
 std::unique_ptr<StructuredSDFG> StructuredSDFGBuilder::move() {
 #ifndef NDEBUG
@@ -553,7 +563,9 @@ void StructuredSDFGBuilder::remove_child(Sequence& parent, size_t index) {
     parent.children_.erase(parent.children_.begin() + index);
 };
 
-void StructuredSDFGBuilder::remove_children(Sequence& parent) { parent.children_.clear(); };
+void StructuredSDFGBuilder::remove_children(Sequence& parent) {
+    parent.children_.clear();
+};
 
 void StructuredSDFGBuilder::move_child(Sequence& source, size_t source_index, Sequence& target) {
     size_t target_index = target.size();

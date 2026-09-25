@@ -97,7 +97,9 @@ void CUDACodeGenerator::append_function_source(std::ostream& ofs_source) {
     ofs_source << "}" << std::endl;
 }
 
-void CUDACodeGenerator::dispatch_includes() { this->dispatch_header_includes(this->includes_stream_); }
+void CUDACodeGenerator::dispatch_includes() {
+    this->dispatch_header_includes(this->includes_stream_);
+}
 
 void CUDACodeGenerator::dispatch_header_includes(PrettyPrinter& out) {
     out << "#define "
@@ -106,7 +108,9 @@ void CUDACodeGenerator::dispatch_header_includes(PrettyPrinter& out) {
     out << "#include <daisy_rtl/daisy_rtl.h>" << std::endl;
 };
 
-void CUDACodeGenerator::dispatch_structures() { this->dispatch_header_structures(this->classes_stream_); }
+void CUDACodeGenerator::dispatch_structures() {
+    this->dispatch_header_structures(this->classes_stream_);
+}
 
 void CUDACodeGenerator::dispatch_header_structures(PrettyPrinter& out) {
     // Forward declarations

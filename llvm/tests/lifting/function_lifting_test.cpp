@@ -445,7 +445,9 @@ entry:
                 break;
             }
         }
-        if (!call_node) continue;
+        if (!call_node) {
+            continue;
+        }
 
         EXPECT_EQ(state.dataflow().in_degree(*call_node), 1);
         EXPECT_EQ(state.dataflow().out_degree(*call_node), 0);

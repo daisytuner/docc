@@ -15,7 +15,9 @@ private:
 public:
     LoopReport(sdfg::builder::StructuredSDFGBuilder& builder, sdfg::analysis::AnalysisManager& analysis_manager);
 
-    const std::unordered_map<std::string, size_t>& report() const { return this->report_; }
+    const std::unordered_map<std::string, size_t>& report() const {
+        return this->report_;
+    }
 
     bool accept(sdfg::structured_control_flow::Block& node) override;
 

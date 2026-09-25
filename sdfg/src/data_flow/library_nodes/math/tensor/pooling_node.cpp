@@ -43,7 +43,8 @@ PoolingNode::PoolingNode(
           pads,
           dilations
       ),
-      mode_(mode) {}
+      mode_(mode) {
+}
 
 void PoolingNode::validate(const Function& function) const {
     TensorNode::validate(function);
@@ -440,9 +441,15 @@ std::string PoolingNode::mode_to_string(PoolingMode mode) {
 }
 
 PoolingMode PoolingNode::string_to_mode(const std::string& str) {
-    if (str == "max") return PoolingMode::Max;
-    if (str == "sum") return PoolingMode::Sum;
-    if (str == "avg") return PoolingMode::Avg;
+    if (str == "max") {
+        return PoolingMode::Max;
+    }
+    if (str == "sum") {
+        return PoolingMode::Sum;
+    }
+    if (str == "avg") {
+        return PoolingMode::Avg;
+    }
     throw InvalidSDFGException("Unknown pooling mode: " + str);
 }
 

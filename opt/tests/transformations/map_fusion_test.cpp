@@ -1030,7 +1030,9 @@ TEST(MapFusionTest, Domain_Stencil1D_SharedAccessNode) {
     structured_control_flow::Block* consumer_block = nullptr;
     for (size_t i = 0; i < new_map2->root().size(); ++i) {
         auto* b = dyn_cast<structured_control_flow::Block*>(&new_map2->root().at(i));
-        if (b == nullptr) continue;
+        if (b == nullptr) {
+            continue;
+        }
         for (auto& node : b->dataflow().nodes()) {
             auto* an = dynamic_cast<data_flow::AccessNode*>(&node);
             if (an != nullptr && an->data() == "B" && b->dataflow().in_degree(*an) > 0) {
@@ -1038,7 +1040,9 @@ TEST(MapFusionTest, Domain_Stencil1D_SharedAccessNode) {
                 break;
             }
         }
-        if (consumer_block != nullptr) break;
+        if (consumer_block != nullptr) {
+            break;
+        }
     }
     ASSERT_TRUE(consumer_block != nullptr) << "Consumer block (writing B) not found after fusion";
 
@@ -1263,8 +1267,12 @@ TEST(MapFusionTest, Domain_BothMapsStridedModuloMatches) {
                     bool has_j = false;
                     bool has_i = false;
                     for (const auto& atom : atoms) {
-                        if (atom->get_name() == "j") has_j = true;
-                        if (atom->get_name() == "i") has_i = true;
+                        if (atom->get_name() == "j") {
+                            has_j = true;
+                        }
+                        if (atom->get_name() == "i") {
+                            has_i = true;
+                        }
                     }
                     EXPECT_TRUE(has_j) << "Index should contain 'j' after fusion, got: " << actual->__str__();
                     EXPECT_FALSE(has_i) << "Index should not contain 'i' after fusion, got: " << actual->__str__();
@@ -1511,7 +1519,9 @@ TEST(MapFusionTest, Dataflow_InDegree0_SingleOutEdge) {
     bool found_producer_output = false;
     for (auto& node : producer_dataflow.nodes()) {
         auto* access = dynamic_cast<data_flow::AccessNode*>(&node);
-        if (access == nullptr) continue;
+        if (access == nullptr) {
+            continue;
+        }
 
         if (access->data() == "A") {
             // Input memlet (A -> tasklet) should retain Array type
@@ -3645,7 +3655,9 @@ TEST(MapFusionTest, ScenarioC_BothReadWriteT) {
     bool consumer_reads_tmp = false;
     for (auto& node : inlined_block->dataflow().nodes()) {
         auto* access = dynamic_cast<data_flow::AccessNode*>(&node);
-        if (access == nullptr) continue;
+        if (access == nullptr) {
+            continue;
+        }
         if (access->data() == "T" && inlined_block->dataflow().in_degree(*access) > 0) {
             consumer_writes_t = true;
         }

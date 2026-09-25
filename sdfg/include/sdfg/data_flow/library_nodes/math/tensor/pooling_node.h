@@ -60,14 +60,18 @@ public:
         const data_flow::ImplementationType& impl_type = data_flow::ImplementationType_NONE
     );
 
-    PoolingMode mode() const { return mode_; }
+    PoolingMode mode() const {
+        return mode_;
+    }
 
     void validate(const Function& function) const override;
 
     passes::LibNodeExpander::ExpandOutcome
     expand(passes::LibNodeExpander::ExpandContext& context, structured_control_flow::Block& block) override;
 
-    bool supports_integer_types() const override { return true; }
+    bool supports_integer_types() const override {
+        return true;
+    }
 
     std::unique_ptr<data_flow::DataFlowNode>
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const override;

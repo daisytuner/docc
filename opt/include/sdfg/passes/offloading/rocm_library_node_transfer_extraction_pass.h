@@ -12,7 +12,9 @@ public:
         builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager
     );
 
-    static std::string name() { return "RocmLibraryNodeTransferExtractionPass"; }
+    static std::string name() {
+        return "RocmLibraryNodeTransferExtractionPass";
+    }
     bool visit() override;
     bool accept(structured_control_flow::Block& block) override;
 };

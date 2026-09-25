@@ -60,7 +60,9 @@ public:
      */
     virtual bool is_symbol() const override;
 
-    bool is_pointer_like() const override { return false; }
+    bool is_pointer_like() const override {
+        return false;
+    }
 
     /**
      * @brief Creates a copy of this scalar with signed integer type
@@ -99,8 +101,10 @@ public:
      * Nothing to do.
      */
     virtual void replace_symbols(const symbolic::Expression old_expression, const symbolic::Expression new_expression)
-        override {}
-    virtual void replace_symbols(const symbolic::ExpressionMapping& replacements) override {}
+        override {
+    }
+    virtual void replace_symbols(const symbolic::ExpressionMapping& replacements) override {
+    }
 };
 } // namespace types
 } // namespace sdfg

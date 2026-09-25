@@ -16,12 +16,17 @@ FreeNode::FreeNode(
           {"_ptr"},
           true,
           data_flow::ImplementationType_NONE
-      ) {}
+      ) {
+}
 
 
-void FreeNode::validate(const Function& function) const { LibraryNode::validate(function); }
+void FreeNode::validate(const Function& function) const {
+    LibraryNode::validate(function);
+}
 
-symbolic::SymbolSet FreeNode::symbols() const { return {}; }
+symbolic::SymbolSet FreeNode::symbols() const {
+    return {};
+}
 
 std::unique_ptr<data_flow::DataFlowNode> FreeNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
@@ -78,7 +83,8 @@ FreeNodeDispatcher::FreeNodeDispatcher(
     const data_flow::DataFlowGraph& data_flow_graph,
     const FreeNode& node
 )
-    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
+}
 
 void FreeNodeDispatcher::dispatch_code_with_edges(
     codegen::CodegenOutput& out,

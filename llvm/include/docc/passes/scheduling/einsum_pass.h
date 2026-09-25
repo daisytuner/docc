@@ -16,9 +16,12 @@ private:
     sdfg::PassReportConsumer *report_;
 
 public:
-    EinsumPass(sdfg::PassReportConsumer *report = nullptr) : report_(report) {}
+    EinsumPass(sdfg::PassReportConsumer *report = nullptr) : report_(report) {
+    }
 
-    static bool available(analysis::AnalysisManager &AM) { return true; }
+    static bool available(analysis::AnalysisManager &AM) {
+        return true;
+    }
 
     llvm::PreservedAnalyses run(llvm::Module &Module, llvm::ModuleAnalysisManager &MAM, analysis::AnalysisManager &AM);
 };

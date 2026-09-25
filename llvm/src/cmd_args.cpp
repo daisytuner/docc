@@ -37,7 +37,9 @@ llvm::cl::opt<std::string> DOCC_DUMP_GLBL_CFG(
     "docc-dump-glbl-cfg",
     llvm::cl::desc("Path to dump global cfgs"),
     llvm::cl::ValueOptional,
-    llvm::cl::callback([](const std::string &Val) { DOCC_DUMP_GLBL_CFG_EN = true; })
+    llvm::cl::callback([](const std::string &Val) {
+        DOCC_DUMP_GLBL_CFG_EN = true;
+    })
 );
 
 llvm::cl::list<std::string, bool>

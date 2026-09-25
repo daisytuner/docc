@@ -20,7 +20,9 @@ namespace {
 
 symbolic::MultiExpression ints(const std::vector<long>& xs) {
     symbolic::MultiExpression out;
-    for (long x : xs) out.push_back(symbolic::integer(x));
+    for (long x : xs) {
+        out.push_back(symbolic::integer(x));
+    }
     return out;
 }
 
@@ -28,30 +30,46 @@ symbolic::MultiExpression ints(const std::vector<long>& xs) {
 // integer intrinsics (`bit_xor`, `imod`, `idiv`, `iabs`) the swizzle relies on.
 long eval(const symbolic::Expression& e) {
     using namespace SymEngine;
-    if (is_a<Integer>(*e)) return static_cast<long>(rcp_static_cast<const Integer>(e)->as_int());
+    if (is_a<Integer>(*e)) {
+        return static_cast<long>(rcp_static_cast<const Integer>(e)->as_int());
+    }
     if (is_a<Add>(*e)) {
         long s = 0;
-        for (auto& a : e->get_args()) s += eval(a);
+        for (auto& a : e->get_args()) {
+            s += eval(a);
+        }
         return s;
     }
     if (is_a<Mul>(*e)) {
         long p = 1;
-        for (auto& a : e->get_args()) p *= eval(a);
+        for (auto& a : e->get_args()) {
+            p *= eval(a);
+        }
         return p;
     }
     if (is_a<Pow>(*e)) {
         auto args = e->get_args();
         long b = eval(args[0]), ex = eval(args[1]), r = 1;
-        for (long i = 0; i < ex; ++i) r *= b;
+        for (long i = 0; i < ex; ++i) {
+            r *= b;
+        }
         return r;
     }
     if (is_a<FunctionSymbol>(*e)) {
         auto name = rcp_static_cast<const FunctionSymbol>(e)->get_name();
         auto args = e->get_args();
-        if (name == "bit_xor") return eval(args[0]) ^ eval(args[1]);
-        if (name == "imod") return eval(args[0]) % eval(args[1]);
-        if (name == "idiv") return eval(args[0]) / eval(args[1]);
-        if (name == "iabs") return std::labs(eval(args[0]));
+        if (name == "bit_xor") {
+            return eval(args[0]) ^ eval(args[1]);
+        }
+        if (name == "imod") {
+            return eval(args[0]) % eval(args[1]);
+        }
+        if (name == "idiv") {
+            return eval(args[0]) / eval(args[1]);
+        }
+        if (name == "iabs") {
+            return std::labs(eval(args[0]));
+        }
     }
     ADD_FAILURE() << "eval: unhandled expression " << e->__str__();
     return 0;
@@ -92,16 +110,24 @@ void expect_consistent(
     tiles::PackedBuffer pb{ints(slot_sizes), ints(tile_sizes), kind, coop_warp_span};
     auto composed = pb.layout();
     long ntile = 1;
-    for (long t : tile_sizes) ntile *= t;
+    for (long t : tile_sizes) {
+        ntile *= t;
+    }
     long nslot = 1;
-    for (long s : slot_sizes) nslot *= s;
+    for (long s : slot_sizes) {
+        nslot *= s;
+    }
     for (long si = 0; si < nslot; ++si) {
         for (long ti = 0; ti < ntile; ++ti) {
             auto slot = delin(si, slot_sizes);
             auto tile = delin(ti, tile_sizes);
             symbolic::MultiExpression coords;
-            for (long v : slot) coords.push_back(symbolic::integer(v));
-            for (long v : tile) coords.push_back(symbolic::integer(v));
+            for (long v : slot) {
+                coords.push_back(symbolic::integer(v));
+            }
+            for (long v : tile) {
+                coords.push_back(symbolic::integer(v));
+            }
             EXPECT_EQ(eval(composed.apply_coords(coords)), packed_offset(pb, slot, tile));
         }
     }
@@ -114,18 +140,28 @@ bool lane_contiguous_flat(const std::vector<long>& slot_sizes, const std::vector
     tiles::PackedBuffer pb{ints(slot_sizes), ints(tile_sizes), kind};
     auto composed = pb.layout();
     long ntile = 1;
-    for (long t : tile_sizes) ntile *= t;
+    for (long t : tile_sizes) {
+        ntile *= t;
+    }
     long nslot = 1;
-    for (long s : slot_sizes) nslot *= s;
+    for (long s : slot_sizes) {
+        nslot *= s;
+    }
     long prev = 0;
     for (long t = 0; t < ntile * nslot; ++t) {
         auto sc = delin(t / ntile, slot_sizes); // slot changes slowest
         auto tc = delin(t % ntile, tile_sizes); // tile fastest
         symbolic::MultiExpression coords;
-        for (long v : sc) coords.push_back(symbolic::integer(v));
-        for (long v : tc) coords.push_back(symbolic::integer(v));
+        for (long v : sc) {
+            coords.push_back(symbolic::integer(v));
+        }
+        for (long v : tc) {
+            coords.push_back(symbolic::integer(v));
+        }
         long off = eval(composed.apply_coords(coords));
-        if (t > 0 && off - prev != 1) return false;
+        if (t > 0 && off - prev != 1) {
+            return false;
+        }
         prev = off;
     }
     return true;
@@ -134,30 +170,46 @@ bool lane_contiguous_flat(const std::vector<long>& slot_sizes, const std::vector
 } // namespace
 
 // MultiDim: dense row-major [slot ++ tile], no swizzle.
-TEST(BufferLayoutTest, MultiDim_NoSlots) { expect_consistent({}, {3, 4}, tiles::BufferKind::MultiDim); }
-TEST(BufferLayoutTest, MultiDim_WithSlots) { expect_consistent({2}, {3, 4}, tiles::BufferKind::MultiDim); }
-TEST(BufferLayoutTest, MultiDim_MultiSlot) { expect_consistent({2, 5}, {4}, tiles::BufferKind::MultiDim); }
+TEST(BufferLayoutTest, MultiDim_NoSlots) {
+    expect_consistent({}, {3, 4}, tiles::BufferKind::MultiDim);
+}
+TEST(BufferLayoutTest, MultiDim_WithSlots) {
+    expect_consistent({2}, {3, 4}, tiles::BufferKind::MultiDim);
+}
+TEST(BufferLayoutTest, MultiDim_MultiSlot) {
+    expect_consistent({2, 5}, {4}, tiles::BufferKind::MultiDim);
+}
 
 // Linearized: fully flat, consistent offset/addressing.
-TEST(BufferLayoutTest, Linearized_Consistent) { expect_consistent({2}, {3, 4}, tiles::BufferKind::Linearized); }
+TEST(BufferLayoutTest, Linearized_Consistent) {
+    expect_consistent({2}, {3, 4}, tiles::BufferKind::Linearized);
+}
 
 // Padded: the per-slot block is widened to inner_stride (coprime with 32).
-TEST(BufferLayoutTest, Padded_NextOdd) { expect_consistent({8}, {16}, tiles::BufferKind::Padded); }
+TEST(BufferLayoutTest, Padded_NextOdd) {
+    expect_consistent({8}, {16}, tiles::BufferKind::Padded);
+}
 TEST(BufferLayoutTest, Padded_CoopWarpSpan) {
     // A cooperative-store span pads inner_stride congruent to it mod 32.
     expect_consistent({8}, {16}, tiles::BufferKind::Padded, /*coop_warp_span=*/4);
 }
 
 // Swizzle: natural power-of-two block, inner index XOR-ed by the slot.
-TEST(BufferLayoutTest, Swizzle_PowerOfTwoBlock) { expect_consistent({2}, {8}, tiles::BufferKind::Swizzle); }
+TEST(BufferLayoutTest, Swizzle_PowerOfTwoBlock) {
+    expect_consistent({2}, {8}, tiles::BufferKind::Swizzle);
+}
 TEST(BufferLayoutTest, Swizzle_MultiDimTileBlock) {
     // tile {2,4} -> block 8 (power of two); slots {2} fit within the block.
     expect_consistent({2}, {2, 4}, tiles::BufferKind::Swizzle);
 }
 
 // Transposed: dense, but the tile axes are stored column-major (reversed).
-TEST(BufferLayoutTest, Transposed_NoSlots) { expect_consistent({}, {3, 4}, tiles::BufferKind::Transposed); }
-TEST(BufferLayoutTest, Transposed_WithSlots) { expect_consistent({2}, {4, 8}, tiles::BufferKind::Transposed); }
+TEST(BufferLayoutTest, Transposed_NoSlots) {
+    expect_consistent({}, {3, 4}, tiles::BufferKind::Transposed);
+}
+TEST(BufferLayoutTest, Transposed_WithSlots) {
+    expect_consistent({2}, {4, 8}, tiles::BufferKind::Transposed);
+}
 // The reversed axes physically swap a 2D tile: axes() is [N, M] for a tile [M, N].
 TEST(BufferLayoutTest, Transposed_ReversesAxes) {
     tiles::PackedBuffer pb{{}, {symbolic::integer(3), symbolic::integer(4)}, tiles::BufferKind::Transposed};

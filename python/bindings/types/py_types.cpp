@@ -54,16 +54,63 @@ void register_types(py::module& m) {
             py::arg("value"),
             py::arg("allocation_size")
         )
-        .def_static("CPU_Stack", []() { return StorageType::CPU_Stack(); })
-        .def_static("CPU_Heap", []() { return StorageType::CPU_Heap(); })
-        .def_static("NV_Generic", []() { return StorageType::NV_Generic(); })
-        .def_static("NV_Global", []() { return StorageType::NV_Global(); })
-        .def_static("NV_Shared", []() { return StorageType::NV_Shared(); })
-        .def_static("NV_Constant", []() { return StorageType::NV_Constant(); })
-        .def_static("NV_Symbol", []() { return StorageType::NV_Symbol(); })
-        .def_static("AMD_Generic", []() { return StorageType("AMD_Generic"); })
-        .def_property_readonly("value", [](const StorageType& st) { return st.value(); })
-        .def("__repr__", [](const StorageType& st) { return "<StorageType value='" + st.value() + "'>"; });
+        .def_static(
+            "CPU_Stack",
+            []() {
+                return StorageType::CPU_Stack();
+            }
+        )
+        .def_static(
+            "CPU_Heap",
+            []() {
+                return StorageType::CPU_Heap();
+            }
+        )
+        .def_static(
+            "NV_Generic",
+            []() {
+                return StorageType::NV_Generic();
+            }
+        )
+        .def_static(
+            "NV_Global",
+            []() {
+                return StorageType::NV_Global();
+            }
+        )
+        .def_static(
+            "NV_Shared",
+            []() {
+                return StorageType::NV_Shared();
+            }
+        )
+        .def_static(
+            "NV_Constant",
+            []() {
+                return StorageType::NV_Constant();
+            }
+        )
+        .def_static(
+            "NV_Symbol",
+            []() {
+                return StorageType::NV_Symbol();
+            }
+        )
+        .def_static(
+            "AMD_Generic",
+            []() {
+                return StorageType("AMD_Generic");
+            }
+        )
+        .def_property_readonly(
+            "value",
+            [](const StorageType& st) {
+                return st.value();
+            }
+        )
+        .def("__repr__", [](const StorageType& st) {
+            return "<StorageType value='" + st.value() + "'>";
+        });
 
     // IType
     py::class_<IType>(m, "Type")
@@ -92,7 +139,9 @@ void register_types(py::module& m) {
             py::arg("storage_type")
         )
         .def_property_readonly("element_type", &Array::element_type)
-        .def_property_readonly("num_elements", [](const Array& self) { return self.num_elements()->__str__(); });
+        .def_property_readonly("num_elements", [](const Array& self) {
+            return self.num_elements()->__str__();
+        });
 
     // Pointer
     py::class_<Pointer, IType>(m, "Pointer")
@@ -167,22 +216,58 @@ void register_types(py::module& m) {
                 return result;
             }
         )
-        .def_property_readonly("offset", [](const Tensor& self) { return self.offset()->__str__(); })
-        .def("total_elements", [](const Tensor& self) { return self.total_elements()->__str__(); })
-        .def("total_size", [](const Tensor& self) { return self.total_size()->__str__(); })
-        .def(
-            "newaxis", [](const Tensor& self, size_t axis) { return self.newaxis(axis); }, py::arg("axis")
+        .def_property_readonly(
+            "offset",
+            [](const Tensor& self) {
+                return self.offset()->__str__();
+            }
         )
         .def(
-            "flip", [](const Tensor& self, size_t axis) { return self.flip(axis); }, py::arg("axis")
+            "total_elements",
+            [](const Tensor& self) {
+                return self.total_elements()->__str__();
+            }
         )
         .def(
-            "unsqueeze", [](const Tensor& self, size_t axis) { return self.unsqueeze(axis); }, py::arg("axis")
+            "total_size",
+            [](const Tensor& self) {
+                return self.total_size()->__str__();
+            }
         )
         .def(
-            "squeeze", [](const Tensor& self, size_t axis) { return self.squeeze(axis); }, py::arg("axis")
+            "newaxis",
+            [](const Tensor& self, size_t axis) {
+                return self.newaxis(axis);
+            },
+            py::arg("axis")
         )
-        .def("squeeze", [](const Tensor& self) { return self.squeeze(); })
+        .def(
+            "flip",
+            [](const Tensor& self, size_t axis) {
+                return self.flip(axis);
+            },
+            py::arg("axis")
+        )
+        .def(
+            "unsqueeze",
+            [](const Tensor& self, size_t axis) {
+                return self.unsqueeze(axis);
+            },
+            py::arg("axis")
+        )
+        .def(
+            "squeeze",
+            [](const Tensor& self, size_t axis) {
+                return self.squeeze(axis);
+            },
+            py::arg("axis")
+        )
+        .def(
+            "squeeze",
+            [](const Tensor& self) {
+                return self.squeeze();
+            }
+        )
         .def(
             "reshape",
             [](const Tensor& self, const std::vector<std::string>& new_shape) {
@@ -218,23 +303,30 @@ void register_types(py::module& m) {
            const std::string& kind,
            const std::vector<std::string>& slot_sizes) -> Tensor* {
             sdfg::symbolic::MultiExpression tiles_e, slots_e;
-            for (const auto& s : tile_sizes) tiles_e.push_back(sdfg::symbolic::parse(s));
-            for (const auto& s : slot_sizes) slots_e.push_back(sdfg::symbolic::parse(s));
+            for (const auto& s : tile_sizes) {
+                tiles_e.push_back(sdfg::symbolic::parse(s));
+            }
+            for (const auto& s : slot_sizes) {
+                slots_e.push_back(sdfg::symbolic::parse(s));
+            }
             sdfg::tiles::BufferKind bk;
-            if (kind == "MultiDim")
+            if (kind == "MultiDim") {
                 bk = sdfg::tiles::BufferKind::MultiDim;
-            else if (kind == "Transposed")
+            } else if (kind == "Transposed") {
                 bk = sdfg::tiles::BufferKind::Transposed;
-            else if (kind == "Padded")
+            } else if (kind == "Padded") {
                 bk = sdfg::tiles::BufferKind::Padded;
-            else if (kind == "Linearized")
+            } else if (kind == "Linearized") {
                 bk = sdfg::tiles::BufferKind::Linearized;
-            else if (kind == "Swizzle")
+            } else if (kind == "Swizzle") {
                 bk = sdfg::tiles::BufferKind::Swizzle;
-            else
+            } else {
                 throw std::invalid_argument("tile_buffer_layout: unknown BufferKind '" + kind + "'");
+            }
             sdfg::symbolic::Expression inner = sdfg::symbolic::integer(1);
-            for (const auto& e : tiles_e) inner = sdfg::symbolic::mul(inner, e);
+            for (const auto& e : tiles_e) {
+                inner = sdfg::symbolic::mul(inner, e);
+            }
             auto composed = sdfg::tiles::buffer_layout(slots_e, tiles_e, bk, inner);
             if (!composed.swizzle.is_identity()) {
                 throw std::invalid_argument(

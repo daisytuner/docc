@@ -21,7 +21,9 @@ void BarrierLocalNode::validate(const Function& function) const {
     // No specific validation for barrier local
 }
 
-symbolic::SymbolSet BarrierLocalNode::symbols() const { return {}; };
+symbolic::SymbolSet BarrierLocalNode::symbols() const {
+    return {};
+};
 
 std::unique_ptr<DataFlowNode> BarrierLocalNode::clone(size_t element_id, const graph::Vertex vertex, DataFlowGraph& parent)
     const {
@@ -61,7 +63,8 @@ BarrierLocalNodeDispatcher::BarrierLocalNodeDispatcher(
     const data_flow::DataFlowGraph& data_flow_graph,
     const BarrierLocalNode& node
 )
-    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
+}
 
 void BarrierLocalNodeDispatcher::dispatch(
     codegen::PrettyPrinter& stream,

@@ -39,9 +39,12 @@ GELUNode::GELUNode(
     : ElementWiseDataflowTensorNode(
           element_id, debug_info, vertex, parent, LibraryNodeType_GELU, shape, "Y", {"X"}, quantization, impl_type
       ),
-      tanh_approx_(tanh_approx) {}
+      tanh_approx_(tanh_approx) {
+}
 
-bool GELUNode::tanh_approx() const { return this->tanh_approx_; }
+bool GELUNode::tanh_approx() const {
+    return this->tanh_approx_;
+}
 
 ElementWiseDataflowTensorNode::ElementOutput GELUNode::expand_operation_dataflow_precise(
     builder::StructuredSDFGBuilder& builder,

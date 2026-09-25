@@ -50,7 +50,8 @@ class LoopIndirectAccessFinder : public analysis::BaseUserVisitor {
             symbolic::Expression indvar_placeholder
         )
             : loop(loop), type(type), fusion_candidate(fusion_candidate),
-              indvar_placeholder(std::move(indvar_placeholder)) {}
+              indvar_placeholder(std::move(indvar_placeholder)) {
+        }
     };
     std::deque<LoopEntry> loop_stack_;
 
@@ -94,7 +95,8 @@ public:
         analysis::LoopAnalysis& loops,
         std::unordered_map<analysis::ElementId, std::unique_ptr<FusionLoopCandidate>>& fuse_candidates
     )
-        : sdfg_(sdfg), loop_analysis_(loops), fuse_candidates_(fuse_candidates) {}
+        : sdfg_(sdfg), loop_analysis_(loops), fuse_candidates_(fuse_candidates) {
+    }
 
     bool visit(sdfg::structured_control_flow::While& node) override {
         // far from being supported as fuse candidates, so do the normal stuff
@@ -145,7 +147,8 @@ public:
         SymbolReadLocation loc,
         int loc_index,
         symbolic::Expression expr
-    ) override {}
+    ) override {
+    }
 
     static void found_indirect_arg_access(
         const std::string& container,
@@ -224,7 +227,8 @@ public:
             found_indirect_arg_access(container, edge, block, current, true);
         }
     }
-    void use_as_return_src(const std::string& container, const Return& ret) override {}
+    void use_as_return_src(const std::string& container, const Return& ret) override {
+    }
     /**
      * Dangerous, if somebody builds a value derived from indvar and then uses that for addressing we would not notice.
      * But normally those should be folded into the accesses
@@ -244,7 +248,8 @@ public:
     }
     void use_as_symbol_write(
         const symbolic::Symbol& container, const ControlFlowNode* node, const Element* user, SymbolWriteLocation loc
-    ) override {}
+    ) override {
+    }
 };
 
 FusionLoopCandidate* LoopFusionPass::State::get_next_level_map_stack(FusionLoopCandidate& current) {
@@ -270,7 +275,9 @@ FusionLoopCandidate* LoopFusionPass::State::get_parent(FusionLoopCandidate& curr
     }
 }
 
-uint32_t LoopFusionPass::State::total_fused_count() const { return fused_by_domain_count + fused_by_access_count; }
+uint32_t LoopFusionPass::State::total_fused_count() const {
+    return fused_by_domain_count + fused_by_access_count;
+}
 
 std::ostream& operator<<(std::ostream& os, const symbolic::Expression& expr) {
     if (!expr.is_null()) {
@@ -308,7 +315,8 @@ std::ostream& operator<<(std::ostream& os, const symbolic::Assumptions& ass) {
     return os;
 }
 
-LoopFusionPass::LoopFusionPass(const LoopFusionConfig& config) : config_(config) {}
+LoopFusionPass::LoopFusionPass(const LoopFusionConfig& config) : config_(config) {
+}
 
 LoopFusionPass::LoopFusionPass() = default;
 
@@ -384,7 +392,8 @@ const symbolic::Assumption* LoopFusionPass::
 }
 
 LoopFusionHandler::LoopFusionHandler(const LoopFusionConfig& config, LoopFusionPass::State& state)
-    : config_(config), state_(state), LoopFusionByAccessWorker(config.allow_init_hoist) {}
+    : config_(config), state_(state), LoopFusionByAccessWorker(config.allow_init_hoist) {
+}
 
 PatternHandler::MatchResult LoopFusionHandler::fuse_contents(
     ControlFlowNode* first_top,
@@ -475,13 +484,17 @@ PatternHandler::MatchResult LoopFusionHandler::fuse_contents(
     return {.removed_first = removed_first, .visit_second_body = keep_visiting_second};
 }
 
-analysis::LoopAnalysis& LoopFusionHandler::get_loop_analysis() { return *state_.loop_analysis; }
+analysis::LoopAnalysis& LoopFusionHandler::get_loop_analysis() {
+    return *state_.loop_analysis;
+}
 
 FusionLoopCandidate* LoopFusionHandler::get_fuse_candidate(StructuredLoop& loop) {
     return state_.fuse_candidates.at(loop.element_id()).get();
 }
 
-builder::StructuredSDFGBuilder& LoopFusionHandler::builder() { return state_.builder; }
+builder::StructuredSDFGBuilder& LoopFusionHandler::builder() {
+    return state_.builder;
+}
 
 void LoopFusionHandler::update_copied_leaf_contents_from_first_to_second(
     const Plan& plan, FusionLoopCandidate* first_current, FusionLoopCandidate* second_current
@@ -975,9 +988,13 @@ bool FusionArg::saw_access_locally() const {
     return local_access.subsets_conflict || local_access.common_subset.has_value();
 }
 
-void FusionLoopCandidate::non_indvar_writes() { this->incompatible = true; }
+void FusionLoopCandidate::non_indvar_writes() {
+    this->incompatible = true;
+}
 
-void FusionLoopCandidate::aliasing_encountered() { this->incompatible = true; }
+void FusionLoopCandidate::aliasing_encountered() {
+    this->incompatible = true;
+}
 
 void FusionLoopCandidate::replace(const symbolic::ExpressionMapping& mapping) {
     for (auto& [name, arg] : args) {
@@ -996,7 +1013,8 @@ void FusionLoopCandidate::replace(const symbolic::ExpressionMapping& mapping) {
     }
 }
 
-NeighboringPatternVisitor::NeighboringPatternVisitor(PatternHandler& handler) : handler_(handler) {}
+NeighboringPatternVisitor::NeighboringPatternVisitor(PatternHandler& handler) : handler_(handler) {
+}
 
 bool NeighboringPatternVisitor::visit(sdfg::structured_control_flow::Sequence& node) {
     if (node.size() < 2) { // impossible to find a match, just descend into it

@@ -132,9 +132,12 @@ void ROCMStdlibDataTransferExtraction::create_copy_to_device_with_allocation(
 }
 
 ROCMStdlibDataTransferExtraction::ROCMStdlibDataTransferExtraction(data_flow::LibraryNode& lib_node)
-    : lib_node_(lib_node) {}
+    : lib_node_(lib_node) {
+}
 
-std::string ROCMStdlibDataTransferExtraction::name() const { return "ROCMStdlibDataTransferExtraction"; }
+std::string ROCMStdlibDataTransferExtraction::name() const {
+    return "ROCMStdlibDataTransferExtraction";
+}
 
 bool ROCMStdlibDataTransferExtraction::
     can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {

@@ -130,18 +130,26 @@ private:
 
 public:
     UniqueLoopIndvarsVisitor(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager)
-        : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager) {}
+        : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager) {
+    }
 
-    bool accept(structured_control_flow::For& node) override { return handle_loop(node); }
+    bool accept(structured_control_flow::For& node) override {
+        return handle_loop(node);
+    }
 
-    bool accept(structured_control_flow::Map& node) override { return handle_loop(node); }
+    bool accept(structured_control_flow::Map& node) override {
+        return handle_loop(node);
+    }
 };
 
 } // namespace
 
-UniqueLoopIndvars::UniqueLoopIndvars() : Pass() {}
+UniqueLoopIndvars::UniqueLoopIndvars() : Pass() {
+}
 
-std::string UniqueLoopIndvars::name() { return "UniqueLoopIndvars"; }
+std::string UniqueLoopIndvars::name() {
+    return "UniqueLoopIndvars";
+}
 
 bool UniqueLoopIndvars::run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     UniqueLoopIndvarsVisitor visitor(builder, analysis_manager);

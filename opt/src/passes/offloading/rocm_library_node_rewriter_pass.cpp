@@ -37,7 +37,8 @@ std::optional<data_flow::ImplementationType> RocmLibraryNodeRewriter::
 
 RocmLibraryNodeRewriter::
     RocmLibraryNodeRewriter(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager)
-    : visitor::StructuredSDFGVisitor(builder, analysis_manager) {}
+    : visitor::StructuredSDFGVisitor(builder, analysis_manager) {
+}
 
 bool RocmLibraryNodeRewriter::accept(structured_control_flow::Block& node) {
     auto& dataflow = node.dataflow();

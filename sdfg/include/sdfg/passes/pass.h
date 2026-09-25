@@ -12,14 +12,17 @@ class Pass {
 public:
     Pass() = default;
     // A pass is constructed for a specific set of options (non-owning; caller keeps them alive).
-    explicit Pass(const Options& options) : options_(&options) {}
+    explicit Pass(const Options& options) : options_(&options) {
+    }
 
     virtual ~Pass() = default;
 
     virtual std::string name() = 0;
 
     // Registrable option specs for this pass; default: none.
-    virtual std::vector<OptionSpec> options() { return {}; }
+    virtual std::vector<OptionSpec> options() {
+        return {};
+    }
 
     bool run(builder::SDFGBuilder& builder, bool create_report = false);
 
@@ -46,7 +49,9 @@ private:
 
 template<typename T>
 class VisitorPass : public Pass {
-    std::string name() override { return T::name(); };
+    std::string name() override {
+        return T::name();
+    };
 
     bool run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override {
         T visitor(builder, analysis_manager);

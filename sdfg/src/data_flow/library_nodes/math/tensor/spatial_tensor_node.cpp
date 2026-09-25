@@ -21,9 +21,12 @@ SpatialTensorNode::SpatialTensorNode(
 )
     : TensorNode(element_id, debug_info, vertex, parent, code, outputs, inputs, impl_type), shape_(shape),
       kernel_shape_(kernel_shape), strides_(strides), pads_(pads), dilations_(dilations),
-      fixed_quantization_(quantization) {}
+      fixed_quantization_(quantization) {
+}
 
-QuantizationType SpatialTensorNode::fixed_quantization() const { return fixed_quantization_; }
+QuantizationType SpatialTensorNode::fixed_quantization() const {
+    return fixed_quantization_;
+}
 
 QuantizationType SpatialTensorNode::quantization(const data_flow::DataFlowGraph& data_flow_graph) const {
     if (fixed_quantization_ != QUANTIZATION_MATCH_INPUTS) {
@@ -47,7 +50,9 @@ std::optional<QuantizationType> SpatialTensorNode::uniform_quantization(const da
     }
 }
 
-void SpatialTensorNode::set_fixed_quantization(const QuantizationType quant) { fixed_quantization_ = quant; }
+void SpatialTensorNode::set_fixed_quantization(const QuantizationType quant) {
+    fixed_quantization_ = quant;
+}
 
 symbolic::SymbolSet SpatialTensorNode::symbols() const {
     symbolic::SymbolSet syms;
@@ -166,27 +171,37 @@ symbolic::Expression SpatialTensorNode::kernel_volume() const {
 std::basic_ostream<char>& SpatialTensorNode::operator<<(std::basic_ostream<char>& os) const {
     os << "shape=[";
     for (size_t i = 0; i < shape_.size(); ++i) {
-        if (i > 0) os << ", ";
+        if (i > 0) {
+            os << ", ";
+        }
         os << shape_[i]->__str__();
     }
     os << "], kernel_shape=[";
     for (size_t i = 0; i < kernel_shape_.size(); ++i) {
-        if (i > 0) os << ", ";
+        if (i > 0) {
+            os << ", ";
+        }
         os << kernel_shape_[i]->__str__();
     }
     os << "], strides=[";
     for (size_t i = 0; i < strides_.size(); ++i) {
-        if (i > 0) os << ", ";
+        if (i > 0) {
+            os << ", ";
+        }
         os << strides_[i]->__str__();
     }
     os << "], pads=[";
     for (size_t i = 0; i < pads_.size(); ++i) {
-        if (i > 0) os << ", ";
+        if (i > 0) {
+            os << ", ";
+        }
         os << pads_[i]->__str__();
     }
     os << "], dilations=[";
     for (size_t i = 0; i < dilations_.size(); ++i) {
-        if (i > 0) os << ", ";
+        if (i > 0) {
+            os << ", ";
+        }
         os << dilations_[i]->__str__();
     }
     os << "], ";

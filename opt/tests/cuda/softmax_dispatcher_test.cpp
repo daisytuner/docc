@@ -72,7 +72,9 @@ static std::string dispatch_softmax(
         local_registry
             .get_library_node_dispatcher(math::tensor::LibraryNodeType_Softmax.value() + "::" + impl_type.value());
     EXPECT_NE(dispatcher_fn, nullptr);
-    if (!dispatcher_fn) return "";
+    if (!dispatcher_fn) {
+        return "";
+    }
 
     codegen::CLanguageExtension language_extension(sdfg);
     auto dispatcher = dispatcher_fn(language_extension, sdfg, block.dataflow(), softmax_node);

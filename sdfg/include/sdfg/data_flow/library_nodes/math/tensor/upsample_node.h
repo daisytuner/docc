@@ -70,10 +70,18 @@ public:
         const data_flow::ImplementationType& impl_type = data_flow::ImplementationType_NONE
     );
 
-    const std::vector<symbolic::Expression>& input_shape() const { return input_shape_; }
-    const std::vector<symbolic::Expression>& output_shape() const { return output_shape_; }
-    bool align_corners() const { return align_corners_; }
-    const std::vector<double>& scale_factors() const { return scale_factors_; }
+    const std::vector<symbolic::Expression>& input_shape() const {
+        return input_shape_;
+    }
+    const std::vector<symbolic::Expression>& output_shape() const {
+        return output_shape_;
+    }
+    bool align_corners() const {
+        return align_corners_;
+    }
+    const std::vector<double>& scale_factors() const {
+        return scale_factors_;
+    }
 
     void validate(const Function& function) const override;
 
@@ -83,7 +91,9 @@ public:
 
     void replace(const symbolic::ExpressionMapping& replacements) override;
 
-    bool supports_integer_types() const override { return false; }
+    bool supports_integer_types() const override {
+        return false;
+    }
 
     passes::LibNodeExpander::ExpandOutcome
     expand(passes::LibNodeExpander::ExpandContext& context, structured_control_flow::Block& block) override;

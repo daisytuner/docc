@@ -29,7 +29,8 @@ LeakyReLUNode::LeakyReLUNode(
           {"Y", "alpha"},
           quantization,
           impl_type
-      ) {}
+      ) {
+}
 
 ElementWiseDataflowTensorNode::ElementOutput LeakyReLUNode::expand_operation_dataflow(
     builder::StructuredSDFGBuilder& builder,

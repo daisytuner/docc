@@ -24,7 +24,9 @@ IslCtx::~IslCtx() {
     }
 }
 
-IslCtx::IslCtx(IslCtx&& other) noexcept : ctx_(other.ctx_) { other.ctx_ = nullptr; }
+IslCtx::IslCtx(IslCtx&& other) noexcept : ctx_(other.ctx_) {
+    other.ctx_ = nullptr;
+}
 
 IslCtx& IslCtx::operator=(IslCtx&& other) noexcept {
     if (this != &other) {

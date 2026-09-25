@@ -253,7 +253,8 @@ void TypeAnalysis::run(analysis::AnalysisManager& analysis_manager) {
     }
 }
 
-TypeAnalysis::TypeAnalysis(StructuredSDFG& sdfg) : Analysis(sdfg), node_(nullptr) {}
+TypeAnalysis::TypeAnalysis(StructuredSDFG& sdfg) : Analysis(sdfg), node_(nullptr) {
+}
 
 TypeAnalysis::TypeAnalysis(
     StructuredSDFG& sdfg, structured_control_flow::ControlFlowNode* node, AnalysisManager& analysis_manager

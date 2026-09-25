@@ -19,7 +19,8 @@ DivNode::DivNode(
 )
     : ElementWiseDataflowTensorNode(
           element_id, debug_info, vertex, parent, LibraryNodeType_Div, shape, "C", {"A", "B"}, quantization, impl_type
-      ) {}
+      ) {
+}
 
 ElementWiseDataflowTensorNode::ElementOutput DivNode::expand_operation_dataflow(
     builder::StructuredSDFGBuilder& builder,

@@ -14,7 +14,8 @@ BLASNode::BLASNode(
     const BLAS_Precision& precision
 )
     : MathNode(element_id, debug_info, vertex, parent, code, outputs, inputs, implementation_type, true),
-      precision_(precision) {}
+      precision_(precision) {
+}
 
 types::PrimitiveType BLASNode::scalar_primitive() const {
     switch (this->precision_) {
@@ -29,7 +30,9 @@ types::PrimitiveType BLASNode::scalar_primitive() const {
     }
 }
 
-BLAS_Precision BLASNode::precision() const { return this->precision_; };
+BLAS_Precision BLASNode::precision() const {
+    return this->precision_;
+};
 
 
 } // namespace sdfg::math::blas

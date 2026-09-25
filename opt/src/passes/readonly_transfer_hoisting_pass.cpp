@@ -23,7 +23,9 @@
 namespace sdfg {
 namespace passes {
 
-std::string ReadonlyTransferHoistingPass::name() { return "ReadonlyTransferHoistingPass"; }
+std::string ReadonlyTransferHoistingPass::name() {
+    return "ReadonlyTransferHoistingPass";
+}
 
 bool ReadonlyTransferHoistingPass::
     run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {

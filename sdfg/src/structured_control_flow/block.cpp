@@ -12,7 +12,9 @@ Block::Block(size_t element_id, const DebugInfo& debug_info, ControlFlowNode* pa
     this->dataflow_ = std::make_unique<data_flow::DataFlowGraph>(this);
 };
 
-bool Block::accept(visitor::ActualStructuredSDFGVisitor& visitor) { return visitor.visit(*this); }
+bool Block::accept(visitor::ActualStructuredSDFGVisitor& visitor) {
+    return visitor.visit(*this);
+}
 
 void Block::validate(const Function& function) const {
     this->dataflow_->validate(function);
@@ -21,15 +23,21 @@ void Block::validate(const Function& function) const {
     }
 };
 
-const data_flow::DataFlowGraph& Block::dataflow() const { return *this->dataflow_; };
+const data_flow::DataFlowGraph& Block::dataflow() const {
+    return *this->dataflow_;
+};
 
-data_flow::DataFlowGraph& Block::dataflow() { return *this->dataflow_; };
+data_flow::DataFlowGraph& Block::dataflow() {
+    return *this->dataflow_;
+};
 
 void Block::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
     this->dataflow_->replace(old_expression, new_expression);
 }
 
-void Block::replace(const symbolic::ExpressionMapping& replacements) { this->dataflow_->replace(replacements); }
+void Block::replace(const symbolic::ExpressionMapping& replacements) {
+    this->dataflow_->replace(replacements);
+}
 
 AssignmentBlock::AssignmentBlock(
     ElementId element_id,
@@ -37,17 +45,21 @@ AssignmentBlock::AssignmentBlock(
     ControlFlowNode* parent,
     const control_flow::Assignments& assignments
 )
-    : ControlFlowNode(element_id, debug_info, parent), assignments_(assignments) {}
+    : ControlFlowNode(element_id, debug_info, parent), assignments_(assignments) {
+}
 
 AssignmentBlock::AssignmentBlock(ElementId element_id, const DebugInfo& debug_info, ControlFlowNode* parent)
-    : ControlFlowNode(element_id, debug_info, parent) {}
+    : ControlFlowNode(element_id, debug_info, parent) {
+}
 
 bool AssignmentBlock::add_if_not_overwritten(const symbolic::Symbol& target, const symbolic::Expression& expr) {
     auto [it, was_added] = assignments_.insert({target, expr});
     return was_added;
 }
 
-bool AssignmentBlock::accept(visitor::ActualStructuredSDFGVisitor& visitor) { return visitor.visit(*this); }
+bool AssignmentBlock::accept(visitor::ActualStructuredSDFGVisitor& visitor) {
+    return visitor.visit(*this);
+}
 
 void AssignmentBlock::validate(const Function& function) const {
     for (const auto& entry : this->assignments_) {
@@ -110,13 +122,21 @@ void AssignmentBlock::validate(const Function& function) const {
     }
 }
 
-const control_flow::Assignments& AssignmentBlock::assignments() const { return assignments_; }
+const control_flow::Assignments& AssignmentBlock::assignments() const {
+    return assignments_;
+}
 
-control_flow::Assignments& AssignmentBlock::assignments() { return assignments_; }
+control_flow::Assignments& AssignmentBlock::assignments() {
+    return assignments_;
+}
 
-bool AssignmentBlock::empty() const { return assignments_.empty(); }
+bool AssignmentBlock::empty() const {
+    return assignments_.empty();
+}
 
-size_t AssignmentBlock::size() const { return assignments_.size(); }
+size_t AssignmentBlock::size() const {
+    return assignments_.size();
+}
 
 void AssignmentBlock::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
     if (SymEngine::is_a<SymEngine::Symbol>(*old_expression) && SymEngine::is_a<SymEngine::Symbol>(*new_expression)) {

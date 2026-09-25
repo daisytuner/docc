@@ -85,7 +85,8 @@ public:
      * @param value The storage location identifier
      */
     StorageType(const std::string& value)
-        : value_(value), allocation_size_(SymEngine::null), allocation_(Unmanaged), deallocation_(Unmanaged) {}
+        : value_(value), allocation_size_(SymEngine::null), allocation_(Unmanaged), deallocation_(Unmanaged) {
+    }
 
     /**
      * @brief Constructs a StorageType with explicit allocation management
@@ -100,37 +101,58 @@ public:
         AllocationType allocation,
         AllocationType deallocation
     )
-        : value_(value), allocation_size_(allocation_size), allocation_(allocation), deallocation_(deallocation) {}
+        : value_(value), allocation_size_(allocation_size), allocation_(allocation), deallocation_(deallocation) {
+    }
 
     /// @brief Gets the storage location identifier
-    std::string value() const { return value_; }
+    std::string value() const {
+        return value_;
+    }
 
     /// @brief Sets the storage location identifier
-    void value(const std::string& value) { value_ = value; }
+    void value(const std::string& value) {
+        value_ = value;
+    }
 
     /// @brief Gets the allocation size
-    symbolic::Expression allocation_size() const { return allocation_size_; }
+    symbolic::Expression allocation_size() const {
+        return allocation_size_;
+    }
 
     /// @brief Sets the allocation size
-    void allocation_size(const symbolic::Expression& allocation_size) { allocation_size_ = allocation_size; }
+    void allocation_size(const symbolic::Expression& allocation_size) {
+        allocation_size_ = allocation_size;
+    }
 
     /// @brief Gets the additional argument
-    symbolic::Expression arg1() const { return arg1_; }
+    symbolic::Expression arg1() const {
+        return arg1_;
+    }
 
     /// @brief Sets the additional argument
-    void arg1(const symbolic::Expression& arg) { arg1_ = arg; }
+    void arg1(const symbolic::Expression& arg) {
+        arg1_ = arg;
+    }
 
     /// @brief Gets the allocation management type
-    AllocationType allocation() const { return allocation_; }
+    AllocationType allocation() const {
+        return allocation_;
+    }
 
     /// @brief Sets the allocation management type
-    void allocation(AllocationType allocation) { allocation_ = allocation; }
+    void allocation(AllocationType allocation) {
+        allocation_ = allocation;
+    }
 
     /// @brief Gets the deallocation management type
-    AllocationType deallocation() const { return deallocation_; }
+    AllocationType deallocation() const {
+        return deallocation_;
+    }
 
     /// @brief Sets the deallocation management type
-    void deallocation(AllocationType deallocation) { deallocation_ = deallocation; }
+    void deallocation(AllocationType deallocation) {
+        deallocation_ = deallocation;
+    }
 
     /**
      * @brief Compares two StorageType objects for equality
@@ -157,31 +179,49 @@ public:
     }
 
     /// @brief Checks if this storage is CPU stack storage
-    bool is_cpu_stack() const { return value_ == "CPU_Stack"; }
+    bool is_cpu_stack() const {
+        return value_ == "CPU_Stack";
+    }
 
     /// @brief Checks if this storage is CPU heap storage
-    bool is_cpu_heap() const { return value_ == "CPU_Heap"; }
+    bool is_cpu_heap() const {
+        return value_ == "CPU_Heap";
+    }
 
     /// @brief Checks if this storage resides on a device (i.e. not CPU stack/heap)
-    bool is_device() const { return !is_cpu_stack() && !is_cpu_heap(); }
+    bool is_device() const {
+        return !is_cpu_stack() && !is_cpu_heap();
+    }
 
     /// @brief Checks if this storage is NVIDIA generic memory
-    bool is_nv_generic() const { return value_ == "NV_Generic"; }
+    bool is_nv_generic() const {
+        return value_ == "NV_Generic";
+    }
 
     /// @brief Checks if this storage is AMD generic memory
-    bool is_amd_generic() const { return value_ == "AMD_Generic"; }
+    bool is_amd_generic() const {
+        return value_ == "AMD_Generic";
+    }
 
     /// @brief Checks if this storage is NVIDIA global memory
-    bool is_nv_global() const { return value_ == "NV_Global"; }
+    bool is_nv_global() const {
+        return value_ == "NV_Global";
+    }
 
     /// @brief Checks if this storage is NVIDIA shared memory
-    bool is_nv_shared() const { return value_ == "NV_Shared"; }
+    bool is_nv_shared() const {
+        return value_ == "NV_Shared";
+    }
 
     /// @brief Checks if this storage is NVIDIA constant memory
-    bool is_nv_constant() const { return value_ == "NV_Constant"; }
+    bool is_nv_constant() const {
+        return value_ == "NV_Constant";
+    }
 
     /// @brief Checks if this storage is an NVIDIA symbol
-    bool is_nv_symbol() const { return value_ == "NV_Symbol"; }
+    bool is_nv_symbol() const {
+        return value_ == "NV_Symbol";
+    }
 
     /**
      * @brief Creates a CPU stack storage type
@@ -215,19 +255,29 @@ public:
     }
 
     /// @brief Creates an NVIDIA generic memory storage type
-    static StorageType NV_Generic() { return StorageType("NV_Generic"); }
+    static StorageType NV_Generic() {
+        return StorageType("NV_Generic");
+    }
 
     /// @brief Creates an NVIDIA global memory storage type
-    static StorageType NV_Global() { return StorageType("NV_Global"); }
+    static StorageType NV_Global() {
+        return StorageType("NV_Global");
+    }
 
     /// @brief Creates an NVIDIA shared memory storage type
-    static StorageType NV_Shared() { return StorageType("NV_Shared"); }
+    static StorageType NV_Shared() {
+        return StorageType("NV_Shared");
+    }
 
     /// @brief Creates an NVIDIA constant memory storage type
-    static StorageType NV_Constant() { return StorageType("NV_Constant"); }
+    static StorageType NV_Constant() {
+        return StorageType("NV_Constant");
+    }
 
     /// @brief Creates an NVIDIA symbol storage type
-    static StorageType NV_Symbol() { return StorageType("NV_Symbol"); }
+    static StorageType NV_Symbol() {
+        return StorageType("NV_Symbol");
+    }
 };
 
 /**
@@ -553,7 +603,9 @@ public:
     virtual TypeID type_id() const = 0;
 
     /// @brief Gets the storage type (const version)
-    StorageType storage_type() const { return storage_type_; }
+    StorageType storage_type() const {
+        return storage_type_;
+    }
 
     /**
      * @brief Checks if this is a pointer or a structure behaves like a pointer
@@ -563,22 +615,34 @@ public:
     virtual bool is_pointer_like() const = 0;
 
     /// @brief Gets the storage type (mutable reference)
-    StorageType& storage_type() { return storage_type_; };
+    StorageType& storage_type() {
+        return storage_type_;
+    };
 
     /// @brief Sets the storage type
-    void storage_type(const StorageType& storage_type) { storage_type_ = storage_type; };
+    void storage_type(const StorageType& storage_type) {
+        storage_type_ = storage_type;
+    };
 
     /// @brief Gets the alignment requirement in bytes
-    size_t alignment() const { return alignment_; };
+    size_t alignment() const {
+        return alignment_;
+    };
 
     /// @brief Sets the alignment requirement in bytes
-    void alignment(size_t alignment) { alignment_ = alignment; };
+    void alignment(size_t alignment) {
+        alignment_ = alignment;
+    };
 
     /// @brief Gets the initializer expression
-    std::string initializer() const { return initializer_; };
+    std::string initializer() const {
+        return initializer_;
+    };
 
     /// @brief Sets the initializer expression
-    void initializer(const std::string& initializer) { initializer_ = initializer; };
+    void initializer(const std::string& initializer) {
+        initializer_ = initializer;
+    };
 
     /**
      * @brief Returns the primitive type for this type

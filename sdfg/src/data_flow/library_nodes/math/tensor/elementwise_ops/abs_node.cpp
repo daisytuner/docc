@@ -21,7 +21,8 @@ AbsNode::AbsNode(
 )
     : ElementWiseDataflowTensorNode(
           element_id, debug_info, vertex, parent, LibraryNodeType_Abs, shape, "Y", {"X"}, quantization, impl_type
-      ) {}
+      ) {
+}
 
 ElementWiseDataflowTensorNode::ElementOutput AbsNode::expand_operation_dataflow(
     builder::StructuredSDFGBuilder& builder,

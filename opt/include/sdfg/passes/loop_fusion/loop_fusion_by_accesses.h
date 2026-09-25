@@ -21,7 +21,8 @@ public:
 protected:
     bool allow_init_hoist_ = true;
 
-    LoopFusionByAccessWorker(bool allow_init_hoist = true) : allow_init_hoist_(allow_init_hoist) {}
+    LoopFusionByAccessWorker(bool allow_init_hoist = true) : allow_init_hoist_(allow_init_hoist) {
+    }
 
     struct Plan {
         structured_control_flow::Map& first;
@@ -38,7 +39,8 @@ protected:
         std::vector<FusionRegCandidate> fusion_candidates_;
 
         Plan(structured_control_flow::Map& first, structured_control_flow::StructuredLoop& second)
-            : first(first), second(second), direction_() {}
+            : first(first), second(second), direction_() {
+        }
 
         // Case 2 (init-into-reduction): when true, the producer is hoisted to the
         // reduction's outer parallel band (before the innermost sequential loop) and

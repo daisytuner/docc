@@ -31,25 +31,32 @@ private:
     ScheduleTypeCategory category_;
 
 public:
-    ScheduleType(std::string value, ScheduleTypeCategory category) : value_(value), category_(category) {}
+    ScheduleType(std::string value, ScheduleTypeCategory category) : value_(value), category_(category) {
+    }
 
     /**
      * @brief Get the schedule type identifier
      * @return Schedule type string (e.g., "SEQUENTIAL", "CPU_PARALLEL")
      */
-    const std::string& value() const { return value_; }
+    const std::string& value() const {
+        return value_;
+    }
 
     /**
      * @brief Get all schedule properties
      * @return Map of property names to values
      */
-    const std::unordered_map<std::string, std::string>& properties() const { return properties_; }
+    const std::unordered_map<std::string, std::string>& properties() const {
+        return properties_;
+    }
 
     /**
      * @brief Get the schedule type category
      * @return Schedule type category enum
      */
-    ScheduleTypeCategory category() const { return category_; }
+    ScheduleTypeCategory category() const {
+        return category_;
+    }
 
     /**
      * @brief Set a schedule property
@@ -81,8 +88,12 @@ public:
  */
 class ScheduleType_Sequential {
 public:
-    static const std::string value() { return "SEQUENTIAL"; }
-    static ScheduleType create() { return ScheduleType(value(), ScheduleTypeCategory::None); }
+    static const std::string value() {
+        return "SEQUENTIAL";
+    }
+    static ScheduleType create() {
+        return ScheduleType(value(), ScheduleTypeCategory::None);
+    }
 };
 
 /**
@@ -168,7 +179,9 @@ public:
     static constexpr ElementType TypeGroup = ElementType::For | ElementType::Map | ElementType::Reduce;
 
     /// LLVM-style RTTI predicate: true if \p element is a StructuredLoop.
-    static bool classof(const Element& element) { return is_a(element.type_id(), TypeGroup); }
+    static bool classof(const Element& element) {
+        return is_a(element.type_id(), TypeGroup);
+    }
 
     virtual ~StructuredLoop() = default;
 

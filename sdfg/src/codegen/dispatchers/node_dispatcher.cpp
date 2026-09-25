@@ -17,7 +17,9 @@ NodeDispatcher::NodeDispatcher(
     : node_(node), language_extension_(language_extension), sdfg_(sdfg), analysis_manager_(analysis_manager),
       instrumentation_plan_(instrumentation_plan), arg_capture_plan_(arg_capture_plan) {};
 
-bool NodeDispatcher::begin_node(PrettyPrinter& stream) { return false; };
+bool NodeDispatcher::begin_node(PrettyPrinter& stream) {
+    return false;
+};
 
 void NodeDispatcher::end_node(PrettyPrinter& stream, bool applied) {};
 

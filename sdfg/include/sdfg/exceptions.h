@@ -10,21 +10,29 @@ private:
     std::string message_;
 
 public:
-    InvalidSDFGException(const std::string& message) : message_(message) {}
+    InvalidSDFGException(const std::string& message) : message_(message) {
+    }
 
-    const char* what() const noexcept override { return message_.c_str(); }
+    const char* what() const noexcept override {
+        return message_.c_str();
+    }
 };
 
 class UnstructuredControlFlowException : public std::exception {
 public:
-    const char* what() const noexcept override { return "Unstructured control flow detected"; }
+    const char* what() const noexcept override {
+        return "Unstructured control flow detected";
+    }
 };
 
 class StringEnum {
 public:
-    StringEnum(const std::string& value) : value_(value) {}
-    StringEnum(const StringEnum& other) : value_(other.value_) {}
-    StringEnum(StringEnum&& other) noexcept : value_(std::move(other.value_)) {}
+    StringEnum(const std::string& value) : value_(value) {
+    }
+    StringEnum(const StringEnum& other) : value_(other.value_) {
+    }
+    StringEnum(StringEnum&& other) noexcept : value_(std::move(other.value_)) {
+    }
 
     StringEnum& operator=(const StringEnum& other) {
         value_ = other.value_;
@@ -36,11 +44,17 @@ public:
         return *this;
     }
 
-    std::string value() const { return value_; }
+    std::string value() const {
+        return value_;
+    }
 
-    bool operator==(const StringEnum& other) const { return value_ == other.value_; }
+    bool operator==(const StringEnum& other) const {
+        return value_ == other.value_;
+    }
 
-    bool operator!=(const StringEnum& other) const { return !(*this == other); }
+    bool operator!=(const StringEnum& other) const {
+        return !(*this == other);
+    }
 
 private:
     std::string value_;

@@ -63,7 +63,9 @@ public:
                                              ElementType::Reduce;
 
     /// LLVM-style RTTI predicate: true if \p element is a ControlFlowNode.
-    static bool classof(const Element& element) { return is_a(element.type_id(), TypeGroup); }
+    static bool classof(const Element& element) {
+        return is_a(element.type_id(), TypeGroup);
+    }
 
     virtual bool accept(visitor::ActualStructuredSDFGVisitor& visitor) = 0;
 

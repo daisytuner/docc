@@ -36,7 +36,9 @@ public:
         bool offload_unknown_sizes = false
     ) override;
 
-    static std::string target() { return "vectorize"; };
+    static std::string target() {
+        return "vectorize";
+    };
 
     std::unordered_set<ScheduleTypeCategory> compatible_types() override;
 };

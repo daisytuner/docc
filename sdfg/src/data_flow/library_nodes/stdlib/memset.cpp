@@ -22,13 +22,20 @@ MemsetNode::MemsetNode(
           true,
           data_flow::ImplementationType_NONE
       ),
-      num_(num), value_(value) {}
+      num_(num), value_(value) {
+}
 
-const symbolic::Expression MemsetNode::value() const { return value_; }
+const symbolic::Expression MemsetNode::value() const {
+    return value_;
+}
 
-const symbolic::Expression MemsetNode::num() const { return num_; }
+const symbolic::Expression MemsetNode::num() const {
+    return num_;
+}
 
-void MemsetNode::validate(const Function& function) const { LibraryNode::validate(function); }
+void MemsetNode::validate(const Function& function) const {
+    LibraryNode::validate(function);
+}
 
 symbolic::SymbolSet MemsetNode::symbols() const {
     auto value_symbols = symbolic::atoms(this->value_);
@@ -107,7 +114,8 @@ MemsetNodeDispatcher::MemsetNodeDispatcher(
     const data_flow::DataFlowGraph& data_flow_graph,
     const MemsetNode& node
 )
-    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
+}
 
 void MemsetNodeDispatcher::dispatch_code_with_edges(
     codegen::CodegenOutput& out,

@@ -25,7 +25,9 @@ public:
         bool ignore_libnodes = false
     );
 
-    static std::string name() { return "BlockFusion"; };
+    static std::string name() {
+        return "BlockFusion";
+    };
 
     bool accept(structured_control_flow::Sequence& node) override;
 };
@@ -34,7 +36,9 @@ typedef VisitorPass<BlockFusion> BlockFusionPass;
 
 class NoLibnodesBlockFusionPass : public Pass {
 public:
-    std::string name() override { return BlockFusion::name(); }
+    std::string name() override {
+        return BlockFusion::name();
+    }
 
     bool run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override {
         BlockFusion visitor(builder, analysis_manager, true);

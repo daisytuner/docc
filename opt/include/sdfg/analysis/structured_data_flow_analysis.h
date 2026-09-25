@@ -68,7 +68,9 @@ protected:
     bool ran_ = false;
 
 public:
-    bool ran_at_least_once() const override { return ran_; }
+    bool ran_at_least_once() const override {
+        return ran_;
+    }
 
     bool update(const ExposedType& incoming) override {
         bool needs_update = update_incoming(incoming);
@@ -106,9 +108,13 @@ public:
         }
     }
 
-    const ExposedType& forward_exposed() const override { return forward_exposed_; }
+    const ExposedType& forward_exposed() const override {
+        return forward_exposed_;
+    }
 
-    static ExposedType empty_in() { return ExposedType(); }
+    static ExposedType empty_in() {
+        return ExposedType();
+    }
 
     static void merge(ExposedType& merge_into, const ExposedType& other, MergeMode mode = MergeMode::CUMULATIVE) {
         if (mode == MergeMode::BRANCHES) {
@@ -181,7 +187,9 @@ public:
      * @brief Run the analysis starting from the given root sequence.
      * @param root Typically `sdfg.root()`.
      */
-    void run_forward(structured_control_flow::Sequence& root) { solve(root, boundary()); }
+    void run_forward(structured_control_flow::Sequence& root) {
+        solve(root, boundary());
+    }
 
     // -----------------------------------------------------------------
     //  Query results
@@ -192,9 +200,13 @@ public:
      * @param node A node that was visited during `run`.
      * @return Reference to its DataFlowState (in/out sets).
      */
-    const State& state(const structured_control_flow::ControlFlowNode& node) const { return *states_.at(&node); }
+    const State& state(const structured_control_flow::ControlFlowNode& node) const {
+        return *states_.at(&node);
+    }
 
-    bool has_state(const structured_control_flow::ControlFlowNode& node) const { return states_.contains(&node); }
+    bool has_state(const structured_control_flow::ControlFlowNode& node) const {
+        return states_.contains(&node);
+    }
 
 protected:
     State& get_or_create_state(const structured_control_flow::ControlFlowNode& node) {
@@ -216,7 +228,9 @@ protected:
      * Override to seed the analysis with an initial set (e.g. function
      * arguments that are live on entry).  Default: empty set.
      */
-    virtual ExposedType boundary() { return State::empty_in(); }
+    virtual ExposedType boundary() {
+        return State::empty_in();
+    }
 
 private:
     std::unordered_map<const structured_control_flow::ControlFlowNode*, std::unique_ptr<State>> states_;

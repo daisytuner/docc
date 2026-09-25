@@ -41,7 +41,9 @@ OptimizationReport::OptimizationReport(StructuredSDFG& sdfg, bool aggregate)
 }
 
 
-nlohmann::json OptimizationReport::get_report() { return report_; }
+nlohmann::json OptimizationReport::get_report() {
+    return report_;
+}
 
 void OptimizationReport::add_pass_entry(const std::string& pass_name, long duration, bool applied) {
     /* if (!aggregate_) {

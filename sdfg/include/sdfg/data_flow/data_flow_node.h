@@ -129,7 +129,9 @@ public:
                                              ElementType::Tasklet | ElementType::LibraryNode;
 
     /// LLVM-style RTTI predicate: true if \p element is a DataFlowNode.
-    static bool classof(const Element& element) { return is_a(element.type_id(), TypeGroup); }
+    static bool classof(const Element& element) {
+        return is_a(element.type_id(), TypeGroup);
+    }
 
     // Remark: Exclusive resource
     DataFlowNode(const DataFlowNode& data_node) = delete;
@@ -194,7 +196,9 @@ public:
      * EdgeRemoveOption::RequiresUpdate
      * @return edge removal is completed, node is valid without edge
      */
-    virtual bool update_edge_removed(const std::string& out_conn) { return false; }
+    virtual bool update_edge_removed(const std::string& out_conn) {
+        return false;
+    }
 };
 } // namespace data_flow
 } // namespace sdfg

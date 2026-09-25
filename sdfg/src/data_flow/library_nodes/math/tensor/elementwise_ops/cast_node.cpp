@@ -18,7 +18,8 @@ CastNode::CastNode(
 )
     : ElementWiseDataflowTensorNode(
           element_id, debug_info, vertex, parent, LibraryNodeType_Cast, shape, "Y", {"X"}, target_type, impl_type
-      ) {}
+      ) {
+}
 
 ElementWiseDataflowTensorNode::ElementOutput CastNode::expand_operation_dataflow(
     builder::StructuredSDFGBuilder& builder,

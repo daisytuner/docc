@@ -1328,15 +1328,25 @@ void JSONSerializer::writeToFile(const StructuredSDFG& sdfg, const std::filesyst
     out.close();
 }
 
-void JSONSymbolicPrinter::bvisit(const SymEngine::BooleanAtom& x) { str_ = x.get_val() ? "True" : "False"; };
+void JSONSymbolicPrinter::bvisit(const SymEngine::BooleanAtom& x) {
+    str_ = x.get_val() ? "True" : "False";
+};
 
-void JSONSymbolicPrinter::bvisit(const SymEngine::And& expr) { SymEngine::StrPrinter::bvisit(expr); };
+void JSONSymbolicPrinter::bvisit(const SymEngine::And& expr) {
+    SymEngine::StrPrinter::bvisit(expr);
+};
 
-void JSONSymbolicPrinter::bvisit(const SymEngine::Or& expr) { SymEngine::StrPrinter::bvisit(expr); };
+void JSONSymbolicPrinter::bvisit(const SymEngine::Or& expr) {
+    SymEngine::StrPrinter::bvisit(expr);
+};
 
-void JSONSymbolicPrinter::bvisit(const SymEngine::Not& expr) { SymEngine::StrPrinter::bvisit(expr); };
+void JSONSymbolicPrinter::bvisit(const SymEngine::Not& expr) {
+    SymEngine::StrPrinter::bvisit(expr);
+};
 
-void JSONSymbolicPrinter::bvisit(const SymEngine::Xor& expr) { SymEngine::StrPrinter::bvisit(expr); };
+void JSONSymbolicPrinter::bvisit(const SymEngine::Xor& expr) {
+    SymEngine::StrPrinter::bvisit(expr);
+};
 
 void JSONSymbolicPrinter::bvisit(const SymEngine::Equality& x) {
     str_ = apply(x.get_args()[0]) + " == " + apply(x.get_args()[1]);
@@ -1421,7 +1431,9 @@ LibraryNodeSerializerFn LibraryNodeSerializerRegistry::get_library_node_serializ
     return nullptr;
 }
 
-size_t LibraryNodeSerializerRegistry::size() const { return factory_map_.size(); }
+size_t LibraryNodeSerializerRegistry::size() const {
+    return factory_map_.size();
+}
 
 void register_default_serializers() {
     // stdlib

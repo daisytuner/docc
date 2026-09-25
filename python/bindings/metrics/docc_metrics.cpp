@@ -10,7 +10,9 @@ void DoccMetrics::add_target_options(const target::TargetOptions& target_options
     add_metric("remote_tuning", target_options.remote_tuning ? "true" : "false", "target");
 }
 
-void DoccMetrics::add_frontend_source_info(const std::string& frontend) { add_metric("frontend", frontend, "source"); }
+void DoccMetrics::add_frontend_source_info(const std::string& frontend) {
+    add_metric("frontend", frontend, "source");
+}
 
 void DoccMetrics::capture_env_vars() {
     if (auto run_stage_env = std::getenv("DAISY_CI_STAGE")) {

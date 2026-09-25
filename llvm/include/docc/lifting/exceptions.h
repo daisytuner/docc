@@ -16,13 +16,20 @@ private:
 
 public:
     NotImplementedException(const std::string& message, sdfg::DebugInfo dbg_info, const std::string& element)
-        : message_(message), dbg_info_(dbg_info), element_(element) {}
+        : message_(message), dbg_info_(dbg_info), element_(element) {
+    }
 
-    const char* what() const noexcept override { return message_.c_str(); }
+    const char* what() const noexcept override {
+        return message_.c_str();
+    }
 
-    const sdfg::DebugInfo& debug_info() const { return dbg_info_; }
+    const sdfg::DebugInfo& debug_info() const {
+        return dbg_info_;
+    }
 
-    const std::string& element() const { return element_; }
+    const std::string& element() const {
+        return element_;
+    }
 };
 
 } // namespace lifting

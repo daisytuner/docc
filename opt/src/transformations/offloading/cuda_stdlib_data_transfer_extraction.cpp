@@ -132,9 +132,12 @@ void CUDAStdlibDataTransferExtraction::create_copy_to_device_with_allocation(
 }
 
 CUDAStdlibDataTransferExtraction::CUDAStdlibDataTransferExtraction(data_flow::LibraryNode& lib_node)
-    : lib_node_(lib_node) {}
+    : lib_node_(lib_node) {
+}
 
-std::string CUDAStdlibDataTransferExtraction::name() const { return "CUDAStdlibDataTransferExtraction"; }
+std::string CUDAStdlibDataTransferExtraction::name() const {
+    return "CUDAStdlibDataTransferExtraction";
+}
 
 bool CUDAStdlibDataTransferExtraction::
     can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {

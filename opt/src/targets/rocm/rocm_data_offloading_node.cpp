@@ -43,7 +43,8 @@ ROCMDataOffloadingNode::ROCMDataOffloadingNode(
           buffer_lifecycle,
           size
       ),
-      device_id_(device_id) {}
+      device_id_(device_id) {
+}
 
 void ROCMDataOffloadingNode::validate(const Function& function) const {
     // Prevent copy-in and free
@@ -57,7 +58,9 @@ void ROCMDataOffloadingNode::validate(const Function& function) const {
     }
 }
 
-const symbolic::Expression ROCMDataOffloadingNode::device_id() const { return this->device_id_; }
+const symbolic::Expression ROCMDataOffloadingNode::device_id() const {
+    return this->device_id_;
+}
 
 std::unique_ptr<data_flow::DataFlowNode> ROCMDataOffloadingNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
@@ -88,7 +91,9 @@ void ROCMDataOffloadingNode::replace(const symbolic::Expression old_expression, 
     this->device_id_ = symbolic::subs(this->device_id_, old_expression, new_expression);
 }
 
-bool ROCMDataOffloadingNode::blocking() const { return true; }
+bool ROCMDataOffloadingNode::blocking() const {
+    return true;
+}
 
 bool ROCMDataOffloadingNode::redundant_with(const offloading::DataOffloadingNode& other) const {
     if (!offloading::DataOffloadingNode::redundant_with(other)) {
@@ -127,7 +132,8 @@ ROCMDataOffloadingNodeDispatcher::ROCMDataOffloadingNodeDispatcher(
     const data_flow::DataFlowGraph& data_flow_graph,
     const data_flow::LibraryNode& node
 )
-    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
+}
 
 void ROCMDataOffloadingNodeDispatcher::dispatch_code_with_edges(
     codegen::CodegenOutput& out,

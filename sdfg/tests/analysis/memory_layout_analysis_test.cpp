@@ -2498,7 +2498,9 @@ TEST(MemoryLayoutAnalysisTest, LU_Factorization_Diagnostic) {
     auto fmt_subset = [](const data_flow::Subset& s) {
         std::string out = "[";
         for (size_t idx = 0; idx < s.size(); ++idx) {
-            if (idx) out += ", ";
+            if (idx) {
+                out += ", ";
+            }
             out += SymEngine::str(*s.at(idx));
         }
         out += "]";
@@ -2783,7 +2785,9 @@ TEST(MemoryLayoutAnalysisTest, LU_BlockedFactorization_Diagnostic) {
     auto fmt_subset = [](const data_flow::Subset& s) {
         std::string out = "[";
         for (size_t idx = 0; idx < s.size(); ++idx) {
-            if (idx) out += ", ";
+            if (idx) {
+                out += ", ";
+            }
             out += SymEngine::str(*s.at(idx));
         }
         out += "]";

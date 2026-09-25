@@ -43,11 +43,16 @@ AssertNode::AssertNode(
           true,
           data_flow::ImplementationType_NONE
       ),
-      message_(message) {}
+      message_(message) {
+}
 
-std::string& AssertNode::message() { return this->message_; }
+std::string& AssertNode::message() {
+    return this->message_;
+}
 
-const std::string& AssertNode::message() const { return this->message_; }
+const std::string& AssertNode::message() const {
+    return this->message_;
+}
 
 std::string AssertNode::toStr() const {
     if (this->message_.empty()) {
@@ -57,16 +62,20 @@ std::string AssertNode::toStr() const {
     }
 }
 
-symbolic::SymbolSet AssertNode::symbols() const { return {}; }
+symbolic::SymbolSet AssertNode::symbols() const {
+    return {};
+}
 
 std::unique_ptr<data_flow::DataFlowNode> AssertNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
     return std::make_unique<AssertNode>(element_id, this->debug_info(), vertex, parent, this->message());
 }
 
-void AssertNode::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {}
+void AssertNode::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
+}
 
-void AssertNode::replace(const symbolic::ExpressionMapping& replacements) {}
+void AssertNode::replace(const symbolic::ExpressionMapping& replacements) {
+}
 
 nlohmann::json AssertNodeSerializer::serialize(const data_flow::LibraryNode& library_node) {
     const auto& assert_node = static_cast<const AssertNode&>(library_node);
@@ -149,7 +158,8 @@ AssertNodeDispatcher::AssertNodeDispatcher(
     const data_flow::DataFlowGraph& data_flow_graph,
     const data_flow::LibraryNode& node
 )
-    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
+}
 
 void AssertNodeDispatcher::dispatch_code(
     codegen::PrettyPrinter& stream,

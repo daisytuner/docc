@@ -21,7 +21,9 @@ namespace transformations {
 LoopPeeling::LoopPeeling(structured_control_flow::StructuredLoop& loop, bool predicate)
     : loop_(loop), predicate_(predicate) {};
 
-std::string LoopPeeling::name() const { return "LoopPeeling"; };
+std::string LoopPeeling::name() const {
+    return "LoopPeeling";
+};
 
 /// Sound tri-state result of statically evaluating a boundary condition against
 /// the SDFG's symbol assumptions.
@@ -32,9 +34,15 @@ enum class Provable { True, False, Unknown };
 /// SymEngine into swapped StrictLessThan/LessThan, so four classes suffice.
 static Provable
 prove_literal(const symbolic::Condition& lit, const symbolic::SymbolSet& params, const symbolic::Assumptions& assums) {
-    if (symbolic::is_true(lit)) return Provable::True;
-    if (symbolic::is_false(lit)) return Provable::False;
-    if (!SymEngine::is_a_Relational(*lit)) return Provable::Unknown;
+    if (symbolic::is_true(lit)) {
+        return Provable::True;
+    }
+    if (symbolic::is_false(lit)) {
+        return Provable::False;
+    }
+    if (!SymEngine::is_a_Relational(*lit)) {
+        return Provable::Unknown;
+    }
 
     auto rel = SymEngine::rcp_static_cast<const SymEngine::Relational>(lit);
     auto a = rel->get_arg1();
@@ -61,17 +69,33 @@ prove_literal(const symbolic::Condition& lit, const symbolic::SymbolSet& params,
     };
 
     if (SymEngine::is_a<SymEngine::StrictLessThan>(*lit)) { // a < b
-        if (lt(a, b)) return Provable::True;
-        if (ge(a, b)) return Provable::False;
+        if (lt(a, b)) {
+            return Provable::True;
+        }
+        if (ge(a, b)) {
+            return Provable::False;
+        }
     } else if (SymEngine::is_a<SymEngine::LessThan>(*lit)) { // a <= b
-        if (le(a, b)) return Provable::True;
-        if (gt(a, b)) return Provable::False;
+        if (le(a, b)) {
+            return Provable::True;
+        }
+        if (gt(a, b)) {
+            return Provable::False;
+        }
     } else if (SymEngine::is_a<SymEngine::Equality>(*lit)) { // a == b
-        if (eq(a, b)) return Provable::True;
-        if (lt(a, b) || gt(a, b)) return Provable::False;
+        if (eq(a, b)) {
+            return Provable::True;
+        }
+        if (lt(a, b) || gt(a, b)) {
+            return Provable::False;
+        }
     } else if (SymEngine::is_a<SymEngine::Unequality>(*lit)) { // a != b
-        if (lt(a, b) || gt(a, b)) return Provable::True;
-        if (eq(a, b)) return Provable::False;
+        if (lt(a, b) || gt(a, b)) {
+            return Provable::True;
+        }
+        if (eq(a, b)) {
+            return Provable::False;
+        }
     }
     return Provable::Unknown;
 }
@@ -84,8 +108,12 @@ static Provable prove_condition(
     const symbolic::Condition& cond, const symbolic::SymbolSet& params, const symbolic::Assumptions& assums
 ) {
     auto simplified = symbolic::simplify(cond);
-    if (symbolic::is_true(simplified)) return Provable::True;
-    if (symbolic::is_false(simplified)) return Provable::False;
+    if (symbolic::is_true(simplified)) {
+        return Provable::True;
+    }
+    if (symbolic::is_false(simplified)) {
+        return Provable::False;
+    }
 
     symbolic::CNF cnf;
     try {
@@ -109,10 +137,14 @@ static Provable prove_condition(
                 clause_all_false = false;
             }
         }
-        if (clause_true) continue;
+        if (clause_true) {
+            continue;
+        }
         // A clause whose every literal is provably false is unsatisfiable, so the
         // whole conjunction is provably false.
-        if (clause_all_false) return Provable::False;
+        if (clause_all_false) {
+            return Provable::False;
+        }
         all_true = false; // this clause is undecided
     }
     return all_true ? Provable::True : Provable::Unknown;

@@ -28,7 +28,8 @@ public:
     LoopSchedulingPass(
         const std::vector<LoopScheduler*>& targets, sdfg::PassReportConsumer* report, bool offload_unknown_sizes = false
     )
-        : targets_(targets), report_(report), offload_unknown_sizes_(offload_unknown_sizes) {}
+        : targets_(targets), report_(report), offload_unknown_sizes_(offload_unknown_sizes) {
+    }
     ~LoopSchedulingPass() override = default;
 
     /**
@@ -37,11 +38,15 @@ public:
      * When set, the recorder accumulates the transformations applied by the
      * target schedulers.
      */
-    void set_recorder(sdfg::transformations::Recorder* recorder) { recorder_ = recorder; }
+    void set_recorder(sdfg::transformations::Recorder* recorder) {
+        recorder_ = recorder;
+    }
 
     bool run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
 
-    std::string name() override { return "LoopSchedulingPass"; }
+    std::string name() override {
+        return "LoopSchedulingPass";
+    }
 };
 
 

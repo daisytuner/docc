@@ -58,7 +58,9 @@ public:
     AnalysisManager& operator=(const AnalysisManager&) = delete;
 
     // Options visible to every analysis (analyses read via option()/options()).
-    const Options& options() const { return *options_; }
+    const Options& options() const {
+        return *options_;
+    }
 
     template<class T>
     T option(const OptionKey<T>& key) const {

@@ -43,17 +43,28 @@ Function::Function(const std::string& name, FunctionType type, const types::ITyp
 };
 
 Function::Function(const std::string& name, FunctionType type)
-    : Function(name, type, types::Scalar(types::PrimitiveType::Void)) {}
+    : Function(name, type, types::Scalar(types::PrimitiveType::Void)) {
+}
 
-const std::string& Function::name() const { return this->name_; };
+const std::string& Function::name() const {
+    return this->name_;
+};
 
-void Function::name(const std::string& name) { this->name_ = name; };
+void Function::name(const std::string& name) {
+    this->name_ = name;
+};
 
-FunctionType Function::type() const { return this->type_; };
+FunctionType Function::type() const {
+    return this->type_;
+};
 
-const types::IType& Function::return_type() const { return *this->return_type_; };
+const types::IType& Function::return_type() const {
+    return *this->return_type_;
+};
 
-size_t Function::element_counter() const { return this->element_counter_; };
+size_t Function::element_counter() const {
+    return this->element_counter_;
+};
 
 void Function::validate() const {
     // Function type
@@ -85,9 +96,13 @@ const types::StructureDefinition& Function::structure(const std::string& name) c
     return *entry->second;
 };
 
-const std::vector<std::string>& Function::arguments() const { return this->arguments_; };
+const std::vector<std::string>& Function::arguments() const {
+    return this->arguments_;
+};
 
-const std::vector<std::string>& Function::externals() const { return this->externals_; };
+const std::vector<std::string>& Function::externals() const {
+    return this->externals_;
+};
 
 LinkageType Function::linkage_type(const std::string& name) const {
     auto entry = this->externals_linkage_types_.find(name);
@@ -150,13 +165,21 @@ symbolic::Assumption& Function::assumption(const symbolic::Symbol symbol) {
     return entry->second;
 };
 
-const symbolic::Assumptions& Function::assumptions() const { return this->assumptions_; };
+const symbolic::Assumptions& Function::assumptions() const {
+    return this->assumptions_;
+};
 
-void Function::add_metadata(const std::string& key, const std::string& value) { this->metadata_[key] = value; };
+void Function::add_metadata(const std::string& key, const std::string& value) {
+    this->metadata_[key] = value;
+};
 
-void Function::remove_metadata(const std::string& key) { this->metadata_.erase(key); };
+void Function::remove_metadata(const std::string& key) {
+    this->metadata_.erase(key);
+};
 
-const std::string& Function::metadata(const std::string& key) const { return this->metadata_.at(key); }
+const std::string& Function::metadata(const std::string& key) const {
+    return this->metadata_.at(key);
+}
 
 const std::string* Function::metadata_if_exists(const std::string& key) const {
     auto entry = this->metadata_.find(key);
@@ -166,6 +189,8 @@ const std::string* Function::metadata_if_exists(const std::string& key) const {
     return &entry->second;
 };
 
-const std::unordered_map<std::string, std::string>& Function::metadata() const { return this->metadata_; };
+const std::unordered_map<std::string, std::string>& Function::metadata() const {
+    return this->metadata_;
+};
 
 } // namespace sdfg

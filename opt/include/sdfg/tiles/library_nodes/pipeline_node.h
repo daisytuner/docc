@@ -48,11 +48,17 @@ public:
         size_t loads_per_group = 1
     );
 
-    size_t keep_outstanding() const { return keep_outstanding_; }
+    size_t keep_outstanding() const {
+        return keep_outstanding_;
+    }
 
-    size_t loads_per_group() const { return loads_per_group_; }
+    size_t loads_per_group() const {
+        return loads_per_group_;
+    }
 
-    void set_loads_per_group(size_t loads_per_group) { loads_per_group_ = loads_per_group; }
+    void set_loads_per_group(size_t loads_per_group) {
+        loads_per_group_ = loads_per_group;
+    }
 
     void validate(const Function& function) const override;
 

@@ -75,7 +75,9 @@ PyStructuredSDFGBuilder::PyStructuredSDFGBuilder(PyStructuredSDFG& sdfg)
     scope_stack.push_back({&builder_.subject().root(), nullptr, -1});
 }
 
-sdfg::plugins::Context& PyStructuredSDFGBuilder::docc_context() const { return docc_context_; }
+sdfg::plugins::Context& PyStructuredSDFGBuilder::docc_context() const {
+    return docc_context_;
+}
 
 PyStructuredSDFG PyStructuredSDFGBuilder::move() {
     sdfg::analysis::AnalysisManager analysis_manager(builder_.subject());
@@ -90,7 +92,9 @@ void PyStructuredSDFGBuilder::add_metadata(const std::string& key, const std::st
     builder_.subject().add_metadata(key, value);
 }
 
-void PyStructuredSDFGBuilder::remove_metadata(const std::string& key) { builder_.subject().remove_metadata(key); }
+void PyStructuredSDFGBuilder::remove_metadata(const std::string& key) {
+    builder_.subject().remove_metadata(key);
+}
 
 bool PyStructuredSDFGBuilder::has_metadata(const std::string& key) const {
     return builder_.subject().metadata().contains(key);
@@ -121,16 +125,22 @@ void PyStructuredSDFGBuilder::
     }
 }
 
-bool PyStructuredSDFGBuilder::exists(const std::string& name) { return builder_.subject().exists(name); }
+bool PyStructuredSDFGBuilder::exists(const std::string& name) {
+    return builder_.subject().exists(name);
+}
 
-void PyStructuredSDFGBuilder::set_return_type(const sdfg::types::IType& type) { builder_.set_return_type(type); }
+void PyStructuredSDFGBuilder::set_return_type(const sdfg::types::IType& type) {
+    builder_.set_return_type(type);
+}
 
 std::string PyStructuredSDFGBuilder::get_sizeof(const sdfg::types::IType& type) {
     auto expr = sdfg::symbolic::size_of_type(type);
     return expr->__str__();
 }
 
-std::string PyStructuredSDFGBuilder::find_new_name(const std::string& prefix) { return builder_.find_new_name(prefix); }
+std::string PyStructuredSDFGBuilder::find_new_name(const std::string& prefix) {
+    return builder_.find_new_name(prefix);
+}
 
 void PyStructuredSDFGBuilder::add_assumption_lb(const std::string& symbol, const std::string& bound) {
     sdfg::symbolic::Symbol sym = sdfg::symbolic::symbol(symbol);
@@ -258,10 +268,14 @@ sdfg::structured_control_flow::For& PyStructuredSDFGBuilder::begin_for(
     bool is_negative = false;
     if (SymEngine::is_a<SymEngine::Integer>(*step_expr)) {
         auto i = SymEngine::rcp_static_cast<const SymEngine::Integer>(step_expr);
-        if (i->is_negative()) is_negative = true;
+        if (i->is_negative()) {
+            is_negative = true;
+        }
     } else if (SymEngine::is_a<SymEngine::RealDouble>(*step_expr)) {
         auto d = SymEngine::rcp_static_cast<const SymEngine::RealDouble>(step_expr);
-        if (d->as_double() < 0) is_negative = true;
+        if (d->as_double() < 0) {
+            is_negative = true;
+        }
     }
 
     SymEngine::RCP<const SymEngine::Boolean> condition;
@@ -306,7 +320,9 @@ sdfg::structured_control_flow::Map& PyStructuredSDFGBuilder::begin_map(
     bool is_negative = false;
     if (SymEngine::is_a<SymEngine::Integer>(*step_expr)) {
         auto i = SymEngine::rcp_static_cast<const SymEngine::Integer>(step_expr);
-        if (i->is_negative()) is_negative = true;
+        if (i->is_negative()) {
+            is_negative = true;
+        }
     }
 
     SymEngine::RCP<const SymEngine::Boolean> condition;
@@ -355,7 +371,9 @@ sdfg::structured_control_flow::Reduce& PyStructuredSDFGBuilder::begin_reduce(
     bool is_negative = false;
     if (SymEngine::is_a<SymEngine::Integer>(*step_expr)) {
         auto i = SymEngine::rcp_static_cast<const SymEngine::Integer>(step_expr);
-        if (i->is_negative()) is_negative = true;
+        if (i->is_negative()) {
+            is_negative = true;
+        }
     }
 
     SymEngine::RCP<const SymEngine::Boolean> condition;
@@ -435,10 +453,11 @@ void PyStructuredSDFGBuilder::
         size_t close_paren = std::string::npos;
         int balance = 0;
         for (size_t i = open_paren; i < target.length(); ++i) {
-            if (target[i] == '(')
+            if (target[i] == '(') {
                 balance++;
-            else if (target[i] == ')')
+            } else if (target[i] == ')') {
                 balance--;
+            }
 
             if (balance == 0) {
                 close_paren = i;
@@ -446,7 +465,9 @@ void PyStructuredSDFGBuilder::
             }
         }
 
-        if (close_paren == std::string::npos) throw std::runtime_error("Invalid target format: unbalanced parentheses");
+        if (close_paren == std::string::npos) {
+            throw std::runtime_error("Invalid target format: unbalanced parentheses");
+        }
         std::string idx_str = target.substr(open_paren + 1, close_paren - open_paren - 1);
         auto index_sym = parse_and_expand(idx_str);
         target_indices.push_back(index_sym);
@@ -480,10 +501,11 @@ void PyStructuredSDFGBuilder::
             size_t close_paren = std::string::npos;
             int balance = 0;
             for (size_t i = open_paren; i < name.length(); ++i) {
-                if (name[i] == '(')
+                if (name[i] == '(') {
                     balance++;
-                else if (name[i] == ')')
+                } else if (name[i] == ')') {
                     balance--;
+                }
 
                 if (balance == 0) {
                     close_paren = i;
@@ -535,7 +557,9 @@ void PyStructuredSDFGBuilder::
     else if (SymEngine::is_a<SymEngine::Add>(*expr)) {
         auto add = SymEngine::rcp_static_cast<const SymEngine::Add>(expr);
         auto args = add->get_args();
-        if (args.size() != 2) throw std::runtime_error("Only binary add/sub supported");
+        if (args.size() != 2) {
+            throw std::runtime_error("Only binary add/sub supported");
+        }
 
         std::string op1 = args[0]->__str__();
         std::string op2 = args[1]->__str__();
@@ -543,7 +567,9 @@ void PyStructuredSDFGBuilder::
         sdfg::data_flow::TaskletCode opcode = sdfg::data_flow::int_add;
         bool is_float = sdfg::types::is_floating_point(elem_type->primitive_type());
 
-        if (is_float) opcode = sdfg::data_flow::fp_add;
+        if (is_float) {
+            opcode = sdfg::data_flow::fp_add;
+        }
 
         // Check for subtraction: a + (-1)*b
         if (SymEngine::is_a<SymEngine::Mul>(*args[0]) || SymEngine::is_a<SymEngine::Mul>(*args[1])) {
@@ -573,17 +599,19 @@ void PyStructuredSDFGBuilder::
                 // (-b) + a -> a - b
                 op1 = op2;
                 op2 = neg_op;
-                if (is_float)
+                if (is_float) {
                     opcode = sdfg::data_flow::fp_sub;
-                else
+                } else {
                     opcode = sdfg::data_flow::int_sub;
+                }
             } else if (check_neg(args[1], neg_op)) {
                 // a + (-b) -> a - b
                 op2 = neg_op;
-                if (is_float)
+                if (is_float) {
                     opcode = sdfg::data_flow::fp_sub;
-                else
+                } else {
                     opcode = sdfg::data_flow::int_sub;
+                }
             }
         }
 
@@ -598,7 +626,9 @@ void PyStructuredSDFGBuilder::
     else if (SymEngine::is_a<SymEngine::Mul>(*expr)) {
         auto mul = SymEngine::rcp_static_cast<const SymEngine::Mul>(expr);
         auto args = mul->get_args();
-        if (args.size() != 2) throw std::runtime_error("Only binary mul supported");
+        if (args.size() != 2) {
+            throw std::runtime_error("Only binary mul supported");
+        }
 
         std::string op1 = args[0]->__str__();
         std::string op2 = args[1]->__str__();
@@ -614,10 +644,11 @@ void PyStructuredSDFGBuilder::
             auto pargs = pow->get_args();
             if (SymEngine::eq(*pargs[1], *SymEngine::integer(-1))) {
                 op2 = pargs[0]->__str__();
-                if (opcode == sdfg::data_flow::fp_mul)
+                if (opcode == sdfg::data_flow::fp_mul) {
                     opcode = sdfg::data_flow::fp_div;
-                else
+                } else {
                     opcode = sdfg::data_flow::int_sdiv;
+                }
             }
         } else if (SymEngine::is_a<SymEngine::Pow>(*args[0])) {
             auto pow = SymEngine::rcp_static_cast<const SymEngine::Pow>(args[0]);
@@ -627,10 +658,11 @@ void PyStructuredSDFGBuilder::
                 std::string tmp = op1;
                 op1 = op2;
                 op2 = pargs[0]->__str__();
-                if (opcode == sdfg::data_flow::fp_mul)
+                if (opcode == sdfg::data_flow::fp_mul) {
                     opcode = sdfg::data_flow::fp_div;
-                else
+                } else {
                     opcode = sdfg::data_flow::int_sdiv;
+                }
             }
         }
 
@@ -668,7 +700,9 @@ sdfg::data_flow::Tasklet& PyStructuredSDFGBuilder::add_tasklet(
     const std::vector<std::string>& outputs,
     const sdfg::DebugInfo& debug_info
 ) {
-    if (outputs.empty()) throw std::runtime_error("Tasklet must have at least one output");
+    if (outputs.empty()) {
+        throw std::runtime_error("Tasklet must have at least one output");
+    }
     return builder_.add_tasklet(block, code, outputs[0], inputs, debug_info);
 }
 
@@ -1028,10 +1062,11 @@ void PyStructuredSDFGBuilder::add_gemm(
                              bool is_output) {
         if (subset.empty()) {
             auto& origin = builder_.add_access(block, name, debug_info);
-            if (is_output)
+            if (is_output) {
                 builder_.add_computational_memlet(block, gemm_node, port, origin, {}, ptr_type, debug_info);
-            else
+            } else {
                 builder_.add_computational_memlet(block, origin, gemm_node, port, {}, ptr_type, debug_info);
+            }
         } else {
             std::string view_name = builder_.find_new_name(name + "_view_");
             builder_.add_container(view_name, ptr_type, false);

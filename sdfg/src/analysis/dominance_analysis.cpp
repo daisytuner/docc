@@ -3,7 +3,8 @@
 namespace sdfg {
 namespace analysis {
 
-DominanceAnalysis::DominanceAnalysis(StructuredSDFG& sdfg) : Analysis(sdfg) {}
+DominanceAnalysis::DominanceAnalysis(StructuredSDFG& sdfg) : Analysis(sdfg) {
+}
 
 void DominanceAnalysis::run(AnalysisManager& analysis_manager) {
     this->dom_tree_.clear();

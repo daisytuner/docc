@@ -135,7 +135,12 @@ PYBIND11_MODULE(_sdfg, m) {
                         break;
                 }
                 d["type"] = type_name;
-                std::visit([&](auto&& v) { d["default"] = py::cast(v); }, spec.default_value);
+                std::visit(
+                    [&](auto&& v) {
+                        d["default"] = py::cast(v);
+                    },
+                    spec.default_value
+                );
                 d["doc"] = spec.doc;
                 out.append(d);
             }
@@ -266,13 +271,17 @@ PYBIND11_MODULE(_sdfg, m) {
     py::class_<PyStructuredSDFG>(m, "StructuredSDFG")
         .def_static(
             "from_file",
-            [&](const std::string& file_path) { return PyStructuredSDFG::from_file(docc_context, file_path); },
+            [&](const std::string& file_path) {
+                return PyStructuredSDFG::from_file(docc_context, file_path);
+            },
             py::arg("file_path"),
             "Load a StructuredSDFG from file"
         )
         .def_static(
             "parse",
-            [&](const std::string& sdfg_text) { return PyStructuredSDFG::parse(docc_context, sdfg_text); },
+            [&](const std::string& sdfg_text) {
+                return PyStructuredSDFG::parse(docc_context, sdfg_text);
+            },
             py::arg("sdfg_text"),
             "Parse a StructuredSDFG from text"
         )
@@ -286,12 +295,16 @@ PYBIND11_MODULE(_sdfg, m) {
         )
         .def_property_readonly(
             "_ptr",
-            [](PyStructuredSDFG& self) { return reinterpret_cast<uintptr_t>(&self.sdfg()); },
+            [](PyStructuredSDFG& self) {
+                return reinterpret_cast<uintptr_t>(&self.sdfg());
+            },
             "Get native pointer to StructuredSDFG for external plugin use"
         )
         .def_property_readonly(
             "root",
-            [](PyStructuredSDFG& self) -> sdfg::structured_control_flow::Sequence& { return self.root(); },
+            [](PyStructuredSDFG& self) -> sdfg::structured_control_flow::Sequence& {
+                return self.root();
+            },
             py::return_value_policy::reference,
             "Get the root sequence of the SDFG"
         )
@@ -379,8 +392,12 @@ PYBIND11_MODULE(_sdfg, m) {
         .def("add_metadata", &PyStructuredSDFG::add_metadata, py::arg("key"), py::arg("value"), "Set metadata value")
         .def_property(
             "output_dir",
-            [](PyStructuredSDFG* self) { return self->metadata("output_dir"); },
-            [](PyStructuredSDFG* self, const std::string& path) { self->set_output_dir(path); },
+            [](PyStructuredSDFG* self) {
+                return self->metadata("output_dir");
+            },
+            [](PyStructuredSDFG* self, const std::string& path) {
+                self->set_output_dir(path);
+            },
             "Get or set the output directory metadata"
         )
         .def("loop_report", &PyStructuredSDFG::loop_report, "Get loop statistics from the SDFG")
@@ -1235,7 +1252,9 @@ PYBIND11_MODULE(_sdfg, m) {
     // Plugin infrastructure - global context and registration callback
     m.def(
         "_plugin_context",
-        []() { return reinterpret_cast<uintptr_t>(&docc_context); },
+        []() {
+            return reinterpret_cast<uintptr_t>(&docc_context);
+        },
         "Get native pointer to the global plugin context"
     );
 

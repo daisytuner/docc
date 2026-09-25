@@ -7,7 +7,8 @@
 namespace sdfg {
 namespace transformations {
 
-Recorder::Recorder() : history_(nlohmann::json::array()) {}
+Recorder::Recorder() : history_(nlohmann::json::array()) {
+}
 
 
 void Recorder::save(std::filesystem::path path) const {

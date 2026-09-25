@@ -45,17 +45,28 @@ ConstPaddingNode::ConstPaddingNode(
     const data_flow::ImplementationType& impl_type
 )
     : TensorNode(element_id, debug_info, vertex, parent, LibraryNodeType_ConstPadding, {}, {"_y", "_x", "_val"}, impl_type),
-      pads_(pads), y_layout_(y_layout), x_layout_(x_layout) {}
+      pads_(pads), y_layout_(y_layout), x_layout_(x_layout) {
+}
 
-const symbolic::MultiExpression& ConstPaddingNode::pads() const { return this->pads_; }
+const symbolic::MultiExpression& ConstPaddingNode::pads() const {
+    return this->pads_;
+}
 
-const symbolic::Expression& ConstPaddingNode::get_lower_pad(int index) const { return this->pads_.at(2 * index); }
+const symbolic::Expression& ConstPaddingNode::get_lower_pad(int index) const {
+    return this->pads_.at(2 * index);
+}
 
-const symbolic::Expression& ConstPaddingNode::get_upper_pad(int index) const { return this->pads_.at(2 * index + 1); }
+const symbolic::Expression& ConstPaddingNode::get_upper_pad(int index) const {
+    return this->pads_.at(2 * index + 1);
+}
 
-const TensorLayout& ConstPaddingNode::y_layout() const { return this->y_layout_; }
+const TensorLayout& ConstPaddingNode::y_layout() const {
+    return this->y_layout_;
+}
 
-const TensorLayout& ConstPaddingNode::x_layout() const { return this->x_layout_; }
+const TensorLayout& ConstPaddingNode::x_layout() const {
+    return this->x_layout_;
+}
 
 void ConstPaddingNode::validate(const Function& function) const {
     auto& graph = this->get_parent();
@@ -147,7 +158,9 @@ void ConstPaddingNode::validate(const Function& function) const {
     }
 }
 
-bool ConstPaddingNode::supports_integer_types() const { return true; }
+bool ConstPaddingNode::supports_integer_types() const {
+    return true;
+}
 
 using Dir = passes::LibNodeExpander::InputUse;
 
@@ -272,7 +285,9 @@ symbolic::SymbolSet ConstPaddingNode::symbols() const {
     return syms;
 }
 
-symbolic::Expression ConstPaddingNode::flop() const { return symbolic::zero(); }
+symbolic::Expression ConstPaddingNode::flop() const {
+    return symbolic::zero();
+}
 
 data_flow::PointerAccessType ConstPaddingNode::pointer_access_type(int input_idx) const {
     switch (input_idx) {

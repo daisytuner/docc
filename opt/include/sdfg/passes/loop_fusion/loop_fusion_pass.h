@@ -77,7 +77,8 @@ public:
             analysis::AnalysisManager& analysis_manager,
             std::unique_ptr<analysis::LoopAnalysis> loop_analysis
         )
-            : builder(builder), analysis_manager(analysis_manager), loop_analysis(std::move(loop_analysis)), run(0) {}
+            : builder(builder), analysis_manager(analysis_manager), loop_analysis(std::move(loop_analysis)), run(0) {
+        }
 
         loop_fusion::FusionLoopCandidate* get_next_level_map_stack(loop_fusion::FusionLoopCandidate& current);
 
@@ -91,7 +92,9 @@ public:
     LoopFusionPass(const LoopFusionConfig& config);
     LoopFusionPass();
 
-    std::string name() override { return "LoopFusionPass"; }
+    std::string name() override {
+        return "LoopFusionPass";
+    }
 
     bool run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
 

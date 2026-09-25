@@ -14,9 +14,12 @@ namespace codegen {
 class CPPLanguageExtension : public LanguageExtension {
 public:
     CPPLanguageExtension(sdfg::Function& function, const std::string& external_prefix = "")
-        : LanguageExtension(function, external_prefix) {}
+        : LanguageExtension(function, external_prefix) {
+    }
 
-    const std::string language() const override { return "C++"; }
+    const std::string language() const override {
+        return "C++";
+    }
 
     std::string primitive_type(const types::PrimitiveType prim_type) override;
 
@@ -71,7 +74,8 @@ public:
     ) override;
 
     CPPSymbolicPrinter(sdfg::Function& function, const std::string& external_prefix = "")
-        : function_(function), external_prefix_(external_prefix) {}
+        : function_(function), external_prefix_(external_prefix) {
+    }
 };
 
 } // namespace codegen

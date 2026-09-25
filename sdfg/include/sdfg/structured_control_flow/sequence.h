@@ -68,9 +68,13 @@ public:
     Sequence(const Sequence& node) = delete;
     Sequence& operator=(const Sequence&) = delete;
 
-    ElementType type_id() const override { return ElementType::Sequence; }
+    ElementType type_id() const override {
+        return ElementType::Sequence;
+    }
 
-    static bool classof(const Element& element) { return element.type_id() == ElementType::Sequence; }
+    static bool classof(const Element& element) {
+        return element.type_id() == ElementType::Sequence;
+    }
 
     bool accept(visitor::ActualStructuredSDFGVisitor& visitor) override;
 

@@ -34,10 +34,15 @@ namespace {
 // `acc[index]` form the dispatcher requires.
 class AccumulatorSubsetProbe : public analysis::BaseUserVisitor {
 public:
-    explicit AccumulatorSubsetProbe(std::string container) : container_(std::move(container)) {}
+    explicit AccumulatorSubsetProbe(std::string container) : container_(std::move(container)) {
+    }
 
-    bool has_multidim() const { return has_multidim_; }
-    bool has_indexed() const { return has_indexed_; }
+    bool has_multidim() const {
+        return has_multidim_;
+    }
+    bool has_indexed() const {
+        return has_indexed_;
+    }
 
     void
     use_as_src_node(const std::string& container, const data_flow::AccessNode&, const data_flow::Memlet& edge, const structured_control_flow::Block&)
@@ -57,11 +62,14 @@ public:
         SymbolReadLocation,
         int,
         symbolic::Expression
-    ) override {}
+    ) override {
+    }
     void use_as_symbol_write(
         const symbolic::Symbol&, const structured_control_flow::ControlFlowNode*, const Element*, SymbolWriteLocation
-    ) override {}
-    void use_as_return_src(const std::string&, const structured_control_flow::Return&) override {}
+    ) override {
+    }
+    void use_as_return_src(const std::string&, const structured_control_flow::Return&) override {
+    }
 
 private:
     void record(const std::string& container, const data_flow::Memlet& edge) {
@@ -87,7 +95,8 @@ template<typename GPUType>
 GPUOffloadNestedLoop<GPUType>::GPUOffloadNestedLoop(
     structured_control_flow::StructuredLoop& loop, gpu::TargetLevel target_level, symbolic::Integer parallel_size
 )
-    : loop_(loop), target_level_(target_level), parallel_size_(parallel_size) {}
+    : loop_(loop), target_level_(target_level), parallel_size_(parallel_size) {
+}
 
 
 template<typename GPUType>

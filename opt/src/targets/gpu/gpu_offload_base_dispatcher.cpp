@@ -33,7 +33,8 @@ GPUOffloadBaseDispatcher::GPUOffloadBaseDispatcher(
     std::unique_ptr<GPUOffloadDispatcherStrategy> strategy
 )
     : codegen::NodeDispatcher(language_extension, sdfg, analysis_manager, node, instrumentation_plan, arg_capture_plan),
-      node_(node), strategy_(std::move(strategy)) {}
+      node_(node), strategy_(std::move(strategy)) {
+}
 
 bool GPUOffloadBaseDispatcher::is_outermost_map(analysis::AnalysisManager& analysis_manager) {
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();

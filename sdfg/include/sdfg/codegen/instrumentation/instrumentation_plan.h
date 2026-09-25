@@ -37,7 +37,8 @@ public:
         bool emit_finalize_all = true,
         bool sampling = false
     )
-        : sdfg_(sdfg), nodes_(nodes), emit_finalize_all_(emit_finalize_all), sampling_(sampling) {}
+        : sdfg_(sdfg), nodes_(nodes), emit_finalize_all_(emit_finalize_all), sampling_(sampling) {
+    }
 
     InstrumentationPlan(const InstrumentationPlan& other) = delete;
     InstrumentationPlan(InstrumentationPlan&& other) = delete;
@@ -45,9 +46,13 @@ public:
     InstrumentationPlan& operator=(const InstrumentationPlan& other) = delete;
     InstrumentationPlan& operator=(InstrumentationPlan&& other) = delete;
 
-    bool is_empty() const { return nodes_.empty(); }
+    bool is_empty() const {
+        return nodes_.empty();
+    }
 
-    bool sampling() const { return sampling_; }
+    bool sampling() const {
+        return sampling_;
+    }
 
     bool should_instrument(const Element& node) const;
 
@@ -67,7 +72,9 @@ public:
 
     void leaving_instrumentation_function(PrettyPrinter& stream, LanguageExtension& language_extension) const;
 
-    void insert(const Element* node) { nodes_.insert(node); }
+    void insert(const Element* node) {
+        nodes_.insert(node);
+    }
 
     static std::unique_ptr<InstrumentationPlan> none(StructuredSDFG& sdfg);
 

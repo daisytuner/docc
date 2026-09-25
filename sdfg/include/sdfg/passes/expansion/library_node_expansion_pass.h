@@ -53,14 +53,16 @@ struct BlockOutcome {
     int skip_count;
 
     BlockOutcome(bool block_removed = false, int skip_count = 0)
-        : block_removed(block_removed), skip_count(skip_count) {}
+        : block_removed(block_removed), skip_count(skip_count) {
+    }
 };
 
 struct NodeOutcome : public BlockOutcome {
     bool expanded;
 
     NodeOutcome(bool expanded = false, bool block_removed = false, int skip_count = 0)
-        : BlockOutcome(block_removed, skip_count), expanded(expanded) {}
+        : BlockOutcome(block_removed, skip_count), expanded(expanded) {
+    }
 };
 } // namespace expansion
 
@@ -68,8 +70,10 @@ struct SingleExpanderHolder {
     using StorageType = std::shared_ptr<LibNodeExpander>;
     const LibNodeExpander& expander_;
 
-    SingleExpanderHolder(const LibNodeExpander& expander) : expander_(expander) {}
-    SingleExpanderHolder(StorageType expander) : expander_(*expander) {}
+    SingleExpanderHolder(const LibNodeExpander& expander) : expander_(expander) {
+    }
+    SingleExpanderHolder(StorageType expander) : expander_(*expander) {
+    }
 
     const LibNodeExpander* get_expander_for(const data_flow::LibraryNode& node) const {
         return expander_.for_lib_node(node);
@@ -127,7 +131,8 @@ public:
         bool force_expand
     )
         : visitor::ActualStructuredSDFGVisitor(), builder_(builder), analysis_manager_(analysis_manager),
-          holder_(holder), force_expand_(force_expand) {}
+          holder_(holder), force_expand_(force_expand) {
+    }
 
     bool visit(sdfg::structured_control_flow::Sequence& seq) override {
         bool may_contain_libnodes = true;
@@ -202,16 +207,21 @@ public:
             // track the last handled element_id, because changes are not allowed  to affect other libnodes.
             // So if the current block gets invalidated (but not removed) we can restart iterating above the last
             // processed element_id
-            auto libnodes =
-                dataflow.nodes() |
-                std::views::transform([](auto& n) { return dynamic_cast<const data_flow::LibraryNode*>(&n); }) |
-                std::views::filter([](auto* n) { return n != nullptr; }) |
-                std::views::filter([last_element_id, force_expand](auto* n) {
-                    return (force_expand || n->implementation_type() == data_flow::ImplementationType_NONE) &&
-                           n->element_id() > last_element_id;
-                });
+            auto libnodes = dataflow.nodes() | std::views::transform([](auto& n) {
+                                return dynamic_cast<const data_flow::LibraryNode*>(&n);
+                            }) |
+                            std::views::filter([](auto* n) {
+                                return n != nullptr;
+                            }) |
+                            std::views::filter([last_element_id, force_expand](auto* n) {
+                                return (force_expand || n->implementation_type() == data_flow::ImplementationType_NONE
+                                       ) &&
+                                       n->element_id() > last_element_id;
+                            });
             std::vector<const data_flow::LibraryNode*> sorted_nodes(libnodes.begin(), libnodes.end());
-            std::ranges::sort(sorted_nodes, std::less<>{}, [](const auto* n) { return n->element_id(); });
+            std::ranges::sort(sorted_nodes, std::less<>{}, [](const auto* n) {
+                return n->element_id();
+            });
 
             may_contain_lib_nodes = !libnodes.empty();
 
@@ -257,12 +267,17 @@ public:
     static constexpr OptionKey<bool> FORCE_EXPAND{"library_node_expansion.force_expand"};
     static constexpr OptionKey<bool> ONLINE_SOFTMAX{"library_node_expansion.online_softmax"};
 
-    LibraryNodeExpansionPass() : holder_options_(std::make_shared<MathNodeExpander>()) {}
+    LibraryNodeExpansionPass() : holder_options_(std::make_shared<MathNodeExpander>()) {
+    }
     explicit LibraryNodeExpansionPass(const Options& options)
-        : Pass(options), holder_options_(std::make_shared<MathNodeExpander>()) {}
-    LibraryNodeExpansionPass(Holder::StorageType options) : holder_options_(std::move(options)) {}
+        : Pass(options), holder_options_(std::make_shared<MathNodeExpander>()) {
+    }
+    LibraryNodeExpansionPass(Holder::StorageType options) : holder_options_(std::move(options)) {
+    }
 
-    std::string name() override { return std::string(NAME); }
+    std::string name() override {
+        return std::string(NAME);
+    }
 
     std::vector<OptionSpec> options() override {
         return {
