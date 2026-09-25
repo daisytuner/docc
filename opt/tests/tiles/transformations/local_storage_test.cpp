@@ -1893,6 +1893,79 @@ TEST(LocalStorageTest, Apply_SequentialAncestorReduce_RMW) {
 
 // A cooperatively-combined (GPU-offloaded) reduction accumulator is left to the
 // reduce dispatcher — can_be_applied must refuse to localize it.
+TEST(LocalStorageTest, GridReductionDemotionPreservesOtherAccumulators) {
+    for (bool multiple : {false, true}) {
+        builder::StructuredSDFGBuilder builder("ls_grid_demotion", FunctionType_CPU);
+        types::Scalar integer_type(types::PrimitiveType::Int32);
+        types::Pointer pointer{types::Scalar(types::PrimitiveType::Float)};
+        builder.add_container("grid", integer_type);
+        builder.add_container("step", integer_type);
+        builder.add_container("lane", integer_type);
+        builder.add_container("acc", pointer, true);
+        builder.add_container("other", pointer, true);
+        auto grid = symbolic::symbol("grid");
+        auto step = symbolic::symbol("step");
+        auto lane = symbolic::symbol("lane");
+        std::vector<structured_control_flow::ReductionInfo> entries{
+            {structured_control_flow::ReductionOperation::Add, "acc"}
+        };
+        if (multiple) {
+            entries.push_back({structured_control_flow::ReductionOperation::Add, "other"});
+        }
+        auto& reduction = builder.add_reduce(
+            builder.subject().root(),
+            grid,
+            symbolic::Lt(grid, symbolic::integer(8)),
+            symbolic::zero(),
+            symbolic::add(grid, symbolic::one()),
+            entries,
+            gpu::ScheduleType_GPU_Offload::create<
+                cuda::ScheduleType_CUDA_Offload>(gpu::TargetLevel::X_GRID, symbolic::integer(8))
+        );
+        auto& lanes = builder.add_map(
+            reduction.root(),
+            lane,
+            symbolic::Lt(lane, symbolic::integer(4)),
+            symbolic::zero(),
+            symbolic::add(lane, symbolic::one()),
+            gpu::ScheduleType_GPU_Offload::create<
+                cuda::ScheduleType_CUDA_Offload>(gpu::TargetLevel::X_BLOCK, symbolic::integer(4))
+        );
+        auto& loop = builder.add_for(
+            lanes.root(),
+            step,
+            symbolic::Lt(step, symbolic::integer(4)),
+            symbolic::zero(),
+            symbolic::add(step, symbolic::one())
+        );
+        auto& block = builder.add_block(loop.root());
+        auto& input = builder.add_access(block, "acc");
+        auto& output = builder.add_access(block, "acc");
+        auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::fp_add, "out", {"left", "right"});
+        builder.add_computational_memlet(block, input, tasklet, "left", {lane}, pointer);
+        builder.add_computational_memlet(block, input, tasklet, "right", {lane}, pointer);
+        builder.add_computational_memlet(block, tasklet, "out", output, {lane}, pointer);
+        if (multiple) {
+            auto& other_input = builder.add_access(block, "other");
+            auto& other_output = builder.add_access(block, "other");
+            auto& addition = builder.add_tasklet(block, data_flow::TaskletCode::fp_add, "out", {"left", "right"});
+            builder.add_computational_memlet(block, other_input, addition, "left", {lane}, pointer);
+            builder.add_computational_memlet(block, other_input, addition, "right", {lane}, pointer);
+            builder.add_computational_memlet(block, addition, "out", other_output, {lane}, pointer);
+        }
+        analysis::AnalysisManager manager(builder.subject());
+        serializer::JSONSerializer serializer;
+        const auto unchanged = serializer.serialize(builder.subject());
+        LocalStorage storage(loop, output);
+        EXPECT_EQ(storage.can_be_applied(builder, manager), !multiple);
+        EXPECT_EQ(serializer.serialize(builder.subject()), unchanged);
+        if (!multiple) {
+            storage.apply(builder, manager);
+            EXPECT_NE(dyn_cast<structured_control_flow::Map*>(&builder.subject().root().at(0)), nullptr);
+        }
+    }
+}
+
 TEST(LocalStorageTest, CanApply_CooperativeReductionAccumulator_Rejects) {
     builder::StructuredSDFGBuilder builder("ls_reduce_coop_reject", FunctionType_CPU);
     auto& seq = builder.subject().root();

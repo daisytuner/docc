@@ -12,7 +12,6 @@
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/analysis/data_dependency_analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
-#include "sdfg/deepcopy/structured_sdfg_deep_copy.h"
 #include "sdfg/structured_control_flow/for.h"
 #include "sdfg/structured_control_flow/reduce.h"
 #include "sdfg/structured_control_flow/sequence.h"
@@ -20,6 +19,7 @@
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/cuda/cuda.h"
 #include "sdfg/targets/gpu/gpu_offload_schedule_type.h"
+#include "sdfg/targets/rocm/rocm.h"
 #include "sdfg/types/pointer.h"
 #include "sdfg/types/scalar.h"
 
@@ -34,66 +34,31 @@ static void check_schedule_estimates(
     serializer::JSONSerializer serializer;
     const auto unchanged = serializer.serialize(source.subject());
     for (auto* target : reductions) {
+        const auto footprint = buffers.require(*target, "acc");
+        EXPECT_TRUE(buffers.supports_schedule(*target, target->schedule_type()));
         auto wider = target->schedule_type();
         gpu::ScheduleType_GPU_Offload::parallel_size(wider, symbolic::integer(16));
-        auto global = target->schedule_type();
-        gpu::ScheduleType_GPU_Offload::partial_storage(global, gpu::ReduceStrategy::Global);
+        EXPECT_EQ(buffers.supports_schedule(*target, wider), !footprint.materialized);
         auto invalid = target->schedule_type();
         gpu::ScheduleType_GPU_Offload::partial_storage(invalid, gpu::ReduceStrategy::Register);
-        const std::vector<structured_control_flow::ScheduleType> schedules{
-            target->schedule_type(),
-            wider,
-            global,
-            invalid,
-            structured_control_flow::ScheduleType_Sequential::create(),
-            gpu::ScheduleType_GPU_Offload::create<
-                cuda::ScheduleType_CUDA_Offload>(gpu::TargetLevel::WARP, symbolic::integer(32))
-        };
-        for (const auto& schedule : schedules) {
-            builder::StructuredSDFGBuilder proposed("schedule_oracle", source.subject().type());
-            proposed.set_element_counter(source.subject().element_counter());
-            const auto nodes = buffers.copy_nest(*target, proposed);
-            auto* copied_target = const_cast<
-                structured_control_flow::Reduce*>(dynamic_cast<const structured_control_flow::Reduce*>(nodes.at(target))
-            );
-            ASSERT_NE(copied_target, nullptr);
-            proposed.update_schedule_type(*copied_target, schedule);
-            EXPECT_EQ(buffers.supports_schedule(*target, schedule), buffers.supports(proposed.subject(), nodes));
-            analysis::AnalysisManager proposed_manager(proposed.subject());
-            for (auto* reduction : reductions) {
-                const auto footprint = buffers.require(*reduction, "acc");
-                const auto estimate = buffers.estimate_schedule(*reduction, "acc", footprint, {*target, schedule});
-                EXPECT_FALSE(estimate.materialized);
-                if (footprint.materialized) {
-                    continue;
-                }
-                auto* copied = const_cast<
-                    structured_control_flow::Reduce*>(dynamic_cast<
-                                                      const structured_control_flow::Reduce*>(nodes.at(reduction)));
-                ASSERT_NE(copied, nullptr);
-                const auto actual = proposed_manager.get<tiles::ReductionBufferAnalysis>().buffer(*copied, "acc");
-                EXPECT_EQ(estimate.status, actual.status);
-                EXPECT_EQ(estimate.private_bytes, actual.private_bytes);
-                EXPECT_EQ(estimate.shared_bytes, actual.shared_bytes);
-                ASSERT_EQ(estimate.shared_owner.has_value(), actual.shared_owner.has_value());
-                if (estimate.shared_owner) {
-                    const auto* owner = dynamic_cast<
-                        const structured_control_flow::ControlFlowNode*>(source.find_element_by_id(*estimate.shared_owner
-                    ));
-                    ASSERT_NE(owner, nullptr);
-                    EXPECT_EQ(nodes.at(owner)->element_id(), *actual.shared_owner);
-                }
-                if (estimate.layout && actual.layout) {
-                    EXPECT_EQ(estimate.layout->extent, actual.layout->extent);
-                    EXPECT_TRUE(symbolic::eq(estimate.layout->base, actual.layout->base));
-                }
-                EXPECT_EQ(estimate.linear_thread_index.is_null(), actual.linear_thread_index.is_null());
-                if (!estimate.linear_thread_index.is_null() && !actual.linear_thread_index.is_null()) {
-                    EXPECT_TRUE(symbolic::eq(estimate.linear_thread_index, actual.linear_thread_index));
-                }
-            }
-            EXPECT_EQ(serializer.serialize(source.subject()), unchanged);
-        }
+        EXPECT_FALSE(buffers.supports_schedule(*target, invalid));
+        EXPECT_EQ(
+            buffers.estimate_schedule(*target, "acc", footprint, {*target, invalid}).status,
+            tiles::ReductionBufferStatus::Unsupported
+        );
+        const auto estimate = buffers.estimate_schedule(*target, "acc", footprint, {*target, wider});
+        ASSERT_EQ(estimate.status, tiles::ReductionBufferStatus::Exact) << estimate.diagnostic;
+        EXPECT_FALSE(estimate.materialized);
+        EXPECT_EQ(estimate.layout->extent, 1);
+        EXPECT_TRUE(symbolic::eq(estimate.layout->base, symbolic::zero()));
+        EXPECT_EQ(estimate.shared_owner, reductions.front()->element_id());
+        const auto width =
+            SymEngine::rcp_static_cast<
+                const SymEngine::Integer>(gpu::ScheduleType_GPU_Offload::parallel_size(target->schedule_type()))
+                ->as_int();
+        EXPECT_EQ(estimate.shared_bytes, *footprint.shared_bytes / width * 16);
+        EXPECT_EQ(estimate.private_bytes, footprint.private_bytes);
+        EXPECT_EQ(serializer.serialize(source.subject()), unchanged);
     }
 }
 
@@ -130,44 +95,28 @@ TEST(ReductionBufferAnalysisTest, SchedulePreviewIsLocalToTargetNest) {
     analysis::AnalysisManager manager(builder.subject());
     serializer::JSONSerializer serializer;
     const auto before = serializer.serialize(builder.subject());
-    builder::StructuredSDFGBuilder proposed("local_preview", FunctionType_CPU);
-    proposed.set_element_counter(builder.subject().element_counter());
-    const auto nodes = manager.get<tiles::ReductionBufferAnalysis>().copy_nest(target, proposed);
-    auto* copied = dynamic_cast<const structured_control_flow::Reduce*>(nodes.at(&target));
-    ASSERT_NE(copied, nullptr);
-    EXPECT_NE(copied->element_id(), target.element_id());
-    EXPECT_FALSE(nodes.contains(&unrelated));
-    EXPECT_FALSE(proposed.subject().exists("unrelated_acc"));
-    auto& reduction = const_cast<structured_control_flow::Reduce&>(*copied);
-    proposed.update_schedule_type(
-        reduction,
-        gpu::ScheduleType_GPU_Offload::create<
-            cuda::ScheduleType_CUDA_Offload>(gpu::TargetLevel::X_BLOCK, symbolic::integer(16))
-    );
-    analysis::AnalysisManager proposed_manager(proposed.subject());
-    EXPECT_EQ(proposed_manager.get<tiles::ReductionBufferAnalysis>().require(reduction, "target_acc").shared_bytes, 64);
-    EXPECT_TRUE(manager.get<tiles::ReductionBufferAnalysis>().supports(proposed.subject(), nodes));
+    auto& buffers = manager.get<tiles::ReductionBufferAnalysis>();
+    const auto wider = gpu::ScheduleType_GPU_Offload::create<
+        cuda::ScheduleType_CUDA_Offload>(gpu::TargetLevel::X_BLOCK, symbolic::integer(16));
+    const auto estimate =
+        buffers.estimate_schedule(target, "target_acc", buffers.require(target, "target_acc"), {target, wider});
+    EXPECT_EQ(estimate.status, tiles::ReductionBufferStatus::Exact);
+    EXPECT_EQ(estimate.shared_bytes, 64);
+    EXPECT_EQ(estimate.private_bytes, 4);
+    EXPECT_EQ(estimate.shared_owner, target.element_id());
+    EXPECT_EQ(buffers.require(unrelated, "unrelated_acc").shared_bytes, 32);
+    EXPECT_TRUE(buffers.supports_schedule(target, wider));
     EXPECT_EQ(serializer.serialize(builder.subject()), before);
     passes::ReductionSharedMemoryDelinearization packing;
     ASSERT_TRUE(packing.run_pass(builder, manager));
     const auto materialized = serializer.serialize(builder.subject());
-    builder::StructuredSDFGBuilder packed("packed_preview", FunctionType_CPU);
-    packed.set_element_counter(builder.subject().element_counter());
-    auto& buffers = manager.get<tiles::ReductionBufferAnalysis>();
-    const auto packed_nodes = buffers.copy_nest(target, packed);
-    EXPECT_NE(packed_nodes.at(&target)->element_id(), target.element_id());
-    EXPECT_TRUE(buffers.supports(packed.subject(), packed_nodes));
-    EXPECT_THROW(buffers.supports(builder.subject(), packed_nodes), InvalidSDFGException);
-    auto* packed_target = const_cast<
-        structured_control_flow::Reduce*>(dynamic_cast<const structured_control_flow::Reduce*>(packed_nodes.at(&target))
+    auto& packed_buffers = manager.get<tiles::ReductionBufferAnalysis>();
+    EXPECT_TRUE(packed_buffers.supports_schedule(target, target.schedule_type()));
+    EXPECT_FALSE(packed_buffers.supports_schedule(target, wider));
+    EXPECT_NE(
+        packed_buffers.require(target, "target_acc").shared_buffer,
+        packed_buffers.require(unrelated, "unrelated_acc").shared_buffer
     );
-    ASSERT_NE(packed_target, nullptr);
-    packed.update_schedule_type(
-        *packed_target,
-        gpu::ScheduleType_GPU_Offload::create<
-            cuda::ScheduleType_CUDA_Offload>(gpu::TargetLevel::X_BLOCK, symbolic::integer(16))
-    );
-    EXPECT_FALSE(buffers.supports(packed.subject(), packed_nodes));
     EXPECT_EQ(serializer.serialize(builder.subject()), materialized);
 }
 
@@ -449,69 +398,238 @@ TEST(ReductionBufferAnalysisTest, NestedSharedOwnersGrowWithoutDoubleCounting) {
         EXPECT_EQ(kernel.status, tiles::ReductionBufferStatus::Exact);
         EXPECT_EQ(kernel.shared_bytes, threads * 4);
         check_schedule_estimates(builder, manager, reductions);
-
-        builder::StructuredSDFGBuilder proposed("shared_owner_preview", FunctionType_CPU);
-        proposed.set_element_counter(builder.subject().element_counter());
-        const auto copied_nodes = buffers.copy_nest(*reductions.back(), proposed);
-        const auto sibling_nodes =
-            deepcopy::StructuredSDFGDeepCopy(proposed, proposed.subject().root(), *reductions.front()).copy();
-        auto* sibling_owner = const_cast<
-            structured_control_flow::Reduce*>(dynamic_cast<const structured_control_flow::Reduce*>(sibling_nodes
-                                                                                                       .at(reductions
-                                                                                                               .front())
-        ));
-        ASSERT_NE(sibling_owner, nullptr);
-        proposed.update_schedule_type(
-            *sibling_owner,
-            gpu::ScheduleType_GPU_Offload::create<
-                cuda::ScheduleType_CUDA_Offload>(levels.front(), symbolic::integer(widths.front() * 2))
-        );
-        analysis::AnalysisManager proposed_manager(proposed.subject());
-        passes::ReductionSharedMemoryDelinearization packing;
-        ASSERT_TRUE(packing.run_pass(proposed, proposed_manager));
-        auto& packed_buffers = proposed_manager.get<tiles::ReductionBufferAnalysis>();
-        std::string shared_name;
-        std::vector<structured_control_flow::Reduce*> packed_reductions;
-        for (auto* nested : reductions) {
-            auto* cloned = const_cast<
-                structured_control_flow::Reduce*>(dynamic_cast<const structured_control_flow::Reduce*>(copied_nodes
-                                                                                                           .at(nested))
-            );
-            ASSERT_NE(cloned, nullptr);
-            packed_reductions.push_back(cloned);
-            EXPECT_NE(cloned->element_id(), nested->element_id());
-            const auto& info = packed_buffers.require(*cloned, "acc");
-            EXPECT_TRUE(info.materialized);
-            EXPECT_EQ(info.shared_owner, copied_nodes.at(reductions.front())->element_id());
-            if (shared_name.empty()) {
-                shared_name = info.shared_buffer;
+        if (reductions.size() > 1) {
+            auto& outer = *reductions.front();
+            auto& inner = *reductions.at(1);
+            transformations::LoopInterchange interchange(outer, inner);
+            const auto proposal = interchange.proposal();
+            serializer::JSONSerializer serializer;
+            const auto unchanged = serializer.serialize(builder.subject());
+            for (auto* nested : reductions) {
+                const auto estimate =
+                    buffers.estimate_interchange(*nested, "acc", buffers.require(*nested, "acc"), proposal);
+                EXPECT_EQ(estimate.status, tiles::ReductionBufferStatus::Exact);
+                EXPECT_EQ(estimate.private_bytes, 0);
+                EXPECT_EQ(estimate.shared_bytes, nested == &inner ? threads * 4 : 0);
+                EXPECT_EQ(estimate.shared_owner, inner.element_id());
+                EXPECT_FALSE(estimate.materialized);
             }
-            EXPECT_EQ(info.shared_buffer, shared_name);
-            EXPECT_EQ(info.shared_bytes, nested == reductions.front() ? threads * 4 : 0);
+            EXPECT_TRUE(buffers.supports_interchange(proposal));
+            EXPECT_EQ(serializer.serialize(builder.subject()), unchanged);
         }
-        ASSERT_FALSE(shared_name.empty());
-        check_schedule_estimates(proposed, proposed_manager, packed_reductions);
-        for (auto* nested : reductions) {
-            auto* sibling = const_cast<
-                structured_control_flow::Reduce*>(dynamic_cast<const structured_control_flow::Reduce*>(sibling_nodes
-                                                                                                           .at(nested))
-            );
-            ASSERT_NE(sibling, nullptr);
-            const auto info = packed_buffers.require(*sibling, "acc");
-            EXPECT_TRUE(info.materialized);
-            EXPECT_EQ(info.shared_owner, sibling_owner->element_id());
-            EXPECT_NE(info.shared_buffer, shared_name);
-            EXPECT_EQ(info.shared_bytes, nested == reductions.front() ? threads * 8 : 0);
+    }
+    passes::ReductionSharedMemoryDelinearization packing;
+    ASSERT_TRUE(packing.run_pass(builder, manager));
+    auto& packed_buffers = manager.get<tiles::ReductionBufferAnalysis>();
+    const auto shared_name = packed_buffers.require(*reductions.front(), "acc").shared_buffer;
+    ASSERT_FALSE(shared_name.empty());
+    for (auto* nested : reductions) {
+        const auto info = packed_buffers.require(*nested, "acc");
+        EXPECT_TRUE(info.materialized);
+        EXPECT_EQ(info.shared_owner, reductions.front()->element_id());
+        EXPECT_EQ(info.shared_buffer, shared_name);
+        EXPECT_EQ(info.shared_bytes, nested == reductions.front() ? threads * 4 : 0);
+    }
+    check_schedule_estimates(builder, manager, reductions);
+    EXPECT_FALSE(packing.run_pass(builder, manager));
+}
+
+TEST(ReductionBufferAnalysisTest, SymbolicHeadersPreserveAffineCounts) {
+    auto point = symbolic::symbol("point");
+    auto origin = symbolic::symbol("origin");
+    auto limit = symbolic::symbol("limit");
+    const auto domain = tiles::ReductionLoopDomain::from_header(
+        point,
+        {origin,
+         symbolic::
+             Le(symbolic::add(symbolic::mul(symbolic::integer(2), point), symbolic::one()),
+                symbolic::add(symbolic::mul(symbolic::integer(2), origin), symbolic::integer(8))),
+         symbolic::add(point, symbolic::integer(2))}
+    );
+    EXPECT_TRUE(symbolic::eq(domain.init, origin));
+    ASSERT_FALSE(domain.count.is_null());
+    EXPECT_TRUE(symbolic::eq(domain.count, symbolic::integer(2)));
+    EXPECT_TRUE(symbolic::eq(domain.stride, symbolic::integer(2)));
+    const auto guarded = tiles::ReductionLoopDomain::from_header(
+        point,
+        {origin,
+         symbolic::And(symbolic::Lt(point, limit), symbolic::Lt(point, symbolic::add(origin, symbolic::integer(4)))),
+         symbolic::add(point, symbolic::one())}
+    );
+    ASSERT_FALSE(guarded.count.is_null());
+    EXPECT_TRUE(symbolic::
+                    eq(SymEngine::subs(guarded.count, {{origin, symbolic::integer(3)}, {limit, symbolic::integer(5)}}),
+                       symbolic::integer(2)));
+    EXPECT_TRUE(symbolic::
+                    eq(SymEngine::subs(guarded.count, {{origin, symbolic::integer(3)}, {limit, symbolic::integer(20)}}),
+                       symbolic::integer(4)));
+    const auto nonlinear = tiles::ReductionLoopDomain::from_header(
+        point, {origin, symbolic::Lt(symbolic::mul(point, point), limit), symbolic::add(point, symbolic::one())}
+    );
+    EXPECT_TRUE(nonlinear.count.is_null());
+}
+
+TEST(ReductionBufferAnalysisTest, DependentInterchangePreservesScalarFootprint) {
+    builder::StructuredSDFGBuilder builder("dependent_reduction_interchange", FunctionType_CPU);
+    types::Scalar integer_type(types::PrimitiveType::Int32);
+    types::Pointer pointer{types::Scalar(types::PrimitiveType::Float)};
+    builder.add_container("row", integer_type);
+    builder.add_container("step", integer_type);
+    builder.add_container("acc", pointer);
+    auto row = symbolic::symbol("row");
+    auto step = symbolic::symbol("step");
+    auto& outer = builder.add_for(
+        builder.subject().root(),
+        row,
+        symbolic::Lt(row, symbolic::integer(4)),
+        symbolic::zero(),
+        symbolic::add(row, symbolic::one())
+    );
+    auto& reduction = builder.add_reduce(
+        outer.root(),
+        step,
+        symbolic::Lt(step, symbolic::add(row, symbolic::integer(8))),
+        row,
+        symbolic::add(step, symbolic::one()),
+        {{structured_control_flow::ReductionOperation::Add, "acc"}},
+        gpu::ScheduleType_GPU_Offload::create<
+            cuda::ScheduleType_CUDA_Offload>(gpu::TargetLevel::X_BLOCK, symbolic::integer(8))
+    );
+    auto& block = builder.add_block(reduction.root());
+    auto& input = builder.add_access(block, "acc");
+    auto& output = builder.add_access(block, "acc");
+    auto& addition = builder.add_tasklet(block, data_flow::TaskletCode::fp_add, "out", {"left", "right"});
+    builder.add_computational_memlet(block, input, addition, "left", {symbolic::zero()}, pointer);
+    builder.add_computational_memlet(block, input, addition, "right", {symbolic::zero()}, pointer);
+    builder.add_computational_memlet(block, addition, "out", output, {symbolic::zero()}, pointer);
+    analysis::AnalysisManager manager(builder.subject());
+    serializer::JSONSerializer serializer;
+    const auto unchanged = serializer.serialize(builder.subject());
+    transformations::LoopInterchange interchange(outer, reduction);
+    ASSERT_TRUE(interchange.can_be_applied(builder, manager));
+    EXPECT_EQ(serializer.serialize(builder.subject()), unchanged);
+    interchange.apply(builder, manager);
+    auto* rewritten = dyn_cast<structured_control_flow::Reduce*>(interchange.new_outer_loop());
+    ASSERT_NE(rewritten, nullptr);
+    const auto footprint = manager.get<tiles::ReductionBufferAnalysis>().require(*rewritten, "acc");
+    EXPECT_EQ(footprint.layout->extent, 1);
+    EXPECT_TRUE(symbolic::eq(footprint.layout->base, symbolic::zero()));
+    EXPECT_EQ(footprint.private_bytes, 4);
+    EXPECT_EQ(footprint.shared_bytes, 32);
+    EXPECT_EQ(footprint.shared_owner, rewritten->element_id());
+}
+
+TEST(ReductionBufferAnalysisTest, TilingPreservesFootprintAddresses) {
+    for (bool simplify : {false, true}) {
+        for (bool use_rocm : {false, true}) {
+            for (bool mapped : {false, true}) {
+                SCOPED_TRACE(use_rocm);
+                SCOPED_TRACE(mapped);
+                builder::StructuredSDFGBuilder builder("tiling_projection", FunctionType_CPU);
+                types::Scalar integer_type(types::PrimitiveType::Int32);
+                types::Pointer pointer{types::Scalar(types::PrimitiveType::Float)};
+                builder.add_container("step", integer_type);
+                builder.add_container("row", integer_type);
+                builder.add_container("acc", pointer);
+                auto make_schedule = [&](gpu::TargetLevel level, int64_t width) {
+                    if (use_rocm) {
+                        return gpu::ScheduleType_GPU_Offload::create<
+                            rocm::ScheduleType_ROCM_Offload>(level, symbolic::integer(width));
+                    }
+                    return gpu::ScheduleType_GPU_Offload::create<
+                        cuda::ScheduleType_CUDA_Offload>(level, symbolic::integer(width));
+                };
+                auto step = symbolic::symbol("step");
+                auto row = symbolic::symbol("row");
+                auto& reduction = builder.add_reduce(
+                    builder.subject().root(),
+                    step,
+                    symbolic::Lt(step, symbolic::integer(8)),
+                    symbolic::zero(),
+                    symbolic::add(step, symbolic::one()),
+                    {{structured_control_flow::ReductionOperation::Add, "acc"}},
+                    make_schedule(gpu::TargetLevel::X_BLOCK, 8)
+                );
+                structured_control_flow::StructuredLoop* output_loop = nullptr;
+                if (mapped) {
+                    output_loop = &builder.add_map(
+                        reduction.root(),
+                        row,
+                        symbolic::Lt(row, symbolic::integer(19)),
+                        symbolic::integer(3),
+                        symbolic::add(row, symbolic::one()),
+                        make_schedule(gpu::TargetLevel::Y_BLOCK, 4)
+                    );
+                } else {
+                    output_loop = &builder.add_for(
+                        reduction.root(),
+                        row,
+                        symbolic::Lt(row, symbolic::integer(19)),
+                        symbolic::integer(3),
+                        symbolic::add(row, symbolic::one())
+                    );
+                }
+                auto& block = builder.add_block(output_loop->root());
+                auto& input = builder.add_access(block, "acc");
+                auto& output = builder.add_access(block, "acc");
+                auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::fp_add, "out", {"left", "right"});
+                auto index = symbolic::add(symbolic::integer(7), symbolic::mul(symbolic::integer(2), row));
+                builder.add_computational_memlet(block, input, tasklet, "left", {index}, pointer);
+                builder.add_computational_memlet(block, input, tasklet, "right", {index}, pointer);
+                builder.add_computational_memlet(block, tasklet, "out", output, {index}, pointer);
+                analysis::AnalysisManager manager(builder.subject());
+                auto& buffers = manager.get<tiles::ReductionBufferAnalysis>();
+                const auto source = buffers.require(reduction, "acc");
+                auto tile = symbolic::symbol("tile");
+                auto subtile = symbolic::symbol("subtile");
+                const std::vector<tiles::ReductionLoopDomain> domains{
+                    {row, subtile, symbolic::integer(2), symbolic::one()},
+                    {subtile, tile, symbolic::integer(2), symbolic::integer(2)},
+                    {tile, symbolic::integer(3), symbolic::integer(4), symbolic::integer(4)}
+                };
+                serializer::JSONSerializer serializer;
+                const auto unchanged = serializer.serialize(builder.subject());
+                const auto estimate = buffers.estimate_geometry(reduction, "acc", source, domains);
+                ASSERT_EQ(estimate.status, tiles::ReductionBufferStatus::Exact) << estimate.diagnostic;
+                EXPECT_FALSE(estimate.materialized);
+                EXPECT_EQ(estimate.layout->extent, 16);
+                EXPECT_TRUE(symbolic::eq(estimate.layout->base, symbolic::integer(13)));
+                EXPECT_EQ(estimate.private_bytes, 64);
+                EXPECT_EQ(estimate.shared_bytes, mapped ? 2048 : 512);
+                transformations::LoopTiling ragged_tiling(*output_loop, 5, true);
+                EXPECT_FALSE(ragged_tiling.can_be_applied(builder, manager));
+                transformations::MultiLevelTiling tiling(*output_loop, 4, 2, simplify);
+                ASSERT_TRUE(tiling.can_be_applied(builder, manager));
+                EXPECT_EQ(serializer.serialize(builder.subject()), unchanged);
+                tiling.apply(builder, manager);
+                const auto actual = manager.get<tiles::ReductionBufferAnalysis>().require(reduction, "acc");
+                EXPECT_EQ(actual.layout->extent, 16);
+                EXPECT_EQ(actual.private_bytes, 64);
+                EXPECT_EQ(actual.shared_bytes, mapped ? 2048 : 512);
+                for (int64_t slot = 0; slot < 16; ++slot) {
+                    auto address = symbolic::integer(13 + 2 * slot);
+                    EXPECT_TRUE(symbolic::eq(estimate.layout->unpack(symbolic::integer(slot)), address));
+                    EXPECT_TRUE(symbolic::eq(actual.layout->unpack(symbolic::integer(slot)), address));
+                    EXPECT_TRUE(symbolic::eq(actual.layout->pack(address), symbolic::integer(slot)));
+                }
+                transformations::LoopTiling reduction_tiling(reduction, 3, false);
+                const auto before_reduction_tiling = serializer.serialize(builder.subject());
+                ASSERT_TRUE(reduction_tiling.can_be_applied(builder, manager));
+                EXPECT_EQ(serializer.serialize(builder.subject()), before_reduction_tiling);
+                reduction_tiling.apply(builder, manager);
+                auto* owner = dyn_cast<structured_control_flow::Reduce*>(reduction_tiling.outer_loop());
+                ASSERT_NE(owner, nullptr);
+                auto& tiled_buffers = manager.get<tiles::ReductionBufferAnalysis>();
+                const auto owner_info = tiled_buffers.require(*owner, "acc");
+                const auto inner_info = tiled_buffers.require(reduction, "acc");
+                EXPECT_EQ(owner_info.layout->extent, 16);
+                EXPECT_EQ(owner_info.private_bytes, 0);
+                EXPECT_EQ(owner_info.shared_bytes, mapped ? 2048 : 512);
+                EXPECT_EQ(inner_info.shared_bytes, 0);
+                EXPECT_EQ(inner_info.shared_owner, owner->element_id());
+                EXPECT_EQ(tiled_buffers.kernel(*owner).shared_bytes, mapped ? 2048 : 512);
+            }
         }
-        EXPECT_FALSE(packing.run_pass(proposed, proposed_manager));
-        builder::StructuredSDFGBuilder replay("shared_owner_replay", FunctionType_CPU);
-        replay.set_element_counter(proposed.subject().element_counter());
-        auto* copied_owner = const_cast<
-            structured_control_flow::Reduce*>(dynamic_cast<
-                                              const structured_control_flow::Reduce*>(copied_nodes.at(reductions.front()
-        )));
-        const auto replay_nodes = packed_buffers.copy_nest(*copied_owner, replay);
-        EXPECT_TRUE(packed_buffers.supports(replay.subject(), replay_nodes));
     }
 }
 
@@ -651,6 +769,11 @@ TEST(ReductionBufferAnalysisTest, DenseFootprintAndInvalidation) {
     transformations::LoopInterchange interchange(reduction, rows);
     serializer::JSONSerializer serializer;
     const auto before_preview = serializer.serialize(builder.subject());
+    const auto interchanged = manager.get<tiles::ReductionBufferAnalysis>()
+                                  .estimate_interchange(reduction, "acc", shared, interchange.proposal());
+    ASSERT_EQ(interchanged.status, tiles::ReductionBufferStatus::Exact);
+    EXPECT_EQ(interchanged.private_bytes, 8);
+    EXPECT_EQ(interchanged.shared_bytes, 64);
     EXPECT_TRUE(manager.get<tiles::ReductionBufferAnalysis>().supports_interchange(interchange.proposal()));
     EXPECT_EQ(serializer.serialize(builder.subject()), before_preview);
     auto expected_origin = symbolic::add(origin, symbolic::mul(symbolic::integer(16), row));
@@ -675,6 +798,7 @@ TEST(ReductionBufferAnalysisTest, DenseFootprintAndInvalidation) {
     EXPECT_EQ(actual.shared_bytes, 64);
     EXPECT_EQ(actual.layout->extent, 2);
     EXPECT_TRUE(symbolic::eq(actual.layout->base, expected_origin));
+    EXPECT_TRUE(symbolic::eq(actual.layout->base, interchanged.layout->base));
     transformations::LoopInterchange reverse(*interchange.new_outer_loop(), *interchange.new_inner_loop());
     EXPECT_TRUE(manager.get<tiles::ReductionBufferAnalysis>().supports_interchange(reverse.proposal()));
     builder.add_container("unknown_bound", integer_type, true);

@@ -2,7 +2,6 @@
 
 #include <optional>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include "sdfg/analysis/analysis.h"
@@ -40,9 +39,15 @@ struct ReductionScheduleProposal {
     const structured_control_flow::ScheduleType& schedule;
 };
 
-/// Native source-to-copy correspondence; copied elements have independent IDs.
-using ReductionNodeMapping =
-    std::unordered_map<const structured_control_flow::ControlFlowNode*, const structured_control_flow::ControlFlowNode*>;
+/// One projected affine loop domain; geometry queries consume domains deepest first.
+struct ReductionLoopDomain {
+    symbolic::Symbol indvar;
+    symbolic::Expression init;
+    symbolic::Expression count;
+    symbolic::Integer stride;
+
+    static ReductionLoopDomain from_header(const symbolic::Symbol& indvar, const ReductionLoopHeader& header);
+};
 
 /**
  * @brief One accumulator's logical footprint and allocation contribution
@@ -130,22 +135,30 @@ public:
         const ReductionScheduleProposal& proposal
     ) const;
 
-    /// Copy only the enclosing nest and referenced declarations into a detached builder.
-    /// The returned correspondence locates copied nodes without preserving element IDs.
-    ReductionNodeMapping
-    copy_nest(structured_control_flow::StructuredLoop& loop, builder::StructuredSDFGBuilder& destination) const;
+    /// Recompute geometry and allocation ownership from proposed symbolic interchange headers.
+    ReductionBufferInfo estimate_interchange(
+        structured_control_flow::Reduce& reduction,
+        const std::string& container,
+        ReductionBufferInfo footprint,
+        const ReductionInterchangeProposal& proposal
+    ) const;
 
-    /// Check directly nested loop interchange on a native nest copy.
+    /// Recompute an exact footprint from deepest-first domains without changing allocation topology.
+    /// Caller-owned source results must describe the unchanged accumulator; no body is visited.
+    ReductionBufferInfo estimate_geometry(
+        structured_control_flow::Reduce& reduction,
+        const std::string& container,
+        ReductionBufferInfo footprint,
+        const std::vector<ReductionLoopDomain>& inner_domains
+    ) const;
+
+    /// Check interchange analytically without constructing a proposal graph.
     /// Malformed nesting throws; moving materialized reductions is unsupported.
     bool supports_interchange(const ReductionInterchangeProposal& proposal) const;
 
-    /// Validate a detached nest after a proposed rewrite, using native node correspondence
-    /// to preserve materialized layouts, types, costs, and allocation ownership.
-    bool supports(StructuredSDFG& proposal, const ReductionNodeMapping& nodes) const;
-
     /// Check exactness and materialized-buffer compatibility for a proposed schedule,
     /// including sibling reductions in the enclosing nest. Uses analytical allocation
-    /// effects for exact source footprints, with native-copy fallback otherwise.
+    /// effects for exact source footprints. Unknown effects are unsupported.
     bool supports_schedule(
         structured_control_flow::StructuredLoop& loop, const structured_control_flow::ScheduleType& schedule
     ) const;

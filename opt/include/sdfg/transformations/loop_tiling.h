@@ -27,7 +27,7 @@ protected:
     structured_control_flow::StructuredLoop* outer_loop_ = nullptr;
 
     /**
-     * @brief Preview all proposed tile levels on a clone to check reduction footprints
+     * @brief Check reduction footprints using symbolic tile domains without changing the graph
      * @param builder The builder for the unchanged original SDFG
      * @param analysis_manager The analysis manager for the current graph
      * @param tile_sizes Tile sizes in application order, each applied to the inner loop

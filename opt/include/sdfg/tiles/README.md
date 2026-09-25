@@ -131,9 +131,25 @@ current enclosing loop nest, discarding them when it advances to another nest.
 - `kernel(root)` totals reduction shared-memory allocations below a kernel root,
     counting each shared owner once. It does not include unrelated staging buffers
     or compare against a device budget.
-- `estimate(proposal)` evaluates an interchange, schedule change, or detached SDFG
-    using fresh analyses without changing the original graph. Callers must not pass
-    the live SDFG as the proposal.
+- `estimate_schedule` reprices a caller-owned exact footprint under a read-only
+    schedule override; `estimate_interchange` additionally projects symbolic loop
+    headers, nesting, and shared ownership.
+- `estimate_geometry` rebuilds a footprint from deepest-first `ReductionLoopDomain`
+    values without changing allocation topology. Tiling uses this path,
+    sharing tile-header formulas with the actual transformation, including multilevel
+    tiles. Estimates do not visit body memlets or copy the graph.
+- `supports_schedule` and `supports_interchange` check representability and existing
+    materialized-buffer compatibility analytically. LocalStorage checks its prepared
+    retargeting and atomic-writeback plan directly. No reduction preview copies a graph,
+    and no copy-based preview API or fallback exists.
+
+Tiling retains exact counts for dividing unit-stride tiles even when guards are kept.
+Other symbolic counts require an exact proof from assumptions; unknown or genuinely
+ragged output footprints remain unsupported. Tiling an unmaterialized Reduce preserves
+its accumulator geometry and schedule width while adding an enclosing owner.
+A size estimate is not a dependence or legality proof: transformation
+checks still run, and materialized layouts must remain compatible, not merely equal
+in byte size. Tests assert costs, ownership, addresses, and transformation semantics directly.
 
 Results distinguish `Exact`, `ConservativeBound`, and `Unsupported`. A conservative
 bound can supply allocation costs but has no materializable layout. Unknown costs
