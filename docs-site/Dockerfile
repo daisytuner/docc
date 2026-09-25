@@ -32,6 +32,10 @@ WORKDIR /src/docs-site
 ARG DOCS_NOINDEX=true
 RUN DOCS_NOINDEX="${DOCS_NOINDEX}" npm run build
 
+# CI-only: `--target artifacts --output type=local` exports build logs. Must stay above the final stage.
+FROM scratch AS artifacts
+COPY --from=build /src/docs-site/doxygen-warnings.log /
+
 FROM nginxinc/nginx-unprivileged:1.31.6-alpine
 
 COPY docs-site/nginx.conf /etc/nginx/conf.d/default.conf
