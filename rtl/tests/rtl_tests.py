@@ -7,6 +7,17 @@ import numpy as np
 from pathlib import Path
 import base64
 
+@pytest.fixture(autouse=True)
+def clean_daisy_env():
+    """Fixture to clean up __DAISY_INSTRUMENTATION_* environment variables before and after each test."""
+    old_env = {key: value for key, value in os.environ.items() if key.startswith("__DAISY_INSTRUMENTATION_")}
+    for key in list(old_env):
+        os.environ.pop(key, None)
+    yield
+    for key in list(os.environ):
+        if key.startswith("__DAISY_INSTRUMENTATION_"):
+            os.environ.pop(key, None)
+    os.environ.update(old_env)
 
 @pytest.mark.parametrize(
     "event",
