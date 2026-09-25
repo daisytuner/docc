@@ -34,6 +34,12 @@ struct ReductionInterchangeProposal {
     ReductionLoopHeader new_inner;
 };
 
+/// A schedule-only change; loop domains, access expressions, and nesting stay fixed.
+struct ReductionScheduleProposal {
+    structured_control_flow::StructuredLoop& loop;
+    const structured_control_flow::ScheduleType& schedule;
+};
+
 /// Native source-to-copy correspondence; copied elements have independent IDs.
 using ReductionNodeMapping =
     std::unordered_map<const structured_control_flow::ControlFlowNode*, const structured_control_flow::ControlFlowNode*>;
@@ -113,6 +119,17 @@ public:
     /// Exactness alone does not imply materialization; check the result's materialized flag.
     ReductionBufferInfo require(structured_control_flow::Reduce& reduction, const std::string& container) const;
 
+    /// Reprice a caller-owned exact footprint under a read-only schedule override.
+    /// The footprint must describe this accumulator in the unchanged source graph.
+    /// Does not visit body memlets, copy the graph, or validate materialized buffers.
+    /// Returned ownership uses source node IDs; materialized is false for estimates.
+    ReductionBufferInfo estimate_schedule(
+        structured_control_flow::Reduce& reduction,
+        const std::string& container,
+        ReductionBufferInfo footprint,
+        const ReductionScheduleProposal& proposal
+    ) const;
+
     /// Copy only the enclosing nest and referenced declarations into a detached builder.
     /// The returned correspondence locates copied nodes without preserving element IDs.
     ReductionNodeMapping
@@ -127,7 +144,8 @@ public:
     bool supports(StructuredSDFG& proposal, const ReductionNodeMapping& nodes) const;
 
     /// Check exactness and materialized-buffer compatibility for a proposed schedule,
-    /// including affected sibling reductions in the enclosing GPU root.
+    /// including sibling reductions in the enclosing nest. Uses analytical allocation
+    /// effects for exact source footprints, with native-copy fallback otherwise.
     bool supports_schedule(
         structured_control_flow::StructuredLoop& loop, const structured_control_flow::ScheduleType& schedule
     ) const;

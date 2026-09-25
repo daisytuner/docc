@@ -25,6 +25,78 @@
 
 using namespace sdfg;
 
+static void check_schedule_estimates(
+    builder::StructuredSDFGBuilder& source,
+    analysis::AnalysisManager& manager,
+    const std::vector<structured_control_flow::Reduce*>& reductions
+) {
+    auto& buffers = manager.get<tiles::ReductionBufferAnalysis>();
+    serializer::JSONSerializer serializer;
+    const auto unchanged = serializer.serialize(source.subject());
+    for (auto* target : reductions) {
+        auto wider = target->schedule_type();
+        gpu::ScheduleType_GPU_Offload::parallel_size(wider, symbolic::integer(16));
+        auto global = target->schedule_type();
+        gpu::ScheduleType_GPU_Offload::partial_storage(global, gpu::ReduceStrategy::Global);
+        auto invalid = target->schedule_type();
+        gpu::ScheduleType_GPU_Offload::partial_storage(invalid, gpu::ReduceStrategy::Register);
+        const std::vector<structured_control_flow::ScheduleType> schedules{
+            target->schedule_type(),
+            wider,
+            global,
+            invalid,
+            structured_control_flow::ScheduleType_Sequential::create(),
+            gpu::ScheduleType_GPU_Offload::create<
+                cuda::ScheduleType_CUDA_Offload>(gpu::TargetLevel::WARP, symbolic::integer(32))
+        };
+        for (const auto& schedule : schedules) {
+            builder::StructuredSDFGBuilder proposed("schedule_oracle", source.subject().type());
+            proposed.set_element_counter(source.subject().element_counter());
+            const auto nodes = buffers.copy_nest(*target, proposed);
+            auto* copied_target = const_cast<
+                structured_control_flow::Reduce*>(dynamic_cast<const structured_control_flow::Reduce*>(nodes.at(target))
+            );
+            ASSERT_NE(copied_target, nullptr);
+            proposed.update_schedule_type(*copied_target, schedule);
+            EXPECT_EQ(buffers.supports_schedule(*target, schedule), buffers.supports(proposed.subject(), nodes));
+            analysis::AnalysisManager proposed_manager(proposed.subject());
+            for (auto* reduction : reductions) {
+                const auto footprint = buffers.require(*reduction, "acc");
+                const auto estimate = buffers.estimate_schedule(*reduction, "acc", footprint, {*target, schedule});
+                EXPECT_FALSE(estimate.materialized);
+                if (footprint.materialized) {
+                    continue;
+                }
+                auto* copied = const_cast<
+                    structured_control_flow::Reduce*>(dynamic_cast<
+                                                      const structured_control_flow::Reduce*>(nodes.at(reduction)));
+                ASSERT_NE(copied, nullptr);
+                const auto actual = proposed_manager.get<tiles::ReductionBufferAnalysis>().buffer(*copied, "acc");
+                EXPECT_EQ(estimate.status, actual.status);
+                EXPECT_EQ(estimate.private_bytes, actual.private_bytes);
+                EXPECT_EQ(estimate.shared_bytes, actual.shared_bytes);
+                ASSERT_EQ(estimate.shared_owner.has_value(), actual.shared_owner.has_value());
+                if (estimate.shared_owner) {
+                    const auto* owner = dynamic_cast<
+                        const structured_control_flow::ControlFlowNode*>(source.find_element_by_id(*estimate.shared_owner
+                    ));
+                    ASSERT_NE(owner, nullptr);
+                    EXPECT_EQ(nodes.at(owner)->element_id(), *actual.shared_owner);
+                }
+                if (estimate.layout && actual.layout) {
+                    EXPECT_EQ(estimate.layout->extent, actual.layout->extent);
+                    EXPECT_TRUE(symbolic::eq(estimate.layout->base, actual.layout->base));
+                }
+                EXPECT_EQ(estimate.linear_thread_index.is_null(), actual.linear_thread_index.is_null());
+                if (!estimate.linear_thread_index.is_null() && !actual.linear_thread_index.is_null()) {
+                    EXPECT_TRUE(symbolic::eq(estimate.linear_thread_index, actual.linear_thread_index));
+                }
+            }
+            EXPECT_EQ(serializer.serialize(source.subject()), unchanged);
+        }
+    }
+}
+
 TEST(ReductionBufferAnalysisTest, SchedulePreviewIsLocalToTargetNest) {
     builder::StructuredSDFGBuilder builder("local_reduction_preview", FunctionType_CPU);
     types::Scalar integer_type(types::PrimitiveType::Int32);
@@ -376,6 +448,7 @@ TEST(ReductionBufferAnalysisTest, NestedSharedOwnersGrowWithoutDoubleCounting) {
         const auto kernel = buffers.kernel(*reductions.front());
         EXPECT_EQ(kernel.status, tiles::ReductionBufferStatus::Exact);
         EXPECT_EQ(kernel.shared_bytes, threads * 4);
+        check_schedule_estimates(builder, manager, reductions);
 
         builder::StructuredSDFGBuilder proposed("shared_owner_preview", FunctionType_CPU);
         proposed.set_element_counter(builder.subject().element_counter());
@@ -398,12 +471,14 @@ TEST(ReductionBufferAnalysisTest, NestedSharedOwnersGrowWithoutDoubleCounting) {
         ASSERT_TRUE(packing.run_pass(proposed, proposed_manager));
         auto& packed_buffers = proposed_manager.get<tiles::ReductionBufferAnalysis>();
         std::string shared_name;
+        std::vector<structured_control_flow::Reduce*> packed_reductions;
         for (auto* nested : reductions) {
             auto* cloned = const_cast<
                 structured_control_flow::Reduce*>(dynamic_cast<const structured_control_flow::Reduce*>(copied_nodes
                                                                                                            .at(nested))
             );
             ASSERT_NE(cloned, nullptr);
+            packed_reductions.push_back(cloned);
             EXPECT_NE(cloned->element_id(), nested->element_id());
             const auto& info = packed_buffers.require(*cloned, "acc");
             EXPECT_TRUE(info.materialized);
@@ -415,6 +490,7 @@ TEST(ReductionBufferAnalysisTest, NestedSharedOwnersGrowWithoutDoubleCounting) {
             EXPECT_EQ(info.shared_bytes, nested == reductions.front() ? threads * 4 : 0);
         }
         ASSERT_FALSE(shared_name.empty());
+        check_schedule_estimates(proposed, proposed_manager, packed_reductions);
         for (auto* nested : reductions) {
             auto* sibling = const_cast<
                 structured_control_flow::Reduce*>(dynamic_cast<const structured_control_flow::Reduce*>(sibling_nodes

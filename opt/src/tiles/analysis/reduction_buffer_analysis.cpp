@@ -104,7 +104,9 @@ class AccumulatorIndexCollector : public analysis::BaseUserVisitor {
     std::string container_;
 
     void record(const std::string& container, const data_flow::Memlet& edge) {
-        if (container != container_) return;
+        if (container != container_) {
+            return;
+        }
         if (edge.type() != data_flow::MemletType::Computational) {
             throw InvalidSDFGException("accumulator aliases cannot be packed");
         }
@@ -112,7 +114,9 @@ class AccumulatorIndexCollector : public analysis::BaseUserVisitor {
             throw InvalidSDFGException("unsupported multidimensional accumulator access");
         }
         symbolic::Expression candidate = symbolic::zero();
-        if (!edge.subset().empty()) candidate = edge.subset().front();
+        if (!edge.subset().empty()) {
+            candidate = edge.subset().front();
+        }
         if (!index.is_null() && !symbolic::eq(index, candidate)) {
             throw InvalidSDFGException("accumulator is accessed with inconsistent indices in the reduce body");
         }
@@ -159,10 +163,16 @@ int64_t checked_product(int64_t left, int64_t right) {
     return left * right;
 }
 
-bool gpu_loop(const structured_control_flow::StructuredLoop& loop) {
-    return gpu::is_gpu_schedule(loop.schedule_type()) &&
-           loop.schedule_type().category() == structured_control_flow::ScheduleTypeCategory::Offloader &&
-           loop.schedule_type().properties().contains("target_level");
+const structured_control_flow::ScheduleType&
+effective_schedule(const structured_control_flow::StructuredLoop& loop, const ReductionScheduleProposal* proposal) {
+    return proposal && &proposal->loop == &loop ? proposal->schedule : loop.schedule_type();
+}
+
+bool gpu_loop(const structured_control_flow::StructuredLoop& loop, const ReductionScheduleProposal* proposal = nullptr) {
+    const auto& schedule = effective_schedule(loop, proposal);
+    return gpu::is_gpu_schedule(schedule) &&
+           schedule.category() == structured_control_flow::ScheduleTypeCategory::Offloader &&
+           schedule.properties().contains("target_level");
 }
 
 bool owns_container(const structured_control_flow::Reduce& reduction, const std::string& container) {
@@ -174,12 +184,14 @@ bool owns_container(const structured_control_flow::Reduce& reduction, const std:
 /// Packed accesses require the same address mapping, not merely the same allocation size.
 bool same_layout(const gpu::ReductionLayout& left, const gpu::ReductionLayout& right) {
     if (left.extent != right.extent || !symbolic::eq(left.base, right.base) ||
-        left.dimensions.size() != right.dimensions.size())
+        left.dimensions.size() != right.dimensions.size()) {
         return false;
+    }
     for (size_t axis = 0; axis < left.dimensions.size(); ++axis) {
         if (left.dimensions[axis].stride != right.dimensions[axis].stride ||
-            left.dimensions[axis].count != right.dimensions[axis].count)
+            left.dimensions[axis].count != right.dimensions[axis].count) {
             return false;
+        }
     }
     return true;
 }
@@ -194,15 +206,21 @@ void allocation_cost(
     ReductionBufferInfo& result,
     structured_control_flow::Reduce& reduction,
     const std::string& container,
-    analysis::LoopAnalysis& loops
+    analysis::LoopAnalysis& loops,
+    const ReductionScheduleProposal* proposal = nullptr
 ) {
     auto footprint_bytes = checked_product(result.layout->extent, *result.element_bytes);
     result.private_bytes = footprint_bytes;
     result.shared_bytes = 0;
-    if (!gpu_loop(reduction)) return;
-    const auto strategy = gpu::ScheduleType_GPU_Offload::partial_storage(reduction.schedule_type());
-    const auto level = gpu::ScheduleType_GPU_Offload::target_level(reduction.schedule_type());
-    auto placed = gpu::ScheduleType_GPU_Offload::partial_container(reduction.schedule_type());
+    result.shared_owner.reset();
+    result.linear_thread_index = SymEngine::null;
+    if (!gpu_loop(reduction, proposal)) {
+        return;
+    }
+    const auto& schedule = effective_schedule(reduction, proposal);
+    const auto strategy = gpu::ScheduleType_GPU_Offload::partial_storage(schedule);
+    const auto level = gpu::ScheduleType_GPU_Offload::target_level(schedule);
+    auto placed = gpu::ScheduleType_GPU_Offload::partial_container(schedule);
     if (!placed.empty() && (strategy != gpu::ReduceStrategy::Shared || reduction.reductions().size() != 1)) {
         throw InvalidSDFGException("partial_container requires a single Shared accumulator");
     }
@@ -212,42 +230,58 @@ void allocation_cost(
     if (strategy == gpu::ReduceStrategy::Register && level != gpu::TargetLevel::WARP) {
         throw InvalidSDFGException("Register reduction strategy requires WARP scope");
     }
-    if (strategy != gpu::ReduceStrategy::Shared) return;
+    if (strategy != gpu::ReduceStrategy::Shared) {
+        return;
+    }
     if (!gpu::is_block_level(level)) {
         throw InvalidSDFGException("Shared reduction strategy requires block scope");
     }
     auto* owner = &reduction;
     for (auto* ancestor : loops.ancestors(&reduction)) {
         auto* enclosing = dyn_cast<structured_control_flow::Reduce*>(ancestor);
-        if (!enclosing || !gpu_loop(*enclosing) || !owns_container(*enclosing, container)) continue;
-        if (!gpu::is_block_level(gpu::ScheduleType_GPU_Offload::target_level(enclosing->schedule_type()))) {
+        if (!enclosing || !gpu_loop(*enclosing, proposal) || !owns_container(*enclosing, container)) {
             continue;
         }
-        if (gpu::ScheduleType_GPU_Offload::partial_storage(enclosing->schedule_type()) != gpu::ReduceStrategy::Shared) {
+        const auto& enclosing_schedule = effective_schedule(*enclosing, proposal);
+        if (!gpu::is_block_level(gpu::ScheduleType_GPU_Offload::target_level(enclosing_schedule))) {
+            continue;
+        }
+        if (gpu::ScheduleType_GPU_Offload::partial_storage(enclosing_schedule) != gpu::ReduceStrategy::Shared) {
             throw InvalidSDFGException("Shared reduction cannot reuse a Global block owner's partial buffer");
         }
-        if (loops.ancestors(enclosing).size() < loops.ancestors(owner).size()) owner = enclosing;
+        if (loops.ancestors(enclosing).size() < loops.ancestors(owner).size()) {
+            owner = enclosing;
+        }
     }
     result.shared_owner = owner->element_id();
     bool nested_cooperative = false;
     for (auto* descendant : loops.descendants(&reduction)) {
         auto* nested = dyn_cast<structured_control_flow::Reduce*>(descendant);
-        if (!nested || !gpu_loop(*nested) || !owns_container(*nested, container)) continue;
-        auto nested_level = gpu::ScheduleType_GPU_Offload::target_level(nested->schedule_type());
+        if (!nested || !gpu_loop(*nested, proposal) || !owns_container(*nested, container)) {
+            continue;
+        }
+        auto nested_level = gpu::ScheduleType_GPU_Offload::target_level(effective_schedule(*nested, proposal));
         nested_cooperative |= gpu::is_block_level(nested_level) || gpu::is_warp_level(nested_level);
     }
-    if (nested_cooperative || owner != &reduction) result.private_bytes = 0;
-    if (owner != &reduction) return;
+    if (nested_cooperative || owner != &reduction) {
+        result.private_bytes = 0;
+    }
+    if (owner != &reduction) {
+        return;
+    }
     // Repeated uses of one block axis must agree on its width and count only once.
     // Include this reduction's ancestors and descendants, not unrelated sibling scopes.
     std::map<gpu::TargetLevel, int64_t> dimensions;
     auto collect = [&](structured_control_flow::StructuredLoop& loop) {
-        if (!gpu_loop(loop)) return;
-        auto axis = gpu::ScheduleType_GPU_Offload::target_level(loop.schedule_type());
+        if (!gpu_loop(loop, proposal)) {
+            return;
+        }
+        const auto& loop_schedule = effective_schedule(loop, proposal);
+        auto axis = gpu::ScheduleType_GPU_Offload::target_level(loop_schedule);
         if (!gpu::is_block_level(axis)) {
             return;
         }
-        auto count = gpu::ScheduleType_GPU_Offload::parallel_size(loop.schedule_type())->as_int();
+        auto count = gpu::ScheduleType_GPU_Offload::parallel_size(loop_schedule)->as_int();
         if (count <= 0 || (dimensions.contains(axis) && dimensions.at(axis) != count)) {
             throw InvalidSDFGException("inconsistent block dimensions for reduction buffer");
         }
@@ -255,13 +289,19 @@ void allocation_cost(
     };
     collect(reduction);
     for (auto* node : loops.ancestors(&reduction)) {
-        if (auto* loop = dyn_cast<structured_control_flow::StructuredLoop*>(node)) collect(*loop);
+        if (auto* loop = dyn_cast<structured_control_flow::StructuredLoop*>(node)) {
+            collect(*loop);
+        }
     }
     for (auto* node : loops.descendants(&reduction)) {
-        if (auto* loop = dyn_cast<structured_control_flow::StructuredLoop*>(node)) collect(*loop);
+        if (auto* loop = dyn_cast<structured_control_flow::StructuredLoop*>(node)) {
+            collect(*loop);
+        }
     }
     int64_t threads = 1;
-    for (const auto& [axis, count] : dimensions) threads = checked_product(threads, count);
+    for (const auto& [axis, count] : dimensions) {
+        threads = checked_product(threads, count);
+    }
     result.shared_bytes = checked_product(threads, footprint_bytes);
     auto block_x =
         symbolic::integer(dimensions.contains(gpu::TargetLevel::X_BLOCK) ? dimensions.at(gpu::TargetLevel::X_BLOCK) : 1);
@@ -296,6 +336,35 @@ ReductionBufferInfo ReductionBufferAnalysis::
         throw InvalidSDFGException("ReductionBufferAnalysis: accumulator '" + container + "': " + result.diagnostic);
     }
     return result;
+}
+
+ReductionBufferInfo ReductionBufferAnalysis::estimate_schedule(
+    structured_control_flow::Reduce& reduction,
+    const std::string& container,
+    ReductionBufferInfo footprint,
+    const ReductionScheduleProposal& proposal
+) const {
+    try {
+        if (footprint.status != ReductionBufferStatus::Exact || !footprint.layout || !footprint.element_bytes) {
+            throw InvalidSDFGException("schedule estimation requires an exact source footprint");
+        }
+        allocation_cost(footprint, reduction, container, analysis_manager_->get<analysis::LoopAnalysis>(), &proposal);
+        footprint.materialized = false;
+        footprint.private_buffer.clear();
+        footprint.shared_buffer.clear();
+        const auto& properties = effective_schedule(reduction, &proposal).properties();
+        if (auto reference = properties.find("reduction_private." + container); reference != properties.end()) {
+            footprint.private_buffer = reference->second;
+        }
+        if (auto reference = properties.find("reduction_shared." + container); reference != properties.end()) {
+            footprint.shared_buffer = reference->second;
+        }
+        return footprint;
+    } catch (const InvalidSDFGException& error) {
+        ReductionBufferInfo result;
+        result.diagnostic = error.what();
+        return result;
+    }
 }
 
 ReductionBufferInfo ReductionBufferAnalysis::
@@ -423,7 +492,9 @@ ReductionBufferInfo ReductionBufferAnalysis::
         result.element_bytes = (types::bit_width(*result.primitive) + 7) / 8;
         allocation_cost(result, reduction, container, loop_analysis);
         if (!exact) {
-            if (materialized) throw InvalidSDFGException("materialized reduction requires an exact footprint");
+            if (materialized) {
+                throw InvalidSDFGException("materialized reduction requires an exact footprint");
+            }
             result.status = ReductionBufferStatus::ConservativeBound;
             result.diagnostic = "only an upper bound on the reduction footprint is known";
             result.layout.reset();
@@ -444,9 +515,12 @@ ReductionBufferInfo ReductionBufferAnalysis::
         }
         if (materialized) {
             auto validate_buffer = [&](const std::string& name, int64_t bytes, bool shared) {
-                if (bytes == 0) return;
-                if (name.empty() || !sdfg_.exists(name))
+                if (bytes == 0) {
+                    return;
+                }
+                if (name.empty() || !sdfg_.exists(name)) {
                     throw InvalidSDFGException("missing materialized partial buffer");
+                }
                 auto* array = dynamic_cast<const types::Array*>(&sdfg_.type(name));
                 if (!array || !symbolic::eq(array->num_elements(), symbolic::integer(bytes / *result.element_bytes)) ||
                     array->element_type() != types::Scalar(*result.primitive) ||
@@ -577,15 +651,50 @@ bool ReductionBufferAnalysis::supports_schedule(
     structured_control_flow::StructuredLoop& loop, const structured_control_flow::ScheduleType& schedule
 ) const {
     auto& loops = analysis_manager_->get<analysis::LoopAnalysis>();
-    auto* root = &loop;
-    for (auto* node : loops.ancestors(&loop)) {
-        auto* ancestor = dyn_cast<structured_control_flow::StructuredLoop*>(node);
-        if (ancestor && gpu_loop(*ancestor) && loops.ancestors(ancestor).size() < loops.ancestors(root).size()) {
-            root = ancestor;
+    structured_control_flow::ControlFlowNode* root = &loop;
+    while (auto* parent = loops.parent_loop(root)) {
+        root = parent;
+    }
+    const ReductionScheduleProposal proposal{loop, schedule};
+    auto candidates = loops.descendants(root);
+    candidates.insert(root);
+    bool needs_copy = false;
+    for (auto* node : candidates) {
+        auto* reduction = dyn_cast<structured_control_flow::Reduce*>(node);
+        if (!reduction || !gpu_loop(*reduction, &proposal)) {
+            continue;
+        }
+        for (const auto& entry : reduction->reductions()) {
+            auto before = buffer(*reduction, entry.container);
+            if (before.status != ReductionBufferStatus::Exact) {
+                needs_copy = true;
+                continue;
+            }
+            auto after = estimate_schedule(*reduction, entry.container, before, proposal);
+            if (after.status != ReductionBufferStatus::Exact) {
+                return false;
+            }
+            if (!before.materialized) {
+                continue;
+            }
+            if (before.private_bytes != after.private_bytes || before.shared_bytes != after.shared_bytes ||
+                before.shared_owner != after.shared_owner || before.private_buffer != after.private_buffer ||
+                before.shared_buffer != after.shared_buffer) {
+                return false;
+            }
+            if (*after.shared_bytes) {
+                AccumulatorIndexCollector accesses(after.shared_buffer);
+                accesses.visit(reduction->root());
+                auto expected = symbolic::
+                    add(after.layout->pack(after.accumulator_index),
+                        symbolic::mul(after.linear_thread_index, symbolic::integer(after.layout->extent)));
+                if (!accesses.index.is_null() && !symbolic::eq(accesses.index, expected)) {
+                    return false;
+                }
+            }
         }
     }
-    auto affected = affected_reductions(*root);
-    if (affected.empty() && !dyn_cast<structured_control_flow::Reduce*>(&loop)) {
+    if (!needs_copy) {
         return true;
     }
     builder::StructuredSDFGBuilder builder("reduction_schedule_preview", sdfg_.type());
@@ -666,8 +775,9 @@ std::vector<structured_control_flow::Reduce*> ReductionBufferAnalysis::
         }
         const auto& parents = loops.ancestors(reduction);
         if (reduction == &loop || std::find(parents.begin(), parents.end(), &loop) != parents.end() ||
-            std::find(ancestors.begin(), ancestors.end(), reduction) != ancestors.end())
+            std::find(ancestors.begin(), ancestors.end(), reduction) != ancestors.end()) {
             result.push_back(reduction);
+        }
     }
     return result;
 }
@@ -679,8 +789,9 @@ bool ReductionBufferAnalysis::is_partial_buffer(const std::string& container) co
             continue;
         }
         for (const auto& [key, value] : reduction->schedule_type().properties()) {
-            if ((key.starts_with("reduction_private.") || key.starts_with("reduction_shared.")) && value == container)
+            if ((key.starts_with("reduction_private.") || key.starts_with("reduction_shared.")) && value == container) {
                 return true;
+            }
         }
     }
     return false;
