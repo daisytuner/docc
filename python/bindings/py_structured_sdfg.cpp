@@ -401,7 +401,11 @@ void PyStructuredSDFG::dump_debug(const std::string& type, bool dump_dot, bool d
 }
 
 void PyStructuredSDFG::dump(
-    const std::string& path, const std::string& type, bool dump_dot, bool dump_json, bool record_for_instrumentation
+    const std::filesystem::path& path,
+    const std::string& type,
+    bool dump_dot,
+    bool dump_json,
+    bool record_for_instrumentation
 ) {
     fs::path build_path(path);
     if (!fs::exists(build_path)) {

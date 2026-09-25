@@ -129,6 +129,15 @@ symbolic::Expression TensorLayout::resolve_element(const symbolic::MultiExpressi
     return addr;
 }
 
+symbolic::Expression TensorLayout::max_accessed_byte_offset_from_ptr(types::PrimitiveType element_type) const {
+    symbolic::Expression max_offset = offset_;
+    for (size_t i = 0; i < shape_.size(); ++i) {
+        max_offset =
+            symbolic::add(max_offset, symbolic::mul(symbolic::sub(shape_.at(i), symbolic::integer(1)), strides_.at(i)));
+    }
+    return symbolic::mul(max_offset, symbolic::integer(types::bit_width(element_type) / 8));
+}
+
 bool TensorLayout::is_scalar() const { return shape_.empty(); }
 
 TensorLayout TensorLayout::deserialize_from_json(const nlohmann::json& j) {

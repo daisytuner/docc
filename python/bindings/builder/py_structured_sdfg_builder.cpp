@@ -86,6 +86,37 @@ PyStructuredSDFG PyStructuredSDFGBuilder::move() {
     return PyStructuredSDFG(docc_context_, sdfg);
 }
 
+void PyStructuredSDFGBuilder::dump(const std::string& output_dir, const std::string& type, bool dump_json, bool dump_dot) {
+    std::filesystem::path build_path(output_dir);
+    if (!std::filesystem::exists(build_path)) {
+        std::filesystem::create_directories(build_path);
+    }
+
+    // Add metadata to SDFG
+    auto typeSuffix = type.empty() ? "" : ("." + type);
+    auto suffixedName = builder_.subject().name() + typeSuffix;
+
+    if (dump_json) {
+        std::filesystem::path sdfg_file = build_path / (suffixedName + ".json");
+
+        // Dump json
+        sdfg::serializer::JSONSerializer serializer;
+        nlohmann::json j = serializer.serialize(builder_.subject());
+
+        std::ofstream ofs(sdfg_file);
+        if (!ofs.is_open()) {
+            throw std::runtime_error("Failed to open file: " + sdfg_file.string());
+        }
+        ofs << j.dump(2);
+        ofs.close();
+    }
+
+    if (dump_dot) {
+        auto dot_file = build_path / (suffixedName + ".dot");
+        sdfg::visualizer::DotVisualizer::writeToFile(builder_.subject(), &dot_file);
+    }
+}
+
 void PyStructuredSDFGBuilder::add_metadata(const std::string& key, const std::string& value) {
     builder_.subject().add_metadata(key, value);
 }

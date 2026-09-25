@@ -33,7 +33,22 @@ protected:
 
 public:
     void on_escape(const std::string& container, const ControlFlowNode* node, const Element* user) {
-        blockers_[container].emplace(user, BlockerType::Escape);
+        if (user) blockers_[container].emplace(user, BlockerType::Escape);
+    }
+
+    void on_ptr_input_into_lib_node(
+        const std::string& container,
+        const ControlFlowNode* node,
+        const data_flow::LibraryNode& lib_node,
+        const data_flow::PointerAccessType& access_type
+    ) {
+        if (!access_type || !access_type->no_capture()) { // this includes calls to free()
+            blockers_[container].emplace(&lib_node, BlockerType::Escape);
+        }
+    }
+
+    void on_ptr_returned(const std::string& container, const Return& return_node) {
+        blockers_[container].emplace(&return_node, BlockerType::Escape);
     }
 
     void on_overwrite(const std::string& container, const ControlFlowNode* node, const Element* user) {
@@ -47,7 +62,7 @@ public:
  * general, as you must prove no reference to that data ever escapes our control
  */
 class MemoryOwnershipAnalysis : public analysis::BaseUserVisitor,
-                                analysis::PointerEscapeAnalyzer<BlockerListPolicy>,
+                                analysis::PointerEscapeAnalyzer<BlockerListPolicy, true>,
                                 analysis::PointerOverwriteAnalyzer<BlockerListPolicy>,
                                 BlockerListPolicy {
     struct FreeCluster {
@@ -151,28 +166,7 @@ void MemoryOwnershipAnalysis::OwnedArea::remove_from(builder::StructuredSDFGBuil
 MemoryOwnershipAnalysis::MemoryOwnershipAnalysis(StructuredSDFG& sdfg)
     : sdfg_(sdfg), PointerEscapeAnalyzer(sdfg, *this), PointerOverwriteAnalyzer(sdfg, *this) {}
 
-bool MemoryOwnershipAnalysis::excusedEscape(const Element* element, const OwnedArea& area) {
-    // An escape is excused if it matches the input edge of one of the free_clusters.
-    // Reading the pointer to pass it to free() is not a real escape.
-    for (const auto& cluster : area.free_clusters) { // could be expanded into looking aptr access type
-        if (element == cluster.in) {
-            return true;
-        }
-    }
-
-    auto* memlet = dynamic_cast<const data_flow::Memlet*>(element);
-    if (memlet) {
-        auto* libNode = dynamic_cast<const data_flow::LibraryNode*>(&memlet->dst());
-        if (libNode) {
-            auto access_type = libNode->pointer_access_type(*memlet);
-            if (access_type && access_type->no_capture()) {
-                return true;
-            }
-        }
-    }
-
-    return false;
-}
+bool MemoryOwnershipAnalysis::excusedEscape(const Element* element, const OwnedArea& area) { return false; }
 
 bool MemoryOwnershipAnalysis::excusedOverwrite(const Element* element, const OwnedArea& area) {
     auto* memlet = dynamic_cast<const data_flow::Memlet*>(element);

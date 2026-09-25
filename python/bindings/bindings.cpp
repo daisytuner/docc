@@ -1,8 +1,10 @@
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <pybind11/stl/filesystem.h>
 
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 
 #include "analysis/py_analysis.h"
@@ -407,6 +409,24 @@ PYBIND11_MODULE(_sdfg, m) {
         )
         .def(py::init<PyStructuredSDFG&>(), py::arg("sdfg"), "Create a StructuredSDFGBuilder to modify an existing SDFG")
         .def("move", &PyStructuredSDFGBuilder::move, "Move the built StructuredSDFG and return it")
+        .def(
+            "dump",
+            [](PyStructuredSDFGBuilder& self,
+               const std::filesystem::path& output_dir,
+               const std::string& type,
+               bool dump_json,
+               bool dump_dot) {
+                // Accept a str or os.PathLike from Python (converted to
+                // std::filesystem::path by pybind11) and forward it as a string
+                // to the underlying dump implementation.
+                self.dump(output_dir.string(), type, dump_json, dump_dot);
+            },
+            py::arg("output_dir"),
+            py::arg("type"),
+            py::arg("dump_json") = true,
+            py::arg("dump_dot") = true,
+            "Dump the SDFG to the given directory (accepts a str or os.PathLike path)"
+        )
         .def(
             "add_metadata",
             &PyStructuredSDFGBuilder::add_metadata,
