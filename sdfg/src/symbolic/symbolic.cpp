@@ -2,7 +2,9 @@
 
 #include <cmath>
 #include <limits>
+#include <map>
 #include <numeric>
+#include <regex>
 #include <string>
 
 #include <symengine/parser.h>
@@ -47,9 +49,10 @@ bool is_nullptr(const Symbol symbol) { return symbol->get_name() == "__daisy_nul
 bool is_pointer(const Symbol symbol) { return is_nullptr(symbol); };
 
 bool is_nv(const Symbol symbol) {
-    if (symbol == threadIdx_x() || symbol == threadIdx_y() || symbol == threadIdx_z() || symbol == blockIdx_x() ||
-        symbol == blockIdx_y() || symbol == blockIdx_z() || symbol == blockDim_x() || symbol == blockDim_y() ||
-        symbol == blockDim_z() || symbol == gridDim_x() || symbol == gridDim_y() || symbol == gridDim_z()) {
+    if (eq(symbol, threadIdx_x()) || eq(symbol, threadIdx_y()) || eq(symbol, threadIdx_z()) ||
+        eq(symbol, blockIdx_x()) || eq(symbol, blockIdx_y()) || eq(symbol, blockIdx_z()) || eq(symbol, blockDim_x()) ||
+        eq(symbol, blockDim_y()) || eq(symbol, blockDim_z()) || eq(symbol, gridDim_x()) || eq(symbol, gridDim_y()) ||
+        eq(symbol, gridDim_z())) {
         return true;
     } else {
         return false;
@@ -965,7 +968,26 @@ MultiExpression substitute(const MultiExpression& vec, const symbolic::Expressio
 }
 
 Expression parse(const std::string& expr_str) {
-    auto expr = SymEngine::parse(expr_str);
+    static const std::regex gpu_builtin(R"(\b(?:threadIdx|blockIdx|blockDim|gridDim)\.[xyz]\b)");
+    std::map<const std::string, const Expression> constants;
+    std::string parsed_text;
+    std::string prefix = "__daisy_parse_gpu_";
+    while (expr_str.find(prefix) != std::string::npos) {
+        prefix += "_";
+    }
+    size_t position = 0;
+    // SymEngine's lexer rejects dots in identifiers; parser-local tokens restore the original builtin symbols.
+    for (auto match = std::sregex_iterator(expr_str.begin(), expr_str.end(), gpu_builtin);
+         match != std::sregex_iterator();
+         ++match) {
+        parsed_text.append(expr_str, position, match->position() - position);
+        auto token = prefix + std::to_string(constants.size());
+        constants.emplace(token, symbolic::symbol(match->str()));
+        parsed_text += token;
+        position = match->position() + match->length();
+    }
+    parsed_text.append(expr_str, position, std::string::npos);
+    auto expr = SymEngine::parse(parsed_text, true, constants);
     expr = symbolic::subs(expr, symbolic::symbol("true"), symbolic::one());
     expr = symbolic::subs(expr, symbolic::symbol("false"), symbolic::zero());
     return expr;

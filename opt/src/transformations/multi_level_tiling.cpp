@@ -54,7 +54,9 @@ bool MultiLevelTiling::can_be_applied(builder::StructuredSDFGBuilder& builder, a
         }
     }
 
-    return true;
+    std::vector<size_t> tile_sizes = {tile_size_};
+    tile_sizes.insert(tile_sizes.end(), additional_tile_sizes_.begin(), additional_tile_sizes_.end());
+    return reduction_buffers_supported(builder, analysis_manager, tile_sizes);
 };
 
 void MultiLevelTiling::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {

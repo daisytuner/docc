@@ -262,6 +262,9 @@ TEST(StructuredSDFGDeepCopy, For) {
     auto init = symbolic::integer(0);
 
     auto& loop = builder_source.add_for(root_source, loopvar, bound, init, update);
+    auto schedule = loop.schedule_type();
+    structured_control_flow::ScheduleType_Unroll::set(schedule);
+    builder_source.update_schedule_type(loop, schedule);
 
     builder::StructuredSDFGBuilder builder_target("sdfg_target", FunctionType_CPU);
     auto& sdfg_target = builder_target.subject();
@@ -285,6 +288,14 @@ TEST(StructuredSDFGDeepCopy, For) {
     EXPECT_TRUE(symbolic::eq(inserted_loop->condition(), bound));
     EXPECT_TRUE(symbolic::eq(inserted_loop->update(), update));
     EXPECT_TRUE(symbolic::eq(inserted_loop->init(), init));
+    EXPECT_TRUE(structured_control_flow::ScheduleType_Unroll::is_set(inserted_loop->schedule_type()));
+
+    deepcopy::StructuredSDFGDeepCopy nest_copy(builder_target, root_target, loop);
+    const auto nodes = nest_copy.copy();
+    const auto* copied_loop = dynamic_cast<const structured_control_flow::For*>(nodes.at(&loop));
+    ASSERT_NE(copied_loop, nullptr);
+    EXPECT_NE(copied_loop->element_id(), loop.element_id());
+    EXPECT_TRUE(structured_control_flow::ScheduleType_Unroll::is_set(copied_loop->schedule_type()));
 }
 
 TEST(StructuredSDFGDeepCopy, Map) {

@@ -5,7 +5,6 @@
 #include <isl/options.h>
 #include <isl/set.h>
 
-#include "sdfg/analysis/data_dependency_analysis.h"
 #include "sdfg/exceptions.h"
 #include "sdfg/parallelization/analysis/loop_carried_dependency_analysis.h"
 #include "sdfg/structured_control_flow/for.h"
@@ -158,6 +157,46 @@ LoopInterchange::LoopInterchange(
 
 std::string LoopInterchange::name() const { return "LoopInterchange"; };
 
+// Build the loop headers shared by footprint preview and apply without mutating the graph.
+tiles::ReductionInterchangeProposal LoopInterchange::proposal() const {
+    tiles::ReductionInterchangeProposal result{
+        outer_loop_,
+        inner_loop_,
+        {inner_loop_.init(), inner_loop_.condition(), inner_loop_.update()},
+        {outer_loop_.init(), outer_loop_.condition(), outer_loop_.update()}
+    };
+    bool dependent = symbolic::uses(inner_loop_.init(), outer_loop_.indvar()) ||
+                     symbolic::uses(inner_loop_.condition(), outer_loop_.indvar());
+    if (!dependent) {
+        return result;
+    }
+
+    auto outer_indvar = outer_loop_.indvar();
+    auto inner_indvar = inner_loop_.indvar();
+    auto outer_bound = extract_strict_upper_bound(outer_loop_.condition(), outer_indvar);
+    auto inner_bound = extract_strict_upper_bound(inner_loop_.condition(), inner_indvar);
+    auto init_decomp = check_affine(inner_loop_.init(), outer_indvar);
+    auto bound_decomp = inner_bound.is_null() ? AffineDecomp{} : check_affine(inner_bound, outer_indvar);
+    if (outer_bound.is_null() || !init_decomp || !bound_decomp ||
+        !symbolic::eq(init_decomp.coefficient, bound_decomp.coefficient)) {
+        throw InvalidSDFGException("LoopInterchange: unsupported dependent-bound proposal");
+    }
+    result.new_outer.init = symbolic::subs(inner_loop_.init(), outer_indvar, outer_loop_.init());
+    result.new_outer.condition =
+        symbolic::Lt(inner_indvar, symbolic::subs(inner_bound, outer_indvar, symbolic::sub(outer_bound, symbolic::one())));
+    auto coefficient = init_decomp.coefficient;
+    auto lower = symbolic::sub(inner_indvar, bound_decomp.constant);
+    auto upper = symbolic::sub(inner_indvar, init_decomp.constant);
+    if (!symbolic::eq(coefficient, symbolic::one())) {
+        lower = symbolic::div(lower, coefficient);
+        upper = symbolic::div(upper, coefficient);
+    }
+    result.new_inner.init = symbolic::max(outer_loop_.init(), symbolic::add(lower, symbolic::one()));
+    result.new_inner.condition =
+        symbolic::Lt(outer_indvar, symbolic::min(outer_bound, symbolic::add(upper, symbolic::one())));
+    return result;
+}
+
 bool LoopInterchange::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     auto& outer_indvar = this->outer_loop_.indvar();
 
@@ -216,7 +255,7 @@ bool LoopInterchange::can_be_applied(builder::StructuredSDFGBuilder& builder, an
     }
 
     // Criterion: Outer loop must not have any outer blocks
-    if (outer_loop_.root().size() > 1) {
+    if (outer_loop_.root().size() != 1) {
         return false;
     }
     if (&outer_loop_.root().at(0) != &inner_loop_) {
@@ -226,7 +265,7 @@ bool LoopInterchange::can_be_applied(builder::StructuredSDFGBuilder& builder, an
     // Criterion: Any of both loops is a map
     if (dyn_cast<structured_control_flow::Map*>(&outer_loop_) ||
         dyn_cast<structured_control_flow::Map*>(&inner_loop_)) {
-        return true;
+        return reduction_buffers_supported(analysis_manager);
     }
 
     auto& users_analysis = analysis_manager.get<analysis::Users>();
@@ -401,10 +440,26 @@ bool LoopInterchange::can_be_applied(builder::StructuredSDFGBuilder& builder, an
         }
     }
 
-    return true;
+    return reduction_buffers_supported(analysis_manager);
 };
 
+// Check affected GPU owners against the proposed nesting before changing the live graph.
+bool LoopInterchange::reduction_buffers_supported(analysis::AnalysisManager& analysis_manager) const {
+    auto& buffers = analysis_manager.get<tiles::ReductionBufferAnalysis>();
+    if (buffers.affected_reductions(outer_loop_).empty()) {
+        return true;
+    }
+    try {
+        return buffers.supports_interchange(proposal());
+    } catch (const InvalidSDFGException&) {
+        return false;
+    }
+}
+
 void LoopInterchange::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+    if (!reduction_buffers_supported(analysis_manager)) {
+        throw InvalidSDFGException("LoopInterchange: proposed GPU reduction buffers are not representable");
+    }
     auto& outer_scope = static_cast<structured_control_flow::Sequence&>(*outer_loop_.get_parent());
     auto& inner_scope = outer_loop_.root();
 
@@ -419,51 +474,19 @@ void LoopInterchange::apply(builder::StructuredSDFGBuilder& builder, analysis::A
     auto* inner_reduce = dyn_cast<structured_control_flow::Reduce*>(&inner_loop_);
     auto* outer_reduce = dyn_cast<structured_control_flow::Reduce*>(&outer_loop_);
 
+    const auto geometry = proposal();
+
     bool dependent = !inner_map && !outer_map &&
                      (symbolic::uses(inner_loop_.init(), outer_loop_.indvar()->get_name()) ||
                       symbolic::uses(inner_loop_.condition(), outer_loop_.indvar()->get_name()));
 
     if (dependent) {
-        // Fourier-Motzkin elimination: compute projected and inverted bounds
         auto outer_indvar = outer_loop_.indvar();
         auto inner_indvar = inner_loop_.indvar();
-        auto outer_init_expr = outer_loop_.init();
-        auto outer_bound = extract_strict_upper_bound(outer_loop_.condition(), outer_indvar);
-        auto outer_max = symbolic::sub(outer_bound, symbolic::integer(1));
-
-        auto inner_init_expr = inner_loop_.init();
-        auto inner_bound_expr = extract_strict_upper_bound(inner_loop_.condition(), inner_indvar);
-
-        // Project inner bounds for new outer loop:
-        //   new_init = inner_init(outer_var = outer_init)
-        //   new_bound = inner_bound(outer_var = outer_max)
-        auto new_outer_init = symbolic::subs(inner_init_expr, outer_indvar, outer_init_expr);
-        auto new_outer_bound = symbolic::subs(inner_bound_expr, outer_indvar, outer_max);
-        auto new_outer_cond = symbolic::Lt(inner_indvar, new_outer_bound);
-
-        // Invert inner bounds for new inner loop (FM elimination):
-        //   inner_init  = α*outer_var + b  =>  from y >= α*x + b:  x <= (y-b)/α
-        //   inner_bound = α*outer_var + d  =>  from y <  α*x + d:  x >  (y-d)/α
-        // Integer rounding: x < floor((y-b)/α) + 1 and x >= floor((y-d)/α) + 1
-        auto init_decomp = check_affine(inner_init_expr, outer_indvar);
-        auto bound_decomp = check_affine(inner_bound_expr, outer_indvar);
-        auto alpha = init_decomp.coefficient; // == bound_decomp.coefficient
-        auto b = init_decomp.constant;
-        auto d = bound_decomp.constant;
-
-        symbolic::Expression lower_from_cond, upper_from_init;
-        if (symbolic::eq(alpha, symbolic::integer(1))) {
-            // Unit coefficient — avoid introducing idiv(x,1)
-            lower_from_cond = symbolic::add(symbolic::sub(inner_indvar, d), symbolic::integer(1));
-            upper_from_init = symbolic::add(symbolic::sub(inner_indvar, b), symbolic::integer(1));
-        } else {
-            // General: floor((y - const) / α) + 1
-            lower_from_cond = symbolic::add(symbolic::div(symbolic::sub(inner_indvar, d), alpha), symbolic::integer(1));
-            upper_from_init = symbolic::add(symbolic::div(symbolic::sub(inner_indvar, b), alpha), symbolic::integer(1));
-        }
-        auto new_inner_init = symbolic::max(outer_init_expr, lower_from_cond);
-        auto new_inner_bound = symbolic::min(outer_bound, upper_from_init);
-        auto new_inner_cond = symbolic::Lt(outer_indvar, new_inner_bound);
+        auto new_outer_init = geometry.new_outer.init;
+        auto new_outer_cond = geometry.new_outer.condition;
+        auto new_inner_init = geometry.new_inner.init;
+        auto new_inner_cond = geometry.new_inner.condition;
 
         if (inner_reduce) {
             new_outer_loop = &builder.add_reduce_after(

@@ -27,6 +27,19 @@ protected:
     structured_control_flow::StructuredLoop* outer_loop_ = nullptr;
 
     /**
+     * @brief Check reduction footprints using symbolic tile domains without changing the graph
+     * @param builder The builder for the unchanged original SDFG
+     * @param analysis_manager The analysis manager for the current graph
+     * @param tile_sizes Tile sizes in application order, each applied to the inner loop
+     * @return true if affected reductions are unmaterialized and their proposed footprints are exact
+     */
+    bool reduction_buffers_supported(
+        builder::StructuredSDFGBuilder& builder,
+        analysis::AnalysisManager& analysis_manager,
+        const std::vector<size_t>& tile_sizes
+    ) const;
+
+    /**
      * @brief Tile a single loop into an outer tile loop and an inner element loop
      *
      * Splits @p loop in place: @p loop becomes the inner (element) loop and a new

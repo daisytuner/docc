@@ -15,6 +15,40 @@
 
 using namespace sdfg;
 
+TEST(ArgumentsAnalysisTest, GpuBuiltinsAreNotArgumentsOrLocals) {
+    builder::StructuredSDFGBuilder builder("gpu_builtin_arguments", FunctionType_NV_GLOBAL);
+    types::Scalar scalar(types::PrimitiveType::Int32);
+    types::Pointer pointer(scalar);
+    builder.add_container("input", pointer, true);
+    builder.add_container("output", pointer, true);
+    builder.add_container("offset", scalar, true);
+    auto index = symbolic::add(symbolic::symbol("offset"), symbolic::threadIdx_x());
+    index = symbolic::add(index, symbolic::mul(symbolic::integer(32), symbolic::threadIdx_y()));
+    index = symbolic::add(index, symbolic::mul(symbolic::integer(64), symbolic::threadIdx_z()));
+    for (size_t block_index = 0; block_index < 2; ++block_index) {
+        auto& block = builder.add_block(builder.subject().root());
+        auto& input = builder.add_access(block, "input");
+        auto& output = builder.add_access(block, "output");
+        auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "out", {"in"});
+        builder.add_computational_memlet(block, input, tasklet, "in", {index}, pointer);
+        builder.add_computational_memlet(block, tasklet, "out", output, {index}, pointer);
+    }
+    EXPECT_NO_THROW(builder.subject().validate());
+    analysis::AnalysisManager manager(builder.subject());
+    auto& arguments = manager.get<analysis::ArgumentsAnalysis>();
+    auto& block = builder.subject().root().at(0);
+    const auto& parameters = arguments.arguments(manager, block);
+    EXPECT_EQ(parameters.size(), 3);
+    EXPECT_TRUE(parameters.contains("input"));
+    EXPECT_TRUE(parameters.contains("output"));
+    EXPECT_TRUE(parameters.contains("offset"));
+    EXPECT_TRUE(arguments.locals(manager, block).empty());
+    EXPECT_TRUE(arguments.inferred_types(manager, block));
+    for (const auto& builtin : {symbolic::threadIdx_x(), symbolic::threadIdx_y(), symbolic::threadIdx_z()}) {
+        EXPECT_FALSE(builder.subject().exists(builtin->get_name()));
+    }
+}
+
 TEST(ArgumentsAnalysisTest, Block_Arguments_Empty) {
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
 

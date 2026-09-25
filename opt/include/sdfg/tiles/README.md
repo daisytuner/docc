@@ -113,6 +113,79 @@ When the minimum level is achieved *without* a buffer — a subgroup sharing thr
 
 > **Example.** In `out[i] += A[k]` with `i` mapped across a GPU block and `k` sequential, the tile of `A` has base $b = k$, independent of `i`. Since `i` does not appear in $b$, the `i` axis is **cooperative** at the **Group** level (a GPU thread block), so `A` is staged **once** into a **Shared** buffer, filled cooperatively by the block's threads. For the access `A[i*16 + k]`, the base $b = 16i$ depends on `i`: the axis is **Private**, and each thread stages its own row-tile, without sharing or a barrier.
 
+## GPU Reduction Buffers
+
+`tiles::ReductionBufferAnalysis` owns reduction layout and allocation inference.
+Query it through `AnalysisManager::get<tiles::ReductionBufferAnalysis>()`:
+
+Queries return values; the analysis does not cache results. A reduction dispatcher
+retains one validated result per accumulator for its lifetime and refreshes them
+before each dispatch. Materialization retains only shared-owner layouts within the
+current enclosing loop nest, discarding them when it advances to another nest.
+
+- `buffer(reduce, container)` reports the original accumulator index, compact layout,
+    element type, private bytes, shared bytes, and shared-buffer owner.
+- `require(reduce, container)` requires an exact layout and throws with a diagnostic
+    for unsupported or inconsistent materialization. Code generation uses this query;
+    it has no fallback to padded linear spans.
+- `kernel(root)` totals reduction shared-memory allocations below a kernel root,
+    counting each shared owner once. It does not include unrelated staging buffers
+    or compare against a device budget.
+- `estimate_schedule` reprices a caller-owned exact footprint under a read-only
+    schedule override; `estimate_interchange` additionally projects symbolic loop
+    headers, nesting, and shared ownership.
+- `estimate_geometry` rebuilds a footprint from deepest-first `ReductionLoopDomain`
+    values without changing allocation topology. Tiling uses this path,
+    sharing tile-header formulas with the actual transformation, including multilevel
+    tiles. Estimates do not visit body memlets or copy the graph.
+- `supports_schedule` and `supports_interchange` check representability and existing
+    materialized-buffer compatibility analytically. LocalStorage checks its prepared
+    retargeting and atomic-writeback plan directly. No reduction preview copies a graph,
+    and no copy-based preview API or fallback exists.
+
+Tiling retains exact counts for dividing unit-stride tiles even when guards are kept.
+Other symbolic counts require an exact proof from assumptions; unknown or genuinely
+ragged output footprints remain unsupported. Tiling an unmaterialized Reduce preserves
+its accumulator geometry and schedule width while adding an enclosing owner.
+A size estimate is not a dependence or legality proof: transformation
+checks still run, and materialized layouts must remain compatible, not merely equal
+in byte size. Tests assert costs, ownership, addresses, and transformation semantics directly.
+
+Results distinguish `Exact`, `ConservativeBound`, and `Unsupported`. A conservative
+bound can supply allocation costs but has no materializable layout. Unknown costs
+are absent optionals, never zero. Products and kernel totals use checked arithmetic.
+Compact indexing currently requires scalar or one-dimensional accumulator accesses
+with consistent indices and constant positive affine output axes. Guarded tile
+counts are accepted when assumptions prove them exact; scatter reductions are rejected.
+
+`passes::ReductionSharedMemoryDelinearization` creates real private (`CPU_Stack`)
+and shared (`NV_Shared`) arrays and rewrites accumulator memlets to compact indices.
+`ReductionInfo::container` retains the original writeback target; its serialized
+`original_index` preserves the original address relation. User and dependency analyses
+therefore see the writeback even though body accesses now name partial buffers.
+The schedule stores only strategy and buffer references (`reduction_private.<name>`
+and `reduction_shared.<name>`), not inferred sizes. Ordinary array declarations are
+validated against fresh inference after materialization or cloning.
+
+The Python compile/source-emission paths and LLVM compilation invoke the pass
+immediately before instrumentation planning and code generation (after graph splitting
+in LLVM). Scheduling does not materialize buffers, so compilation also accepts
+already-scheduled graphs that bypass RPC or heuristic scheduling. Low-level generator
+and dispatcher callers must prepare their SDFGs explicitly; dispatchers do not
+materialize reduction buffers. Repeated calls validate existing materialization without
+changing it. The reduction dispatcher remains the single owner of identity
+initialization, synchronization, combine and publication; there is no language-extension
+access remapping. Packed memlets use the existing GPU thread-index builtins directly,
+without reduction-specific aliases.
+
+Interchange, tiling, GPU offload and local-storage transformations preview affected
+footprints before changing the live graph and invalidate analyses after applying.
+Perform these optimizations before packing: incompatible changes after materialization
+are rejected, not automatically unpacked and repacked. Returned values survive analysis
+invalidation, but must not be treated as current results after graph mutations.
+Hardware-budget selection and automatic
+Shared-to-Global fallback are separate policy work, not part of this lowering.
+
 ## The Tile API: Build Your Own Transformations
 
 `LocalStorage` is one transformation built on the tile algebra; the same API supports others (double buffering, asynchronous pipelines, custom packings). All types below are pure values with no SDFG state, so a movement plan is assembled and only the final `TileCopyNode` emission modifies the graph.

@@ -1,4 +1,5 @@
 #include "sdfg/targets/gpu/gpu_offload_base_dispatcher.h"
+#include "sdfg/tiles/analysis/reduction_buffer_analysis.h"
 
 #include <string>
 #include <unordered_map>
@@ -58,6 +59,8 @@ void GPUOffloadBaseDispatcher::emit_lib_dependency_includes(
         kernel_header_stream << "#include <" << include << ">" << std::endl;
     }
 }
+
+static int viz_count = 0;
 
 void GPUOffloadBaseDispatcher::dispatch_node(
     codegen::PrettyPrinter& main_stream,
@@ -126,6 +129,9 @@ void GPUOffloadBaseDispatcher::dispatch_node(
     auto warps = target_level_indvars(node_, analysis_manager, TargetLevel::WARP);
 
     for (auto& var : scope_variables_unfiltered) {
+        if (analysis_manager.get<tiles::ReductionBufferAnalysis>().is_partial_buffer(var)) {
+            continue;
+        }
         if (x_grids.find(symbolic::symbol(var)) == x_grids.end() &&
             y_grids.find(symbolic::symbol(var)) == y_grids.end() &&
             z_grids.find(symbolic::symbol(var)) == z_grids.end() &&

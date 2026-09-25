@@ -94,6 +94,22 @@ private:
     bool container_read_ = false; ///< Container is read in the loop (set by can_be_applied)
     bool container_written_ = false; ///< Container is written in the loop (set by can_be_applied)
 
+    /// Check localization preconditions and populate the tile, access group,
+    /// storage plan, and reduction-retargeting state without modifying the SDFG.
+    /// Returns false if localization is unsupported; does not preview reduction
+    /// footprints (see @ref reduction_buffers_supported).
+    bool prepare(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager);
+
+    /// Preview localization on a native nest copy and require exact affected reduction
+    /// footprints. Rejects partial-buffer localization and materialized
+    /// accumulator retargeting without modifying the original SDFG.
+    bool reduction_buffers_supported(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager);
+
+    /// Allocate the local buffer, emit copies, and rewrite accesses and reduction
+    /// owners using state from a successful @ref prepare on the same graph.
+    /// Skips applicability checks so the detached preview can use the same rewrite.
+    void apply_prepared(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager);
+
     /// Copy the tile in before the loop iff the container is read there.
     bool needs_copy_in() const { return container_read_; }
 

@@ -13,6 +13,7 @@
 
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/analysis/loop_analysis.h"
+#include "sdfg/structured_control_flow/reduce.h"
 #include "sdfg/structured_sdfg.h"
 #include "sdfg/symbolic/maps.h"
 #include "sdfg/symbolic/sets.h"
@@ -373,6 +374,21 @@ void DataDependencyAnalysis::visit_for(
     std::unordered_map<User*, std::unordered_set<User*>> open_definitions_for;
     std::unordered_map<User*, std::unordered_set<User*>> closed_definitions_for;
     std::unordered_set<User*> undefined_for;
+
+    // Packed bodies use partials, but the final combine still reads and writes the original accumulator.
+    if (auto* reduction = dyn_cast<structured_control_flow::Reduce*>(&for_loop)) {
+        for (const auto& entry : reduction->reductions()) {
+            if (entry.original_index.is_null()) {
+                continue;
+            }
+            undefined_for.insert(users.get_user(entry.container, reduction, Use::READ));
+            open_definitions_for
+                .emplace(users.get_user(entry.container, reduction, Use::WRITE), std::unordered_set<User*>{});
+            for (const auto& symbol : symbolic::atoms(entry.original_index)) {
+                undefined_for.insert(users.get_user(symbol->get_name(), reduction, Use::READ));
+            }
+        }
+    }
 
     // Add assumptions for body
     visit_sequence(analysis_manager, for_loop.root(), undefined_for, open_definitions_for, closed_definitions_for);

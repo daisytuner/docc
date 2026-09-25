@@ -17,6 +17,7 @@
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/cuda/cuda.h"
 #include "sdfg/targets/gpu/gpu_schedule_type.h"
+#include "sdfg/transformations/offloading/rocm_offload_transform.h"
 #include "sdfg/types/pointer.h"
 #include "sdfg/types/scalar.h"
 
@@ -31,31 +32,35 @@ constexpr int64_t kMaxGridYZ = 65535; // 2^16 - 1
 // Builds a minimal, valid offloadable map that writes `A[i]` for i in [0, bound).
 // `bound` may be a constant (static size) or a symbol (dynamic size); when it is
 // a symbol, the caller must add the corresponding container first.
-structured_control_flow::Map& build_offloadable_map(builder::StructuredSDFGBuilder& builder, symbolic::Expression bound) {
+structured_control_flow::Map& build_offloadable_map(
+    builder::StructuredSDFGBuilder& builder, symbolic::Expression bound, const std::string& suffix = ""
+) {
     auto& root = builder.subject().root();
 
     types::Scalar f32(types::PrimitiveType::Float);
     types::Pointer f32ptr(f32);
     types::Scalar i64(types::PrimitiveType::Int64);
 
-    builder.add_container("i", i64);
-    builder.add_container("A", f32ptr, /*is_argument=*/true);
+    auto indvar = symbolic::symbol("i" + suffix);
+    auto container = "A" + suffix;
+    builder.add_container(indvar->get_name(), i64);
+    builder.add_container(container, f32ptr, /*is_argument=*/true);
 
     auto& map = builder.add_map(
         root,
-        symbolic::symbol("i"),
-        symbolic::Lt(symbolic::symbol("i"), bound),
+        indvar,
+        symbolic::Lt(indvar, bound),
         symbolic::integer(0),
-        symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
+        symbolic::add(indvar, symbolic::integer(1)),
         ScheduleType_Sequential::create()
     );
 
     auto& block = builder.add_block(map.root());
-    auto& write = builder.add_access(block, "A");
+    auto& write = builder.add_access(block, container);
     auto& constant = builder.add_constant(block, "0.0f", f32);
     auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "out_", {"in_"});
     builder.add_computational_memlet(block, constant, tasklet, "in_", {}, f32);
-    builder.add_computational_memlet(block, tasklet, "out_", write, {symbolic::symbol("i")});
+    builder.add_computational_memlet(block, tasklet, "out_", write, {indvar});
 
     return map;
 }
@@ -134,6 +139,41 @@ void expect_schedule_retained(
 }
 
 } // namespace
+
+template<typename Transform>
+class GPUOffloadSweepTest : public ::testing::Test {};
+
+using OffloadTransforms = ::testing::Types<CUDAOffloadTransform, rocm::ROCMOffloadTransform>;
+TYPED_TEST_SUITE(GPUOffloadSweepTest, OffloadTransforms);
+
+TYPED_TEST(GPUOffloadSweepTest, MarkedLoopsReuseAnalysesDuringSweep) {
+    builder::StructuredSDFGBuilder builder("gpu_offload_sweep", FunctionType_CPU);
+    std::vector<structured_control_flow::Map*> loops;
+    for (size_t index = 0; index < 3; ++index) {
+        loops.push_back(&build_offloadable_map(builder, symbolic::integer(128), std::to_string(index)));
+    }
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    for (auto* loop : loops) {
+        TypeParam transform(*loop, symbolic::integer(128), gpu::TargetLevel::X_GRID);
+        ASSERT_TRUE(transform.can_be_applied(builder, analysis_manager));
+    }
+
+    const bool statistics_enabled = passes::CompileStatistics::enabled();
+    passes::CompileStatistics::enable();
+    auto& statistics = passes::CompileStatistics::instance();
+    auto* sweep = statistics.enter_scope("offload_sweep", "Test");
+    for (auto* loop : loops) {
+        TypeParam transform(*loop, symbolic::integer(128), gpu::TargetLevel::X_GRID);
+        EXPECT_NO_THROW(transform.apply(builder, analysis_manager));
+        EXPECT_EQ(loop->schedule_type().category(), ScheduleTypeCategory::Offloader);
+    }
+    statistics.exit_scope();
+    if (!statistics_enabled) {
+        passes::CompileStatistics::disable();
+    }
+    EXPECT_TRUE(sweep->children.empty());
+    analysis_manager.invalidate_all();
+}
 
 // --- Grid target levels: positive (within limit) ---------------------------
 

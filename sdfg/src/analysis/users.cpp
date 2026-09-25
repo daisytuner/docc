@@ -13,6 +13,7 @@
 #include "sdfg/graph/graph.h"
 #include "sdfg/structured_control_flow/for.h"
 #include "sdfg/structured_control_flow/map.h"
+#include "sdfg/structured_control_flow/reduce.h"
 #include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/structured_sdfg.h"
 #include "sdfg/symbolic/sets.h"
@@ -49,6 +50,15 @@ const std::vector<data_flow::Subset>& User::subsets() const {
             for (auto& oedge : graph.in_edges(*access_node)) {
                 this->subsets_.push_back(oedge.subset());
             }
+        }
+    } else if (auto* reduction = dyn_cast<structured_control_flow::Reduce*>(element_)) {
+        for (const auto& entry : reduction->reductions()) {
+            if (entry.container == container_ && !entry.original_index.is_null()) {
+                subsets_.push_back({entry.original_index});
+            }
+        }
+        if (subsets_.empty()) {
+            subsets_.push_back({});
         }
     } else {
         // Use of symbol
@@ -363,6 +373,26 @@ std::pair<graph::Vertex, graph::Vertex> Users::traverse(structured_control_flow:
         this->users_.insert({s, std::make_unique<User>(s, "", for_stmt, Use::NOP)});
         auto last = s;
         this->entries_.insert({for_stmt, this->users_.at(s).get()});
+
+        if (auto* reduction = dyn_cast<structured_control_flow::Reduce*>(for_stmt)) {
+            for (const auto& entry : reduction->reductions()) {
+                if (entry.original_index.is_null()) {
+                    continue;
+                }
+                for (auto use : {Use::READ, Use::WRITE}) {
+                    auto vertex = boost::add_vertex(graph_);
+                    add_user(std::make_unique<User>(vertex, entry.container, reduction, use));
+                    boost::add_edge(last, vertex, graph_);
+                    last = vertex;
+                }
+                for (auto atom : symbolic::atoms(entry.original_index)) {
+                    auto vertex = boost::add_vertex(graph_);
+                    add_user(std::make_unique<User>(vertex, atom->get_name(), reduction, Use::READ));
+                    boost::add_edge(last, vertex, graph_);
+                    last = vertex;
+                }
+            }
+        }
 
         // NOP
         auto t = boost::add_vertex(this->graph_);

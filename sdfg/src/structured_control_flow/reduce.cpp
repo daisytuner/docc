@@ -3,6 +3,7 @@
 #include <string>
 
 #include "sdfg/exceptions.h"
+#include "sdfg/function.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/visitor/structured_sdfg_visitor.h"
 
@@ -52,10 +53,34 @@ Reduce::Reduce(
 
 bool Reduce::accept(visitor::ActualStructuredSDFGVisitor& visitor) { return visitor.visit(*this); }
 
-void Reduce::validate(const Function& function) const { StructuredLoop::validate(function); };
+void Reduce::validate(const Function& function) const {
+    StructuredLoop::validate(function);
+    for (const auto& reduction : reductions_) {
+        if (reduction.original_index.is_null()) {
+            continue;
+        }
+        if (!function.exists(reduction.container)) {
+            throw InvalidSDFGException("Reduce: missing original accumulator '" + reduction.container + "'");
+        }
+        if (symbolic::uses(reduction.original_index, indvar())) {
+            throw InvalidSDFGException("Reduce: original index depends on the reduction variable");
+        }
+        for (const auto& symbol : symbolic::atoms(reduction.original_index)) {
+            if (!function.exists(symbol->get_name())) {
+                throw InvalidSDFGException("Reduce: undeclared original-index symbol '" + symbol->get_name() + "'");
+            }
+        }
+    }
+};
 
 void Reduce::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
     StructuredLoop::replace(old_expression, new_expression);
+
+    for (auto& reduction : reductions_) {
+        if (!reduction.original_index.is_null()) {
+            reduction.original_index = symbolic::subs(reduction.original_index, old_expression, new_expression);
+        }
+    }
 
     if (SymEngine::is_a<SymEngine::Symbol>(*old_expression) && SymEngine::is_a<SymEngine::Symbol>(*new_expression)) {
         const auto& old_name = SymEngine::rcp_static_cast<const SymEngine::Symbol>(old_expression)->get_name();
@@ -72,6 +97,9 @@ void Reduce::replace(const symbolic::ExpressionMapping& replacements) {
     StructuredLoop::replace(replacements);
 
     for (auto& reduction : this->reductions_) {
+        if (!reduction.original_index.is_null()) {
+            reduction.original_index = SymEngine::subs(reduction.original_index, replacements);
+        }
         auto it = replacements.find(symbolic::symbol(reduction.container));
         if (it != replacements.end() && SymEngine::is_a<SymEngine::Symbol>(*it->second)) {
             reduction.container = SymEngine::rcp_static_cast<const SymEngine::Symbol>(it->second)->get_name();
@@ -80,6 +108,16 @@ void Reduce::replace(const symbolic::ExpressionMapping& replacements) {
 }
 
 const std::vector<ReductionInfo>& Reduce::reductions() const { return this->reductions_; };
+
+void Reduce::original_index(const std::string& container, symbolic::Expression index) {
+    for (auto& reduction : reductions_) {
+        if (reduction.container == container) {
+            reduction.original_index = index;
+            return;
+        }
+    }
+    throw InvalidSDFGException("Reduce: unknown accumulator '" + container + "'");
+}
 
 void Reduce::replace_reduction_container(const std::string& old_name, const std::string& new_name) {
     if (old_name == new_name) {

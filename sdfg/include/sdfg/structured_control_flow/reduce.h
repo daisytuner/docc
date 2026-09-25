@@ -55,6 +55,7 @@ ReductionOperation reduction_operation_from_string(const std::string& value);
 struct ReductionInfo {
     ReductionOperation operation;
     std::string container;
+    symbolic::Expression original_index = SymEngine::null;
 };
 
 /**
@@ -133,6 +134,8 @@ public:
      * keep the ReductionInfo consistent with the dataflow graph.
      */
     void replace_reduction_container(const std::string& old_name, const std::string& new_name);
+
+    void original_index(const std::string& container, symbolic::Expression index);
 };
 
 } // namespace structured_control_flow

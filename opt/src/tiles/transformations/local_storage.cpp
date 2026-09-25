@@ -21,6 +21,7 @@
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/structured_sdfg.h"
 #include "sdfg/symbolic/extreme_values.h"
+#include "sdfg/tiles/analysis/reduction_buffer_analysis.h"
 #include "sdfg/tiles/analysis/tile_analysis.h"
 #include "sdfg/tiles/library_nodes/tile_copy_node.h"
 #include "sdfg/tiles/locality.h"
@@ -270,6 +271,39 @@ bool LocalStorage::has_side_effect(structured_control_flow::StructuredLoop& loop
 }
 
 bool LocalStorage::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+    return prepare(builder, analysis_manager) && reduction_buffers_supported(builder, analysis_manager);
+}
+
+bool LocalStorage::
+    reduction_buffers_supported(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+    auto& buffers = analysis_manager.get<tiles::ReductionBufferAnalysis>();
+    if (buffers.is_partial_buffer(container_)) {
+        return false;
+    }
+    const auto affected = buffers.affected_reductions(loop_);
+    if (affected.empty()) {
+        return true;
+    }
+    for (auto* reduction : affected) {
+        if (std::find(grid_reduce_owners_.begin(), grid_reduce_owners_.end(), reduction) != grid_reduce_owners_.end()) {
+            if (reduction->reductions().size() != 1 || !reduction->reductions().front().original_index.is_null()) {
+                return false;
+            }
+            continue;
+        }
+        for (const auto& entry : reduction->reductions()) {
+            if (entry.container == container_) {
+                return false;
+            }
+            if (buffers.buffer(*reduction, entry.container).status != tiles::ReductionBufferStatus::Exact) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+bool LocalStorage::prepare(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     auto& sdfg = builder.subject();
     tile_info_ = TileInfo{};
     group_memlets_.clear();
@@ -478,6 +512,13 @@ bool LocalStorage::can_be_applied(builder::StructuredSDFGBuilder& builder, analy
 }
 
 void LocalStorage::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+    if (!can_be_applied(builder, analysis_manager)) {
+        throw InvalidTransformationException("LocalStorage: unsupported tile or proposed reduction footprint");
+    }
+    apply_prepared(builder, analysis_manager);
+}
+
+void LocalStorage::apply_prepared(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     auto* parent = dyn_cast<structured_control_flow::Sequence*>(loop_.get_parent());
     if (!parent) {
         throw InvalidTransformationException("LocalStorage: parent of loop must be a Sequence");

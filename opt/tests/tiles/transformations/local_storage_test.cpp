@@ -12,6 +12,8 @@
 #include "sdfg/data_flow/library_nodes/stdlib/memset.h"
 #include "sdfg/data_flow/tasklet.h"
 #include "sdfg/function.h"
+#include "sdfg/passes/offloading/reduction_shared_memory_delinearization.h"
+#include "sdfg/serializer/json_serializer.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/for.h"
 #include "sdfg/structured_control_flow/map.h"
@@ -21,6 +23,7 @@
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/cuda/cuda.h"
 #include "sdfg/targets/gpu/gpu_schedule_type.h"
+#include "sdfg/tiles/analysis/reduction_buffer_analysis.h"
 #include "sdfg/tiles/analysis/tile_analysis.h"
 #include "sdfg/tiles/library_nodes/tile_copy_node.h"
 #include "sdfg/tiles/locality.h"
@@ -1890,6 +1893,79 @@ TEST(LocalStorageTest, Apply_SequentialAncestorReduce_RMW) {
 
 // A cooperatively-combined (GPU-offloaded) reduction accumulator is left to the
 // reduce dispatcher — can_be_applied must refuse to localize it.
+TEST(LocalStorageTest, GridReductionDemotionPreservesOtherAccumulators) {
+    for (bool multiple : {false, true}) {
+        builder::StructuredSDFGBuilder builder("ls_grid_demotion", FunctionType_CPU);
+        types::Scalar integer_type(types::PrimitiveType::Int32);
+        types::Pointer pointer{types::Scalar(types::PrimitiveType::Float)};
+        builder.add_container("grid", integer_type);
+        builder.add_container("step", integer_type);
+        builder.add_container("lane", integer_type);
+        builder.add_container("acc", pointer, true);
+        builder.add_container("other", pointer, true);
+        auto grid = symbolic::symbol("grid");
+        auto step = symbolic::symbol("step");
+        auto lane = symbolic::symbol("lane");
+        std::vector<structured_control_flow::ReductionInfo> entries{
+            {structured_control_flow::ReductionOperation::Add, "acc"}
+        };
+        if (multiple) {
+            entries.push_back({structured_control_flow::ReductionOperation::Add, "other"});
+        }
+        auto& reduction = builder.add_reduce(
+            builder.subject().root(),
+            grid,
+            symbolic::Lt(grid, symbolic::integer(8)),
+            symbolic::zero(),
+            symbolic::add(grid, symbolic::one()),
+            entries,
+            gpu::ScheduleType_GPU_Offload::create<
+                cuda::ScheduleType_CUDA_Offload>(gpu::TargetLevel::X_GRID, symbolic::integer(8))
+        );
+        auto& lanes = builder.add_map(
+            reduction.root(),
+            lane,
+            symbolic::Lt(lane, symbolic::integer(4)),
+            symbolic::zero(),
+            symbolic::add(lane, symbolic::one()),
+            gpu::ScheduleType_GPU_Offload::create<
+                cuda::ScheduleType_CUDA_Offload>(gpu::TargetLevel::X_BLOCK, symbolic::integer(4))
+        );
+        auto& loop = builder.add_for(
+            lanes.root(),
+            step,
+            symbolic::Lt(step, symbolic::integer(4)),
+            symbolic::zero(),
+            symbolic::add(step, symbolic::one())
+        );
+        auto& block = builder.add_block(loop.root());
+        auto& input = builder.add_access(block, "acc");
+        auto& output = builder.add_access(block, "acc");
+        auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::fp_add, "out", {"left", "right"});
+        builder.add_computational_memlet(block, input, tasklet, "left", {lane}, pointer);
+        builder.add_computational_memlet(block, input, tasklet, "right", {lane}, pointer);
+        builder.add_computational_memlet(block, tasklet, "out", output, {lane}, pointer);
+        if (multiple) {
+            auto& other_input = builder.add_access(block, "other");
+            auto& other_output = builder.add_access(block, "other");
+            auto& addition = builder.add_tasklet(block, data_flow::TaskletCode::fp_add, "out", {"left", "right"});
+            builder.add_computational_memlet(block, other_input, addition, "left", {lane}, pointer);
+            builder.add_computational_memlet(block, other_input, addition, "right", {lane}, pointer);
+            builder.add_computational_memlet(block, addition, "out", other_output, {lane}, pointer);
+        }
+        analysis::AnalysisManager manager(builder.subject());
+        serializer::JSONSerializer serializer;
+        const auto unchanged = serializer.serialize(builder.subject());
+        LocalStorage storage(loop, output);
+        EXPECT_EQ(storage.can_be_applied(builder, manager), !multiple);
+        EXPECT_EQ(serializer.serialize(builder.subject()), unchanged);
+        if (!multiple) {
+            storage.apply(builder, manager);
+            EXPECT_NE(dyn_cast<structured_control_flow::Map*>(&builder.subject().root().at(0)), nullptr);
+        }
+    }
+}
+
 TEST(LocalStorageTest, CanApply_CooperativeReductionAccumulator_Rejects) {
     builder::StructuredSDFGBuilder builder("ls_reduce_coop_reject", FunctionType_CPU);
     auto& seq = builder.subject().root();
@@ -1934,6 +2010,26 @@ TEST(LocalStorageTest, CanApply_CooperativeReductionAccumulator_Rejects) {
     analysis::AnalysisManager am(builder.subject());
     LocalStorage xform(reduce_j, acc_out);
     EXPECT_FALSE(xform.can_be_applied(builder, am));
+    const auto reduction_before = am.get<tiles::ReductionBufferAnalysis>().require(reduce_j, "acc");
+    serializer::JSONSerializer serializer;
+    const auto before_staging = serializer.serialize(builder.subject());
+    LocalStorage input_staging(map_row, x_in);
+    ASSERT_TRUE(input_staging.can_be_applied(builder, am));
+    EXPECT_EQ(serializer.serialize(builder.subject()), before_staging);
+    input_staging.apply(builder, am);
+    const auto reduction_after = am.get<tiles::ReductionBufferAnalysis>().require(reduce_j, "acc");
+    EXPECT_EQ(reduction_after.private_bytes, reduction_before.private_bytes);
+    EXPECT_EQ(reduction_after.shared_bytes, reduction_before.shared_bytes);
+    EXPECT_EQ(reduction_after.shared_owner, reduction_before.shared_owner);
+    passes::ReductionSharedMemoryDelinearization packing;
+    ASSERT_TRUE(packing.run_pass(builder, am));
+    const auto materialized = serializer.serialize(builder.subject());
+    EXPECT_FALSE(xform.can_be_applied(builder, am));
+    EXPECT_THROW(xform.apply(builder, am), transformations::InvalidTransformationException);
+    LocalStorage partial_retarget(reduce_j, acc_out);
+    EXPECT_FALSE(partial_retarget.can_be_applied(builder, am));
+    EXPECT_THROW(partial_retarget.apply(builder, am), transformations::InvalidTransformationException);
+    EXPECT_EQ(serializer.serialize(builder.subject()), materialized);
 }
 
 // =====================================================================
