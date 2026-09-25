@@ -60,16 +60,6 @@ bool GPUOffloadTransform<OffloaderNodeType>::reduction_buffers_supported(analysi
 }
 
 template<typename OffloaderNodeType>
-void GPUOffloadTransform<
-    OffloaderNodeType>::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
-    if (!reduction_buffers_supported(analysis_manager)) {
-        throw InvalidSDFGException("GPUOffloadTransform: unsupported proposed reduction footprint");
-    }
-    OffloadTransform::apply(builder, analysis_manager);
-    analysis_manager.invalidate_all();
-}
-
-template<typename OffloaderNodeType>
 void GPUOffloadTransform<OffloaderNodeType>::add_device_buffer(
     builder::StructuredSDFGBuilder& builder,
     std::string host_arg_name,
@@ -286,10 +276,6 @@ GPUOffloadTransform<OffloaderNodeType> GPUOffloadTransform<
 // from_json returns it by value, so members are instantiated individually instead.
 template bool GPUOffloadTransform<
     cuda::CUDADataOffloadingNode>::can_be_applied(builder::StructuredSDFGBuilder&, analysis::AnalysisManager&);
-template void GPUOffloadTransform<
-    cuda::CUDADataOffloadingNode>::apply(builder::StructuredSDFGBuilder&, analysis::AnalysisManager&);
-template void GPUOffloadTransform<
-    rocm::ROCMDataOffloadingNode>::apply(builder::StructuredSDFGBuilder&, analysis::AnalysisManager&);
 template void GPUOffloadTransform<cuda::CUDADataOffloadingNode>::
     add_device_buffer(builder::StructuredSDFGBuilder&, std::string, std::string, symbolic::Expression);
 template void GPUOffloadTransform<cuda::CUDADataOffloadingNode>::allocate_device_arg(
