@@ -20,7 +20,18 @@ RocmArch ROCM_ARCH_GFX1201 = RocmArch("gfx1201", 32, true, false);
 RocmArch ROCM_ARCH_GFX90A = RocmArch("gfx90a", 64, true, true);
 RocmArch ROCM_ARCH_GFX942 = RocmArch("gfx942", 64, true, true);
 
-const RocmArch* rocm_arch_parse(const std::string& name) {
+const RocmArch* rocm_arch_parse(const std::string& raw_name) {
+    // Strip an optional case-insensitive "cuda:" prefix before matching.
+    std::string name = raw_name;
+    if (name.size() >= 5) {
+        std::string prefix = name.substr(0, 5);
+        std::transform(prefix.begin(), prefix.end(), prefix.begin(), [](unsigned char c) {
+            return static_cast<char>(std::tolower(c));
+        });
+        if (prefix == "rocm:") {
+            name = name.substr(5);
+        }
+    }
     if (name == ROCM_ARCH_GFX1201.name()) {
         return &ROCM_ARCH_GFX1201;
     } else if (name == ROCM_ARCH_GFX90A.name()) {
@@ -168,10 +179,14 @@ const RocmArch* rocm_arch_from_schedule_type(const structured_control_flow::Sche
     }
 }
 
+std::string RocmArch::unique_id() const { return "Rocm:" + rocm_name_; }
+
+std::string RocmArch::name() const { return rocm_name_; }
+
 structured_control_flow::ScheduleType RocmArch::create_schedule_type() const {
     structured_control_flow::ScheduleType
         sched(sdfg::rocm::ScheduleType_ROCM_Offload::value(), structured_control_flow::ScheduleTypeCategory::Offloader);
-    sched.set_property(ARCH_PROPERTY, name_);
+    sched.set_property(ARCH_PROPERTY, unique_id());
     return sched;
 }
 
@@ -281,7 +296,7 @@ GpuMmaTiling RocmMmaSupport::get_mma_tiling(const symbolic::MultiExpression& res
 
 std::optional<data_flow::ImplementationType> RocmMmaSupport::
     get_matmul_impl_type(const GpuArch& arch, const GpuMmaTiling& tiling) const {
-    auto& arch_name = arch.name();
+    auto arch_name = arch.name();
     if (arch_name == "gfx1201") {
         return ImplementationType_ROCM_MMA_GFX1201;
     } else if (arch_name == "gfx90a") {

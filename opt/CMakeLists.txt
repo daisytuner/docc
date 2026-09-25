@@ -26,6 +26,9 @@ configure_file(
 set(SOURCE_FILES
     src/analysis/data_transfer_elimination_analysis.cpp
     src/einsum/einsum_node.cpp
+    src/einsum/einsum_detection.cpp
+    src/einsum/einsum_replacer.cpp
+    src/einsum/replacers/einsum2matmul.cpp
     src/einsum/passes/einsum_passes.cpp
     src/einsum/transformations/einsum_extend.cpp
     src/einsum/transformations/einsum_lift.cpp

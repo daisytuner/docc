@@ -1,6 +1,7 @@
 #include "sdfg/targets/cuda/cuda_arch.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <map>
 #include <optional>
@@ -181,10 +182,14 @@ const CudaArch* cuda_arch_from_schedule_type(const structured_control_flow::Sche
     }
 }
 
+std::string CudaArch::unique_id() const { return "Cuda:sm_" + std::to_string(sm_version_); }
+
+std::string CudaArch::name() const { return "sm_" + std::to_string(sm_version_); }
+
 structured_control_flow::ScheduleType CudaArch::create_schedule_type() const {
     structured_control_flow::ScheduleType
         sched(sdfg::cuda::ScheduleType_CUDA_Offload::value(), structured_control_flow::ScheduleTypeCategory::Offloader);
-    sched.set_property("ARCH", name_);
+    sched.set_property("ARCH", unique_id());
     return sched;
 }
 
@@ -210,7 +215,19 @@ const CudaArch* cuda_arch_from_available_hardware() {
     }
 }
 
-const CudaArch* cuda_arch_parse(const std::string& name) {
+const CudaArch* cuda_arch_parse(const std::string& raw_name) {
+    // Strip an optional case-insensitive "cuda:" prefix before matching.
+    std::string name = raw_name;
+    if (name.size() >= 5) {
+        std::string prefix = name.substr(0, 5);
+        std::transform(prefix.begin(), prefix.end(), prefix.begin(), [](unsigned char c) {
+            return static_cast<char>(std::tolower(c));
+        });
+        if (prefix == "cuda:") {
+            name = name.substr(5);
+        }
+    }
+
     if (name == "sm_120") {
         return &CUDA_ARCH_SM120;
     } else if (name == "sm_110") {

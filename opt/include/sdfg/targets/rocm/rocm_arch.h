@@ -27,12 +27,16 @@ public:
 
 class RocmArch : public GpuArch {
     int per_cu_threads_;
+    std::string rocm_name_;
     RocmMmaSupport mma_support_;
 
 public:
     RocmArch(const std::string& name, int per_cu_threads, bool mma_base_support, bool mma_f32_support)
-        : GpuArch(name), per_cu_threads_(per_cu_threads),
+        : GpuArch(), rocm_name_(name), per_cu_threads_(per_cu_threads),
           mma_support_(mma_base_support ? 16 : 0, mma_f32_support, per_cu_threads) {}
+
+    std::string unique_id() const override;
+    std::string name() const override;
 
     int per_cu_threads() const override { return per_cu_threads_; }
 

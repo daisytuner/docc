@@ -43,16 +43,14 @@ struct GpuMmaSupport {
 };
 
 class GpuArch {
-protected:
-    std::string name_;
-
 public:
     static constexpr const char* ARCH_PROPERTY = "ARCH";
 
-    GpuArch(const std::string& name) : name_(name) {}
+    GpuArch() {}
     virtual ~GpuArch() = default;
 
-    const std::string& name() const { return name_; }
+    virtual std::string unique_id() const = 0;
+    virtual std::string name() const = 0;
     virtual int per_cu_threads() const = 0;
 
     virtual const GpuMmaSupport* mma_support() const = 0;

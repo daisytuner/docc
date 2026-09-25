@@ -22,13 +22,24 @@ public:
         LibNodeExpander::ExpandContext& context, structured_control_flow::Block& block, math::tensor::MatMulNode& node
     ) const override;
 
-    math::tensor::TensorLayout
-    add_to_offset(const math::tensor::TensorLayout& layout, const symbolic::Expression& offset_add) const;
+    static math::tensor::TensorLayout
+    add_to_offset(const math::tensor::TensorLayout& layout, const symbolic::Expression& offset_add);
+
+    static passes::LibNodeExpander::ExpandOutcome expand_mma(
+        LibNodeExpander::AccessNodeExpand& standalone,
+        const GpuArch& arch,
+        GpuMmaTiling& mma_tiling,
+        const math::tensor::TensorLayout& layout_a,
+        const math::tensor::TensorLayout& layout_b,
+        const math::tensor::TensorLayout& layout_y,
+        types::PrimitiveType input_type,
+        types::PrimitiveType output_type,
+        const data_flow::ImplementationType& impl_type
+    );
 
 protected:
     virtual bool matches_possible_mma_pattern(const math::tensor::MatMulNode& node) const;
     virtual GpuMmaTiling get_mma_tiling(const symbolic::MultiExpression& res_shape) const;
-    virtual ScheduleType get_schedule_type(gpu::TargetLevel dim, const symbolic::Integer& size) const;
 };
 
 } // namespace sdfg::gpu

@@ -53,8 +53,11 @@ class CudaArch : public GpuArch {
 
 public:
     CudaArch(int sm_version, bool mma_base_support, bool mma_tf32_support, bool mma_fp64_support)
-        : GpuArch("sm_" + std::to_string(sm_version)), sm_version_(sm_version),
+        : GpuArch(), sm_version_(sm_version),
           mma_support_(mma_base_support ? 16 : 0, mma_tf32_support, mma_fp64_support) {}
+
+    std::string unique_id() const override;
+    std::string name() const override;
 
     int per_cu_threads() const override { return 32; }
 

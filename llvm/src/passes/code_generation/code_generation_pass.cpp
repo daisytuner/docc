@@ -53,6 +53,7 @@
 #include "sdfg/element.h"
 #include "sdfg/structured_control_flow/return.h"
 #include "sdfg/structured_sdfg.h"
+#include "sdfg/targets/cuda/cuda_arch.h"
 #include "sdfg/targets/cuda/cuda_data_offloading_node.h"
 #include "sdfg/targets/gpu/gpu_map_utils.h"
 #include "sdfg/targets/offloading/data_offloading_node.h"
@@ -132,8 +133,8 @@ void add_schedule_type_specific_linker_args(const ScheduleType& schedule_type, s
     }
 }
 
-static std::optional<util::CudaComputeCapability> cuda_select_compute_cap() {
-    auto caps = util::query_cuda_compute_capabilities();
+static std::optional<sdfg::gpu::cuda::CudaComputeCapability> cuda_select_compute_cap() {
+    auto caps = sdfg::gpu::cuda::query_cuda_compute_capabilities();
 
     if (!caps.empty()) {
         auto& first = caps.front();
