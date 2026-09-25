@@ -22,8 +22,6 @@ public:
 
     bool can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
 
-    void apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
-
     void to_json(nlohmann::json& j) const override;
 
     static GPUOffloadTransform<OffloaderNodeType>
