@@ -118,6 +118,11 @@ When the minimum level is achieved *without* a buffer — a subgroup sharing thr
 `tiles::ReductionBufferAnalysis` owns reduction layout and allocation inference.
 Query it through `AnalysisManager::get<tiles::ReductionBufferAnalysis>()`:
 
+Queries return values; the analysis does not cache results. A reduction dispatcher
+retains one validated result per accumulator for its lifetime and refreshes them
+before each dispatch. Materialization retains only shared-owner layouts within the
+current enclosing loop nest, discarding them when it advances to another nest.
+
 - `buffer(reduce, container)` reports the original accumulator index, compact layout,
     element type, private bytes, shared bytes, and shared-buffer owner.
 - `require(reduce, container)` requires an exact layout and throws with a diagnostic
@@ -160,8 +165,9 @@ without reduction-specific aliases.
 Interchange, tiling, GPU offload and local-storage transformations preview affected
 footprints before changing the live graph and invalidate analyses after applying.
 Perform these optimizations before packing: incompatible changes after materialization
-are rejected, not automatically unpacked and repacked. Analysis results and references
-must not be retained across invalidation. Hardware-budget selection and automatic
+are rejected, not automatically unpacked and repacked. Returned values survive analysis
+invalidation, but must not be treated as current results after graph mutations.
+Hardware-budget selection and automatic
 Shared-to-Global fallback are separate policy work, not part of this lowering.
 
 ## The Tile API: Build Your Own Transformations

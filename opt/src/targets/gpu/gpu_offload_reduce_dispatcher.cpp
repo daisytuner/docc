@@ -151,15 +151,13 @@ GPUOffloadReduceDispatcher::GPUOffloadReduceDispatcher(
 
 void GPUOffloadReduceDispatcher::validate_before_dispatch(analysis::AnalysisManager& analysis_manager) {
     auto& buffers = analysis_manager.get<tiles::ReductionBufferAnalysis>();
-    multi_output_layouts_.clear();
+    reduction_buffers_.clear();
     for (const auto& reduction : node_.reductions()) {
-        const auto& result = buffers.require(node_, reduction.container);
+        auto result = buffers.require(node_, reduction.container);
         if (!result.materialized) {
             throw InvalidSDFGException("GPU reduction requires materialized partial buffers");
         }
-        if (result.multi_output) {
-            multi_output_layouts_.emplace(reduction.container, *result.layout);
-        }
+        reduction_buffers_.emplace(reduction.container, std::move(result));
     }
 }
 
@@ -555,7 +553,7 @@ symbolic::Expression GPUOffloadReduceDispatcher::reduce_block_size_product() {
 }
 
 std::string GPUOffloadReduceDispatcher::partials_buffer_name(const std::string& container) {
-    return analysis_manager_.get<tiles::ReductionBufferAnalysis>().require(node_, container).shared_buffer;
+    return reduction_buffers_.at(container).shared_buffer;
 }
 
 bool GPUOffloadReduceDispatcher::is_scalar_accumulator(const std::string& container) {
@@ -641,16 +639,15 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_publish(
         if (!uses_register_partial(target_level, r.container)) {
             continue;
         }
-        std::string reg_name =
-            analysis_manager_.get<tiles::ReductionBufferAnalysis>().require(node_, r.container).private_buffer;
+        const auto& buffer = reduction_buffers_.at(r.container);
+        const auto& reg_name = buffer.private_buffer;
         std::string smem_name = partials_buffer_name(r.container);
-        auto layout = multi_output_layouts_.find(r.container);
-        if (layout == multi_output_layouts_.end()) {
+        if (!buffer.multi_output) {
             stream << smem_name << "[" << lin_tid << "] = " << reg_name << "[0];" << std::endl;
         } else {
             std::string slot = "__daisy_reduce_slot_" + r.container;
-            stream << "for (int " << slot << " = 0; " << slot << " < " << layout->second.extent << "; ++" << slot
-                   << ") " << smem_name << "[(" << lin_tid << ") * " << layout->second.extent << " + " << slot
+            stream << "for (int " << slot << " = 0; " << slot << " < " << buffer.layout->extent << "; ++" << slot
+                   << ") " << smem_name << "[(" << lin_tid << ") * " << buffer.layout->extent << " + " << slot
                    << "] = " << reg_name << "[" << slot << "];" << std::endl;
         }
     }
@@ -666,9 +663,8 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_declarations(
 ) {
     std::string lin_tid = reduce_linear_thread_index(language_extension);
     bool declared_shared = false;
-    auto& buffer_analysis = analysis_manager_.get<tiles::ReductionBufferAnalysis>();
     for (const auto& entry : node_.reductions()) {
-        const auto& buffer = buffer_analysis.require(node_, entry.container);
+        const auto& buffer = reduction_buffers_.at(entry.container);
         auto ctype = language_extension.primitive_type(*buffer.primitive);
         auto identity = identity_literal(entry.operation, *buffer.primitive);
         auto slot = "__daisy_reduce_slot_" + entry.container;
@@ -726,7 +722,7 @@ std::string GPUOffloadReduceDispatcher::reduction_target(
             return buffer.shared_buffer + "[" + language_extension.expression(slot) + "]";
         }
     }
-    auto primitive = *buffer_analysis.require(node_, container).primitive;
+    auto primitive = *reduction_buffers_.at(container).primitive;
     return "reinterpret_cast<" + language_extension.primitive_type(primitive) + " *>(" + container + ")[" +
            language_extension.expression(index) + "]";
 }
@@ -748,16 +744,16 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
     std::string warp_size =
         language_extension.expression(get_target_level_dim(TargetLevel::WARP, strategy_->get_warp_size()));
 
-    auto& buffer_analysis = analysis_manager_.get<tiles::ReductionBufferAnalysis>();
     for (const auto& r : node_.reductions()) {
         if (strategy == ReduceStrategy::Shared && has_enclosing_block_reduction(r.container)) continue;
-        auto prim = *buffer_analysis.require(node_, r.container).primitive;
+        const auto& buffer = reduction_buffers_.at(r.container);
+        auto prim = *buffer.primitive;
         std::string ctype = language_extension.primitive_type(prim);
-        std::string reg_name = buffer_analysis.require(node_, r.container).private_buffer;
+        std::string reg_name = buffer.private_buffer;
         std::string smem_name = partials_buffer_name(r.container);
-        auto index = buffer_analysis.require(node_, r.container).accumulator_index;
-        auto layout = multi_output_layouts_.find(r.container);
-        bool multi_output = layout != multi_output_layouts_.end();
+        auto index = buffer.accumulator_index;
+        const auto& layout = *buffer.layout;
+        bool multi_output = buffer.multi_output;
         if (!multi_output) {
             reg_name += "[0]";
         }
@@ -765,12 +761,12 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
         std::string shared_stride = "1";
         if (multi_output) {
             std::string slot = "__daisy_reduce_slot_" + r.container;
-            stream << "for (int " << slot << " = 0; " << slot << " < " << layout->second.extent << "; ++" << slot
-                   << ") {" << std::endl;
+            stream << "for (int " << slot << " = 0; " << slot << " < " << layout.extent << "; ++" << slot << ") {"
+                   << std::endl;
             stream.changeIndent(+4);
             reg_name += "[" + slot + "]";
-            index = layout->second.unpack(symbolic::symbol(slot));
-            shared_stride = std::to_string(layout->second.extent);
+            index = layout.unpack(symbolic::symbol(slot));
+            shared_stride = std::to_string(layout.extent);
             shared_index = "(" + lin_tid + ") * " + shared_stride + " + " + slot;
         }
         std::string target = reduction_target(language_extension, r.container, index);

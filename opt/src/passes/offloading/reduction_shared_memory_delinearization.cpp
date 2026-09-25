@@ -1,6 +1,7 @@
 #include "sdfg/passes/offloading/reduction_shared_memory_delinearization.h"
 
 #include <algorithm>
+#include <map>
 #include <set>
 #include <vector>
 
@@ -139,11 +140,27 @@ bool ReductionSharedMemoryDelinearization::
             reductions.push_back(reduction);
         }
     }
+    auto nest_id = [&](structured_control_flow::Reduce* reduction) {
+        for (auto* ancestor : loops.ancestors(reduction)) {
+            if (loops.ancestors(ancestor).empty()) {
+                return ancestor->element_id();
+            }
+        }
+        return reduction->element_id();
+    };
     std::sort(reductions.begin(), reductions.end(), [&](auto* left, auto* right) {
-        return loops.ancestors(left).size() < loops.ancestors(right).size();
+        return std::make_pair(nest_id(left), loops.ancestors(left).size()) <
+               std::make_pair(nest_id(right), loops.ancestors(right).size());
     });
+    std::map<std::pair<size_t, std::string>, std::pair<gpu::ReductionLayout, symbolic::Expression>> shared_layouts;
+    std::optional<size_t> current_nest;
     bool applied = false;
     for (auto* reduction : reductions) {
+        auto nest = nest_id(reduction);
+        if (current_nest != nest) {
+            shared_layouts.clear();
+            current_nest = nest;
+        }
         for (const auto& entry : reduction->reductions()) {
             if (!entry.original_index.is_null()) {
                 continue;
@@ -155,7 +172,8 @@ bool ReductionSharedMemoryDelinearization::
             if (*info.shared_bytes) {
                 info.shared_buffer = choose_buffer_name(builder, *reduction, entry.container, info, names, true);
             }
-            const auto* layout_info = &info;
+            const auto* layout = &*info.layout;
+            auto linear_thread_index = info.linear_thread_index;
             if (info.shared_owner && *info.shared_owner != reduction->element_id()) {
                 auto* owner = dyn_cast<structured_control_flow::Reduce*>(builder.find_element_by_id(*info.shared_owner)
                 );
@@ -163,7 +181,9 @@ bool ReductionSharedMemoryDelinearization::
                     throw InvalidSDFGException("missing enclosing shared reduction buffer owner");
                 }
                 info.shared_buffer = owner->schedule_type().properties().at("reduction_shared." + entry.container);
-                layout_info = &analysis.require(*owner, entry.container);
+                const auto& owner_layout = shared_layouts.at({*info.shared_owner, entry.container});
+                layout = &owner_layout.first;
+                linear_thread_index = owner_layout.second;
             }
             auto declare = [&](const std::string& name, int64_t bytes, bool shared) {
                 if (bytes != 0 && !sdfg.exists(name)) {
@@ -194,11 +214,16 @@ bool ReductionSharedMemoryDelinearization::
             auto name = shared ? info.shared_buffer : info.private_buffer;
             symbolic::Expression offset = symbolic::zero();
             if (shared) {
-                offset =
-                    symbolic::mul(layout_info->linear_thread_index, symbolic::integer(layout_info->layout->extent));
+                offset = symbolic::mul(linear_thread_index, symbolic::integer(layout->extent));
             }
-            RewriteAccesses rewrite(entry.container, name, sdfg.type(name), *layout_info->layout, offset);
+            RewriteAccesses rewrite(entry.container, name, sdfg.type(name), *layout, offset);
             reduction->root().accept(rewrite);
+            if (*info.shared_bytes && !*info.private_bytes) {
+                shared_layouts.emplace(
+                    std::make_pair(reduction->element_id(), entry.container),
+                    std::make_pair(std::move(*info.layout), info.linear_thread_index)
+                );
+            }
             applied = true;
         }
     }

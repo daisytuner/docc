@@ -9,7 +9,7 @@
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/gpu/gpu_offload_base_dispatcher.h"
 #include "sdfg/targets/gpu/gpu_offload_schedule_type.h"
-#include "sdfg/targets/gpu/gpu_reduce_layout.h"
+#include "sdfg/tiles/analysis/reduction_buffer_analysis.h"
 #include "sdfg/types/type.h"
 
 
@@ -20,7 +20,7 @@ class GPUOffloadReduceDispatcher : public GPUOffloadBaseDispatcher {
 protected:
     structured_control_flow::Reduce& node_;
 
-    std::map<std::string, ReductionLayout> multi_output_layouts_;
+    std::map<std::string, tiles::ReductionBufferInfo> reduction_buffers_;
 
     void dispatch_kernel_body(
         codegen::NestedCodeSnippetFactory& kernel_snippet_factory,

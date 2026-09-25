@@ -1,6 +1,5 @@
 #pragma once
 
-#include <map>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -85,20 +84,19 @@ struct ReductionKernelInfo {
 /**
  * @brief Infer reduction footprints and verify explicitly materialized buffers
  *
- * Queries are cached per reduction and original accumulator without changing the
- * SDFG. Callers must invalidate the analysis after changing bounds, schedules,
- * accesses, or container types. Returned references expire with the analysis.
+ * Queries return independently owned results without caching or changing the SDFG.
+ * Callers may retain results while their graph remains unchanged and must invalidate
+ * dependent analyses after changing bounds, schedules, accesses, or container types.
  * Device capacity limits and strategy selection are outside this analysis.
  */
 class ReductionBufferAnalysis : public analysis::Analysis {
     analysis::AnalysisManager* analysis_manager_ = nullptr;
-    mutable std::map<std::pair<const structured_control_flow::Reduce*, std::string>, ReductionBufferInfo> buffers_;
 
     /// Infer one footprint, converting unsupported geometry or storage into a diagnostic result.
     ReductionBufferInfo compute(structured_control_flow::Reduce& reduction, const std::string& container) const;
 
 protected:
-    /// Bind the manager and options, and reset the lazily populated result cache.
+    /// Bind the manager and options for dependency queries.
     void run(analysis::AnalysisManager& analysis_manager) override;
 
 public:
@@ -108,12 +106,12 @@ public:
     /// @return "ReductionBufferAnalysis".
     std::string name() const override;
 
-    /// Return the cached or newly inferred result, including bounded or unsupported results.
-    const ReductionBufferInfo& buffer(structured_control_flow::Reduce& reduction, const std::string& container) const;
+    /// Infer an independent result, including bounded or unsupported results.
+    ReductionBufferInfo buffer(structured_control_flow::Reduce& reduction, const std::string& container) const;
 
     /// Require an exact footprint, throwing InvalidSDFGException otherwise.
     /// Exactness alone does not imply materialization; check the result's materialized flag.
-    const ReductionBufferInfo& require(structured_control_flow::Reduce& reduction, const std::string& container) const;
+    ReductionBufferInfo require(structured_control_flow::Reduce& reduction, const std::string& container) const;
 
     /// Copy only the enclosing nest and referenced declarations into a detached builder.
     /// The returned correspondence locates copied nodes without preserving element IDs.

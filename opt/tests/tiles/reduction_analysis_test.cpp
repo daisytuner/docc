@@ -7,10 +7,12 @@
 #include "sdfg/transformations/multi_level_tiling.h"
 
 #include <gtest/gtest.h>
+#include <type_traits>
 
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/analysis/data_dependency_analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/deepcopy/structured_sdfg_deep_copy.h"
 #include "sdfg/structured_control_flow/for.h"
 #include "sdfg/structured_control_flow/reduce.h"
 #include "sdfg/structured_control_flow/sequence.h"
@@ -378,6 +380,19 @@ TEST(ReductionBufferAnalysisTest, NestedSharedOwnersGrowWithoutDoubleCounting) {
         builder::StructuredSDFGBuilder proposed("shared_owner_preview", FunctionType_CPU);
         proposed.set_element_counter(builder.subject().element_counter());
         const auto copied_nodes = buffers.copy_nest(*reductions.back(), proposed);
+        const auto sibling_nodes =
+            deepcopy::StructuredSDFGDeepCopy(proposed, proposed.subject().root(), *reductions.front()).copy();
+        auto* sibling_owner = const_cast<
+            structured_control_flow::Reduce*>(dynamic_cast<const structured_control_flow::Reduce*>(sibling_nodes
+                                                                                                       .at(reductions
+                                                                                                               .front())
+        ));
+        ASSERT_NE(sibling_owner, nullptr);
+        proposed.update_schedule_type(
+            *sibling_owner,
+            gpu::ScheduleType_GPU_Offload::create<
+                cuda::ScheduleType_CUDA_Offload>(levels.front(), symbolic::integer(widths.front() * 2))
+        );
         analysis::AnalysisManager proposed_manager(proposed.subject());
         passes::ReductionSharedMemoryDelinearization packing;
         ASSERT_TRUE(packing.run_pass(proposed, proposed_manager));
@@ -400,6 +415,18 @@ TEST(ReductionBufferAnalysisTest, NestedSharedOwnersGrowWithoutDoubleCounting) {
             EXPECT_EQ(info.shared_bytes, nested == reductions.front() ? threads * 4 : 0);
         }
         ASSERT_FALSE(shared_name.empty());
+        for (auto* nested : reductions) {
+            auto* sibling = const_cast<
+                structured_control_flow::Reduce*>(dynamic_cast<const structured_control_flow::Reduce*>(sibling_nodes
+                                                                                                           .at(nested))
+            );
+            ASSERT_NE(sibling, nullptr);
+            const auto info = packed_buffers.require(*sibling, "acc");
+            EXPECT_TRUE(info.materialized);
+            EXPECT_EQ(info.shared_owner, sibling_owner->element_id());
+            EXPECT_NE(info.shared_buffer, shared_name);
+            EXPECT_EQ(info.shared_bytes, nested == reductions.front() ? threads * 8 : 0);
+        }
         EXPECT_FALSE(packing.run_pass(proposed, proposed_manager));
         builder::StructuredSDFGBuilder replay("shared_owner_replay", FunctionType_CPU);
         replay.set_element_counter(proposed.subject().element_counter());
@@ -511,10 +538,18 @@ TEST(ReductionBufferAnalysisTest, DenseFootprintAndInvalidation) {
     EXPECT_EQ(result.shared_bytes, 0);
     EXPECT_TRUE(symbolic::eq(result.layout->unpack(symbolic::integer(3)), symbolic::add(origin, symbolic::integer(33)))
     );
-    EXPECT_EQ(
-        &manager.get<tiles::ReductionBufferAnalysis>().buffer(reduction, "acc"),
-        &manager.get<tiles::ReductionBufferAnalysis>().buffer(reduction, "acc")
-    );
+    auto independent = manager.get<tiles::ReductionBufferAnalysis>().buffer(reduction, "acc");
+    static_assert(std::is_same_v<
+                  decltype(manager.get<tiles::ReductionBufferAnalysis>().buffer(reduction, "acc")),
+                  tiles::ReductionBufferInfo>);
+    static_assert(std::is_same_v<
+                  decltype(manager.get<tiles::ReductionBufferAnalysis>().require(reduction, "acc")),
+                  tiles::ReductionBufferInfo>);
+    independent.layout->extent = 99;
+    independent.private_bytes = 0;
+    const auto fresh = manager.get<tiles::ReductionBufferAnalysis>().buffer(reduction, "acc");
+    EXPECT_EQ(fresh.layout->extent, 4);
+    EXPECT_EQ(fresh.private_bytes, 16);
     EXPECT_THROW(manager.get<tiles::ReductionBufferAnalysis>().require(reduction, "missing"), InvalidSDFGException);
     rows.replace(symbolic::integer(4), symbolic::integer(8));
     manager.invalidate_all();

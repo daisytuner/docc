@@ -261,6 +261,22 @@ static std::string dispatch_block_reduce(
         EXPECT_NE(globals_stream.str().find("void* __restrict__ acc"), std::string::npos);
         EXPECT_NE(source_snippet->stream().str().find("reinterpret_cast<float *>(acc)[0]"), std::string::npos);
     }
+    if (!nested) {
+        reduce.original_index("acc", symbolic::integer(7));
+        analysis_manager.invalidate_all();
+        codegen::PrettyPrinter refreshed_main;
+        codegen::PrettyPrinter refreshed_globals;
+        codegen::CodeSnippetFactory refreshed_snippets;
+        dispatcher.dispatch_node(refreshed_main, refreshed_globals, refreshed_snippets);
+        bool found_kernel = false;
+        for (auto& [key, snippet] : refreshed_snippets.snippets()) {
+            if (snippet.extension() == "cu") {
+                found_kernel = true;
+                EXPECT_NE(snippet.stream().str().find("reinterpret_cast<float *>(acc)[7]"), std::string::npos);
+            }
+        }
+        EXPECT_TRUE(found_kernel);
+    }
     return source_snippet->stream().str();
 }
 

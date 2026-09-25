@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <map>
 #include <set>
 
 #include "sdfg/analysis/assumptions_analysis.h"
@@ -30,7 +31,7 @@
  * After materialization, original_index preserves the logical address expression;
  * the inferred layout is checked against actual declarations and compact memlets.
  * Proposed transformations are analyzed on detached graphs with fresh analyses so
- * current cached results never masquerade as the footprint of a changed loop nest.
+ * retained source results never masquerade as the footprint of a changed loop nest.
  */
 namespace sdfg {
 namespace tiles {
@@ -281,22 +282,16 @@ std::string ReductionBufferAnalysis::name() const { return "ReductionBufferAnaly
 void ReductionBufferAnalysis::run(analysis::AnalysisManager& analysis_manager) {
     analysis_manager_ = &analysis_manager;
     options_ = &analysis_manager.options();
-    buffers_.clear();
 }
 
-const ReductionBufferInfo& ReductionBufferAnalysis::
+ReductionBufferInfo ReductionBufferAnalysis::
     buffer(structured_control_flow::Reduce& reduction, const std::string& container) const {
-    auto key = std::make_pair(&reduction, container);
-    auto found = buffers_.find(key);
-    if (found == buffers_.end()) {
-        found = buffers_.emplace(key, compute(reduction, container)).first;
-    }
-    return found->second;
+    return compute(reduction, container);
 }
 
-const ReductionBufferInfo& ReductionBufferAnalysis::
+ReductionBufferInfo ReductionBufferAnalysis::
     require(structured_control_flow::Reduce& reduction, const std::string& container) const {
-    const auto& result = buffer(reduction, container);
+    auto result = buffer(reduction, container);
     if (result.status != ReductionBufferStatus::Exact) {
         throw InvalidSDFGException("ReductionBufferAnalysis: accumulator '" + container + "': " + result.diagnostic);
     }
