@@ -9,6 +9,7 @@
 #include "sdfg/analysis/loop_analysis.h"
 #include "sdfg/analysis/type_analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/deepcopy/structured_sdfg_deep_copy.h"
 #include "sdfg/symbolic/extreme_values.h"
 #include "sdfg/targets/gpu/gpu_map_utils.h"
 #include "sdfg/targets/gpu/gpu_offload_schedule_type.h"
@@ -31,9 +32,69 @@
  * Proposed transformations are analyzed on detached graphs with fresh analyses so
  * current cached results never masquerade as the footprint of a changed loop nest.
  */
-namespace sdfg::tiles {
+namespace sdfg {
+namespace tiles {
 
 namespace {
+
+/// Collect declarations used by a preview, including references kept only in reduction metadata.
+class PreviewDependencies : public analysis::BaseUserVisitor {
+public:
+    std::set<std::string> containers;
+
+    void
+    use_as_src_node(const std::string& container, const data_flow::AccessNode&, const data_flow::Memlet&, const structured_control_flow::Block&)
+        override {
+        containers.insert(container);
+    }
+
+    void
+    use_as_dst_node(const std::string& container, const data_flow::AccessNode&, const data_flow::Memlet&, const structured_control_flow::Block&)
+        override {
+        containers.insert(container);
+    }
+
+    void use_as_symbol_read(
+        const std::string& container,
+        const structured_control_flow::ControlFlowNode*,
+        const Element*,
+        SymbolReadLocation,
+        int,
+        symbolic::Expression
+    ) override {
+        containers.insert(container);
+    }
+
+    void use_as_symbol_write(
+        const symbolic::Symbol& container,
+        const structured_control_flow::ControlFlowNode*,
+        const Element*,
+        SymbolWriteLocation
+    ) override {
+        containers.insert(container->get_name());
+    }
+
+    void use_as_return_src(const std::string& container, const structured_control_flow::Return&) override {
+        containers.insert(container);
+    }
+
+    void handle_structured_loop_before_body(structured_control_flow::StructuredLoop& loop) override {
+        BaseUserVisitor::handle_structured_loop_before_body(loop);
+        for (const auto& [key, value] : loop.schedule_type().properties()) {
+            containers.insert(value);
+        }
+        if (auto* reduction = dyn_cast<structured_control_flow::Reduce*>(&loop)) {
+            for (const auto& entry : reduction->reductions()) {
+                containers.insert(entry.container);
+                if (!entry.original_index.is_null()) {
+                    for (const auto& symbol : symbolic::atoms(entry.original_index)) {
+                        containers.insert(symbol->get_name());
+                    }
+                }
+            }
+        }
+    }
+};
 
 /// Find a uniform original index across computational accumulator memlets; reject aliases or inconsistent accesses.
 /// Reads and writes must agree, including across nested control flow. This deliberately
@@ -453,16 +514,56 @@ ReductionBufferInfo ReductionBufferAnalysis::
     }
 }
 
-ReductionBufferEstimate ReductionBufferAnalysis::estimate(const ReductionInterchangeProposal& proposal) const {
-    // Preserve node IDs on the clone so results can be matched to live reductions.
-    // This is a geometry preview, not a dependence-legality check for interchange.
-    auto snapshot = sdfg_.clone();
-    builder::StructuredSDFGBuilder builder(*snapshot);
-    auto* outer = dyn_cast<structured_control_flow::StructuredLoop*>(builder.find_element_by_id(proposal.outer_id));
-    auto* inner = dyn_cast<structured_control_flow::StructuredLoop*>(builder.find_element_by_id(proposal.inner_id));
-    if (!outer || !inner || outer->root().size() != 1 || &outer->root().at(0) != inner) {
+ReductionNodeMapping ReductionBufferAnalysis::
+    copy_nest(structured_control_flow::StructuredLoop& loop, builder::StructuredSDFGBuilder& destination) const {
+    if (&destination.subject() == &sdfg_) {
+        throw InvalidSDFGException("reduction preview requires a detached proposal");
+    }
+    structured_control_flow::ControlFlowNode* root = &loop;
+    for (auto* parent = loop.get_parent(); parent; parent = parent->get_parent()) {
+        if (dyn_cast<structured_control_flow::StructuredLoop*>(parent) ||
+            dyn_cast<structured_control_flow::While*>(parent)) {
+            root = parent;
+        }
+    }
+    PreviewDependencies dependencies;
+    dependencies.dispatch(*root);
+    for (const auto& container : dependencies.containers) {
+        if (!sdfg_.exists(container)) {
+            continue;
+        }
+        if (sdfg_.is_external(container)) {
+            destination.add_external(container, sdfg_.type(container), sdfg_.linkage_type(container));
+        } else {
+            destination.add_container(container, sdfg_.type(container), sdfg_.is_argument(container));
+        }
+    }
+    return deepcopy::StructuredSDFGDeepCopy(destination, destination.subject().root(), *root).copy();
+}
+
+bool ReductionBufferAnalysis::supports_interchange(const ReductionInterchangeProposal& proposal) const {
+    if (proposal.outer.root().size() != 1 || &proposal.outer.root().at(0) != &proposal.inner) {
         throw InvalidSDFGException("ReductionBufferAnalysis: proposal requires directly nested loops");
     }
+    for (auto* loop : {&proposal.outer, &proposal.inner}) {
+        if (auto* reduction = dyn_cast<structured_control_flow::Reduce*>(loop)) {
+            for (const auto& entry : reduction->reductions()) {
+                if (!entry.original_index.is_null()) {
+                    return false;
+                }
+            }
+        }
+    }
+    builder::StructuredSDFGBuilder builder("reduction_interchange_preview", sdfg_.type());
+    const auto nodes = copy_nest(proposal.outer, builder);
+    auto* outer = const_cast<
+        structured_control_flow::StructuredLoop*>(dynamic_cast<
+                                                  const structured_control_flow::StructuredLoop*>(nodes.at(&proposal.outer
+    )));
+    auto* inner = const_cast<
+        structured_control_flow::StructuredLoop*>(dynamic_cast<
+                                                  const structured_control_flow::StructuredLoop*>(nodes.at(&proposal.inner
+    )));
     auto& parent = static_cast<structured_control_flow::Sequence&>(*outer->get_parent());
     auto position = parent.index(*outer);
     builder.move_children(inner->root(), outer->root());
@@ -474,25 +575,7 @@ ReductionBufferEstimate ReductionBufferAnalysis::estimate(const ReductionInterch
     builder.update_loop(
         *outer, outer->indvar(), proposal.new_inner.condition, proposal.new_inner.init, proposal.new_inner.update
     );
-    auto result = estimate(*snapshot);
-    for (auto& [key, info] : result) {
-        if (info.materialized && (key.first == proposal.outer_id || key.first == proposal.inner_id)) {
-            info = ReductionBufferInfo{};
-            info.diagnostic = "interchange would move a materialized reduction";
-        }
-    }
-    return result;
-}
-
-ReductionBufferEstimate ReductionBufferAnalysis::estimate(const ReductionScheduleProposal& proposal) const {
-    auto snapshot = sdfg_.clone();
-    builder::StructuredSDFGBuilder builder(*snapshot);
-    auto* loop = dyn_cast<structured_control_flow::StructuredLoop*>(builder.find_element_by_id(proposal.loop_id));
-    if (!loop) {
-        throw InvalidSDFGException("reduction schedule proposal requires a structured loop");
-    }
-    builder.update_schedule_type(*loop, proposal.schedule);
-    return estimate(*snapshot);
+    return supports(builder.subject(), nodes);
 }
 
 bool ReductionBufferAnalysis::supports_schedule(
@@ -510,61 +593,70 @@ bool ReductionBufferAnalysis::supports_schedule(
     if (affected.empty() && !dyn_cast<structured_control_flow::Reduce*>(&loop)) {
         return true;
     }
-    for (const auto& [key, info] : estimate(ReductionScheduleProposal{loop.element_id(), schedule})) {
-        if (key.first != loop.element_id() &&
-            std::none_of(affected.begin(), affected.end(), [&](const auto* reduction) {
-                return reduction->element_id() == key.first;
-            })) {
-            continue;
-        }
-        if (info.status != ReductionBufferStatus::Exact) {
-            return false;
-        }
-    }
-    return true;
+    builder::StructuredSDFGBuilder builder("reduction_schedule_preview", sdfg_.type());
+    const auto nodes = copy_nest(loop, builder);
+    auto* copied = const_cast<
+        structured_control_flow::StructuredLoop*>(dynamic_cast<
+                                                  const structured_control_flow::StructuredLoop*>(nodes.at(&loop)));
+    builder.update_schedule_type(*copied, schedule);
+    return supports(builder.subject(), nodes);
 }
 
-// Recompute under the proposed nesting; equal byte counts alone do not preserve a packed layout.
-// Fresh analyses see the proposal's bounds and schedules rather than the live
-// graph's caches. Already-packed graphs must preserve the address map, primitive
-// type, and allocation owner as well as cost; otherwise their existing memlets
-// would require unpacking and rematerialization, which this preview does not do.
-ReductionBufferEstimate ReductionBufferAnalysis::estimate(StructuredSDFG& proposal) const {
-    if (&proposal == &sdfg_) throw InvalidSDFGException("reduction preview requires a detached proposal");
+bool ReductionBufferAnalysis::supports(StructuredSDFG& proposal, const ReductionNodeMapping& nodes) const {
+    if (&proposal == &sdfg_) {
+        throw InvalidSDFGException("reduction preview requires a detached proposal");
+    }
     analysis::AnalysisManager manager(proposal, additional_assumptions_, *options_);
     auto& loops = manager.get<analysis::LoopAnalysis>();
     auto& buffers = manager.get<ReductionBufferAnalysis>();
-    ReductionBufferEstimate result;
+    ReductionNodeMapping originals;
+    for (const auto& [original, copied] : nodes) {
+        originals.emplace(copied, original);
+    }
+    std::unordered_map<size_t, size_t> owners;
+    for (auto* node : loops.loops()) {
+        if (auto original = originals.find(node); original != originals.end()) {
+            owners.emplace(node->element_id(), original->second->element_id());
+        }
+    }
     for (auto* node : loops.loops()) {
         auto* reduction = dyn_cast<structured_control_flow::Reduce*>(node);
         if (!reduction || !gpu_loop(*reduction)) {
             continue;
         }
         for (const auto& entry : reduction->reductions()) {
-            auto info = buffers.buffer(*reduction, entry.container);
-            if (info.materialized && info.status == ReductionBufferStatus::Exact) {
-                builder::StructuredSDFGBuilder original_builder(sdfg_);
-                auto* original =
-                    dyn_cast<structured_control_flow::Reduce*>(original_builder
-                                                                   .find_element_by_id(reduction->element_id()));
-                if (!original) {
-                    info = ReductionBufferInfo{};
-                    info.diagnostic = "proposal introduces a materialized reduction without an original owner";
-                    result.emplace(std::make_pair(reduction->element_id(), entry.container), std::move(info));
-                    continue;
-                }
-                const auto& before = require(*original, entry.container);
-                if (!same_layout(*before.layout, *info.layout) || before.shared_owner != info.shared_owner ||
-                    before.private_bytes != info.private_bytes || before.shared_bytes != info.shared_bytes ||
-                    before.primitive != info.primitive) {
-                    info = ReductionBufferInfo{};
-                    info.diagnostic = "proposal would invalidate materialized reduction layout or ownership";
-                }
+            const auto& info = buffers.buffer(*reduction, entry.container);
+            if (info.status != ReductionBufferStatus::Exact) {
+                return false;
             }
-            result.emplace(std::make_pair(reduction->element_id(), entry.container), std::move(info));
+            if (!info.materialized) {
+                continue;
+            }
+            auto original = originals.find(reduction);
+            if (original == originals.end()) {
+                return false;
+            }
+            auto* source = const_cast<
+                structured_control_flow::Reduce*>(dynamic_cast<const structured_control_flow::Reduce*>(original->second)
+            );
+            if (!source) {
+                return false;
+            }
+            const auto& before = buffer(*source, entry.container);
+            if (before.status != ReductionBufferStatus::Exact || !before.materialized ||
+                !same_layout(*before.layout, *info.layout) || before.private_bytes != info.private_bytes ||
+                before.shared_bytes != info.shared_bytes || before.primitive != info.primitive ||
+                before.private_buffer != info.private_buffer || before.shared_buffer != info.shared_buffer ||
+                before.shared_owner.has_value() != info.shared_owner.has_value()) {
+                return false;
+            }
+            if (info.shared_owner &&
+                (!owners.contains(*info.shared_owner) || owners.at(*info.shared_owner) != *before.shared_owner)) {
+                return false;
+            }
         }
     }
-    return result;
+    return true;
 }
 
 std::vector<structured_control_flow::Reduce*> ReductionBufferAnalysis::
@@ -643,4 +735,5 @@ ReductionKernelInfo ReductionBufferAnalysis::kernel(const structured_control_flo
     return result;
 }
 
-} // namespace sdfg::tiles
+} // namespace tiles
+} // namespace sdfg

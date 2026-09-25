@@ -274,7 +274,7 @@ bool LocalStorage::can_be_applied(builder::StructuredSDFGBuilder& builder, analy
     return prepare(builder, analysis_manager) && reduction_buffers_supported(builder, analysis_manager);
 }
 
-// Preview the prepared rewrite on a clone, including accumulator retargeting and grid-owner demotion.
+// Preview the prepared rewrite on a native nest copy, including accumulator retargeting and grid-owner demotion.
 bool LocalStorage::
     reduction_buffers_supported(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     auto& buffers = analysis_manager.get<tiles::ReductionBufferAnalysis>();
@@ -285,25 +285,32 @@ bool LocalStorage::
     if (affected.empty()) {
         return true;
     }
-    std::unordered_set<size_t> affected_ids;
     for (auto* reduction : affected) {
-        affected_ids.insert(reduction->element_id());
         for (const auto& entry : reduction->reductions()) {
             if (entry.container == container_ && !entry.original_index.is_null()) {
                 return false;
             }
         }
     }
-    auto snapshot = builder.subject().clone();
-    builder::StructuredSDFGBuilder proposed_builder(*snapshot);
-    auto* loop =
-        dyn_cast<structured_control_flow::StructuredLoop*>(proposed_builder.find_element_by_id(loop_.element_id()));
-    auto* access = dyn_cast<data_flow::AccessNode*>(proposed_builder.find_element_by_id(access_node_.element_id()));
-    if (!loop || !access) {
+    builder::StructuredSDFGBuilder proposed_builder("reduction_local_storage_preview", builder.subject().type());
+    const auto nodes = buffers.copy_nest(loop_, proposed_builder);
+    auto* loop = const_cast<
+        structured_control_flow::StructuredLoop*>(dynamic_cast<
+                                                  const structured_control_flow::StructuredLoop*>(nodes.at(&loop_)));
+    data_flow::AccessNode* access = nullptr;
+    visitor::for_each_block(*loop, [&](structured_control_flow::Block& block) {
+        for (auto* candidate : block.dataflow().data_nodes()) {
+            if (candidate->data() == container_) {
+                access = candidate;
+                return;
+            }
+        }
+    });
+    if (!access) {
         return false;
     }
     analysis::AnalysisManager proposed_manager(
-        *snapshot,
+        proposed_builder.subject(),
         analysis_manager.get<analysis::AssumptionsAnalysis>().get(builder.subject().root()),
         analysis_manager.options()
     );
@@ -312,12 +319,7 @@ bool LocalStorage::
         return false;
     }
     proposed.apply_prepared(proposed_builder, proposed_manager);
-    for (const auto& [key, info] : buffers.estimate(*snapshot)) {
-        if (affected_ids.contains(key.first) && info.status != tiles::ReductionBufferStatus::Exact) {
-            return false;
-        }
-    }
-    return true;
+    return buffers.supports(proposed_builder.subject(), nodes);
 }
 
 bool LocalStorage::prepare(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {

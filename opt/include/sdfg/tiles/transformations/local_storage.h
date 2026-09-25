@@ -100,7 +100,7 @@ private:
     /// footprints (see @ref reduction_buffers_supported).
     bool prepare(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager);
 
-    /// Preview localization on a clone and require exact affected reduction
+    /// Preview localization on a native nest copy and require exact affected reduction
     /// footprints. Rejects partial-buffer localization and materialized
     /// accumulator retargeting without modifying the original SDFG.
     bool reduction_buffers_supported(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager);

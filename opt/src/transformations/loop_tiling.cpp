@@ -5,7 +5,6 @@
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/tiles/analysis/reduction_buffer_analysis.h"
 
-#include <set>
 #include <symengine/integer.h>
 
 namespace sdfg {
@@ -45,7 +44,7 @@ bool LoopTiling::can_be_applied(builder::StructuredSDFGBuilder& builder, analysi
     return loop_.is_contiguous() && reduction_buffers_supported(builder, analysis_manager, {tile_size_});
 };
 
-// Apply all proposed tile levels to a clone before checking affected reduction footprints.
+// Apply all proposed tile levels to a native nest copy before checking reduction footprints.
 bool LoopTiling::reduction_buffers_supported(
     builder::StructuredSDFGBuilder& builder,
     analysis::AnalysisManager& analysis_manager,
@@ -56,30 +55,22 @@ bool LoopTiling::reduction_buffers_supported(
     if (affected.empty()) {
         return true;
     }
-    std::set<size_t> affected_ids;
     for (auto* reduction : affected) {
-        affected_ids.insert(reduction->element_id());
         for (const auto& entry : reduction->reductions()) {
             if (!entry.original_index.is_null()) {
                 return false;
             }
         }
     }
-    auto snapshot = builder.subject().clone();
-    builder::StructuredSDFGBuilder proposed(*snapshot);
-    auto* inner = dyn_cast<structured_control_flow::StructuredLoop*>(proposed.find_element_by_id(loop_.element_id()));
+    builder::StructuredSDFGBuilder proposed("reduction_tiling_preview", builder.subject().type());
+    const auto nodes = buffers.copy_nest(loop_, proposed);
+    auto* inner = const_cast<
+        structured_control_flow::StructuredLoop*>(dynamic_cast<
+                                                  const structured_control_flow::StructuredLoop*>(nodes.at(&loop_)));
     for (auto size : tile_sizes) {
-        auto& outer = tile_loop(proposed, *inner, size, simplify_bounds_);
-        if (dyn_cast<structured_control_flow::Reduce*>(&outer)) {
-            affected_ids.insert(outer.element_id());
-        }
+        tile_loop(proposed, *inner, size, simplify_bounds_);
     }
-    for (const auto& [key, info] : buffers.estimate(*snapshot)) {
-        if (affected_ids.contains(key.first) && info.status != tiles::ReductionBufferStatus::Exact) {
-            return false;
-        }
-    }
-    return true;
+    return buffers.supports(proposed.subject(), nodes);
 }
 
 void LoopTiling::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {

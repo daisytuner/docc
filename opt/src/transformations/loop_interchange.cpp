@@ -5,7 +5,6 @@
 #include <isl/options.h>
 #include <isl/set.h>
 
-#include "sdfg/analysis/loop_analysis.h"
 #include "sdfg/exceptions.h"
 #include "sdfg/parallelization/analysis/loop_carried_dependency_analysis.h"
 #include "sdfg/structured_control_flow/for.h"
@@ -161,8 +160,8 @@ std::string LoopInterchange::name() const { return "LoopInterchange"; };
 // Build the loop headers shared by footprint preview and apply without mutating the graph.
 tiles::ReductionInterchangeProposal LoopInterchange::proposal() const {
     tiles::ReductionInterchangeProposal result{
-        outer_loop_.element_id(),
-        inner_loop_.element_id(),
+        outer_loop_,
+        inner_loop_,
         {inner_loop_.init(), inner_loop_.condition(), inner_loop_.update()},
         {outer_loop_.init(), outer_loop_.condition(), outer_loop_.update()}
     };
@@ -446,38 +445,15 @@ bool LoopInterchange::can_be_applied(builder::StructuredSDFGBuilder& builder, an
 
 // Check affected GPU owners against the proposed nesting before changing the live graph.
 bool LoopInterchange::reduction_buffers_supported(analysis::AnalysisManager& analysis_manager) const {
-    auto& loops = analysis_manager.get<analysis::LoopAnalysis>();
-    std::unordered_set<size_t> affected;
-    auto collect = [&](structured_control_flow::ControlFlowNode* node) {
-        auto* reduction = dyn_cast<structured_control_flow::Reduce*>(node);
-        if (!reduction ||
-            reduction->schedule_type().category() != structured_control_flow::ScheduleTypeCategory::Offloader ||
-            !reduction->schedule_type().properties().contains("target_level")) {
-            return;
-        }
-        affected.insert(reduction->element_id());
-    };
-    collect(&outer_loop_);
-    for (auto* node : loops.ancestors(&outer_loop_)) {
-        collect(node);
-    }
-    for (auto* node : loops.descendants(&outer_loop_)) {
-        collect(node);
-    }
-    if (affected.empty()) {
+    auto& buffers = analysis_manager.get<tiles::ReductionBufferAnalysis>();
+    if (buffers.affected_reductions(outer_loop_).empty()) {
         return true;
     }
     try {
-        const auto predicted = analysis_manager.get<tiles::ReductionBufferAnalysis>().estimate(proposal());
-        for (const auto& [key, buffer] : predicted) {
-            if (affected.contains(key.first) && buffer.status != tiles::ReductionBufferStatus::Exact) {
-                return false;
-            }
-        }
+        return buffers.supports_interchange(proposal());
     } catch (const InvalidSDFGException&) {
         return false;
     }
-    return true;
 }
 
 void LoopInterchange::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {

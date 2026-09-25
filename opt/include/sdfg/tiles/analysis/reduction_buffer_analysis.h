@@ -3,6 +3,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "sdfg/analysis/analysis.h"
@@ -26,19 +27,17 @@ struct ReductionLoopHeader {
     symbolic::Expression update;
 };
 
-/// Original loop IDs and the headers after swapping directly nested loops.
+/// Target loops and the headers after swapping directly nested loops.
 struct ReductionInterchangeProposal {
-    size_t outer_id;
-    size_t inner_id;
+    structured_control_flow::StructuredLoop& outer;
+    structured_control_flow::StructuredLoop& inner;
     ReductionLoopHeader new_outer;
     ReductionLoopHeader new_inner;
 };
 
-/// Replacement schedule for a loop identified in the original SDFG.
-struct ReductionScheduleProposal {
-    size_t loop_id;
-    structured_control_flow::ScheduleType schedule;
-};
+/// Native source-to-copy correspondence; copied elements have independent IDs.
+using ReductionNodeMapping =
+    std::unordered_map<const structured_control_flow::ControlFlowNode*, const structured_control_flow::ControlFlowNode*>;
 
 /**
  * @brief One accumulator's logical footprint and allocation contribution
@@ -74,9 +73,6 @@ struct ReductionBufferInfo {
     /// The original index has inner-loop output axes, including unit-count axes.
     bool multi_output = false;
 };
-
-/// Proposed GPU reduction results keyed by reduction element ID and accumulator name.
-using ReductionBufferEstimate = std::map<std::pair<size_t, std::string>, ReductionBufferInfo>;
 
 /// Aggregate reduction-owned shared storage; excludes unrelated staging buffers.
 struct ReductionKernelInfo {
@@ -119,17 +115,18 @@ public:
     /// Exactness alone does not imply materialization; check the result's materialized flag.
     const ReductionBufferInfo& require(structured_control_flow::Reduce& reduction, const std::string& container) const;
 
-    /// Preview directly nested loop interchange on a clone; malformed loop IDs or
-    /// nesting throw InvalidSDFGException. Moving materialized reductions is unsupported.
-    ReductionBufferEstimate estimate(const ReductionInterchangeProposal& proposal) const;
+    /// Copy only the enclosing nest and referenced declarations into a detached builder.
+    /// The returned correspondence locates copied nodes without preserving element IDs.
+    ReductionNodeMapping
+    copy_nest(structured_control_flow::StructuredLoop& loop, builder::StructuredSDFGBuilder& destination) const;
 
-    /// Preview a schedule replacement on a clone; throws InvalidSDFGException if the loop is missing.
-    ReductionBufferEstimate estimate(const ReductionScheduleProposal& proposal) const;
+    /// Check directly nested loop interchange on a native nest copy.
+    /// Malformed nesting throws; moving materialized reductions is unsupported.
+    bool supports_interchange(const ReductionInterchangeProposal& proposal) const;
 
-    /// Analyze a detached proposal with fresh analyses and the same assumptions/options.
-    /// Materialized layouts, types, costs, and owners must match the original graph.
-    /// Throws InvalidSDFGException if @p proposal is the original SDFG.
-    ReductionBufferEstimate estimate(StructuredSDFG& proposal) const;
+    /// Validate a detached nest after a proposed rewrite, using native node correspondence
+    /// to preserve materialized layouts, types, costs, and allocation ownership.
+    bool supports(StructuredSDFG& proposal, const ReductionNodeMapping& nodes) const;
 
     /// Check exactness and materialized-buffer compatibility for a proposed schedule,
     /// including affected sibling reductions in the enclosing GPU root.

@@ -17,11 +17,85 @@
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/cuda/cuda.h"
-#include "sdfg/targets/gpu/gpu_schedule_type.h"
+#include "sdfg/targets/gpu/gpu_offload_schedule_type.h"
 #include "sdfg/types/pointer.h"
 #include "sdfg/types/scalar.h"
 
 using namespace sdfg;
+
+TEST(ReductionBufferAnalysisTest, SchedulePreviewIsLocalToTargetNest) {
+    builder::StructuredSDFGBuilder builder("local_reduction_preview", FunctionType_CPU);
+    types::Scalar integer_type(types::PrimitiveType::Int32);
+    types::Pointer pointer{types::Scalar(types::PrimitiveType::Float)};
+    auto schedule = gpu::ScheduleType_GPU_Offload::create<
+        cuda::ScheduleType_CUDA_Offload>(gpu::TargetLevel::X_BLOCK, symbolic::integer(8));
+    auto add_reduction = [&](const std::string& name) -> structured_control_flow::Reduce& {
+        builder.add_container(name, integer_type);
+        builder.add_container(name + "_acc", pointer);
+        auto indvar = symbolic::symbol(name);
+        auto& reduction = builder.add_reduce(
+            builder.subject().root(),
+            indvar,
+            symbolic::Lt(indvar, symbolic::integer(8)),
+            symbolic::zero(),
+            symbolic::add(indvar, symbolic::one()),
+            {{structured_control_flow::ReductionOperation::Add, name + "_acc"}},
+            schedule
+        );
+        auto& block = builder.add_block(reduction.root());
+        auto& input = builder.add_access(block, name + "_acc");
+        auto& output = builder.add_access(block, name + "_acc");
+        auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::fp_add, "out", {"left", "right"});
+        builder.add_computational_memlet(block, input, tasklet, "left", {symbolic::zero()}, pointer);
+        builder.add_computational_memlet(block, input, tasklet, "right", {symbolic::zero()}, pointer);
+        builder.add_computational_memlet(block, tasklet, "out", output, {symbolic::zero()}, pointer);
+        return reduction;
+    };
+    auto& target = add_reduction("target");
+    auto& unrelated = add_reduction("unrelated");
+    analysis::AnalysisManager manager(builder.subject());
+    serializer::JSONSerializer serializer;
+    const auto before = serializer.serialize(builder.subject());
+    builder::StructuredSDFGBuilder proposed("local_preview", FunctionType_CPU);
+    proposed.set_element_counter(builder.subject().element_counter());
+    const auto nodes = manager.get<tiles::ReductionBufferAnalysis>().copy_nest(target, proposed);
+    auto* copied = dynamic_cast<const structured_control_flow::Reduce*>(nodes.at(&target));
+    ASSERT_NE(copied, nullptr);
+    EXPECT_NE(copied->element_id(), target.element_id());
+    EXPECT_FALSE(nodes.contains(&unrelated));
+    EXPECT_FALSE(proposed.subject().exists("unrelated_acc"));
+    auto& reduction = const_cast<structured_control_flow::Reduce&>(*copied);
+    proposed.update_schedule_type(
+        reduction,
+        gpu::ScheduleType_GPU_Offload::create<
+            cuda::ScheduleType_CUDA_Offload>(gpu::TargetLevel::X_BLOCK, symbolic::integer(16))
+    );
+    analysis::AnalysisManager proposed_manager(proposed.subject());
+    EXPECT_EQ(proposed_manager.get<tiles::ReductionBufferAnalysis>().require(reduction, "target_acc").shared_bytes, 64);
+    EXPECT_TRUE(manager.get<tiles::ReductionBufferAnalysis>().supports(proposed.subject(), nodes));
+    EXPECT_EQ(serializer.serialize(builder.subject()), before);
+    passes::ReductionSharedMemoryDelinearization packing;
+    ASSERT_TRUE(packing.run_pass(builder, manager));
+    const auto materialized = serializer.serialize(builder.subject());
+    builder::StructuredSDFGBuilder packed("packed_preview", FunctionType_CPU);
+    packed.set_element_counter(builder.subject().element_counter());
+    auto& buffers = manager.get<tiles::ReductionBufferAnalysis>();
+    const auto packed_nodes = buffers.copy_nest(target, packed);
+    EXPECT_NE(packed_nodes.at(&target)->element_id(), target.element_id());
+    EXPECT_TRUE(buffers.supports(packed.subject(), packed_nodes));
+    EXPECT_THROW(buffers.supports(builder.subject(), packed_nodes), InvalidSDFGException);
+    auto* packed_target = const_cast<
+        structured_control_flow::Reduce*>(dynamic_cast<const structured_control_flow::Reduce*>(packed_nodes.at(&target))
+    );
+    ASSERT_NE(packed_target, nullptr);
+    packed.update_schedule_type(
+        *packed_target,
+        gpu::ScheduleType_GPU_Offload::create<
+            cuda::ScheduleType_CUDA_Offload>(gpu::TargetLevel::X_BLOCK, symbolic::integer(16))
+    );
+    EXPECT_FALSE(buffers.supports(packed.subject(), packed_nodes));
+    EXPECT_EQ(serializer.serialize(builder.subject()), materialized);
+}
 
 TEST(ReductionBufferAnalysisTest, FootprintGrowsOneAffineAxisAtATime) {
     builder::StructuredSDFGBuilder builder("inductive_footprint", FunctionType_CPU);
@@ -301,20 +375,24 @@ TEST(ReductionBufferAnalysisTest, NestedSharedOwnersGrowWithoutDoubleCounting) {
         EXPECT_EQ(kernel.status, tiles::ReductionBufferStatus::Exact);
         EXPECT_EQ(kernel.shared_bytes, threads * 4);
 
-        // Materialize only the clone so the live graph can grow another level on the next step.
-        auto snapshot = builder.subject().clone();
-        builder::StructuredSDFGBuilder proposed(*snapshot);
-        analysis::AnalysisManager proposed_manager(*snapshot);
+        builder::StructuredSDFGBuilder proposed("shared_owner_preview", FunctionType_CPU);
+        proposed.set_element_counter(builder.subject().element_counter());
+        const auto copied_nodes = buffers.copy_nest(*reductions.back(), proposed);
+        analysis::AnalysisManager proposed_manager(proposed.subject());
         passes::ReductionSharedMemoryDelinearization packing;
         ASSERT_TRUE(packing.run_pass(proposed, proposed_manager));
         auto& packed_buffers = proposed_manager.get<tiles::ReductionBufferAnalysis>();
         std::string shared_name;
         for (auto* nested : reductions) {
-            auto* cloned = dyn_cast<structured_control_flow::Reduce*>(proposed.find_element_by_id(nested->element_id())
+            auto* cloned = const_cast<
+                structured_control_flow::Reduce*>(dynamic_cast<const structured_control_flow::Reduce*>(copied_nodes
+                                                                                                           .at(nested))
             );
             ASSERT_NE(cloned, nullptr);
+            EXPECT_NE(cloned->element_id(), nested->element_id());
             const auto& info = packed_buffers.require(*cloned, "acc");
             EXPECT_TRUE(info.materialized);
+            EXPECT_EQ(info.shared_owner, copied_nodes.at(reductions.front())->element_id());
             if (shared_name.empty()) {
                 shared_name = info.shared_buffer;
             }
@@ -323,6 +401,14 @@ TEST(ReductionBufferAnalysisTest, NestedSharedOwnersGrowWithoutDoubleCounting) {
         }
         ASSERT_FALSE(shared_name.empty());
         EXPECT_FALSE(packing.run_pass(proposed, proposed_manager));
+        builder::StructuredSDFGBuilder replay("shared_owner_replay", FunctionType_CPU);
+        replay.set_element_counter(proposed.subject().element_counter());
+        auto* copied_owner = const_cast<
+            structured_control_flow::Reduce*>(dynamic_cast<
+                                              const structured_control_flow::Reduce*>(copied_nodes.at(reductions.front()
+        )));
+        const auto replay_nodes = packed_buffers.copy_nest(*copied_owner, replay);
+        EXPECT_TRUE(packed_buffers.supports(replay.subject(), replay_nodes));
     }
 }
 
@@ -447,25 +533,16 @@ TEST(ReductionBufferAnalysisTest, DenseFootprintAndInvalidation) {
         cuda::ScheduleType_CUDA_Offload>(gpu::TargetLevel::X_BLOCK, symbolic::integer(16));
     serializer::JSONSerializer schedule_serializer;
     const auto before_schedule_preview = schedule_serializer.serialize(builder.subject());
-    const auto schedule_preview =
-        manager.get<tiles::ReductionBufferAnalysis>().estimate(tiles::ReductionScheduleProposal{
-            reduction.element_id(), larger_schedule
-        });
-    EXPECT_EQ(schedule_preview.at({reduction.element_id(), "acc"}).shared_bytes, 512);
+    EXPECT_TRUE(manager.get<tiles::ReductionBufferAnalysis>().supports_schedule(reduction, larger_schedule));
     EXPECT_EQ(schedule_serializer.serialize(builder.subject()), before_schedule_preview);
     transformations::LoopTiling column_tiling(cols, 2, true);
     EXPECT_TRUE(column_tiling.can_be_applied(builder, manager));
     transformations::LoopInterchange interchange(reduction, rows);
     serializer::JSONSerializer serializer;
     const auto before_preview = serializer.serialize(builder.subject());
-    auto proposed = manager.get<tiles::ReductionBufferAnalysis>().estimate(interchange.proposal());
+    EXPECT_TRUE(manager.get<tiles::ReductionBufferAnalysis>().supports_interchange(interchange.proposal()));
     EXPECT_EQ(serializer.serialize(builder.subject()), before_preview);
-    const auto predicted = proposed.at({reduction.element_id(), "acc"});
-    ASSERT_EQ(predicted.status, tiles::ReductionBufferStatus::Exact) << predicted.diagnostic;
-    EXPECT_EQ(predicted.private_bytes, 8);
-    EXPECT_EQ(predicted.shared_bytes, 64);
     auto expected_origin = symbolic::add(origin, symbolic::mul(symbolic::integer(16), row));
-    EXPECT_TRUE(symbolic::eq(predicted.layout->base, expected_origin));
     gpu::ScheduleType_GPU_Offload::partial_storage(schedule, gpu::ReduceStrategy::Global);
     builder.update_schedule_type(reduction, schedule);
     manager.invalidate_all();
@@ -483,13 +560,12 @@ TEST(ReductionBufferAnalysisTest, DenseFootprintAndInvalidation) {
     auto* new_reduction = dyn_cast<structured_control_flow::Reduce*>(interchange.new_inner_loop());
     ASSERT_NE(new_reduction, nullptr);
     const auto& actual = manager.get<tiles::ReductionBufferAnalysis>().require(*new_reduction, "acc");
-    EXPECT_EQ(actual.private_bytes, predicted.private_bytes);
-    EXPECT_EQ(actual.shared_bytes, predicted.shared_bytes);
-    EXPECT_EQ(actual.layout->extent, predicted.layout->extent);
-    EXPECT_TRUE(symbolic::eq(actual.layout->base, predicted.layout->base));
+    EXPECT_EQ(actual.private_bytes, 8);
+    EXPECT_EQ(actual.shared_bytes, 64);
+    EXPECT_EQ(actual.layout->extent, 2);
+    EXPECT_TRUE(symbolic::eq(actual.layout->base, expected_origin));
     transformations::LoopInterchange reverse(*interchange.new_outer_loop(), *interchange.new_inner_loop());
-    const auto growth = manager.get<tiles::ReductionBufferAnalysis>().estimate(reverse.proposal());
-    EXPECT_EQ(growth.at({new_reduction->element_id(), "acc"}).shared_bytes, 256);
+    EXPECT_TRUE(manager.get<tiles::ReductionBufferAnalysis>().supports_interchange(reverse.proposal()));
     builder.add_container("unknown_bound", integer_type, true);
     auto& new_rows = *interchange.new_outer_loop();
     builder.update_loop(
@@ -500,11 +576,7 @@ TEST(ReductionBufferAnalysisTest, DenseFootprintAndInvalidation) {
         symbolic::add(row, symbolic::integer(2))
     );
     manager.invalidate_all();
-    const auto unknown = manager.get<tiles::ReductionBufferAnalysis>().estimate(reverse.proposal());
-    const auto& unsupported = unknown.at({new_reduction->element_id(), "acc"});
-    EXPECT_EQ(unsupported.status, tiles::ReductionBufferStatus::Unsupported);
-    EXPECT_FALSE(unsupported.shared_bytes);
-    EXPECT_FALSE(unsupported.private_bytes);
+    EXPECT_FALSE(manager.get<tiles::ReductionBufferAnalysis>().supports_interchange(reverse.proposal()));
     const auto before_reject = serializer.serialize(builder.subject());
     EXPECT_FALSE(reverse.can_be_applied(builder, manager));
     EXPECT_THROW(reverse.apply(builder, manager), InvalidSDFGException);

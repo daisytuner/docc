@@ -188,11 +188,8 @@ TEST(GPUOffloadNestedLoopTest, ReduceWithSupportedOperationApplies) {
 
     serializer::JSONSerializer serializer;
     const auto before = serializer.serialize(builder.subject());
-    const auto predicted =
-        analysis_manager.get<tiles::ReductionBufferAnalysis>().estimate(tiles::ReductionScheduleProposal{
-            reduce.element_id(), gpu_schedule(gpu::TargetLevel::X_BLOCK, 256)
-        });
-    EXPECT_EQ(predicted.at({reduce.element_id(), "__daisy_cuda_A"}).shared_bytes, 1024);
+    EXPECT_TRUE(analysis_manager.get<tiles::ReductionBufferAnalysis>()
+                    .supports_schedule(reduce, gpu_schedule(gpu::TargetLevel::X_BLOCK, 256)));
     ASSERT_TRUE(transformation.can_be_applied(builder, analysis_manager));
     EXPECT_EQ(serializer.serialize(builder.subject()), before);
     transformation.apply(builder, analysis_manager);
