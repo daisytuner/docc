@@ -124,9 +124,9 @@ symbolic::Expression EinsumIndexing::get_stride_including_subsets(int idx, const
     return stride;
 }
 
-std::pair<data_flow::AccessNode*, data_flow::Memlet*> EinsumCluster::get_input_for(size_t input_idx) {
+std::pair<data_flow::AccessNode*, const data_flow::Subset&> EinsumCluster::get_input_for(size_t input_idx) {
     auto* input_src = dyn_cast<data_flow::AccessNode*>(input_nodes.at(inputs.at(input_idx)));
-    return {input_src, in_edges.at(input_idx)};
+    return {input_src, in_edges.at(input_idx)->subset()};
 }
 
 const data_flow::Subset& EinsumCluster::get_input_subset(size_t input_idx) const {
@@ -200,16 +200,13 @@ std::string EinsumCluster::toStr() const {
                 stream << " * ";
             }
             stream << this->inputs.at(i);
-            if (auto* edge = this->in_edges.at(i)) {
-                print_subset(
-                    edge->subset(), i < this->einsum_in_indices.size() ? this->einsum_in_indices.at(i).covered : 0
-                );
-            }
+            auto& edge = this->in_edges.at(i);
+            print_subset(edge->subset(), i < this->einsum_in_indices.size() ? this->einsum_in_indices.at(i).covered : 0);
         }
         stream << " + ";
     }
     stream << this->inputs.at(num_inputs - 1);
-    if (auto* edge = this->in_edges.at(num_inputs - 1)) {
+    if (auto& edge = this->in_edges.at(num_inputs - 1)) {
         size_t last = num_inputs - 1;
         print_subset(edge->subset(), last < this->einsum_in_indices.size() ? this->einsum_in_indices.at(last).covered : 0);
     }
@@ -244,7 +241,7 @@ EinsumCluster* EinsumDetection::try_lift(structured_control_flow::Block& block, 
     auto& dfg = block.dataflow();
 
     std::vector<std::string> inputs;
-    std::vector<data_flow::Memlet*> in_edges;
+    std::vector<std::unique_ptr<EinsumEdge>> in_edges;
     std::unordered_map<std::string, data_flow::DataFlowNode*> input_nodes;
     data_flow::AccessNode* output_node = nullptr;
     data_flow::Memlet* out_edge = nullptr;
@@ -266,7 +263,7 @@ EinsumCluster* EinsumDetection::try_lift(structured_control_flow::Block& block, 
                 }
             }
             inputs.push_back(iedge.dst_conn());
-            in_edges.push_back(&iedge);
+            in_edges.push_back(std::make_unique<EinsumEdgeOriginal>(&iedge));
             input_nodes.insert({iedge.dst_conn(), &iedge.src()});
         }
         if (!found_reduction) {
@@ -289,7 +286,7 @@ EinsumCluster* EinsumDetection::try_lift(structured_control_flow::Block& block, 
                 }
             }
             inputs.push_back(iedge.dst_conn());
-            in_edges.push_back(&iedge);
+            in_edges.push_back(std::make_unique<EinsumEdgeOriginal>(&iedge));
             input_nodes.insert({iedge.dst_conn(), &iedge.src()});
         }
         if (!found_reduction) {
@@ -312,7 +309,7 @@ EinsumCluster* EinsumDetection::try_lift(structured_control_flow::Block& block, 
                 }
             }
             inputs.push_back(iedge.dst_conn());
-            in_edges.push_back(&iedge);
+            in_edges.push_back(std::make_unique<EinsumEdgeOriginal>(&iedge));
             input_nodes.insert({iedge.dst_conn(), &iedge.src()});
         }
         if (!found_reduction) {
@@ -320,7 +317,7 @@ EinsumCluster* EinsumDetection::try_lift(structured_control_flow::Block& block, 
         }
 
         // Implicit multiplication with -1
-        inputs.push_back("__einsum_const");
+        inputs.emplace_back("__einsum_const");
         in_edges.push_back(nullptr);
         input_nodes.insert({"__einsum_const", nullptr});
         subtraction = true;
@@ -329,47 +326,45 @@ EinsumCluster* EinsumDetection::try_lift(structured_control_flow::Block& block, 
     }
 
     auto& cluster = this->new_cluster(block);
-    cluster.in_edges = in_edges;
+    cluster.in_edges = std::move(in_edges);
     cluster.inputs = inputs;
     cluster.input_nodes = input_nodes;
     cluster.output_node = output_node;
-    cluster.output_edge = out_edge;
+    cluster.output_edge = std::make_unique<EinsumEdgeOriginal>(out_edge);
     cluster.subtraction = subtraction;
     cluster.consumed_nodes.push_back(&tasklet);
     return &cluster;
 }
 
 EinsumCluster* EinsumDetection::from_einsum_node(structured_control_flow::Block& block, EinsumNode& einsum_node) {
-    // Not representable as cluster, because we use the memlets to hold the subsets. also potentially wrong
-    // auto& dfg = block.dataflow();
-    //
-    // auto& cluster = this->new_cluster(block);
-    // cluster.out_indices = einsum_node.out_indices();
-    //
-    // // Drop the trailing implicit reduction input ("__einsum_out")
-    // const auto& node_inputs = einsum_node.inputs();
-    // const auto& node_in_indices = einsum_node.in_indices();
-    // for (size_t i = 0; i + 1 < node_inputs.size(); i++) {
-    //     cluster.inputs.push_back(node_inputs.at(i));
-    //     cluster.in_edges.push_back(node_in_indices.at(i));
-    // }
-    //
-    // for (const auto& dim : einsum_node.dims()) {
-    //     cluster.dims.push_back(dim);
-    // }
-    //
-    // for (auto& iedge : dfg.in_edges(einsum_node)) {
-    //     cluster.input_nodes.insert({iedge.dst_conn(), &iedge.src()});
-    // }
-    // for (auto& oedge : dfg.out_edges(einsum_node)) {
-    //     cluster.output_node = &static_cast<data_flow::AccessNode&>(oedge.dst());
-    //     break;
-    // }
-    //
-    // this->recompute_einsum_indices(cluster);
-    // cluster.consumed_nodes.push_back(&einsum_node);
-    // return &cluster;
-    return nullptr;
+    auto& dfg = block.dataflow();
+
+    auto& cluster = this->new_cluster(block);
+    auto out_edges = dfg.out_edges_for_connector(einsum_node, einsum_node.output(0));
+    if (out_edges.size() != 1) {
+        return nullptr;
+    }
+    cluster.output_edge = std::make_unique<EinsumEdgeVirtual>(out_edges.at(0), einsum_node.out_indices());
+    cluster.output_node = &dyn_cast<data_flow::AccessNode&>(out_edges.at(0)->dst());
+
+    // Drop the trailing implicit reduction input ("__einsum_out")
+    const auto& node_inputs = einsum_node.inputs();
+    const auto& node_in_indices = einsum_node.in_indices();
+    for (size_t i = 0; i + 1 < node_inputs.size(); i++) {
+        auto& input_conn = node_inputs.at(i);
+        cluster.inputs.push_back(input_conn);
+        auto* iedge = dfg.in_edge_for_connector(einsum_node, input_conn);
+        cluster.in_edges.push_back(std::make_unique<EinsumEdgeVirtual>(iedge, node_in_indices.at(i)));
+        cluster.input_nodes.insert({input_conn, &iedge->src()});
+    }
+
+    for (const auto& dim : einsum_node.dims()) {
+        cluster.dims.push_back(dim);
+    }
+
+    this->recompute_einsum_indices(cluster);
+    cluster.consumed_nodes.push_back(&einsum_node);
+    return &cluster;
 }
 
 void EinsumDetection::find_einsum_core_ops(BlockState& state, structured_control_flow::Block& block) {
@@ -402,13 +397,10 @@ bool EinsumDetection::try_extend(BlockState& state, EinsumCluster& cluster) {
 
     auto& dfg = cluster.block->dataflow();
 
-    std::vector<std::string> new_inputs;
-    std::vector<data_flow::Memlet*> new_in_edges;
-    std::unordered_map<std::string, data_flow::DataFlowNode*> new_input_nodes;
     bool applied = false;
 
-    for (size_t i = 0; i < cluster.inputs.size(); i++) {
-        const std::string& conn = cluster.inputs.at(i);
+    for (int i = cluster.inputs.size() - 1; i >= 0; --i) {
+        const std::string conn = cluster.inputs.at(i);
         auto* node = cluster.input_nodes.at(conn);
         auto* access = dynamic_cast<data_flow::AccessNode*>(node);
 
@@ -425,31 +417,31 @@ bool EinsumDetection::try_extend(BlockState& state, EinsumCluster& cluster) {
 
         if (mul) {
             applied = true;
+            int new_edge_count = 0;
+            cluster.input_nodes.erase(conn);
             for (auto& medge : dfg.in_edges(*mul)) {
                 std::string new_conn = conn + medge.dst_conn();
-                new_inputs.push_back(new_conn);
-                new_in_edges.push_back(&medge);
-                new_input_nodes.insert({new_conn, &medge.src()});
+                if (new_edge_count == 0) {
+                    cluster.inputs[i] = new_conn;
+                    cluster.in_edges[i] = std::make_unique<EinsumEdgeOriginal>(&medge);
+                    ++new_edge_count;
+                } else {
+                    cluster.inputs.insert(cluster.inputs.begin() + i + new_edge_count, new_conn);
+                    cluster.in_edges.insert(
+                        cluster.in_edges.begin() + i + new_edge_count, std::make_unique<EinsumEdgeOriginal>(&medge)
+                    );
+                }
+                // map. we always insert with new keys. just need to ensure the original one was removed as well
+                cluster.input_nodes.insert({new_conn, &medge.src()});
             }
             cluster.consumed_nodes.push_back(mul);
             state.consumed_nodes.insert(mul);
             cluster.consumed_nodes.push_back(access);
             state.consumed_nodes.insert(access);
-        } else {
-            new_inputs.push_back(conn);
-            new_in_edges.push_back(cluster.in_edges.at(i));
-            new_input_nodes.insert({conn, node});
         }
     }
 
-    if (!applied) {
-        return false;
-    }
-
-    cluster.inputs = std::move(new_inputs);
-    cluster.in_edges = std::move(new_in_edges);
-    cluster.input_nodes = std::move(new_input_nodes);
-    return true;
+    return applied;
 }
 
 void EinsumDetection::consume_input_operations(BlockState& state) {
@@ -557,8 +549,7 @@ PromotionCheck EinsumDetection::can_promote(EinsumCluster& cluster, structured_c
     result.inputs.resize(cluster.inputs.size());
     data_flow::Subset empty_subset;
     for (size_t i = 0; i < cluster.inputs.size(); i++) {
-        auto [in_src, in_edge] = cluster.get_input_for(i);
-        const data_flow::Subset& subset = in_edge ? in_edge->subset() : empty_subset;
+        auto [in_src, subset] = cluster.get_input_for(i);
 
         auto contrib = contribution_of(subset, indvar);
         if (contrib.kind == Contribution::Kind::Invalid) {
@@ -615,23 +606,19 @@ void EinsumDetection::recompute_einsum_indices(EinsumCluster& cluster) {
     cluster.einsum_in_indices.clear();
     cluster.einsum_in_indices.reserve(cluster.in_edges.size());
     data_flow::Subset empty_subset;
-    for (auto* edge : cluster.in_edges) {
+    for (auto& edge : cluster.in_edges) {
         const data_flow::Subset& subset = edge ? edge->subset() : empty_subset;
         cluster.einsum_in_indices.push_back(compute_indexing(subset, cluster.dims));
     }
     cluster.einsum_out_indices = compute_indexing(cluster.out_indices(), cluster.dims);
 }
 
-bool EinsumDetection::try_to_consume_loop(LoopScopeState& state, structured_control_flow::StructuredLoop& loop) {
-    EinsumCluster* cluster = state.representing_last_block_;
-    if (!cluster) {
-        return false;
-    }
-    auto check = this->can_promote(*cluster, loop);
+bool EinsumDetection::try_to_consume_loop(EinsumCluster& cluster, structured_control_flow::StructuredLoop& loop) {
+    auto check = this->can_promote(cluster, loop);
     if (!check.ok) {
         return false;
     }
-    this->apply_promote(*cluster, loop, check);
+    this->apply_promote(cluster, loop, check);
     return true;
 }
 
@@ -742,7 +729,8 @@ bool EinsumDetection::handleStructuredLoop(structured_control_flow::StructuredLo
 
     EinsumCluster* result = nullptr;
     if (!scope.non_reducible && scope.representing_last_block_ != nullptr && loop.root().size() == 1) {
-        if (this->try_to_consume_loop(scope, loop)) {
+        EinsumCluster* cluster = scope.representing_last_block_;
+        if (cluster && this->try_to_consume_loop(*cluster, loop)) {
             result = scope.representing_last_block_;
         }
     }
@@ -756,11 +744,12 @@ bool EinsumDetection::handleStructuredLoop(structured_control_flow::StructuredLo
     return true;
 }
 
-void EinsumDetection::run(structured_control_flow::ControlFlowNode& start) {
+size_t EinsumDetection::run(structured_control_flow::ControlFlowNode& start) {
     this->all_einsums_.clear();
     this->loop_stack_.clear();
     this->visit(start);
     this->filter_for_coverage();
+    return this->all_einsums_.size();
 }
 
 } // namespace sdfg::einsum

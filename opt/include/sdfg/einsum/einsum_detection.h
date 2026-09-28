@@ -89,6 +89,38 @@ struct PromotionCheck {
     std::vector<OperandContribution> inputs;
 };
 
+class EinsumEdge {
+public:
+    virtual ~EinsumEdge() = default;
+
+    virtual const data_flow::Subset& subset() const = 0;
+    virtual const types::IType& base_type() const = 0;
+    virtual data_flow::Memlet* original_edge() const = 0;
+};
+
+class EinsumEdgeOriginal : public EinsumEdge {
+    data_flow::Memlet* edge;
+
+public:
+    EinsumEdgeOriginal(data_flow::Memlet* edge) : edge(edge) {}
+
+    const data_flow::Subset& subset() const override { return edge->subset(); }
+    const types::IType& base_type() const override { return edge->base_type(); }
+    data_flow::Memlet* original_edge() const override { return edge; }
+};
+
+class EinsumEdgeVirtual : public EinsumEdge {
+    data_flow::Subset subset_;
+    const data_flow::Memlet* edge;
+
+public:
+    EinsumEdgeVirtual(const data_flow::Memlet* edge, const data_flow::Subset& subset) : subset_(subset), edge(edge) {}
+
+    const data_flow::Subset& subset() const override { return subset_; }
+    const types::IType& base_type() const override { return edge->base_type(); }
+    data_flow::Memlet* original_edge() const override { return nullptr; }
+};
+
 /**
  * @brief Non-destructive counterpart of an EinsumNode.
  *
@@ -105,7 +137,7 @@ public:
     // Core einsum properties (mirroring EinsumNode, but excluding the implicit
     // "__einsum_out" reduction input, which is represented by output_node/out_indices).
     std::vector<EinsumDimension> dims;
-    std::vector<data_flow::Memlet*> in_edges;
+    std::vector<std::unique_ptr<EinsumEdge>> in_edges;
     std::vector<std::string> inputs;
 
     /// Inner-index mapping per input operand (parallel to in_indices/inputs).
@@ -114,7 +146,7 @@ public:
     EinsumIndexing einsum_out_indices;
 
     /// Reduction/output access node of the cluster.
-    data_flow::Memlet* output_edge = nullptr;
+    std::unique_ptr<EinsumEdge> output_edge = nullptr;
     data_flow::AccessNode* output_node = nullptr;
     /// Source node for each input connector (may be null for synthetic constants).
     std::unordered_map<std::string, data_flow::DataFlowNode*> input_nodes;
@@ -126,7 +158,7 @@ public:
     /// Surrounding loops folded into this cluster as reduction/free dimensions. From outermost to innermost
     std::list<structured_control_flow::StructuredLoop*> consumed_loops;
 
-    std::pair<data_flow::AccessNode*, data_flow::Memlet*> get_input_for(size_t input_idx);
+    std::pair<data_flow::AccessNode*, const data_flow::Subset&> get_input_for(size_t input_idx);
 
     const std::vector<EinsumIndexing>& get_input_indexings() const;
 
@@ -181,7 +213,7 @@ protected:
     EinsumCluster* from_einsum_node(structured_control_flow::Block& block, EinsumNode& einsum_node);
 
     /// Try to fold a multiplication feeding an input into the cluster. Returns true if applied.
-    bool try_extend(BlockState& state, EinsumCluster& cluster);
+    static bool try_extend(BlockState& state, EinsumCluster& cluster);
 
     static symbolic::Expression cnf_to_upper_bound(const symbolic::CNF& cnf, const symbolic::Symbol indvar);
     static bool subset_contains_symbol(const data_flow::Subset& subset, const symbolic::Symbol& symbol);
@@ -212,12 +244,12 @@ public:
      * @param loop
      * @return true if the loop was successfully consumed by the cluster, false otherwise.
      */
-    bool try_to_consume_loop(LoopScopeState& state, structured_control_flow::StructuredLoop& loop);
+    bool try_to_consume_loop(EinsumCluster& einsum, structured_control_flow::StructuredLoop& loop);
 
     void filter_for_coverage();
 
     /// Run detection starting from the given control flow node.
-    void run(structured_control_flow::ControlFlowNode& start);
+    size_t run(structured_control_flow::ControlFlowNode& start);
 
     /// All einsum clusters found during the last run.
     const std::vector<std::unique_ptr<EinsumCluster>>& einsums() const { return all_einsums_; }

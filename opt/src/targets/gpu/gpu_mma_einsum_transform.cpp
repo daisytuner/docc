@@ -94,7 +94,7 @@ einsum::ReplaceOutcome GpuMmaEinsumReplacer::
 
     // --- Replacement ---
 
-    std::vector<Dir> access_dirs(cluster.inputs.size() + 1, Dir::Scalar);
+    std::vector<Dir> access_dirs{Dir::Scalar, Dir::Scalar, Dir::Scalar}; // last one is the output ptr
     auto standalone = context.replacement_requires_access_nodes(access_dirs, true);
     if (!standalone) {
         return context.unable();
