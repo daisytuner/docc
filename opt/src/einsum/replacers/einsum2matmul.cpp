@@ -43,7 +43,7 @@ math::tensor::TensorLayout Einsum2MatMul::build_tensor_layout(
     const symbolic::Expression& linearized_offset
 ) const {
     std::vector<symbolic::Expression> shape, strides;
-    strides.reserve(2);
+    strides.resize(2);
     shape = {outer_dim, inner_dim};
     if (swapped) {
         strides[0] = indexing.get_stride_including_subsets(1, shape);
@@ -131,7 +131,7 @@ bool Einsum2MatMul::analyze(const EinsumCluster& cluster, MatMulAnalysis& analys
     }
 
     // Determine and check the element type from the reduction core.
-    for (auto* iedge : cluster.in_edges) {
+    for (auto& iedge : cluster.in_edges) {
         analysis.input_type = iedge->base_type().primitive_type();
         break;
     }

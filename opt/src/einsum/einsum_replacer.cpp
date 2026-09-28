@@ -151,18 +151,25 @@ std::unique_ptr<passes::LibNodeExpander::AccessNodeExpand> EinsumReplacementCont
         if (access_dirs[i] == passes::LibNodeExpander::InputUse::Skip) {
             continue;
         }
-        if (i >= cluster_.inputs.size()) {
+        if (i == cluster_.inputs.size()) {
+            auto* output_node = cluster_.output_node;
+            if (!output_node) {
+                return {};
+            }
+            base_ins[i] = output_node;
+        } else if (i > cluster_.inputs.size()) {
             return {};
+        } else {
+            auto it = cluster_.input_nodes.find(cluster_.inputs[i]);
+            if (it == cluster_.input_nodes.end()) {
+                return {};
+            }
+            auto* access = dynamic_cast<const data_flow::AccessNode*>(it->second);
+            if (!access) {
+                return {};
+            }
+            base_ins[i] = access;
         }
-        auto it = cluster_.input_nodes.find(cluster_.inputs[i]);
-        if (it == cluster_.input_nodes.end()) {
-            return {};
-        }
-        auto* access = dynamic_cast<const data_flow::AccessNode*>(it->second);
-        if (!access) {
-            return {};
-        }
-        base_ins[i] = access;
     }
 
     std::vector<const data_flow::AccessNode*> base_outs;
