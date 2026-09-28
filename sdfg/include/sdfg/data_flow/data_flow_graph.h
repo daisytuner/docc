@@ -159,6 +159,7 @@ public:
 
     std::vector<const data_flow::Memlet*>
     out_edges_for_connector(const data_flow::CodeNode& node, const std::string& conn) const;
+    std::vector<data_flow::Memlet*> out_edges_for_connector(const data_flow::CodeNode& node, const std::string& conn);
 
     std::vector<data_flow::Memlet*> out_edges_by_connector(const data_flow::CodeNode& node);
 

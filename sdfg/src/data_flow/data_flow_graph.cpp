@@ -166,6 +166,17 @@ std::vector<const data_flow::Memlet*> DataFlowGraph::
     return outs;
 }
 
+std::vector<data_flow::Memlet*> DataFlowGraph::
+    out_edges_for_connector(const data_flow::CodeNode& node, const std::string& conn) {
+    std::vector<data_flow::Memlet*> outs;
+    for (auto& edge : out_edges(node)) {
+        if (edge.src_conn() == conn) {
+            outs.push_back(&edge);
+        }
+    }
+    return outs;
+}
+
 size_t DataFlowGraph::in_degree(const data_flow::DataFlowNode& node) const {
     return boost::in_degree(node.vertex(), this->graph_);
 };
