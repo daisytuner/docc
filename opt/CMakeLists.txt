@@ -26,6 +26,9 @@ configure_file(
 set(SOURCE_FILES
     src/analysis/data_transfer_elimination_analysis.cpp
     src/einsum/einsum_node.cpp
+    src/einsum/einsum_detection.cpp
+    src/einsum/einsum_replacer.cpp
+    src/einsum/replacers/einsum2matmul.cpp
     src/einsum/passes/einsum_passes.cpp
     src/einsum/transformations/einsum_extend.cpp
     src/einsum/transformations/einsum_lift.cpp
@@ -96,6 +99,7 @@ set(SOURCE_FILES
     src/targets/cuda/blas/utils.cpp
     src/targets/cuda/tiles/pipeline_node.cpp
     src/targets/cuda/tiles/tile_copy_node.cpp
+    src/targets/cuda/cuda_arch.cpp
     src/targets/cuda/cuda_data_offloading_node.cpp
     src/targets/cuda/cuda_map_dispatcher.cpp
     src/targets/cuda/cuda_offload_dispatcher_strategy.cpp
@@ -108,6 +112,7 @@ set(SOURCE_FILES
     src/targets/cuda/stdlib/memcpy.cpp
     src/targets/cuda/stdlib/memset.cpp
     src/targets/gpu/gpu_arch.cpp
+    src/targets/gpu/gpu_mma_einsum_transform.cpp
     src/targets/gpu/gpu_map_utils.cpp
     src/targets/gpu/gpu_mma_dispatcher.cpp
     src/targets/gpu/gpu_mma_expander.cpp
@@ -135,7 +140,6 @@ set(SOURCE_FILES
     src/targets/rocm/rocm_data_offloading_node.cpp
     src/targets/rocm/rocm_map_dispatcher.cpp
     src/targets/rocm/rocm_mma_dispatcher.cpp
-    src/targets/rocm/rocm_mma_expander.cpp
     src/targets/rocm/rocm_mma_transform.cpp
     src/targets/rocm/rocm_offload_dispatcher_strategy.cpp
     src/targets/rocm/rocm_reduce_dispatcher.cpp

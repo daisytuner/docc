@@ -45,6 +45,8 @@ public:
 
     PyStructuredSDFG move();
 
+    void dump(const std::string& output_dir, const std::string& type, bool dump_json = true, bool dump_dot = true);
+
     /***** Metadata *****/
 
     void add_metadata(const std::string& key, const std::string& value);

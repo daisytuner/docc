@@ -27,7 +27,9 @@ set(TEST_FILES
     cuda/cuda_reduce_dispatcher_test.cpp
     cuda/cuda_offload_reduce_dispatcher_test.cpp
     cuda/softmax_dispatcher_test.cpp
+    einsum/einsum_detection_test.cpp
     einsum/einsum_node_test.cpp
+    einsum/einsum_replacement_test.cpp
     einsum/passes/einsum_passes_test.cpp
     einsum/transformations/einsum2gemm_test.cpp
     einsum/transformations/einsum_extend_test.cpp

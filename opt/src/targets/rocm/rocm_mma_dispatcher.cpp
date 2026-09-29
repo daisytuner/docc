@@ -1,7 +1,6 @@
 #include "sdfg/targets/rocm/rocm_mma_dispatcher.h"
 
 #include "sdfg/targets/rocm/rocm_arch.h"
-#include "sdfg/targets/rocm/rocm_mma_expander.h"
 
 
 namespace sdfg::gpu::rocm {
@@ -71,50 +70,7 @@ GpuMmaTiling RocmMmaMatmulDispatcher::get_mma_tiling(const symbolic::MultiExpres
         throw std::runtime_error("No MMA architecture available for this GPU target.");
     }
 
-    return get_mma_tiling(mma_arch, res_shape);
-}
-
-GpuMmaTiling RocmMmaMatmulDispatcher::
-    get_mma_tiling(const GpuMmaSupport* mma_arch, const symbolic::MultiExpression& res_shape) {
-    GpuMmaTiling tiling;
-    tiling.mma_block_m = mma_arch->mma_block_m;
-    tiling.mma_block_n = mma_arch->mma_block_n;
-    tiling.mma_block_k = mma_arch->mma_block_k;
-    tiling.threads_per_mma_block_m = mma_arch->threads_per_mma_block;
-
-    auto mma_blocks_m = GpuMmaSupport::get_integer_block_count(res_shape.at(0), tiling.mma_block_m);
-    auto mma_blocks_n = GpuMmaSupport::get_integer_block_count(res_shape.at(1), tiling.mma_block_n);
-    auto mma_blocks_k = GpuMmaSupport::get_integer_block_count(res_shape.at(2), tiling.mma_block_k);
-
-    if (!mma_blocks_m || !mma_blocks_n || !mma_blocks_k) {
-        throw std::runtime_error("Result shape is not compatible with MMA block sizes.");
-    }
-    if (mma_blocks_m == 1 && mma_blocks_n == 1) {
-        tiling.wave_tile_blocks_m = 1;
-        tiling.wave_tile_blocks_n = 1;
-        tiling.macro_blocks_m = 1;
-        tiling.macro_blocks_n = 1;
-    } else if (mma_blocks_m <= 2 && mma_blocks_n <= 2) {
-        tiling.wave_tile_blocks_m = 1;
-        tiling.wave_tile_blocks_n = 1;
-        tiling.macro_blocks_m = mma_blocks_m;
-        tiling.macro_blocks_n = mma_blocks_n;
-    } else if (mma_blocks_n <= 4 && (mma_blocks_m == 4 || mma_blocks_m == 8)) {
-        tiling.wave_tile_blocks_m = 1;
-        tiling.wave_tile_blocks_n = 1;
-        tiling.macro_blocks_m = mma_blocks_m;
-        tiling.macro_blocks_n = mma_blocks_n;
-        // tiling.mma_block_m *= 2;
-        // tiling.mma_block_n += 2;
-        // tiling.wave_tile_blocks_m = mma_blocks_m / 2;
-        // tiling.wave_tile_blocks_n = mma_blocks_n / 2;
-        // tiling.macro_blocks_m = 2;
-        // tiling.macro_blocks_n = 2;
-    } else {
-        throw std::runtime_error("Unsupported MMA block configuration for this GPU target.");
-    }
-
-    return tiling;
+    return mma_arch->get_mma_tiling(res_shape);
 }
 
 void RocmMmaMatmulDispatcher::emit_load_macro(

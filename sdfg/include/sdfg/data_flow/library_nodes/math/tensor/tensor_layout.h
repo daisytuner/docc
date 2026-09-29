@@ -51,7 +51,15 @@ public:
 
     symbolic::MultiExpression linear_strides() const;
 
+    /// apply the index to the layout, returning an "element-address"
+    /// @param require_to_element whether the result must be a single element or could just be a sub-tensor. If true,
+    /// the indices must match the shape size
+    /// @return the offset from the pointer to the element in elements
     symbolic::Expression resolve_element(const symbolic::MultiExpression& indices, bool require_to_element = true) const;
+
+    /// For memory access ranges, this should return the maximum offset from the pointer that is possible, in elements.
+    /// This is used to determine the size of a pointer access
+    symbolic::Expression max_accessed_byte_offset_from_ptr(types::PrimitiveType element_type) const;
 
     static symbolic::MultiExpression linear_strides(const symbolic::MultiExpression& shape);
 

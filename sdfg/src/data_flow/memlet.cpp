@@ -359,7 +359,7 @@ bool Memlet::is_src_address_leak() const {
 bool Memlet::is_src_pointed_to_address_leak(const types::IType& src_type) const {
     if (src_conn_ == "void" || src_conn_ == "deref") {
         auto t = type();
-        if (src_type.type_id() == types::TypeID::Pointer) { // even if we use it as integer
+        if (src_type.is_pointer_like()) { // even if we use it as integer
             if (t == Computational && base_type_ && base_type_->type_id() == types::TypeID::Scalar) { // reinterpret as
                                                                                                       // not pointer,
                                                                                                       // but the
@@ -371,8 +371,8 @@ bool Memlet::is_src_pointed_to_address_leak(const types::IType& src_type) const 
                 return true;
             }
         }
-        if (base_type_ && base_type_->type_id() == types::TypeID::Pointer) { // read as pointer, so more hidden things
-                                                                             // possible
+        if (base_type_ && base_type_->is_pointer_like()) { // read as pointer, so more hidden things
+                                                           // possible
             if (t == Reference && !subset_.empty()) { // = address calc of ptr + subsets
                 return true;
             }

@@ -6,6 +6,7 @@
 #include <sdfg/data_flow/access_node.h>
 #include <sdfg/symbolic/symbolic.h>
 #include <sdfg/targets/cuda/cuda.h>
+#include <sdfg/targets/gpu/gpu_mma_einsum_transform.h>
 #include <sdfg/targets/rocm/rocm.h>
 #include <sdfg/targets/rocm/rocm_arch.h>
 #include <sdfg/targets/rocm/rocm_mma_transform.h>
@@ -580,11 +581,11 @@ void register_transformations(py::module& m) {
         });
 
     // RocmMmaExpand transformation: expand a MatMul node into an arch-specific MMA impl.
-    py::class_<sdfg::gpu::rocm::RocmMmaTransform, Transformation>(m, "RocmMmaTransform")
+    py::class_<sdfg::gpu::rocm::GpuMmaTransform, Transformation>(m, "RocmMmaTransform")
         .def(
             py::init([](sdfg::data_flow::LibraryNode& node, const sdfg::gpu::rocm::RocmArch& arch) {
                 auto& matmul_node = sdfg::dyn_cast<sdfg::math::tensor::MatMulNode>(node);
-                return new sdfg::gpu::rocm::RocmMmaTransform(matmul_node, &arch);
+                return new sdfg::gpu::rocm::GpuMmaTransform(matmul_node, &arch);
             }),
             py::arg("node"),
             py::arg("arch"),
@@ -597,11 +598,29 @@ void register_transformations(py::module& m) {
         )
         .def_property_readonly(
             "expanded",
-            &sdfg::gpu::rocm::RocmMmaTransform::expanded,
+            &sdfg::gpu::rocm::GpuMmaTransform::expanded,
             "Whether the node was expanded (valid after apply())"
         )
-        .def("__repr__", [](const sdfg::gpu::rocm::RocmMmaTransform&) {
+        .def("__repr__", [](const sdfg::gpu::rocm::GpuMmaTransform&) {
             return std::string("<RocmMmaTransform name='RocmMmaTransform'>");
+        });
+
+    py::class_<sdfg::gpu::GpuMmaEinsumTransform, Transformation>(m, "GpuMmaEinsumTransform")
+        .def(
+            py::init<StructuredLoop&, const sdfg::gpu::GpuArch*>(),
+            py::arg("outermost_mma_loop"),
+            py::arg("arch") = nullptr,
+            "Transform will try to match up the loop-nest given as Matmul of 1 or multiple MMA blocks using Einsum "
+            "detection.\n\n"
+            "Args:\n"
+            "    outermost_mma_loop (StructuredLoop): The outermost loop of the supposed MMA block.\n"
+            "    arch (GpuArch): The GPU architecture. If none, infer.\n"
+        )
+        .def_property_readonly(
+            "matched", &sdfg::gpu::GpuMmaEinsumTransform::matched, "Whether the node was expanded (valid after apply())"
+        )
+        .def("__repr__", [](const sdfg::gpu::GpuMmaEinsumTransform&) {
+            return std::string("<GpuMmaEinsumTransform name='GpuMmaEinsumTransform'>");
         });
 
     // InvalidTransformationException

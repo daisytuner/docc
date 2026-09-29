@@ -23,8 +23,6 @@ public:
     )
         : GpuMmaMatmulDispatcher(language_extension, function, data_flow_graph, node) {}
 
-    static GpuMmaTiling get_mma_tiling(const GpuMmaSupport* arch, const symbolic::MultiExpression& res_shape);
-
 protected:
     void emit_block_frag_declaration(
         codegen::CodegenOutput& out,

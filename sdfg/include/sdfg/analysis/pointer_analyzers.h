@@ -9,11 +9,12 @@
 
 namespace sdfg::analysis {
 /**
- * Concept for policies that handle pointer escape and overwrite events.
+ * Concept for policies that handle pointer usages. This is somewhat named inaccurately, as it is more of a "pointer
+ * direct usage"
  *
  * An EscapePolicy receives notifications when a pointer-typed container
- * is observed to escape (its value becomes visible outside the current scope)
- * or to be overwritten (a new value is assigned to the pointer variable itself).
+ * is used for anything other than indirect writes.
+ * This includes using this pointer in some pointer-math symbolic expressions or passing it to any code node.
  */
 template<typename P>
 concept EscapePolicy = requires(P& p, const std::string& container, const ControlFlowNode* node, const Element* user) {
@@ -21,18 +22,42 @@ concept EscapePolicy = requires(P& p, const std::string& container, const Contro
 };
 
 /**
- * Reusable BaseUserAnalyzer that detects pointer escapes and overwrites.
+ * A more detailed variant of EscapePolicy that aims to distinguish between different types of pointer escapes and
+ * over-declare less
+ *
+ * Currently still very conservative for pointers used in symbolic expressions (iteration over a pointer range would not
+ * be an actual escape, but will currently be found as one)
+ */
+template<typename P>
+concept EscapeDetailsPolicy = EscapePolicy<P> && requires(
+                                                     P& p,
+                                                     const std::string& container,
+                                                     const ControlFlowNode* node,
+                                                     const data_flow::LibraryNode& lib_node,
+                                                     const structured_control_flow::Return& return_node,
+                                                     const data_flow::PointerAccessType& access_type
+                                                 ) {
+    p.on_ptr_input_into_lib_node(container, node, lib_node, access_type);
+    p.on_ptr_returned(container, return_node);
+    // p.on_ptr_written_to_memory
+    // ..
+};
+
+/**
+ * Reusable BaseUserAnalyzer that detects pointer escapes.
  *
  * For each of the 5 BaseUserAnalyzer callbacks, it checks whether the access
  * involves a pointer-typed container and whether the operation constitutes
- * an escape (value leaks out of our control) or an overwrite (the pointer
- * variable itself is reassigned).  Detected events are forwarded to the
+ * an escape (value leaks out of our control). Detected events are forwarded to the
  * policy object via static dispatch.
  *
  * Does NOT walk the SDFG itself — must be driven by a BaseUserVisitor
  * (or future CompositeUserVisitor) that calls the callbacks.
+ *
+ * If the policy implements the EscapeDetailsPolicy concept, it will make a more specific call for lib-nodes,
+ * as they can vary greatly in what they do with the pointer.
  */
-template<EscapePolicy Policy>
+template<EscapePolicy Policy, bool ForceDetailed = false>
 class PointerEscapeAnalyzer : public virtual BaseUserAnalyzer {
     const StructuredSDFG& sdfg_;
     Policy& policy_;
@@ -42,7 +67,11 @@ public:
 
     void use_as_return_src(const std::string& container, const Return& ret) override {
         if (sdfg_.type(container).type_id() == types::TypeID::Pointer) {
-            policy_.on_escape(container, &ret, &ret);
+            if constexpr (ForceDetailed || EscapeDetailsPolicy<Policy>) {
+                policy_.on_ptr_returned(container, ret);
+            } else {
+                policy_.on_escape(container, &ret, &ret);
+            }
         }
     }
 
@@ -70,9 +99,21 @@ public:
         if (edge.is_src_pointed_to_address_leak(type) || edge.is_src_address_leak()) {
             // pulls a reference to the owned memory area or can alias the entire pointer
 
-            policy_.on_escape(container, &block, &edge);
-            // it may not be, but this is the safest
-            // assumption. other passes can forward the original container and fold it into accesses
+            if constexpr (ForceDetailed || EscapeDetailsPolicy<Policy>) {
+                auto& target_node = edge.dst();
+                if (auto* lib_node = dyn_cast<data_flow::LibraryNode*>(&target_node)) {
+                    auto meta = lib_node->pointer_access_type(edge);
+                    policy_.on_ptr_input_into_lib_node(container, &block, *lib_node, meta);
+                } else {
+                    // we currently do not have the analysis to track this through tasmklets, so fall back to generic
+                    // escape
+                    policy_.on_escape(container, &block, &edge);
+                }
+            } else {
+                policy_.on_escape(container, &block, &edge);
+                // it may not be, but this is the safest
+                // assumption. other passes can forward the original container and fold it into accesses
+            }
         }
     }
 
@@ -93,6 +134,18 @@ concept OverwritePolicy =
         p.on_overwrite(container, node, user);
     };
 
+/**
+ * Reusable BaseUserAnalyzer that detects pointer overwrites.
+ *
+ * For each of the 5 BaseUserAnalyzer callbacks, it checks whether the access
+ * involves a pointer-typed container and whether the operation constitutes
+ * an overwrite (the pointer variable itself is reassigned).
+ * Detected events are forwarded to the
+ * policy object via static dispatch.
+ *
+ * Does NOT walk the SDFG itself — must be driven by a BaseUserVisitor
+ * (or future CompositeUserVisitor) that calls the callbacks.
+ */
 template<OverwritePolicy Policy>
 class PointerOverwriteAnalyzer : public BaseUserAnalyzer {
     const StructuredSDFG& sdfg_;
