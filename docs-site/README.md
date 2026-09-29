@@ -50,7 +50,7 @@ docker run --rm -p 8088:8080 docc-docs    # http://localhost:8088/
 
 The site runs on Cloud Run as service `docc-docs` in project `daisy-367210` (`europe-west1`).
 
-- **CI:** `.github/workflows/docs.yml` builds and smoke-tests the image on pull requests, and deploys on pushes to `main` or manual runs on `main`. It needs the `GOOGLE_APPLICATION_CREDENTIALS` secret. The repository variable `DOCS_NOINDEX` controls indexing.
+- **CI:** `.github/workflows/docs.yml` builds and smoke-tests the image on pull requests, and deploys on pushes to `main` or manual runs on `main`. The deploy job uses GitHub OIDC and the `gh-docc-docs-publisher@daisy-367210.iam.gserviceaccount.com` service account through the `github-pool/github-provider` workload identity provider; no JSON key is needed. The repository variable `DOCS_NOINDEX` controls indexing.
 - **Manual:** `docs-site/scripts/deploy-cloudrun.sh` builds, pushes, and deploys from your machine using your `gcloud` login.
 
-Neither path changes the service's IAM policy; public access (`allUsers` as `roles/run.invoker`) was granted once by a project owner.
+Neither path changes the service's IAM policy; public access is provided by disabled Cloud Run Invoker IAM enforcement on `docc-docs`.

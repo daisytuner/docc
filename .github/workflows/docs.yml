@@ -123,8 +123,11 @@ jobs:
   deploy:
     name: Deploy docs to Cloud Run
     needs: build
-    # if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v7
 
@@ -135,9 +138,9 @@ jobs:
       - id: auth
         uses: google-github-actions/auth@v3
         with:
-          credentials_json: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
+          workload_identity_provider: projects/1080482399950/locations/global/workloadIdentityPools/github-pool/providers/github-provider
           token_format: access_token
-          service_account: firebase-adminsdk-vmikd@daisy-367210.iam.gserviceaccount.com
+          service_account: gh-docc-docs-publisher@daisy-367210.iam.gserviceaccount.com
 
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
