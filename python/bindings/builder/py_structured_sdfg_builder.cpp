@@ -2197,13 +2197,19 @@ void PyStructuredSDFGBuilder::add_attention_op(
     auto& Q_access = builder_.add_access(block, Q, debug_info);
     auto& K_access = builder_.add_access(block, K, debug_info);
     auto& V_access = builder_.add_access(block, V, debug_info);
+    std::ostringstream scale_stream;
+    scale_stream.precision(17);
+    scale_stream << scale;
+    sdfg::types::Scalar scale_type(Q_type.primitive_type());
+    auto& scale_constant = builder_.add_constant(block, scale_stream.str(), scale_type, debug_info);
     auto& libnode = builder_.add_library_node<sdfg::math::tensor::AttentionNode>(
-        block, debug_info, O_type.layout(), Q_type.layout(), K_type.layout(), V_type.layout(), scale, is_causal
+        block, debug_info, O_type.layout(), Q_type.layout(), K_type.layout(), V_type.layout(), is_causal
     );
     builder_.add_computational_memlet(block, O_access, libnode, "O", {}, O_type, debug_info);
     builder_.add_computational_memlet(block, Q_access, libnode, "Q", {}, Q_type, debug_info);
     builder_.add_computational_memlet(block, K_access, libnode, "K", {}, K_type, debug_info);
     builder_.add_computational_memlet(block, V_access, libnode, "V", {}, V_type, debug_info);
+    builder_.add_computational_memlet(block, scale_constant, libnode, "scale", {}, scale_type, debug_info);
 }
 
 void PyStructuredSDFGBuilder::add_attention_masked_op(
@@ -2227,21 +2233,19 @@ void PyStructuredSDFGBuilder::add_attention_masked_op(
     auto& K_access = builder_.add_access(block, K, debug_info);
     auto& V_access = builder_.add_access(block, V, debug_info);
     auto& M_access = builder_.add_access(block, M, debug_info);
+    std::ostringstream scale_stream;
+    scale_stream.precision(17);
+    scale_stream << scale;
+    sdfg::types::Scalar scale_type(Q_type.primitive_type());
+    auto& scale_constant = builder_.add_constant(block, scale_stream.str(), scale_type, debug_info);
     auto& libnode = builder_.add_library_node<sdfg::math::tensor::AttentionNode>(
-        block,
-        debug_info,
-        O_type.layout(),
-        Q_type.layout(),
-        K_type.layout(),
-        V_type.layout(),
-        M_type.layout(),
-        scale,
-        is_causal
+        block, debug_info, O_type.layout(), Q_type.layout(), K_type.layout(), V_type.layout(), M_type.layout(), is_causal
     );
     builder_.add_computational_memlet(block, O_access, libnode, "O", {}, O_type, debug_info);
     builder_.add_computational_memlet(block, Q_access, libnode, "Q", {}, Q_type, debug_info);
     builder_.add_computational_memlet(block, K_access, libnode, "K", {}, K_type, debug_info);
     builder_.add_computational_memlet(block, V_access, libnode, "V", {}, V_type, debug_info);
+    builder_.add_computational_memlet(block, scale_constant, libnode, "scale", {}, scale_type, debug_info);
     builder_.add_computational_memlet(block, M_access, libnode, "M", {}, M_type, debug_info);
 }
 

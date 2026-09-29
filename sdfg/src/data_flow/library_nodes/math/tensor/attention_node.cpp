@@ -27,14 +27,16 @@ AttentionNode::AttentionNode(
     const TensorLayout& q_layout,
     const TensorLayout& k_layout,
     const TensorLayout& v_layout,
-    double scale,
     bool is_causal,
     QuantizationType quantization,
     const data_flow::ImplementationType& impl_type
 )
-    : TensorNode(element_id, debug_info, vertex, parent, LibraryNodeType_Attention, {}, {"O", "Q", "K", "V"}, impl_type),
+    : TensorNode(
+          element_id, debug_info, vertex, parent, LibraryNodeType_Attention, {}, {"O", "Q", "K", "V", "scale"}, impl_type
+      ),
       o_layout_(o_layout), q_layout_(q_layout), k_layout_(k_layout), v_layout_(v_layout), mask_layout_(std::nullopt),
-      scale_(scale), is_causal_(is_causal), fixed_quantization_(quantization) {}
+      is_causal_(is_causal), fixed_quantization_(quantization) {
+}
 
 AttentionNode::AttentionNode(
     size_t element_id,
@@ -46,18 +48,27 @@ AttentionNode::AttentionNode(
     const TensorLayout& k_layout,
     const TensorLayout& v_layout,
     const TensorLayout& mask_layout,
-    double scale,
     bool is_causal,
     QuantizationType quantization,
     const data_flow::ImplementationType& impl_type
 )
     : TensorNode(
-          element_id, debug_info, vertex, parent, LibraryNodeType_Attention, {}, {"O", "Q", "K", "V", "M"}, impl_type
+          element_id,
+          debug_info,
+          vertex,
+          parent,
+          LibraryNodeType_Attention,
+          {},
+          {"O", "Q", "K", "V", "scale", "M"},
+          impl_type
       ),
       o_layout_(o_layout), q_layout_(q_layout), k_layout_(k_layout), v_layout_(v_layout), mask_layout_(mask_layout),
-      scale_(scale), is_causal_(is_causal), fixed_quantization_(quantization) {}
+      is_causal_(is_causal), fixed_quantization_(quantization) {
+}
 
-void AttentionNode::validate(const Function& function) const { TensorNode::validate(function); }
+void AttentionNode::validate(const Function& function) const {
+    TensorNode::validate(function);
+}
 
 passes::LibNodeExpander::ExpandOutcome AttentionNode::
     expand(passes::LibNodeExpander::ExpandContext& context, structured_control_flow::Block& block) {
@@ -67,7 +78,7 @@ passes::LibNodeExpander::ExpandOutcome AttentionNode::
     auto& dataflow = this->get_parent();
 
     const bool has_mask = mask_layout_.has_value();
-    const size_t n_in = has_mask ? 5 : 4;
+    const size_t n_in = has_mask ? 6 : 5;
     if (dataflow.in_degree(*this) != n_in) {
         return context.unable();
     }
@@ -86,8 +97,9 @@ passes::LibNodeExpander::ExpandOutcome AttentionNode::
     auto* q_edge = dataflow.in_edge_for_connector(*this, "Q");
     auto* k_edge = dataflow.in_edge_for_connector(*this, "K");
     auto* v_edge = dataflow.in_edge_for_connector(*this, "V");
+    auto* scale_edge = dataflow.in_edge_for_connector(*this, "scale");
     auto* m_edge = has_mask ? dataflow.in_edge_for_connector(*this, "M") : nullptr;
-    if (!o_edge || !q_edge || !k_edge || !v_edge || (has_mask && !m_edge)) {
+    if (!o_edge || !q_edge || !k_edge || !v_edge || !scale_edge || (has_mask && !m_edge)) {
         return context.unable();
     }
 
@@ -100,7 +112,8 @@ passes::LibNodeExpander::ExpandOutcome AttentionNode::
         passes::LibNodeExpander::InputUse::IndirectReadWrite,
         passes::LibNodeExpander::InputUse::IndirectRead,
         passes::LibNodeExpander::InputUse::IndirectRead,
-        passes::LibNodeExpander::InputUse::IndirectRead
+        passes::LibNodeExpander::InputUse::IndirectRead,
+        passes::LibNodeExpander::InputUse::Scalar
     };
     if (has_mask) {
         dirs.push_back(passes::LibNodeExpander::InputUse::IndirectRead);
@@ -131,11 +144,6 @@ passes::LibNodeExpander::ExpandOutcome AttentionNode::
         builder.add_container(name, types::Scalar(types::get_primitive_type_to_hold_upper_bound(limit)));
         return symbolic::symbol(name);
     };
-
-    std::ostringstream scale_ss;
-    scale_ss.precision(17);
-    scale_ss << scale_;
-    const std::string scale_str = scale_ss.str();
 
     // Outer parallel maps over the batch/head leading dims, then the query position.
     std::vector<symbolic::Expression> lead;
@@ -190,8 +198,12 @@ passes::LibNodeExpander::ExpandOutcome AttentionNode::
         s.push_back(col);
         return s;
     };
-    auto q_sub = [&](const symbolic::Expression& col) { return with(lead, i_sym, col); };
-    auto o_sub = [&](const symbolic::Expression& col) { return with(lead, i_sym, col); };
+    auto q_sub = [&](const symbolic::Expression& col) {
+        return with(lead, i_sym, col);
+    };
+    auto o_sub = [&](const symbolic::Expression& col) {
+        return with(lead, i_sym, col);
+    };
     auto k_sub = [&](const symbolic::Expression& row, const symbolic::Expression& col) {
         return with(kvlead, row, col);
     };
@@ -287,10 +299,10 @@ passes::LibNodeExpander::ExpandOutcome AttentionNode::
         auto& blk = builder.add_block(*jscope, {}, dbg);
         auto& mul = builder.add_tasklet(blk, TaskletCode::fp_mul, {"_out"}, {"_in1", "_in2"}, dbg);
         auto& s_r = builder.add_access(blk, s_name, dbg);
-        auto& c = builder.add_constant(blk, scale_str, elem, dbg);
+        auto& scale_access = access->add_scalar_input_access(blk, SCALE_INPUT_IDX);
         auto& s_w = builder.add_access(blk, s_name, dbg);
         builder.add_computational_memlet(blk, s_r, mul, "_in1", {}, elem, dbg);
-        builder.add_computational_memlet(blk, c, mul, "_in2", {}, elem, dbg);
+        builder.add_computational_memlet(blk, scale_access, mul, "_in2", {}, dbg);
         builder.add_computational_memlet(blk, mul, "_out", s_w, {}, elem, dbg);
     }
     // s += mask[..., i, j]  (additive attention bias, with per-axis broadcasting)
@@ -448,7 +460,6 @@ std::unique_ptr<data_flow::DataFlowNode> AttentionNode::
             k_layout_,
             v_layout_,
             *mask_layout_,
-            scale_,
             is_causal_,
             fixed_quantization_,
             this->implementation_type()
@@ -463,7 +474,6 @@ std::unique_ptr<data_flow::DataFlowNode> AttentionNode::
         q_layout_,
         k_layout_,
         v_layout_,
-        scale_,
         is_causal_,
         fixed_quantization_,
         this->implementation_type()
@@ -472,8 +482,8 @@ std::unique_ptr<data_flow::DataFlowNode> AttentionNode::
 
 std::string AttentionNode::toStr() const {
     std::stringstream ss;
-    ss << "Attention(scale=" << scale_ << ", causal=" << (is_causal_ ? "true" : "false") << ", Q: " << q_layout_
-       << ", K: " << k_layout_ << ", V: " << v_layout_ << ")";
+    ss << "Attention(causal=" << (is_causal_ ? "true" : "false") << ", Q: " << q_layout_ << ", K: " << k_layout_
+       << ", V: " << v_layout_ << ")";
     return ss.str();
 }
 
@@ -495,7 +505,6 @@ nlohmann::json AttentionNodeSerializer::serialize(const data_flow::LibraryNode& 
     if (node.mask_layout().has_value()) {
         node.mask_layout()->serialize_to_json(j["layout_m"]);
     }
-    j["scale"] = node.scale();
     j["is_causal"] = node.is_causal();
     j["result_quant"] = node.quantization();
     return j;
@@ -512,7 +521,6 @@ data_flow::LibraryNode& AttentionNodeSerializer::deserialize(
     auto q_layout = TensorLayout::deserialize_from_json(j.at("layout_q"));
     auto k_layout = TensorLayout::deserialize_from_json(j.at("layout_k"));
     auto v_layout = TensorLayout::deserialize_from_json(j.at("layout_v"));
-    double scale = j.at("scale").get<double>();
     bool is_causal = j.at("is_causal").get<bool>();
     auto quantization = deserialize_quantization(j, "result_quant", QUANTIZATION_MATCH_INPUTS);
 
@@ -522,11 +530,11 @@ data_flow::LibraryNode& AttentionNodeSerializer::deserialize(
     if (j.contains("layout_m")) {
         auto mask_layout = TensorLayout::deserialize_from_json(j.at("layout_m"));
         return builder.add_library_node<AttentionNode>(
-            parent, debug_info, o_layout, q_layout, k_layout, v_layout, mask_layout, scale, is_causal, quantization
+            parent, debug_info, o_layout, q_layout, k_layout, v_layout, mask_layout, is_causal, quantization
         );
     }
     return builder.add_library_node<
-        AttentionNode>(parent, debug_info, o_layout, q_layout, k_layout, v_layout, scale, is_causal, quantization);
+        AttentionNode>(parent, debug_info, o_layout, q_layout, k_layout, v_layout, is_causal, quantization);
 }
 
 } // namespace tensor
