@@ -11,6 +11,7 @@ import torch
 import torch.nn.functional as F
 
 from docc.sdfg import (
+    Block,
     ConstantNode,
     Pointer,
     PrimitiveType,
@@ -116,7 +117,9 @@ def test_attention_scale_constant(masked: bool, primitive_type) -> None:
     sdfg = builder.move()
     for graph in (sdfg, StructuredSDFG.parse(sdfg.to_json())):
         graph.validate()
-        edges = list(graph.root.child(0).dataflow.edges)
+        block = graph.root[0]
+        assert isinstance(block, Block)
+        edges = list(block.dataflow.edges)
         assert len(edges) == (6 if masked else 5)
         scale_edges = [edge for edge in edges if edge.dst_conn == "scale"]
         assert len(scale_edges) == 1

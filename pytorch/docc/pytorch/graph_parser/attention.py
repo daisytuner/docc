@@ -70,6 +70,10 @@ class ScaledDotProductAttentionParser(GraphParserModule):
             scale = node.args[6]
         if scale is None:
             scale = 1.0 / math.sqrt(int(d))
+        if not isinstance(scale, (float, int)):
+            raise GraphParserError(
+                self, node, "Expected float scale but got: " + str(type(scale))
+            )
 
         # O = softmax(scale · Q Kᵀ [+ mask]) V, lowered as one fused AttentionNode.
         if attn_mask is not None:
