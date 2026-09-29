@@ -203,7 +203,9 @@ bool nested_parallelization_is_unsafe(
     // living outside, per ArgumentsAnalysis) is a hazard. Loop induction variables
     // are locals by definition, so this subsumes loop-control bookkeeping.
     const auto& locals = arguments_analysis.locals(analysis_manager, *outermost);
-    auto is_local = [&locals](const std::string& container) { return locals.count(container) != 0; };
+    auto is_local = [&locals](const std::string& container) {
+        return locals.count(container) != 0;
+    };
 
     // Collect the container reads and writes of a subtree. Views alias memory and
     // are treated conservatively as both a read and a write.
@@ -300,6 +302,162 @@ bool nested_parallelization_is_unsafe(
     return false;
 }
 
+NestedFoldPlan analyze_nested_fold(
+    structured_control_flow::StructuredLoop& loop, TargetLevel target_level, analysis::AnalysisManager& analysis_manager
+) {
+    NestedFoldPlan plan;
+    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
+
+    auto is_parallelized = [](structured_control_flow::Map* map) {
+        return map->schedule_type().value() != structured_control_flow::ScheduleType_Sequential::value();
+    };
+
+    structured_control_flow::Map* outermost = nullptr;
+    for (auto* ancestor = loop_analysis.parent_loop(&loop); ancestor != nullptr;
+         ancestor = loop_analysis.parent_loop(ancestor)) {
+        if (auto* map = dyn_cast<structured_control_flow::Map*>(ancestor)) {
+            if (is_parallelized(map)) {
+                outermost = map;
+            }
+        }
+    }
+    if (outermost == nullptr) {
+        return plan;
+    }
+
+    auto& users = analysis_manager.get<analysis::Users>();
+    auto& arguments_analysis = analysis_manager.get<analysis::ArgumentsAnalysis>();
+    const auto& locals = arguments_analysis.locals(analysis_manager, *outermost);
+    auto is_local = [&locals](const std::string& container) {
+        return locals.count(container) != 0;
+    };
+
+    auto collect = [&](structured_control_flow::ControlFlowNode& node,
+                       std::unordered_set<std::string>& writes,
+                       std::unordered_set<std::string>& reads) {
+        analysis::UsersView view(users, node);
+        for (auto* u : view.writes()) {
+            writes.insert(u->container());
+        }
+        for (auto* u : view.moves()) {
+            writes.insert(u->container());
+        }
+        for (auto* u : view.views()) {
+            writes.insert(u->container());
+            reads.insert(u->container());
+        }
+        for (auto* u : view.reads()) {
+            reads.insert(u->container());
+        }
+    };
+
+    std::unordered_set<std::string> loop_writes;
+    std::unordered_set<std::string> loop_reads;
+    collect(loop, loop_writes, loop_reads);
+
+    // The offload reduce dispatcher combines and broadcasts a Reduce's accumulator
+    // behind its own __syncthreads, so a replicated consumer already sees the
+    // finished value: exclude it from the cooperative-write hazard.
+    std::unordered_set<std::string> reduce_accumulators;
+    if (auto* reduce = dynamic_cast<structured_control_flow::Reduce*>(&loop)) {
+        for (const auto& reduction : reduce->reductions()) {
+            reduce_accumulators.insert(reduction.container);
+        }
+    }
+
+    auto accumulates_on_shared = [&](const std::unordered_set<std::string>& writes,
+                                     const std::unordered_set<std::string>& reads) {
+        for (const auto& container : writes) {
+            if (reads.count(container) != 0 && !is_local(container)) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    // A block/warp fold shares data through on-chip memory reachable by a
+    // __syncthreads; a grid fold spreads the iterations across blocks, where no
+    // in-kernel barrier exists.
+    const bool barrierable = is_block_level(target_level) || is_warp_level(target_level);
+
+    structured_control_flow::ControlFlowNode* node = &loop;
+    while (node != outermost) {
+        auto* sequence = dynamic_cast<structured_control_flow::Sequence*>(node->get_parent());
+        if (sequence == nullptr) {
+            break;
+        }
+        const int node_index = sequence->index(*node);
+
+        int earliest_consumer = -1; // first sibling after `node` reading the produced data (RAW/WAW)
+        bool has_prior_consumer = false; // a sibling before `node` reads it (WAR)
+
+        for (size_t i = 0; i < sequence->size(); ++i) {
+            auto& sibling = sequence->at(i);
+            if (&sibling == node) {
+                continue;
+            }
+
+            std::unordered_set<std::string> sibling_writes;
+            std::unordered_set<std::string> sibling_reads;
+            collect(sibling, sibling_writes, sibling_reads);
+
+            // Hazard 1 (producer/consumer across the fold): a container `loop` writes
+            // is read or written by a replicated sibling.
+            for (const auto& container : loop_writes) {
+                if (reduce_accumulators.count(container) != 0) {
+                    continue;
+                }
+                const bool touched = sibling_writes.count(container) != 0 || sibling_reads.count(container) != 0;
+                if (!touched) {
+                    continue;
+                }
+                if (barrierable) {
+                    if (static_cast<int>(i) > node_index) {
+                        if (earliest_consumer < 0 || static_cast<int>(i) < earliest_consumer) {
+                            earliest_consumer = static_cast<int>(i);
+                        }
+                    } else {
+                        has_prior_consumer = true;
+                    }
+                } else if (!is_local(container)) {
+                    // Grid/device cross-block dependency: no barrier can order it.
+                    plan.unsafe = true;
+                }
+            }
+
+            // Hazard 2 (replicated self-accumulation): a sibling read-modify-writes a
+            // shared container. A barrier cannot fix a per-thread replicated RMW, so
+            // this is always a hard reject. A sibling that is itself a GPU map is
+            // exempt (codegen maps it onto its own threads instead of replicating it).
+            bool sibling_exempt = false;
+            if (auto* sibling_map = dyn_cast<structured_control_flow::Map*>(&sibling)) {
+                if (is_parallelized(sibling_map)) {
+                    sibling_exempt = true;
+                }
+            }
+            if (!sibling_exempt && accumulates_on_shared(sibling_writes, sibling_reads)) {
+                plan.unsafe = true;
+            }
+        }
+
+        if (barrierable) {
+            if (has_prior_consumer) {
+                plan.barriers.push_back({sequence, node});
+            }
+            if (earliest_consumer >= 0) {
+                plan.barriers.push_back({sequence, &sequence->at(static_cast<size_t>(earliest_consumer))});
+            }
+        }
+
+        node = sequence->get_parent();
+        if (node == nullptr) {
+            break;
+        }
+    }
+
+    return plan;
+}
+
 symbolic::Expression get_target_level_dim(TargetLevel target_level, int warp_size) {
     switch (target_level) {
         case TargetLevel::X_GRID:
@@ -356,7 +514,9 @@ bool is_block_level(TargetLevel target_level) {
            target_level == TargetLevel::Z_BLOCK;
 }
 
-bool is_warp_level(TargetLevel target_level) { return target_level == TargetLevel::WARP; }
+bool is_warp_level(TargetLevel target_level) {
+    return target_level == TargetLevel::WARP;
+}
 
 size_t perfectly_nested_depth(structured_control_flow::StructuredLoop* loop) {
     size_t depth = 0;
@@ -415,9 +575,11 @@ void get_nested_schedule_types(
                 // Sibling offloaders can share a level with different parallel_size; keep the
                 // largest so the launch dimension covers every sibling.
                 if (it == output.end() ||
-                    symbolic::is_true(symbolic::
-                                          Gt(ScheduleType_GPU_Offload::parallel_size(struc_loop->schedule_type()),
-                                             ScheduleType_GPU_Offload::parallel_size(it->second)))) {
+                    symbolic::is_true(
+                        symbolic::
+                            Gt(ScheduleType_GPU_Offload::parallel_size(struc_loop->schedule_type()),
+                               ScheduleType_GPU_Offload::parallel_size(it->second))
+                    )) {
                     output.insert_or_assign(level, struc_loop->schedule_type());
                 }
             }
@@ -439,9 +601,11 @@ void get_nested_level_maps(
                 auto level = ScheduleType_GPU_Offload::target_level(struc_loop->schedule_type());
                 auto it = output.find(level);
                 if (it == output.end() ||
-                    symbolic::is_true(symbolic::
-                                          Gt(ScheduleType_GPU_Offload::parallel_size(struc_loop->schedule_type()),
-                                             ScheduleType_GPU_Offload::parallel_size(it->second->schedule_type())))) {
+                    symbolic::is_true(
+                        symbolic::
+                            Gt(ScheduleType_GPU_Offload::parallel_size(struc_loop->schedule_type()),
+                               ScheduleType_GPU_Offload::parallel_size(it->second->schedule_type()))
+                    )) {
                     output.insert_or_assign(level, struc_loop);
                 }
             }

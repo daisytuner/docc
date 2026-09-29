@@ -34,4 +34,6 @@ endif()
 add_test(NAME printf_target_test COMMAND printf_target_test)
 
 include(GoogleTest)
-gtest_discover_tests(printf_target_test)
+gtest_discover_tests(printf_target_test
+  PROPERTIES LABELS "printf_target"
+)

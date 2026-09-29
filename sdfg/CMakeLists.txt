@@ -30,9 +30,7 @@ set(SOURCE_FILES
     src/analysis/control_flow_analysis.cpp
     src/analysis/data_dependency_analysis.cpp
     src/analysis/dominance_analysis.cpp
-    src/analysis/flop_analysis.cpp
     src/analysis/loop_analysis.cpp
-    src/analysis/loop_carried_dependency_analysis.cpp
     src/analysis/memory_layout_analysis.cpp
     src/analysis/reference_analysis.cpp
     src/analysis/type_analysis.cpp
@@ -73,7 +71,6 @@ set(SOURCE_FILES
     src/data_flow/data_flow_node.cpp
     src/data_flow/library_node.cpp
     src/data_flow/library_nodes/atomic_op_node.cpp
-    src/data_flow/library_nodes/async_copy_node.cpp
     src/data_flow/library_nodes/barrier_local_node.cpp
     src/data_flow/library_nodes/call_node.cpp
     src/data_flow/library_nodes/invoke_node.cpp
@@ -180,7 +177,6 @@ set(SOURCE_FILES
     src/passes/structured_control_flow/common_assignment_elimination.cpp
     src/passes/structured_control_flow/condition_elimination.cpp
     src/passes/structured_control_flow/dead_cfg_elimination.cpp
-    src/passes/structured_control_flow/for_classification.cpp
     src/passes/structured_control_flow/pointer_evolution.cpp
     src/passes/structured_control_flow/sequence_fusion.cpp
     src/passes/structured_control_flow/unify_loop_exits.cpp
@@ -220,6 +216,7 @@ set(SOURCE_FILES
     src/types/structure.cpp
     src/types/tensor.cpp
     src/types/utils.cpp
+    src/visitor/for_each.cpp
     src/visitor/immutable_structured_sdfg_visitor.cpp
     src/visitor/structured_sdfg_visitor.cpp
     src/visitor/structured_sdfg_walker.cpp

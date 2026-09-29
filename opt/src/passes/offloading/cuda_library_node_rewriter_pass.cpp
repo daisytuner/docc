@@ -64,7 +64,8 @@ std::optional<data_flow::ImplementationType> CudaLibraryNodeRewriter::try_cublas
 
 CudaLibraryNodeRewriter::
     CudaLibraryNodeRewriter(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager)
-    : visitor::StructuredSDFGVisitor(builder, analysis_manager) {}
+    : visitor::StructuredSDFGVisitor(builder, analysis_manager) {
+}
 
 bool CudaLibraryNodeRewriter::accept(structured_control_flow::Block& node) {
     auto& dataflow = node.dataflow();
@@ -73,19 +74,19 @@ bool CudaLibraryNodeRewriter::accept(structured_control_flow::Block& node) {
             auto implType = try_library_node_implementation(*lib_node, lib_node->scalar_primitive());
 
             if (implType) {
-                lib_node->implementation_type() = implType.value();
+                lib_node->set_implementation_type(implType.value());
             }
         }
         if (auto memset_node = dynamic_cast<::sdfg::stdlib::MemsetNode*>(&library_node)) {
             auto implType = try_memset_implementation(*memset_node);
             if (implType) {
-                memset_node->implementation_type() = implType.value();
+                memset_node->set_implementation_type(implType.value());
             }
         }
         if (auto memcpy_node = dynamic_cast<::sdfg::stdlib::MemcpyNode*>(&library_node)) {
             auto implType = try_memcpy_implementation(*memcpy_node);
             if (implType) {
-                memcpy_node->implementation_type() = implType.value();
+                memcpy_node->set_implementation_type(implType.value());
             }
         }
     }

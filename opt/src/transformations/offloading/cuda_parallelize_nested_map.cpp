@@ -13,9 +13,12 @@ namespace sdfg {
 namespace transformations {
 
 CUDAParallelizeNestedMap::CUDAParallelizeNestedMap(structured_control_flow::StructuredLoop& loop, size_t block_size)
-    : loop_(loop), block_size_(block_size) {}
+    : loop_(loop), block_size_(block_size) {
+}
 
-std::string CUDAParallelizeNestedMap::name() const { return "CUDAParallelizeNestedMap"; }
+std::string CUDAParallelizeNestedMap::name() const {
+    return "CUDAParallelizeNestedMap";
+}
 
 bool CUDAParallelizeNestedMap::
     can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {

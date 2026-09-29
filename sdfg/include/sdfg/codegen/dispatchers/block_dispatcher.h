@@ -122,7 +122,8 @@ struct DispatchInput {
     bool is_locally_modifiable;
 
     DispatchInput(std::string expr, const data_flow::Memlet& edge, bool is_locally_modifiable)
-        : expr(std::move(expr)), edge(edge), is_locally_modifiable(is_locally_modifiable) {}
+        : expr(std::move(expr)), edge(edge), is_locally_modifiable(is_locally_modifiable) {
+    }
 };
 
 struct DispatchOutput {
@@ -131,7 +132,8 @@ struct DispatchOutput {
     bool used;
 
     DispatchOutput(const std::string* local_name, std::unique_ptr<types::IType> out_type, bool used)
-        : local_name(local_name), out_type(std::move(out_type)), used(used) {}
+        : local_name(local_name), out_type(std::move(out_type)), used(used) {
+    }
 };
 
 /**
@@ -187,14 +189,17 @@ public:
      * @param stream Output stream for generated code
      * @return True if a declaration was generated
      */
-    virtual bool begin_node(PrettyPrinter& stream) { return false; }
+    virtual bool begin_node(PrettyPrinter& stream) {
+        return false;
+    }
 
     /**
      * @brief End code generation for the node
      * @param stream Output stream for generated code
      * @param has_declaration Whether a declaration was generated
      */
-    virtual void end_node(PrettyPrinter& stream, bool has_declaration) {}
+    virtual void end_node(PrettyPrinter& stream, bool has_declaration) {
+    }
 
     /**
      * @brief Dispatch the library node to code
@@ -219,7 +224,8 @@ public:
      * @param library_snippet_factory Factory for library code snippets
      */
     virtual void
-    dispatch_code(PrettyPrinter& stream, PrettyPrinter& globals_stream, CodeSnippetFactory& library_snippet_factory) {}
+    dispatch_code(PrettyPrinter& stream, PrettyPrinter& globals_stream, CodeSnippetFactory& library_snippet_factory) {
+    }
 
     virtual void dispatch_code_with_edges(
         CodegenOutput& out, std::vector<DispatchInput>& inputs, std::vector<DispatchOutput>& outputs

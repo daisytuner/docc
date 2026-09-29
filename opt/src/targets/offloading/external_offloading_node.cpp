@@ -62,9 +62,13 @@ ExternalDataOffloadingNode::ExternalDataOffloadingNode(
     }
 }
 
-const std::string& ExternalDataOffloadingNode::callee_name() const { return this->callee_name_; }
+const std::string& ExternalDataOffloadingNode::callee_name() const {
+    return this->callee_name_;
+}
 
-size_t ExternalDataOffloadingNode::transfer_index() const { return this->transfer_index_; }
+size_t ExternalDataOffloadingNode::transfer_index() const {
+    return this->transfer_index_;
+}
 
 std::unique_ptr<data_flow::DataFlowNode> ExternalDataOffloadingNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
@@ -108,7 +112,9 @@ void ExternalDataOffloadingNode::validate(const Function& function) const {
     }
 }
 
-bool ExternalDataOffloadingNode::blocking() const { return true; }
+bool ExternalDataOffloadingNode::blocking() const {
+    return true;
+}
 
 bool ExternalDataOffloadingNode::redundant_with(const offloading::DataOffloadingNode& other) const {
     if (!offloading::DataOffloadingNode::redundant_with(other)) {
@@ -152,7 +158,8 @@ ExternalDataOffloadingNodeDispatcher::ExternalDataOffloadingNodeDispatcher(
     const data_flow::DataFlowGraph& data_flow_graph,
     const data_flow::LibraryNode& node
 )
-    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
+}
 
 void ExternalDataOffloadingNodeDispatcher::dispatch_code(
     codegen::PrettyPrinter& stream,

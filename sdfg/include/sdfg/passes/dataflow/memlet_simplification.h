@@ -57,7 +57,9 @@ public:
      * @brief Returns the name of the pass
      * @return The string "MemletSimplification"
      */
-    static std::string name() { return "MemletSimplification"; }
+    static std::string name() {
+        return "MemletSimplification";
+    }
 
     /**
      * @brief Accepts a Map and simplifies memlet subsets in immediate blocks

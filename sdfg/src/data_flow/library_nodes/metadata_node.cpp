@@ -15,19 +15,24 @@ MetadataNode::MetadataNode(
     : LibraryNode(
           element_id, debug_info, vertex, parent, LibraryNodeType_Metadata, outputs, inputs, false, ImplementationType_NONE
       ),
-      metadata_(metadata) {}
+      metadata_(metadata) {
+}
 
 void MetadataNode::validate(const Function& function) const {
     LibraryNode::validate(function);
     // No specific validation for metadata
 }
 
-const std::unordered_map<std::string, std::string>& MetadataNode::metadata() const { return metadata_; }
+const std::unordered_map<std::string, std::string>& MetadataNode::metadata() const {
+    return metadata_;
+}
 
-symbolic::SymbolSet MetadataNode::symbols() const { return symbolic::SymbolSet(); }
+symbolic::SymbolSet MetadataNode::symbols() const {
+    return symbolic::SymbolSet();
+}
 
-std::unique_ptr<DataFlowNode> MetadataNode::clone(size_t element_id, const graph::Vertex vertex, DataFlowGraph& parent)
-    const {
+std::unique_ptr<DataFlowNode> MetadataNode::
+    clone(size_t element_id, const graph::Vertex vertex, DataFlowGraph& parent) const {
     return std::make_unique<MetadataNode>(element_id, debug_info_, vertex, parent, outputs_, inputs_, metadata_);
 }
 
@@ -88,7 +93,8 @@ MetadataDispatcher::MetadataDispatcher(
     const DataFlowGraph& data_flow_graph,
     const MetadataNode& node
 )
-    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
+}
 
 void MetadataDispatcher::dispatch(
     codegen::PrettyPrinter& stream,

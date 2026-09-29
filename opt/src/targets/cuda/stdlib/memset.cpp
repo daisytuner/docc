@@ -9,7 +9,8 @@ MemsetNodeDispatcher_CUDAWithTransfers::MemsetNodeDispatcher_CUDAWithTransfers(
     const data_flow::DataFlowGraph& data_flow_graph,
     const sdfg::stdlib::MemsetNode& node
 )
-    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
+}
 
 void MemsetNodeDispatcher_CUDAWithTransfers::dispatch_code_with_edges(
     codegen::CodegenOutput& out,
@@ -46,7 +47,8 @@ MemsetNodeDispatcher_CUDAWithoutTransfers::MemsetNodeDispatcher_CUDAWithoutTrans
     const data_flow::DataFlowGraph& data_flow_graph,
     const sdfg::stdlib::MemsetNode& node
 )
-    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
+}
 
 void MemsetNodeDispatcher_CUDAWithoutTransfers::dispatch_code_with_edges(
     codegen::CodegenOutput& out,

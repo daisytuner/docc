@@ -13,7 +13,6 @@
 #include "sdfg/passes/structured_control_flow/common_assignment_elimination.h"
 #include "sdfg/passes/structured_control_flow/condition_elimination.h"
 #include "sdfg/passes/structured_control_flow/dead_cfg_elimination.h"
-#include "sdfg/passes/structured_control_flow/for_classification.h"
 #include "sdfg/passes/structured_control_flow/sequence_fusion.h"
 #include "sdfg/passes/symbolic/symbol_evolution.h"
 #include "sdfg/passes/symbolic/symbol_propagation.h"
@@ -56,8 +55,6 @@ public:
     static Pipeline memlet_combine();
 
     static Pipeline controlflow_simplification();
-
-    static Pipeline data_parallelism();
 
     static Pipeline memory();
 

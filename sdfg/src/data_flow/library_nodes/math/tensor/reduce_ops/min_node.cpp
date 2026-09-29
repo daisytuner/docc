@@ -18,7 +18,8 @@ MinNode::MinNode(
     const std::vector<int64_t>& axes,
     bool keepdims
 )
-    : ReduceNode(element_id, debug_info, vertex, parent, LibraryNodeType_Min, shape, axes, keepdims) {}
+    : ReduceNode(element_id, debug_info, vertex, parent, LibraryNodeType_Min, shape, axes, keepdims) {
+}
 
 bool MinNode::expand_reduction(
     passes::LibNodeExpander::AccessNodeExpand& expansion,

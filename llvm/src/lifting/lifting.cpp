@@ -156,7 +156,9 @@ void Lifting::visit_globals() {
 
 void Lifting::collect_globals(llvm::Function& function, std::unordered_set<llvm::GlobalObject*>& globals) {
     for (llvm::Instruction& I : llvm::instructions(function)) {
-        for (llvm::Use& U : I.operands()) Lifting::collect_globals(function, U.get(), globals);
+        for (llvm::Use& U : I.operands()) {
+            Lifting::collect_globals(function, U.get(), globals);
+        }
     }
 }
 
@@ -166,13 +168,17 @@ void Lifting::collect_globals(llvm::Function& function, llvm::Value* V, std::uno
 
     // If it is a ConstantExpr (GEP, bitcast, inttoptr, …) look at its operands.
     if (auto* CE = llvm::dyn_cast<llvm::ConstantExpr>(V)) {
-        for (llvm::Value* Op : CE->operands()) Lifting::collect_globals(function, Op, visited);
+        for (llvm::Value* Op : CE->operands()) {
+            Lifting::collect_globals(function, Op, visited);
+        }
         return;
     }
 
     // Aggregate constants (arrays, structs) can also hide ConstantExprs.
     if (auto* CA = llvm::dyn_cast<llvm::ConstantAggregate>(V)) {
-        for (llvm::Value* Op : CA->operands()) Lifting::collect_globals(function, Op, visited);
+        for (llvm::Value* Op : CA->operands()) {
+            Lifting::collect_globals(function, Op, visited);
+        }
         return;
     }
 
@@ -1283,8 +1289,8 @@ sdfg::control_flow::State& Lifting::visit_SelectInst(
     }
     auto& output_type = this->builder_.subject().type(output);
     assert(
-        (output_type.type_id() == sdfg::types::TypeID::Scalar || output_type.type_id() == sdfg::types::TypeID::Pointer
-        ) &&
+        (output_type.type_id() == sdfg::types::TypeID::Scalar ||
+         output_type.type_id() == sdfg::types::TypeID::Pointer) &&
         "SelectInst: Expected scalar, array, or pointer type as output"
     );
 
@@ -1464,8 +1470,8 @@ sdfg::control_flow::State& Lifting::visit_FCmpInst(
     }
     auto& output_type = this->builder_.subject().type(output);
     assert(
-        (output_type.type_id() == sdfg::types::TypeID::Scalar || output_type.type_id() == sdfg::types::TypeID::Structure
-        ) &&
+        (output_type.type_id() == sdfg::types::TypeID::Scalar ||
+         output_type.type_id() == sdfg::types::TypeID::Structure) &&
         "FCmpInst: Expected scalar or structure type as output"
     );
 
@@ -1679,8 +1685,8 @@ sdfg::control_flow::State& Lifting::visit_UnaryOperator(
     }
     auto& output_type = this->builder_.subject().type(output);
     assert(
-        (output_type.type_id() == sdfg::types::TypeID::Scalar || output_type.type_id() == sdfg::types::TypeID::Structure
-        ) &&
+        (output_type.type_id() == sdfg::types::TypeID::Scalar ||
+         output_type.type_id() == sdfg::types::TypeID::Structure) &&
         "UnaryOperator: Expected scalar or structure type as output"
     );
 
@@ -1783,8 +1789,8 @@ sdfg::control_flow::State& Lifting::visit_BinaryOperator(
     }
     auto& output_type = this->builder_.subject().type(output);
     assert(
-        (output_type.type_id() == sdfg::types::TypeID::Scalar || output_type.type_id() == sdfg::types::TypeID::Structure
-        ) &&
+        (output_type.type_id() == sdfg::types::TypeID::Scalar ||
+         output_type.type_id() == sdfg::types::TypeID::Structure) &&
         "BinaryOperator: Expected scalar or structure type as output"
     );
 

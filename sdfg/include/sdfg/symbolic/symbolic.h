@@ -367,7 +367,8 @@ Expression bit_xor(const Expression lhs, const Expression rhs);
  */
 class IModFunction : public SymEngine::FunctionSymbol {
 public:
-    IModFunction(const Expression lhs, const Expression rhs) : FunctionSymbol("imod", {lhs, rhs}) {}
+    IModFunction(const Expression lhs, const Expression rhs) : FunctionSymbol("imod", {lhs, rhs}) {
+    }
 };
 
 /**
@@ -392,7 +393,8 @@ Expression zext_i64(const Expression expr);
  */
 class ZExtI64Function : public SymEngine::FunctionSymbol {
 public:
-    explicit ZExtI64Function(const Expression expr) : FunctionSymbol("zext_i64", expr) {}
+    explicit ZExtI64Function(const Expression expr) : FunctionSymbol("zext_i64", expr) {
+    }
 };
 
 /**
@@ -409,7 +411,8 @@ Expression trunc_i32(const Expression expr);
  */
 class TruncI32Function : public SymEngine::FunctionSymbol {
 public:
-    explicit TruncI32Function(const Expression expr) : FunctionSymbol("trunc_i32", expr) {}
+    explicit TruncI32Function(const Expression expr) : FunctionSymbol("trunc_i32", expr) {
+    }
 };
 
 /** @} */ // end of symbolic_arithmetic group
@@ -439,9 +442,12 @@ private:
 
 public:
     explicit SizeOfTypeFunction(const types::IType& type)
-        : FunctionSymbol("sizeof", SymEngine::vec_basic{}), type_(type) {}
+        : FunctionSymbol("sizeof", SymEngine::vec_basic{}), type_(type) {
+    }
 
-    const types::IType& get_type() const { return type_; }
+    const types::IType& get_type() const {
+        return type_;
+    }
 };
 
 /**
@@ -459,7 +465,8 @@ Expression dynamic_sizeof(const Symbol symbol);
  */
 class DynamicSizeOfFunction : public SymEngine::FunctionSymbol {
 public:
-    explicit DynamicSizeOfFunction(const Symbol symbol) : FunctionSymbol("dynamic_sizeof", symbol) {}
+    explicit DynamicSizeOfFunction(const Symbol symbol) : FunctionSymbol("dynamic_sizeof", symbol) {
+    }
 };
 
 /**
@@ -477,7 +484,8 @@ Expression malloc_usable_size(const Symbol symbol);
  */
 class MallocUsableSizeFunction : public SymEngine::FunctionSymbol {
 public:
-    explicit MallocUsableSizeFunction(const Symbol symbol) : FunctionSymbol("malloc_usable_size", symbol) {}
+    explicit MallocUsableSizeFunction(const Symbol symbol) : FunctionSymbol("malloc_usable_size", symbol) {
+    }
 };
 
 /** @} */ // end of symbolic_sizeof group

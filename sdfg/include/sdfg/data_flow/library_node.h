@@ -136,9 +136,13 @@ public:
 
     virtual ~LibraryNode() = default;
 
-    ElementType type_id() const override { return ElementType::LibraryNode; }
+    ElementType type_id() const override {
+        return ElementType::LibraryNode;
+    }
 
-    static bool classof(const Element& element) { return element.type_id() == ElementType::LibraryNode; }
+    static bool classof(const Element& element) {
+        return element.type_id() == ElementType::LibraryNode;
+    }
 
     /**
      * @brief Get the operation code
@@ -155,8 +159,13 @@ public:
     /**
      * @brief Get the implementation type (mutable)
      * @return Mutable reference to implementation type
+     * @deprecated use setter allow for future type-changes of ImplementationType that can still work with the existing
+     * API
      */
+    [[deprecated("use set_implementationtype(impl_type)")]]
     ImplementationType& implementation_type();
+
+    void set_implementation_type(const ImplementationType& impl_type);
 
     /**
      * @brief Check if this node has side effects
@@ -187,7 +196,9 @@ public:
      * @param input_idx index of input that is a pointer.
      * @return Invalid if not asked about a pointer input
      */
-    virtual PointerAccessType pointer_access_type(int input_idx) const { return nullptr; }
+    virtual PointerAccessType pointer_access_type(int input_idx) const {
+        return nullptr;
+    }
 
     PointerAccessType pointer_access_type(const Memlet& edge) const;
 

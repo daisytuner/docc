@@ -9,9 +9,12 @@ namespace sdfg {
 namespace structured_control_flow {
 
 IfElse::IfElse(size_t element_id, const DebugInfo& debug_info, ControlFlowNode* parent)
-    : ControlFlowNode(element_id, debug_info, parent) {}
+    : ControlFlowNode(element_id, debug_info, parent) {
+}
 
-bool IfElse::accept(visitor::ActualStructuredSDFGVisitor& visitor) { return visitor.visit(*this); }
+bool IfElse::accept(visitor::ActualStructuredSDFGVisitor& visitor) {
+    return visitor.visit(*this);
+}
 
 void IfElse::validate(const Function& function) const {
     for (auto& entry : this->cases_) {
@@ -30,7 +33,9 @@ void IfElse::validate(const Function& function) const {
     }
 };
 
-size_t IfElse::size() const { return this->cases_.size(); };
+size_t IfElse::size() const {
+    return this->cases_.size();
+};
 
 std::pair<const Sequence&, const symbolic::Condition> IfElse::at(size_t i) const {
     return {*this->cases_.at(i), this->conditions_.at(i)};
@@ -55,7 +60,9 @@ bool IfElse::is_complete() const {
     for (auto& entry : this->conditions_) {
         condition = symbolic::Or(condition, entry);
     }
-    if (symbolic::is_true(condition)) return true;
+    if (symbolic::is_true(condition)) {
+        return true;
+    }
 
     symbolic::CNF cnf_cond = symbolic::conjunctive_normal_form(condition);
     for (auto& clause : cnf_cond) {

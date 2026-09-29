@@ -68,17 +68,29 @@ void InterstateEdge::validate(const Function& function) const {
     }
 };
 
-const graph::Edge InterstateEdge::edge() const { return this->edge_; };
+const graph::Edge InterstateEdge::edge() const {
+    return this->edge_;
+};
 
-const control_flow::State& InterstateEdge::src() const { return this->src_; };
+const control_flow::State& InterstateEdge::src() const {
+    return this->src_;
+};
 
-const control_flow::State& InterstateEdge::dst() const { return this->dst_; };
+const control_flow::State& InterstateEdge::dst() const {
+    return this->dst_;
+};
 
-const symbolic::Condition InterstateEdge::condition() const { return this->condition_; };
+const symbolic::Condition InterstateEdge::condition() const {
+    return this->condition_;
+};
 
-bool InterstateEdge::is_unconditional() const { return symbolic::is_true(this->condition_); };
+bool InterstateEdge::is_unconditional() const {
+    return symbolic::is_true(this->condition_);
+};
 
-const sdfg::control_flow::Assignments& InterstateEdge::assignments() const { return this->assignments_; };
+const sdfg::control_flow::Assignments& InterstateEdge::assignments() const {
+    return this->assignments_;
+};
 
 void InterstateEdge::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
     symbolic::subs(this->condition_, old_expression, new_expression);

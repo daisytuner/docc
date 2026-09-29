@@ -42,7 +42,9 @@ public:
         std::vector<structured_control_flow::StructuredLoop*>& applicable_loops
     ) override;
 
-    static std::string target() { return "openmp"; };
+    static std::string target() {
+        return "openmp";
+    };
 
     std::unordered_set<ScheduleTypeCategory> compatible_types() override;
 };

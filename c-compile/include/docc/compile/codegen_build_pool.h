@@ -1,6 +1,7 @@
 #pragma once
 #include <condition_variable>
 #include <list>
+#include <map>
 #include <memory>
 #include <queue>
 #include <thread>
@@ -33,13 +34,26 @@ private:
 
     // Thread pool members
     std::vector<std::thread> workers_;
-    std::queue<CompileState*> work_queue_;
+    // Tasks whose codegen still needs to run. Codegen is unconstrained, so a plain
+    // FIFO queue is enough; running it eagerly keeps gated compiles unblocked.
+    std::queue<CompileState*> codegen_queue_;
+    // Tasks that finished codegen and are waiting to compile (their compile may still
+    // be gated on lower codegen orders).
+    std::vector<CompileState*> compile_ready_;
+    // Number of states whose codegen has not finished yet, keyed by codegen_order
+    // (zero entries erased).
+    std::map<int, int> pending_codegen_by_order_;
     std::mutex queue_mutex_;
-    std::condition_variable queue_cv_;
+    std::condition_variable cv_;
     std::condition_variable done_cv_;
     bool stop_ = false;
 
     void worker_loop();
+
+    // The following helpers must be called while holding queue_mutex_.
+    bool has_pending_codegen_below(int order) const;
+    bool has_ready_compile() const;
+    CompileState* take_ready_compile();
 
 public:
     CodegenBuildPool(int num_threads);

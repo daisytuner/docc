@@ -55,8 +55,14 @@
 namespace sdfg {
 namespace codegen {
 
-using NodeDispatcherFn = std::function<std::unique_ptr<
-    NodeDispatcher>(LanguageExtension&, StructuredSDFG&, analysis::AnalysisManager&, structured_control_flow::ControlFlowNode&, InstrumentationPlan&, ArgCapturePlan&)>;
+using NodeDispatcherFn = std::function<std::unique_ptr<NodeDispatcher>(
+    LanguageExtension&,
+    StructuredSDFG&,
+    analysis::AnalysisManager&,
+    structured_control_flow::ControlFlowNode&,
+    InstrumentationPlan&,
+    ArgCapturePlan&
+)>;
 
 class NodeDispatcherRegistry {
 private:
@@ -85,7 +91,9 @@ public:
         return nullptr;
     }
 
-    size_t size() const { return factory_map_.size(); }
+    size_t size() const {
+        return factory_map_.size();
+    }
 };
 
 std::unique_ptr<NodeDispatcher> create_dispatcher(
@@ -97,8 +105,14 @@ std::unique_ptr<NodeDispatcher> create_dispatcher(
     ArgCapturePlan& arg_capture_plan
 );
 
-using MapDispatcherFn = std::function<std::unique_ptr<
-    NodeDispatcher>(LanguageExtension&, StructuredSDFG&, analysis::AnalysisManager&, structured_control_flow::Map&, InstrumentationPlan&, ArgCapturePlan&)>;
+using MapDispatcherFn = std::function<std::unique_ptr<NodeDispatcher>(
+    LanguageExtension&,
+    StructuredSDFG&,
+    analysis::AnalysisManager&,
+    structured_control_flow::Map&,
+    InstrumentationPlan&,
+    ArgCapturePlan&
+)>;
 
 /**
  * @class MapDispatcherRegistry
@@ -135,11 +149,19 @@ public:
         return nullptr;
     }
 
-    size_t size() const { return factory_map_.size(); }
+    size_t size() const {
+        return factory_map_.size();
+    }
 };
 
-using ReduceDispatcherFn = std::function<std::unique_ptr<
-    NodeDispatcher>(LanguageExtension&, StructuredSDFG&, analysis::AnalysisManager&, structured_control_flow::Reduce&, InstrumentationPlan&, ArgCapturePlan&)>;
+using ReduceDispatcherFn = std::function<std::unique_ptr<NodeDispatcher>(
+    LanguageExtension&,
+    StructuredSDFG&,
+    analysis::AnalysisManager&,
+    structured_control_flow::Reduce&,
+    InstrumentationPlan&,
+    ArgCapturePlan&
+)>;
 
 /**
  * @class ReduceDispatcherRegistry
@@ -177,11 +199,14 @@ public:
         return nullptr;
     }
 
-    size_t size() const { return factory_map_.size(); }
+    size_t size() const {
+        return factory_map_.size();
+    }
 };
 
-using LibraryNodeDispatcherFn = std::function<std::unique_ptr<
-    LibraryNodeDispatcher>(LanguageExtension&, const Function&, const data_flow::DataFlowGraph&, const data_flow::LibraryNode&)>;
+using LibraryNodeDispatcherFn = std::function<std::unique_ptr<LibraryNodeDispatcher>(
+    LanguageExtension&, const Function&, const data_flow::DataFlowGraph&, const data_flow::LibraryNode&
+)>;
 
 /**
  * @class LibraryNodeDispatcherRegistry
@@ -228,12 +253,39 @@ public:
         return registry;
     }
 
+    /**
+     * @param  library_node_code Compound string of LibraryNodeCode + "::" + ImplementationType
+     * @deprecated to decouple how this registry indexes from its users
+     */
+    [[deprecated(
+        "use register_library_node_dispatcher(const data_flow::LibraryNodeCode&, const data_flow::ImplementationType&, "
+        "LibraryNodeDispatcherFn) instead"
+    )]]
     void register_library_node_dispatcher(std::string library_node_code, LibraryNodeDispatcherFn fn) {
         std::lock_guard<std::mutex> lock(mutex_);
         if (factory_map_.find(library_node_code) != factory_map_.end()) {
             return;
         }
         factory_map_[library_node_code] = std::move(fn);
+    }
+
+    /**
+     * Designed to make the way the lookup of impl-type specific dispatchers work implementation detail
+     * @param code Just the LibraryNodeCode
+     * @param impl_type The ImplementationType
+     * @param fn
+     */
+    void register_library_node_dispatcher(
+        const data_flow::LibraryNodeCode& code,
+        const data_flow::ImplementationType& impl_type,
+        LibraryNodeDispatcherFn fn
+    ) {
+        std::string full_code = code.value() + "::" + impl_type.value();
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (factory_map_.find(full_code) != factory_map_.end()) {
+            return;
+        }
+        factory_map_[full_code] = std::move(fn);
     }
 
     LibraryNodeDispatcherFn get_library_node_dispatcher(std::string library_node_code) const {
@@ -244,7 +296,9 @@ public:
         return nullptr;
     }
 
-    size_t size() const { return factory_map_.size(); }
+    size_t size() const {
+        return factory_map_.size();
+    }
 };
 
 void register_default_dispatchers();

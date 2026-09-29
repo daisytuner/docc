@@ -337,7 +337,8 @@ SoftmaxNodeDispatcher_CUDAWithTransfers::SoftmaxNodeDispatcher_CUDAWithTransfers
     const data_flow::DataFlowGraph& data_flow_graph,
     const sdfg::math::tensor::SoftmaxNode& node
 )
-    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
+}
 
 void SoftmaxNodeDispatcher_CUDAWithTransfers::dispatch_code_with_edges(
     codegen::CodegenOutput& out,
@@ -407,7 +408,8 @@ SoftmaxNodeDispatcher_CUDAWithoutTransfers::SoftmaxNodeDispatcher_CUDAWithoutTra
     const data_flow::DataFlowGraph& data_flow_graph,
     const sdfg::math::tensor::SoftmaxNode& node
 )
-    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
+}
 
 void SoftmaxNodeDispatcher_CUDAWithoutTransfers::dispatch_code_with_edges(
     codegen::CodegenOutput& out,

@@ -6,7 +6,9 @@
 namespace sdfg {
 namespace builder {
 
-Function& SDFGBuilder::function() const { return static_cast<Function&>(*this->sdfg_); };
+Function& SDFGBuilder::function() const {
+    return static_cast<Function&>(*this->sdfg_);
+};
 
 SDFGBuilder::SDFGBuilder(std::unique_ptr<SDFG>& sdfg)
     : FunctionBuilder(), sdfg_(std::move(sdfg)) {
@@ -23,9 +25,13 @@ SDFGBuilder::SDFGBuilder(const std::string& name, FunctionType type, const types
 
       };
 
-SDFG& SDFGBuilder::subject() const { return *this->sdfg_; };
+SDFG& SDFGBuilder::subject() const {
+    return *this->sdfg_;
+};
 
-std::unique_ptr<SDFG> SDFGBuilder::move() { return std::move(this->sdfg_); };
+std::unique_ptr<SDFG> SDFGBuilder::move() {
+    return std::move(this->sdfg_);
+};
 
 void SDFGBuilder::rename_container(const std::string& old_name, const std::string& new_name) const {
     FunctionBuilder::rename_container(old_name, new_name);
@@ -62,7 +68,9 @@ control_flow::State& SDFGBuilder::
     auto& new_state = this->add_state(false, debug_info);
 
     std::vector<const control_flow::InterstateEdge*> to_redirect;
-    for (auto& e : this->sdfg_->in_edges(state)) to_redirect.push_back(&e);
+    for (auto& e : this->sdfg_->in_edges(state)) {
+        to_redirect.push_back(&e);
+    }
 
     // Redirect control-flow
     for (auto edge : to_redirect) {
@@ -86,7 +94,9 @@ control_flow::State& SDFGBuilder::
     auto& new_state = this->add_state(false, debug_info);
 
     std::vector<const control_flow::InterstateEdge*> to_redirect;
-    for (auto& e : this->sdfg_->out_edges(state)) to_redirect.push_back(&e);
+    for (auto& e : this->sdfg_->out_edges(state)) {
+        to_redirect.push_back(&e);
+    }
 
     // Redirect control-flow
     for (auto& edge : to_redirect) {
@@ -122,7 +132,9 @@ control_flow::ReturnState& SDFGBuilder::
     auto& new_state = this->add_return_state(data, debug_info);
 
     std::vector<const control_flow::InterstateEdge*> to_redirect;
-    for (auto& e : this->sdfg_->out_edges(state)) to_redirect.push_back(&e);
+    for (auto& e : this->sdfg_->out_edges(state)) {
+        to_redirect.push_back(&e);
+    }
 
     // Redirect control-flow
     for (auto& edge : to_redirect) {
@@ -143,8 +155,7 @@ control_flow::ReturnState& SDFGBuilder::
     auto res = this->sdfg_->states_.insert(
         {vertex,
          std::unique_ptr<
-             control_flow::State>(new control_flow::ReturnState(this->new_element_id(), debug_info, vertex, data, type))
-        }
+             control_flow::State>(new control_flow::ReturnState(this->new_element_id(), debug_info, vertex, data, type))}
     );
 
     assert(res.second);
@@ -159,7 +170,9 @@ control_flow::ReturnState& SDFGBuilder::add_constant_return_state_after(
     auto& new_state = this->add_constant_return_state(data, type, debug_info);
 
     std::vector<const control_flow::InterstateEdge*> to_redirect;
-    for (auto& e : this->sdfg_->out_edges(state)) to_redirect.push_back(&e);
+    for (auto& e : this->sdfg_->out_edges(state)) {
+        to_redirect.push_back(&e);
+    }
 
     // Redirect control-flow
     for (auto& edge : to_redirect) {
@@ -341,8 +354,7 @@ data_flow::AccessNode& SDFGBuilder::
     auto res = dataflow.nodes_.insert(
         {vertex,
          std::unique_ptr<
-             data_flow::AccessNode>(new data_flow::AccessNode(this->new_element_id(), debug_info, vertex, dataflow, data)
-         )}
+             data_flow::AccessNode>(new data_flow::AccessNode(this->new_element_id(), debug_info, vertex, dataflow, data))}
     );
 
     return static_cast<data_flow::AccessNode&>(*(res.first->second));

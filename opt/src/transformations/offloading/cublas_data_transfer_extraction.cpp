@@ -32,9 +32,14 @@ std::string CUBLASDataTransferExtraction::create_device_container(
     builder::StructuredSDFGBuilder& builder, const types::Pointer& type, const symbolic::Expression& size
 ) {
     auto new_type = type.clone();
-    new_type->storage_type(types::StorageType(
-        "NV_Generic", size, types::StorageType::AllocationType::Unmanaged, types::StorageType::AllocationType::Unmanaged
-    ));
+    new_type->storage_type(
+        types::StorageType(
+            "NV_Generic",
+            size,
+            types::StorageType::AllocationType::Unmanaged,
+            types::StorageType::AllocationType::Unmanaged
+        )
+    );
     auto device_container = builder.find_new_name(CUDA_DEVICE_PREFIX);
     builder.add_container(device_container, *new_type);
     return device_container;
@@ -187,9 +192,12 @@ void CUBLASDataTransferExtraction::create_copy_from_device_with_deallocation(
     );
 }
 
-CUBLASDataTransferExtraction::CUBLASDataTransferExtraction(math::blas::BLASNode& blas_node) : blas_node_(blas_node) {}
+CUBLASDataTransferExtraction::CUBLASDataTransferExtraction(math::blas::BLASNode& blas_node) : blas_node_(blas_node) {
+}
 
-std::string CUBLASDataTransferExtraction::name() const { return "CUBLASDataTransferExtraction"; }
+std::string CUBLASDataTransferExtraction::name() const {
+    return "CUBLASDataTransferExtraction";
+}
 
 bool CUBLASDataTransferExtraction::
     can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
@@ -339,7 +347,7 @@ void CUBLASDataTransferExtraction::
     }
 
     // Change the implementation type to CUBLAS without data transfers
-    this->blas_node_.implementation_type() = cuda::ImplementationType_CUDAWithoutTransfers;
+    this->blas_node_.set_implementation_type(cuda::ImplementationType_CUDAWithoutTransfers);
 }
 
 void CUBLASDataTransferExtraction::to_json(nlohmann::json& j) const {

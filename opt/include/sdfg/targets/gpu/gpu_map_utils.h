@@ -5,6 +5,7 @@
 
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/structured_control_flow/map.h"
+#include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/gpu/gpu_offload_schedule_type.h"
@@ -152,6 +153,20 @@ get_gpu_maps(structured_control_flow::Map& node, analysis::AnalysisManager& anal
  */
 bool nested_parallelization_is_unsafe(
     structured_control_flow::StructuredLoop& loop, analysis::AnalysisManager& analysis_manager
+);
+
+struct FoldBarrier {
+    structured_control_flow::Sequence* sequence;
+    structured_control_flow::ControlFlowNode* before;
+};
+
+struct NestedFoldPlan {
+    bool unsafe = false;
+    std::vector<FoldBarrier> barriers;
+};
+
+NestedFoldPlan analyze_nested_fold(
+    structured_control_flow::StructuredLoop& loop, TargetLevel target_level, analysis::AnalysisManager& analysis_manager
 );
 
 symbolic::Expression get_target_level_dim(TargetLevel target_level, int warp_size);

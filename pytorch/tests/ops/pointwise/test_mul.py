@@ -34,11 +34,21 @@ def test_mul_tensor_scalar_int(target: str) -> None:
     check(MulScalarIntNet(), x, 3, target=target)
 
 
-def test_mul_broadcast(target: str) -> None:
-    class PointwiseMulBroadcastNet(nn.Module):
+def test_mul_broadcast_1(target: str) -> None:
+    class MulBroadcast1Net(nn.Module):
+        def forward(self, input: torch.Tensor, other: torch.Tensor) -> torch.Tensor:
+            return torch.mul(input, other)
+
+    check(MulBroadcast1Net(), *(torch.randn(3), torch.randn(2, 3)), target=target)
+
+
+def test_mul_broadcast_2(target: str) -> None:
+    class MulBroadcast2Net(nn.Module):
         def forward(self, input: torch.Tensor, other: torch.Tensor) -> torch.Tensor:
             return torch.mul(input, other)
 
     check(
-        PointwiseMulBroadcastNet(), *(torch.randn(3), torch.randn(2, 3)), target=target
+        MulBroadcast2Net(),
+        *(torch.randn(1, 3, 15), torch.randn(1, 3, 1)),
+        target=target
     )

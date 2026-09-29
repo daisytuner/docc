@@ -24,9 +24,13 @@ ROCMReduceDispatcher::ROCMReduceDispatcher(
     : gpu::GPUReduceDispatcher(language_extension, sdfg, analysis_manager, node, instrumentation_plan, arg_capture_plan) {
       };
 
-std::string ROCMReduceDispatcher::schedule_value() const { return ScheduleType_ROCM::value(); }
+std::string ROCMReduceDispatcher::schedule_value() const {
+    return ScheduleType_ROCM::value();
+}
 
-codegen::TargetType ROCMReduceDispatcher::target_type() const { return TargetType_ROCM; }
+codegen::TargetType ROCMReduceDispatcher::target_type() const {
+    return TargetType_ROCM;
+}
 
 std::unique_ptr<codegen::LanguageExtension> ROCMReduceDispatcher::create_device_language_extension() const {
     return std::make_unique<codegen::ROCMLanguageExtension>(sdfg_);
@@ -36,7 +40,9 @@ bool ROCMReduceDispatcher::is_device_pointer_storage(const types::StorageType& s
     return storage.value() == "AMD_Generic";
 }
 
-std::string ROCMReduceDispatcher::kernel_file_extension() const { return "rocm.cpp"; }
+std::string ROCMReduceDispatcher::kernel_file_extension() const {
+    return "rocm.cpp";
+}
 
 void ROCMReduceDispatcher::emit_kernel_includes(codegen::CodeSnippetFactory& library_snippet_factory) const {
     library_snippet_factory.add_global("#include <cstdio>");

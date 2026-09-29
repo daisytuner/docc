@@ -76,7 +76,9 @@ public:
 
     bool visit(sdfg::structured_control_flow::ControlFlowNode& node);
 
-    bool dispatch(sdfg::structured_control_flow::ControlFlowNode& node) { return node.accept(*this); }
+    bool dispatch(sdfg::structured_control_flow::ControlFlowNode& node) {
+        return node.accept(*this);
+    }
 
     virtual bool visit(sdfg::structured_control_flow::Block& node);
 

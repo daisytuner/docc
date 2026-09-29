@@ -152,7 +152,8 @@ std::optional<MixedRadixTerm> parse_term(const symbolic::Expression& term, const
 
 MemletSimplification::
     MemletSimplification(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager)
-    : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager) {}
+    : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager) {
+}
 
 std::optional<symbolic::Expression> MemletSimplification::
     try_simplify_mixed_radix(const symbolic::Expression& expr, const symbolic::Symbol& expected_base) {

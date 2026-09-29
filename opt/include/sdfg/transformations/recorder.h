@@ -45,10 +45,14 @@ protected:
     enrich(nlohmann::json& desc, builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
         auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
         for (auto& [key, value] : desc["subgraph"].items()) {
-            if (!value.contains("element_id")) continue;
+            if (!value.contains("element_id")) {
+                continue;
+            }
             auto element_id = value["element_id"].template get<size_t>();
             auto* elem = builder.find_element_by_id(element_id);
-            if (dyn_cast<structured_control_flow::StructuredLoop*>(elem) == nullptr) continue;
+            if (dyn_cast<structured_control_flow::StructuredLoop*>(elem) == nullptr) {
+                continue;
+            }
             auto* loop = static_cast<structured_control_flow::ControlFlowNode*>(elem);
             auto loop_info = loop_analysis.loop_info(loop);
             value["loop_info"] = loop_info_to_json(loop_info);
@@ -138,13 +142,17 @@ public:
      * @brief Get the transformation history
      * @return JSON array of transformation descriptions
      */
-    nlohmann::json get_history() const { return history_; }
+    nlohmann::json get_history() const {
+        return history_;
+    }
 
     /**
      * @brief Get mutable reference to transformation history
      * @return JSON array of transformation descriptions
      */
-    nlohmann::json& history() { return history_; }
+    nlohmann::json& history() {
+        return history_;
+    }
 };
 
 } // namespace transformations

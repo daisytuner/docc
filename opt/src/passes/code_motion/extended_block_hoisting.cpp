@@ -16,7 +16,8 @@ namespace passes {
 
 ExtendedBlockHoisting::
     ExtendedBlockHoisting(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager)
-    : BlockHoisting(builder, analysis_manager) {}
+    : BlockHoisting(builder, analysis_manager) {
+}
 
 bool ExtendedBlockHoisting::is_libnode_allowed(
     structured_control_flow::Sequence& body, data_flow::DataFlowGraph& dfg, data_flow::LibraryNode* libnode
@@ -98,8 +99,8 @@ void ExtendedBlockHoisting::if_else_extract_invariant_libnode_back(
 
             for (size_t i = 1; i < if_else.size(); i++) {
                 size_t other_size = if_else.at(i).first.size();
-                auto& other_block = static_cast<structured_control_flow::Block&>(if_else.at(i).first.at(other_size - 1)
-                );
+                auto& other_block =
+                    static_cast<structured_control_flow::Block&>(if_else.at(i).first.at(other_size - 1));
                 auto& other_dfg = other_block.dataflow();
                 auto* other_offloading_node =
                     dynamic_cast<offloading::DataOffloadingNode*>(*other_dfg.library_nodes().begin());
@@ -117,8 +118,8 @@ void ExtendedBlockHoisting::if_else_extract_invariant_libnode_back(
 
             for (size_t i = 1; i < if_else.size(); i++) {
                 size_t other_size = if_else.at(i).first.size();
-                auto& other_block = static_cast<structured_control_flow::Block&>(if_else.at(i).first.at(other_size - 1)
-                );
+                auto& other_block =
+                    static_cast<structured_control_flow::Block&>(if_else.at(i).first.at(other_size - 1));
                 auto& other_dfg = other_block.dataflow();
                 auto* other_libnode = *other_dfg.library_nodes().begin();
                 auto& other_oedge = *other_dfg.out_edges(*other_libnode).begin();

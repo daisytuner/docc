@@ -13,7 +13,8 @@ DotNodeDispatcher_ROCMBLASWithTransfers::DotNodeDispatcher_ROCMBLASWithTransfers
     const data_flow::DataFlowGraph& data_flow_graph,
     const math::blas::DotNode& node
 )
-    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
+}
 
 void DotNodeDispatcher_ROCMBLASWithTransfers::dispatch_code(
     codegen::PrettyPrinter& stream,
@@ -94,7 +95,8 @@ DotNodeDispatcher_ROCMBLASWithoutTransfers::DotNodeDispatcher_ROCMBLASWithoutTra
     const data_flow::DataFlowGraph& data_flow_graph,
     const math::blas::DotNode& node
 )
-    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
+}
 
 void DotNodeDispatcher_ROCMBLASWithoutTransfers::dispatch_code(
     codegen::PrettyPrinter& stream,

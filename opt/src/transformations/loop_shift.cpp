@@ -26,12 +26,16 @@
 namespace sdfg {
 namespace transformations {
 
-LoopShift::LoopShift(structured_control_flow::StructuredLoop& loop) : loop_(loop), offset_(loop.init()) {}
+LoopShift::LoopShift(structured_control_flow::StructuredLoop& loop) : loop_(loop), offset_(loop.init()) {
+}
 
 LoopShift::LoopShift(structured_control_flow::StructuredLoop& loop, const symbolic::Expression& offset)
-    : loop_(loop), offset_(offset) {}
+    : loop_(loop), offset_(offset) {
+}
 
-std::string LoopShift::name() const { return "LoopShift"; }
+std::string LoopShift::name() const {
+    return "LoopShift";
+}
 
 bool LoopShift::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     if (symbolic::eq(offset_, symbolic::zero())) {

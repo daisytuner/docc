@@ -33,13 +33,14 @@ SoftmaxNode::SoftmaxNode(
     }
 }
 
-void SoftmaxNode::validate(const Function& function) const {}
+void SoftmaxNode::validate(const Function& function) const {
+}
 
 passes::LibNodeExpander::ExpandOutcome SoftmaxNode::expand(passes::LibNodeExpander::ExpandContext& context, Block& block) {
     auto& dataflow = this->get_parent();
 
     // Select the online (log-sum-exp monoid) variant; defaults to the 3-pass form.
-    const bool softmax_use_online = context.options().get(passes::LibraryNodeExpansionPass::ONLINE_SOFTMAX, false);
+    const bool softmax_use_online = context.options().get(passes::LibraryNodeExpansionPass<>::ONLINE_SOFTMAX, false);
 
     if (dataflow.in_degree(*this) != 2) {
         return context.unable();
@@ -405,8 +406,8 @@ bool SoftmaxNode::expand_reduction(
 
 std::unique_ptr<data_flow::DataFlowNode> SoftmaxNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
-    return std::unique_ptr<
-        data_flow::DataFlowNode>(new SoftmaxNode(element_id, this->debug_info(), vertex, parent, this->shape_, this->axes_)
+    return std::unique_ptr<data_flow::DataFlowNode>(
+        new SoftmaxNode(element_id, this->debug_info(), vertex, parent, this->shape_, this->axes_)
     );
 }
 

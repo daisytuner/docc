@@ -62,7 +62,9 @@ SymbolPropagation::SymbolPropagation()
 
       };
 
-std::string SymbolPropagation::name() { return "SymbolPropagation"; };
+std::string SymbolPropagation::name() {
+    return "SymbolPropagation";
+};
 
 bool SymbolPropagation::run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     bool applied = false;

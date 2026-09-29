@@ -10,7 +10,6 @@
 #include "sdfg/codegen/dispatchers/sequence_dispatcher.h"
 #include "sdfg/codegen/dispatchers/while_dispatcher.h"
 
-#include "sdfg/data_flow/library_nodes/async_copy_node.h"
 #include "sdfg/data_flow/library_nodes/atomic_op_node.h"
 #include "sdfg/data_flow/library_nodes/barrier_local_node.h"
 #include "sdfg/data_flow/library_nodes/call_node.h"
@@ -272,7 +271,8 @@ void register_default_dispatchers() {
 
     // stdlib
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        stdlib::LibraryNodeType_Alloca.value() + "::" + data_flow::ImplementationType_NONE.value(),
+        stdlib::LibraryNodeType_Alloca,
+        data_flow::ImplementationType_NONE,
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -283,7 +283,8 @@ void register_default_dispatchers() {
         }
     );
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        stdlib::LibraryNodeType_Assert.value() + "::" + data_flow::ImplementationType_NONE.value(),
+        stdlib::LibraryNodeType_Assert,
+        data_flow::ImplementationType_NONE,
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -294,7 +295,8 @@ void register_default_dispatchers() {
         }
     );
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        stdlib::LibraryNodeType_Calloc.value() + "::" + data_flow::ImplementationType_NONE.value(),
+        stdlib::LibraryNodeType_Calloc,
+        data_flow::ImplementationType_NONE,
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -305,7 +307,8 @@ void register_default_dispatchers() {
         }
     );
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        stdlib::LibraryNodeType_Free.value() + "::" + data_flow::ImplementationType_NONE.value(),
+        stdlib::LibraryNodeType_Free,
+        data_flow::ImplementationType_NONE,
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -316,7 +319,8 @@ void register_default_dispatchers() {
         }
     );
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        stdlib::LibraryNodeType_Malloc.value() + "::" + data_flow::ImplementationType_NONE.value(),
+        stdlib::LibraryNodeType_Malloc,
+        data_flow::ImplementationType_NONE,
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -327,7 +331,8 @@ void register_default_dispatchers() {
         }
     );
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        stdlib::LibraryNodeType_Memcpy.value() + "::" + data_flow::ImplementationType_NONE.value(),
+        stdlib::LibraryNodeType_Memcpy,
+        data_flow::ImplementationType_NONE,
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -338,7 +343,8 @@ void register_default_dispatchers() {
         }
     );
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        stdlib::LibraryNodeType_Memmove.value() + "::" + data_flow::ImplementationType_NONE.value(),
+        stdlib::LibraryNodeType_Memmove,
+        data_flow::ImplementationType_NONE,
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -349,7 +355,8 @@ void register_default_dispatchers() {
         }
     );
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        stdlib::LibraryNodeType_Memset.value() + "::" + data_flow::ImplementationType_NONE.value(),
+        stdlib::LibraryNodeType_Memset,
+        data_flow::ImplementationType_NONE,
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -360,7 +367,8 @@ void register_default_dispatchers() {
         }
     );
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        stdlib::LibraryNodeType_Trap.value() + "::" + data_flow::ImplementationType_NONE.value(),
+        stdlib::LibraryNodeType_Trap,
+        data_flow::ImplementationType_NONE,
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -371,7 +379,8 @@ void register_default_dispatchers() {
         }
     );
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        stdlib::LibraryNodeType_Unreachable.value() + "::" + data_flow::ImplementationType_NONE.value(),
+        stdlib::LibraryNodeType_Unreachable,
+        data_flow::ImplementationType_NONE,
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -384,7 +393,8 @@ void register_default_dispatchers() {
 
     // CallNode
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        data_flow::LibraryNodeType_Call.value() + "::" + data_flow::ImplementationType_NONE.value(),
+        data_flow::LibraryNodeType_Call,
+        data_flow::ImplementationType_NONE,
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -395,7 +405,8 @@ void register_default_dispatchers() {
         }
     );
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        data_flow::LibraryNodeType_Invoke.value() + "::" + data_flow::ImplementationType_NONE.value(),
+        data_flow::LibraryNodeType_Invoke,
+        data_flow::ImplementationType_NONE,
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -408,7 +419,8 @@ void register_default_dispatchers() {
 
     // BarrierLocal
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        data_flow::LibraryNodeType_BarrierLocal.value() + "::" + data_flow::ImplementationType_NONE.value(),
+        data_flow::LibraryNodeType_BarrierLocal,
+        data_flow::ImplementationType_NONE,
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -419,45 +431,11 @@ void register_default_dispatchers() {
         }
     );
 
-    // Async copy / pipeline primitives (software pipelining)
-    LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        data_flow::LibraryNodeType_CpAsyncCopy.value() + "::" + data_flow::ImplementationType_NONE.value(),
-        [](LanguageExtension& language_extension,
-           const Function& function,
-           const data_flow::DataFlowGraph& data_flow_graph,
-           const data_flow::LibraryNode& node) {
-            return std::make_unique<data_flow::CpAsyncCopyNodeDispatcher>(
-                language_extension, function, data_flow_graph, dynamic_cast<const data_flow::CpAsyncCopyNode&>(node)
-            );
-        }
-    );
-    LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        data_flow::LibraryNodeType_PipelineCommit.value() + "::" + data_flow::ImplementationType_NONE.value(),
-        [](LanguageExtension& language_extension,
-           const Function& function,
-           const data_flow::DataFlowGraph& data_flow_graph,
-           const data_flow::LibraryNode& node) {
-            return std::make_unique<data_flow::PipelineCommitNodeDispatcher>(
-                language_extension, function, data_flow_graph, dynamic_cast<const data_flow::PipelineCommitNode&>(node)
-            );
-        }
-    );
-    LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        data_flow::LibraryNodeType_PipelineWait.value() + "::" + data_flow::ImplementationType_NONE.value(),
-        [](LanguageExtension& language_extension,
-           const Function& function,
-           const data_flow::DataFlowGraph& data_flow_graph,
-           const data_flow::LibraryNode& node) {
-            return std::make_unique<data_flow::PipelineWaitNodeDispatcher>(
-                language_extension, function, data_flow_graph, dynamic_cast<const data_flow::PipelineWaitNode&>(node)
-            );
-        }
-    );
-
 
     auto& libNodeRegistry = LibraryNodeDispatcherRegistry::instance();
     libNodeRegistry.register_library_node_dispatcher(
-        data_flow::LibraryNodeType_AtomicScalarOp.value() + "::" + data_flow::AtomicScalarOpCPUImpl::TYPE_NAME,
+        data_flow::LibraryNodeType_AtomicScalarOp,
+        data_flow::AtomicScalarOpCPUImpl::implementation_type(),
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -469,7 +447,8 @@ void register_default_dispatchers() {
     );
 
     libNodeRegistry.register_library_node_dispatcher(
-        data_flow::LibraryNodeType_AtomicScalarOp.value() + "::" + data_flow::AtomicScalarOpCudaImpl::TYPE_NAME,
+        data_flow::LibraryNodeType_AtomicScalarOp,
+        data_flow::AtomicScalarOpCudaImpl::implementation_type(),
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -481,7 +460,8 @@ void register_default_dispatchers() {
     );
 
     libNodeRegistry.register_library_node_dispatcher(
-        data_flow::LibraryNodeType_AtomicScalarOp.value() + "::" + data_flow::AtomicScalarOpRocmImpl::TYPE_NAME,
+        data_flow::LibraryNodeType_AtomicScalarOp,
+        data_flow::AtomicScalarOpRocmImpl::implementation_type(),
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -494,7 +474,8 @@ void register_default_dispatchers() {
 
     // Metadata
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        data_flow::LibraryNodeType_Metadata.value() + "::" + data_flow::ImplementationType_NONE.value(),
+        data_flow::LibraryNodeType_Metadata,
+        data_flow::ImplementationType_NONE,
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -507,7 +488,8 @@ void register_default_dispatchers() {
 
     // LoadConst
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        data_flow::LibraryNodeType_LoadConst.value() + "::" + data_flow::ImplementationType_NONE.value(),
+        data_flow::LibraryNodeType_LoadConst,
+        data_flow::ImplementationType_NONE,
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -522,7 +504,8 @@ void register_default_dispatchers() {
 
     // CMath
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        math::cmath::LibraryNodeType_CMath.value() + "::" + data_flow::ImplementationType_NONE.value(),
+        math::cmath::LibraryNodeType_CMath,
+        data_flow::ImplementationType_NONE,
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -535,7 +518,8 @@ void register_default_dispatchers() {
 
     // Dot - BLAS
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        math::blas::LibraryNodeType_DOT.value() + "::" + math::blas::ImplementationType_BLAS.value(),
+        math::blas::LibraryNodeType_DOT,
+        math::blas::ImplementationType_BLAS,
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
@@ -548,7 +532,8 @@ void register_default_dispatchers() {
 
     // GEMM - BLAS
     LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        math::blas::LibraryNodeType_GEMM.value() + "::" + math::blas::ImplementationType_BLAS.value(),
+        math::blas::LibraryNodeType_GEMM,
+        math::blas::ImplementationType_BLAS,
         [](LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,

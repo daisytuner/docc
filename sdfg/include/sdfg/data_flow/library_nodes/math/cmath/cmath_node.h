@@ -220,6 +220,85 @@ constexpr size_t cmath_function_to_arity(CMathFunction func) {
 }
 
 /**
+ * @brief Approximate flop-equivalent cost of a libm call.
+ *
+ * Elementwise math lowers to a single library call whose polynomial implementation retires
+ * several floating-point instructions; FLOPAnalysis weights the node with this instead of
+ * counting it as one flop. Values are coarse tiers, not exact per-libm counts. The switch is
+ * exhaustive (no default), so adding a CMathFunction without a cost here fails to compile.
+ */
+constexpr uint64_t cmath_function_to_flop(CMathFunction func) {
+    switch (func) {
+        // Rounding, sign, classification, manipulation, min/max, remainder, sqrt: one fp op.
+        case CMathFunction::fabs:
+        case CMathFunction::ceil:
+        case CMathFunction::floor:
+        case CMathFunction::trunc:
+        case CMathFunction::round:
+        case CMathFunction::lround:
+        case CMathFunction::llround:
+        case CMathFunction::roundeven:
+        case CMathFunction::nearbyint:
+        case CMathFunction::rint:
+        case CMathFunction::lrint:
+        case CMathFunction::llrint:
+        case CMathFunction::fmod:
+        case CMathFunction::remainder:
+        case CMathFunction::frexp:
+        case CMathFunction::ldexp:
+        case CMathFunction::modf:
+        case CMathFunction::scalbn:
+        case CMathFunction::scalbln:
+        case CMathFunction::ilogb:
+        case CMathFunction::logb:
+        case CMathFunction::nextafter:
+        case CMathFunction::nexttoward:
+        case CMathFunction::copysign:
+        case CMathFunction::fmax:
+        case CMathFunction::fmin:
+        case CMathFunction::fdim:
+        case CMathFunction::sqrt:
+            return 1;
+        // Fused multiply-add.
+        case CMathFunction::fma:
+            return 2;
+        // Exponential / logarithmic / root: a short polynomial evaluation.
+        case CMathFunction::exp:
+        case CMathFunction::exp2:
+        case CMathFunction::exp10:
+        case CMathFunction::expm1:
+        case CMathFunction::log:
+        case CMathFunction::log10:
+        case CMathFunction::log2:
+        case CMathFunction::log1p:
+        case CMathFunction::cbrt:
+        case CMathFunction::hypot:
+            return 10;
+        // Trig / hyperbolic / inverse, power, error and gamma: range reduction plus a longer
+        // polynomial.
+        case CMathFunction::sin:
+        case CMathFunction::cos:
+        case CMathFunction::tan:
+        case CMathFunction::asin:
+        case CMathFunction::acos:
+        case CMathFunction::atan:
+        case CMathFunction::atan2:
+        case CMathFunction::sinh:
+        case CMathFunction::cosh:
+        case CMathFunction::tanh:
+        case CMathFunction::asinh:
+        case CMathFunction::acosh:
+        case CMathFunction::atanh:
+        case CMathFunction::pow:
+        case CMathFunction::erf:
+        case CMathFunction::erfc:
+        case CMathFunction::tgamma:
+        case CMathFunction::lgamma:
+            return 20;
+    }
+}
+
+/**
  * @brief Convert CMathFunction enum to function name stem (without type suffix)
  * @param func The CMathFunction enum value
  * @return The function name stem as a string
@@ -422,8 +501,8 @@ public:
 
     std::string toStr() const override;
 
-    data_flow::EdgeRemoveOption can_remove_out_edge(const data_flow::DataFlowGraph& graph, const data_flow::Memlet* memlet)
-        const override;
+    data_flow::EdgeRemoveOption
+    can_remove_out_edge(const data_flow::DataFlowGraph& graph, const data_flow::Memlet* memlet) const override;
 };
 
 class CMathNodeSerializer : public serializer::LibraryNodeSerializer {

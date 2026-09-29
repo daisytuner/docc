@@ -7,7 +7,8 @@ TargetMappingVisitor::TargetMappingVisitor(
     analysis::AnalysisManager& analysis_manager,
     const std::vector<std::shared_ptr<plugins::TargetMapper>>& target_mappers
 )
-    : NonStoppingStructuredSDFGVisitor(builder, analysis_manager), target_mappers_(target_mappers) {}
+    : NonStoppingStructuredSDFGVisitor(builder, analysis_manager), target_mappers_(target_mappers) {
+}
 
 bool TargetMappingVisitor::accept(structured_control_flow::Block& node) {
     bool applied = false;
@@ -25,9 +26,12 @@ bool TargetMappingVisitor::accept(structured_control_flow::Block& node) {
 }
 
 TargetMappingPass::TargetMappingPass(std::vector<std::shared_ptr<plugins::TargetMapper>> target_mappers)
-    : target_mappers_(target_mappers) {}
+    : target_mappers_(target_mappers) {
+}
 
-std::string TargetMappingPass::name() { return "TargetMapper"; }
+std::string TargetMappingPass::name() {
+    return "TargetMapper";
+}
 
 bool TargetMappingPass::run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     TargetMappingVisitor visitor(builder, analysis_manager, target_mappers_);

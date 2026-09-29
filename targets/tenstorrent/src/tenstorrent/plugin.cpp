@@ -83,7 +83,8 @@ void register_plugin(sdfg::plugins::Context &context) {
 
 
     context.library_node_dispatcher_registry.register_library_node_dispatcher(
-        LibraryNodeType_Tenstorrent_Offloading.value() + "::" + data_flow::ImplementationType_NONE.value(),
+        LibraryNodeType_Tenstorrent_Offloading,
+        data_flow::ImplementationType_NONE,
         [](codegen::LanguageExtension &language_extension,
            const Function &function,
            const data_flow::DataFlowGraph &data_flow_graph,
@@ -98,7 +99,8 @@ void register_plugin(sdfg::plugins::Context &context) {
         });
 
     context.library_node_dispatcher_registry.register_library_node_dispatcher(
-        LibraryNodeType_Tenstorrent_CreateDevice.value() + "::" + data_flow::ImplementationType_NONE.value(),
+        LibraryNodeType_Tenstorrent_CreateDevice,
+        data_flow::ImplementationType_NONE,
         [](codegen::LanguageExtension &language_extension,
            const Function &function,
            const data_flow::DataFlowGraph &data_flow_graph,
@@ -115,7 +117,8 @@ void register_plugin(sdfg::plugins::Context &context) {
     // blas dispatchers
 
     context.library_node_dispatcher_registry.register_library_node_dispatcher(
-        math::blas::LibraryNodeType_GEMM.value() + "::" + ImplementationType_Tenstorrent_WithTransfers.value(),
+        math::blas::LibraryNodeType_GEMM,
+        ImplementationType_Tenstorrent_WithTransfers,
         [](codegen::LanguageExtension &language_extension,
            const Function &function,
            const data_flow::DataFlowGraph &data_flow_graph,
@@ -127,7 +130,8 @@ void register_plugin(sdfg::plugins::Context &context) {
     );
 
     context.library_node_dispatcher_registry.register_library_node_dispatcher(
-        math::blas::LibraryNodeType_DOT.value() + "::" + ImplementationType_Tenstorrent_WithTransfers.value(),
+        math::blas::LibraryNodeType_DOT,
+        ImplementationType_Tenstorrent_WithTransfers,
         [](codegen::LanguageExtension &language_extension,
            const Function &function,
            const data_flow::DataFlowGraph &data_flow_graph,

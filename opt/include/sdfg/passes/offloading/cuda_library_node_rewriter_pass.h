@@ -14,7 +14,9 @@ class CudaLibraryNodeRewriter : public visitor::StructuredSDFGVisitor {
 public:
     CudaLibraryNodeRewriter(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager);
 
-    static std::string name() { return "CudaLibraryNodeRewriterPass"; };
+    static std::string name() {
+        return "CudaLibraryNodeRewriterPass";
+    };
     bool accept(structured_control_flow::Block& node) override;
 
 private:

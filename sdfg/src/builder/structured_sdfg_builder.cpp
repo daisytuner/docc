@@ -1,6 +1,8 @@
 #include "sdfg/builder/structured_sdfg_builder.h"
 
+#include <algorithm>
 #include <cstddef>
+#include <vector>
 
 #include "sdfg/builder/function_builder.h"
 #include "sdfg/data_flow/library_node.h"
@@ -44,8 +46,12 @@ std::unordered_set<const control_flow::State*> StructuredSDFGBuilder::
     auto dominates = [&](const control_flow::State* a, const control_flow::State* b) {
         const control_flow::State* curr = b;
         while (curr != nullptr) {
-            if (curr == a) return true;
-            if (dom_tree.find(curr) == dom_tree.end()) break;
+            if (curr == a) {
+                return true;
+            }
+            if (dom_tree.find(curr) == dom_tree.end()) {
+                break;
+            }
             curr = dom_tree.at(curr);
         }
         return false;
@@ -102,7 +108,9 @@ std::unordered_set<const control_flow::State*> StructuredSDFGBuilder::
             }
         }
 
-        if (!changed) break;
+        if (!changed) {
+            break;
+        }
     }
 
     return nodes;
@@ -381,7 +389,9 @@ void StructuredSDFGBuilder::structure_region(
     }
 }
 
-Function& StructuredSDFGBuilder::function() const { return static_cast<Function&>(*this->structured_sdfg_); };
+Function& StructuredSDFGBuilder::function() const {
+    return static_cast<Function&>(*this->structured_sdfg_);
+};
 
 StructuredSDFGBuilder::StructuredSDFGBuilder(StructuredSDFG& sdfg)
     : FunctionBuilder(), structured_sdfg_(&sdfg, owned(false)) {};
@@ -426,7 +436,9 @@ StructuredSDFGBuilder::StructuredSDFGBuilder(SDFG& sdfg)
     this->traverse(sdfg);
 };
 
-StructuredSDFG& StructuredSDFGBuilder::subject() const { return *this->structured_sdfg_; };
+StructuredSDFG& StructuredSDFGBuilder::subject() const {
+    return *this->structured_sdfg_;
+};
 
 std::unique_ptr<StructuredSDFG> StructuredSDFGBuilder::move() {
 #ifndef NDEBUG
@@ -551,7 +563,9 @@ void StructuredSDFGBuilder::remove_child(Sequence& parent, size_t index) {
     parent.children_.erase(parent.children_.begin() + index);
 };
 
-void StructuredSDFGBuilder::remove_children(Sequence& parent) { parent.children_.clear(); };
+void StructuredSDFGBuilder::remove_children(Sequence& parent) {
+    parent.children_.clear();
+};
 
 void StructuredSDFGBuilder::move_child(Sequence& source, size_t source_index, Sequence& target) {
     size_t target_index = target.size();
@@ -1453,22 +1467,37 @@ int StructuredSDFGBuilder::clear_ptr_borrow_edge(Block& block, const data_flow::
 void StructuredSDFGBuilder::add_dataflow(const data_flow::DataFlowGraph& from, Block& to) {
     auto& to_dataflow = to.dataflow();
 
+    std::vector<const data_flow::DataFlowNode*> nodes;
+    for (const auto& node : from.nodes()) {
+        nodes.push_back(&node);
+    }
+    std::sort(nodes.begin(), nodes.end(), [](const auto* left, const auto* right) {
+        return left->element_id() < right->element_id();
+    });
+    std::vector<const data_flow::Memlet*> edges;
+    for (const auto& edge : from.edges()) {
+        edges.push_back(&edge);
+    }
+    std::sort(edges.begin(), edges.end(), [](const auto* left, const auto* right) {
+        return left->element_id() < right->element_id();
+    });
+
     std::unordered_map<graph::Vertex, graph::Vertex> node_mapping;
-    for (auto& entry : from.nodes_) {
+    for (const auto* node : nodes) {
         auto vertex = boost::add_vertex(to_dataflow.graph_);
-        to_dataflow.nodes_.insert({vertex, entry.second->clone(this->new_element_id(), vertex, to_dataflow)});
-        node_mapping.insert({entry.first, vertex});
+        to_dataflow.nodes_.insert({vertex, node->clone(this->new_element_id(), vertex, to_dataflow)});
+        node_mapping.insert({node->vertex(), vertex});
     }
 
-    for (auto& entry : from.edges_) {
-        auto src = node_mapping[entry.second->src().vertex()];
-        auto dst = node_mapping[entry.second->dst().vertex()];
+    for (const auto* memlet : edges) {
+        auto src = node_mapping[memlet->src().vertex()];
+        auto dst = node_mapping[memlet->dst().vertex()];
 
         auto edge = boost::add_edge(src, dst, to_dataflow.graph_);
 
         to_dataflow.edges_.insert(
             {edge.first,
-             entry.second->clone(
+             memlet->clone(
                  this->new_element_id(), edge.first, to_dataflow, *to_dataflow.nodes_[src], *to_dataflow.nodes_[dst]
              )}
         );

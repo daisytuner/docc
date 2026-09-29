@@ -27,7 +27,9 @@ protected:
 
     void dispatch_schedule() override;
 
-    LanguageExtension& language_extension() override { return language_extension_; }
+    LanguageExtension& language_extension() override {
+        return language_extension_;
+    }
 
 public:
     explicit CPPCodeGenerator(
@@ -47,7 +49,8 @@ public:
               std::move(library_snippet_factory),
               externals_prefix
           ),
-          language_extension_(sdfg, externals_prefix), global_constructor_(global_constructor) {}
+          language_extension_(sdfg, externals_prefix), global_constructor_(global_constructor) {
+    }
 
     std::string function_definition() override;
 

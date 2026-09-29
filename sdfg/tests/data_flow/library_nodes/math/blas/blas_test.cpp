@@ -793,7 +793,9 @@ INSTANTIATE_TEST_SUITE_P(
             types::PrimitiveType::Int64
         }
     ),
-    [](const ::testing::TestParamInfo<GemmIndvarTypeParams>& info) { return info.param.label; }
+    [](const ::testing::TestParamInfo<GemmIndvarTypeParams>& info) {
+        return info.param.label;
+    }
 );
 
 } // namespace

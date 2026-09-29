@@ -5,9 +5,12 @@ namespace visitor {
 
 StructuredSDFGVisitor::
     StructuredSDFGVisitor(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager)
-    : builder_(builder), analysis_manager_(analysis_manager) {}
+    : builder_(builder), analysis_manager_(analysis_manager) {
+}
 
-bool StructuredSDFGVisitor::visit() { return this->visit_internal(builder_.subject().root()); }
+bool StructuredSDFGVisitor::visit() {
+    return this->visit_internal(builder_.subject().root());
+}
 
 bool StructuredSDFGVisitor::visit_internal(structured_control_flow::Sequence& parent) {
     if (this->accept(parent)) {
@@ -89,32 +92,55 @@ bool StructuredSDFGVisitor::visit_internal(structured_control_flow::Sequence& pa
     return false;
 };
 
-bool StructuredSDFGVisitor::accept(structured_control_flow::Block& node) { return false; }
+bool StructuredSDFGVisitor::accept(structured_control_flow::Block& node) {
+    return false;
+}
 
-bool StructuredSDFGVisitor::accept(structured_control_flow::AssignmentBlock& node) { return false; }
+bool StructuredSDFGVisitor::accept(structured_control_flow::AssignmentBlock& node) {
+    return false;
+}
 
-bool StructuredSDFGVisitor::accept(structured_control_flow::Sequence& node) { return false; };
+bool StructuredSDFGVisitor::accept(structured_control_flow::Sequence& node) {
+    return false;
+};
 
-bool StructuredSDFGVisitor::accept(structured_control_flow::Return& node) { return false; };
+bool StructuredSDFGVisitor::accept(structured_control_flow::Return& node) {
+    return false;
+};
 
-bool StructuredSDFGVisitor::accept(structured_control_flow::IfElse& node) { return false; };
+bool StructuredSDFGVisitor::accept(structured_control_flow::IfElse& node) {
+    return false;
+};
 
-bool StructuredSDFGVisitor::accept(structured_control_flow::While& node) { return false; };
+bool StructuredSDFGVisitor::accept(structured_control_flow::While& node) {
+    return false;
+};
 
-bool StructuredSDFGVisitor::accept(structured_control_flow::Continue& node) { return false; };
+bool StructuredSDFGVisitor::accept(structured_control_flow::Continue& node) {
+    return false;
+};
 
-bool StructuredSDFGVisitor::accept(structured_control_flow::Break& node) { return false; };
+bool StructuredSDFGVisitor::accept(structured_control_flow::Break& node) {
+    return false;
+};
 
-bool StructuredSDFGVisitor::accept(structured_control_flow::For& node) { return false; };
+bool StructuredSDFGVisitor::accept(structured_control_flow::For& node) {
+    return false;
+};
 
-bool StructuredSDFGVisitor::accept(structured_control_flow::Map& node) { return false; };
+bool StructuredSDFGVisitor::accept(structured_control_flow::Map& node) {
+    return false;
+};
 
-bool StructuredSDFGVisitor::accept(structured_control_flow::Reduce& node) { return false; };
+bool StructuredSDFGVisitor::accept(structured_control_flow::Reduce& node) {
+    return false;
+};
 
 NonStoppingStructuredSDFGVisitor::NonStoppingStructuredSDFGVisitor(
     builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager
 )
-    : StructuredSDFGVisitor(builder, analysis_manager), applied_(false) {}
+    : StructuredSDFGVisitor(builder, analysis_manager), applied_(false) {
+}
 
 bool NonStoppingStructuredSDFGVisitor::visit() {
     this->visit_internal(builder_.subject().root());
@@ -163,13 +189,19 @@ bool NonStoppingStructuredSDFGVisitor::visit_internal(structured_control_flow::S
     return false;
 };
 
-bool ActualStructuredSDFGVisitor::visit(sdfg::structured_control_flow::ControlFlowNode& node) { return dispatch(node); }
+bool ActualStructuredSDFGVisitor::visit(sdfg::structured_control_flow::ControlFlowNode& node) {
+    return dispatch(node);
+}
 
 
 ActualStructuredSDFGVisitor::ActualStructuredSDFGVisitor() = default;
 
-bool ActualStructuredSDFGVisitor::visit(Block& node) { return false; }
-bool ActualStructuredSDFGVisitor::visit(AssignmentBlock& node) { return false; }
+bool ActualStructuredSDFGVisitor::visit(Block& node) {
+    return false;
+}
+bool ActualStructuredSDFGVisitor::visit(AssignmentBlock& node) {
+    return false;
+}
 bool ActualStructuredSDFGVisitor::visit(Sequence& node) {
     for (int i = 0; i < node.size(); ++i) {
         node.at(i).accept(*this);
@@ -177,7 +209,9 @@ bool ActualStructuredSDFGVisitor::visit(Sequence& node) {
 
     return true;
 }
-bool ActualStructuredSDFGVisitor::visit(Return& node) { return false; }
+bool ActualStructuredSDFGVisitor::visit(Return& node) {
+    return false;
+}
 bool ActualStructuredSDFGVisitor::visit(IfElse& node) {
     for (int i = 0; i < node.size(); ++i) {
         visit(node.at(i).first);
@@ -185,12 +219,26 @@ bool ActualStructuredSDFGVisitor::visit(IfElse& node) {
 
     return true;
 }
-bool ActualStructuredSDFGVisitor::visit(For& node) { return handleStructuredLoop(node); }
-bool ActualStructuredSDFGVisitor::visit(Map& node) { return handleStructuredLoop(node); }
-bool ActualStructuredSDFGVisitor::visit(Reduce& node) { return handleStructuredLoop(node); }
-bool ActualStructuredSDFGVisitor::handleStructuredLoop(StructuredLoop& loop) { return visit(loop.root()); }
-bool ActualStructuredSDFGVisitor::visit(While& node) { return visit(node.root()); }
-bool ActualStructuredSDFGVisitor::visit(Continue& node) { return false; }
-bool ActualStructuredSDFGVisitor::visit(Break& node) { return false; }
+bool ActualStructuredSDFGVisitor::visit(For& node) {
+    return handleStructuredLoop(node);
+}
+bool ActualStructuredSDFGVisitor::visit(Map& node) {
+    return handleStructuredLoop(node);
+}
+bool ActualStructuredSDFGVisitor::visit(Reduce& node) {
+    return handleStructuredLoop(node);
+}
+bool ActualStructuredSDFGVisitor::handleStructuredLoop(StructuredLoop& loop) {
+    return visit(loop.root());
+}
+bool ActualStructuredSDFGVisitor::visit(While& node) {
+    return visit(node.root());
+}
+bool ActualStructuredSDFGVisitor::visit(Continue& node) {
+    return false;
+}
+bool ActualStructuredSDFGVisitor::visit(Break& node) {
+    return false;
+}
 } // namespace visitor
 } // namespace sdfg

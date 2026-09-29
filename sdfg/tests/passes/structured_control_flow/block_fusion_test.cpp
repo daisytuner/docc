@@ -447,10 +447,8 @@ TEST(BlockFusionTest, Computational_LibraryNode_WithoutSideEffects) {
 
     symbolic::MultiExpression shape = {symbolic::integer(10), symbolic::integer(20)};
     types::Tensor desc_tensor(desc, shape);
-    auto& relu_node =
-        static_cast<math::tensor::ReLUNode&>(builder
-                                                 .add_library_node<math::tensor::ReLUNode>(block_1, DebugInfo(), shape)
-        );
+    auto& relu_node = static_cast<
+        math::tensor::ReLUNode&>(builder.add_library_node<math::tensor::ReLUNode>(block_1, DebugInfo(), shape));
 
     builder.add_computational_memlet(block_1, input_node, relu_node, "X", {}, desc_tensor, block_1.debug_info());
     builder.add_computational_memlet(block_1, relu_node, "Y", tmp_node_out, {}, desc_tensor, block_1.debug_info());

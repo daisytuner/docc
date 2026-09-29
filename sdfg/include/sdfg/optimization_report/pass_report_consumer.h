@@ -24,11 +24,15 @@ public:
     }
 
     virtual void in_scope(StructuredSDFG* scope) = 0;
-    void no_scope() { in_scope(nullptr); }
+    void no_scope() {
+        in_scope(nullptr);
+    }
 
     virtual void in_outermost_loop(int idx) = 0;
 
-    void no_loop() { in_outermost_loop(-1); }
+    void no_loop() {
+        in_outermost_loop(-1);
+    }
     virtual ~PassReportConsumer() = default;
 
     virtual void target_transform_possible(const std::string basicString, bool b) = 0;

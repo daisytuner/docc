@@ -35,4 +35,6 @@ endif()
 add_test(NAME c-compile_test_test COMMAND c-compile_test)
 
 include(GoogleTest)
-gtest_discover_tests(c-compile_test)
+gtest_discover_tests(c-compile_test
+  PROPERTIES LABELS "c-compile"
+)

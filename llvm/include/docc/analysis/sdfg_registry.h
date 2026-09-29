@@ -73,7 +73,9 @@ public:
     SDFGRegistry(const SDFGRegistry&) = delete;
     SDFGRegistry& operator=(const SDFGRegistry&) = delete;
 
-    bool has_module(const llvm::Module& Module) const { return this->registry_.contains(Module.getName().str()); }
+    bool has_module(const llvm::Module& Module) const {
+        return this->registry_.contains(Module.getName().str());
+    }
 
     std::vector<std::string> get_known_modules() {
         std::vector<std::string> modules;
@@ -98,17 +100,25 @@ public:
         return at(ModuleName.str());
     }
 
-    bool has_function(const std::string& name) const { return this->attributes_.contains(name); }
+    bool has_function(const std::string& name) const {
+        return this->attributes_.contains(name);
+    }
 
-    bool has_external_function(const std::string& name) const { return this->external_attributes_.contains(name); }
+    bool has_external_function(const std::string& name) const {
+        return this->external_attributes_.contains(name);
+    }
 
     std::unordered_map<std::string, std::unique_ptr<SDFGHolder>>& at(const llvm::Module& Module) {
         return at(Module.getName());
     }
 
-    const Attributes& attributes(const std::string& name) const { return this->attributes_.at(name); }
+    const Attributes& attributes(const std::string& name) const {
+        return this->attributes_.at(name);
+    }
 
-    const Attributes& external_attributes(const std::string& name) const { return this->external_attributes_.at(name); }
+    const Attributes& external_attributes(const std::string& name) const {
+        return this->external_attributes_.at(name);
+    }
 
     void insert(const llvm::Module& Module, std::list<std::unique_ptr<sdfg::StructuredSDFG>> sdfgs);
 

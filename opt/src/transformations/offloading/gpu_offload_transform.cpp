@@ -5,9 +5,9 @@
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/cuda/cuda_data_offloading_node.h"
-#include "sdfg/targets/gpu/gpu_schedule_type.h"
 #include "sdfg/targets/offloading/data_offloading_node.h"
 #include "sdfg/targets/rocm/rocm_data_offloading_node.h"
+#include "sdfg/tiles/analysis/reduction_buffer_analysis.h"
 #include "sdfg/transformations/transformation.h"
 #include "symengine/symengine_rcp.h"
 
@@ -43,8 +43,21 @@ bool GPUOffloadTransform<OffloaderNodeType>::
         return false;
     }
 
-    return true;
+    return reduction_buffers_supported(analysis_manager);
 };
+
+template<typename OffloaderNodeType>
+bool GPUOffloadTransform<OffloaderNodeType>::reduction_buffers_supported(analysis::AnalysisManager& analysis_manager) {
+    auto& buffers = analysis_manager.get<tiles::ReductionBufferAnalysis>();
+    for (auto* reduction : buffers.affected_reductions(loop_)) {
+        for (const auto& entry : reduction->reductions()) {
+            if (!entry.original_index.is_null()) {
+                return false;
+            }
+        }
+    }
+    return buffers.supports_schedule(loop_, transformed_schedule_type());
+}
 
 template<typename OffloaderNodeType>
 void GPUOffloadTransform<OffloaderNodeType>::add_device_buffer(
@@ -271,10 +284,12 @@ template void GPUOffloadTransform<cuda::CUDADataOffloadingNode>::allocate_device
 template void GPUOffloadTransform<cuda::CUDADataOffloadingNode>::deallocate_device_arg(
     builder::StructuredSDFGBuilder&, Block&, std::string, symbolic::Expression, symbolic::Expression
 );
-template void GPUOffloadTransform<cuda::CUDADataOffloadingNode>::
-    copy_to_device(builder::StructuredSDFGBuilder&, std::string, std::string, symbolic::Expression, symbolic::Expression, Block&);
-template void GPUOffloadTransform<cuda::CUDADataOffloadingNode>::
-    copy_to_device_with_allocation(builder::StructuredSDFGBuilder&, std::string, std::string, symbolic::Expression, symbolic::Expression, Block&);
+template void GPUOffloadTransform<cuda::CUDADataOffloadingNode>::copy_to_device(
+    builder::StructuredSDFGBuilder&, std::string, std::string, symbolic::Expression, symbolic::Expression, Block&
+);
+template void GPUOffloadTransform<cuda::CUDADataOffloadingNode>::copy_to_device_with_allocation(
+    builder::StructuredSDFGBuilder&, std::string, std::string, symbolic::Expression, symbolic::Expression, Block&
+);
 template void GPUOffloadTransform<cuda::CUDADataOffloadingNode>::copy_from_device(
     builder::StructuredSDFGBuilder&, Block&, std::string, std::string, symbolic::Expression, symbolic::Expression
 );
@@ -293,10 +308,12 @@ template void GPUOffloadTransform<rocm::ROCMDataOffloadingNode>::allocate_device
 template void GPUOffloadTransform<rocm::ROCMDataOffloadingNode>::deallocate_device_arg(
     builder::StructuredSDFGBuilder&, Block&, std::string, symbolic::Expression, symbolic::Expression
 );
-template void GPUOffloadTransform<rocm::ROCMDataOffloadingNode>::
-    copy_to_device(builder::StructuredSDFGBuilder&, std::string, std::string, symbolic::Expression, symbolic::Expression, Block&);
-template void GPUOffloadTransform<rocm::ROCMDataOffloadingNode>::
-    copy_to_device_with_allocation(builder::StructuredSDFGBuilder&, std::string, std::string, symbolic::Expression, symbolic::Expression, Block&);
+template void GPUOffloadTransform<rocm::ROCMDataOffloadingNode>::copy_to_device(
+    builder::StructuredSDFGBuilder&, std::string, std::string, symbolic::Expression, symbolic::Expression, Block&
+);
+template void GPUOffloadTransform<rocm::ROCMDataOffloadingNode>::copy_to_device_with_allocation(
+    builder::StructuredSDFGBuilder&, std::string, std::string, symbolic::Expression, symbolic::Expression, Block&
+);
 template void GPUOffloadTransform<rocm::ROCMDataOffloadingNode>::copy_from_device(
     builder::StructuredSDFGBuilder&, Block&, std::string, std::string, symbolic::Expression, symbolic::Expression
 );

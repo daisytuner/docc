@@ -23,11 +23,15 @@ class DataTransferMinimizationPass : public Pass {
 public:
     DataTransferMinimizationPass();
 
-    std::string name() override { return "DataTransferMinimization"; };
+    std::string name() override {
+        return "DataTransferMinimization";
+    };
 
     bool run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
 
-    static bool available(analysis::AnalysisManager& AM) { return true; }
+    static bool available(analysis::AnalysisManager& AM) {
+        return true;
+    }
 
 protected:
     bool eliminate_transfer_pair(

@@ -3,7 +3,9 @@
 namespace sdfg {
 namespace graph {
 
-const ReverseGraph reverse(const Graph& graph) { return boost::reverse_graph<Graph>(graph); };
+const ReverseGraph reverse(const Graph& graph) {
+    return boost::reverse_graph<Graph>(graph);
+};
 
 const std::tuple<
     std::unique_ptr<const UndirectedGraph>,

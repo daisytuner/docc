@@ -14,11 +14,12 @@ set(TEST_FILES
     tiles/tile_analysis_test.cpp
     tiles/reduction_analysis_test.cpp
     tiles/locality_test.cpp
-    tiles/tiled_copy_test.cpp
     tiles/buffer_layout_test.cpp
-    tiles/tiled_copy_emit_test.cpp
+    tiles/library_nodes/pipeline_node_test.cpp
+    tiles/library_nodes/tile_copy_node_test.cpp
     tiles/transformations/tile_fusion_test.cpp
     tiles/transformations/software_pipelining_test.cpp
+    tiles/transformations/tile_vectorizer_test.cpp
     tiles/transformations/local_storage_test.cpp
     cuda/blas/cublas_test.cpp
     cuda/cuda_library_nodes_test.cpp
@@ -32,8 +33,11 @@ set(TEST_FILES
     einsum/transformations/einsum_extend_test.cpp
     einsum/transformations/einsum_lift_test.cpp
     einsum/transformations/einsum_promotion_test.cpp
+    parallelization/analysis/loop_carried_dependency_analysis_test.cpp
+    parallelization/passes/for_classification_test.cpp
     rocm/blas/rocblas_test.cpp
     rocm/rocm_library_nodes_test.cpp
+    rocm/rocm_mma_test.cpp
     rocm/rocm_reduce_dispatcher_test.cpp
     passes/loop_fusion/loop_fusion_by_domain_pass_test.cpp
     passes/loop_fusion/loop_fusion_pass_test.cpp
@@ -46,13 +50,12 @@ set(TEST_FILES
     passes/offloading/data_transfer_minimization_pass_test.cpp
     passes/offloading/device_buffer_reuse_pass_test.cpp
     passes/offloading/gpu_nested_offload_pass_test.cpp
+    analysis/data_dependency_tile_copy_test.cpp
     passes/tiling_pass_test.cpp
     transformations/offloading/cuda_parallelize_nested_map_test.cpp
     transformations/offloading/rocm_parallelize_nested_map_test.cpp
     transformations/offloading/rocm_transform_test.cpp
     transformations/offloading/cuda_transform_im2col_test.cpp
-    transformations/offloading/gpu_tiling_test.cpp
-    transformations/offloading/kernel_local_storage_test.cpp
     transformations/offloading/cublas_data_transfer_extraction_test.cpp
     transformations/offloading/rocblas_data_transfer_extraction_test.cpp
     transformations/offloading/cuda_stdlib_data_transfer_extraction_test.cpp
@@ -61,8 +64,6 @@ set(TEST_FILES
     transformations/offloading/cuda_offload_transform_test.cpp
     transformations/offloading/rocm_offload_transform_test.cpp
     optimizations/diamond_tiling_test.cpp
-    optimizations/blocking_test.cpp
-    optimizations/gpu_kernels_test.cpp
     passes/redundant_load_elimination_pass_test.cpp
     passes/offloading/cuda_library_node_transfer_extraction_pass_test.cpp
     passes/offloading/cuda_library_node_expand_tests.cpp
@@ -93,8 +94,6 @@ set(TEST_FILES
     transformations/map_fusion_test.cpp
     transformations/multi_level_tiling_test.cpp
     transformations/stream_k_test.cpp
-    transformations/out_local_storage_test.cpp
-    transformations/in_local_storage_test.cpp
     transformations/recorder_test.cpp
     transformations/vectorize_transform_test.cpp
     transformations/unroll_transform_test.cpp
@@ -127,4 +126,6 @@ endif()
 add_test(NAME sdfgopt_test_test COMMAND sdfgopt_test)
 
 include(GoogleTest)
-gtest_discover_tests(sdfgopt_test)
+gtest_discover_tests(sdfgopt_test
+  PROPERTIES LABELS "sdfgopt"
+)

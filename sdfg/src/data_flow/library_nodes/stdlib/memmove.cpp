@@ -21,11 +21,16 @@ MemmoveNode::MemmoveNode(
           true,
           data_flow::ImplementationType_NONE
       ),
-      count_(count) {}
+      count_(count) {
+}
 
-const symbolic::Expression MemmoveNode::count() const { return count_; }
+const symbolic::Expression MemmoveNode::count() const {
+    return count_;
+}
 
-void MemmoveNode::validate(const Function& function) const { LibraryNode::validate(function); }
+void MemmoveNode::validate(const Function& function) const {
+    LibraryNode::validate(function);
+}
 
 symbolic::SymbolSet MemmoveNode::symbols() const {
     auto count_symbols = symbolic::atoms(this->count_);
@@ -85,7 +90,8 @@ MemmoveNodeDispatcher::MemmoveNodeDispatcher(
     const data_flow::DataFlowGraph& data_flow_graph,
     const MemmoveNode& node
 )
-    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
+}
 
 void MemmoveNodeDispatcher::dispatch_code_with_edges(
     codegen::CodegenOutput& out,

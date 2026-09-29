@@ -12,7 +12,8 @@ namespace passes {
 GPUNestedParallelizationPass::GPUNestedParallelizationPass(
     const std::vector<structured_control_flow::StructuredLoop*>& loops, GPUTarget target, size_t block_size
 )
-    : loops_(loops), target_(target), block_size_(block_size) {}
+    : loops_(loops), target_(target), block_size_(block_size) {
+}
 
 bool GPUNestedParallelizationPass::
     run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {

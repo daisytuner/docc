@@ -1,6 +1,8 @@
 #pragma once
 
+#include <memory>
 #include "sdfg/data_flow/library_nodes/math/tensor/tensor_layout.h"
+#include "sdfg/symbolic/symbolic.h"
 #include "sdfg/types/type.h"
 
 namespace sdfg {
@@ -58,7 +60,9 @@ public:
 
     virtual bool is_symbol() const override;
 
-    bool is_pointer_like() const override { return true; }
+    bool is_pointer_like() const override {
+        return true;
+    }
 
     const Scalar& element_type() const;
 
@@ -116,14 +120,19 @@ public:
     std::unique_ptr<Tensor> reshape(const symbolic::MultiExpression& new_shape) const;
 
     /**
+     * Broadcast this tensor to a bigger shape with strides correctly set.
+     */
+    std::unique_ptr<Tensor> broadcast(const symbolic::MultiExpression& ref_shape) const;
+
+    /**
      * @brief Replace symbolic expressions on this type
      * @param old_expression Expression to replace
      * @param new_expression Replacement expression
      *
      * Replaces occurrences of symbolic expressions on the type.
      */
-    virtual void replace_symbols(const symbolic::Expression old_expression, const symbolic::Expression new_expression)
-        override;
+    virtual void
+    replace_symbols(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override;
     virtual void replace_symbols(const symbolic::ExpressionMapping& replacements) override;
 };
 

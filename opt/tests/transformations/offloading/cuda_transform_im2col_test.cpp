@@ -57,8 +57,12 @@ constexpr long long kPatchesElems = static_cast<long long>(kN) * kHout * kHout *
 // _1 size in elements: N * Cin * Hin * Win
 constexpr long long kImageElems = static_cast<long long>(kN) * kCin * kHin * kHin;
 
-symbolic::Expression i(long long v) { return symbolic::integer(v); }
-symbolic::Symbol s(const std::string& n) { return symbolic::symbol(n); }
+symbolic::Expression i(long long v) {
+    return symbolic::integer(v);
+}
+symbolic::Symbol s(const std::string& n) {
+    return symbolic::symbol(n);
+}
 
 } // namespace
 
@@ -182,8 +186,9 @@ TEST(CudaTransformIm2colTest, ExplicitSixDimMap) {
 
     ScheduleType seq = ScheduleType_Sequential::create();
 
-    auto add_simple_map = [&](structured_control_flow::Sequence& parent, const std::string& name, long long bound
-                          ) -> structured_control_flow::Map& {
+    auto add_simple_map = [&](structured_control_flow::Sequence& parent,
+                              const std::string& name,
+                              long long bound) -> structured_control_flow::Map& {
         return builder
             .add_map(parent, s(name), symbolic::Lt(s(name), i(bound)), i(0), symbolic::add(s(name), i(1)), seq);
     };

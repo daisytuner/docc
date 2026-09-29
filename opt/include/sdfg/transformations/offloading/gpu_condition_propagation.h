@@ -28,6 +28,29 @@ public:
     static GPUConditionPropagation from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& j);
 };
 
+/**
+ * @brief Root-anchored sweep of GPUConditionPropagation.
+ *
+ * Applies GPUConditionPropagation to every GPU-scheduled Map in the subtree rooted at `root`
+ */
+class GPUConditionPropagationScope : public Transformation {
+private:
+    structured_control_flow::StructuredLoop& root_;
+
+public:
+    GPUConditionPropagationScope(structured_control_flow::StructuredLoop& root);
+
+    bool can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
+
+    void apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
+
+    virtual std::string name() const override;
+
+    virtual void to_json(nlohmann::json& j) const override;
+
+    static GPUConditionPropagationScope from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& j);
+};
+
 class BarrierFinder : public visitor::StructuredSDFGVisitor {
 public:
     BarrierFinder(builder::StructuredSDFGBuilder& builder, sdfg::analysis::AnalysisManager& analysis_manager);

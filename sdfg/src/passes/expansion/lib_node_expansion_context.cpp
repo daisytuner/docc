@@ -1,4 +1,4 @@
-#include "lib_node_expansion_context.h"
+#include "sdfg/passes/expansion/lib_node_expansion_context.h"
 
 namespace sdfg::passes::expansion {
 
@@ -20,7 +20,9 @@ public:
         context->expanded_ = true;
     }
 
-    builder::StructuredSDFGBuilder& builder() override { return context_->builder_; }
+    builder::StructuredSDFGBuilder& builder() override {
+        return context_->builder_;
+    }
 
     structured_control_flow::Sequence& replace_with_sequence() override {
         auto child_idx = context_->child_idx_;
@@ -85,7 +87,9 @@ public:
         return context_->builder_.add_access(block, org->data(), org->debug_info());
     }
 
-    LibNodeExpander::ExpandOutcome successfully_expanded() override { return LibNodeExpander::ExpandOutcome(true); }
+    LibNodeExpander::ExpandOutcome successfully_expanded() override {
+        return LibNodeExpander::ExpandOutcome(true);
+    }
 };
 
 void LibNodeExpansionContext::cleanup() {
@@ -144,8 +148,16 @@ std::unique_ptr<LibNodeExpander::AccessNodeExpand> LibNodeExpansionContext::
         AccessNodeExpansion>(this, base_in_access_nodes, base_out_access_nodes, nothing_else_in_block);
 }
 
-LibNodeExpander::ExpandOutcome LibNodeExpansionContext::unable() { return LibNodeExpander::ExpandOutcome(false); }
+LibNodeExpander::ExpandOutcome LibNodeExpansionContext::successfully_modified_node_only() {
+    return LibNodeExpander::ExpandOutcome(true);
+}
 
-LibNodeExpander::ExpandOutcome LibNodeExpansionContext::unapplicable() { return LibNodeExpander::ExpandOutcome(false); }
+LibNodeExpander::ExpandOutcome LibNodeExpansionContext::unable() {
+    return LibNodeExpander::ExpandOutcome(false);
+}
+
+LibNodeExpander::ExpandOutcome LibNodeExpansionContext::unapplicable() {
+    return LibNodeExpander::ExpandOutcome(false);
+}
 
 } // namespace sdfg::passes::expansion

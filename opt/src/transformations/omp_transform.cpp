@@ -7,9 +7,12 @@
 namespace sdfg {
 namespace transformations {
 
-OMPTransform::OMPTransform(structured_control_flow::Map& map) : map_(map) {}
+OMPTransform::OMPTransform(structured_control_flow::Map& map) : map_(map) {
+}
 
-std::string OMPTransform::name() const { return "OMPTransform"; }
+std::string OMPTransform::name() const {
+    return "OMPTransform";
+}
 
 bool OMPTransform::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     auto result = map_.schedule_type().category() == structured_control_flow::ScheduleTypeCategory::None;
@@ -26,7 +29,9 @@ bool OMPTransform::can_be_applied(builder::StructuredSDFGBuilder& builder, analy
 
 void OMPTransform::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     builder.update_schedule_type(this->map_, omp::ScheduleType_OMP::create());
-    if (report_) report_->transform_applied(this);
+    if (report_) {
+        report_->transform_applied(this);
+    }
 }
 
 void OMPTransform::to_json(nlohmann::json& j) const {

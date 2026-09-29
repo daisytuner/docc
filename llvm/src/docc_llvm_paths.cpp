@@ -9,8 +9,8 @@
 
 namespace docc::utils {
 
-std::string getEnv(std::string const &key) {
-    char *val = std::getenv(key.c_str());
+std::string getEnv(std::string const& key) {
+    char* val = std::getenv(key.c_str());
     return val == NULL ? std::string("") : std::string(val);
 };
 

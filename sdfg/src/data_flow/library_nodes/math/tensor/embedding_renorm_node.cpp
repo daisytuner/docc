@@ -40,15 +40,24 @@ EmbeddingRenormNode::EmbeddingRenormNode(
           {"Y", "Weight", "Indices", "MaxNorm", "NormType"},
           impl_type
       ),
-      y_layout_(y_layout), weight_layout_(weight_layout), indices_layout_(indices_layout) {}
+      y_layout_(y_layout), weight_layout_(weight_layout), indices_layout_(indices_layout) {
+}
 
-const TensorLayout& EmbeddingRenormNode::y_layout() const { return this->y_layout_; }
+const TensorLayout& EmbeddingRenormNode::y_layout() const {
+    return this->y_layout_;
+}
 
-const TensorLayout& EmbeddingRenormNode::weight_layout() const { return this->weight_layout_; }
+const TensorLayout& EmbeddingRenormNode::weight_layout() const {
+    return this->weight_layout_;
+}
 
-const TensorLayout& EmbeddingRenormNode::indices_layout() const { return this->indices_layout_; }
+const TensorLayout& EmbeddingRenormNode::indices_layout() const {
+    return this->indices_layout_;
+}
 
-bool EmbeddingRenormNode::supports_integer_types() const { return false; }
+bool EmbeddingRenormNode::supports_integer_types() const {
+    return false;
+}
 
 void EmbeddingRenormNode::validate(const Function& function) const {
     auto& graph = this->get_parent();

@@ -40,8 +40,7 @@ public:
     void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override;
     void replace(const symbolic::ExpressionMapping& replacements) override;
 
-    std::unique_ptr<DataFlowNode> clone(size_t element_id, const graph::Vertex vertex, DataFlowGraph& parent)
-        const override;
+    std::unique_ptr<DataFlowNode> clone(size_t element_id, const graph::Vertex vertex, DataFlowGraph& parent) const override;
 
     PointerAccessType pointer_access_type(int input_idx) const override;
     const std::vector<PointerAccessType>& pointer_access_meta() const;

@@ -189,7 +189,9 @@ protected:
 
         analysis_manager_ = std::make_unique<analysis::AnalysisManager>(builder_->subject());
     }
-    void TearDown() override { analysis_manager_->invalidate<analysis::LoopAnalysis>(); };
+    void TearDown() override {
+        analysis_manager_->invalidate<analysis::LoopAnalysis>();
+    };
 };
 
 TEST_F(RecorderMultiTransformationTest, Apply_LoopInterchange) {
@@ -208,9 +210,8 @@ TEST_F(RecorderMultiTransformationTest, Apply_LoopInterchange) {
     }
     EXPECT_TRUE((loop_1_ != nullptr && loop_2_ != nullptr));
 
-    EXPECT_NO_THROW(recorder
-                        .apply<transformations::LoopInterchange>(*builder_, *analysis_manager_, true, *loop_1_, *loop_2_)
-    );
+    EXPECT_NO_THROW(recorder.apply<
+                    transformations::LoopInterchange>(*builder_, *analysis_manager_, true, *loop_1_, *loop_2_));
 }
 
 TEST_F(RecorderMultiTransformationTest, Apply_Transformations) {
@@ -272,8 +273,7 @@ TEST_F(RecorderMultiTransformationTest, Apply_Transformations) {
     EXPECT_TRUE(loop_j_outer_id != 0);
 
     EXPECT_NO_THROW(recorder.apply<
-                    transformations::LoopInterchange>(*builder_, *analysis_manager_, true, *loop_i_tile, *loop_j_outer)
-    );
+                    transformations::LoopInterchange>(*builder_, *analysis_manager_, true, *loop_i_tile, *loop_j_outer));
 
     /**** Save ****/
 
@@ -411,7 +411,9 @@ protected:
 
         analysis_manager_ = std::make_unique<analysis::AnalysisManager>(builder_->subject());
     }
-    void TearDown() override { analysis_manager_->invalidate<analysis::LoopAnalysis>(); };
+    void TearDown() override {
+        analysis_manager_->invalidate<analysis::LoopAnalysis>();
+    };
 };
 
 TEST_F(ReplayerTest, Replay_Transformations) {

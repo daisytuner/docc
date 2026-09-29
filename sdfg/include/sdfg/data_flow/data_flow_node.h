@@ -129,7 +129,9 @@ public:
                                              ElementType::Tasklet | ElementType::LibraryNode;
 
     /// LLVM-style RTTI predicate: true if \p element is a DataFlowNode.
-    static bool classof(const Element& element) { return is_a(element.type_id(), TypeGroup); }
+    static bool classof(const Element& element) {
+        return is_a(element.type_id(), TypeGroup);
+    }
 
     // Remark: Exclusive resource
     DataFlowNode(const DataFlowNode& data_node) = delete;
@@ -172,8 +174,8 @@ public:
      * Pure virtual function that must be implemented by derived classes
      * to support graph transformations and optimizations.
      */
-    virtual std::unique_ptr<DataFlowNode> clone(size_t element_id, const graph::Vertex vertex, DataFlowGraph& parent)
-        const = 0;
+    virtual std::unique_ptr<DataFlowNode>
+    clone(size_t element_id, const graph::Vertex vertex, DataFlowGraph& parent) const = 0;
 
     /**
      * Is the edge in question removable, or will this make the node its an output on invalid?
@@ -194,7 +196,9 @@ public:
      * EdgeRemoveOption::RequiresUpdate
      * @return edge removal is completed, node is valid without edge
      */
-    virtual bool update_edge_removed(const std::string& out_conn) { return false; }
+    virtual bool update_edge_removed(const std::string& out_conn) {
+        return false;
+    }
 };
 } // namespace data_flow
 } // namespace sdfg

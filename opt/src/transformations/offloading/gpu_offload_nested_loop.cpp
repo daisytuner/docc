@@ -7,6 +7,7 @@
 #include <sdfg/analysis/loop_analysis.h>
 #include "sdfg/analysis/base_user_visitor.h"
 #include "sdfg/data_flow/access_node.h"
+#include "sdfg/data_flow/library_nodes/barrier_local_node.h"
 #include "sdfg/data_flow/memlet.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/reduce.h"
@@ -15,6 +16,7 @@
 #include "sdfg/targets/cuda/cuda.h"
 #include "sdfg/targets/gpu/gpu_map_utils.h"
 #include "sdfg/targets/rocm/rocm.h"
+#include "sdfg/tiles/analysis/reduction_buffer_analysis.h"
 #include "symengine/symengine_rcp.h"
 
 namespace sdfg {
@@ -32,19 +34,30 @@ namespace {
 // `acc[index]` form the dispatcher requires.
 class AccumulatorSubsetProbe : public analysis::BaseUserVisitor {
 public:
-    explicit AccumulatorSubsetProbe(std::string container) : container_(std::move(container)) {}
+    explicit AccumulatorSubsetProbe(std::string container) : container_(std::move(container)) {
+    }
 
-    bool has_multidim() const { return has_multidim_; }
-    bool has_indexed() const { return has_indexed_; }
+    bool has_multidim() const {
+        return has_multidim_;
+    }
+    bool has_indexed() const {
+        return has_indexed_;
+    }
 
-    void
-    use_as_src_node(const std::string& container, const data_flow::AccessNode&, const data_flow::Memlet& edge, const structured_control_flow::Block&)
-        override {
+    void use_as_src_node(
+        const std::string& container,
+        const data_flow::AccessNode&,
+        const data_flow::Memlet& edge,
+        const structured_control_flow::Block&
+    ) override {
         record(container, edge);
     }
-    void
-    use_as_dst_node(const std::string& container, const data_flow::AccessNode&, const data_flow::Memlet& edge, const structured_control_flow::Block&)
-        override {
+    void use_as_dst_node(
+        const std::string& container,
+        const data_flow::AccessNode&,
+        const data_flow::Memlet& edge,
+        const structured_control_flow::Block&
+    ) override {
         record(container, edge);
     }
 
@@ -55,11 +68,14 @@ public:
         SymbolReadLocation,
         int,
         symbolic::Expression
-    ) override {}
+    ) override {
+    }
     void use_as_symbol_write(
         const symbolic::Symbol&, const structured_control_flow::ControlFlowNode*, const Element*, SymbolWriteLocation
-    ) override {}
-    void use_as_return_src(const std::string&, const structured_control_flow::Return&) override {}
+    ) override {
+    }
+    void use_as_return_src(const std::string&, const structured_control_flow::Return&) override {
+    }
 
 private:
     void record(const std::string& container, const data_flow::Memlet& edge) {
@@ -85,7 +101,8 @@ template<typename GPUType>
 GPUOffloadNestedLoop<GPUType>::GPUOffloadNestedLoop(
     structured_control_flow::StructuredLoop& loop, gpu::TargetLevel target_level, symbolic::Integer parallel_size
 )
-    : loop_(loop), target_level_(target_level), parallel_size_(parallel_size) {}
+    : loop_(loop), target_level_(target_level), parallel_size_(parallel_size) {
+}
 
 
 template<typename GPUType>
@@ -289,27 +306,59 @@ bool GPUOffloadNestedLoop<
     // the natural strided value; `num_iterations()` accounts for both when
     // computing the grid geometry.
 
-    // Condition: Parallelizing this loop must not introduce a data race. Folding a new
-    // grid dimension distributes this loop's iterations across the new threads and
-    // re-runs every unguarded sibling on each of them, with no grid-wide barrier. That
-    // races when this loop produces a shared container a sibling consumes (a reduction
-    // accumulator -> consumer, e.g. softmax) or when a sibling read-modify-writes a
-    // shared container. Such a loop must be parallelized differently or left sequential.
-    if (gpu::nested_parallelization_is_unsafe(loop_, analysis_manager)) {
+    // Condition: Parallelizing this loop must not introduce a data race no barrier
+    // can resolve. Folding a new dimension distributes this loop's iterations across
+    // the new threads and re-runs every unguarded sibling on each of them. A
+    // producer/consumer dependency within a block is made safe by the barrier that
+    // apply() inserts; only a cross-block (grid) dependency or a replicated
+    // self-accumulation is a hard reject.
+    if (gpu::analyze_nested_fold(loop_, target_level_, analysis_manager).unsafe) {
         return false;
     }
 
-    return true;
+    return analysis_manager.get<tiles::ReductionBufferAnalysis>()
+        .supports_schedule(loop_, GPUType::template create<GPUType>(target_level_, parallel_size_));
 }
 
 template<typename GPUType>
 void GPUOffloadNestedLoop<
     GPUType>::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
-    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
-
     auto new_schedule = GPUType::template create<GPUType>(target_level_, parallel_size_);
+    if (!analysis_manager.get<tiles::ReductionBufferAnalysis>().supports_schedule(loop_, new_schedule)) {
+        throw InvalidSDFGException("GPUOffloadNestedLoop: unsupported proposed reduction footprint");
+    }
+    auto plan = gpu::analyze_nested_fold(loop_, target_level_, analysis_manager);
 
     builder.update_schedule_type(loop_, new_schedule);
+
+    auto barrier_precedes = [](structured_control_flow::Sequence& sequence,
+                               structured_control_flow::ControlFlowNode& before) {
+        const int index = sequence.index(before);
+        if (index <= 0) {
+            return false;
+        }
+        auto* block = dynamic_cast<structured_control_flow::Block*>(&sequence.at(static_cast<size_t>(index) - 1));
+        if (block == nullptr) {
+            return false;
+        }
+        for (auto& node : block->dataflow().nodes()) {
+            if (dynamic_cast<const data_flow::BarrierLocalNode*>(&node) != nullptr) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    for (const auto& barrier : plan.barriers) {
+        if (barrier.sequence == nullptr || barrier.before == nullptr) {
+            continue;
+        }
+        if (barrier_precedes(*barrier.sequence, *barrier.before)) {
+            continue;
+        }
+        auto& block = builder.add_block_before(*barrier.sequence, *barrier.before, DebugInfo());
+        builder.add_library_node<data_flow::BarrierLocalNode>(block, DebugInfo());
+    }
 }
 
 template<typename GPUType>

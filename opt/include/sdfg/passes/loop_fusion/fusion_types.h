@@ -69,8 +69,10 @@ struct FusionArg {
     FusionArgCommonAccesses local_access;
     FusionArgCommonAccesses nested_access;
 
-    FusionArg(const analysis::RegionArgument& arg) : arg(arg) {}
-    FusionArg(const FusionArg& arg) : arg(arg.arg), local_access(arg.local_access), nested_access(arg.nested_access) {}
+    FusionArg(const analysis::RegionArgument& arg) : arg(arg) {
+    }
+    FusionArg(const FusionArg& arg) : arg(arg.arg), local_access(arg.local_access), nested_access(arg.nested_access) {
+    }
 
     bool saw_access_locally() const;
 };
@@ -103,7 +105,8 @@ struct FusionLoopCandidate {
         bool is_by_domain_candidate = false
     )
         : loop(loop), indvar_boundaries(indvar_boundaries), assumptions(std::move(assumptions)), is_map(is_map),
-          is_by_domain_candidate(is_by_domain_candidate) {}
+          is_by_domain_candidate(is_by_domain_candidate) {
+    }
 
     void non_indvar_writes();
 
@@ -138,6 +141,7 @@ public:
 struct ComplexFusionResult {
     PatternHandler::MatchResult pattern_result;
     bool fused = false;
+    int64_t copied_redundant_writes = 0;
 };
 
 } // namespace sdfg::passes::loop_fusion

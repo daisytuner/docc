@@ -16,11 +16,16 @@ UnreachableNode::UnreachableNode(
           {},
           true,
           data_flow::ImplementationType_NONE
-      ) {}
+      ) {
+}
 
-void UnreachableNode::validate(const Function& function) const { LibraryNode::validate(function); }
+void UnreachableNode::validate(const Function& function) const {
+    LibraryNode::validate(function);
+}
 
-symbolic::SymbolSet UnreachableNode::symbols() const { return symbolic::SymbolSet(); }
+symbolic::SymbolSet UnreachableNode::symbols() const {
+    return symbolic::SymbolSet();
+}
 
 std::unique_ptr<data_flow::DataFlowNode> UnreachableNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
@@ -67,7 +72,8 @@ UnreachableNodeDispatcher::UnreachableNodeDispatcher(
     const data_flow::DataFlowGraph& data_flow_graph,
     const UnreachableNode& node
 )
-    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
+}
 
 void UnreachableNodeDispatcher::dispatch_code(
     codegen::PrettyPrinter& stream,

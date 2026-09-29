@@ -13,9 +13,13 @@ class CudaExpansion : public visitor::NonStoppingStructuredSDFGVisitor {
 public:
     CudaExpansion(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager);
 
-    void set_report(PassReportConsumer* report) { report_ = report; }
+    void set_report(PassReportConsumer* report) {
+        report_ = report;
+    }
 
-    static std::string name() { return "CudaExpansion"; };
+    static std::string name() {
+        return "CudaExpansion";
+    };
 
     bool accept(structured_control_flow::Block& node) override;
 };

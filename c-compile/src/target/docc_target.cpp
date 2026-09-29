@@ -16,7 +16,9 @@
 #include "sdfg/passes/scheduler/rocm_offload_scheduler.h"
 #include "sdfg/passes/scheduler/rocm_scheduler.h"
 #include "sdfg/passes/scheduler/vectorize_scheduler.h"
+#include "sdfg/targets/cuda/cuda_offload_dispatcher_strategy.h"
 #include "sdfg/targets/omp/math/tensor/conv_expander.h"
+#include "sdfg/targets/rocm/rocm_offload_dispatcher_strategy.h"
 
 namespace docc::target {
 
@@ -55,7 +57,15 @@ static DoccTarget cuda_target = {
 
         b.add_compile_option("--cuda-path=/usr/local/cuda");
         b.set_bin_extension("cu");
-        builder.redirect_snippet("cu", std::move(b));
+        b.set_compile_order(1, 1);
+        builder.redirect_snippet(sdfg::cuda::CUDAOffloadDispatcherStrategy::KERNEL_SNIPPET_FILE_EXT, std::move(b));
+
+        compile::SrcFileCompilerBuilder hb;
+        hb.inherit(builder, false);
+        hb.codegen_only();
+        hb.set_compile_order(0);
+
+        builder.redirect_snippet(sdfg::cuda::CUDAOffloadDispatcherStrategy::KERNEL_SNIPPET_HEADER_EXT, std::move(hb));
         return true;
     },
     .apply_expand_time_mapping = [](sdfg::builder::StructuredSDFGBuilder& builder,
@@ -103,8 +113,16 @@ static DoccTarget rocm_target = {
         compile::SrcFileCompilerBuilder b;
         b.inherit(builder, true);
         b.remove_compile_option("--offload-host-only");
+        b.set_compile_order(1, 1);
 
-        builder.redirect_snippet("rocm.cpp", std::move(b));
+        builder.redirect_snippet(sdfg::rocm::ROCMOffloadDispatcherStrategy::KERNEL_SNIPPET_FILE_EXT, std::move(b));
+
+        compile::SrcFileCompilerBuilder hb;
+        hb.inherit(builder, false);
+        hb.codegen_only();
+        hb.set_compile_order(0);
+
+        builder.redirect_snippet(sdfg::rocm::ROCMOffloadDispatcherStrategy::KERNEL_SNIPPET_HEADER_EXT, std::move(hb));
 
         return true;
     },

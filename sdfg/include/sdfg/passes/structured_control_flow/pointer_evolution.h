@@ -10,7 +10,9 @@ class IteratorToIndvar : public visitor::NonStoppingStructuredSDFGVisitor {
 public:
     IteratorToIndvar(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager);
 
-    static std::string name() { return "IteratorToIndvar"; };
+    static std::string name() {
+        return "IteratorToIndvar";
+    };
 
     bool accept(structured_control_flow::For& node) override;
 };

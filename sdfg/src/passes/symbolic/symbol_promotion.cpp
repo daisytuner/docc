@@ -285,11 +285,13 @@ void SymbolPromotion::apply(
         case data_flow::TaskletCode::assign: {
             if (tasklet->is_zext(builder.subject())) {
                 // Zero-extension (i32 -> i64)
-                rhs = symbolic::zext_i64(SymEngine::rcp_static_cast<
-                                         const SymEngine::Symbol>(as_symbol(dataflow, *tasklet, tasklet->input(0))));
+                rhs = symbolic::zext_i64(
+                    SymEngine::rcp_static_cast<const SymEngine::Symbol>(as_symbol(dataflow, *tasklet, tasklet->input(0)))
+                );
             } else if (tasklet->is_trunc(builder.subject())) {
-                rhs = symbolic::trunc_i32(SymEngine::rcp_static_cast<
-                                          const SymEngine::Symbol>(as_symbol(dataflow, *tasklet, tasklet->input(0))));
+                rhs = symbolic::trunc_i32(
+                    SymEngine::rcp_static_cast<const SymEngine::Symbol>(as_symbol(dataflow, *tasklet, tasklet->input(0)))
+                );
             } else {
                 rhs = as_symbol(dataflow, *tasklet, tasklet->input(0));
             }
@@ -412,7 +414,9 @@ SymbolPromotion::SymbolPromotion()
 
       };
 
-std::string SymbolPromotion::name() { return "SymbolPromotion"; };
+std::string SymbolPromotion::name() {
+    return "SymbolPromotion";
+};
 
 bool SymbolPromotion::run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     bool applied = false;

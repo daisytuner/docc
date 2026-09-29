@@ -17,7 +17,9 @@ NodeDispatcher::NodeDispatcher(
     : node_(node), language_extension_(language_extension), sdfg_(sdfg), analysis_manager_(analysis_manager),
       instrumentation_plan_(instrumentation_plan), arg_capture_plan_(arg_capture_plan) {};
 
-bool NodeDispatcher::begin_node(PrettyPrinter& stream) { return false; };
+bool NodeDispatcher::begin_node(PrettyPrinter& stream) {
+    return false;
+};
 
 void NodeDispatcher::end_node(PrettyPrinter& stream, bool applied) {};
 
@@ -39,6 +41,7 @@ void NodeDispatcher::
     std::optional<InstrumentationInfo> instrumentation_info;
     if (should_instrument) {
         instrumentation_info = this->instrumentation_info();
+        instrumentation_info->set_sampling(this->instrumentation_plan_.sampling());
         this->instrumentation_plan_
             .begin_instrumentation(node_, main_stream, language_extension_, instrumentation_info.value());
     }

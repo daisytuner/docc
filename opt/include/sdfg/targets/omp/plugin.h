@@ -30,15 +30,26 @@ public:
 
     /// A host thread pool has no on-chip scratchpad: every level cooperates through
     /// global memory.
-    tiles::Space space(tiles::Level) const override { return tiles::Space::Global; }
+    tiles::Space space(tiles::Level) const override {
+        return tiles::Space::Global;
+    }
 
-    bool supports_cooperative_staging(const structured_control_flow::ScheduleType&) const override { return false; }
+    bool supports_cooperative_staging(const structured_control_flow::ScheduleType&) const override {
+        return false;
+    }
 
-    unsigned lane_width() const override { return 1; }
+    unsigned lane_width() const override {
+        return 1;
+    }
+
+    /// A host thread pool has no cp.async / vector-copy / pipeline library nodes.
+    data_flow::ImplementationType implementation_type() const override {
+        return data_flow::ImplementationType_NONE;
+    }
 };
 
 inline void register_omp_plugin(plugins::Context& context) {
-    context.map_dispatcher_registry.register_map_dispatcher(
+    context.get_map_dispatcher_registry().register_map_dispatcher(
         ScheduleType_OMP::value(),
         [](codegen::LanguageExtension& language_extension,
            StructuredSDFG& sdfg,
@@ -52,10 +63,10 @@ inline void register_omp_plugin(plugins::Context& context) {
         }
     );
 
-    context.scheduler_registry
+    context.get_scheduler_registry()
         .register_loop_scheduler<passes::scheduler::OMPScheduler>(passes::scheduler::OMPScheduler::target());
 
-    context.tile_target_registry.register_target(ScheduleType_OMP::value(), std::make_shared<OMPTileTarget>());
+    context.get_tile_target_registry().register_target(ScheduleType_OMP::value(), std::make_shared<OMPTileTarget>());
 }
 
 inline void register_omp_plugin() {

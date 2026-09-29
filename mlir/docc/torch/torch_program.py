@@ -292,14 +292,21 @@ class TorchProgram(DoccProgram):
             )
             stable_id = hashlib.sha256(hash_input).hexdigest()[:16]
 
+            # Isolate parallel pytest-xdist workers so concurrent compilations of
+            # identically named models don't share (and clobber) one build dir.
+            worker = os.environ.get("PYTEST_XDIST_WORKER", "")
+            worker_suffix = f"-{worker}" if worker else ""
+
             docc_tmp = os.environ.get("DOCC_TMP")
             if docc_tmp:
-                output_folder = f"{docc_tmp}/{self.name}-{stable_id}"
+                output_folder = f"{docc_tmp}/{self.name}-{stable_id}{worker_suffix}"
             else:
                 user = os.getenv("USER")
                 if not user:
                     user = getpass.getuser()
-                output_folder = f"/tmp/{user}/DOCC/{self.name}-{stable_id}"
+                output_folder = (
+                    f"/tmp/{user}/DOCC/{self.name}-{stable_id}{worker_suffix}"
+                )
 
         # Reuse already built binaries
         docc_reuse_binaries = self.options.reuse_binaries

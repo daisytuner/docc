@@ -12,7 +12,8 @@ namespace sdfg {
 namespace passes {
 
 DotExpansion::DotExpansion(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager)
-    : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager) {}
+    : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager) {
+}
 
 bool DotExpansion::visit() {
     DEBUG_PRINTLN("Running DotExpansionPass on " << this->builder_.subject().name());

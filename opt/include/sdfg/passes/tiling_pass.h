@@ -27,7 +27,9 @@ public:
 
     bool run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
 
-    std::string name() override { return "TilingPass"; }
+    std::string name() override {
+        return "TilingPass";
+    }
 };
 
 } // namespace passes

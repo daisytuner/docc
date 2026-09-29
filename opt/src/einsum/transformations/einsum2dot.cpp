@@ -22,9 +22,12 @@
 namespace sdfg {
 namespace einsum {
 
-Einsum2Dot::Einsum2Dot(einsum::EinsumNode& einsum_node) : einsum_node_(einsum_node) {}
+Einsum2Dot::Einsum2Dot(einsum::EinsumNode& einsum_node) : einsum_node_(einsum_node) {
+}
 
-std::string Einsum2Dot::name() const { return "Einsum2Dot"; }
+std::string Einsum2Dot::name() const {
+    return "Einsum2Dot";
+}
 
 bool Einsum2Dot::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     // Check dims

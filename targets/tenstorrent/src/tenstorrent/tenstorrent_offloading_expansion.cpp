@@ -60,7 +60,7 @@ void TenstorrentOffloadingExpansion::expand_blas(sdfg::math::blas::BLASNode& nod
 
     create_offloaded_memory_handling(transferred_args);
 
-    node.implementation_type() = ImplementationType_Tenstorrent_WithoutTransfers;
+    node.set_implementation_type(ImplementationType_Tenstorrent_WithoutTransfers);
     if (report_) report_->transform_applied(name());
 }
 

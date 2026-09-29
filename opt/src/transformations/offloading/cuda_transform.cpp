@@ -11,7 +11,9 @@
 namespace sdfg {
 namespace cuda {
 
-std::string CUDATransform::name() const { return "CUDATransform"; }
+std::string CUDATransform::name() const {
+    return "CUDATransform";
+}
 
 bool CUDATransform::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     if (!OffloadTransform::can_be_applied(builder, analysis_manager)) {

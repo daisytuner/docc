@@ -13,8 +13,11 @@ StdlibNode::StdlibNode(
     const bool side_effect,
     const data_flow::ImplementationType& implementation_type
 )
-    : LibraryNode(element_id, debug_info, vertex, parent, code, outputs, inputs, side_effect, implementation_type) {}
+    : LibraryNode(element_id, debug_info, vertex, parent, code, outputs, inputs, side_effect, implementation_type) {
+}
 
-symbolic::Expression StdlibNode::flop() const { return symbolic::zero(); }
+symbolic::Expression StdlibNode::flop() const {
+    return symbolic::zero();
+}
 
 } // namespace sdfg::stdlib

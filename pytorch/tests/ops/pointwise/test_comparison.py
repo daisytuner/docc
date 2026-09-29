@@ -63,7 +63,7 @@ def test_eq_tensor_tensor_bool(target: str) -> None:
     check(EqTensorBoolNet(), x, y, target=target)
 
 
-# --- torch.le op test ---
+# --- le ---
 
 
 def test_le_tensor_tensor_float(target: str) -> None:
@@ -102,3 +102,15 @@ def test_le_tensor_scalar_int(target: str) -> None:
 
     x = torch.tensor([[1.0, 2.0], [3.0, 2.0]])
     check(LeScalarIntNet(), x, 2, target=target)
+
+
+def test_le_broadcast(target: str) -> None:
+    class LeBroadcastNet(nn.Module):
+        def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+            return torch.le(x, y)
+
+    check(
+        LeBroadcastNet(),
+        *(torch.randn(1, 1, 1, 15), torch.randn(1, 1, 15, 1)),
+        target=target
+    )

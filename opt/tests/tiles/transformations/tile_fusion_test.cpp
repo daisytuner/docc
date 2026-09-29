@@ -830,7 +830,9 @@ TEST(TileFusionTest, Jacobi1D_CopyLoopTargets) {
         auto& seq = map.root();
         for (size_t i = 0; i < seq.size(); i++) {
             auto* block = dyn_cast<structured_control_flow::Block*>(&seq.at(i));
-            if (!block) continue;
+            if (!block) {
+                continue;
+            }
             for (auto* access : block->dataflow().data_nodes()) {
                 names.insert(access->data());
             }

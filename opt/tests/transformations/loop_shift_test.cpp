@@ -74,9 +74,10 @@ TEST(LoopShiftTest, ShiftToZero) {
     // Verify loop now starts at 0
     EXPECT_TRUE(symbolic::eq(loop->init(), symbolic::integer(0)));
     EXPECT_TRUE(symbolic::eq(loop->indvar(), symbolic::symbol("i")));
-    EXPECT_TRUE(symbolic::
-                    eq(loop->condition(),
-                       symbolic::Lt(symbolic::add(symbolic::symbol("i"), symbolic::integer(3)), symbolic::symbol("N")))
+    EXPECT_TRUE(
+        symbolic::
+            eq(loop->condition(),
+               symbolic::Lt(symbolic::add(symbolic::symbol("i"), symbolic::integer(3)), symbolic::symbol("N")))
     );
     EXPECT_TRUE(symbolic::eq(loop->update(), symbolic::add(symbolic::symbol("i"), symbolic::integer(1))));
 
@@ -236,7 +237,9 @@ TEST(LoopShiftTest, IndvarUsedInAccessNode) {
     // Find incoming edge to A access node
     for (auto& edge : dataflow.edges()) {
         auto& subset = edge.subset();
-        if (subset.empty()) continue; // skip non-memlet edges
+        if (subset.empty()) {
+            continue; // skip non-memlet edges
+        }
         ASSERT_EQ(subset.size(), 1);
         // The subset should now use __i_orig__ instead of i
         EXPECT_TRUE(symbolic::uses(subset[0], shift.shifted_container_name()));

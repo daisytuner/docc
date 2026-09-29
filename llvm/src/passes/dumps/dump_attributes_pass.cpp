@@ -70,9 +70,12 @@ llvm::PreservedAnalyses DumpAttributesPass::
     return llvm::PreservedAnalyses::all();
 }
 
-AttributesAnalysis::AttributesAnalysis(sdfg::StructuredSDFG& sdfg) : sdfg::analysis::Analysis(sdfg) {}
+AttributesAnalysis::AttributesAnalysis(sdfg::StructuredSDFG& sdfg) : sdfg::analysis::Analysis(sdfg) {
+}
 
-std::string AttributesAnalysis::name() const { return "AttributesAnalysis"; }
+std::string AttributesAnalysis::name() const {
+    return "AttributesAnalysis";
+}
 
 void AttributesAnalysis::run(sdfg::analysis::AnalysisManager& analysis_manager) {
     this->attributes_ = analysis::Attributes();
@@ -226,8 +229,8 @@ void AttributesAnalysis::run(sdfg::analysis::AnalysisManager& analysis_manager) 
             } else {
                 break;
             }
-        } else if (auto* external_offloading_node = dynamic_cast<sdfg::offloading::ExternalDataOffloadingNode*>(libnode
-                   )) {
+        } else if (auto* external_offloading_node =
+                       dynamic_cast<sdfg::offloading::ExternalDataOffloadingNode*>(libnode)) {
             if (external_offloading_node->is_h2d()) {
                 auto* src = this->get_in_access(external_offloading_node, external_offloading_node->inputs().back());
                 auto* dst = this->get_out_access(
@@ -396,8 +399,8 @@ void AttributesAnalysis::run(sdfg::analysis::AnalysisManager& analysis_manager) 
             } else {
                 break;
             }
-        } else if (auto* external_offloading_node = dynamic_cast<sdfg::offloading::ExternalDataOffloadingNode*>(libnode
-                   )) {
+        } else if (auto* external_offloading_node =
+                       dynamic_cast<sdfg::offloading::ExternalDataOffloadingNode*>(libnode)) {
             if (external_offloading_node->is_d2h()) {
                 auto* src = this->get_in_access(
                     external_offloading_node,
@@ -470,7 +473,9 @@ void AttributesAnalysis::run(sdfg::analysis::AnalysisManager& analysis_manager) 
     }
 }
 
-const analysis::Attributes& AttributesAnalysis::get() { return attributes_; }
+const analysis::Attributes& AttributesAnalysis::get() {
+    return attributes_;
+}
 
 analysis::ArgumentAttributes AttributesAnalysis::empty() {
     return {

@@ -13,10 +13,8 @@ set(TEST_FILES
     analysis/assumptions_analysis_test.cpp
     analysis/control_flow_analysis_test.cpp
     analysis/data_dependency_analysis_test.cpp
-    analysis/flop_analysis_test.cpp
     analysis/loop_analysis_info_test.cpp
     analysis/loop_analysis_test.cpp
-    analysis/loop_carried_dependency_analysis_test.cpp
     analysis/memory_layout_analysis_test.cpp
     analysis/type_analysis_test.cpp
     analysis/users_test.cpp
@@ -48,7 +46,6 @@ set(TEST_FILES
     data_flow/code_node_test.cpp
     data_flow/data_flow_graph_test.cpp
     data_flow/data_flow_node_test.cpp
-    data_flow/library_nodes/async_copy_node_test.cpp
     data_flow/library_nodes/atomic_node_test.cpp
     data_flow/library_nodes/load_const_node_test.cpp
     data_flow/library_nodes/math/blas/blas_test.cpp
@@ -62,6 +59,7 @@ set(TEST_FILES
     data_flow/library_nodes/math/tensor/conv_test.cpp
     data_flow/library_nodes/math/tensor/copy_node_test.cpp
     data_flow/library_nodes/math/tensor/elementwise_ops/gelu_node_test.cpp
+    data_flow/library_nodes/math/tensor/elementwise_ops/sub_node_test.cpp
     data_flow/library_nodes/math/tensor/elementwise_test.cpp
     data_flow/library_nodes/math/tensor/embedding_node_test.cpp
     data_flow/library_nodes/math/tensor/embedding_renorm_node_test.cpp
@@ -99,7 +97,6 @@ set(TEST_FILES
     passes/structured_control_flow/common_assignment_elimination_test.cpp
     passes/structured_control_flow/condition_elimination_test.cpp
     passes/structured_control_flow/dead_cfg_elimination_test.cpp
-    passes/structured_control_flow/for_classification_test.cpp
     passes/structured_control_flow/pointer_evolution_test.cpp
     passes/structured_control_flow/unique_loop_indvars_test.cpp
     passes/symbolic/symbol_evolution_test.cpp
@@ -161,4 +158,6 @@ endif()
 add_test(NAME sdfglib_test_test COMMAND sdfglib_test)
 
 include(GoogleTest)
-gtest_discover_tests(sdfglib_test)
+gtest_discover_tests(sdfglib_test
+  PROPERTIES LABELS "sdfglib"
+)

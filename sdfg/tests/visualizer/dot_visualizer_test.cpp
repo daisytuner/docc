@@ -28,7 +28,9 @@ static std::string escapeDotId(const std::string& id, const std::string& prefix 
     return prefix + std::regex_replace(id, dotIdBadChars, "_");
 }
 
-static std::string escapeDotId(size_t id, const std::string& prefix) { return prefix + std::to_string(id); }
+static std::string escapeDotId(size_t id, const std::string& prefix) {
+    return prefix + std::to_string(id);
+}
 
 TEST(DotVisualizerTest, transpose) {
     builder::StructuredSDFGBuilder builder("transpose", FunctionType_CPU);
@@ -719,7 +721,9 @@ TEST(DotVisualizerTest, test_handleTasklet) {
         auto& block = builder.add_block(root);
         auto& output = builder.add_access(block, "x");
         std::vector<std::string> inputs;
-        for (size_t i = 0; i < arity; ++i) inputs.push_back(std::to_string(i));
+        for (size_t i = 0; i < arity; ++i) {
+            inputs.push_back(std::to_string(i));
+        }
         auto& tasklet = builder.add_tasklet(block, code.first, "_out", inputs);
         builder.add_computational_memlet(block, tasklet, "_out", output, {});
 
@@ -743,7 +747,9 @@ TEST(DotVisualizerTest, test_handleTasklet) {
         } else {
             exp << "_out = " << code.second << "(";
             for (size_t i = 0; i < arity; ++i) {
-                if (i > 0) exp << ", ";
+                if (i > 0) {
+                    exp << ", ";
+                }
                 exp << std::to_string(i);
             }
             exp << ")";

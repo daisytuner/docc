@@ -257,7 +257,9 @@ ContainerSet process(
 
 ConstantPropagation::ConstantPropagation() : Pass() {};
 
-std::string ConstantPropagation::name() { return "ConstantPropagation"; };
+std::string ConstantPropagation::name() {
+    return "ConstantPropagation";
+};
 
 bool ConstantPropagation::run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     auto& sdfg = builder.subject();

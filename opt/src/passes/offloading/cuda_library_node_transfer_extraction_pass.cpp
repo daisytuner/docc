@@ -13,9 +13,12 @@ namespace cuda {
 CudaLibraryNodeTransferExtractionVisitor::CudaLibraryNodeTransferExtractionVisitor(
     builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager
 )
-    : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager) {}
+    : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager) {
+}
 
-bool CudaLibraryNodeTransferExtractionVisitor::visit() { return visitor::NonStoppingStructuredSDFGVisitor::visit(); }
+bool CudaLibraryNodeTransferExtractionVisitor::visit() {
+    return visitor::NonStoppingStructuredSDFGVisitor::visit();
+}
 
 bool CudaLibraryNodeTransferExtractionVisitor::accept(structured_control_flow::Block& block) {
     auto& dataflow = block.dataflow();

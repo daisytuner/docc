@@ -27,6 +27,7 @@ bool SyncConditionPropagation::
     return modified;
 }
 
-SyncConditionPropagation::SyncConditionPropagation() {}
+SyncConditionPropagation::SyncConditionPropagation() {
+}
 
 } // namespace sdfg::passes

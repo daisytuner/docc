@@ -7,40 +7,58 @@ namespace sdfg {
 namespace tiles {
 
 bool LocalityPlan::inside_scratchpad_scope() const {
-    for (const auto& a : axes_)
-        if (a.schedule().has_scratchpad()) return true;
+    for (const auto& a : axes_) {
+        if (a.schedule().has_scratchpad()) {
+            return true;
+        }
+    }
     return false;
 }
 
 bool LocalityPlan::has_scratchpad_cooperative() const {
-    for (const auto& a : axes_)
-        if (a.schedule().has_scratchpad() && a.cooperative()) return true;
+    for (const auto& a : axes_) {
+        if (a.schedule().has_scratchpad() && a.cooperative()) {
+            return true;
+        }
+    }
     return false;
 }
 
 bool LocalityPlan::has_cooperative_at(Level level) const {
-    for (const auto& a : axes_)
-        if (a.schedule().has_scratchpad() && a.cooperative() && a.schedule().level() == level) return true;
+    for (const auto& a : axes_) {
+        if (a.schedule().has_scratchpad() && a.cooperative() && a.schedule().level() == level) {
+            return true;
+        }
+    }
     return false;
 }
 
 bool LocalityPlan::has_global_cooperative() const {
-    for (const auto& a : axes_)
-        if (!a.schedule().has_scratchpad() && a.cooperative()) return true;
+    for (const auto& a : axes_) {
+        if (!a.schedule().has_scratchpad() && a.cooperative()) {
+            return true;
+        }
+    }
     return false;
 }
 
 std::vector<TileAxis> LocalityPlan::private_axes() const {
     std::vector<TileAxis> out;
-    for (const auto& a : axes_)
-        if (a.schedule().has_scratchpad() && !a.cooperative()) out.push_back(a);
+    for (const auto& a : axes_) {
+        if (a.schedule().has_scratchpad() && !a.cooperative()) {
+            out.push_back(a);
+        }
+    }
     return out;
 }
 
 std::vector<TileAxis> LocalityPlan::cooperative_axes() const {
     std::vector<TileAxis> out;
-    for (const auto& a : axes_)
-        if (a.schedule().has_scratchpad() && a.cooperative()) out.push_back(a);
+    for (const auto& a : axes_) {
+        if (a.schedule().has_scratchpad() && a.cooperative()) {
+            out.push_back(a);
+        }
+    }
     return out;
 }
 
@@ -161,8 +179,8 @@ std::optional<Space> LocalityPlan::required_space(bool container_written) const 
     return Space::Register;
 }
 
-LocalityPlan Tile::placement(structured_control_flow::StructuredLoop& loop, analysis::AnalysisManager& analysis_manager)
-    const {
+LocalityPlan Tile::
+    placement(structured_control_flow::StructuredLoop& loop, analysis::AnalysisManager& analysis_manager) const {
     return LocalityPlan::analyze(loop, axes_, analysis_manager);
 }
 

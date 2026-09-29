@@ -25,7 +25,9 @@ public:
         bool allow_prod_into_cons = true
     );
 
-    static std::string name() { return "MapFusion"; };
+    static std::string name() {
+        return "MapFusion";
+    };
 
     bool accept(structured_control_flow::Sequence& node) override;
 };
@@ -37,9 +39,12 @@ class MapFusionPass : public Pass {
 
 public:
     MapFusionPass(bool allow_init_hoist = true, bool allow_prod_into_cons = true)
-        : allow_init_hoist_(allow_init_hoist), allow_prod_into_cons_(allow_prod_into_cons) {}
+        : allow_init_hoist_(allow_init_hoist), allow_prod_into_cons_(allow_prod_into_cons) {
+    }
 
-    std::string name() override { return MapFusion::name(); }
+    std::string name() override {
+        return MapFusion::name();
+    }
 
     bool run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override {
         MapFusion visitor(builder, analysis_manager, allow_init_hoist_, allow_prod_into_cons_);

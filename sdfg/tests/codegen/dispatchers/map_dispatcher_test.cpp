@@ -87,7 +87,8 @@ TEST(MapDispatcherTest, RedirectDispatch) {
             bool& dispatch_node_called
         )
             : NodeDispatcher(language_extension, sdfg, analysis_manager, node, instrumentation_plan, arg_capture_plan),
-              dispatch_called(dispatch_called), dispatch_node_called(dispatch_node_called) {}
+              dispatch_called(dispatch_called), dispatch_node_called(dispatch_node_called) {
+        }
 
         void dispatch_node(
             codegen::PrettyPrinter& main_stream,

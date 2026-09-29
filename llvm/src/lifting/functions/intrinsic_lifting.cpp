@@ -59,8 +59,8 @@ sdfg::control_flow::State& IntrinsicLifting::visit_tasklet(
     }
     auto& output_type = this->builder_.subject().type(output);
     assert(
-        (output_type.type_id() == sdfg::types::TypeID::Scalar || output_type.type_id() == sdfg::types::TypeID::Structure
-        ) &&
+        (output_type.type_id() == sdfg::types::TypeID::Scalar ||
+         output_type.type_id() == sdfg::types::TypeID::Structure) &&
         "IntrinsicLifting: Expected scalar or structure type as output for taskletable intrinsic"
     );
 
@@ -211,8 +211,8 @@ sdfg::control_flow::State& IntrinsicLifting::visit_math(
     }
     auto& output_type = this->builder_.subject().type(output);
     assert(
-        (output_type.type_id() == sdfg::types::TypeID::Scalar || output_type.type_id() == sdfg::types::TypeID::Structure
-        ) &&
+        (output_type.type_id() == sdfg::types::TypeID::Scalar ||
+         output_type.type_id() == sdfg::types::TypeID::Structure) &&
         "IntrinsicLifting: Expected scalar or structure type as output for taskletable intrinsic"
     );
     switch (output_type.type_id()) {

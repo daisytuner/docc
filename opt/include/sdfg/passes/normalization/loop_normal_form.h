@@ -18,7 +18,9 @@ private:
 public:
     LoopNormalFormPass();
 
-    std::string name() override { return "LoopNormalForm"; };
+    std::string name() override {
+        return "LoopNormalForm";
+    };
 
     virtual bool run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
 };

@@ -27,4 +27,6 @@ endif()
 add_test(NAME docc-target-tenstorrent_test_test COMMAND docc-target-tenstorrent_test)
 
 include(GoogleTest)
-gtest_discover_tests(docc-target-tenstorrent_test)
+gtest_discover_tests(docc-target-tenstorrent_test
+  PROPERTIES LABELS "docc-target-tenstorrent"
+)

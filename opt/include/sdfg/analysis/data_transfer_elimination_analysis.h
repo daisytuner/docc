@@ -41,14 +41,16 @@ struct OffloadHolder {
     )
         : offload_node(offload_node), malloc_node(nullptr), host_data(host_data), host_access(host_access),
           dev_data(dev_data), starts_dev_lifetime(starts_dev_lifetime), ends_dev_lifetime(ends_dev_lifetime),
-          updates_on_dev(updates_on_dev), updates_on_host(updates_on_host) {}
+          updates_on_dev(updates_on_dev), updates_on_host(updates_on_host) {
+    }
 
     OffloadHolder(
         stdlib::MallocNode* malloc_node, const data_flow::AccessNode* host_data, const data_flow::Memlet* host_access
     )
         : offload_node(nullptr), malloc_node(malloc_node), host_data(host_data), host_access(host_access),
           dev_data(nullptr), starts_dev_lifetime(false), ends_dev_lifetime(false), updates_on_dev(false),
-          updates_on_host(false) {}
+          updates_on_host(false) {
+    }
 
     void remove_h2d_parts();
     void remove_d2h_parts();
@@ -60,7 +62,8 @@ struct ExposedOffload {
     int read_count = 0;
 
     ExposedOffload(OffloadHolder* offload, std::string container, int read_count = 0)
-        : offload(offload), container(std::move(container)), read_count(read_count) {}
+        : offload(offload), container(std::move(container)), read_count(read_count) {
+    }
 };
 
 /**
@@ -185,7 +188,8 @@ private:
 
 public:
     DataTransferEliminationAnalysis(StructuredSDFG& sdfg, AnalysisManager& ana)
-        : sdfg_(sdfg), ana_(ana), PointerEscapeAnalyzer(sdfg, *this), PointerUsedAnalyzer(sdfg, *this) {}
+        : sdfg_(sdfg), ana_(ana), PointerEscapeAnalyzer(sdfg, *this), PointerUsedAnalyzer(sdfg, *this) {
+    }
 
     void handle_lib_node(Block& block, data_flow::LibraryNode& node) override;
 

@@ -21,9 +21,8 @@ jobs:
         --gpus=all
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
-          token: ${{ secrets.BENCHMARK_TESTS_TOKEN }}
           submodules: recursive
           lfs: true
 
@@ -58,8 +57,7 @@ jobs:
           export LLVM_SYMBOLIZER_PATH=$(which llvm-symbolizer-21)
           export CPLUS_INCLUDE_PATH=$(pwd)/rtl/include/daisy_rtl:$CPLUS_INCLUDE_PATH
 
-          pip install pytest==7.1.3 --break-system-packages
-          pip install pytest-parallel --break-system-packages
+          pip install pytest pytest-xdist --break-system-packages
 
           cd llvm/integration
 

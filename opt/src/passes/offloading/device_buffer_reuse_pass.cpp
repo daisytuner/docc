@@ -57,7 +57,8 @@ analysis::User* user_for_element(analysis::Users& users, const std::string& cont
 BufferReuseMarker::BufferReuseMarker(
     builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager, analysis::Users& users
 )
-    : visitor::StructuredSDFGVisitor(builder, analysis_manager), users_(users), sdfg_(builder.subject()) {}
+    : visitor::StructuredSDFGVisitor(builder, analysis_manager), users_(users), sdfg_(builder.subject()) {
+}
 
 bool BufferReuseMarker::visit_internal(structured_control_flow::Sequence& parent) {
     for (size_t i = 0; i < parent.size(); i++) {
@@ -207,9 +208,12 @@ void BufferReuseMarker::process_block(structured_control_flow::Block& block) {
 }
 
 DeviceBufferReusePass::DeviceBufferReusePass(bool consider_dataflow_branching)
-    : consider_dataflow_branching_(consider_dataflow_branching) {}
+    : consider_dataflow_branching_(consider_dataflow_branching) {
+}
 
-std::string DeviceBufferReusePass::name() { return "DeviceBufferReuse"; }
+std::string DeviceBufferReusePass::name() {
+    return "DeviceBufferReuse";
+}
 
 void add_edge(std::vector<std::unordered_set<size_t>>& adjacency, size_t a, size_t b) {
     if (a == b) {

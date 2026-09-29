@@ -69,7 +69,9 @@ public:
 
     virtual void visualize();
 
-    codegen::PrettyPrinter const& getStream() const { return this->stream_; }
+    codegen::PrettyPrinter const& getStream() const {
+        return this->stream_;
+    }
 
     virtual void visualizeSubset(data_flow::Subset const& begin_sub, types::IType const* type = nullptr, int subIdx = 0);
 };

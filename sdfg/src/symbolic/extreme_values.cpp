@@ -34,9 +34,13 @@ namespace {
 // limits are 0, which is a common *real* bound, so they are intentionally NOT
 // treated as sentinels.
 bool matches_any(const Expression& e, const std::vector<int64_t>& values) {
-    if (!SymEngine::is_a<SymEngine::Integer>(*e)) return false;
+    if (!SymEngine::is_a<SymEngine::Integer>(*e)) {
+        return false;
+    }
     for (auto v : values) {
-        if (SymEngine::eq(*e, *symbolic::integer(v))) return true;
+        if (SymEngine::eq(*e, *symbolic::integer(v))) {
+            return true;
+        }
     }
     return false;
 }
@@ -62,13 +66,20 @@ bool is_type_lower_sentinel(const Expression& e) {
 BoundAnalysis::BoundAnalysis(
     const SymbolSet& parameters, const Assumptions& assumptions, bool use_tight_assumptions, int64_t budget
 )
-    : parameters_(parameters), assumptions_(assumptions), use_tight_(use_tight_assumptions), budget_(budget) {}
+    : parameters_(parameters), assumptions_(assumptions), use_tight_(use_tight_assumptions), budget_(budget) {
+}
 
-Interval BoundAnalysis::bound(const Expression& expr) { return visit(expr, 0); }
+Interval BoundAnalysis::bound(const Expression& expr) {
+    return visit(expr, 0);
+}
 
-Expression BoundAnalysis::lower_bound(const Expression& expr) { return visit(expr, 0).lower; }
+Expression BoundAnalysis::lower_bound(const Expression& expr) {
+    return visit(expr, 0).lower;
+}
 
-Expression BoundAnalysis::upper_bound(const Expression& expr) { return visit(expr, 0).upper; }
+Expression BoundAnalysis::upper_bound(const Expression& expr) {
+    return visit(expr, 0).upper;
+}
 
 // ============================================================================
 // Main dispatch
@@ -87,9 +98,13 @@ thread_local int g_bound_depth = 0;
 // Resets the work counter on the outermost top-level query only.
 struct BoundWorkGuard {
     BoundWorkGuard() {
-        if (g_bound_depth++ == 0) g_bound_work = 0;
+        if (g_bound_depth++ == 0) {
+            g_bound_work = 0;
+        }
     }
-    ~BoundWorkGuard() { --g_bound_depth; }
+    ~BoundWorkGuard() {
+        --g_bound_depth;
+    }
 };
 } // namespace
 
@@ -306,8 +321,12 @@ Interval BoundAnalysis::visit_symbol(const SymEngine::RCP<const SymEngine::Symbo
     // For constant symbols without evolution (outer-scope values, array dimensions),
     // the symbol's value is exactly itself. Use it as fallback when bounds are missing.
     if (assum.constant() && assum.map().is_null()) {
-        if (lb.is_null()) lb = sym;
-        if (ub.is_null()) ub = sym;
+        if (lb.is_null()) {
+            lb = sym;
+        }
+        if (ub.is_null()) {
+            ub = sym;
+        }
     }
 
     visiting_.erase(sym);
@@ -993,9 +1012,13 @@ bool decompose_constraint(
 ) {
     SymbolVec gens_copy = gens;
     auto poly = polynomial(constraint, gens_copy);
-    if (poly.is_null()) return false;
+    if (poly.is_null()) {
+        return false;
+    }
     auto coeffs = affine_coefficients(poly);
-    if (coeffs.empty()) return false;
+    if (coeffs.empty()) {
+        return false;
+    }
 
     out_g_coeffs.assign(gens.size(), 0);
     out_const = symbolic::zero();
@@ -1006,9 +1029,13 @@ bool decompose_constraint(
             out_const = coeff;
             continue;
         }
-        if (!SymEngine::is_a<SymEngine::Integer>(*coeff)) return false;
+        if (!SymEngine::is_a<SymEngine::Integer>(*coeff)) {
+            return false;
+        }
         long long v = SymEngine::rcp_static_cast<const SymEngine::Integer>(coeff)->as_int();
-        if (v == 0) continue;
+        if (v == 0) {
+            continue;
+        }
         // Locate this symbol in `gens`.
         bool found = false;
         for (size_t i = 0; i < gens.size(); ++i) {
@@ -1031,7 +1058,9 @@ bool decompose_constraint(
 } // namespace
 
 Interval BoundAnalysis::visit_add_coupled_constraints(const AffineCoeffs& coeffs, const SymbolVec& gens, size_t depth) {
-    if (gens.empty()) return Interval::failure();
+    if (gens.empty()) {
+        return Interval::failure();
+    }
 
     auto constant_sym = symbolic::symbol("__daisy_constant__");
 
@@ -1040,12 +1069,16 @@ Interval BoundAnalysis::visit_add_coupled_constraints(const AffineCoeffs& coeffs
     Expression sum_const = symbolic::zero();
     for (size_t i = 0; i < gens.size(); ++i) {
         long long c = 0;
-        if (!integer_coeff(coeffs, gens[i], c)) return Interval::failure();
+        if (!integer_coeff(coeffs, gens[i], c)) {
+            return Interval::failure();
+        }
         sum_g[i] = c;
     }
     {
         auto it = coeffs.find(constant_sym);
-        if (it != coeffs.end()) sum_const = it->second;
+        if (it != coeffs.end()) {
+            sum_const = it->second;
+        }
     }
 
     // Collect candidate constraints from every generator's assumption,
@@ -1059,16 +1092,24 @@ Interval BoundAnalysis::visit_add_coupled_constraints(const AffineCoeffs& coeffs
     ExpressionSet seen;
     for (const auto& g : gens) {
         auto a_it = assumptions_.find(g);
-        if (a_it == assumptions_.end()) continue;
+        if (a_it == assumptions_.end()) {
+            continue;
+        }
         for (const auto& c : a_it->second.constraints()) {
-            if (!seen.insert(c).second) continue;
+            if (!seen.insert(c).second) {
+                continue;
+            }
             Candidate cand;
             cand.expr = c;
-            if (!decompose_constraint(c, gens, cand.g_coeffs, cand.const_part)) continue;
+            if (!decompose_constraint(c, gens, cand.g_coeffs, cand.const_part)) {
+                continue;
+            }
             cands.push_back(std::move(cand));
         }
     }
-    if (cands.empty()) return Interval::failure();
+    if (cands.empty()) {
+        return Interval::failure();
+    }
 
     // Greedy peel in one direction, with partial-peel fallback. `direction
     // = +1` projects toward an upper bound (each constraint `c <= 0` is
@@ -1089,9 +1130,13 @@ Interval BoundAnalysis::visit_add_coupled_constraints(const AffineCoeffs& coeffs
     // bound.
     auto try_direction = [&](int direction) -> Expression {
         std::vector<long long> residual = sum_g;
-        for (auto& v : residual) v *= direction;
+        for (auto& v : residual) {
+            v *= direction;
+        }
         Expression accumulated_const = sum_const;
-        if (direction < 0) accumulated_const = symbolic::mul(symbolic::integer(-1), accumulated_const);
+        if (direction < 0) {
+            accumulated_const = symbolic::mul(symbolic::integer(-1), accumulated_const);
+        }
 
         for (int iter = 0; iter < 32; ++iter) {
             // Walk all generators; apply the first (generator, constraint)
@@ -1101,14 +1146,22 @@ Interval BoundAnalysis::visit_add_coupled_constraints(const AffineCoeffs& coeffs
             // would otherwise bail immediately on the free term.
             bool advanced = false;
             for (size_t pick = 0; pick < gens.size() && !advanced; ++pick) {
-                if (residual[pick] == 0) continue;
+                if (residual[pick] == 0) {
+                    continue;
+                }
                 long long need = residual[pick];
                 for (const auto& c : cands) {
                     long long cc = c.g_coeffs[pick];
-                    if (cc == 0) continue;
-                    if (need % cc != 0) continue;
+                    if (cc == 0) {
+                        continue;
+                    }
+                    if (need % cc != 0) {
+                        continue;
+                    }
                     long long lambda = need / cc;
-                    if (lambda <= 0) continue;
+                    if (lambda <= 0) {
+                        continue;
+                    }
 
                     // Tentatively subtract `lambda * c` from the residual.
                     std::vector<long long> r_new = residual;
@@ -1134,7 +1187,9 @@ Interval BoundAnalysis::visit_add_coupled_constraints(const AffineCoeffs& coeffs
                         }
                         r_new[i] = new_val;
                     }
-                    if (overshoot) continue;
+                    if (overshoot) {
+                        continue;
+                    }
 
                     residual = std::move(r_new);
                     accumulated_const =
@@ -1143,7 +1198,9 @@ Interval BoundAnalysis::visit_add_coupled_constraints(const AffineCoeffs& coeffs
                     break;
                 }
             }
-            if (!advanced) break;
+            if (!advanced) {
+                break;
+            }
         }
 
         // Build the partial bound: `K + sum(residual[i] * gens[i])`. For
@@ -1153,14 +1210,20 @@ Interval BoundAnalysis::visit_add_coupled_constraints(const AffineCoeffs& coeffs
         // therefore this helper, keeping the recursion bounded.
         Expression bound = accumulated_const;
         for (size_t i = 0; i < gens.size(); ++i) {
-            if (residual[i] == 0) continue;
+            if (residual[i] == 0) {
+                continue;
+            }
             auto sym_iv = visit(gens[i], depth + 1);
             Expression chosen;
             if (residual[i] > 0) {
-                if (!sym_iv.has_upper()) return Expression(SymEngine::null);
+                if (!sym_iv.has_upper()) {
+                    return Expression(SymEngine::null);
+                }
                 chosen = sym_iv.upper;
             } else {
-                if (!sym_iv.has_lower()) return Expression(SymEngine::null);
+                if (!sym_iv.has_lower()) {
+                    return Expression(SymEngine::null);
+                }
                 chosen = sym_iv.lower;
             }
             bound = symbolic::add(bound, symbolic::mul(symbolic::integer(residual[i]), chosen));
@@ -1175,7 +1238,9 @@ Interval BoundAnalysis::visit_add_coupled_constraints(const AffineCoeffs& coeffs
     if (!upper_k.is_null()) {
         // `K` may still mention parameters - resolve via the regular flow.
         auto k_iv = visit(symbolic::expand(upper_k), depth + 1);
-        if (k_iv.has_upper()) ub = k_iv.upper;
+        if (k_iv.has_upper()) {
+            ub = k_iv.upper;
+        }
     }
     Expression lb = SymEngine::null;
     if (!lower_k.is_null()) {
@@ -1183,7 +1248,9 @@ Interval BoundAnalysis::visit_add_coupled_constraints(const AffineCoeffs& coeffs
         // `expr = -K_lower + sum(mu_i * (-c_i)) >= -K_lower`. Negate.
         auto neg_k = symbolic::mul(symbolic::integer(-1), lower_k);
         auto k_iv = visit(symbolic::expand(neg_k), depth + 1);
-        if (k_iv.has_lower()) lb = k_iv.lower;
+        if (k_iv.has_lower()) {
+            lb = k_iv.lower;
+        }
     }
 
     return {lb, ub};
@@ -1231,8 +1298,12 @@ SymEngine::RCP<const SymEngine::Basic> find_first_min(const Expression& expr) {
     while (!worklist.empty()) {
         auto node = worklist.back();
         worklist.pop_back();
-        if (SymEngine::is_a<SymEngine::Min>(*node)) return node;
-        for (auto& a : node->get_args()) worklist.push_back(a);
+        if (SymEngine::is_a<SymEngine::Min>(*node)) {
+            return node;
+        }
+        for (auto& a : node->get_args()) {
+            worklist.push_back(a);
+        }
     }
     return SymEngine::null;
 }
@@ -1244,8 +1315,12 @@ SymEngine::RCP<const SymEngine::Basic> find_first_max(const Expression& expr) {
     while (!worklist.empty()) {
         auto node = worklist.back();
         worklist.pop_back();
-        if (SymEngine::is_a<SymEngine::Max>(*node)) return node;
-        for (auto& a : node->get_args()) worklist.push_back(a);
+        if (SymEngine::is_a<SymEngine::Max>(*node)) {
+            return node;
+        }
+        for (auto& a : node->get_args()) {
+            worklist.push_back(a);
+        }
     }
     return SymEngine::null;
 }
@@ -1275,11 +1350,15 @@ bool descend_max(
     int depth
 ) {
     auto max_node = find_first_max(diff);
-    if (max_node.is_null()) return false;
+    if (max_node.is_null()) {
+        return false;
+    }
     auto max_op = SymEngine::rcp_static_cast<const SymEngine::Max>(max_node);
     for (auto& arg : max_op->get_args()) {
         Expression replaced = symbolic::simplify(symbolic::expand(symbolic::subs(diff, max_node, arg)));
-        if (prove_ge_zero(replaced, parameters, assumptions, tight, strict, depth - 1)) return true;
+        if (prove_ge_zero(replaced, parameters, assumptions, tight, strict, depth - 1)) {
+            return true;
+        }
     }
     return false;
 }
@@ -1297,7 +1376,9 @@ bool descend_min_and(
     const Expression& e, const SymbolSet& parameters, const Assumptions& assumptions, bool tight, bool strict, int depth
 ) {
     auto min_node = find_first_min(e);
-    if (min_node.is_null()) return false;
+    if (min_node.is_null()) {
+        return false;
+    }
 
     // Monotonicity check: Min must appear at top level or as a direct addend.
     bool ok = false;
@@ -1311,12 +1392,16 @@ bool descend_min_and(
             }
         }
     }
-    if (!ok) return false;
+    if (!ok) {
+        return false;
+    }
 
     auto min_op = SymEngine::rcp_static_cast<const SymEngine::Min>(min_node);
     for (auto& arg : min_op->get_args()) {
         Expression replaced = symbolic::simplify(symbolic::expand(symbolic::subs(e, min_node, arg)));
-        if (!prove_ge_zero(replaced, parameters, assumptions, tight, strict, depth - 1)) return false;
+        if (!prove_ge_zero(replaced, parameters, assumptions, tight, strict, depth - 1)) {
+            return false;
+        }
     }
     return true;
 }
@@ -1360,9 +1445,13 @@ bool descend_symbol_bounds(
     // -- turning an unprovable coupled goal into a trivially-bounded one.
     std::vector<Expression> candidates;
     for (auto& s : symbolic::atoms(e)) {
-        if (parameters.find(s) != parameters.end()) continue;
+        if (parameters.find(s) != parameters.end()) {
+            continue;
+        }
         auto it = assumptions.find(s);
-        if (it == assumptions.end()) continue;
+        if (it == assumptions.end()) {
+            continue;
+        }
 
         // Linear coefficient of `s` via second-difference test (constant iff linear).
         auto c0 = symbolic::subs(e, s, zero);
@@ -1370,20 +1459,32 @@ bool descend_symbol_bounds(
         auto c2 = symbolic::subs(e, s, two);
         auto d1 = symbolic::simplify(symbolic::expand(symbolic::sub(c1, c0)));
         auto d2 = symbolic::simplify(symbolic::expand(symbolic::sub(c2, c1)));
-        if (!SymEngine::eq(*symbolic::simplify(symbolic::sub(d1, d2)), *zero)) continue;
-        if (!SymEngine::is_a<SymEngine::Integer>(*d1)) continue;
+        if (!SymEngine::eq(*symbolic::simplify(symbolic::sub(d1, d2)), *zero)) {
+            continue;
+        }
+        if (!SymEngine::is_a<SymEngine::Integer>(*d1)) {
+            continue;
+        }
         auto coeff = SymEngine::rcp_static_cast<const SymEngine::Integer>(d1);
-        if (coeff->is_zero()) continue;
+        if (coeff->is_zero()) {
+            continue;
+        }
 
         Expression bound = coeff->is_negative() ? it->second.tight_upper_bound() : it->second.tight_lower_bound();
         // Only worthwhile for a compound symbolic bound; numeric bounds are
         // already handled by the interval path, and a self-referential bound
         // would loop.
-        if (bound.is_null() || SymEngine::is_a<SymEngine::Integer>(*bound)) continue;
-        if (symbolic::atoms(bound).count(s)) continue;
+        if (bound.is_null() || SymEngine::is_a<SymEngine::Integer>(*bound)) {
+            continue;
+        }
+        if (symbolic::atoms(bound).count(s)) {
+            continue;
+        }
 
         Expression replaced = symbolic::simplify(symbolic::expand(symbolic::subs(e, s, bound)));
-        if (only_reducing && symbolic::atoms(replaced).size() >= base_atoms) continue;
+        if (only_reducing && symbolic::atoms(replaced).size() >= base_atoms) {
+            continue;
+        }
         candidates.push_back(replaced);
     }
 
@@ -1392,7 +1493,9 @@ bool descend_symbol_bounds(
     });
 
     for (auto& replaced : candidates) {
-        if (prove_ge_zero(replaced, parameters, assumptions, tight, strict, depth - 1)) return true;
+        if (prove_ge_zero(replaced, parameters, assumptions, tight, strict, depth - 1)) {
+            return true;
+        }
     }
     return false;
 }
@@ -1416,9 +1519,13 @@ bool prove_ge_zero(
 
     // Direct decidable check.
     if (strict) {
-        if (symbolic::is_true(symbolic::Gt(e, symbolic::zero()))) return true;
+        if (symbolic::is_true(symbolic::Gt(e, symbolic::zero()))) {
+            return true;
+        }
     } else {
-        if (symbolic::is_true(symbolic::Ge(e, symbolic::zero()))) return true;
+        if (symbolic::is_true(symbolic::Ge(e, symbolic::zero()))) {
+            return true;
+        }
     }
 
     // Cheap coupling shortcut before the interval descent: a symbolic-bound
@@ -1427,59 +1534,84 @@ bool prove_ge_zero(
     // and inexpensive. Running it here keeps the shared work budget from being
     // exhausted by `try_lb`'s min/max fan-out on the coupled goal before the
     // cancellation is ever tried.
-    if (depth > 0 && descend_symbol_bounds(e, parameters, assumptions, tight, strict, depth, /*only_reducing=*/true))
+    if (depth > 0 && descend_symbol_bounds(e, parameters, assumptions, tight, strict, depth, /*only_reducing=*/true)) {
         return true;
+    }
 
     // Interval check via BoundAnalysis with the supplied parameter set.
     auto try_lb = [&](const SymbolSet& params) -> bool {
         BoundAnalysis analysis(params, assumptions, tight);
         auto lb = analysis.lower_bound(e);
-        if (lb.is_null() || SymEngine::is_a<SymEngine::Infty>(*lb)) return false;
+        if (lb.is_null() || SymEngine::is_a<SymEngine::Infty>(*lb)) {
+            return false;
+        }
         // Simplify the computed bound: BoundAnalysis can return shapes like
         // `N - (N - 1)` that don't reduce inside `is_true(Ge(...))`.
         auto lb_s = symbolic::simplify(symbolic::expand(lb));
         if (SymEngine::is_a<SymEngine::Integer>(*lb_s)) {
             auto i = SymEngine::rcp_static_cast<const SymEngine::Integer>(lb_s);
-            if (strict ? i->is_positive() : !i->is_negative()) return true;
+            if (strict ? i->is_positive() : !i->is_negative()) {
+                return true;
+            }
         }
         if (strict) {
-            if (symbolic::is_true(symbolic::Gt(lb_s, symbolic::zero()))) return true;
+            if (symbolic::is_true(symbolic::Gt(lb_s, symbolic::zero()))) {
+                return true;
+            }
         } else {
-            if (symbolic::is_true(symbolic::Ge(lb_s, symbolic::zero()))) return true;
+            if (symbolic::is_true(symbolic::Ge(lb_s, symbolic::zero()))) {
+                return true;
+            }
         }
         // Max-descent on the computed lower bound: tight bounds frequently
         // take the shape `c + max(0, X)`. Substituting Max with one arg yields
         // a (sound) lower bound on `lb`, which transitively bounds `e`.
-        if (depth > 0 && descend_max(lb_s, params, assumptions, tight, strict, depth - 1)) return true;
+        if (depth > 0 && descend_max(lb_s, params, assumptions, tight, strict, depth - 1)) {
+            return true;
+        }
         // Min-descent (AND): `BoundAnalysis` may emit shapes like
         // `N + min(0, 1 - N)` whose value depends on the Min branches.
         // For each Min arg, substitute and require ALL branches to be
         // provable (sound when Min sits in monotone-nondecreasing position).
-        if (depth > 0 && descend_min_and(lb_s, params, assumptions, tight, strict, depth - 1)) return true;
+        if (depth > 0 && descend_min_and(lb_s, params, assumptions, tight, strict, depth - 1)) {
+            return true;
+        }
         return false;
     };
     // First with the caller's parameters (preserves chain-resolution shapes
     // like `upper(i) = N - 1` when N is a parameter).
-    if (try_lb(parameters)) return true;
+    if (try_lb(parameters)) {
+        return true;
+    }
     // Fallback with empty parameters: lets BoundAnalysis substitute
     // assumption-derived bounds on parameters themselves (e.g. `N >= 1`).
-    if (!parameters.empty() && try_lb({})) return true;
+    if (!parameters.empty() && try_lb({})) {
+        return true;
+    }
 
-    if (depth <= 0) return false;
+    if (depth <= 0) {
+        return false;
+    }
 
     // Max descent on the original expression.
-    if (descend_max(e, parameters, assumptions, tight, strict, depth)) return true;
+    if (descend_max(e, parameters, assumptions, tight, strict, depth)) {
+        return true;
+    }
 
     // Min-AND descent on the original expression: `min(a,b) - c >= 0` iff
     // `a - c >= 0` AND `b - c >= 0`. The interval path handles most mins, but a
     // Stream-K store bound `min(N-1, min(3+_j1, 63+base)) - _j1 - d` needs the
     // branches split so the per-branch symbolic substitution below can fire.
-    if (descend_min_and(e, parameters, assumptions, tight, strict, depth)) return true;
+    if (descend_min_and(e, parameters, assumptions, tight, strict, depth)) {
+        return true;
+    }
 
     // Symbolic-bound substitution: recover coupling lost by per-symbol interval
     // bounding (e.g. `_j1 - base` when `_j1 in [base, base+K]` and `base` is a
     // non-polynomial function of another generator).
-    if (descend_symbol_bounds(e, parameters, assumptions, tight, strict, depth, /*only_reducing=*/false)) return true;
+    if (descend_symbol_bounds(e, parameters, assumptions, tight, strict, depth, /*only_reducing=*/false)) {
+        return true;
+    }
 
     return false;
 }
@@ -1518,14 +1650,18 @@ bool is_gt(
     // then, if that fails, doing a Min descent on `b` (i.e. on the negative
     // term of the difference).
     auto diff = symbolic::sub(a, b);
-    if (is_positive(diff, parameters, assumptions, tight)) return true;
+    if (is_positive(diff, parameters, assumptions, tight)) {
+        return true;
+    }
     // Min descent on b: a > min(args) iff a > arg_i for some i.
     auto min_node = find_first_min(b);
     if (!min_node.is_null()) {
         auto min_op = SymEngine::rcp_static_cast<const SymEngine::Min>(min_node);
         for (auto& arg : min_op->get_args()) {
             Expression b_replaced = symbolic::simplify(symbolic::expand(symbolic::subs(b, min_node, arg)));
-            if (is_gt(a, b_replaced, parameters, assumptions, tight)) return true;
+            if (is_gt(a, b_replaced, parameters, assumptions, tight)) {
+                return true;
+            }
         }
     }
     return false;
@@ -1546,7 +1682,9 @@ bool is_lt(
 bool is_eq(
     const Expression& a, const Expression& b, const SymbolSet& parameters, const Assumptions& assumptions, bool tight
 ) {
-    if (symbolic::eq(a, b)) return true;
+    if (symbolic::eq(a, b)) {
+        return true;
+    }
     return is_ge(a, b, parameters, assumptions, tight) && is_ge(b, a, parameters, assumptions, tight);
 }
 
@@ -1568,18 +1706,24 @@ bool prove_ge_zero_ba(const Expression& diff, BoundAnalysis& ba, bool strict, in
 
 bool descend_max_ba(const Expression& diff, BoundAnalysis& ba, bool strict, int depth) {
     auto max_node = find_first_max(diff);
-    if (max_node.is_null()) return false;
+    if (max_node.is_null()) {
+        return false;
+    }
     auto max_op = SymEngine::rcp_static_cast<const SymEngine::Max>(max_node);
     for (auto& arg : max_op->get_args()) {
         Expression replaced = symbolic::simplify(symbolic::expand(symbolic::subs(diff, max_node, arg)));
-        if (prove_ge_zero_ba(replaced, ba, strict, depth - 1)) return true;
+        if (prove_ge_zero_ba(replaced, ba, strict, depth - 1)) {
+            return true;
+        }
     }
     return false;
 }
 
 bool descend_min_and_ba(const Expression& e, BoundAnalysis& ba, bool strict, int depth) {
     auto min_node = find_first_min(e);
-    if (min_node.is_null()) return false;
+    if (min_node.is_null()) {
+        return false;
+    }
 
     bool ok = false;
     if (e.get() == min_node.get()) {
@@ -1592,12 +1736,16 @@ bool descend_min_and_ba(const Expression& e, BoundAnalysis& ba, bool strict, int
             }
         }
     }
-    if (!ok) return false;
+    if (!ok) {
+        return false;
+    }
 
     auto min_op = SymEngine::rcp_static_cast<const SymEngine::Min>(min_node);
     for (auto& arg : min_op->get_args()) {
         Expression replaced = symbolic::simplify(symbolic::expand(symbolic::subs(e, min_node, arg)));
-        if (!prove_ge_zero_ba(replaced, ba, strict, depth - 1)) return false;
+        if (!prove_ge_zero_ba(replaced, ba, strict, depth - 1)) {
+            return false;
+        }
     }
     return true;
 }
@@ -1614,9 +1762,13 @@ bool prove_ge_zero_ba(const Expression& diff, BoundAnalysis& ba, bool strict, in
 
     // Direct decidable check.
     if (strict) {
-        if (symbolic::is_true(symbolic::Gt(e, symbolic::zero()))) return true;
+        if (symbolic::is_true(symbolic::Gt(e, symbolic::zero()))) {
+            return true;
+        }
     } else {
-        if (symbolic::is_true(symbolic::Ge(e, symbolic::zero()))) return true;
+        if (symbolic::is_true(symbolic::Ge(e, symbolic::zero()))) {
+            return true;
+        }
     }
 
     // Interval check via the supplied BoundAnalysis.
@@ -1625,21 +1777,35 @@ bool prove_ge_zero_ba(const Expression& diff, BoundAnalysis& ba, bool strict, in
         auto lb_s = symbolic::simplify(symbolic::expand(lb));
         if (SymEngine::is_a<SymEngine::Integer>(*lb_s)) {
             auto i = SymEngine::rcp_static_cast<const SymEngine::Integer>(lb_s);
-            if (strict ? i->is_positive() : !i->is_negative()) return true;
+            if (strict ? i->is_positive() : !i->is_negative()) {
+                return true;
+            }
         }
         if (strict) {
-            if (symbolic::is_true(symbolic::Gt(lb_s, symbolic::zero()))) return true;
+            if (symbolic::is_true(symbolic::Gt(lb_s, symbolic::zero()))) {
+                return true;
+            }
         } else {
-            if (symbolic::is_true(symbolic::Ge(lb_s, symbolic::zero()))) return true;
+            if (symbolic::is_true(symbolic::Ge(lb_s, symbolic::zero()))) {
+                return true;
+            }
         }
-        if (depth > 0 && descend_max_ba(lb_s, ba, strict, depth - 1)) return true;
-        if (depth > 0 && descend_min_and_ba(lb_s, ba, strict, depth - 1)) return true;
+        if (depth > 0 && descend_max_ba(lb_s, ba, strict, depth - 1)) {
+            return true;
+        }
+        if (depth > 0 && descend_min_and_ba(lb_s, ba, strict, depth - 1)) {
+            return true;
+        }
     }
 
-    if (depth <= 0) return false;
+    if (depth <= 0) {
+        return false;
+    }
 
     // Max descent on the original expression.
-    if (descend_max_ba(e, ba, strict, depth)) return true;
+    if (descend_max_ba(e, ba, strict, depth)) {
+        return true;
+    }
 
     return false;
 }
@@ -1662,29 +1828,41 @@ bool is_negative(const Expression& expr, BoundAnalysis& ba) {
     return is_positive(symbolic::mul(symbolic::integer(-1), expr), ba);
 }
 
-bool is_ge(const Expression& a, const Expression& b, BoundAnalysis& ba) { return is_nonneg(symbolic::sub(a, b), ba); }
+bool is_ge(const Expression& a, const Expression& b, BoundAnalysis& ba) {
+    return is_nonneg(symbolic::sub(a, b), ba);
+}
 
 bool is_gt(const Expression& a, const Expression& b, BoundAnalysis& ba) {
     auto diff = symbolic::sub(a, b);
-    if (is_positive(diff, ba)) return true;
+    if (is_positive(diff, ba)) {
+        return true;
+    }
     // Min descent on b: a > min(args) iff a > arg_i for some i.
     auto min_node = find_first_min(b);
     if (!min_node.is_null()) {
         auto min_op = SymEngine::rcp_static_cast<const SymEngine::Min>(min_node);
         for (auto& arg : min_op->get_args()) {
             Expression b_replaced = symbolic::simplify(symbolic::expand(symbolic::subs(b, min_node, arg)));
-            if (is_gt(a, b_replaced, ba)) return true;
+            if (is_gt(a, b_replaced, ba)) {
+                return true;
+            }
         }
     }
     return false;
 }
 
-bool is_le(const Expression& a, const Expression& b, BoundAnalysis& ba) { return is_ge(b, a, ba); }
+bool is_le(const Expression& a, const Expression& b, BoundAnalysis& ba) {
+    return is_ge(b, a, ba);
+}
 
-bool is_lt(const Expression& a, const Expression& b, BoundAnalysis& ba) { return is_gt(b, a, ba); }
+bool is_lt(const Expression& a, const Expression& b, BoundAnalysis& ba) {
+    return is_gt(b, a, ba);
+}
 
 bool is_eq(const Expression& a, const Expression& b, BoundAnalysis& ba) {
-    if (symbolic::eq(a, b)) return true;
+    if (symbolic::eq(a, b)) {
+        return true;
+    }
     return is_ge(a, b, ba) && is_ge(b, a, ba);
 }
 

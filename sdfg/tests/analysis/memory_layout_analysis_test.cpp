@@ -413,10 +413,12 @@ TEST(MemoryLayoutAnalysisTest, Linearized_3D_RowMajor) {
     // first = i*M*K
     EXPECT_TRUE(symbolic::eq(tile_j_first, symbolic::mul(i, symbolic::mul(M, K))));
     // last = i*MK + (M-1)*K + (K-1) = i*MK + MK - 1
-    EXPECT_TRUE(symbolic::eq(
-        tile_j_last,
-        symbolic::sub(symbolic::add(symbolic::mul(i, symbolic::mul(M, K)), symbolic::mul(M, K)), symbolic::one())
-    ));
+    EXPECT_TRUE(
+        symbolic::eq(
+            tile_j_last,
+            symbolic::sub(symbolic::add(symbolic::mul(i, symbolic::mul(M, K)), symbolic::mul(M, K)), symbolic::one())
+        )
+    );
 
     // Check tile at outer loop (i)
     auto* tile_i = analysis.tile(outer_loop, "A");
@@ -564,9 +566,11 @@ TEST(MemoryLayoutAnalysisTest, Linearized_3D_ColMajor) {
     auto Nj_i = symbolic::add(symbolic::mul(N, j), i);
     EXPECT_TRUE(symbolic::eq(tile_k_first, Nj_i));
     // last = MN*(K-1) + Nj + i = MNK - MN + Nj + i
-    EXPECT_TRUE(symbolic::
-                    eq(tile_k_last,
-                       symbolic::add(symbolic::sub(symbolic::mul(symbolic::mul(M, N), K), symbolic::mul(M, N)), Nj_i)));
+    EXPECT_TRUE(
+        symbolic::
+            eq(tile_k_last,
+               symbolic::add(symbolic::sub(symbolic::mul(symbolic::mul(M, N), K), symbolic::mul(M, N)), Nj_i))
+    );
 
     // Check tile at middle loop (j)
     auto* tile_j = analysis.tile(middle_loop, "A");
@@ -787,10 +791,12 @@ TEST(MemoryLayoutAnalysisTest, Stencil_2D_5Point) {
     // first = M*(i-1) = Mi - M
     EXPECT_TRUE(symbolic::eq(tile_j_A_first, symbolic::sub(symbolic::mul(M, i), M)));
     // last = M*(i+1) + (M-1) = Mi + 2M - 1
-    EXPECT_TRUE(symbolic::eq(
-        tile_j_A_last,
-        symbolic::add(symbolic::mul(M, i), symbolic::sub(symbolic::mul(symbolic::integer(2), M), symbolic::one()))
-    ));
+    EXPECT_TRUE(
+        symbolic::eq(
+            tile_j_A_last,
+            symbolic::add(symbolic::mul(M, i), symbolic::sub(symbolic::mul(symbolic::integer(2), M), symbolic::one()))
+        )
+    );
 
     // Check tile at inner loop for B
     auto* tile_j_B = analysis.tile(inner_loop, "B");
@@ -812,8 +818,7 @@ TEST(MemoryLayoutAnalysisTest, Stencil_2D_5Point) {
 
     auto [tile_j_B_first, tile_j_B_last] = tile_j_B->contiguous_range();
     EXPECT_TRUE(symbolic::eq(tile_j_B_first, symbolic::add(symbolic::mul(M, i), symbolic::one())));
-    EXPECT_TRUE(symbolic::eq(tile_j_B_last, symbolic::add(symbolic::mul(M, i), symbolic::sub(M, symbolic::integer(2))))
-    );
+    EXPECT_TRUE(symbolic::eq(tile_j_B_last, symbolic::add(symbolic::mul(M, i), symbolic::sub(M, symbolic::integer(2)))));
 
     // Check tile at outer loop for A
     auto* tile_i_A = analysis.tile(outer_loop, "A");
@@ -865,8 +870,7 @@ TEST(MemoryLayoutAnalysisTest, Stencil_2D_5Point) {
     auto [tile_i_B_first, tile_i_B_last] = tile_i_B->contiguous_range();
     EXPECT_TRUE(symbolic::eq(tile_i_B_first, symbolic::add(M, symbolic::one())));
     // last = M*(N-2) + (M-2) = MN - M - 2
-    EXPECT_TRUE(symbolic::eq(tile_i_B_last, symbolic::sub(symbolic::sub(symbolic::mul(M, N), M), symbolic::integer(2)))
-    );
+    EXPECT_TRUE(symbolic::eq(tile_i_B_last, symbolic::sub(symbolic::sub(symbolic::mul(M, N), M), symbolic::integer(2))));
 }
 
 TEST(MemoryLayoutAnalysisTest, Linearized_2D_TriangularLoop) {
@@ -1068,10 +1072,13 @@ TEST(MemoryLayoutAnalysisTest, Linearized_2D_TiledLoop) {
     ASSERT_EQ(tile_j->max_subset.size(), 2);
     EXPECT_TRUE(symbolic::eq(tile_j->max_subset.at(0), i));
     // j's tight upper bound: min(j_tile+31, M-1)
-    EXPECT_TRUE(symbolic::eq(
-        tile_j->max_subset.at(1),
-        symbolic::min(symbolic::sub(symbolic::add(j_tile, tile_size), symbolic::one()), symbolic::sub(M, symbolic::one()))
-    ));
+    EXPECT_TRUE(
+        symbolic::
+            eq(tile_j->max_subset.at(1),
+               symbolic::
+                   min(symbolic::sub(symbolic::add(j_tile, tile_size), symbolic::one()),
+                       symbolic::sub(M, symbolic::one())))
+    );
 
     // tile_j extents and contiguous range
     auto min_j_upper =
@@ -1103,14 +1110,20 @@ TEST(MemoryLayoutAnalysisTest, Linearized_2D_TiledLoop) {
 
     ASSERT_EQ(tile_i->max_subset.size(), 2);
     // i's tight upper bound: min(i_tile+31, N-1)
-    EXPECT_TRUE(symbolic::eq(
-        tile_i->max_subset.at(0),
-        symbolic::min(symbolic::sub(symbolic::add(i_tile, tile_size), symbolic::one()), symbolic::sub(N, symbolic::one()))
-    ));
-    EXPECT_TRUE(symbolic::eq(
-        tile_i->max_subset.at(1),
-        symbolic::min(symbolic::sub(symbolic::add(j_tile, tile_size), symbolic::one()), symbolic::sub(M, symbolic::one()))
-    ));
+    EXPECT_TRUE(
+        symbolic::
+            eq(tile_i->max_subset.at(0),
+               symbolic::
+                   min(symbolic::sub(symbolic::add(i_tile, tile_size), symbolic::one()),
+                       symbolic::sub(N, symbolic::one())))
+    );
+    EXPECT_TRUE(
+        symbolic::
+            eq(tile_i->max_subset.at(1),
+               symbolic::
+                   min(symbolic::sub(symbolic::add(j_tile, tile_size), symbolic::one()),
+                       symbolic::sub(M, symbolic::one())))
+    );
 
     // tile_i extents and contiguous range
     auto min_i_upper =
@@ -2498,7 +2511,9 @@ TEST(MemoryLayoutAnalysisTest, LU_Factorization_Diagnostic) {
     auto fmt_subset = [](const data_flow::Subset& s) {
         std::string out = "[";
         for (size_t idx = 0; idx < s.size(); ++idx) {
-            if (idx) out += ", ";
+            if (idx) {
+                out += ", ";
+            }
             out += SymEngine::str(*s.at(idx));
         }
         out += "]";
@@ -2783,7 +2798,9 @@ TEST(MemoryLayoutAnalysisTest, LU_BlockedFactorization_Diagnostic) {
     auto fmt_subset = [](const data_flow::Subset& s) {
         std::string out = "[";
         for (size_t idx = 0; idx < s.size(); ++idx) {
-            if (idx) out += ", ";
+            if (idx) {
+                out += ", ";
+            }
             out += SymEngine::str(*s.at(idx));
         }
         out += "]";

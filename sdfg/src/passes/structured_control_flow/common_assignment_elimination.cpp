@@ -10,7 +10,9 @@ CommonAssignmentElimination::CommonAssignmentElimination()
 
       };
 
-std::string CommonAssignmentElimination::name() { return "CommonAssignmentElimination"; };
+std::string CommonAssignmentElimination::name() {
+    return "CommonAssignmentElimination";
+};
 
 bool CommonAssignmentElimination::
     run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {

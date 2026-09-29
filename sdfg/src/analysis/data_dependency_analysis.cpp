@@ -13,6 +13,7 @@
 
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/analysis/loop_analysis.h"
+#include "sdfg/structured_control_flow/reduce.h"
 #include "sdfg/structured_sdfg.h"
 #include "sdfg/symbolic/maps.h"
 #include "sdfg/symbolic/sets.h"
@@ -145,6 +146,25 @@ void DataDependencyAnalysis::visit_block(
                                    oedge.type() == data_flow::MemletType::Dereference_Dst) {
                             use = Use::VIEW;
                             break;
+                        }
+                    }
+
+                    // A container feeding a library node's write-only pointer input is written
+                    // *through* that pointer. analysis::Users applies this regardless of the access
+                    // node's element type (e.g. an Array shared buffer staged by a TileCopyNode's
+                    // _dst); mirror it here so the get_user(READ) lookup below never diverges from
+                    // what Users registered (a divergence throws std::out_of_range).
+                    if (use == Use::READ) {
+                        for (auto& oedge : dataflow.out_edges(*access_node)) {
+                            auto* lib = dynamic_cast<data_flow::LibraryNode*>(&oedge.dst());
+                            if (lib == nullptr) {
+                                continue;
+                            }
+                            auto meta = lib->pointer_access_type(oedge);
+                            if (meta && meta->may_contain_writes() && !meta->may_contain_reads()) {
+                                use = Use::WRITE;
+                                break;
+                            }
                         }
                     }
 
@@ -355,6 +375,21 @@ void DataDependencyAnalysis::visit_for(
     std::unordered_map<User*, std::unordered_set<User*>> closed_definitions_for;
     std::unordered_set<User*> undefined_for;
 
+    // Packed bodies use partials, but the final combine still reads and writes the original accumulator.
+    if (auto* reduction = dyn_cast<structured_control_flow::Reduce*>(&for_loop)) {
+        for (const auto& entry : reduction->reductions()) {
+            if (entry.original_index.is_null()) {
+                continue;
+            }
+            undefined_for.insert(users.get_user(entry.container, reduction, Use::READ));
+            open_definitions_for
+                .emplace(users.get_user(entry.container, reduction, Use::WRITE), std::unordered_set<User*>{});
+            for (const auto& symbol : symbolic::atoms(entry.original_index)) {
+                undefined_for.insert(users.get_user(symbol->get_name(), reduction, Use::READ));
+            }
+        }
+    }
+
     // Add assumptions for body
     visit_sequence(analysis_manager, for_loop.root(), undefined_for, open_definitions_for, closed_definitions_for);
 
@@ -462,10 +497,16 @@ void DataDependencyAnalysis::visit_for(
     // (writer -> readers) sets we are mutating.
     for (auto* open_read : undefined_for) {
         auto& type = this->sdfg_.type(open_read->container());
-        if (!dynamic_cast<const types::Scalar*>(&type)) continue;
+        if (!dynamic_cast<const types::Scalar*>(&type)) {
+            continue;
+        }
         for (auto& write_entry : open_definitions_for) {
-            if (write_entry.first->container() != open_read->container()) continue;
-            if (this->is_undefined_user(*write_entry.first)) continue;
+            if (write_entry.first->container() != open_read->container()) {
+                continue;
+            }
+            if (this->is_undefined_user(*write_entry.first)) {
+                continue;
+            }
             write_entry.second.insert(open_read);
         }
     }
@@ -831,8 +872,12 @@ bool DataDependencyAnalysis::fully_covered(
         bool covered = false;
         for (auto& w_entry : open_definitions) {
             auto* w = w_entry.first;
-            if (w->container() != current.container()) continue;
-            if (this->is_undefined_user(*w)) continue;
+            if (w->container() != current.container()) {
+                continue;
+            }
+            if (this->is_undefined_user(*w)) {
+                continue;
+            }
             auto& w_assumptions = assumptions_analysis.get(*Users::scope(w), true);
             symbolic::AssumptionsBounds w_bounds(w_assumptions);
             for (auto& w_subset : w->subsets()) {
@@ -841,9 +886,13 @@ bool DataDependencyAnalysis::fully_covered(
                     break;
                 }
             }
-            if (covered) break;
+            if (covered) {
+                break;
+            }
         }
-        if (!covered) return false;
+        if (!covered) {
+            return false;
+        }
     }
     return true;
 }
@@ -1071,8 +1120,8 @@ bool DataDependencyAnalysis::has_loop_boundary(structured_control_flow::Structur
     return this->loop_boundaries_.find(&loop) != this->loop_boundaries_.end();
 }
 
-const std::unordered_set<User*>& DataDependencyAnalysis::upward_exposed_reads(structured_control_flow::StructuredLoop&
-                                                                                  loop) const {
+const std::unordered_set<User*>& DataDependencyAnalysis::
+    upward_exposed_reads(structured_control_flow::StructuredLoop& loop) const {
     return this->loop_boundaries_.at(&loop).first;
 }
 

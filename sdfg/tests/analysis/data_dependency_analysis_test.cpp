@@ -8,6 +8,7 @@
 #include "sdfg/analysis/users.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/element.h"
+#include "sdfg/structured_control_flow/reduce.h"
 #include "sdfg/symbolic/symbolic.h"
 
 using namespace sdfg;
@@ -1112,6 +1113,268 @@ TEST(DataDependencyAnalysisTest, For_Open_Array_Subsets) {
 
     auto& definition_A_after = open_definitions.at(write_A_after);
     EXPECT_EQ(definition_A_after.size(), 0);
+}
+
+TEST(DataDependencyAnalysisTest, Reduce_Materialized_Writeback_And_Partial_Dependencies) {
+    for (bool detailed : {false, true}) {
+        SCOPED_TRACE(detailed);
+        builder::StructuredSDFGBuilder builder("reduction_writeback", FunctionType_CPU);
+        types::Scalar scalar(types::PrimitiveType::Int32);
+        types::Array accumulator_type(scalar, symbolic::integer(16));
+        types::Array partial_type(scalar, symbolic::one());
+        builder.add_container("step", scalar);
+        builder.add_container("acc", accumulator_type);
+        builder.add_container("partial", partial_type);
+        builder.add_container("result", scalar);
+
+        auto& root = builder.subject().root();
+        auto& initialization = builder.add_block(root);
+        auto& initial_acc = builder.add_access(initialization, "acc");
+        auto& initial_partial = builder.add_access(initialization, "partial");
+        auto& initial_value = builder.add_constant(initialization, "0", scalar);
+        auto& initialize_acc = builder.add_tasklet(initialization, data_flow::TaskletCode::assign, "out", {"in"});
+        auto& initialize_partial = builder.add_tasklet(initialization, data_flow::TaskletCode::assign, "out", {"in"});
+        builder.add_computational_memlet(initialization, initial_value, initialize_acc, "in", {});
+        builder.add_computational_memlet(
+            initialization, initialize_acc, "out", initial_acc, {symbolic::integer(7)}, accumulator_type
+        );
+        builder.add_computational_memlet(initialization, initial_value, initialize_partial, "in", {});
+        builder.add_computational_memlet(
+            initialization, initialize_partial, "out", initial_partial, {symbolic::zero()}, partial_type
+        );
+
+        auto step = symbolic::symbol("step");
+        auto& reduction = builder.add_reduce(
+            root,
+            step,
+            symbolic::Lt(step, symbolic::integer(8)),
+            symbolic::zero(),
+            symbolic::add(step, symbolic::one()),
+            {{structured_control_flow::ReductionOperation::Add, "acc"}},
+            structured_control_flow::ScheduleType_Sequential::create()
+        );
+        reduction.original_index("acc", symbolic::integer(7));
+        auto& body = builder.add_block(reduction.root());
+        auto& partial_read = builder.add_access(body, "partial");
+        auto& partial_write = builder.add_access(body, "partial");
+        auto& increment = builder.add_constant(body, "1", scalar);
+        auto& accumulate = builder.add_tasklet(body, data_flow::TaskletCode::int_add, "out", {"left", "right"});
+        builder.add_computational_memlet(body, partial_read, accumulate, "left", {symbolic::zero()}, partial_type);
+        builder.add_computational_memlet(body, increment, accumulate, "right", {});
+        builder.add_computational_memlet(body, accumulate, "out", partial_write, {symbolic::zero()}, partial_type);
+
+        auto& consumption = builder.add_block(root);
+        auto& final_acc = builder.add_access(consumption, "acc");
+        auto& result = builder.add_access(consumption, "result");
+        auto& consume = builder.add_tasklet(consumption, data_flow::TaskletCode::assign, "out", {"in"});
+        builder
+            .add_computational_memlet(consumption, final_acc, consume, "in", {symbolic::integer(7)}, accumulator_type);
+        builder.add_computational_memlet(consumption, consume, "out", result, {});
+
+        analysis::AnalysisManager manager(builder.subject());
+        analysis::DataDependencyAnalysis dependencies(builder.subject());
+        dependencies.set_detailed(detailed);
+        dependencies.run(manager);
+        auto& users = manager.get<analysis::Users>();
+        auto* initial_write = users.get_user("acc", &initial_acc, analysis::Use::WRITE);
+        auto* writeback_read = users.get_user("acc", &reduction, analysis::Use::READ);
+        auto* writeback_write = users.get_user("acc", &reduction, analysis::Use::WRITE);
+        auto* final_read = users.get_user("acc", &final_acc, analysis::Use::READ);
+        auto* partial_initial_write = users.get_user("partial", &initial_partial, analysis::Use::WRITE);
+        auto* partial_body_read = users.get_user("partial", &partial_read, analysis::Use::READ);
+        auto* partial_body_write = users.get_user("partial", &partial_write, analysis::Use::WRITE);
+
+        EXPECT_EQ(dependencies.defined_by(*writeback_read), (std::unordered_set<analysis::User*>{initial_write}));
+        EXPECT_TRUE(dependencies.defines(*initial_write).contains(writeback_read));
+        EXPECT_TRUE(dependencies.defined_by(*final_read).contains(writeback_write));
+        EXPECT_TRUE(dependencies.defines(*writeback_write).contains(final_read));
+        EXPECT_TRUE(dependencies.defined_by(*partial_body_read).contains(partial_initial_write));
+        EXPECT_FALSE(dependencies.defined_by(*writeback_read).contains(partial_body_write));
+        EXPECT_FALSE(dependencies.defined_by(*partial_body_read).contains(writeback_write));
+        ASSERT_TRUE(dependencies.has_loop_boundary(reduction));
+        EXPECT_TRUE(dependencies.upward_exposed_reads(reduction).contains(writeback_read));
+        EXPECT_TRUE(dependencies.upward_exposed_reads(reduction).contains(partial_body_read));
+        EXPECT_TRUE(dependencies.escaping_definitions(reduction).contains(writeback_write));
+        EXPECT_TRUE(dependencies.escaping_definitions(reduction).contains(partial_body_write));
+        ASSERT_EQ(writeback_write->subsets().size(), 1);
+        ASSERT_EQ(writeback_write->subsets().front().size(), 1);
+        EXPECT_TRUE(symbolic::eq(writeback_write->subsets().front().front(), symbolic::integer(7)));
+    }
+}
+
+TEST(DataDependencyAnalysisTest, Reduce_Materialized_Chained_And_Disjoint_Writebacks) {
+    for (bool detailed : {false, true}) {
+        SCOPED_TRACE(detailed);
+        builder::StructuredSDFGBuilder builder("reduction_writeback_subsets", FunctionType_CPU);
+        types::Scalar scalar(types::PrimitiveType::Int32);
+        builder.add_container("step", scalar);
+        builder.add_container("acc", types::Array(scalar, symbolic::integer(16)));
+        auto step = symbolic::symbol("step");
+        auto add_reduction = [&](int64_t index) -> structured_control_flow::Reduce& {
+            auto& reduction = builder.add_reduce(
+                builder.subject().root(),
+                step,
+                symbolic::Lt(step, symbolic::integer(8)),
+                symbolic::zero(),
+                symbolic::add(step, symbolic::one()),
+                {{structured_control_flow::ReductionOperation::Add, "acc"}},
+                structured_control_flow::ScheduleType_Sequential::create()
+            );
+            reduction.original_index("acc", symbolic::integer(index));
+            return reduction;
+        };
+        auto& first = add_reduction(7);
+        auto& second = add_reduction(7);
+        auto& disjoint = add_reduction(9);
+
+        analysis::AnalysisManager manager(builder.subject());
+        analysis::DataDependencyAnalysis dependencies(builder.subject());
+        dependencies.set_detailed(detailed);
+        dependencies.run(manager);
+        auto& users = manager.get<analysis::Users>();
+        auto* first_read = users.get_user("acc", &first, analysis::Use::READ);
+        auto* first_write = users.get_user("acc", &first, analysis::Use::WRITE);
+        auto* second_read = users.get_user("acc", &second, analysis::Use::READ);
+        auto* second_write = users.get_user("acc", &second, analysis::Use::WRITE);
+        auto* disjoint_read = users.get_user("acc", &disjoint, analysis::Use::READ);
+
+        EXPECT_TRUE(dependencies.defined_by(*first_read).empty());
+        EXPECT_TRUE(dependencies.defined_by(*second_read).contains(first_write));
+        EXPECT_TRUE(dependencies.defines(*first_write).contains(second_read));
+        EXPECT_EQ(dependencies.defined_by(*disjoint_read).contains(first_write), !detailed);
+        EXPECT_EQ(dependencies.defined_by(*disjoint_read).contains(second_write), !detailed);
+        EXPECT_FALSE(dependencies.defined_by(*first_read).contains(second_write));
+        for (auto* reduction : {&first, &second, &disjoint}) {
+            auto* read = users.get_user("acc", reduction, analysis::Use::READ);
+            auto* write = users.get_user("acc", reduction, analysis::Use::WRITE);
+            EXPECT_TRUE(dependencies.upward_exposed_reads(*reduction).contains(read));
+            EXPECT_TRUE(dependencies.escaping_definitions(*reduction).contains(write));
+        }
+    }
+}
+
+TEST(DataDependencyAnalysisTest, Reduce_Materialized_Nested_Multiple_Accumulators_And_Index_Symbols) {
+    for (bool detailed : {false, true}) {
+        for (bool initialize_offset : {false, true}) {
+            SCOPED_TRACE(detailed);
+            SCOPED_TRACE(initialize_offset);
+            builder::StructuredSDFGBuilder builder("nested_reduction_writebacks", FunctionType_CPU);
+            types::Scalar scalar(types::PrimitiveType::Int32);
+            types::Array array(scalar, symbolic::integer(32));
+            for (const auto* name : {"row", "step", "offset"}) {
+                builder.add_container(name, scalar);
+            }
+            for (const auto* name : {"acc", "other"}) {
+                builder.add_container(name, array);
+            }
+
+            auto& root = builder.subject().root();
+            data_flow::AccessNode* offset_output = nullptr;
+            if (initialize_offset) {
+                auto& initialization = builder.add_block(root);
+                offset_output = &builder.add_access(initialization, "offset");
+                auto& value = builder.add_constant(initialization, "1", scalar);
+                auto& assign = builder.add_tasklet(initialization, data_flow::TaskletCode::assign, "out", {"in"});
+                builder.add_computational_memlet(initialization, value, assign, "in", {});
+                builder.add_computational_memlet(initialization, assign, "out", *offset_output, {});
+            }
+            auto row = symbolic::symbol("row");
+            auto step = symbolic::symbol("step");
+            auto offset = symbolic::symbol("offset");
+            auto& outer = builder.add_for(
+                root, row, symbolic::Lt(row, symbolic::integer(4)), symbolic::zero(), symbolic::add(row, symbolic::one())
+            );
+            auto& reduction = builder.add_reduce(
+                outer.root(),
+                step,
+                symbolic::Lt(step, symbolic::integer(8)),
+                symbolic::zero(),
+                symbolic::add(step, symbolic::one()),
+                {{structured_control_flow::ReductionOperation::Add, "acc"},
+                 {structured_control_flow::ReductionOperation::Add, "other"}},
+                structured_control_flow::ScheduleType_Sequential::create()
+            );
+            auto index = symbolic::add(symbolic::mul(symbolic::integer(4), row), offset);
+            reduction.original_index("acc", index);
+            reduction.original_index("other", symbolic::add(index, symbolic::one()));
+
+            analysis::AnalysisManager manager(builder.subject());
+            analysis::DataDependencyAnalysis dependencies(builder.subject());
+            dependencies.set_detailed(detailed);
+            dependencies.run(manager);
+            auto& users = manager.get<analysis::Users>();
+            auto* offset_read = users.get_user("offset", &reduction, analysis::Use::READ);
+            auto* row_read = users.get_user("row", &reduction, analysis::Use::READ);
+            auto* row_init = users.get_user("row", &outer, analysis::Use::WRITE, true);
+            auto* row_update = users.get_user("row", &outer, analysis::Use::WRITE, false, false, true);
+            EXPECT_TRUE(dependencies.upward_exposed_reads(reduction).contains(offset_read));
+            EXPECT_TRUE(dependencies.upward_exposed_reads(outer).contains(offset_read));
+            EXPECT_TRUE(dependencies.upward_exposed_reads(reduction).contains(row_read));
+            EXPECT_EQ(dependencies.defined_by(*row_read), (std::unordered_set<analysis::User*>{row_init, row_update}));
+            if (initialize_offset) {
+                auto* offset_write = users.get_user("offset", offset_output, analysis::Use::WRITE);
+                EXPECT_EQ(dependencies.defined_by(*offset_read), (std::unordered_set<analysis::User*>{offset_write}));
+                EXPECT_TRUE(dependencies.defines(*offset_write).contains(offset_read));
+            } else {
+                EXPECT_TRUE(dependencies.defined_by(*offset_read).empty());
+            }
+            for (const auto* container : {"acc", "other"}) {
+                auto* read = users.get_user(container, &reduction, analysis::Use::READ);
+                auto* write = users.get_user(container, &reduction, analysis::Use::WRITE);
+                EXPECT_TRUE(dependencies.upward_exposed_reads(reduction).contains(read));
+                EXPECT_TRUE(dependencies.upward_exposed_reads(outer).contains(read));
+                EXPECT_TRUE(dependencies.escaping_definitions(reduction).contains(write));
+                EXPECT_TRUE(dependencies.escaping_definitions(outer).contains(write));
+                EXPECT_TRUE(dependencies.defined_by(*read).empty());
+                EXPECT_EQ(dependencies.definitions(container).size(), 1);
+                EXPECT_TRUE(dependencies.definitions(container).contains(write));
+            }
+        }
+    }
+}
+
+TEST(DataDependencyAnalysisTest, Reduce_Unmaterialized_Uses_Body_Accesses) {
+    for (bool detailed : {false, true}) {
+        SCOPED_TRACE(detailed);
+        builder::StructuredSDFGBuilder builder("logical_reduction", FunctionType_CPU);
+        types::Scalar scalar(types::PrimitiveType::Int32);
+        types::Array array(scalar, symbolic::integer(16));
+        builder.add_container("step", scalar);
+        builder.add_container("acc", array);
+        auto step = symbolic::symbol("step");
+        auto& reduction = builder.add_reduce(
+            builder.subject().root(),
+            step,
+            symbolic::Lt(step, symbolic::integer(8)),
+            symbolic::zero(),
+            symbolic::add(step, symbolic::one()),
+            {{structured_control_flow::ReductionOperation::Add, "acc"}},
+            structured_control_flow::ScheduleType_Sequential::create()
+        );
+        auto& body = builder.add_block(reduction.root());
+        auto& input = builder.add_access(body, "acc");
+        auto& output = builder.add_access(body, "acc");
+        auto& increment = builder.add_constant(body, "1", scalar);
+        auto& accumulate = builder.add_tasklet(body, data_flow::TaskletCode::int_add, "out", {"left", "right"});
+        builder.add_computational_memlet(body, input, accumulate, "left", {symbolic::integer(7)}, array);
+        builder.add_computational_memlet(body, increment, accumulate, "right", {});
+        builder.add_computational_memlet(body, accumulate, "out", output, {symbolic::integer(7)}, array);
+
+        analysis::AnalysisManager manager(builder.subject());
+        analysis::DataDependencyAnalysis dependencies(builder.subject());
+        dependencies.set_detailed(detailed);
+        dependencies.run(manager);
+        auto& users = manager.get<analysis::Users>();
+        auto* read = users.get_user("acc", &input, analysis::Use::READ);
+        auto* write = users.get_user("acc", &output, analysis::Use::WRITE);
+        EXPECT_TRUE(reduction.reductions().front().original_index.is_null());
+        EXPECT_EQ(users.reads("acc").size(), 1);
+        EXPECT_EQ(users.writes("acc").size(), 1);
+        EXPECT_TRUE(dependencies.upward_exposed_reads(reduction).contains(read));
+        EXPECT_TRUE(dependencies.escaping_definitions(reduction).contains(write));
+        EXPECT_EQ(dependencies.definitions("acc").size(), 1);
+        EXPECT_TRUE(dependencies.definitions("acc").contains(write));
+    }
 }
 
 TEST(DataDependencyAnalysisTest, For_Open_Array_Subsets_Trivial) {

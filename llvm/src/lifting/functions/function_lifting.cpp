@@ -141,8 +141,7 @@ sdfg::control_flow::State& FunctionLifting::visit_call(
             if (auto* called_operand_func = llvm::dyn_cast<llvm::Function>(global_alias->getAliaseeObject())) {
                 // This is not 100% safe but a good heuristic for now: Only replace the aliased function with its
                 // aliasee if the function is guaranteed to never throw an exception.
-                if (called_operand_func->getAttributes().getFnAttrs().hasAttribute(llvm::Attribute::AttrKind::NoUnwind
-                    )) {
+                if (called_operand_func->getAttributes().getFnAttrs().hasAttribute(llvm::Attribute::AttrKind::NoUnwind)) {
                     called_operand = global_alias->getAliaseeObject();
                     callee_llvm_type = called_operand_func->getFunctionType();
                 }

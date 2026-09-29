@@ -24,7 +24,9 @@ public:
 
     bool run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
 
-    std::string name() override { return "GPULoopReorderingPass"; }
+    std::string name() override {
+        return "GPULoopReorderingPass";
+    }
 };
 
 } // namespace passes

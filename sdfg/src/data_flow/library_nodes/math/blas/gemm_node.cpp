@@ -36,25 +36,44 @@ GEMMNode::GEMMNode(
           implementation_type,
           precision
       ),
-      layout_(layout), trans_a_(trans_a), trans_b_(trans_b), m_(m), n_(n), k_(k), lda_(lda), ldb_(ldb), ldc_(ldc) {}
+      layout_(layout), trans_a_(trans_a), trans_b_(trans_b), m_(m), n_(n), k_(k), lda_(lda), ldb_(ldb), ldc_(ldc) {
+}
 
-BLAS_Layout GEMMNode::layout() const { return this->layout_; };
+BLAS_Layout GEMMNode::layout() const {
+    return this->layout_;
+};
 
-BLAS_Transpose GEMMNode::trans_a() const { return this->trans_a_; };
+BLAS_Transpose GEMMNode::trans_a() const {
+    return this->trans_a_;
+};
 
-BLAS_Transpose GEMMNode::trans_b() const { return this->trans_b_; };
+BLAS_Transpose GEMMNode::trans_b() const {
+    return this->trans_b_;
+};
 
-symbolic::Expression GEMMNode::m() const { return this->m_; };
+symbolic::Expression GEMMNode::m() const {
+    return this->m_;
+};
 
-symbolic::Expression GEMMNode::n() const { return this->n_; };
+symbolic::Expression GEMMNode::n() const {
+    return this->n_;
+};
 
-symbolic::Expression GEMMNode::k() const { return this->k_; };
+symbolic::Expression GEMMNode::k() const {
+    return this->k_;
+};
 
-symbolic::Expression GEMMNode::lda() const { return this->lda_; };
+symbolic::Expression GEMMNode::lda() const {
+    return this->lda_;
+};
 
-symbolic::Expression GEMMNode::ldb() const { return this->ldb_; };
+symbolic::Expression GEMMNode::ldb() const {
+    return this->ldb_;
+};
 
-symbolic::Expression GEMMNode::ldc() const { return this->ldc_; };
+symbolic::Expression GEMMNode::ldc() const {
+    return this->ldc_;
+};
 
 symbolic::SymbolSet GEMMNode::symbols() const {
     symbolic::SymbolSet syms;
@@ -99,7 +118,9 @@ void GEMMNode::replace(const symbolic::ExpressionMapping& replacements) {
     this->ldc_ = symbolic::subs(this->ldc_, replacements);
 };
 
-void GEMMNode::validate(const Function& function) const { BLASNode::validate(function); }
+void GEMMNode::validate(const Function& function) const {
+    BLASNode::validate(function);
+}
 
 passes::LibNodeExpander::ExpandOutcome GEMMNode::
     expand(passes::LibNodeExpander::ExpandContext& context, structured_control_flow::Block& block) {
@@ -167,8 +188,9 @@ passes::LibNodeExpander::ExpandOutcome GEMMNode::
     bool beta_is_zero = beta_edge->is_src_constant(0.0);
     bool beta_is_one = beta_edge->is_src_constant(1.0);
 
-    auto add_loop = [&](structured_control_flow::Sequence& scope, size_t dim, bool as_map
-                    ) -> structured_control_flow::StructuredLoop& {
+    auto add_loop = [&](structured_control_flow::Sequence& scope,
+                        size_t dim,
+                        bool as_map) -> structured_control_flow::StructuredLoop& {
         std::string iv = builder.find_new_name(indvar_names[dim]);
         auto& indvar_end = indvar_ends[dim];
         auto indvar_type = types::get_primitive_type_to_hold_upper_bound(indvar_end);
@@ -374,9 +396,8 @@ data_flow::PointerAccessType GEMMNode::pointer_access_type(int input_idx) const 
                 create_full_write_only(calc_matrix_access_range(m_, n_, ldc_, BLAS_Transpose::No, layout_), true);
         } else {
             // sparse access. But with only Convex Pattern for now, we cannot represent which values are
-            auto pattern =
-                data_flow::ConvexAccessPattern::create(calc_matrix_access_range(m_, n_, ldc_, BLAS_Transpose::No, layout_)
-                );
+            auto pattern = data_flow::ConvexAccessPattern::
+                create(calc_matrix_access_range(m_, n_, ldc_, BLAS_Transpose::No, layout_));
             // full-overwritten and which are DC.
             return data_flow::PointerAccessMeta::create_generic(pattern->ref(), std::move(pattern), true);
         }
@@ -445,7 +466,8 @@ GEMMNodeDispatcher_BLAS::GEMMNodeDispatcher_BLAS(
     const data_flow::DataFlowGraph& data_flow_graph,
     const GEMMNode& node
 )
-    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
+}
 
 void GEMMNodeDispatcher_BLAS::dispatch_code_with_edges(
     codegen::CodegenOutput& out,

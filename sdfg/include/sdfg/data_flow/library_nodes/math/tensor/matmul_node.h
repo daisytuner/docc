@@ -80,7 +80,7 @@ private:
     types::PrimitiveType fixed_quantization_;
     TensorLayout layout_a_;
     TensorLayout layout_b_;
-    // TensorLayout layout_y_; // we are not using that yet
+    TensorLayout layout_y_;
 
     /** @deprecated use TensorLayout **/
     static bool has_basic_strides(symbolic::MultiExpression shape, symbolic::MultiExpression strides);
@@ -103,6 +103,7 @@ public:
         const TensorLayout& layout_a,
         const TensorLayout& layout_b,
         QuantizationType quantization = QUANTIZATION_MATCH_INPUTS,
+        const TensorLayout* layout_y = nullptr,
         const data_flow::ImplementationType& impl_type = data_flow::ImplementationType_NONE
     );
 
@@ -123,7 +124,9 @@ public:
      */
     symbolic::Expression n() const;
 
-    QuantizationType quantization() const { return quantization(get_parent()); }
+    QuantizationType quantization() const {
+        return quantization(get_parent());
+    }
 
     /**
      * type of the math calculations. May be inferred or fixed.
@@ -148,6 +151,22 @@ public:
 
     const TensorLayout& layout_b() const;
 
+    const TensorLayout& layout_y() const;
+
+    TensorLayout& layout_a() {
+        return layout_a_;
+    }
+
+    TensorLayout& layout_b() {
+        return layout_b_;
+    }
+
+    TensorLayout& layout_y() {
+        return layout_y_;
+    }
+
+    static TensorLayout get_linear_result_layout(const TensorLayout& layout_a, const TensorLayout& layout_b);
+
     /**
      * @brief Get the K dimension (columns of A, rows of B - contraction dimension)
      * @return K dimension expression
@@ -155,6 +174,8 @@ public:
     symbolic::Expression k() const;
 
     void validate(const Function& function) const override;
+
+    void verify_data_types(const data_flow::DataFlowGraph& graph) const override;
 
     /**
      * @brief Expand matmul into nested maps
@@ -185,7 +206,9 @@ public:
 
     symbolic::Expression flop() const override;
 
-    bool supports_integer_types() const override { return true; }
+    bool supports_integer_types() const override {
+        return true;
+    }
 };
 
 /**

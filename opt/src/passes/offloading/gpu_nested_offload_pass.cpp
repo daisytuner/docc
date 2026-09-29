@@ -92,7 +92,8 @@ struct PlannedOffload {
 
 GPUNestedOffloadPass::
     GPUNestedOffloadPass(const std::vector<structured_control_flow::StructuredLoop*>& loops, GPUTarget target)
-    : loops_(loops), target_(target) {}
+    : loops_(loops), target_(target) {
+}
 
 bool GPUNestedOffloadPass::run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     if (loops_.empty()) {

@@ -27,4 +27,6 @@ endif()
 add_test(NAME docc-target-et_test_test COMMAND docc-target-et_test)
 
 include(GoogleTest)
-gtest_discover_tests(docc-target-et_test)
+gtest_discover_tests(docc-target-et_test
+  PROPERTIES LABELS "docc-target-et"
+)

@@ -21,7 +21,9 @@ private:
 public:
     TypeMinimization(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager);
 
-    static std::string name() { return "TypeMinimization"; }
+    static std::string name() {
+        return "TypeMinimization";
+    }
 
     virtual bool accept(structured_control_flow::Block& block) override;
 

@@ -43,8 +43,13 @@ if(SDFG_ENABLE_COVERAGE)
   )
 endif()
 
-add_test(NAME sdfgrpc_test_test COMMAND rpc_test)
+add_test(NAME sdfgrpc_test_test COMMAND sdfgrpc_test)
+set_tests_properties(sdfgrpc_test_test PROPERTIES LABELS "sdfgrpc")
 
 include(GoogleTest)
-gtest_discover_tests(sdfgrpc_test)
-gtest_discover_tests(sdfgrpc_daisytuner_rpc_test)
+gtest_discover_tests(sdfgrpc_test
+  PROPERTIES LABELS "sdfgrpc"
+)
+gtest_discover_tests(sdfgrpc_daisytuner_rpc_test
+  PROPERTIES LABELS "sdfgrpc_daisytuner_rpc"
+)

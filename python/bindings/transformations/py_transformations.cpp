@@ -7,10 +7,12 @@
 #include <sdfg/symbolic/symbolic.h>
 #include <sdfg/targets/cuda/cuda.h>
 #include <sdfg/targets/rocm/rocm.h>
+#include <sdfg/targets/rocm/rocm_arch.h>
+#include <sdfg/targets/rocm/rocm_mma_transform.h>
 #include <sdfg/tiles/transformations/local_storage.h>
 #include <sdfg/tiles/transformations/software_pipelining.h>
 #include <sdfg/tiles/transformations/tile_fusion.h>
-#include <sdfg/transformations/in_local_storage.h>
+#include <sdfg/tiles/transformations/tile_vectorizer.h>
 #include <sdfg/transformations/loop_distribute.h>
 #include <sdfg/transformations/loop_interchange.h>
 #include <sdfg/transformations/loop_peeling.h>
@@ -24,7 +26,6 @@
 #include <sdfg/transformations/offloading/gpu_offload_nested_loop.h>
 #include <sdfg/transformations/offloading/rocm_offload_transform.h>
 #include <sdfg/transformations/omp_transform.h>
-#include <sdfg/transformations/out_local_storage.h>
 #include <sdfg/transformations/recorder.h>
 #include <sdfg/transformations/stream_k.h>
 #include <sdfg/transformations/transformation.h>
@@ -82,13 +83,16 @@ void register_transformations(py::module& m) {
     // LoopTiling transformation
     py::class_<LoopTiling, Transformation>(m, "LoopTiling")
         .def(
-            py::init<StructuredLoop&, size_t>(),
+            py::init<StructuredLoop&, size_t, bool>(),
             py::arg("loop"),
             py::arg("tile_size"),
+            py::arg("simplify_bounds") = false,
             "Create a loop tiling transformation.\n\n"
             "Args:\n"
             "    loop: The loop to tile\n"
-            "    tile_size: The tile size (must be > 1)"
+            "    tile_size: The tile size (must be > 1)\n"
+            "    simplify_bounds: Drop the redundant inner bound for perfectly dividing tiles,\n"
+            "        yielding a clean constant-trip tile that unrolls/vectorizes (default: False)"
         )
         .def_property_readonly(
             "inner_loop",
@@ -156,23 +160,6 @@ void register_transformations(py::module& m) {
         .def("__repr__", [](const LoopSkewing& t) {
             std::ostringstream oss;
             oss << "<LoopSkewing name='" << t.name() << "'>";
-            return oss.str();
-        });
-
-    // OutLocalStorage transformation
-    py::class_<OutLocalStorage, Transformation>(m, "OutLocalStorage")
-        .def(
-            py::init<StructuredLoop&, const sdfg::data_flow::AccessNode&>(),
-            py::arg("loop"),
-            py::arg("access_node"),
-            "Create an out-of-loop local storage transformation.\n\n"
-            "Args:\n"
-            "    loop: The loop to optimize\n"
-            "    access_node: The access node to extract to local storage"
-        )
-        .def("__repr__", [](const OutLocalStorage& t) {
-            std::ostringstream oss;
-            oss << "<OutLocalStorage name='" << t.name() << "'>";
             return oss.str();
         });
 
@@ -399,11 +386,10 @@ void register_transformations(py::module& m) {
     // SoftwarePipelining transformation (cp.async double-buffer a panel loop)
     py::class_<SoftwarePipelining, Transformation>(m, "SoftwarePipelining")
         .def(
-            py::init<StructuredLoop&, size_t, bool, bool>(),
+            py::init<StructuredLoop&, size_t, bool>(),
             py::arg("loop"),
             py::arg("stages") = 2,
             py::arg("single_operand") = false,
-            py::arg("vectorize") = false,
             "Software-pipeline a sequential panel loop that cooperatively stages a\n"
             "shared-memory tile each iteration, overlapping the next panel's global\n"
             "load (via cp.async) with the current panel's compute.\n\n"
@@ -413,14 +399,32 @@ void register_transformations(py::module& m) {
             "    single_operand: Pipeline only the first (name-ordered) shared\n"
             "        operand and keep the rest single-buffered + synchronous. Uses\n"
             "        less shared memory, preserving occupancy when double-buffering\n"
-            "        every operand would drop a block per SM.\n"
-            "    vectorize: Emit 16-byte (float4) cp.async by striding the\n"
-            "        cooperative copy by 4. Only sound for contiguous, 16-byte\n"
-            "        aligned tiles; clang cannot widen the cp.async intrinsic."
+            "        every operand would drop a block per SM."
         )
         .def("__repr__", [](const SoftwarePipelining& t) {
             std::ostringstream oss;
             oss << "<SoftwarePipelining name='" << t.name() << "'>";
+            return oss.str();
+        });
+
+    // TileVectorizer transformation (widen cooperative copies, sync or async)
+    py::class_<TileVectorizer, Transformation>(m, "TileVectorizer")
+        .def(
+            py::init<StructuredLoop&>(),
+            py::arg("loop"),
+            "Widen every cooperative shared-staging copy in a loop's subtree to the\n"
+            "widest legal vector transfer, independent of how the copy was produced.\n\n"
+            "Run after LocalStorage (scalar copies) and, optionally, after\n"
+            "SoftwarePipelining (minimal-width cp.async): scalar copies lower to\n"
+            "synchronous VectorCopy (float4/float2), existing cp.async nodes widen in\n"
+            "place, and pipelined vmcnt fences are recomputed. Always safe (a no-op\n"
+            "when nothing widens); composes with any copy representation.\n\n"
+            "Args:\n"
+            "    loop: A loop enclosing the cooperative copies to widen."
+        )
+        .def("__repr__", [](const TileVectorizer& t) {
+            std::ostringstream oss;
+            oss << "<TileVectorizer name='" << t.name() << "'>";
             return oss.str();
         });
 
@@ -494,45 +498,15 @@ void register_transformations(py::module& m) {
             return oss.str();
         });
 
-    // InLocalStorage transformation (stage a read tile into local/shared storage)
-    py::class_<InLocalStorage, Transformation>(m, "InLocalStorage")
-        .def(
-            py::init([](StructuredLoop& loop,
-                        const sdfg::data_flow::AccessNode& access_node,
-                        const std::string& storage_type) {
-                sdfg::types::StorageType st = sdfg::types::StorageType::CPU_Stack();
-                if (storage_type == "NV_Shared") {
-                    st = sdfg::types::StorageType::NV_Shared();
-                } else if (storage_type == "CPU_Stack") {
-                    st = sdfg::types::StorageType::CPU_Stack();
-                } else {
-                    throw std::invalid_argument("Unsupported storage_type: " + storage_type);
-                }
-                return std::make_unique<InLocalStorage>(loop, access_node, st);
-            }),
-            py::arg("loop"),
-            py::arg("access_node"),
-            py::arg("storage_type") = "CPU_Stack",
-            "Create an in-local-storage transformation (stage a read tile).\n\n"
-            "Args:\n"
-            "    loop: The loop defining the localization scope\n"
-            "    access_node: The access node for the container to localize\n"
-            "    storage_type: 'CPU_Stack' (registers) or 'NV_Shared' (shared memory)"
-        )
-        .def("__repr__", [](const InLocalStorage& t) {
-            std::ostringstream oss;
-            oss << "<InLocalStorage name='" << t.name() << "'>";
-            return oss.str();
-        });
-
     // LocalStorage transformation (schedule-derived local buffer; direction derived)
     py::class_<LocalStorage, Transformation>(m, "LocalStorage")
         .def(
-            py::init<StructuredLoop&, const sdfg::data_flow::AccessNode&, bool, bool>(),
+            py::init<StructuredLoop&, const sdfg::data_flow::AccessNode&, bool, bool, bool>(),
             py::arg("loop"),
             py::arg("access_node"),
             py::arg("swizzle_layout") = false,
             py::arg("lane_contiguous") = false,
+            py::arg("transpose_layout") = false,
             "Create a local-storage transformation.\n\n"
             "The copy direction (in/out) and the storage space are both derived\n"
             "from the dataflow and the enclosing parallel schedule.\n\n"
@@ -545,7 +519,10 @@ void register_transformations(py::module& m) {
             "        power-of-two inner block; falls back to padding otherwise.\n"
             "    lane_contiguous: Lay the NV_Shared tile flat and thread-linear (slots\n"
             "        folded, no padding) via a full-block cooperative copy, as required\n"
-            "        by the CDNA async global->LDS DMA (global_load_lds)."
+            "        by the CDNA async global->LDS DMA (global_load_lds).\n"
+            "    transpose_layout: Store a cooperative (no-slot) NV_Shared tile\n"
+            "        column-major (its tile axes reversed), so consumers read it\n"
+            "        transposed. A pure affine relabelling of storage."
         )
         .def_property_readonly(
             "local_container", &LocalStorage::local_container, "Name of the created local buffer (valid after apply())"
@@ -588,18 +565,47 @@ void register_transformations(py::module& m) {
         .def("save", &Recorder::save, py::arg("path"), "Save the recorded transformation history to a file")
         .def(
             "get_history",
-            [](const Recorder& self) { return self.get_history().dump(); },
+            [](const Recorder& self) {
+                return self.get_history().dump();
+            },
             "Get the transformation history as a JSON string"
         )
         .def_property_readonly(
             "history",
-            [](const Recorder& self) { return self.get_history().dump(); },
+            [](const Recorder& self) {
+                return self.get_history().dump();
+            },
             "Get the transformation history as a JSON string"
         )
         .def("__repr__", [](const Recorder& self) {
             std::ostringstream oss;
             oss << "<Recorder transformations=" << self.get_history().size() << ">";
             return oss.str();
+        });
+
+    // RocmMmaExpand transformation: expand a MatMul node into an arch-specific MMA impl.
+    py::class_<sdfg::gpu::rocm::RocmMmaTransform, Transformation>(m, "RocmMmaTransform")
+        .def(
+            py::init([](sdfg::data_flow::LibraryNode& node, const sdfg::gpu::rocm::RocmArch& arch) {
+                auto& matmul_node = sdfg::dyn_cast<sdfg::math::tensor::MatMulNode>(node);
+                return new sdfg::gpu::rocm::RocmMmaTransform(matmul_node, &arch);
+            }),
+            py::arg("node"),
+            py::arg("arch"),
+            py::keep_alive<1, 2>(),
+            py::keep_alive<1, 3>(),
+            "Create a ROCm MMA expansion transformation for a MatMul library node.\n\n"
+            "Args:\n"
+            "    node: The MatMul library node to expand (from block.dataflow.library_nodes)\n"
+            "    arch: The target RocmArch (e.g. RocmArch.get_from_name('gfx1201'))"
+        )
+        .def_property_readonly(
+            "expanded",
+            &sdfg::gpu::rocm::RocmMmaTransform::expanded,
+            "Whether the node was expanded (valid after apply())"
+        )
+        .def("__repr__", [](const sdfg::gpu::rocm::RocmMmaTransform&) {
+            return std::string("<RocmMmaTransform name='RocmMmaTransform'>");
         });
 
     // InvalidTransformationException

@@ -51,6 +51,7 @@
 #include "sdfg/data_flow/library_nodes/stdlib/memcpy.h"
 #include "sdfg/data_flow/library_nodes/stdlib/memmove.h"
 #include "sdfg/element.h"
+#include "sdfg/passes/offloading/reduction_shared_memory_delinearization.h"
 #include "sdfg/structured_control_flow/return.h"
 #include "sdfg/structured_sdfg.h"
 #include "sdfg/targets/cuda/cuda_data_offloading_node.h"
@@ -85,7 +86,9 @@ llvm::cl::opt<bool> codegen_dot_output(
     llvm::cl::init(false)
 );
 
-CodeGenerationPass::CodeGenerationPass() { add_subcomp_opts_from_arg(sub_compile_opts_); }
+CodeGenerationPass::CodeGenerationPass() {
+    add_subcomp_opts_from_arg(sub_compile_opts_);
+}
 
 void CodeGenerationPass::add_subcomp_opts_from_arg(std::vector<std::string>& out_opts) const {
     for (const auto& opt : DOCC_COMP_OPTS) {
@@ -381,6 +384,11 @@ bool CodeGenerationPass::generate_code(
 
         // Generate code
         sdfg::analysis::AnalysisManager analysis_manager(*part_sdfg);
+
+        // Finalize each split graph before instrumentation and code generation.
+        sdfg::builder::StructuredSDFGBuilder builder(*part_sdfg);
+        sdfg::passes::ReductionSharedMemoryDelinearization reduction_buffers;
+        reduction_buffers.run(builder, analysis_manager);
 
         // Determine instrumentation plan
         std::unique_ptr<sdfg::codegen::InstrumentationPlan> instrumentation_plan;
@@ -940,8 +948,8 @@ std::list<std::unique_ptr<sdfg::StructuredSDFG>> CodeGenerationPass::
                 auto& dst = static_cast<sdfg::data_flow::AccessNode&>(oedge.dst());
                 copy_buffer = dst.data();
             }
-        } else if (auto* external_offloading_node = dynamic_cast<sdfg::offloading::ExternalDataOffloadingNode*>(libnode
-                   )) {
+        } else if (auto* external_offloading_node =
+                       dynamic_cast<sdfg::offloading::ExternalDataOffloadingNode*>(libnode)) {
             if (external_offloading_node->is_h2d()) {
                 copy_in = true;
                 alloc = external_offloading_node->is_alloc();
@@ -1364,8 +1372,8 @@ std::list<std::unique_ptr<sdfg::StructuredSDFG>> CodeGenerationPass::
                 auto& src = static_cast<sdfg::data_flow::AccessNode&>(iedge.src());
                 copy_buffer = src.data();
             }
-        } else if (auto* external_offloading_node = dynamic_cast<sdfg::offloading::ExternalDataOffloadingNode*>(libnode
-                   )) {
+        } else if (auto* external_offloading_node =
+                       dynamic_cast<sdfg::offloading::ExternalDataOffloadingNode*>(libnode)) {
             if (external_offloading_node->is_d2h()) {
                 copy_out = true;
                 free = external_offloading_node->is_free();

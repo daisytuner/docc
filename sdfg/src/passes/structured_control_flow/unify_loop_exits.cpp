@@ -33,7 +33,9 @@ std::unordered_set<const control_flow::State*> UnifyLoopExits::
     return nodes;
 };
 
-std::string UnifyLoopExits::name() { return "UnifyLoopExits"; };
+std::string UnifyLoopExits::name() {
+    return "UnifyLoopExits";
+};
 
 bool UnifyLoopExits::run_pass(builder::SDFGBuilder& builder) {
     auto& sdfg = builder.subject();

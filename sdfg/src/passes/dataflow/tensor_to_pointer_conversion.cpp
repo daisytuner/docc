@@ -14,7 +14,8 @@ namespace passes {
 
 TensorToPointerConversion::
     TensorToPointerConversion(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager)
-    : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager) {}
+    : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager) {
+}
 
 bool TensorToPointerConversion::accept(structured_control_flow::Block& block) {
     bool applied = false;
@@ -61,16 +62,9 @@ bool TensorToPointerConversion::accept(structured_control_flow::Block& block) {
         }
 
         auto& element_type = tensor_type.element_type();
-        auto& shape = tensor_type.shape();
-        auto& strides = tensor_type.strides();
+        auto linearized = tensor_type.layout().resolve_element(memlet.subset(), true);
 
-        auto& tensor_subset = memlet.subset();
-        symbolic::Expression linearized_access = tensor_type.offset();
-        for (size_t i = 0; i < shape.size(); ++i) {
-            linearized_access = symbolic::add(linearized_access, symbolic::mul(tensor_subset.at(i), strides.at(i)));
-        }
-
-        data_flow::Subset pointer_subset = {linearized_access};
+        data_flow::Subset pointer_subset = {linearized};
         memlet.set_subset(pointer_subset);
 
         types::Pointer pointer_type(element_type);

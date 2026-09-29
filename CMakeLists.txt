@@ -42,6 +42,9 @@ endif()
 
 # Tests Options
 option(SDFG_BUILD_TESTS "Build tests" ON)
+if(SDFG_BUILD_TESTS)
+    enable_testing()
+endif()
 
 # Compiler options
 set(SDFG_COMPILE_OPTS

@@ -79,7 +79,9 @@ void extract_bound_from_literal(
     std::vector<symbolic::Symbol> indvar_targets;
     for (const auto& sym : symbolic::atoms(delta)) {
         auto it = outer_assumptions.find(sym);
-        if (it == outer_assumptions.end()) return;
+        if (it == outer_assumptions.end()) {
+            return;
+        }
         bool is_indvar = !it->second.map().is_null();
         if (is_indvar) {
             indvar_targets.push_back(sym);
@@ -87,7 +89,9 @@ void extract_bound_from_literal(
             return; // non-constant local — would be invalidated by body writes
         }
     }
-    if (indvar_targets.empty()) return;
+    if (indvar_targets.empty()) {
+        return;
+    }
 
     if (indvar_targets.size() == 1) {
         // Single-indvar path: emit a per-symbol list bound (and possibly
@@ -98,13 +102,19 @@ void extract_bound_from_literal(
         auto neg_delta = symbolic::expand(symbolic::mul(symbolic::integer(-1), delta));
 
         auto try_emit = [&](const symbolic::Expression& K, bool is_lower) {
-            if (K.is_null()) return;
+            if (K.is_null()) {
+                return;
+            }
             auto neg_K = symbolic::expand(symbolic::mul(symbolic::integer(-1), K));
 
             auto add_bound = [&](const symbolic::Expression& b, bool lower) {
-                if (b.is_null()) return false;
+                if (b.is_null()) {
+                    return false;
+                }
                 for (const auto& a : symbolic::atoms(b)) {
-                    if (symbolic::eq(a, target)) return false;
+                    if (symbolic::eq(a, target)) {
+                        return false;
+                    }
                 }
                 if (lower) {
                     branch_assumptions[target].add_lower_bound(b);
@@ -114,21 +124,37 @@ void extract_bound_from_literal(
                 // Refine the tight bound slot when the branch literal strictly
                 // narrows the outer-scope tight bound.
                 auto outer_it = outer_assumptions.find(target);
-                if (outer_it == outer_assumptions.end()) return true;
-                if (!SymEngine::is_a<SymEngine::Integer>(*b)) return true;
+                if (outer_it == outer_assumptions.end()) {
+                    return true;
+                }
+                if (!SymEngine::is_a<SymEngine::Integer>(*b)) {
+                    return true;
+                }
                 if (lower) {
                     auto cur = branch_assumptions[target].tight_lower_bound();
-                    if (cur.is_null()) cur = outer_it->second.tight_lower_bound();
-                    if (cur.is_null() || !SymEngine::is_a<SymEngine::Integer>(*cur)) return true;
+                    if (cur.is_null()) {
+                        cur = outer_it->second.tight_lower_bound();
+                    }
+                    if (cur.is_null() || !SymEngine::is_a<SymEngine::Integer>(*cur)) {
+                        return true;
+                    }
                     auto refined = symbolic::max(cur, b);
-                    if (!SymEngine::is_a<SymEngine::Integer>(*refined)) return true;
+                    if (!SymEngine::is_a<SymEngine::Integer>(*refined)) {
+                        return true;
+                    }
                     branch_assumptions[target].tight_lower_bound(refined);
                 } else {
                     auto cur = branch_assumptions[target].tight_upper_bound();
-                    if (cur.is_null()) cur = outer_it->second.tight_upper_bound();
-                    if (cur.is_null() || !SymEngine::is_a<SymEngine::Integer>(*cur)) return true;
+                    if (cur.is_null()) {
+                        cur = outer_it->second.tight_upper_bound();
+                    }
+                    if (cur.is_null() || !SymEngine::is_a<SymEngine::Integer>(*cur)) {
+                        return true;
+                    }
                     auto refined = symbolic::min(cur, b);
-                    if (!SymEngine::is_a<SymEngine::Integer>(*refined)) return true;
+                    if (!SymEngine::is_a<SymEngine::Integer>(*refined)) {
+                        return true;
+                    }
                     branch_assumptions[target].tight_upper_bound(refined);
                 }
                 return true;
@@ -159,8 +185,12 @@ void extract_bound_from_literal(
     // Constants and `constant()` symbols stay opaque in the residue.
     for (const auto& sym : indvar_targets) {
         auto decomp = symbolic::affine_decomposition(delta, sym);
-        if (!decomp.success) return;
-        if (!SymEngine::is_a<SymEngine::Integer>(*decomp.coeff)) return;
+        if (!decomp.success) {
+            return;
+        }
+        if (!SymEngine::is_a<SymEngine::Integer>(*decomp.coeff)) {
+            return;
+        }
     }
 
     auto register_constraint = [&](const symbolic::Expression& c) {
@@ -203,7 +233,9 @@ void extract_assumptions_from_condition(
         return;
     }
     for (const auto& clause : cnf) {
-        if (clause.size() != 1) continue; // disjunctive — not soundly splittable
+        if (clause.size() != 1) {
+            continue; // disjunctive — not soundly splittable
+        }
         extract_bound_from_literal(clause.front(), outer_assumptions, branch_assumptions);
     }
 }
@@ -234,7 +266,9 @@ symbolic::SymbolSet AssumptionsAnalysis::per_symbol_refined_symbols(const symbol
         return result;
     }
     for (const auto& clause : cnf) {
-        if (clause.size() != 1) continue; // disjunctive — constrains no single symbol
+        if (clause.size() != 1) {
+            continue; // disjunctive — constrains no single symbol
+        }
         const auto& lit = clause.front();
 
         symbolic::Expression delta = SymEngine::null;
@@ -509,7 +543,9 @@ void AssumptionsAnalysis::traverse_structured_loop(
             }
 
             auto infer_symbol_lower_bound = [&](const symbolic::Expression& expr) {
-                if (!min_ub_value_is_clean) return;
+                if (!min_ub_value_is_clean) {
+                    return;
+                }
                 auto atoms = symbolic::atoms(expr);
                 for (const auto& sym : atoms) {
                     auto bound = symbolic::solve_affine_bound(expr, sym, min_ub_value, true);
@@ -678,7 +714,9 @@ const symbolic::Assumptions& AssumptionsAnalysis::
     }
 }
 
-const symbolic::SymbolSet& AssumptionsAnalysis::parameters() { return this->parameters_; }
+const symbolic::SymbolSet& AssumptionsAnalysis::parameters() {
+    return this->parameters_;
+}
 
 bool AssumptionsAnalysis::is_parameter(const symbolic::Symbol& container) {
     return this->parameters_.contains(container);

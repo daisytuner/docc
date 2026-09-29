@@ -25,7 +25,8 @@ UpsampleBilinear2DNode::UpsampleBilinear2DNode(
 )
     : TensorNode(element_id, debug_info, vertex, parent, LibraryNodeType_UpsampleBilinear2D, {}, {"Y", "X"}, impl_type),
       input_shape_(input_shape), output_shape_(output_shape), align_corners_(align_corners),
-      scale_factors_(scale_factors) {}
+      scale_factors_(scale_factors) {
+}
 
 void UpsampleBilinear2DNode::validate(const Function& function) const {
     TensorNode::validate(function);
@@ -188,8 +189,8 @@ passes::LibNodeExpander::ExpandOutcome UpsampleBilinear2DNode::
         builder.add_computational_memlet(blk, tk, "_out", r_acc, {}, double_type, dbg);
         return name;
     };
-    auto emit_one_minus = [&](structured_control_flow::Sequence& scope, const std::string& lam, const std::string& hint
-                          ) -> std::string {
+    auto emit_one_minus =
+        [&](structured_control_flow::Sequence& scope, const std::string& lam, const std::string& hint) -> std::string {
         std::string name = builder.find_new_name(hint);
         builder.add_container(name, double_type);
         auto& blk = builder.add_block(scope, {}, dbg);

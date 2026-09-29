@@ -29,12 +29,16 @@ public:
         data_flow::ImplementationType impl_type = data_flow::ImplementationType_NONE
     );
 
-    const TensorLayout& batch_layout() const { return layout_; }
+    const TensorLayout& batch_layout() const {
+        return layout_;
+    }
 
     /**
      * In N,C,D0...Dn layout, always C
      */
-    symbolic::Expression num_features() const { return layout_.shape().at(1); }
+    symbolic::Expression num_features() const {
+        return layout_.shape().at(1);
+    }
 
     QuantizationType quantization() const;
 
@@ -56,7 +60,9 @@ public:
 
     symbolic::Expression flop() const override;
 
-    bool supports_integer_types() const override { return false; }
+    bool supports_integer_types() const override {
+        return false;
+    }
 
     data_flow::PointerAccessType pointer_access_type(int input_idx) const override;
 };

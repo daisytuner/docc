@@ -20,7 +20,8 @@ SigmoidNode::SigmoidNode(
 )
     : ElementWiseDataflowTensorNode(
           element_id, debug_info, vertex, parent, LibraryNodeType_Sigmoid, shape, "Y", {"X"}, quantization, impl_type
-      ) {}
+      ) {
+}
 
 ElementWiseDataflowTensorNode::ElementOutput SigmoidNode::expand_operation_dataflow(
     builder::StructuredSDFGBuilder& builder,

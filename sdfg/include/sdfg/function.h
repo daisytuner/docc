@@ -108,11 +108,15 @@ public:
 
     bool exists(const std::string& name) const;
 
-    auto containers() const { return std::views::keys(this->containers_); };
+    auto containers() const {
+        return std::views::keys(this->containers_);
+    };
 
     const types::IType& type(const std::string& name) const;
 
-    auto structures() const { return std::views::keys(this->structures_); };
+    auto structures() const {
+        return std::views::keys(this->structures_);
+    };
 
     const types::StructureDefinition& structure(const std::string& name) const;
 

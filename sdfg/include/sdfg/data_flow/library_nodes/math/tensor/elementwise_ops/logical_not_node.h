@@ -30,7 +30,9 @@ public:
         types::PrimitiveType expected_type
     ) override;
 
-    bool supports_integer_types() const override { return true; }
+    bool supports_integer_types() const override {
+        return true;
+    }
 
     void validate(const Function& function) const override;
 

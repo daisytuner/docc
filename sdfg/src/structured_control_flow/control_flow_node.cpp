@@ -4,11 +4,16 @@ namespace sdfg {
 namespace structured_control_flow {
 
 ControlFlowNode::ControlFlowNode(size_t element_id, const DebugInfo& debug_info, ControlFlowNode* parent)
-    : Element(element_id, debug_info), parent_(parent) {}
+    : Element(element_id, debug_info), parent_(parent) {
+}
 
-ControlFlowNode* ControlFlowNode::get_parent() { return parent_; };
+ControlFlowNode* ControlFlowNode::get_parent() {
+    return parent_;
+};
 
-const ControlFlowNode* ControlFlowNode::get_parent() const { return parent_; }
+const ControlFlowNode* ControlFlowNode::get_parent() const {
+    return parent_;
+}
 
 std::vector<ControlFlowNode*> ControlFlowNode::parent_chain(ControlFlowNode& child) {
     std::vector<ControlFlowNode*> result;

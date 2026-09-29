@@ -26,6 +26,7 @@
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/symbolic/extreme_values.h"
 #include "sdfg/targets/cuda/plugin.h"
+#include "targets/py_gpu_arch.h"
 #include "transformations/py_replayer.h"
 #include "transformations/py_transformations.h"
 #include "types/py_types.h"
@@ -40,7 +41,9 @@
 #include <sdfg/types/type.h>
 
 #include <sdfg/codegen/dispatchers/node_dispatcher_registry.h>
+#include <sdfg/codegen/instrumentation/instrumentation_plan.h>
 #include <sdfg/einsum/einsum.h>
+#include <sdfg/parallelization/parallelization.h>
 #include <sdfg/passes/expansion/library_node_expansion_pass.h>
 #include <sdfg/plugins/plugins.h>
 #include <sdfg/serializer/json_serializer.h>
@@ -48,6 +51,7 @@
 #include <sdfg/targets/omp/plugin.h>
 #include <sdfg/targets/rocm/plugin.h>
 #include <sdfg/targets/vectorize/plugin.h>
+#include <sdfg/tiles/plugin.h>
 
 #include <sdfg/passes/statistics.h>
 
@@ -73,10 +77,16 @@ void register_core_passes(plugins::Context& context) {
         context.option_registry().register_option(spec);
     }
     // Shared option consumed by BoundAnalysis across many analyses/passes.
-    context.option_registry()
-        .register_option(symbolic::BOUND_BUDGET
-                             .spec(symbolic::DEFAULT_BOUND_BUDGET, "Proof-search work budget for symbolic bound analysis")
-        );
+    context.option_registry().register_option(
+        symbolic::BOUND_BUDGET
+            .spec(symbolic::DEFAULT_BOUND_BUDGET, "Proof-search work budget for symbolic bound analysis")
+    );
+    // Opt-in adaptive sampling: wrap each instrumented region in a loop that
+    // repeats the measurement until its runtime confidence interval converges.
+    context.option_registry().register_option(
+        codegen::INSTRUMENTATION_ADAPTIVE_SAMPLING
+            .spec(false, "Wrap instrumented regions in an adaptive (CI-based) sampling loop")
+    );
 }
 } // namespace passes
 } // namespace sdfg
@@ -89,6 +99,8 @@ PYBIND11_MODULE(_sdfg, m) {
     sdfg::serializer::register_default_serializers();
     sdfg::passes::register_core_passes(docc_context);
     sdfg::einsum::register_einsum_plugin();
+    sdfg::parallelization::register_parallelization_plugin(docc_context);
+    sdfg::tiles::register_tiles_plugin(docc_context);
     sdfg::omp::register_omp_plugin();
     sdfg::vectorize::register_vectorize_plugin();
     sdfg::cuda::register_cuda_plugin(docc_context);
@@ -124,7 +136,12 @@ PYBIND11_MODULE(_sdfg, m) {
                         break;
                 }
                 d["type"] = type_name;
-                std::visit([&](auto&& v) { d["default"] = py::cast(v); }, spec.default_value);
+                std::visit(
+                    [&](auto&& v) {
+                        d["default"] = py::cast(v);
+                    },
+                    spec.default_value
+                );
                 d["doc"] = spec.doc;
                 out.append(d);
             }
@@ -166,6 +183,7 @@ PYBIND11_MODULE(_sdfg, m) {
     register_passes(m);
     register_cutout(m);
     register_metrics(m);
+    register_gpu_arch(m, docc_context);
 
     py::class_<sdfg::passes::rpc::RpcContext>(m, "RpcContext");
 
@@ -254,13 +272,17 @@ PYBIND11_MODULE(_sdfg, m) {
     py::class_<PyStructuredSDFG>(m, "StructuredSDFG")
         .def_static(
             "from_file",
-            [&](const std::string& file_path) { return PyStructuredSDFG::from_file(docc_context, file_path); },
+            [&](const std::string& file_path) {
+                return PyStructuredSDFG::from_file(docc_context, file_path);
+            },
             py::arg("file_path"),
             "Load a StructuredSDFG from file"
         )
         .def_static(
             "parse",
-            [&](const std::string& sdfg_text) { return PyStructuredSDFG::parse(docc_context, sdfg_text); },
+            [&](const std::string& sdfg_text) {
+                return PyStructuredSDFG::parse(docc_context, sdfg_text);
+            },
             py::arg("sdfg_text"),
             "Parse a StructuredSDFG from text"
         )
@@ -274,12 +296,16 @@ PYBIND11_MODULE(_sdfg, m) {
         )
         .def_property_readonly(
             "_ptr",
-            [](PyStructuredSDFG& self) { return reinterpret_cast<uintptr_t>(&self.sdfg()); },
+            [](PyStructuredSDFG& self) {
+                return reinterpret_cast<uintptr_t>(&self.sdfg());
+            },
             "Get native pointer to StructuredSDFG for external plugin use"
         )
         .def_property_readonly(
             "root",
-            [](PyStructuredSDFG& self) -> sdfg::structured_control_flow::Sequence& { return self.root(); },
+            [](PyStructuredSDFG& self) -> sdfg::structured_control_flow::Sequence& {
+                return self.root();
+            },
             py::return_value_policy::reference,
             "Get the root sequence of the SDFG"
         )
@@ -340,8 +366,8 @@ PYBIND11_MODULE(_sdfg, m) {
         )
         .def(
             "schedule",
-            static_cast<void (PyStructuredSDFG::*)(const docc::target::TargetOptions&, bool)>(&PyStructuredSDFG::schedule
-            ),
+            static_cast<
+                void (PyStructuredSDFG::*)(const docc::target::TargetOptions&, bool)>(&PyStructuredSDFG::schedule),
             py::arg("options"),
             py::arg("schedule_loops") = true,
             "Schedule the SDFG"
@@ -367,8 +393,12 @@ PYBIND11_MODULE(_sdfg, m) {
         .def("add_metadata", &PyStructuredSDFG::add_metadata, py::arg("key"), py::arg("value"), "Set metadata value")
         .def_property(
             "output_dir",
-            [](PyStructuredSDFG* self) { return self->metadata("output_dir"); },
-            [](PyStructuredSDFG* self, const std::string& path) { self->set_output_dir(path); },
+            [](PyStructuredSDFG* self) {
+                return self->metadata("output_dir");
+            },
+            [](PyStructuredSDFG* self, const std::string& path) {
+                self->set_output_dir(path);
+            },
             "Get or set the output directory metadata"
         )
         .def("loop_report", &PyStructuredSDFG::loop_report, "Get loop statistics from the SDFG")
@@ -537,6 +567,22 @@ PYBIND11_MODULE(_sdfg, m) {
             py::return_value_policy::reference
         )
         .def("end_reduce", &PyStructuredSDFGBuilder::end_reduce)
+        .def(
+            "set_loop_condition",
+            [](PyStructuredSDFGBuilder& builder,
+               sdfg::structured_control_flow::StructuredLoop& loop,
+               const std::string& condition) {
+                auto parsed = sdfg::symbolic::parse(condition);
+                auto boolean = SymEngine::rcp_dynamic_cast<const SymEngine::Boolean>(parsed);
+                if (boolean.is_null()) {
+                    throw std::invalid_argument("Loop condition must be a boolean expression");
+                }
+                builder.builder().update_loop(loop, loop.indvar(), boolean, loop.init(), loop.update());
+            },
+            py::arg("loop"),
+            py::arg("condition"),
+            "Set a loop's boolean condition without changing its iteration variable, start or step"
+        )
         .def(
             "add_assignments",
             &PyStructuredSDFGBuilder::add_assignments,
@@ -918,7 +964,24 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("B_type"),
             py::arg("Y"),
             py::arg("Y_type"),
-            py::arg("debug_info") = sdfg::DebugInfo()
+            py::arg("debug_info") = sdfg::DebugInfo(),
+            py::return_value_policy::reference
+        )
+        .def(
+            "add_tile_copy_node",
+            &PyStructuredSDFGBuilder::add_tile_copy_node,
+            py::arg("buffer_name"),
+            py::arg("global_name"),
+            py::arg("global_layout"),
+            py::arg("buffer_layout"),
+            py::arg("pointer_type"),
+            py::arg("direction") = "in",
+            py::arg("implementation") = "",
+            py::arg("debug_info") = sdfg::DebugInfo(),
+            py::return_value_policy::reference,
+            "Add a whole-block cooperative TileCopyNode staging one tile between a "
+            "global container and a local (shared/LDS) buffer; direction 'in' "
+            "(global->buffer) or 'out'."
         )
         .def(
             "add_attention_op",
@@ -1222,7 +1285,9 @@ PYBIND11_MODULE(_sdfg, m) {
     // Plugin infrastructure - global context and registration callback
     m.def(
         "_plugin_context",
-        []() { return reinterpret_cast<uintptr_t>(&docc_context); },
+        []() {
+            return reinterpret_cast<uintptr_t>(&docc_context);
+        },
         "Get native pointer to the global plugin context"
     );
 

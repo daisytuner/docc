@@ -35,7 +35,9 @@ private:
 public:
     ControlFlowAnalysis(StructuredSDFG& sdfg);
 
-    std::string name() const override { return "ControlFlowAnalysis"; }
+    std::string name() const override {
+        return "ControlFlowAnalysis";
+    }
 
     void run(analysis::AnalysisManager& analysis_manager) override;
 

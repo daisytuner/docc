@@ -10,6 +10,7 @@ from tempfile import mkdtemp
 from pathlib import Path
 import sys
 
+
 def _prepend_env_path(var_name: str, path: Path) -> None:
     if not path.exists():
         return
@@ -23,6 +24,7 @@ def _prepend_env_path(var_name: str, path: Path) -> None:
         return
     os.environ[var_name] = value + os.pathsep + current
 
+
 root_dir = Path(__file__).parent / "pytestOut" / "rtl"
 
 # Ensure generated harnesses can find the RTL headers (e.g., <daisy_rtl/daisy_rtl.h>).
@@ -32,11 +34,13 @@ _daisy_rtl_include = _docc_root / "docc" / "rtl" / "include"
 _prepend_env_path("CPATH", _daisy_rtl_include)
 _prepend_env_path("CPLUS_INCLUDE_PATH", _daisy_rtl_include)
 
+
 def get_output_dir(test_name):
     dir = root_dir / test_name
     Path.mkdir(dir, parents=True, exist_ok=True)
-    tmp_dir = Path(mkdtemp(prefix=datetime.now().strftime('%Y-%m-%d_'), dir= dir))
+    tmp_dir = Path(mkdtemp(prefix=datetime.now().strftime("%Y-%m-%d_"), dir=dir))
     return tmp_dir
+
 
 def get_docc_work_dir(test_name):
     dir = get_output_dir(test_name)
@@ -99,6 +103,7 @@ def parse_arg_captures(capture_path, dtype):
 
     return results
 
+
 def load_sdfg(workdir):
     from docc.sdfg import StructuredSDFG
 
@@ -122,8 +127,11 @@ def load_sdfg(workdir):
 
     return sdfg
 
+
 def test_optional_flag_docc_instrument():
-    workdir = Path(__file__).parent / "tests" / "polybench" / "datamining" / "correlation"
+    workdir = (
+        Path(__file__).parent / "tests" / "polybench" / "datamining" / "correlation"
+    )
     output_dir = get_output_dir("instrument")
     doccWorkDir = output_dir / "DOCC"
 
@@ -136,7 +144,9 @@ def test_optional_flag_docc_instrument():
         "-DMEDIUM_DATASET",
         "-DDATA_TYPE_IS_FLOAT",
         "-I" + str(Path(__file__).parent / "tests" / "polybench" / "utilities"),
-        str(Path(__file__).parent / "tests" / "polybench" / "utilities" / "polybench.c"),
+        str(
+            Path(__file__).parent / "tests" / "polybench" / "utilities" / "polybench.c"
+        ),
         str(benchmark_path),
         "-o",
         str(output_path),
@@ -177,7 +187,6 @@ def test_optional_flag_docc_instrument():
         events = trace["traceEvents"]
         assert len(events) > 4
 
-
         # Check first event as a sample
         event_0 = events[0]
         assert event_0["ph"] == "X"
@@ -189,7 +198,7 @@ def test_optional_flag_docc_instrument():
         assert event_0_args["function"] == "kernel_correlation"
         assert event_0_args["source_ranges"][0]["from"]["line"] == 110
         assert event_0_args["source_ranges"][0]["to"]["line"] == 118
-        assert event_0_args["source_ranges"][0]["from"]["col"] > 0 
+        assert event_0_args["source_ranges"][0]["from"]["col"] > 0
         assert event_0_args["source_ranges"][0]["to"]["col"] > 0
 
         event_0_docc = event_0_args["docc"]
@@ -226,6 +235,7 @@ def test_optional_flag_docc_instrument():
         assert "count" in event_0_metrics["runtime"]
         assert event_0_metrics["runtime"]["count"] == 1
 
+
 @pytest.mark.parametrize(
     "event",
     [
@@ -236,7 +246,14 @@ def test_optional_flag_docc_instrument():
     ],
 )
 def test_instrumentation_cuda(event):
-    workdir = Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "blas" / "symm"
+    workdir = (
+        Path(__file__).parent
+        / "tests"
+        / "polybench"
+        / "linear-algebra"
+        / "blas"
+        / "symm"
+    )
     output_dir = get_output_dir("instrument-cuda")
     doccWorkDir = output_dir / "DOCC"
 
@@ -250,7 +267,9 @@ def test_instrumentation_cuda(event):
         "-DMEDIUM_DATASET",
         "-DDATA_TYPE_IS_FLOAT",
         "-I" + str(Path(__file__).parent / "tests" / "polybench" / "utilities"),
-        str(Path(__file__).parent / "tests" / "polybench" / "utilities" / "polybench.c"),
+        str(
+            Path(__file__).parent / "tests" / "polybench" / "utilities" / "polybench.c"
+        ),
         str(benchmark_path),
         "-o",
         str(output_path),
@@ -327,7 +346,9 @@ def test_ci_mode():
     and verifies that the instrumentation data is collected correctly.
     """
 
-    workdir = Path(__file__).parent / "tests" / "polybench" / "datamining" / "correlation"
+    workdir = (
+        Path(__file__).parent / "tests" / "polybench" / "datamining" / "correlation"
+    )
     output_dir = get_output_dir("ci-mode")
     normal_out = output_dir / "correlation.out"
     instrumented_out = output_dir / "correlation.instrumented.out"
@@ -342,7 +363,9 @@ def test_ci_mode():
         "-DMEDIUM_DATASET",
         "-DDATA_TYPE_IS_FLOAT",
         "-I" + str(Path(__file__).parent / "tests" / "polybench" / "utilities"),
-        str(Path(__file__).parent / "tests" / "polybench" / "utilities" / "polybench.c"),
+        str(
+            Path(__file__).parent / "tests" / "polybench" / "utilities" / "polybench.c"
+        ),
         str(benchmark_path),
         "-o",
         str(normal_out),
@@ -409,16 +432,24 @@ def test_ci_mode():
     "workdir, benchmark, dtype, reference_to_arg_mapping",
     [
         pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "datamining" / "correlation",
+            Path(__file__).parent
+            / "tests"
+            / "polybench"
+            / "datamining"
+            / "correlation",
             "correlation.c",
             "-DDATA_TYPE_IS_DOUBLE",
-            {"corr": 0}
+            {"corr": 0},
         ),
         pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "datamining" / "correlation",
+            Path(__file__).parent
+            / "tests"
+            / "polybench"
+            / "datamining"
+            / "correlation",
             "correlation.c",
             "-DDATA_TYPE_IS_FLOAT",
-            {"corr": 0}
+            {"corr": 0},
         ),
         pytest.param(
             Path(__file__).parent / "tests" / "polybench" / "datamining" / "covariance",
@@ -433,229 +464,419 @@ def test_ci_mode():
             {"cov": 0},
         ),
         pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "blas" / "gemm",
+            Path(__file__).parent
+            / "tests"
+            / "polybench"
+            / "linear-algebra"
+            / "blas"
+            / "gemm",
             "gemm.c",
             "-DDATA_TYPE_IS_DOUBLE",
             {"C": 2},
         ),
         pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "blas" / "gemm",
+            Path(__file__).parent
+            / "tests"
+            / "polybench"
+            / "linear-algebra"
+            / "blas"
+            / "gemm",
             "gemm.c",
             "-DDATA_TYPE_IS_FLOAT",
             {"C": 2},
         ),
         pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "blas" / "gemver",
+            Path(__file__).parent
+            / "tests"
+            / "polybench"
+            / "linear-algebra"
+            / "blas"
+            / "gemver",
             "gemver.c",
             "-DDATA_TYPE_IS_DOUBLE",
             {"w": 0},
         ),
         pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "blas" / "gemver",
+            Path(__file__).parent
+            / "tests"
+            / "polybench"
+            / "linear-algebra"
+            / "blas"
+            / "gemver",
             "gemver.c",
             "-DDATA_TYPE_IS_FLOAT",
             {"w": 0},
         ),
         pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "blas" / "gesummv",
+            Path(__file__).parent
+            / "tests"
+            / "polybench"
+            / "linear-algebra"
+            / "blas"
+            / "gesummv",
             "gesummv.c",
             "-DDATA_TYPE_IS_DOUBLE",
             {"w": 0},
         ),
         pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "blas" / "gesummv",
+            Path(__file__).parent
+            / "tests"
+            / "polybench"
+            / "linear-algebra"
+            / "blas"
+            / "gesummv",
             "gesummv.c",
             "-DDATA_TYPE_IS_FLOAT",
             {"w": 0},
         ),
         pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "blas" / "symm",
+            Path(__file__).parent
+            / "tests"
+            / "polybench"
+            / "linear-algebra"
+            / "blas"
+            / "symm",
             "symm.c",
             "-DDATA_TYPE_IS_DOUBLE",
             {"w": 0},
         ),
         pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "blas" / "symm",
+            Path(__file__).parent
+            / "tests"
+            / "polybench"
+            / "linear-algebra"
+            / "blas"
+            / "symm",
             "symm.c",
             "-DDATA_TYPE_IS_FLOAT",
             {"w": 0},
         ),
         pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "blas" / "syr2k",
+            Path(__file__).parent
+            / "tests"
+            / "polybench"
+            / "linear-algebra"
+            / "blas"
+            / "syr2k",
             "syr2k.c",
             "-DDATA_TYPE_IS_DOUBLE",
             {"w": 0},
         ),
         pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "blas" / "syr2k",
+            Path(__file__).parent
+            / "tests"
+            / "polybench"
+            / "linear-algebra"
+            / "blas"
+            / "syr2k",
             "syr2k.c",
             "-DDATA_TYPE_IS_FLOAT",
             {"w": 0},
         ),
         pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "blas" / "syrk",
+            Path(__file__).parent
+            / "tests"
+            / "polybench"
+            / "linear-algebra"
+            / "blas"
+            / "syrk",
             "syrk.c",
             "-DDATA_TYPE_IS_DOUBLE",
             {"w": 0},
         ),
         pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "blas" / "syrk",
+            Path(__file__).parent
+            / "tests"
+            / "polybench"
+            / "linear-algebra"
+            / "blas"
+            / "syrk",
             "syrk.c",
             "-DDATA_TYPE_IS_FLOAT",
             {"w": 0},
         ),
         pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "blas" / "trmm",
+            Path(__file__).parent
+            / "tests"
+            / "polybench"
+            / "linear-algebra"
+            / "blas"
+            / "trmm",
             "trmm.c",
             "-DDATA_TYPE_IS_DOUBLE",
             {"w": 0},
         ),
         pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "blas" / "trmm",
+            Path(__file__).parent
+            / "tests"
+            / "polybench"
+            / "linear-algebra"
+            / "blas"
+            / "trmm",
             "trmm.c",
             "-DDATA_TYPE_IS_FLOAT",
             {"w": 0},
         ),
         pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "kernels" / "2mm",
+            Path(__file__).parent
+            / "tests"
+            / "polybench"
+            / "linear-algebra"
+            / "kernels"
+            / "2mm",
             "2mm.c",
             "-DDATA_TYPE_IS_DOUBLE",
             {"w": 0},
         ),
         pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "kernels" / "2mm",
+            Path(__file__).parent
+            / "tests"
+            / "polybench"
+            / "linear-algebra"
+            / "kernels"
+            / "2mm",
             "2mm.c",
             "-DDATA_TYPE_IS_FLOAT",
             {"w": 0},
         ),
         pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "kernels" / "3mm",
+            Path(__file__).parent
+            / "tests"
+            / "polybench"
+            / "linear-algebra"
+            / "kernels"
+            / "3mm",
             "3mm.c",
             "-DDATA_TYPE_IS_DOUBLE",
             {"G": 0},
         ),
         pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "kernels" / "3mm",
+            Path(__file__).parent
+            / "tests"
+            / "polybench"
+            / "linear-algebra"
+            / "kernels"
+            / "3mm",
             "3mm.c",
             "-DDATA_TYPE_IS_FLOAT",
             {"G": 0},
         ),
         pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "kernels" / "atax",
+            Path(__file__).parent
+            / "tests"
+            / "polybench"
+            / "linear-algebra"
+            / "kernels"
+            / "atax",
             "atax.c",
             "-DDATA_TYPE_IS_DOUBLE",
             {"G": 0},
         ),
         pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "kernels" / "atax",
+            Path(__file__).parent
+            / "tests"
+            / "polybench"
+            / "linear-algebra"
+            / "kernels"
+            / "atax",
             "atax.c",
             "-DDATA_TYPE_IS_FLOAT",
             {"G": 0},
         ),
         pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "kernels" / "bicg",
+            Path(__file__).parent
+            / "tests"
+            / "polybench"
+            / "linear-algebra"
+            / "kernels"
+            / "bicg",
             "bicg.c",
             "-DDATA_TYPE_IS_DOUBLE",
             {"G": 0},
         ),
         pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "kernels" / "bicg",
+            Path(__file__).parent
+            / "tests"
+            / "polybench"
+            / "linear-algebra"
+            / "kernels"
+            / "bicg",
             "bicg.c",
             "-DDATA_TYPE_IS_FLOAT",
             {"G": 0},
         ),
         pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "kernels" / "doitgen",
+            Path(__file__).parent
+            / "tests"
+            / "polybench"
+            / "linear-algebra"
+            / "kernels"
+            / "doitgen",
             "doitgen.c",
             "-DDATA_TYPE_IS_DOUBLE",
             {"G": 0},
         ),
         pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "kernels" / "doitgen",
+            Path(__file__).parent
+            / "tests"
+            / "polybench"
+            / "linear-algebra"
+            / "kernels"
+            / "doitgen",
             "doitgen.c",
             "-DDATA_TYPE_IS_FLOAT",
             {"G": 0},
         ),
         pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "kernels" / "mvt",
+            Path(__file__).parent
+            / "tests"
+            / "polybench"
+            / "linear-algebra"
+            / "kernels"
+            / "mvt",
             "mvt.c",
             "-DDATA_TYPE_IS_DOUBLE",
             {"G": 0},
         ),
         pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "kernels" / "mvt",
+            Path(__file__).parent
+            / "tests"
+            / "polybench"
+            / "linear-algebra"
+            / "kernels"
+            / "mvt",
             "mvt.c",
             "-DDATA_TYPE_IS_FLOAT",
             {"G": 0},
         ),
         pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "solvers" / "cholesky",
+            Path(__file__).parent
+            / "tests"
+            / "polybench"
+            / "linear-algebra"
+            / "solvers"
+            / "cholesky",
             "cholesky.c",
             "-DDATA_TYPE_IS_DOUBLE",
             {"G": 0},
         ),
         pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "solvers" / "cholesky",
+            Path(__file__).parent
+            / "tests"
+            / "polybench"
+            / "linear-algebra"
+            / "solvers"
+            / "cholesky",
             "cholesky.c",
             "-DDATA_TYPE_IS_FLOAT",
             {"G": 0},
         ),
         pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "solvers" / "durbin",
+            Path(__file__).parent
+            / "tests"
+            / "polybench"
+            / "linear-algebra"
+            / "solvers"
+            / "durbin",
             "durbin.c",
             "-DDATA_TYPE_IS_DOUBLE",
             {"G": 0},
         ),
         pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "solvers" / "durbin",
+            Path(__file__).parent
+            / "tests"
+            / "polybench"
+            / "linear-algebra"
+            / "solvers"
+            / "durbin",
             "durbin.c",
             "-DDATA_TYPE_IS_FLOAT",
             {"G": 0},
         ),
         pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "solvers" / "gramschmidt",
+            Path(__file__).parent
+            / "tests"
+            / "polybench"
+            / "linear-algebra"
+            / "solvers"
+            / "gramschmidt",
             "gramschmidt.c",
             "-DDATA_TYPE_IS_DOUBLE",
             {"G": 0},
         ),
         pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "solvers" / "gramschmidt",
+            Path(__file__).parent
+            / "tests"
+            / "polybench"
+            / "linear-algebra"
+            / "solvers"
+            / "gramschmidt",
             "gramschmidt.c",
             "-DDATA_TYPE_IS_FLOAT",
             {"G": 0},
         ),
         pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "solvers" / "lu",
+            Path(__file__).parent
+            / "tests"
+            / "polybench"
+            / "linear-algebra"
+            / "solvers"
+            / "lu",
             "lu.c",
             "-DDATA_TYPE_IS_DOUBLE",
             {"G": 0},
         ),
         pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "solvers" / "lu",
+            Path(__file__).parent
+            / "tests"
+            / "polybench"
+            / "linear-algebra"
+            / "solvers"
+            / "lu",
             "lu.c",
             "-DDATA_TYPE_IS_FLOAT",
             {"G": 0},
         ),
         pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "solvers" / "ludcmp",
+            Path(__file__).parent
+            / "tests"
+            / "polybench"
+            / "linear-algebra"
+            / "solvers"
+            / "ludcmp",
             "ludcmp.c",
             "-DDATA_TYPE_IS_DOUBLE",
             {"G": 0},
         ),
         pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "solvers" / "ludcmp",
+            Path(__file__).parent
+            / "tests"
+            / "polybench"
+            / "linear-algebra"
+            / "solvers"
+            / "ludcmp",
             "ludcmp.c",
             "-DDATA_TYPE_IS_FLOAT",
             {"G": 0},
         ),
         pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "solvers" / "trisolv",
+            Path(__file__).parent
+            / "tests"
+            / "polybench"
+            / "linear-algebra"
+            / "solvers"
+            / "trisolv",
             "trisolv.c",
             "-DDATA_TYPE_IS_DOUBLE",
             {"G": 0},
         ),
         pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "solvers" / "trisolv",
+            Path(__file__).parent
+            / "tests"
+            / "polybench"
+            / "linear-algebra"
+            / "solvers"
+            / "trisolv",
             "trisolv.c",
             "-DDATA_TYPE_IS_FLOAT",
             {"G": 0},
@@ -682,7 +903,7 @@ def test_ci_mode():
             Path(__file__).parent / "tests" / "polybench" / "medley" / "nussinov",
             "nussinov.c",
             "-DDATA_TYPE_IS_INT",
-            {"table": 0}
+            {"table": 0},
         ),
         pytest.param(
             Path(__file__).parent / "tests" / "polybench" / "stencils" / "adi",
@@ -761,7 +982,7 @@ def test_ci_mode():
 def test_arg_capture(workdir, benchmark, dtype, reference_to_arg_mapping):
     from docc.sdfg import StructuredSDFG, AnalysisManager
 
-    output_dir = get_output_dir(benchmark+dtype)
+    output_dir = get_output_dir(benchmark + dtype)
     doccWorkDir = output_dir / "DOCC"
 
     benchmark_path = workdir / benchmark
@@ -774,7 +995,9 @@ def test_arg_capture(workdir, benchmark, dtype, reference_to_arg_mapping):
         "-DMEDIUM_DATASET",
         dtype,
         "-I" + str(Path(__file__).parent / "tests" / "polybench" / "utilities"),
-        str(Path(__file__).parent / "tests" / "polybench" / "utilities" / "polybench.c"),
+        str(
+            Path(__file__).parent / "tests" / "polybench" / "utilities" / "polybench.c"
+        ),
         str(benchmark_path),
         "-o",
         str(output_path),
@@ -853,7 +1076,9 @@ def test_arg_capture(workdir, benchmark, dtype, reference_to_arg_mapping):
         )
         assert "main_cpp" in result
         assert "baseline_runtime" in result
-        assert Path(result["main_cpp"]).exists(), f"Expected generated harness main at {result['main_cpp']}"
+        assert Path(
+            result["main_cpp"]
+        ).exists(), f"Expected generated harness main at {result['main_cpp']}"
         assert isinstance(result["baseline_runtime"], float)
         assert result["baseline_runtime"] >= 0.0
 
@@ -876,7 +1101,9 @@ def test_arg_capture(workdir, benchmark, dtype, reference_to_arg_mapping):
             if parsed_capture["data"]["element_id"] == str(element_id):
                 capture = parsed_capture
                 break
-        assert capture is not None, f"No capture found for element ID {element_id}: indvar {loop_info.indvar}"
+        assert (
+            capture is not None
+        ), f"No capture found for element ID {element_id}: indvar {loop_info.indvar}"
 
     # for ref, arg_idx in reference_to_arg_mapping.items():
     #     assert (
@@ -895,162 +1122,3 @@ def test_arg_capture(workdir, benchmark, dtype, reference_to_arg_mapping):
     #     assert np.array_equal(
     #         reference_arrays[ref], after_args[arg_idx], equal_nan=True
     #     )
-
-@pytest.mark.parametrize(
-    "workdir, benchmark, dtype, optlevel, result",
-    [
-        pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "datamining" / "covariance",
-            "covariance.c",
-            "-DDATA_TYPE_IS_DOUBLE",
-            "-O3",
-            2029315760.0
-        ),
-        pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "datamining" / "covariance",
-            "covariance.c",
-            "-DDATA_TYPE_IS_FLOAT",
-            "-O3",
-            2030995760.0,
-        ),
-        pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "datamining" / "covariance",
-            "covariance.c",
-            "-DDATA_TYPE_IS_FLOAT",
-            "-O0",
-            0.0,
-        ),
-        pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "blas" / "gemm",
-            "gemm.c",
-            "-DDATA_TYPE_IS_DOUBLE",
-            "-O3",
-            3968914560.0,
-        ),
-        pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "blas" / "gemm",
-            "gemm.c",
-            "-DDATA_TYPE_IS_FLOAT",
-            "-O3",
-            3968914560.0,
-        ),
-        pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "blas" / "gemver",
-            "gemver.c",
-            "-DDATA_TYPE_IS_DOUBLE",
-            "-O3",
-            48208560.0,
-        ),
-        pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "blas" / "gemver",
-            "gemver.c",
-            "-DDATA_TYPE_IS_FLOAT",
-            "-O3",
-            48208560.0,
-        ),
-        pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "kernels" / "3mm",
-            "3mm.c",
-            "-DDATA_TYPE_IS_DOUBLE",
-            "-O3",
-            5408294560.0,
-        ),
-        pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "linear-algebra" / "kernels" / "3mm",
-            "3mm.c",
-            "-DDATA_TYPE_IS_FLOAT",
-            "-O3",
-            5408294560.0,
-        ),
-        pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "medley" / "floyd-warshall",
-            "floyd-warshall.c",
-            "-DDATA_TYPE_IS_INT",
-            "-O3",
-            4194560.0,
-        ),
-        pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "stencils" / "heat-3d",
-            "heat-3d.c",
-            "-DDATA_TYPE_IS_DOUBLE",
-            "-O3",
-            24653150560.0
-        ),
-        pytest.param(
-            Path(__file__).parent / "tests" / "polybench" / "stencils" / "heat-3d",
-            "heat-3d.c",
-            "-DDATA_TYPE_IS_FLOAT",
-            "-O3",
-            24653150560.0,
-        ),
-    ],
-)
-def test_flop_values(workdir, benchmark, dtype, optlevel, result):
-    output_dir = get_output_dir(benchmark+dtype)
-    doccWorkDir = output_dir / "DOCC"
-
-    benchmark_path = workdir / benchmark
-    output_path = output_dir / benchmark.replace(".c", ".out")
-    cmd = [
-        "docc",
-        "-g",
-        optlevel,
-        "-DLARGE_DATASET",
-        "-DPOLYBENCH_TIME",
-        dtype,
-        "-I" + str(Path(__file__).parent / "tests" / "polybench" / "utilities"),
-        str(Path(__file__).parent / "tests" / "polybench" / "utilities" / "polybench.c"),
-        str(benchmark_path),
-        "-o",
-        str(output_path),
-        "-lm",
-        "-docc-work-dir=" + str(doccWorkDir),
-        "-docc-instrument=ols"
-    ]
-
-    # Compile
-    process = subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        universal_newlines=True,
-    )
-    stdout, stderr = process.communicate()
-    if process.returncode != 0:
-        print("STDOUT:", stdout)
-        print("STDERR:", stderr)
-    assert process.returncode == 0
-    assert Path(output_path).exists()
-
-    (workdir / "data_cpu.json").unlink(missing_ok=True)
-
-    ## THIS VERSION IS RUNNER-SPECIFIC and points to CI version of PAPI
-    os.environ["__DAISY_PAPI_VERSION"] = "0x07020000"
-    os.environ["__DAISY_INSTRUMENTATION_MODE"] = "aggregate"
-    os.environ["__DAISY_INSTRUMENTATION_FILE"] = str(workdir / "data_cpu.json")
-
-    # Run
-    process = subprocess.Popen(
-        [output_path],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        universal_newlines=True,
-    )
-    stdout, stderr = process.communicate()
-    if process.returncode != 0:
-        print("STDOUT:", stdout)
-        print("STDERR:", stderr)
-    assert process.returncode == 0
-
-    trace = json.load(open(workdir / "data_cpu.json"))
-    static_flops = 0.0
-    for event in trace["traceEvents"]:
-        assert "args" in event
-        assert "metrics" in event["args"]
-        # Currently with -O0 there are lots of while loops, which do not have a static flop count
-        if ("static:::flop" not in event["args"]["metrics"]) and (optlevel == "-O0"):
-            continue
-        assert "static:::flop" in event["args"]["metrics"]
-        assert "mean" in event["args"]["metrics"]["static:::flop"]
-        static_flops += float(event["args"]["metrics"]["static:::flop"]["mean"])
-    assert static_flops == result

@@ -22,7 +22,9 @@ private:
 public:
     TaskletFusion(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager);
 
-    static std::string name() { return "TaskletFusion"; }
+    static std::string name() {
+        return "TaskletFusion";
+    }
 
     virtual bool accept(structured_control_flow::Block& block) override;
 };

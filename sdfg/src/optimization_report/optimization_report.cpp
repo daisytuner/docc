@@ -41,7 +41,9 @@ OptimizationReport::OptimizationReport(StructuredSDFG& sdfg, bool aggregate)
 }
 
 
-nlohmann::json OptimizationReport::get_report() { return report_; }
+nlohmann::json OptimizationReport::get_report() {
+    return report_;
+}
 
 void OptimizationReport::add_pass_entry(const std::string& pass_name, long duration, bool applied) {
     /* if (!aggregate_) {
@@ -71,8 +73,8 @@ void OptimizationReport::add_pass_entry(const std::string& pass_name, long durat
 void OptimizationReport::add_transformation_entry(
     int loopnest_index, const std::string& transformation_name, long apply_duration, const TransformReport& report
 ) {
-    auto& rep = report_["regions"].at(loopnest_index
-    )["transformations"][transformation_name] = nlohmann::json::object();
+    auto& rep = report_["regions"].at(loopnest_index)["transformations"][transformation_name] =
+        nlohmann::json::object();
 
     rep["possible"] = report.possible;
     rep["applied"] = report.applied;

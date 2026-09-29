@@ -18,9 +18,8 @@ jobs:
       image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:latest-amd64
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
-          token: ${{ secrets.BENCHMARK_TESTS_TOKEN }}
           submodules: recursive
           lfs: true
 
@@ -34,7 +33,7 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          pip install pytest==7.1.3 pytest-parallel tqdm
+          pip install pytest pytest-xdist tqdm
           pip install pandas numpy scipy
 
       - name: Build

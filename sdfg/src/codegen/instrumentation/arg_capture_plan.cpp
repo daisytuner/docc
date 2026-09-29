@@ -28,7 +28,8 @@ CaptureVarPlan::CaptureVarPlan(
     bool isScalar
 )
     : capture_input(capture_input), capture_output(capture_output), arg_idx(argIdx), is_external(isExternal),
-      inner_type(innerType), size(size), is_scalar(isScalar) {}
+      inner_type(innerType), size(size), is_scalar(isScalar) {
+}
 
 bool ArgCapturePlan::should_instrument(const structured_control_flow::ControlFlowNode& node) const {
     return this->nodes_.count(&node);

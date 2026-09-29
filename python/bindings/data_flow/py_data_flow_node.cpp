@@ -24,7 +24,9 @@ void register_data_flow_node(py::module& m) {
     py::class_<AccessNode, DataFlowNode>(m, "AccessNode")
         .def_property_readonly(
             "data",
-            [](const AccessNode& node) -> const std::string& { return node.data(); },
+            [](const AccessNode& node) -> const std::string& {
+                return node.data();
+            },
             "Get the name of the data container"
         )
         .def_property_readonly("side_effect", &AccessNode::side_effect, "Check if this node has side effects (writes)")
@@ -38,7 +40,9 @@ void register_data_flow_node(py::module& m) {
     py::class_<ConstantNode, AccessNode>(m, "ConstantNode")
         .def_property_readonly(
             "type",
-            [](const ConstantNode& node) -> const sdfg::types::IType& { return node.type(); },
+            [](const ConstantNode& node) -> const sdfg::types::IType& {
+                return node.type();
+            },
             py::return_value_policy::reference,
             "Get the type of the constant"
         )

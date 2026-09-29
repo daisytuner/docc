@@ -64,7 +64,9 @@ void GPULoopReordering::apply(builder::StructuredSDFGBuilder& builder, analysis:
     analysis_manager.invalidate_all();
 };
 
-std::string GPULoopReordering::name() const { return "GPULoopReordering"; };
+std::string GPULoopReordering::name() const {
+    return "GPULoopReordering";
+};
 
 void GPULoopReordering::to_json(nlohmann::json& j) const {
     j["transformation_type"] = this->name();

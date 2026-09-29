@@ -31,9 +31,12 @@ bool EinsumLift::subsets_eq(const data_flow::Subset& subset1, const data_flow::S
     return true;
 }
 
-EinsumLift::EinsumLift(data_flow::Tasklet& tasklet) : tasklet_(tasklet) {}
+EinsumLift::EinsumLift(data_flow::Tasklet& tasklet) : tasklet_(tasklet) {
+}
 
-std::string EinsumLift::name() const { return "EinsumLift"; }
+std::string EinsumLift::name() const {
+    return "EinsumLift";
+}
 
 bool EinsumLift::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     auto& dfg = this->tasklet_.get_parent();

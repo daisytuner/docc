@@ -31,9 +31,12 @@
 namespace sdfg {
 namespace transformations {
 
-LoopRotate::LoopRotate(structured_control_flow::StructuredLoop& loop) : loop_(loop) {}
+LoopRotate::LoopRotate(structured_control_flow::StructuredLoop& loop) : loop_(loop) {
+}
 
-std::string LoopRotate::name() const { return "LoopRotate"; }
+std::string LoopRotate::name() const {
+    return "LoopRotate";
+}
 
 bool LoopRotate::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     // Check for negative unit stride

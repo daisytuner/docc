@@ -43,7 +43,8 @@ public:
         bool enclosing_cooperative = false
     )
         : axes_(std::move(axes)), loop_is_outermost_(loop_is_outermost), loop_has_scratchpad_(loop_has_scratchpad),
-          has_scratchpad_descendant_(has_scratchpad_descendant), enclosing_cooperative_(enclosing_cooperative) {}
+          has_scratchpad_descendant_(has_scratchpad_descendant), enclosing_cooperative_(enclosing_cooperative) {
+    }
 
     /// Analyze the placement of a tile with the given @p axes at @p loop
     /// (@ref TileAxis::enclosing produces the axes; @ref Tile::placement is the
@@ -54,11 +55,21 @@ public:
         analysis::AnalysisManager& analysis_manager
     );
 
-    const std::vector<TileAxis>& axes() const { return axes_; }
-    bool loop_is_outermost() const { return loop_is_outermost_; }
-    bool loop_has_scratchpad() const { return loop_has_scratchpad_; }
-    bool has_scratchpad_descendant() const { return has_scratchpad_descendant_; }
-    bool enclosing_cooperative() const { return enclosing_cooperative_; }
+    const std::vector<TileAxis>& axes() const {
+        return axes_;
+    }
+    bool loop_is_outermost() const {
+        return loop_is_outermost_;
+    }
+    bool loop_has_scratchpad() const {
+        return loop_has_scratchpad_;
+    }
+    bool has_scratchpad_descendant() const {
+        return has_scratchpad_descendant_;
+    }
+    bool enclosing_cooperative() const {
+        return enclosing_cooperative_;
+    }
 
     /// True when a scratchpad-scheduled axis encloses us (we are inside a device kernel).
     bool inside_scratchpad_scope() const;

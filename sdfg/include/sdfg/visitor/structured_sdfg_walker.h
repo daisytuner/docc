@@ -74,7 +74,8 @@ public:
 
         ControlFlowNode* node_;
         int32_t idx_;
-        ParentScopeLoc(ControlFlowNode* node, int32_t idx) : node_(node), idx_(idx) {}
+        ParentScopeLoc(ControlFlowNode* node, int32_t idx) : node_(node), idx_(idx) {
+        }
     };
 
     class Iterator {

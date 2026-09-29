@@ -50,8 +50,7 @@ TEST(GELUNodeTest, expansion_precise) {
     ASSERT_NO_THROW(sdfg.validate());
     dump_sdfg(sdfg, "0.before");
 
-    passes::LibNodeExpansionVisitor::NodeOutcome outcome =
-        passes::expansion::expand_single_math_node(builder, block, libnode);
+    passes::expansion::NodeOutcome outcome = passes::expansion::expand_single_math_node(builder, block, libnode);
     EXPECT_TRUE(outcome.expanded);
     EXPECT_TRUE(outcome.block_removed);
 
@@ -104,8 +103,7 @@ TEST(GELUNodeTest, expansion_tanh_approx) {
     ASSERT_NO_THROW(sdfg.validate());
     dump_sdfg(sdfg, "0.before");
 
-    passes::LibNodeExpansionVisitor::NodeOutcome outcome =
-        passes::expansion::expand_single_math_node(builder, block, libnode);
+    passes::expansion::NodeOutcome outcome = passes::expansion::expand_single_math_node(builder, block, libnode);
     EXPECT_TRUE(outcome.expanded);
     EXPECT_TRUE(outcome.block_removed);
 

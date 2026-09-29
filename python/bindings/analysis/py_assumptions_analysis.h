@@ -16,7 +16,10 @@ private:
 
 public:
     PyAssumptionsAnalysis(sdfg::analysis::AnalysisManager& manager)
-        : manager_(manager), analysis_(manager.get<sdfg::analysis::AssumptionsAnalysis>()) {}
+        : manager_(manager), analysis_(manager.get<sdfg::analysis::AssumptionsAnalysis>()) {
+    }
 
-    sdfg::analysis::AssumptionsAnalysis& analysis() { return analysis_; }
+    sdfg::analysis::AssumptionsAnalysis& analysis() {
+        return analysis_;
+    }
 };

@@ -25,9 +25,8 @@ jobs:
             cibw_archs: arm64
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
-          token: ${{ secrets.BENCHMARK_TESTS_TOKEN }}
           submodules: recursive
 
       - uses: pypa/cibuildwheel@v3.3.1
@@ -63,9 +62,8 @@ jobs:
             cibw_archs: arm64
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
-          token: ${{ secrets.BENCHMARK_TESTS_TOKEN }}
           submodules: recursive
 
       # Pin docc-compiler version to match release
@@ -164,9 +162,8 @@ jobs:
       image: ${{ matrix.image }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
-          token: ${{ secrets.BENCHMARK_TESTS_TOKEN }}
           submodules: recursive
 
       - name: Define Version

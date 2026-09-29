@@ -10,8 +10,9 @@ public:
     enum class InputUse { Skip = 0, Scalar, IndirectRead, IndirectWrite, IndirectReadWrite };
 
     struct ExpandOutcome {
-        bool expanded;
-        explicit ExpandOutcome(bool expanded) : expanded(expanded) {}
+        bool applied;
+        explicit ExpandOutcome(bool applied) : applied(applied) {
+        }
     };
     virtual ~LibNodeExpander() = default;
 
@@ -24,7 +25,9 @@ public:
      * @param node
      * @return nullptr if not applicable
      */
-    virtual const LibNodeExpander* for_lib_node(const data_flow::LibraryNode& node) const { return this; }
+    virtual const LibNodeExpander* for_lib_node(const data_flow::LibraryNode& node) const {
+        return this;
+    }
 
     class AccessNodeExpand {
     public:
@@ -121,13 +124,18 @@ public:
          * @return null, if cannot be provided. Otherwise a handle to create arbitrarily many copies of access nodes
          * fitting the access_dirs
          */
-        virtual std::unique_ptr<AccessNodeExpand> replacement_requires_access_nodes(const std::vector<InputUse>&
-                                                                                        access_dirs) = 0;
+        virtual std::unique_ptr<AccessNodeExpand>
+        replacement_requires_access_nodes(const std::vector<InputUse>& access_dirs) = 0;
 
         // TODO virtual std::unique_ptr<DataflowExpand> replace_dataflow() = 0;
         // this would be a quicker way, when the expansion only consists of pure dataflow, where base expansion
         // infrastructure needs to migrate edges from the old node to the new nodes. Describing the new targets of edges
         // can be taken from `ElementWiseDataflowTensorNode.expand_operation_dataflow()`
+
+        /**
+         * Only properties of the node under expansion had to be changed, no change to the dataflow were necessary
+         */
+        virtual ExpandOutcome successfully_modified_node_only() = 0;
 
         virtual ExpandOutcome unable() = 0;
 
@@ -171,7 +179,8 @@ class CodeLibNodeExpander : public TypedLibNodeExpander<T> {
     const data_flow::LibraryNodeCode code_;
 
 public:
-    CodeLibNodeExpander(const data_flow::LibraryNodeCode& code) : code_(code) {}
+    CodeLibNodeExpander(const data_flow::LibraryNodeCode& code) : code_(code) {
+    }
 
     const LibNodeExpander* for_lib_node(const data_flow::LibraryNode& node) const override {
         if (node.code() == code_) {

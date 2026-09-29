@@ -30,7 +30,8 @@
 namespace sdfg {
 namespace passes {
 
-DataTransferMinimizationPass::DataTransferMinimizationPass() {}
+DataTransferMinimizationPass::DataTransferMinimizationPass() {
+}
 
 bool DataTransferMinimizationPass::eliminate_malloc_first_transfer(
     builder::StructuredSDFGBuilder& builder, analysis::OffloadHolder& malloc_holder, analysis::OffloadHolder& copy_in

@@ -84,10 +84,13 @@ TEST(LayerNormNodeTest, symbolic) {
     ASSERT_NO_THROW(sdfg.validate());
     auto& layernorm_node = static_cast<math::tensor::LayerNormNode&>(libnode);
     EXPECT_FALSE(layernorm_node.supports_integer_types());
-    EXPECT_TRUE(symbolic::eq(
-        layernorm_node.flop(),
-        symbolic::mul(batch, symbolic::add(SymEngine::mul({symbolic::integer(8), height, width}), symbolic::integer(14)))
-    ));
+    EXPECT_TRUE(
+        symbolic::
+            eq(layernorm_node.flop(),
+               symbolic::
+                   mul(batch,
+                       symbolic::add(SymEngine::mul({symbolic::integer(8), height, width}), symbolic::integer(14))))
+    );
 
     auto symbols = layernorm_node.symbols();
     EXPECT_EQ(symbols.size(), 3);

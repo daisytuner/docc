@@ -18,12 +18,8 @@ symbolic::Expression Swizzle::apply(const symbolic::Expression& offset) const {
     return symbolic::bit_xor(offset, symbolic::mul(field, two_base));
 }
 
-symbolic::Expression ComposedLayout::apply(const symbolic::Expression& index) const {
-    return swizzle.apply(layout.apply(index));
-}
-
 symbolic::Expression ComposedLayout::apply_coords(const symbolic::MultiExpression& coords) const {
-    return swizzle.apply(layout.apply_coords(coords));
+    return swizzle.apply(layout.resolve_element(coords, /*require_to_element=*/false));
 }
 
 } // namespace tiles

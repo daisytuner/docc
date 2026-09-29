@@ -33,9 +33,12 @@ LoopSkewing::LoopSkewing(
     structured_control_flow::StructuredLoop& inner_loop,
     int skew_factor
 )
-    : outer_loop_(outer_loop), inner_loop_(inner_loop), skew_factor_(skew_factor) {}
+    : outer_loop_(outer_loop), inner_loop_(inner_loop), skew_factor_(skew_factor) {
+}
 
-std::string LoopSkewing::name() const { return "LoopSkewing"; }
+std::string LoopSkewing::name() const {
+    return "LoopSkewing";
+}
 
 bool LoopSkewing::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     // Criterion 0: Skew factor must be non-zero

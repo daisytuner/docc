@@ -22,9 +22,12 @@
 namespace sdfg {
 namespace transformations {
 
-LoopIndvarFinalize::LoopIndvarFinalize(structured_control_flow::StructuredLoop& loop) : loop_(loop) {}
+LoopIndvarFinalize::LoopIndvarFinalize(structured_control_flow::StructuredLoop& loop) : loop_(loop) {
+}
 
-std::string LoopIndvarFinalize::name() const { return "LoopIndvarFinalize"; }
+std::string LoopIndvarFinalize::name() const {
+    return "LoopIndvarFinalize";
+}
 
 bool LoopIndvarFinalize::
     can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {

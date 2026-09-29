@@ -36,7 +36,9 @@ bool Pass::run(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManage
     return applied;
 };
 
-bool Pass::run_pass(builder::SDFGBuilder& builder) { throw std::logic_error("Not implemented"); };
+bool Pass::run_pass(builder::SDFGBuilder& builder) {
+    throw std::logic_error("Not implemented");
+};
 
 bool Pass::run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     throw std::logic_error("Not implemented");

@@ -11,7 +11,8 @@
 namespace sdfg {
 namespace analysis {
 
-LoopAnalysis::LoopAnalysis(StructuredSDFG& sdfg) : Analysis(sdfg), loops_(), loop_tree_() {}
+LoopAnalysis::LoopAnalysis(StructuredSDFG& sdfg) : Analysis(sdfg), loops_(), loop_tree_() {
+}
 
 void LoopAnalysis::init_new_loop_info(
     LoopState& info,
@@ -282,8 +283,7 @@ LoopAnalysis::loop_tree() const {
     return this->loop_tree_;
 }
 
-structured_control_flow::ControlFlowNode* LoopAnalysis::parent_loop(structured_control_flow::ControlFlowNode* loop
-) const {
+structured_control_flow::ControlFlowNode* LoopAnalysis::parent_loop(structured_control_flow::ControlFlowNode* loop) const {
     return this->loop_tree_.at(loop);
 }
 
@@ -488,8 +488,7 @@ void LoopAnalysis::copied_loop(
     reindex_loop_nest_idx();
 }
 
-uint32_t LoopAnalysis::child_insertion_index(structured_control_flow::ControlFlowNode* new_parent, bool start_not_end)
-    const {
+uint32_t LoopAnalysis::child_insertion_index(structured_control_flow::ControlFlowNode* new_parent, bool start_not_end) const {
     const auto& children = loop_children_.at(new_parent);
     auto it = start_not_end ? children.begin() : children.end();
     if (it != children.end()) {
@@ -658,8 +657,8 @@ void LoopAnalysis::removed_loop(structured_control_flow::ControlFlowNode* existi
 void LoopAnalysis::
     added_local_contents(structured_control_flow::ControlFlowNode* loop, bool side_effects, bool non_perfectly_nested) {
     auto& state = loop_infos_.at(loop);
-    state.local.contains_side_effects = side_effects;
-    state.local.contains_non_perfectly_nested = non_perfectly_nested;
+    state.local.contains_side_effects |= side_effects;
+    state.local.contains_non_perfectly_nested |= non_perfectly_nested;
 
     propagate_changed_nest_info(loops_.begin() + state.local.loop_id);
 }

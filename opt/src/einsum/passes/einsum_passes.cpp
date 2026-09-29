@@ -23,16 +23,21 @@ private:
 
 public:
     BlockFinder(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager)
-        : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager), blocks_() {}
+        : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager), blocks_() {
+    }
 
-    static std::string name() { return "BlockFinder"; }
+    static std::string name() {
+        return "BlockFinder";
+    }
 
     virtual bool accept(structured_control_flow::Block& block) {
         blocks_.push_back(&block);
         return true;
     }
 
-    std::list<structured_control_flow::Block*>& blocks() { return blocks_; }
+    std::list<structured_control_flow::Block*>& blocks() {
+        return blocks_;
+    }
 };
 
 bool EinsumDetectionPass::run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
@@ -119,7 +124,8 @@ EinsumConversion::EinsumConversion(
     analysis::AnalysisManager& analysis_manager,
     sdfg::PassReportConsumer* report
 )
-    : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager), report_(report) {}
+    : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager), report_(report) {
+}
 
 bool EinsumConversion::accept(structured_control_flow::Block& block) {
     bool applied = false;
@@ -156,7 +162,8 @@ bool EinsumConversion::accept(structured_control_flow::Block& block) {
 }
 
 EinsumLower::EinsumLower(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager)
-    : visitor::StructuredSDFGVisitor(builder, analysis_manager) {}
+    : visitor::StructuredSDFGVisitor(builder, analysis_manager) {
+}
 
 bool EinsumLower::accept(structured_control_flow::Block& block) {
     for (auto* libnode : block.dataflow().library_nodes()) {
@@ -173,7 +180,8 @@ bool EinsumLower::accept(structured_control_flow::Block& block) {
 }
 
 EinsumExpansion::EinsumExpansion(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager)
-    : visitor::StructuredSDFGVisitor(builder, analysis_manager) {}
+    : visitor::StructuredSDFGVisitor(builder, analysis_manager) {
+}
 
 bool EinsumExpansion::accept(structured_control_flow::Block& node) {
     auto& dataflow = node.dataflow();

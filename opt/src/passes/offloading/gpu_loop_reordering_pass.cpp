@@ -5,7 +5,8 @@
 namespace sdfg {
 namespace passes {
 
-GPULoopReorderingPass::GPULoopReorderingPass(const std::vector<structured_control_flow::Map*>& maps) : maps_(maps) {}
+GPULoopReorderingPass::GPULoopReorderingPass(const std::vector<structured_control_flow::Map*>& maps) : maps_(maps) {
+}
 
 bool GPULoopReorderingPass::run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     if (maps_.empty()) {

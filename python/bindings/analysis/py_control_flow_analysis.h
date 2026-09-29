@@ -16,7 +16,10 @@ private:
 
 public:
     PyControlFlowAnalysis(sdfg::analysis::AnalysisManager& manager)
-        : manager_(manager), analysis_(manager.get<sdfg::analysis::ControlFlowAnalysis>()) {}
+        : manager_(manager), analysis_(manager.get<sdfg::analysis::ControlFlowAnalysis>()) {
+    }
 
-    sdfg::analysis::ControlFlowAnalysis& analysis() { return analysis_; }
+    sdfg::analysis::ControlFlowAnalysis& analysis() {
+        return analysis_;
+    }
 };

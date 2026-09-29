@@ -58,6 +58,46 @@ static inline pid_t gettid() { return syscall(SYS_gettid); }
 //  Dynamic PAPI loading – we avoid a hard dependency on the library at link time
 // -----------------------------------------------------------------------------
 namespace {
+// Read a numeric tuning knob from the environment, falling back to a default.
+static long env_long(const char* name, long fallback) {
+    const char* v = std::getenv(name);
+    return v ? std::atol(v) : fallback;
+}
+static double env_double(const char* name, double fallback) {
+    const char* v = std::getenv(name);
+    return v ? std::atof(v) : fallback;
+}
+
+// Cold-sampling primitive: evict the working set from every cache level by
+// streaming writes through a buffer larger than the LLC. No-op unless
+// DOCC_MEASURE_COLD is set, so warm sampling and normal runs are unaffected.
+// Used between samples so each measurement re-incurs cold-start misses (matches
+// the static single-execution miss model at the L3/DRAM level).
+static void flush_caches_impl() {
+    static const bool cold = env_long("DOCC_MEASURE_COLD", 0) != 0;
+    if (!cold) {
+        return;
+    }
+    static const size_t n = static_cast<size_t>(env_long("DOCC_MEASURE_FLUSH_BYTES", 128L * 1024 * 1024));
+    static volatile unsigned char* buf = []() -> volatile unsigned char* {
+        static const size_t bytes = static_cast<size_t>(env_long("DOCC_MEASURE_FLUSH_BYTES", 128L * 1024 * 1024));
+        auto* p = static_cast<volatile unsigned char*>(std::malloc(bytes));
+        if (p) {
+            for (size_t i = 0; i < bytes; i += 4096) {
+                p[i] = 1; // fault in the pages up front
+            }
+        }
+        return p;
+    }
+    ();
+    if (!buf) {
+        return;
+    }
+    for (size_t i = 0; i < n; i += 64) {
+        buf[i] = static_cast<unsigned char>(buf[i] + 1u);
+    }
+}
+
 static int (*_PAPI_library_init)(int) = nullptr;
 static int (*_PAPI_create_eventset)(int*) = nullptr;
 static int (*_PAPI_cleanup_eventset)(int) = nullptr;
@@ -1283,6 +1323,56 @@ public:
         return true;
     }
 
+    // Decide whether a region's in-place sampling loop should take another sample.
+    // Convergence is judged on the *worst* signal: the runtime and every PAPI
+    // counter must each have a 95% CI within the target CV before stopping (noisy
+    // counters like the socket-wide DRAM iMC therefore drive the sample count).
+    // Zero-mean counters are skipped. Returns false when no aggregate stats are
+    // available (e.g. not in aggregate mode), collapsing the loop to a single
+    // measurement, or once the sample / wall-time caps are hit.
+    bool should_continue_sampling(size_t region_id) {
+        static const long min_samples = env_long("DOCC_MEASURE_MIN_SAMPLES", 3);
+        static const long max_samples = env_long("DOCC_MEASURE_MAX_SAMPLES", 1000);
+        static const double target_cv = env_double("DOCC_MEASURE_CV", 0.05);
+        static const double max_seconds = env_double("DOCC_MEASURE_MAX_SECONDS", 10.0);
+
+        std::lock_guard<std::mutex> lock(mutex);
+        auto it = regions.find(region_id);
+        if (it == regions.end()) {
+            return false;
+        }
+        DaisyRegion& region = it->second;
+        resolve_pending_events(region);
+        long long count = region.runtime_n;
+        if (count <= 0) {
+            return false;
+        }
+        if (count >= max_samples) {
+            return false;
+        }
+        // Wall-time cap based on accumulated measured time (mean_ns * samples).
+        if (region.runtime_mean > 0.0 && region.runtime_mean * static_cast<double>(count) >= max_seconds * 1.0e9) {
+            return false;
+        }
+        if (count < min_samples) {
+            return true;
+        }
+        // Samples needed for a full CI width <= target_cv of the mean at 95% (z=1.96).
+        const double z = 1.96;
+        auto required = [&](double mean, double var) -> double {
+            if (mean == 0.0 || var <= 0.0) {
+                return 0.0;
+            }
+            return 4.0 * z * z * var / (target_cv * target_cv * mean * mean);
+        };
+        double need = required(region.runtime_mean, region.runtime_variance);
+        for (size_t i = 0; i < region.mean.size(); ++i) {
+            double r = required(region.mean[i], region.variance[i]);
+            if (r > need) need = r;
+        }
+        return static_cast<double>(count) < need;
+    }
+
     // Aggregate over all regions (sum of means/variances, min count). Mirrors
     // parse_region_runtime summing every event's duration.
     bool get_total_stats(double* mean_us, double* variance_us2, long long* count) {
@@ -1405,6 +1495,12 @@ void __daisy_instrumentation_metric(size_t region_id, const char* name, double v
 bool __daisy_instrumentation_stats(size_t region_id, double* mean_us, double* variance_us2, long long* count) {
     return get_daisy_state().get_runtime_stats(region_id, mean_us, variance_us2, count);
 }
+
+bool __daisy_instrumentation_should_continue(size_t region_id) {
+    return get_daisy_state().should_continue_sampling(region_id);
+}
+
+void __daisy_instrumentation_flush_caches(void) { flush_caches_impl(); }
 
 bool __daisy_instrumentation_total_stats(double* mean_us, double* variance_us2, long long* count) {
     return get_daisy_state().get_total_stats(mean_us, variance_us2, count);

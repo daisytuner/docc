@@ -634,9 +634,28 @@ def build_map_nest(backend, specs, op):
 # reduction spans several levels they all target the SAME accumulator (the
 # "same variable on different levels" case).
 # ---------------------------------------------------------------------------
-def build_reduce_nest(backend, map_specs, reduce_specs, op):
+def build_reduce_nest(
+    backend, map_specs, reduce_specs, op, *, loop_order=None, reduce_options=None
+):
+    """Build flat acc[row] reductions; None map levels denote sequential maps.
+
+    loop_order names m0, m1, ... and r0, r1, ... in outer-to-inner order.
+    reduce_options maps reduction names to backend.schedule keyword arguments.
+    """
+    m_names = [f"m{k}" for k in range(len(map_specs))]
+    r_names = [f"r{k}" for k in range(len(reduce_specs))]
+    specs = dict(zip(m_names + r_names, map_specs + reduce_specs))
+    order = m_names + r_names if loop_order is None else list(loop_order)
+    assert len(order) == len(specs) and set(order) == set(specs)
+    reduce_options = reduce_options or {}
+    assert set(reduce_options) <= set(r_names)
     _validate_nest(
-        [(lvl, ps) for (lvl, _c, ps) in map_specs + reduce_specs], backend.warp_size
+        [
+            (specs[name][0], specs[name][2])
+            for name in order
+            if specs[name][0] is not None
+        ],
+        backend.warp_size,
     )
     map_counts = [c for (_, c, _) in map_specs]
     red_counts = [c for (_, c, _) in reduce_specs]
@@ -644,8 +663,6 @@ def build_reduce_nest(backend, map_specs, reduce_specs, op):
     cols = math.prod(red_counts)
     n = rows * cols
 
-    m_names = [f"m{k}" for k in range(len(map_specs))]
-    r_names = [f"r{k}" for k in range(len(reduce_specs))]
     row_flat = _flat_expr(m_names, map_counts)
     red_flat = _flat_expr(r_names, red_counts)
     in_index = f"({row_flat}) * {cols} + ({red_flat})"
@@ -697,17 +714,19 @@ def build_reduce_nest(backend, map_specs, reduce_specs, op):
         nbytes_acc,
     )
 
-    for name, (level, count, psize) in zip(m_names, map_specs):
-        builder.begin_map(name, "0", str(count), "1", backend.schedule(level, psize))
-    for name, (level, count, psize) in zip(r_names, reduce_specs):
-        builder.begin_reduce(
-            name,
-            "0",
-            str(count),
-            "1",
-            [(op, "__daisy_dev_acc")],
-            backend.schedule(level, psize),
+    for name in order:
+        level, count, psize = specs[name]
+        schedule = (
+            ScheduleType.sequential()
+            if level is None
+            else backend.schedule(level, psize, **reduce_options.get(name, {}))
         )
+        if name in m_names:
+            builder.begin_map(name, "0", str(count), "1", schedule)
+        else:
+            builder.begin_reduce(
+                name, "0", str(count), "1", [(op, "__daisy_dev_acc")], schedule
+            )
 
     blk = builder.add_block()
     a = builder.add_access(blk, "__daisy_dev_A")
@@ -718,10 +737,11 @@ def build_reduce_nest(backend, map_specs, reduce_specs, op):
     builder.add_memlet(blk, a, "", t, "_in2", in_index)
     builder.add_memlet(blk, t, "_out", acc_out, "", row_flat)
 
-    for _ in reduce_specs:
-        builder.end_reduce()
-    for _ in map_specs:
-        builder.end_map()
+    for name in reversed(order):
+        if name in m_names:
+            builder.end_map()
+        else:
+            builder.end_reduce()
 
     backend.offload(
         builder,
@@ -1077,6 +1097,111 @@ def _free(backend, builder, dev_ptr, name):
         dev_ptr,
         "0",
     )
+
+
+def build_tiled_matmul(backend, guarded, varied_band, reduction_position):
+    """Scale the nine-loop matmul nests from debug_test_{1,2}.json to 16/4/2.
+
+    The guarded form retains every enclosing upper bound as an And condition;
+    the exact-tile form retains only the nearest bound. Each band is i, j, k
+    by default. Move k within just varied_band, keeping the other bands and
+    each loop's GPU axis unchanged. The nine band/position pairs intentionally
+    include the original innermost-reduction order three times.
+
+    Only host/device transfers wrap the static kernel; no scheduling or tiling
+    transformation is run.
+    """
+    assert varied_band in ("grid", "block", "sequential")
+    assert reduction_position in ("outer", "middle", "inner")
+    builder = StructuredSDFGBuilder("offload_tiled_matmul")
+    arguments = ("args_0", "args_1", "mm")
+    dev_ptr = _declare_common(
+        backend, builder, arguments, [_dev(name) for name in arguments]
+    )
+    axes = ("_i1", "_j1", "_k0")
+    bands = (
+        (
+            "grid",
+            "_tile0",
+            "4",
+            (TargetLevel.Z_GRID, TargetLevel.Y_GRID, TargetLevel.X_GRID),
+        ),
+        (
+            "block",
+            "_tile1",
+            "2",
+            (TargetLevel.Z_BLOCK, TargetLevel.Y_BLOCK, TargetLevel.X_BLOCK),
+        ),
+        ("sequential", "", "1", (None, None, None)),
+    )
+    for _band, suffix, _step, _levels in bands:
+        for axis in axes:
+            builder.add_container(axis + suffix, Scalar(PrimitiveType.Int32), False)
+
+    nbytes = f"16 * 16 * {FLOAT_BYTES}"
+    for name in arguments:
+        _alloc(backend, builder, dev_ptr, name, nbytes)
+        _h2d(backend, builder, dev_ptr, name, nbytes)
+
+    loop_axes = []
+    for band_index, (band, suffix, step, levels) in enumerate(bands):
+        order = [0, 1, 2]
+        if band == varied_band:
+            order.remove(2)
+            order.insert(("outer", "middle", "inner").index(reduction_position), 2)
+        for axis_index in order:
+            axis = axes[axis_index]
+            indvar = axis + suffix
+            start = ("0", axis + "_tile0", axis + "_tile1")[band_index]
+            bounds = ("16", f"4 + {axis}_tile0", f"2 + {axis}_tile1")
+            level = levels[axis_index]
+            schedule = (
+                None
+                if level is None
+                else backend.schedule(level, 4 if band == "grid" else 2)
+            )
+            if axis == "_k0":
+                loop = builder.begin_reduce(
+                    indvar,
+                    start,
+                    bounds[band_index],
+                    step,
+                    [("add", _dev("mm"))],
+                    schedule,
+                )
+            else:
+                loop = builder.begin_map(
+                    indvar, start, bounds[band_index], step, schedule
+                )
+            if guarded and band_index > 0:
+                conditions = [
+                    f"({indvar} < {bound})" for bound in bounds[: band_index + 1]
+                ]
+                builder.set_loop_condition(loop, f"And({', '.join(conditions)})")
+            loop_axes.append(axis)
+
+    block = builder.add_block()
+    left = builder.add_access(block, _dev("args_0"))
+    right = builder.add_access(block, _dev("args_1"))
+    accumulator = builder.add_access(block, _dev("mm"))
+    output = builder.add_access(block, _dev("mm"))
+    tasklet = builder.add_tasklet(
+        block, TaskletCode.fp_fma, ["_in1", "_in2", "_in3"], ["_out"]
+    )
+    builder.add_memlet(block, left, "", tasklet, "_in1", "16*_i1 + _k0")
+    builder.add_memlet(block, right, "", tasklet, "_in2", "_j1 + 16*_k0")
+    builder.add_memlet(block, accumulator, "", tasklet, "_in3", "16*_i1 + _j1")
+    builder.add_memlet(block, tasklet, "_out", output, "", "16*_i1 + _j1")
+
+    for axis in reversed(loop_axes):
+        if axis == "_k0":
+            builder.end_reduce()
+        else:
+            builder.end_map()
+    _d2h(backend, builder, dev_ptr, "mm", nbytes)
+    for name in arguments:
+        _free(backend, builder, dev_ptr, name)
+    return builder.move()
 
 
 def build_sibling_nest(backend, parent, sib, containers, siblings):
@@ -1680,6 +1805,100 @@ def make_reduce_nest_scenarios(ws):
     return scns
 
 
+def make_reduce_first_scenarios(ws):
+    """One accumulator array, with output-selecting loops inside the reduction.
+
+    All memlets have one flat index. The cases exercise multiple output slots,
+    not multiple ReductionInfo entries or unsupported multidimensional memlets.
+    Only GPU levels participate in nesting validation; a sequential map may
+    occur inside the innermost warp reduction.
+    """
+    scenarios = []
+    for relation, (count, parallel_size) in _SIZE_RELATIONS.items():
+        serial = (None, count, 1)
+        grid_reduce = (TargetLevel.X_GRID, count, parallel_size)
+        block_reduce = (TargetLevel.X_BLOCK, count, parallel_size)
+        grid_parent = (TargetLevel.X_GRID, 1, 1)
+        row_grid_parent = (TargetLevel.Y_GRID, 1, 1)
+        row_block = (TargetLevel.Y_BLOCK, count, parallel_size)
+        cases = [
+            ("grid_serial", [serial], [grid_reduce], ["r0", "m0"], {}),
+            (
+                "grid_mapped",
+                [(TargetLevel.Y_GRID, count, parallel_size)],
+                [grid_reduce],
+                ["r0", "m0"],
+                {},
+            ),
+            (
+                "grid_block_mapped",
+                [row_grid_parent, row_block],
+                [grid_reduce],
+                ["r0", "m0", "m1"],
+                {},
+            ),
+            (
+                "grid_two_serial_axes",
+                [serial, (None, 3, 1)],
+                [grid_reduce],
+                ["r0", "m0", "m1"],
+                {},
+            ),
+            (
+                "grid_block_serial",
+                [serial],
+                [(TargetLevel.X_GRID, 2, 2), block_reduce],
+                ["r0", "r1", "m0"],
+                {},
+            ),
+            (
+                "warp_register_serial",
+                [grid_parent, serial],
+                [
+                    (TargetLevel.X_BLOCK, ws, ws),
+                    (TargetLevel.WARP, *_warp_relations(ws)[relation]),
+                ],
+                ["m0", "r0", "r1", "m1"],
+                {"r1": {"partial_storage": ReduceStrategy.Register}},
+            ),
+        ]
+        for storage_name, strategy, placed in (
+            ("shared", ReduceStrategy.Shared, None),
+            ("global", ReduceStrategy.Global, None),
+            ("shared_placed", ReduceStrategy.Shared, "__daisy_reduce_placed"),
+        ):
+            options = {"r0": {"partial_storage": strategy, "partial_container": placed}}
+            cases.extend(
+                [
+                    (
+                        f"block_{storage_name}_serial",
+                        [grid_parent, serial],
+                        [block_reduce],
+                        ["m0", "r0", "m1"],
+                        options,
+                    ),
+                    (
+                        f"block_{storage_name}_mapped",
+                        [grid_parent, row_grid_parent, row_block],
+                        [block_reduce],
+                        ["m0", "m1", "r0", "m2"],
+                        options,
+                    ),
+                ]
+            )
+        for name, maps, reductions, order, options in cases:
+            scenarios.append(
+                dict(
+                    id=f"{name}_{relation}",
+                    map_specs=maps,
+                    reduce_specs=reductions,
+                    loop_order=order,
+                    reduce_options=options,
+                )
+            )
+    return scenarios
+
+
 # ---------------------------------------------------------------------------
 # Multiple reductions in ONE node (several accumulators at one level).
 # ---------------------------------------------------------------------------
@@ -2095,6 +2314,51 @@ def register(namespace, backend):
         )
         np.testing.assert_allclose(acc, ref.astype(np.float32), rtol=1e-4, atol=1e-4)
 
+    _reduce_first_scns = make_reduce_first_scenarios(ws)
+
+    @pytest.mark.parametrize(
+        "scn", _reduce_first_scns, ids=[scn["id"] for scn in _reduce_first_scns]
+    )
+    @pytest.mark.parametrize("op", ["add", "mul", "min", "max"])
+    def test_reduce_first_multi_output(scn, op, tmp_path):
+        sdfg, rows, cols = build_reduce_nest(
+            backend,
+            scn["map_specs"],
+            scn["reduce_specs"],
+            op,
+            loop_order=scn["loop_order"],
+            reduce_options=scn["reduce_options"],
+        )
+        assert rows > 1
+        compiled = _compile(backend, sdfg, tmp_path / "reduce_first")
+        values = _rng_input(op, rows * cols, 21)
+        accumulator = np.full(rows, _identity(op), dtype=np.float32)
+        compiled(values, accumulator)
+        matrix = values.reshape(rows, cols)
+        expected = {
+            "add": matrix.sum,
+            "mul": matrix.prod,
+            "min": matrix.min,
+            "max": matrix.max,
+        }[op](axis=1)
+        np.testing.assert_allclose(accumulator, expected, rtol=1e-4, atol=1e-4)
+
+    @pytest.mark.parametrize(
+        "guarded", [True, False], ids=["debug_test_1_guarded", "debug_test_2_exact"]
+    )
+    @pytest.mark.parametrize("varied_band", ["grid", "block", "sequential"])
+    @pytest.mark.parametrize("reduction_position", ["outer", "middle", "inner"])
+    def test_tiled_matmul(guarded, varied_band, reduction_position, tmp_path):
+        sdfg = build_tiled_matmul(backend, guarded, varied_band, reduction_position)
+        compiled = _compile(backend, sdfg, tmp_path / "tiled_matmul")
+
+        rng = np.random.default_rng(22)
+        left = rng.integers(-2, 3, size=(16, 16)).astype(np.float32)
+        right = rng.integers(-2, 3, size=(16, 16)).astype(np.float32)
+        output = np.zeros((16, 16), dtype=np.float32)
+        compiled(left.ravel(), right.ravel(), output.ravel())
+        np.testing.assert_array_equal(output, left @ right)
+
     _multi_scns = make_multi_reduction_scenarios(ws)
 
     @pytest.mark.parametrize(
@@ -2200,6 +2464,8 @@ def register(namespace, backend):
         test_offload_reduce_block_strategy=test_offload_reduce_block_strategy,
         test_map_nest=test_map_nest,
         test_reduce_nest=test_reduce_nest,
+        test_reduce_first_multi_output=test_reduce_first_multi_output,
+        test_tiled_matmul=test_tiled_matmul,
         test_multi_reduction_one_node=test_multi_reduction_one_node,
         test_reduce_different_vars=test_reduce_different_vars,
         test_sibling_nest=test_sibling_nest,

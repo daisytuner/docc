@@ -32,18 +32,23 @@ set(SOURCE_FILES
     src/einsum/transformations/einsum_promotion.cpp
     src/einsum/transformations/einsum2dot.cpp
     src/einsum/transformations/einsum2gemm.cpp
+    src/parallelization/analysis/loop_carried_dependency_analysis.cpp
+    src/parallelization/passes/for_classification.cpp
     src/tiles/analysis/tile_analysis.cpp
     src/tiles/analysis/reduction_analysis.cpp
-    src/tiles/layout.cpp
+    src/tiles/analysis/reduction_buffer_analysis.cpp
     src/tiles/locality.cpp
     src/tiles/swizzle.cpp
     src/tiles/tile.cpp
     src/tiles/buffer_layout.cpp
     src/tiles/tiled_copy.cpp
-    src/tiles/tiled_copy_emit.cpp
+    src/tiles/library_nodes/pipeline_node.cpp
+    src/tiles/library_nodes/tile_copy_node.cpp
     src/tiles/transformations/local_storage.cpp
     src/tiles/transformations/software_pipelining.cpp
     src/tiles/transformations/tile_fusion.cpp
+    src/tiles/transformations/tile_guard_normalization.cpp
+    src/tiles/transformations/tile_vectorizer.cpp
     src/passes/code_motion/extended_block_hoisting.cpp
     src/passes/code_motion/extended_block_sorting.cpp
     src/passes/collapse_pass.cpp
@@ -66,8 +71,8 @@ set(SOURCE_FILES
     src/passes/offloading/device_resident_arg_promotion_pass.cpp
     src/passes/offloading/gpu_loop_reordering_pass.cpp
     src/passes/offloading/gpu_nested_offload_pass.cpp
+    src/passes/offloading/reduction_shared_memory_delinearization.cpp
     src/passes/offloading/gpu_nested_parallelization_pass.cpp
-    src/passes/offloading/gpu_tiling_pass.cpp
     src/passes/offloading/rocm_library_node_expansion_pass.cpp
     src/passes/offloading/rocm_library_node_rewriter_pass.cpp
     src/passes/offloading/rocm_library_node_transfer_extraction_pass.cpp
@@ -89,10 +94,11 @@ set(SOURCE_FILES
     src/targets/cuda/blas/dot.cpp
     src/targets/cuda/blas/gemm.cpp
     src/targets/cuda/blas/utils.cpp
+    src/targets/cuda/tiles/pipeline_node.cpp
+    src/targets/cuda/tiles/tile_copy_node.cpp
     src/targets/cuda/cuda_data_offloading_node.cpp
     src/targets/cuda/cuda_map_dispatcher.cpp
-    src/targets/cuda/cuda_offload_map_dispatcher.cpp
-    src/targets/cuda/cuda_offload_reduce_dispatcher.cpp
+    src/targets/cuda/cuda_offload_dispatcher_strategy.cpp
     src/targets/cuda/cuda_reduce_dispatcher.cpp
     src/targets/cuda/cuda.cpp
     src/targets/cuda/math/tensor/batched_matmul_expander.cpp
@@ -101,10 +107,15 @@ set(SOURCE_FILES
     src/targets/cuda/plugin.cpp
     src/targets/cuda/stdlib/memcpy.cpp
     src/targets/cuda/stdlib/memset.cpp
+    src/targets/gpu/gpu_arch.cpp
     src/targets/gpu/gpu_map_utils.cpp
+    src/targets/gpu/gpu_mma_dispatcher.cpp
+    src/targets/gpu/gpu_mma_expander.cpp
+    src/targets/gpu/gpu_offload_base_dispatcher.cpp
     src/targets/gpu/gpu_offload_map_dispatcher.cpp
     src/targets/gpu/gpu_offload_reduce_dispatcher.cpp
     src/targets/gpu/gpu_reduce_dispatcher.cpp
+    src/targets/gpu/gpu_reduce_layout.cpp
     src/targets/gpu/math/tensor/conv_expander.cpp
     src/targets/offloading/external_offloading_node.cpp
     src/targets/offloading/utils.cpp
@@ -115,20 +126,24 @@ set(SOURCE_FILES
     src/targets/rocm/blas/gemm_handtuned.cpp
     src/targets/rocm/blas/gemm.cpp
     src/targets/rocm/blas/utils.cpp
+    src/targets/rocm/tiles/pipeline_node.cpp
+    src/targets/rocm/tiles/tile_copy_node.cpp
     src/targets/rocm/math/tensor/batched_matmul_expander.cpp
     src/targets/rocm/math/tensor/concat_expander.cpp
     src/targets/rocm/plugin.cpp
+    src/targets/rocm/rocm_arch.cpp
     src/targets/rocm/rocm_data_offloading_node.cpp
     src/targets/rocm/rocm_map_dispatcher.cpp
-    src/targets/rocm/rocm_offload_map_dispatcher.cpp
-    src/targets/rocm/rocm_offload_reduce_dispatcher.cpp
+    src/targets/rocm/rocm_mma_dispatcher.cpp
+    src/targets/rocm/rocm_mma_expander.cpp
+    src/targets/rocm/rocm_mma_transform.cpp
+    src/targets/rocm/rocm_offload_dispatcher_strategy.cpp
     src/targets/rocm/rocm_reduce_dispatcher.cpp
     src/targets/rocm/rocm.cpp
     src/targets/rocm/stdlib/memcpy.cpp
     src/targets/rocm/stdlib/memset.cpp
     src/targets/vectorize/codegen/vectorize_dispatcher.cpp
     src/transformations/collapse_to_depth.cpp
-    src/transformations/in_local_storage.cpp
     src/transformations/loop_condition_normalize.cpp
     src/transformations/loop_distribute.cpp
     src/transformations/loop_indvar_finalize.cpp
@@ -153,8 +168,6 @@ set(SOURCE_FILES
     src/transformations/offloading/gpu_loop_reordering.cpp
     src/transformations/offloading/gpu_offload_nested_loop.cpp
     src/transformations/offloading/gpu_offload_transform.cpp
-    src/transformations/offloading/gpu_tiling.cpp
-    src/transformations/offloading/kernel_local_storage.cpp
     src/transformations/offloading/offload_transform.cpp
     src/transformations/offloading/rocblas_data_transfer_extraction.cpp
     src/transformations/offloading/rocm_offload_transform.cpp
@@ -162,7 +175,6 @@ set(SOURCE_FILES
     src/transformations/offloading/rocm_stdlib_data_transfer_extraction.cpp
     src/transformations/offloading/rocm_transform.cpp
     src/transformations/omp_transform.cpp
-    src/transformations/out_local_storage.cpp
     src/transformations/recorder.cpp
     src/transformations/replayer.cpp
     src/transformations/stream_k.cpp

@@ -52,17 +52,25 @@ ConcatNode::ConcatNode(
     this->inputs_.push_back(result);
 }
 
-const std::string& ConcatNode::result() const { return this->inputs_.back(); }
+const std::string& ConcatNode::result() const {
+    return this->inputs_.back();
+}
 
-const TensorLayout& ConcatNode::result_layout() const { return this->result_layout_; }
+const TensorLayout& ConcatNode::result_layout() const {
+    return this->result_layout_;
+}
 
 std::vector<std::string> ConcatNode::tensors() const {
     return std::vector<std::string>(this->inputs_.begin(), this->inputs_.end() - 1);
 }
 
-const std::vector<TensorLayout>& ConcatNode::tensor_layouts() const { return this->tensor_layouts_; }
+const std::vector<TensorLayout>& ConcatNode::tensor_layouts() const {
+    return this->tensor_layouts_;
+}
 
-long long ConcatNode::dim() const { return this->dim_; }
+long long ConcatNode::dim() const {
+    return this->dim_;
+}
 
 void ConcatNode::validate(const Function& function) const {
     TensorNode::validate(function);
@@ -151,7 +159,9 @@ void ConcatNode::validate(const Function& function) const {
     }
 }
 
-bool ConcatNode::supports_integer_types() const { return true; }
+bool ConcatNode::supports_integer_types() const {
+    return true;
+}
 
 using Dir = passes::LibNodeExpander::InputUse;
 
@@ -266,7 +276,9 @@ symbolic::SymbolSet ConcatNode::symbols() const {
     return syms;
 }
 
-symbolic::Expression ConcatNode::flop() const { return symbolic::zero(); }
+symbolic::Expression ConcatNode::flop() const {
+    return symbolic::zero();
+}
 
 std::unique_ptr<data_flow::DataFlowNode> ConcatNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {

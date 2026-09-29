@@ -1,5 +1,7 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/tensor_layout.h"
 
+#include <memory>
+
 #include "sdfg/serializer/json_serializer.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/types/utils.h"
@@ -101,11 +103,38 @@ void TensorLayout::replace_symbols(const symbolic::ExpressionMapping& replacemen
     offset_ = symbolic::subs(offset_, replacements);
 }
 
-symbolic::Expression TensorLayout::total_elements() const { return SymEngine::mul(shape_); }
+symbolic::Expression TensorLayout::total_elements() const {
+    return SymEngine::mul(shape_);
+}
 
-symbolic::MultiExpression TensorLayout::linear_strides() const { return std::move(linear_strides(shape_)); }
+symbolic::MultiExpression TensorLayout::linear_strides() const {
+    return std::move(linear_strides(shape_));
+}
 
-bool TensorLayout::is_scalar() const { return shape_.empty(); }
+symbolic::Expression TensorLayout::resolve_element(const symbolic::MultiExpression& indices, bool require_to_element) const {
+    auto resolve_dims = indices.size();
+    if (resolve_dims != shape_.size() && require_to_element) {
+        throw std::invalid_argument(
+            "TensorLayout::resolve_element: indices size (" + std::to_string(resolve_dims) +
+            ") does not match shape size (" + std::to_string(shape_.size()) + ")"
+        );
+    } else if (resolve_dims > shape_.size()) {
+        throw std::invalid_argument(
+            "TensorLayout::resolve_element: indices size (" + std::to_string(resolve_dims) +
+            ") is greater than shape size (" + std::to_string(shape_.size()) + ")"
+        );
+    }
+
+    symbolic::Expression addr = offset_;
+    for (size_t i = 0; i < indices.size(); ++i) {
+        addr = symbolic::add(addr, symbolic::mul(indices.at(i), strides_.at(i)));
+    }
+    return addr;
+}
+
+bool TensorLayout::is_scalar() const {
+    return shape_.empty();
+}
 
 TensorLayout TensorLayout::deserialize_from_json(const nlohmann::json& j) {
     symbolic::MultiExpression shape;
@@ -126,7 +155,9 @@ TensorLayout TensorLayout::deserialize_from_json(const nlohmann::json& j) {
 std::ostream& TensorLayout::emit_symbolic_list(std::ostream& stream, const symbolic::MultiExpression& list) {
     stream << "[";
     for (size_t i = 0; i < list.size(); ++i) {
-        if (i > 0) stream << ", ";
+        if (i > 0) {
+            stream << ", ";
+        }
         stream << list.at(i)->__str__();
     }
     stream << "]";
@@ -165,7 +196,9 @@ bool TensorLayout::has_linear_accesses_no_padding(
     return has_linear_accesses(shape, strides) && symbolic::eq(offset, symbolic::zero());
 }
 
-bool TensorLayout::has_linear_accesses() const { return has_linear_accesses(shape_, strides_); }
+bool TensorLayout::has_linear_accesses() const {
+    return has_linear_accesses(shape_, strides_);
+}
 
 bool TensorLayout::has_linear_accesses_no_padding() const {
     return has_linear_accesses_no_padding(shape_, strides_, offset_);
@@ -247,7 +280,9 @@ std::unique_ptr<TensorLayout> TensorLayout::flip(size_t axis) const {
     return std::make_unique<TensorLayout>(this->shape_, new_strides, new_offset);
 }
 
-std::unique_ptr<TensorLayout> TensorLayout::unsqueeze(size_t axis) const { return this->newaxis(axis); }
+std::unique_ptr<TensorLayout> TensorLayout::unsqueeze(size_t axis) const {
+    return this->newaxis(axis);
+}
 
 std::unique_ptr<TensorLayout> TensorLayout::squeeze(size_t axis) const {
     if (axis >= this->shape_.size()) {
@@ -312,9 +347,73 @@ std::unique_ptr<TensorLayout> TensorLayout::reshape(const symbolic::MultiExpress
     return std::make_unique<TensorLayout>(new_shape, new_strides, offset_);
 }
 
+std::unique_ptr<TensorLayout> TensorLayout::broadcast(const symbolic::MultiExpression& ref_shape) const {
+    // Cannot broadcast
+    if (this->shape_.size() > ref_shape.size()) {
+        return nullptr;
+    }
+
+    long long offset = ref_shape.size() - this->shape_.size();
+    symbolic::MultiExpression new_shape;
+    symbolic::MultiExpression new_strides;
+    for (long long i = 0; i < ref_shape.size(); i++) {
+        if (i < offset || symbolic::eq(this->shape_[i - offset], symbolic::one())) {
+            new_shape.push_back(ref_shape[i]);
+            new_strides.push_back(symbolic::zero());
+        } else if (symbolic::eq(this->shape_[i - offset], ref_shape[i])) {
+            new_shape.push_back(this->shape_[i - offset]);
+            new_strides.push_back(this->strides_[i - offset]);
+        } else {
+            // Incompatible shapes
+            return nullptr;
+        }
+    }
+
+    return std::make_unique<TensorLayout>(new_shape, new_strides, this->offset_);
+}
+
 types::PrimitiveType TensorLayout::get_tensor_indvar_type_for_shape(const std::vector<symbolic::Expression>& shape) {
     auto num_elems = SymEngine::mul(shape);
     return types::get_primitive_type_to_hold_upper_bound(num_elems);
+}
+
+TensorLayout::TensorLayoutType TensorLayout::is_2d_col_or_row_major() const {
+    if (dims() != 2) {
+        return TensorLayoutType::LAYOUT_OTHER;
+    }
+    return is_last_dims_col_or_row_major(strides_);
+}
+
+bool TensorLayout::is_last_dims_expressible_as_row_major() const {
+    return strides_.size() >= 2 && symbolic::eq(strides_.back(), symbolic::integer(1));
+}
+
+TensorLayout::TensorLayoutType TensorLayout::is_last_dims_col_or_row_major(const symbolic::MultiExpression& strides) {
+    if (strides.size() < 2) {
+        return TensorLayoutType::LAYOUT_OTHER;
+    }
+    auto innermost_i = strides.size() - 1;
+    auto outer_i = innermost_i - 1;
+    auto outer = strides.at(outer_i);
+    auto inner = strides.at(innermost_i);
+
+    bool col_major = false;
+    bool row_major = false;
+    if (symbolic::eq(outer, symbolic::integer(1))) {
+        col_major = true;
+    }
+    if (symbolic::eq(inner, symbolic::integer(1))) {
+        if (col_major) {
+            return TensorLayoutType::LAYOUT_ROW_OR_COL_MAJOR;
+        } else {
+            return TensorLayoutType::LAYOUT_ROW_MAJOR;
+        }
+    }
+    if (col_major) {
+        return TensorLayoutType::LAYOUT_COL_MAJOR;
+    } else {
+        return TensorLayoutType::LAYOUT_OTHER;
+    }
 }
 
 } // namespace sdfg::math::tensor

@@ -19,7 +19,9 @@ private:
 public:
     AllocationManagement(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager);
 
-    static std::string name() { return "AllocationManagement"; };
+    static std::string name() {
+        return "AllocationManagement";
+    };
 
     bool accept(structured_control_flow::Block& node) override;
 };

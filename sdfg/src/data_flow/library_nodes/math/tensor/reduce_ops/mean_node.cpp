@@ -18,7 +18,8 @@ MeanNode::MeanNode(
     const std::vector<int64_t>& axes,
     bool keepdims
 )
-    : ReduceNode(element_id, debug_info, vertex, parent, LibraryNodeType_Mean, shape, axes, keepdims) {}
+    : ReduceNode(element_id, debug_info, vertex, parent, LibraryNodeType_Mean, shape, axes, keepdims) {
+}
 
 passes::LibNodeExpander::ExpandOutcome MeanNode::expand_inner(
     passes::LibNodeExpander::AccessNodeExpand& expansion,
@@ -50,7 +51,9 @@ passes::LibNodeExpander::ExpandOutcome MeanNode::expand_inner(
     symbolic::Expression count_expr = symbolic::one();
     for (auto axis : axes_) {
         int64_t ax = axis;
-        if (ax < 0) ax += shape_.size();
+        if (ax < 0) {
+            ax += shape_.size();
+        }
         symbolic::Expression dim = shape_[ax];
         count_expr = symbolic::mul(count_expr, dim);
     }
@@ -91,7 +94,9 @@ bool MeanNode::expand_reduction(
     throw std::runtime_error("MeanNode::expand_reduction should not be called");
 }
 
-std::string MeanNode::identity(types::PrimitiveType primitive_type) const { return "0"; }
+std::string MeanNode::identity(types::PrimitiveType primitive_type) const {
+    return "0";
+}
 
 std::unique_ptr<data_flow::DataFlowNode> MeanNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {

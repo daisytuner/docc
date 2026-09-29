@@ -231,6 +231,7 @@ def run_benchmark(initialize_func, kernel_func, parameters, name, args=None):
             kernel_func,
             target=args.target,
             remote_tuning=args.remote_tuning,
+            symbolic_shapes=False,
         )
 
         # Compile with host arrays (shape inference / caching), then feed
@@ -327,6 +328,7 @@ def run_pytest(
         target=target,
         category="server",
         remote_tuning=remote_tuning,
+        symbolic_shapes=True,
     )
 
     # Compile with host arrays so shape inference and caching are correct, then

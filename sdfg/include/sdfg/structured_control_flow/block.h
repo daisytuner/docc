@@ -53,9 +53,13 @@ public:
     Block(const Block& block) = delete;
     Block& operator=(const Block&) = delete;
 
-    ElementType type_id() const override { return ElementType::Block; }
+    ElementType type_id() const override {
+        return ElementType::Block;
+    }
 
-    static bool classof(const Element& element) { return element.type_id() == ElementType::Block; }
+    static bool classof(const Element& element) {
+        return element.type_id() == ElementType::Block;
+    }
 
     bool accept(visitor::ActualStructuredSDFGVisitor& visitor) override;
 
@@ -107,7 +111,9 @@ public:
     AssignmentBlock(const AssignmentBlock& block) = delete;
     AssignmentBlock& operator=(const AssignmentBlock&) = delete;
 
-    ElementType type_id() const override { return ElementType::AssignmentBlock; }
+    ElementType type_id() const override {
+        return ElementType::AssignmentBlock;
+    }
 
     /**
      * Add this assignment, if the symbol in question is not already being written.
@@ -117,7 +123,9 @@ public:
      */
     bool add_if_not_overwritten(const symbolic::Symbol& target, const symbolic::Expression& expr);
 
-    static bool classof(const Element& element) { return element.type_id() == ElementType::AssignmentBlock; }
+    static bool classof(const Element& element) {
+        return element.type_id() == ElementType::AssignmentBlock;
+    }
 
     bool accept(visitor::ActualStructuredSDFGVisitor& visitor) override;
 

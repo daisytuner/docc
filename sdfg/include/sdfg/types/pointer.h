@@ -90,7 +90,9 @@ public:
      */
     virtual bool is_symbol() const override;
 
-    bool is_pointer_like() const override { return true; }
+    bool is_pointer_like() const override {
+        return true;
+    }
 
     /**
      * @brief Checks if this pointer has a known pointee type
@@ -118,8 +120,8 @@ public:
      *
      * Replaces occurrences of symbolic expressions on the type.
      */
-    virtual void replace_symbols(const symbolic::Expression old_expression, const symbolic::Expression new_expression)
-        override;
+    virtual void
+    replace_symbols(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override;
     virtual void replace_symbols(const symbolic::ExpressionMapping& replacements) override;
 };
 } // namespace types

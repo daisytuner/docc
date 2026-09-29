@@ -60,7 +60,9 @@ protected:
         return schedule;
     }
 
-    std::string copy_prefix() override { return ROCM_DEVICE_PREFIX; }
+    std::string copy_prefix() override {
+        return ROCM_DEVICE_PREFIX;
+    }
 
     void add_device_buffer(
         builder::StructuredSDFGBuilder& builder,
@@ -122,8 +124,10 @@ protected:
         symbolic::Expression page_size
     ) override;
 
-    void setup_device(builder::StructuredSDFGBuilder& builder, Block& global_alloc_block) override {}
-    void teardown_device(builder::StructuredSDFGBuilder& builder, Block& global_alloc_block) override {}
+    void setup_device(builder::StructuredSDFGBuilder& builder, Block& global_alloc_block) override {
+    }
+    void teardown_device(builder::StructuredSDFGBuilder& builder, Block& global_alloc_block) override {
+    }
 
 private:
     int block_size_;

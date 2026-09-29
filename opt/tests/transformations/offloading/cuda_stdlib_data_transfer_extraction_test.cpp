@@ -24,7 +24,7 @@ TEST(CUDAStdlibDataTransferExtractionTest, MemsetCanBeApplied) {
     builder.add_container("buf", ptr_type);
 
     auto [block, memset_node] = stdlib::add_memset_block(builder, sdfg.root(), "buf", value, num, ptr_type);
-    memset_node.implementation_type() = cuda::ImplementationType_CUDAWithTransfers;
+    memset_node.set_implementation_type(cuda::ImplementationType_CUDAWithTransfers);
 
     analysis::AnalysisManager analysis_manager(sdfg);
 
@@ -46,7 +46,7 @@ TEST(CUDAStdlibDataTransferExtractionTest, MemsetApply) {
 
     auto [block, memset_node] = stdlib::add_memset_block(builder, sdfg.root(), "buf", value, num, ptr_type);
     auto* buf_node = *block.dataflow().data_nodes().begin();
-    memset_node.implementation_type() = cuda::ImplementationType_CUDAWithTransfers;
+    memset_node.set_implementation_type(cuda::ImplementationType_CUDAWithTransfers);
 
     analysis::AnalysisManager analysis_manager(sdfg);
 
@@ -79,7 +79,7 @@ TEST(CUDAStdlibDataTransferExtractionTest, MemsetWrongImplType) {
 
     auto [block, memset_node] = stdlib::add_memset_block(builder, sdfg.root(), "buf", value, num, ptr_type);
     // Use WithoutTransfers — expansion should not apply
-    memset_node.implementation_type() = cuda::ImplementationType_CUDAWithoutTransfers;
+    memset_node.set_implementation_type(cuda::ImplementationType_CUDAWithoutTransfers);
 
     analysis::AnalysisManager analysis_manager(sdfg);
 
@@ -122,7 +122,7 @@ TEST(CUDAStdlibDataTransferExtractionTest, MemsetSerialization) {
 
     auto [block, memset_node] = stdlib::add_memset_block(builder, sdfg.root(), "buf", value, num, ptr_type);
 
-    memset_node.implementation_type() = cuda::ImplementationType_CUDAWithTransfers;
+    memset_node.set_implementation_type(cuda::ImplementationType_CUDAWithTransfers);
 
     cuda::CUDAStdlibDataTransferExtraction expansion(memset_node);
 

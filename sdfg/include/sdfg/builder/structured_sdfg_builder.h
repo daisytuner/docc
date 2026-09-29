@@ -28,7 +28,8 @@ template<typename T>
 struct ConditionalDeleter {
     bool should_delete_;
 
-    ConditionalDeleter(bool should_delete = true) : should_delete_(should_delete) {}
+    ConditionalDeleter(bool should_delete = true) : should_delete_(should_delete) {
+    }
 
     void operator()(T* ptr) const {
         if (should_delete_) {
@@ -71,8 +72,8 @@ private:
 
     template<typename T, typename... Args>
     T& insert_node_internal(Sequence& parent, int32_t insert_idx, const DebugInfo& debug_info, Args&&... args) {
-        auto child = std::unique_ptr<
-            T>(new T(this->new_element_id_batch(T::REQUIRED_ELEMENT_IDS), debug_info, &parent, std::forward<Args>(args)...)
+        auto child = std::unique_ptr<T>(
+            new T(this->new_element_id_batch(T::REQUIRED_ELEMENT_IDS), debug_info, &parent, std::forward<Args>(args)...)
         );
         auto& new_child = *child;
 
@@ -131,8 +132,8 @@ public:
      * @param old_expression Expression to replace
      * @param new_expression Replacement expression
      */
-    virtual void replace_symbols(const symbolic::Expression old_expression, const symbolic::Expression new_expression)
-        override;
+    virtual void
+    replace_symbols(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override;
     virtual void replace_symbols(const symbolic::ExpressionMapping& replacements) override;
 
     Sequence& add_sequence(Sequence& parent, const DebugInfo& debug_info = DebugInfo());

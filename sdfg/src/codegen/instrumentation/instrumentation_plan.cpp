@@ -13,7 +13,9 @@
 namespace sdfg {
 namespace codegen {
 
-bool InstrumentationPlan::should_instrument(const Element& node) const { return this->nodes_.count(&node); }
+bool InstrumentationPlan::should_instrument(const Element& node) const {
+    return this->nodes_.count(&node);
+}
 
 void InstrumentationPlan::begin_instrumentation(
     const Element& node, PrettyPrinter& stream, LanguageExtension& language_extension, const InstrumentationInfo& info
@@ -125,6 +127,16 @@ void InstrumentationPlan::begin_instrumentation(
         }
     }
 
+    // Adaptive sampling: repeat the region until its runtime confidence interval
+    // converges. The loop opens before enter and closes after exit (see
+    // end_instrumentation), so the region body runs once per sample.
+    if (info.sampling()) {
+        stream << "while (true) {" << std::endl;
+        // Cold sampling (no-op unless DOCC_MEASURE_COLD): evict the working set so
+        // each sample re-incurs cold-start misses at the L3/DRAM level.
+        stream << "__daisy_instrumentation_flush_caches();" << std::endl;
+    }
+
     // Enter region
     stream << "__daisy_instrumentation_enter(" << region_id_var << ");" << std::endl;
 }
@@ -143,6 +155,13 @@ void InstrumentationPlan::end_instrumentation(
             break;
     }
 
+    // Close the adaptive sampling loop: take another sample unless the runtime
+    // confidence interval has converged or the sample/time caps are hit.
+    if (info.sampling()) {
+        stream << "if (!__daisy_instrumentation_should_continue(" << region_id_var << ")) break;" << std::endl;
+        stream << "}" << std::endl;
+    }
+
     for (auto entry : info.metrics()) {
         stream << "__daisy_instrumentation_metric(" << region_id_var << ", \"" << entry.first << "\", " << entry.second
                << ");" << std::endl;
@@ -152,8 +171,8 @@ void InstrumentationPlan::end_instrumentation(
     stream << "__daisy_instrumentation_finalize(" << region_id_var << ");" << std::endl;
 }
 
-void InstrumentationPlan::leaving_instrumentation_function(PrettyPrinter& stream, LanguageExtension& language_extension)
-    const {
+void InstrumentationPlan::
+    leaving_instrumentation_function(PrettyPrinter& stream, LanguageExtension& language_extension) const {
     if (!this->is_empty() && this->emit_finalize_all_) {
         stream << "__daisy_instrumentation_finalize_all();" << std::endl;
     }
@@ -164,7 +183,7 @@ std::unique_ptr<InstrumentationPlan> InstrumentationPlan::none(StructuredSDFG& s
 }
 
 std::unique_ptr<InstrumentationPlan> InstrumentationPlan::
-    outermost_loops_plan(StructuredSDFG& sdfg, bool emit_finalize_all) {
+    outermost_loops_plan(StructuredSDFG& sdfg, bool emit_finalize_all, bool sampling) {
     analysis::AnalysisManager analysis_manager(sdfg);
     auto& loop_tree_analysis = analysis_manager.get<analysis::LoopAnalysis>();
     auto ols = loop_tree_analysis.outermost_loops();
@@ -175,7 +194,7 @@ std::unique_ptr<InstrumentationPlan> InstrumentationPlan::
     }
 
     DEBUG_PRINTLN("Created instrumentation plan for " << nodes.size() << " nodes.");
-    return std::make_unique<InstrumentationPlan>(sdfg, nodes, emit_finalize_all);
+    return std::make_unique<InstrumentationPlan>(sdfg, nodes, emit_finalize_all, sampling);
 }
 
 } // namespace codegen

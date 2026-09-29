@@ -22,7 +22,8 @@ LogicalNotNode::LogicalNotNode(
 )
     : ElementWiseDataflowTensorNode(
           element_id, debug_info, vertex, parent, LibraryNodeType_LogicalNot, shape, "Y", {"X"}, quantization, impl_type
-      ) {}
+      ) {
+}
 
 ElementWiseDataflowTensorNode::ElementOutput LogicalNotNode::expand_operation_dataflow(
     builder::StructuredSDFGBuilder& builder,

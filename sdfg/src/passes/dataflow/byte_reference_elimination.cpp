@@ -12,7 +12,9 @@ ByteReferenceElimination::ByteReferenceElimination()
 
       };
 
-std::string ByteReferenceElimination::name() { return "ByteReferenceElimination"; };
+std::string ByteReferenceElimination::name() {
+    return "ByteReferenceElimination";
+};
 
 bool ByteReferenceElimination::
     run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {

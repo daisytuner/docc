@@ -22,7 +22,6 @@ bool LoopSchedulingPass::run_pass_target(
 
     // ===== Phase 1: Find all applicable loops =====
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
-    auto& flop_analysis = analysis_manager.get<analysis::FlopAnalysis>();
 
     // Initialize queue with outermost loops
     std::list<structured_control_flow::ControlFlowNode*> queue;
@@ -32,7 +31,6 @@ bool LoopSchedulingPass::run_pass_target(
 
         SchedulerLoopInfo info;
         info.loop_info = loop_analysis.loop_info(loop);
-        info.flop = flop_analysis.get(loop);
         scheduling_info_map[loop] = info;
     }
     if (queue.empty()) {
@@ -114,7 +112,6 @@ bool LoopSchedulingPass::run_pass_target(
 
                     SchedulerLoopInfo info;
                     info.loop_info = loop_analysis.loop_info(child);
-                    info.flop = flop_analysis.get(child);
                     scheduling_info_map[child] = info;
                 }
                 break;

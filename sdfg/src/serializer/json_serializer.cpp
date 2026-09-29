@@ -6,7 +6,6 @@
 #include <utility>
 #include <vector>
 
-#include "sdfg/data_flow/library_nodes/async_copy_node.h"
 #include "sdfg/data_flow/library_nodes/atomic_op_node.h"
 #include "sdfg/data_flow/library_nodes/barrier_local_node.h"
 #include "sdfg/data_flow/library_nodes/call_node.h"
@@ -279,6 +278,9 @@ void JSONSerializer::structured_loop_to_json(nlohmann::json& j, const structured
             nlohmann::json reduction_json;
             reduction_json["op"] = structured_control_flow::reduction_operation_to_string(reduction.operation);
             reduction_json["container"] = reduction.container;
+            if (!reduction.original_index.is_null()) {
+                reduction_json["original_index"] = expression(reduction.original_index);
+            }
             j["reductions"].push_back(reduction_json);
         }
     }
@@ -653,8 +655,8 @@ void JSONSerializer::json_to_dataflow(
             }
             auto serializer = serializer_fn();
             auto& lib_node = serializer->deserialize(node, builder, parent);
-            lib_node.implementation_type() =
-                data_flow::ImplementationType(node["implementation_type"].get<std::string>());
+            lib_node
+                .set_implementation_type(data_flow::ImplementationType(node["implementation_type"].get<std::string>()));
             lib_node.element_id_ = node["element_id"];
             nodes_map.insert({node["element_id"], lib_node});
         } else if (type == "access_node") {
@@ -1051,10 +1053,15 @@ void JSONSerializer::json_to_reduce_node(
         assert(reduction_json["op"].is_string());
         assert(reduction_json.contains("container"));
         assert(reduction_json["container"].is_string());
-        reductions.push_back(structured_control_flow::ReductionInfo{
-            structured_control_flow::reduction_operation_from_string(reduction_json["op"].get<std::string>()),
-            reduction_json["container"].get<std::string>()
-        });
+        reductions.push_back(
+            structured_control_flow::ReductionInfo{
+                structured_control_flow::reduction_operation_from_string(reduction_json["op"].get<std::string>()),
+                reduction_json["container"].get<std::string>(),
+                reduction_json.contains("original_index")
+                    ? symbolic::parse(reduction_json["original_index"].get<std::string>())
+                    : symbolic::Expression(SymEngine::null)
+            }
+        );
     }
 
     structured_control_flow::ScheduleType schedule_type = json_to_schedule_type(j["schedule_type"]);
@@ -1324,6 +1331,26 @@ void JSONSerializer::writeToFile(const StructuredSDFG& sdfg, const std::filesyst
     out.close();
 }
 
+void JSONSymbolicPrinter::bvisit(const SymEngine::BooleanAtom& x) {
+    str_ = x.get_val() ? "True" : "False";
+};
+
+void JSONSymbolicPrinter::bvisit(const SymEngine::And& expr) {
+    SymEngine::StrPrinter::bvisit(expr);
+};
+
+void JSONSymbolicPrinter::bvisit(const SymEngine::Or& expr) {
+    SymEngine::StrPrinter::bvisit(expr);
+};
+
+void JSONSymbolicPrinter::bvisit(const SymEngine::Not& expr) {
+    SymEngine::StrPrinter::bvisit(expr);
+};
+
+void JSONSymbolicPrinter::bvisit(const SymEngine::Xor& expr) {
+    SymEngine::StrPrinter::bvisit(expr);
+};
+
 void JSONSymbolicPrinter::bvisit(const SymEngine::Equality& x) {
     str_ = apply(x.get_args()[0]) + " == " + apply(x.get_args()[1]);
     str_ = parenthesize(str_);
@@ -1407,7 +1434,9 @@ LibraryNodeSerializerFn LibraryNodeSerializerRegistry::get_library_node_serializ
     return nullptr;
 }
 
-size_t LibraryNodeSerializerRegistry::size() const { return factory_map_.size(); }
+size_t LibraryNodeSerializerRegistry::size() const {
+    return factory_map_.size();
+}
 
 void register_default_serializers() {
     // stdlib
@@ -1462,20 +1491,6 @@ void register_default_serializers() {
     LibraryNodeSerializerRegistry::instance()
         .register_library_node_serializer(data_flow::LibraryNodeType_BarrierLocal.value(), []() {
             return std::make_unique<data_flow::BarrierLocalNodeSerializer>();
-        });
-
-    // Async copy / pipeline primitives
-    LibraryNodeSerializerRegistry::instance()
-        .register_library_node_serializer(data_flow::LibraryNodeType_CpAsyncCopy.value(), []() {
-            return std::make_unique<data_flow::CpAsyncCopyNodeSerializer>();
-        });
-    LibraryNodeSerializerRegistry::instance()
-        .register_library_node_serializer(data_flow::LibraryNodeType_PipelineCommit.value(), []() {
-            return std::make_unique<data_flow::PipelineCommitNodeSerializer>();
-        });
-    LibraryNodeSerializerRegistry::instance()
-        .register_library_node_serializer(data_flow::LibraryNodeType_PipelineWait.value(), []() {
-            return std::make_unique<data_flow::PipelineWaitNodeSerializer>();
         });
 
     // AtomicAccumulate

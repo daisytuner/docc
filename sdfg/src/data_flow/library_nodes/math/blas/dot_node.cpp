@@ -34,13 +34,20 @@ DotNode::DotNode(
           implementation_type,
           precision
       ),
-      n_(n), incx_(incx), incy_(incy) {}
+      n_(n), incx_(incx), incy_(incy) {
+}
 
-symbolic::Expression DotNode::n() const { return this->n_; };
+symbolic::Expression DotNode::n() const {
+    return this->n_;
+};
 
-symbolic::Expression DotNode::incx() const { return this->incx_; };
+symbolic::Expression DotNode::incx() const {
+    return this->incx_;
+};
 
-symbolic::Expression DotNode::incy() const { return this->incy_; };
+symbolic::Expression DotNode::incy() const {
+    return this->incy_;
+};
 
 symbolic::SymbolSet DotNode::symbols() const {
     symbolic::SymbolSet syms;
@@ -70,7 +77,9 @@ void DotNode::replace(const symbolic::ExpressionMapping& replacements) {
     this->incy_ = symbolic::subs(this->incy_, replacements);
 };
 
-void DotNode::validate(const Function& function) const { BLASNode::validate(function); }
+void DotNode::validate(const Function& function) const {
+    BLASNode::validate(function);
+}
 
 passes::LibNodeExpander::ExpandOutcome DotNode::
     expand(passes::LibNodeExpander::ExpandContext& context, structured_control_flow::Block& block) {
@@ -232,7 +241,8 @@ DotNodeDispatcher_BLAS::DotNodeDispatcher_BLAS(
     const data_flow::DataFlowGraph& data_flow_graph,
     const DotNode& node
 )
-    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
+}
 
 void DotNodeDispatcher_BLAS::dispatch_code_with_edges(
     codegen::CodegenOutput& out,

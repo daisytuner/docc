@@ -12,7 +12,9 @@ class RocmLibraryNodeRewriter : public visitor::StructuredSDFGVisitor {
 public:
     RocmLibraryNodeRewriter(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager);
 
-    static std::string name() { return "RocmLibraryNodeRewriterPass"; };
+    static std::string name() {
+        return "RocmLibraryNodeRewriterPass";
+    };
     bool accept(structured_control_flow::Block& node) override;
 
 private:

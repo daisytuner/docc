@@ -74,16 +74,25 @@ ConditionalTensorCopyNode::ConditionalTensorCopyNode(
           {"Mask", "X1", "X2", "Y"},
           impl_type
       ),
-      layout_mask_(layout_mask), layout_x1_(layout_x1), layout_x2_(layout_x2), layout_y_(layout_y) {}
+      layout_mask_(layout_mask), layout_x1_(layout_x1), layout_x2_(layout_x2), layout_y_(layout_y) {
+}
 
 
-const TensorLayout& ConditionalTensorCopyNode::layout_mask() const { return this->layout_mask_; }
+const TensorLayout& ConditionalTensorCopyNode::layout_mask() const {
+    return this->layout_mask_;
+}
 
-const TensorLayout& ConditionalTensorCopyNode::layout_x1() const { return this->layout_x1_; }
+const TensorLayout& ConditionalTensorCopyNode::layout_x1() const {
+    return this->layout_x1_;
+}
 
-const TensorLayout& ConditionalTensorCopyNode::layout_x2() const { return this->layout_x2_; }
+const TensorLayout& ConditionalTensorCopyNode::layout_x2() const {
+    return this->layout_x2_;
+}
 
-const TensorLayout& ConditionalTensorCopyNode::layout_y() const { return this->layout_y_; }
+const TensorLayout& ConditionalTensorCopyNode::layout_y() const {
+    return this->layout_y_;
+}
 
 void ConditionalTensorCopyNode::validate(const Function& function) const {
     auto& graph = this->get_parent();
@@ -195,16 +204,17 @@ void ConditionalTensorCopyNode::validate(const Function& function) const {
     }
 }
 
-bool ConditionalTensorCopyNode::supports_integer_types() const { return true; }
+bool ConditionalTensorCopyNode::supports_integer_types() const {
+    return true;
+}
 
 using Dir = passes::LibNodeExpander::InputUse;
 
 passes::LibNodeExpander::ExpandOutcome ConditionalTensorCopyNode::
     expand(passes::LibNodeExpander::ExpandContext& context, structured_control_flow::Block& block) {
-    auto standalone =
-        context
-            .replacement_requires_access_nodes({Dir::IndirectRead, Dir::IndirectRead, Dir::IndirectRead, Dir::IndirectWrite}
-            );
+    auto standalone = context.replacement_requires_access_nodes(
+        {Dir::IndirectRead, Dir::IndirectRead, Dir::IndirectRead, Dir::IndirectWrite}
+    );
 
     if (!standalone) {
         return context.unable();
@@ -357,7 +367,9 @@ symbolic::SymbolSet ConditionalTensorCopyNode::symbols() const {
     return syms;
 }
 
-symbolic::Expression ConditionalTensorCopyNode::flop() const { return symbolic::zero(); }
+symbolic::Expression ConditionalTensorCopyNode::flop() const {
+    return symbolic::zero();
+}
 
 std::unique_ptr<data_flow::DataFlowNode> ConditionalTensorCopyNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
@@ -389,8 +401,8 @@ void ConditionalTensorCopyNode::replace(const symbolic::ExpressionMapping& repla
 }
 
 nlohmann::json ConditionalTensorCopyNodeSerializer::serialize(const data_flow::LibraryNode& library_node) {
-    const ConditionalTensorCopyNode& conditional_copy_node = static_cast<const ConditionalTensorCopyNode&>(library_node
-    );
+    const ConditionalTensorCopyNode& conditional_copy_node =
+        static_cast<const ConditionalTensorCopyNode&>(library_node);
     nlohmann::json j;
 
     j["code"] = conditional_copy_node.code().value();

@@ -1,0 +1,54 @@
+name: Sanitizer Tests (Linux)
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+jobs:
+  sanitizer-linux:
+    runs-on:
+      group: dahlia
+      labels: openmp
+    container:
+      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:latest-amd64
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer: [address, undefined, leak]
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Formatting
+        shell: bash
+        run: |
+          shopt -s globstar
+          clang-format-21 -style=file --dry-run --Werror sdfg/include/**/*.h sdfg/src/**/*.cpp sdfg/tests/**/*.cpp
+          clang-format-21 -style=file --dry-run --Werror opt/include/**/*.h opt/src/**/*.cpp opt/tests/**/*.cpp
+
+      - name: Build
+        run: |
+          mkdir build
+          cd build
+          cmake \
+            -G Ninja \
+            -DCMAKE_C_COMPILER=clang-21 \
+            -DCMAKE_CXX_COMPILER=clang++-21 \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DSDFG_ENABLE_SANITIZER=ON \
+            -DSDFG_SANITIZER=${{ matrix.sanitizer }} \
+            -DBUILD_TESTS:BOOL=OFF \
+            -DBUILD_BENCHMARKS:BOOL=OFF \
+            -DBUILD_BENCHMARKS_GOOGLE:BOOL=OFF  \
+            ..
+          ninja -j$(nproc)
+
+      - name: Unit Tests
+        run: |
+          cd build/
+          ctest --label-exclude "sdfgrpc|sdfgrpc_daisytuner_rpc|capture_io" --parallel

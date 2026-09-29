@@ -155,8 +155,8 @@ TEST(MapFusionPassTest, PipelineStableAfterFusion) {
             "_out",
             acc_pf,
             {symbolic::
-                 add(symbolic::integer(3), symbolic::mul(symbolic::symbol("_s1"), symbolic::symbol("_slice_iter_0_4")))
-            },
+                 add(symbolic::integer(3),
+                     symbolic::mul(symbolic::symbol("_s1"), symbolic::symbol("_slice_iter_0_4")))},
             float_ptr
         );
     }

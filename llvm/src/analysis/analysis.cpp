@@ -3,7 +3,8 @@
 namespace docc {
 namespace analysis {
 
-void Analysis::anchor() {}
+void Analysis::anchor() {
+}
 
 } // namespace analysis
 } // namespace docc

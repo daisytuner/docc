@@ -38,7 +38,9 @@ protected:
 public:
     TileAnalysis(StructuredSDFG& sdfg);
 
-    std::string name() const override { return "TileAnalysis"; }
+    std::string name() const override {
+        return "TileAnalysis";
+    }
 
     /// The tile for @p container at loop scope @p scope, or nullptr if none.
     const tiles::Tile* tile(const structured_control_flow::ControlFlowNode& scope, const std::string& container) const;

@@ -12,9 +12,12 @@ namespace codegen {
 class CLanguageExtension : public LanguageExtension {
 public:
     CLanguageExtension(sdfg::Function& function, const std::string& external_prefix = "")
-        : LanguageExtension(function, external_prefix) {}
+        : LanguageExtension(function, external_prefix) {
+    }
 
-    const std::string language() const override { return "C"; }
+    const std::string language() const override {
+        return "C";
+    }
 
     std::string primitive_type(const types::PrimitiveType prim_type) override;
 
@@ -70,7 +73,8 @@ public:
     ) override;
 
     CSymbolicPrinter(sdfg::Function& function, const std::string& external_prefix = "", bool use_rtl_functions = true)
-        : function_(function), external_prefix_(external_prefix), use_rtl_functions_(use_rtl_functions) {}
+        : function_(function), external_prefix_(external_prefix), use_rtl_functions_(use_rtl_functions) {
+    }
 };
 
 } // namespace codegen

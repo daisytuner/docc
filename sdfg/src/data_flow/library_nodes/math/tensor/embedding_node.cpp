@@ -17,13 +17,20 @@ EmbeddingNode::EmbeddingNode(
     const data_flow::ImplementationType& impl_type
 )
     : TensorNode(element_id, debug_info, vertex, parent, LibraryNodeType_Embedding, {}, {"Y", "W", "I"}, impl_type),
-      weight_shape_(weight_shape), index_shape_(index_shape) {}
+      weight_shape_(weight_shape), index_shape_(index_shape) {
+}
 
-const std::vector<symbolic::Expression>& EmbeddingNode::weight_shape() const { return weight_shape_; }
+const std::vector<symbolic::Expression>& EmbeddingNode::weight_shape() const {
+    return weight_shape_;
+}
 
-const std::vector<symbolic::Expression>& EmbeddingNode::index_shape() const { return index_shape_; }
+const std::vector<symbolic::Expression>& EmbeddingNode::index_shape() const {
+    return index_shape_;
+}
 
-bool EmbeddingNode::supports_integer_types() const { return true; }
+bool EmbeddingNode::supports_integer_types() const {
+    return true;
+}
 
 void EmbeddingNode::validate(const Function& function) const {
     // NOTE: The base TensorNode::validate enforces that all connected memlets share one

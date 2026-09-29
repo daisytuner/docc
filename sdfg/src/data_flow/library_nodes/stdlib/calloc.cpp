@@ -22,13 +22,20 @@ CallocNode::CallocNode(
           true,
           data_flow::ImplementationType_NONE
       ),
-      num_(num), size_(size) {}
+      num_(num), size_(size) {
+}
 
-const symbolic::Expression CallocNode::num() const { return num_; }
+const symbolic::Expression CallocNode::num() const {
+    return num_;
+}
 
-const symbolic::Expression CallocNode::size() const { return size_; }
+const symbolic::Expression CallocNode::size() const {
+    return size_;
+}
 
-void CallocNode::validate(const Function& function) const { LibraryNode::validate(function); }
+void CallocNode::validate(const Function& function) const {
+    LibraryNode::validate(function);
+}
 
 symbolic::SymbolSet CallocNode::symbols() const {
     auto num_symbols = symbolic::atoms(this->num_);
@@ -95,7 +102,8 @@ CallocNodeDispatcher::CallocNodeDispatcher(
     const data_flow::DataFlowGraph& data_flow_graph,
     const CallocNode& node
 )
-    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
+}
 
 void CallocNodeDispatcher::dispatch_code(
     codegen::PrettyPrinter& stream,

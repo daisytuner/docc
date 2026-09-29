@@ -1,6 +1,5 @@
 #include "docc/passes/scheduling/einsum_pass.h"
 
-#include <llvm/IR/Analysis.h>
 #include <llvm/IR/Module.h>
 #include <llvm/IR/PassManager.h>
 
@@ -10,6 +9,7 @@
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/library_node.h"
 #include "sdfg/einsum/einsum.h"
+#include "sdfg/parallelization/parallelization.h"
 #include "sdfg/passes/pipeline.h"
 
 namespace docc {
@@ -25,7 +25,9 @@ llvm::PreservedAnalyses EinsumPass::
     registry.for_each_sdfg_modifiable(Module, [&](sdfg::StructuredSDFG& sdfg) {
         sdfg::builder::StructuredSDFGBuilder builder(sdfg);
         sdfg::analysis::AnalysisManager analysis_manager(builder.subject());
-        if (report_) report_->in_scope(&sdfg);
+        if (report_) {
+            report_->in_scope(&sdfg);
+        }
 
         // Run dataflow simplification pipeline, but ignore library nodes
         sdfg::passes::Pipeline dataflow_simplification = sdfg::passes::Pipeline::dataflow_simplification(true);
@@ -43,11 +45,13 @@ llvm::PreservedAnalyses EinsumPass::
         lower.register_pass<sdfg::einsum::EinsumLowerPass>();
         lower.run(builder, analysis_manager);
 
-        sdfg::passes::Pipeline data_parallelism = sdfg::passes::Pipeline::data_parallelism();
+        sdfg::passes::Pipeline data_parallelism = sdfg::parallelization::data_parallelism();
         data_parallelism.run(builder, analysis_manager);
     });
 
-    if (report_) report_->no_scope();
+    if (report_) {
+        report_->no_scope();
+    }
 
     return llvm::PreservedAnalyses::all();
 }

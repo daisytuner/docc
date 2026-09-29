@@ -11,7 +11,9 @@ class DotExpansion : public visitor::NonStoppingStructuredSDFGVisitor {
 public:
     DotExpansion(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager);
 
-    static std::string name() { return "DotExpansion"; }
+    static std::string name() {
+        return "DotExpansion";
+    }
     virtual bool visit() override;
 
     virtual bool accept(structured_control_flow::Block& block) override;

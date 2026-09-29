@@ -1,0 +1,45 @@
+name: Sanitizer Tests (macOS)
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+jobs:
+  sanitizer-macos-asan:
+    runs-on:
+      group: dahlia
+      labels: macOS
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          brew install ninja cmake
+          brew install gmp isl nlohmann-json boost
+          brew install libomp
+
+      - name: Build
+        run: |
+          mkdir build
+          cd build
+          cmake \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DSDFG_ENABLE_SANITIZER=ON \
+            -DSDFG_SANITIZER=address \
+            -DBUILD_TESTS:BOOL=OFF \
+            -DBUILD_BENCHMARKS:BOOL=OFF \
+            -DBUILD_BENCHMARKS_GOOGLE:BOOL=OFF  \
+            ..
+          ninja
+
+      - name: Unit Tests
+        run: |
+          cd build/
+          ctest --label-exclude "sdfgrpc|sdfgrpc_daisytuner_rpc|capture_io" --parallel

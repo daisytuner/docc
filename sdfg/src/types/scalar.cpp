@@ -8,11 +8,17 @@ Scalar::Scalar(PrimitiveType primitive_type) : primitive_type_(primitive_type) {
 Scalar::Scalar(StorageType storage_type, size_t alignment, const std::string& initializer, PrimitiveType primitive_type)
     : IType(storage_type, alignment, initializer), primitive_type_(primitive_type) {};
 
-PrimitiveType Scalar::primitive_type() const { return this->primitive_type_; };
+PrimitiveType Scalar::primitive_type() const {
+    return this->primitive_type_;
+};
 
-bool Scalar::is_symbol() const { return types::is_integer(this->primitive_type_); };
+bool Scalar::is_symbol() const {
+    return types::is_integer(this->primitive_type_);
+};
 
-TypeID Scalar::type_id() const { return TypeID::Scalar; };
+TypeID Scalar::type_id() const {
+    return TypeID::Scalar;
+};
 
 bool Scalar::operator==(const IType& other) const {
     if (auto scalar_type = dynamic_cast<const Scalar*>(&other)) {

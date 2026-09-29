@@ -2,6 +2,7 @@
 
 #include <optional>
 
+#include "sdfg/data_flow/library_node.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/tiles/tile.h"
 #include "sdfg/types/type.h"
@@ -76,6 +77,14 @@ public:
     /// stores bank-conflict-free (32 on NVIDIA, 64 on CDNA, 1 where there is no
     /// SIMD cooperation). Replaces `gpu::gpu_warp_size` in the padding heuristic.
     virtual unsigned lane_width() const = 0;
+
+    /// The implementation selector this target stamps onto its tile codegen library
+    /// nodes (cp.async / vector copy / pipeline commit+wait) so the owning target's
+    /// dispatcher is chosen at codegen. CUDA returns `"CUDA"`, ROCm `"ROCM"`; a
+    /// target without these nodes returns @ref data_flow::ImplementationType_NONE.
+    /// This is the seam the pipelining/vectorization transformations reach through
+    /// instead of hard-coding a backend.
+    virtual data_flow::ImplementationType implementation_type() const = 0;
 };
 
 } // namespace tiles

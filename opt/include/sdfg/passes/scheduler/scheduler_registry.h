@@ -37,7 +37,9 @@ public:
         return nullptr;
     }
 
-    size_t size_loop_schedulers() const { return scheduler_map_.size(); }
+    size_t size_loop_schedulers() const {
+        return scheduler_map_.size();
+    }
 };
 
 std::unique_ptr<LoopScheduler> create_loop_scheduler(const std::string target);

@@ -20,4 +20,6 @@ target_link_libraries(capture_io_test gtest_main arg_capture_io)
 add_test(NAME capture_io_test_test COMMAND capture_io_test)
 
 include(GoogleTest)
-gtest_discover_tests(capture_io_test)
+gtest_discover_tests(capture_io_test
+  PROPERTIES LABELS "capture_io"
+)

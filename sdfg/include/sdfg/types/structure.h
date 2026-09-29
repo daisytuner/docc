@@ -100,9 +100,11 @@ public:
      *
      * Nothing to do.
      */
-    virtual void replace_symbols(const symbolic::Expression old_expression, const symbolic::Expression new_expression)
-        override {}
-    virtual void replace_symbols(const symbolic::ExpressionMapping& replacements) override {}
+    virtual void
+    replace_symbols(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override {
+    }
+    virtual void replace_symbols(const symbolic::ExpressionMapping& replacements) override {
+    }
 };
 
 /**

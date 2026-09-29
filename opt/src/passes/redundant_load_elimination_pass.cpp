@@ -12,7 +12,8 @@ namespace sdfg::passes {
 
 RedundantLoadVisitor::
     RedundantLoadVisitor(builder::StructuredSDFGBuilder& builder, RedundantLoadEliminationPass::State& state)
-    : builder_(builder), state_(state) {}
+    : builder_(builder), state_(state) {
+}
 
 struct RedundantCandidate {
     data_flow::AccessNode* access_node;

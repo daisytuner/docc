@@ -1,4 +1,5 @@
 import os
+import shutil
 import subprocess
 import pytest
 import json
@@ -6,6 +7,77 @@ import numpy as np
 
 from pathlib import Path
 import base64
+
+@pytest.fixture(autouse=True)
+def clean_daisy_env():
+    """Fixture to clean up __DAISY_INSTRUMENTATION_* environment variables before and after each test."""
+    old_env = {key: value for key, value in os.environ.items() if key.startswith("__DAISY_INSTRUMENTATION_")}
+    for key in list(old_env):
+        os.environ.pop(key, None)
+    yield
+    for key in list(os.environ):
+        if key.startswith("__DAISY_INSTRUMENTATION_"):
+            os.environ.pop(key, None)
+    os.environ.update(old_env)
+
+@pytest.mark.parametrize("target", ["cuda", "rocm"])
+def test_reduce_half(target, tmp_path):
+    compiler = shutil.which("clang++-21")
+    if compiler is None:
+        pytest.skip("clang++-21 is required for the GPU RTL test")
+    toolkit = (
+        Path(os.environ.get("CUDA_PATH", "/usr/local/cuda"))
+        if target == "cuda"
+        else Path(os.environ.get("ROCM_PATH", "/opt/rocm"))
+    )
+    if not toolkit.is_dir():
+        pytest.skip(f"{target} toolkit is unavailable")
+    rtl = Path(__file__).parents[1]
+    executable = tmp_path / "reduce_half"
+    if target == "cuda":
+        architecture = os.environ.get("DOCC_CUDA_ARCH", "sm_70")
+        flags = [
+            "-x",
+            "cuda",
+            f"--cuda-path={toolkit}",
+            f"--cuda-gpu-arch={architecture}",
+            f"--cuda-include-ptx={architecture}",
+            f"-L{toolkit / 'lib64'}",
+            "-lcudart",
+        ]
+    else:
+        architecture = os.environ.get("DOCC_ROCM_ARCH", "gfx90a")
+        flags = [
+            "-x",
+            "hip",
+            f"--rocm-path={toolkit}",
+            f"--offload-arch={architecture}",
+            f"-L{toolkit / 'lib'}",
+            f"-Wl,-rpath,{toolkit / 'lib'}",
+            "-lamdhip64",
+        ]
+    compiled = subprocess.run(
+        [
+            compiler,
+            "-std=c++20",
+            "-O2",
+            *flags,
+            f"-I{rtl / 'include'}",
+            str(rtl / "tests/applications/reduce_half_test.cu"),
+            "-o",
+            str(executable),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert compiled.returncode == 0, compiled.stdout + compiled.stderr
+    measured = subprocess.run(
+        [str(executable)], capture_output=True, text=True, timeout=30
+    )
+    if measured.returncode == 77:
+        pytest.skip(f"No usable {target} device")
+    assert measured.returncode == 0, measured.stdout + measured.stderr
 
 
 @pytest.mark.parametrize(

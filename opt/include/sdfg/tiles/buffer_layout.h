@@ -22,6 +22,7 @@ enum class BufferKind {
     Padded, ///< `[slot dims ++ padded flat block]` (bank-conflict avoidance)
     Swizzle, ///< `[slot dims ++ natural flat block]`, inner index XOR-swizzled
     Linearized, ///< fully flat `[slot ++ tile]` (same offset as MultiDim)
+    Transposed, ///< dense `[slot dims ++ reversed tile dims]` (column-major tile)
 };
 
 /// Build the packed buffer as a @ref ComposedLayout over `[slot ++ tile]`;
@@ -52,8 +53,6 @@ struct PackedBuffer {
     symbolic::Expression tile_total_size() const;
     /// Padded per-slot block stride (Padded only; @ref tile_total_size otherwise).
     symbolic::Expression inner_stride() const;
-    /// Row-major decomposition of a flat tile index into per-tile-dim indices.
-    std::vector<symbolic::Expression> delinearize_tile(const symbolic::Expression& flat) const;
 
     /// Per-axis extents of the nested-array type, outermost first.
     symbolic::MultiExpression axes() const;
@@ -61,7 +60,9 @@ struct PackedBuffer {
     symbolic::MultiExpression
     subset(const symbolic::MultiExpression& slot_indices, const symbolic::MultiExpression& tile_indices) const;
     /// The scalar element offset as a (possibly swizzled) layout over `[slot ++ tile]`.
-    ComposedLayout layout() const { return buffer_layout(slot_sizes, tile_sizes, kind, inner_stride()); }
+    ComposedLayout layout() const {
+        return buffer_layout(slot_sizes, tile_sizes, kind, inner_stride());
+    }
 };
 
 } // namespace tiles

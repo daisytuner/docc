@@ -90,6 +90,11 @@ class DoccOptions:
     normalize: Optional[bool] = None
     device_residency: Optional[bool] = None
 
+    # Frontend: parse array shapes as symbolic sizes (``_s{i}`` arguments) when
+    # True, or bake in the concrete integer sizes from the example inputs when
+    # False.
+    symbolic_shapes: Optional[bool] = None
+
     # Overrides for registered options ({full_key: value}); see
     # registered_options(). Forwarded to the SDFG in sdfg_pipe.
     pass_options: Optional[Dict[str, Any]] = None
@@ -140,6 +145,8 @@ class DoccOptions:
             self.normalize = self.target in ("sequential", "openmp")
         if self.device_residency is None:
             self.device_residency = self.target in ("cuda", "rocm")
+        if self.symbolic_shapes is None:
+            self.symbolic_shapes = True
 
         if self.pass_options is None:
             self.pass_options = {}

@@ -68,18 +68,30 @@ std::string identity_literal(ReductionOperation op, types::PrimitiveType prim) {
     if (op == ReductionOperation::Min) {
         // identity for Min is the type maximum
         if (is_unsigned) {
-            if (width == 32) return "UINT32_MAX";
-            if (width == 64) return "UINT64_MAX";
+            if (width == 32) {
+                return "UINT32_MAX";
+            }
+            if (width == 64) {
+                return "UINT64_MAX";
+            }
         } else {
-            if (width == 32) return "INT32_MAX";
-            if (width == 64) return "INT64_MAX";
+            if (width == 32) {
+                return "INT32_MAX";
+            }
+            if (width == 64) {
+                return "INT64_MAX";
+            }
         }
     } else { // Max -> identity is the type minimum
         if (is_unsigned) {
             return "0";
         }
-        if (width == 32) return "INT32_MIN";
-        if (width == 64) return "INT64_MIN";
+        if (width == 32) {
+            return "INT32_MIN";
+        }
+        if (width == 64) {
+            return "INT64_MIN";
+        }
     }
 
     throw InvalidSDFGException("GPUReduceDispatcher: unsupported integer width for min/max reduction");
@@ -118,7 +130,7 @@ types::PrimitiveType accumulator_primitive(const StructuredSDFG& sdfg, const std
 // All accesses to the accumulator must use the same index, and that index must
 // be invariant in the reduction induction variable `indvar` -- otherwise the
 // body scatters across distinct slots per iteration and is not a reduction into
-// a single accumulator element (that requires OutLocalStorage / privatization
+// a single accumulator element (that requires privatization
 // analysis, which is out of scope for this baseline).
 symbolic::Expression accumulator_index(
     structured_control_flow::Sequence& root, const std::string& container, const symbolic::Symbol& indvar
@@ -519,12 +531,6 @@ codegen::InstrumentationInfo GPUReduceDispatcher::instrumentation_info() const {
     analysis::LoopInfo loop_info = loop_analysis.loop_info(&node_);
 
     std::unordered_map<std::string, std::string> metrics;
-    auto& flop_analysis = analysis_manager_.get<analysis::FlopAnalysis>();
-    auto flop = flop_analysis.get_if_available_for_codegen(&node_);
-    if (!flop.is_null()) {
-        metrics.insert({"flop", language_extension_.expression(flop)});
-    }
-
     return codegen::InstrumentationInfo(
         node_.element_id(),
         node_.element_type(),

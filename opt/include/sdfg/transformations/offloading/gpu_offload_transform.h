@@ -31,6 +31,8 @@ protected:
     const symbolic::Integer parallel_size_;
     gpu::TargetLevel target_level_;
 
+    bool reduction_buffers_supported(analysis::AnalysisManager& analysis_manager);
+
     types::StorageType local_device_storage_type() override {
         return types::StorageType(
             "NV_Generic",
@@ -113,8 +115,10 @@ protected:
         symbolic::Expression page_size
     ) override;
 
-    void setup_device(builder::StructuredSDFGBuilder& builder, Block& global_alloc_block) override {}
-    void teardown_device(builder::StructuredSDFGBuilder& builder, Block& global_alloc_block) override {}
+    void setup_device(builder::StructuredSDFGBuilder& builder, Block& global_alloc_block) override {
+    }
+    void teardown_device(builder::StructuredSDFGBuilder& builder, Block& global_alloc_block) override {
+    }
 };
 
 } // namespace gpu

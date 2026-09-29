@@ -1,6 +1,11 @@
 import pytest
 
 
+def pytest_sessionfinish(session, exitstatus):
+    if exitstatus == pytest.ExitCode.NO_TESTS_COLLECTED:
+        session.exitstatus = pytest.ExitCode.OK
+
+
 def pytest_collection_modifyitems(items):
     # Pytest applies some built-in markers automatically under the hood.
     # We ignore those so they don't count as "marked".

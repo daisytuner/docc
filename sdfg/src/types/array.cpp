@@ -15,15 +15,25 @@ Array::Array(
 )
     : IType(storage_type, alignment, initializer), element_type_(element_type.clone()), num_elements_(num_elements) {};
 
-PrimitiveType Array::primitive_type() const { return this->element_type_->primitive_type(); };
+PrimitiveType Array::primitive_type() const {
+    return this->element_type_->primitive_type();
+};
 
-bool Array::is_symbol() const { return false; };
+bool Array::is_symbol() const {
+    return false;
+};
 
-const IType& Array::element_type() const { return *this->element_type_; };
+const IType& Array::element_type() const {
+    return *this->element_type_;
+};
 
-const symbolic::Expression Array::num_elements() const { return this->num_elements_; };
+const symbolic::Expression Array::num_elements() const {
+    return this->num_elements_;
+};
 
-TypeID Array::type_id() const { return TypeID::Array; };
+TypeID Array::type_id() const {
+    return TypeID::Array;
+};
 
 bool Array::operator==(const IType& other) const {
     if (auto array_type = dynamic_cast<const Array*>(&other)) {
@@ -39,7 +49,9 @@ std::unique_ptr<IType> Array::clone() const {
         Array>(this->storage_type(), this->alignment(), this->initializer(), *this->element_type_, this->num_elements_);
 };
 
-std::string Array::print() const { return "Array(" + this->element_type_->print() + ")"; };
+std::string Array::print() const {
+    return "Array(" + this->element_type_->print() + ")";
+};
 
 void Array::replace_symbols(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
     this->element_type_->replace_symbols(old_expression, new_expression);

@@ -93,7 +93,9 @@ void HierarchicalStatistics::print_node_self(std::ostream& stream, const Hierarc
     stream << indent << node.scope_type << " " << node.name << "  " << node.duration_ms() << " ms  ";
     if (!node.metrics.empty()) {
         std::vector<std::pair<std::string, uint64_t>> metrics(node.metrics.begin(), node.metrics.end());
-        std::sort(metrics.begin(), metrics.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+        std::sort(metrics.begin(), metrics.end(), [](const auto& a, const auto& b) {
+            return a.first < b.first;
+        });
         stream << "  [";
         for (size_t i = 0; i < metrics.size(); ++i) {
             if (i > 0) {
@@ -141,7 +143,9 @@ std::string HierarchicalStatistics::report(const std::string& title) {
 
 bool CompileStatistics::enabled_ = false;
 
-std::string CompileStatistics::summary() { return report(ReportLevel::SummarizePipelineContentsAndAnalysis); }
+std::string CompileStatistics::summary() {
+    return report(ReportLevel::SummarizePipelineContentsAndAnalysis);
+}
 
 HierarchicalStatistics::RemapAction CompileStatistics::custom_print_node(std::ostream& out, const Node& node, int depth) {
     auto level = report_detail_;

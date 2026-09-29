@@ -20,7 +20,8 @@ PowNode::PowNode(
 )
     : ElementWiseDataflowTensorNode(
           element_id, debug_info, vertex, parent, LibraryNodeType_Pow, shape, "C", {"A", "B"}, quantization, impl_type
-      ) {}
+      ) {
+}
 
 ElementWiseDataflowTensorNode::ElementOutput PowNode::expand_operation_dataflow(
     builder::StructuredSDFGBuilder& builder,

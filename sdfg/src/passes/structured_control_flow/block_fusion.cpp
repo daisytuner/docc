@@ -11,7 +11,8 @@ namespace passes {
 BlockFusion::BlockFusion(
     builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager, bool ignore_libnodes
 )
-    : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager), ignore_libnodes_(ignore_libnodes) {}
+    : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager), ignore_libnodes_(ignore_libnodes) {
+}
 
 struct ComponentState {
     std::unordered_set<const data_flow::AccessNode*> members;

@@ -120,19 +120,25 @@ public:
      * @brief Get the input tensor shape
      * @return Input tensor shape
      */
-    const std::vector<symbolic::Expression>& shape() const { return shape_; }
+    const std::vector<symbolic::Expression>& shape() const {
+        return shape_;
+    }
 
     /**
      * @brief Get the reduction axes
      * @return Axes to reduce over
      */
-    const std::vector<int64_t>& axes() const { return axes_; }
+    const std::vector<int64_t>& axes() const {
+        return axes_;
+    }
 
     /**
      * @brief Check if reduced dimensions are kept
      * @return True if keepdims is enabled
      */
-    bool keepdims() const { return keepdims_; }
+    bool keepdims() const {
+        return keepdims_;
+    }
 
     symbolic::SymbolSet symbols() const override;
 
@@ -150,8 +156,7 @@ public:
      * @param block the block in which the node is contained
      * @return outcome of expand, created by context
      */
-    passes::LibNodeExpander::ExpandOutcome expand(passes::LibNodeExpander::ExpandContext& context, Block& block)
-        override;
+    passes::LibNodeExpander::ExpandOutcome expand(passes::LibNodeExpander::ExpandContext& context, Block& block) override;
 
     /**
      * @brief Generate the actual reduction code

@@ -12,7 +12,8 @@ BatchedGEMMNodeDispatcher_CUBLASWithTransfers::BatchedGEMMNodeDispatcher_CUBLASW
     const data_flow::DataFlowGraph& data_flow_graph,
     const math::blas::BatchedGEMMNode& node
 )
-    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
+}
 
 void BatchedGEMMNodeDispatcher_CUBLASWithTransfers::dispatch_code_with_edges(
     codegen::CodegenOutput& out,
@@ -126,7 +127,8 @@ BatchedGEMMNodeDispatcher_CUBLASWithoutTransfers::BatchedGEMMNodeDispatcher_CUBL
     const data_flow::DataFlowGraph& data_flow_graph,
     const math::blas::BatchedGEMMNode& node
 )
-    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
+}
 
 void BatchedGEMMNodeDispatcher_CUBLASWithoutTransfers::dispatch_code_with_edges(
     codegen::CodegenOutput& out,

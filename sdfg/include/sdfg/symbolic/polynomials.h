@@ -113,7 +113,9 @@ struct AffineDecomposition {
     Expression coeff; ///< Coefficient of the symbol (must be non-zero integer for success)
     Expression offset; ///< Constant offset (terms not involving the symbol)
 
-    static AffineDecomposition failure() { return {false, SymEngine::null, SymEngine::null}; }
+    static AffineDecomposition failure() {
+        return {false, SymEngine::null, SymEngine::null};
+    }
 };
 
 /**

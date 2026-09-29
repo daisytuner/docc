@@ -45,7 +45,7 @@ TEST(LoopTilingTest, For_Integer) {
 
     // Apply
     analysis::AnalysisManager analysis_manager(builder.subject());
-    transformations::LoopTiling transformation(orig_loop, 4);
+    transformations::LoopTiling transformation(orig_loop, 4, /*simplify_bounds=*/true);
     EXPECT_TRUE(transformation.can_be_applied(builder, analysis_manager));
     EXPECT_THROW(transformation.inner_loop(), InvalidSDFGException);
     EXPECT_THROW(transformation.outer_loop(), InvalidSDFGException);
@@ -67,11 +67,13 @@ TEST(LoopTilingTest, For_Integer) {
     EXPECT_EQ(inner_loop, &orig_loop);
     EXPECT_EQ(inner_loop->indvar()->get_name(), "i");
     EXPECT_TRUE(symbolic::eq(inner_loop->init(), loop.indvar()));
-    EXPECT_TRUE(symbolic::
-                    eq(inner_loop->condition(),
-                       symbolic::
-                           And(symbolic::Lt(inner_loop->indvar(), symbolic::add(loop.indvar(), symbolic::integer(4))),
-                               symbolic::Lt(inner_loop->indvar(), bound))));
+    // tile 4 evenly divides the extent 64, so the redundant global bound is dropped and the inner
+    // loop is a clean constant-trip tile (enables unrolling/vectorization).
+    EXPECT_TRUE(
+        symbolic::
+            eq(inner_loop->condition(),
+               symbolic::Lt(inner_loop->indvar(), symbolic::add(loop.indvar(), symbolic::integer(4))))
+    );
     EXPECT_TRUE(symbolic::eq(inner_loop->update(), symbolic::add(inner_loop->indvar(), symbolic::integer(1))));
 
     EXPECT_EQ(inner_loop->root().size(), 1);
@@ -137,11 +139,13 @@ TEST(LoopTilingTest, For_Symbolic) {
     EXPECT_EQ(inner_loop, &orig_loop);
     EXPECT_EQ(inner_loop->indvar()->get_name(), "i");
     EXPECT_TRUE(symbolic::eq(inner_loop->init(), loop.indvar()));
-    EXPECT_TRUE(symbolic::
-                    eq(inner_loop->condition(),
-                       symbolic::
-                           And(symbolic::Lt(inner_loop->indvar(), symbolic::add(loop.indvar(), symbolic::integer(32))),
-                               symbolic::Lt(inner_loop->indvar(), bound))));
+    EXPECT_TRUE(
+        symbolic::
+            eq(inner_loop->condition(),
+               symbolic::
+                   And(symbolic::Lt(inner_loop->indvar(), symbolic::add(loop.indvar(), symbolic::integer(32))),
+                       symbolic::Lt(inner_loop->indvar(), bound)))
+    );
     EXPECT_TRUE(symbolic::eq(inner_loop->update(), symbolic::add(inner_loop->indvar(), symbolic::integer(1))));
 
     EXPECT_EQ(inner_loop->root().size(), 1);
@@ -212,11 +216,13 @@ TEST(LoopTilingTest, For_WithTransition) {
     EXPECT_EQ(inner_loop, &orig_loop);
     EXPECT_EQ(inner_loop->indvar()->get_name(), "i");
     EXPECT_TRUE(symbolic::eq(inner_loop->init(), loop.indvar()));
-    EXPECT_TRUE(symbolic::
-                    eq(inner_loop->condition(),
-                       symbolic::
-                           And(symbolic::Lt(inner_loop->indvar(), symbolic::add(loop.indvar(), symbolic::integer(32))),
-                               symbolic::Lt(inner_loop->indvar(), bound))));
+    EXPECT_TRUE(
+        symbolic::
+            eq(inner_loop->condition(),
+               symbolic::
+                   And(symbolic::Lt(inner_loop->indvar(), symbolic::add(loop.indvar(), symbolic::integer(32))),
+                       symbolic::Lt(inner_loop->indvar(), bound)))
+    );
     EXPECT_TRUE(symbolic::eq(inner_loop->update(), symbolic::add(inner_loop->indvar(), symbolic::integer(1))));
 
     EXPECT_EQ(inner_loop->root().size(), 1);
@@ -289,11 +295,13 @@ TEST(LoopTilingTest, Map_Symbolic) {
     EXPECT_EQ(inner_loop, &orig_loop);
     EXPECT_EQ(inner_loop->indvar()->get_name(), "i");
     EXPECT_TRUE(symbolic::eq(inner_loop->init(), loop.indvar()));
-    EXPECT_TRUE(symbolic::
-                    eq(inner_loop->condition(),
-                       symbolic::
-                           And(symbolic::Lt(inner_loop->indvar(), symbolic::add(loop.indvar(), symbolic::integer(32))),
-                               symbolic::Lt(inner_loop->indvar(), bound))));
+    EXPECT_TRUE(
+        symbolic::
+            eq(inner_loop->condition(),
+               symbolic::
+                   And(symbolic::Lt(inner_loop->indvar(), symbolic::add(loop.indvar(), symbolic::integer(32))),
+                       symbolic::Lt(inner_loop->indvar(), bound)))
+    );
     EXPECT_TRUE(symbolic::eq(inner_loop->update(), symbolic::add(inner_loop->indvar(), symbolic::integer(1))));
 
     EXPECT_EQ(inner_loop->root().size(), 1);

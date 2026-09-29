@@ -21,7 +21,8 @@ namespace transformations {
  *       compute from buf[p % stages]
  *
  * The shared buffer gains a leading `[stages]` axis indexed by `p % stages`.
- * The synchronous copy tasklets become CpAsyncCopyNode + PipelineCommitNode; a
+ * The cooperative copy's @ref tiles::TileCopyNode has its atom flipped to cp.async
+ * (its plan offset biased per stage) and gains a PipelineCommitNode; a
  * PipelineWaitNode fences each panel's reads. Only fires on CUDA (ROCm has no
  * portable cp.async), a compile-time-constant panel count >= @p stages, and a
  * genuinely block-cooperative shared tile — otherwise the extra buffer wastes
@@ -36,24 +37,16 @@ class SoftwarePipelining : public Transformation {
     // synchronous. This keeps occupancy (fewer shared bytes) while still
     // overlapping the costlier operand's global load.
     bool single_operand_;
-    // Widen each pipelined cp.async to a 16-byte (float4) transfer by striding
-    // the cooperative-copy map by 4. Only sound when the copied run is
-    // contiguous and 16-byte aligned; opt-in because clang cannot vectorize the
-    // cp.async intrinsic (its width is whatever we emit).
-    bool vectorize_;
 
 public:
     explicit SoftwarePipelining(
-        structured_control_flow::StructuredLoop& loop,
-        size_t stages = 2,
-        bool single_operand = false,
-        bool vectorize = false
+        structured_control_flow::StructuredLoop& loop, size_t stages = 2, bool single_operand = false
     );
 
     virtual std::string name() const override;
 
-    virtual bool can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager)
-        override;
+    virtual bool
+    can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
 
     virtual void apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
 

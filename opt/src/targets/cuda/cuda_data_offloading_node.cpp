@@ -43,7 +43,8 @@ CUDADataOffloadingNode::CUDADataOffloadingNode(
           buffer_lifecycle,
           std::move(size)
       ),
-      device_id_(std::move(device_id)) {}
+      device_id_(std::move(device_id)) {
+}
 
 void CUDADataOffloadingNode::validate(const Function& function) const {
     // Prevent copy-in and free
@@ -57,7 +58,9 @@ void CUDADataOffloadingNode::validate(const Function& function) const {
     }
 }
 
-const symbolic::Expression CUDADataOffloadingNode::device_id() const { return this->device_id_; }
+const symbolic::Expression CUDADataOffloadingNode::device_id() const {
+    return this->device_id_;
+}
 
 std::unique_ptr<data_flow::DataFlowNode> CUDADataOffloadingNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
@@ -88,7 +91,9 @@ void CUDADataOffloadingNode::replace(const symbolic::Expression old_expression, 
     this->device_id_ = symbolic::subs(this->device_id_, old_expression, new_expression);
 }
 
-bool CUDADataOffloadingNode::blocking() const { return true; }
+bool CUDADataOffloadingNode::blocking() const {
+    return true;
+}
 
 bool CUDADataOffloadingNode::redundant_with(const offloading::DataOffloadingNode& other) const {
     if (!offloading::DataOffloadingNode::redundant_with(other)) {
@@ -127,7 +132,8 @@ CUDADataOffloadingNodeDispatcher::CUDADataOffloadingNodeDispatcher(
     const data_flow::DataFlowGraph& data_flow_graph,
     const data_flow::LibraryNode& node
 )
-    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
+}
 
 void CUDADataOffloadingNodeDispatcher::dispatch_code_with_edges(
     codegen::CodegenOutput& out,

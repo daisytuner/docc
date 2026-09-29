@@ -290,7 +290,9 @@ void StrideMinimization::apply(
     }
 };
 
-std::string StrideMinimization::name() { return "StrideMinimization"; };
+std::string StrideMinimization::name() {
+    return "StrideMinimization";
+};
 
 bool StrideMinimization::run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     bool applied = false;

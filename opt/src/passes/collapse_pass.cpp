@@ -6,7 +6,8 @@ namespace sdfg {
 namespace passes {
 
 CollapsePass::CollapsePass(std::vector<structured_control_flow::Map*>& maps, size_t target_depth)
-    : maps_(maps), target_depth_(target_depth) {}
+    : maps_(maps), target_depth_(target_depth) {
+}
 
 bool CollapsePass::run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     if (maps_.empty() || target_depth_ == 0) {

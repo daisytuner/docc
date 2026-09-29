@@ -30,12 +30,22 @@ bool sym_equiv(const symbolic::Expression& a, const symbolic::Expression& b) {
 // Loop canonicality
 // -----------------------------------------------------------------------------
 bool is_canonical(structured_control_flow::StructuredLoop& loop) {
-    if (loop.indvar() == SymEngine::null) return false;
-    if (loop.init() == SymEngine::null) return false;
-    if (loop.update() == SymEngine::null) return false;
-    if (loop.condition() == SymEngine::null) return false;
+    if (loop.indvar() == SymEngine::null) {
+        return false;
+    }
+    if (loop.init() == SymEngine::null) {
+        return false;
+    }
+    if (loop.update() == SymEngine::null) {
+        return false;
+    }
+    if (loop.condition() == SymEngine::null) {
+        return false;
+    }
     auto stride = loop.stride();
-    if (stride == SymEngine::null) return false;
+    if (stride == SymEngine::null) {
+        return false;
+    }
     // Stride must be non-zero (otherwise no progress and division by zero).
     if (SymEngine::is_a<SymEngine::Integer>(*stride) &&
         SymEngine::down_cast<const SymEngine::Integer&>(*stride).is_zero()) {
@@ -64,7 +74,9 @@ struct AffineRecurrence {
 
 symbolic::Expression coeff_or_zero(const symbolic::AffineCoeffs& coeffs, const symbolic::Symbol& s) {
     auto it = coeffs.find(s);
-    if (it == coeffs.end()) return symbolic::zero();
+    if (it == coeffs.end()) {
+        return symbolic::zero();
+    }
     return it->second;
 }
 
@@ -88,18 +100,28 @@ AffineRecurrence decompose_recurrence(
     // Decompose `sym_update` as an affine combination of `sym` and `indvar`.
     symbolic::SymbolVec gens = {sym, indvar};
     auto poly = symbolic::polynomial(sym_update, gens);
-    if (poly == SymEngine::null) return rec;
+    if (poly == SymEngine::null) {
+        return rec;
+    }
     auto coeffs = symbolic::affine_coefficients(poly);
-    if (coeffs.empty()) return rec;
+    if (coeffs.empty()) {
+        return rec;
+    }
     auto a = coeff_or_zero(coeffs, sym);
     auto b = coeff_or_zero(coeffs, indvar);
     auto c = coeff_or_zero(coeffs, symbolic::symbol("__daisy_constant__"));
 
     // Coefficients must not reference any other symbol that is being rewritten
     // in the same loop body; otherwise the closed form would be ill-defined.
-    if (depends_on_moving(a, moving)) return rec;
-    if (depends_on_moving(b, moving)) return rec;
-    if (depends_on_moving(c, moving)) return rec;
+    if (depends_on_moving(a, moving)) {
+        return rec;
+    }
+    if (depends_on_moving(b, moving)) {
+        return rec;
+    }
+    if (depends_on_moving(c, moving)) {
+        return rec;
+    }
 
     rec.ok = true;
     rec.a = a;
@@ -192,8 +214,12 @@ bool collect_candidate_cheap(
 ) {
     // Type filter: integer scalars only.
     auto& type = builder.subject().type(name);
-    if (!dynamic_cast<const types::Scalar*>(&type)) return false;
-    if (!types::is_integer(type.primitive_type())) return false;
+    if (!dynamic_cast<const types::Scalar*>(&type)) {
+        return false;
+    }
+    if (!types::is_integer(type.primitive_type())) {
+        return false;
+    }
 
     auto sym = symbolic::symbol(name);
 
@@ -204,24 +230,34 @@ bool collect_candidate_cheap(
 
     // Single write inside the loop body.
     auto body_writes = body_users.writes(name);
-    if (body_writes.size() != 1) return false;
+    if (body_writes.size() != 1) {
+        return false;
+    }
 
     // The write must be a Transition directly inside loop.root() (i.e. always
     // executed each iteration, never inside a conditional branch).
     auto* update_use = body_writes.front();
     auto* element = update_use->element();
     auto* update_transition = dyn_cast<structured_control_flow::AssignmentBlock*>(element);
-    if (update_transition == nullptr) return false;
-    if (update_transition->get_parent() != &loop.root()) return false;
+    if (update_transition == nullptr) {
+        return false;
+    }
+    if (update_transition->get_parent() != &loop.root()) {
+        return false;
+    }
 
     auto upd_it = update_transition->assignments().find(sym);
-    if (upd_it == update_transition->assignments().end()) return false;
+    if (upd_it == update_transition->assignments().end()) {
+        return false;
+    }
 
     // Initial value: there must be exactly one definition reaching the loop
     // header. We approximate this with "exactly two writes globally, one of
     // which is the body write". (Conservative: rejects multi-path inits.)
     auto& all_writes = users.writes(name);
-    if (all_writes.size() != 2) return false;
+    if (all_writes.size() != 2) {
+        return false;
+    }
 
     analysis::User* init_use = nullptr;
     for (auto* w : all_writes) {
@@ -230,13 +266,19 @@ bool collect_candidate_cheap(
             break;
         }
     }
-    if (init_use == nullptr) return false;
+    if (init_use == nullptr) {
+        return false;
+    }
 
     auto* init_transition = dyn_cast<structured_control_flow::AssignmentBlock*>(init_use->element());
-    if (init_transition == nullptr) return false;
+    if (init_transition == nullptr) {
+        return false;
+    }
 
     auto init_it = init_transition->assignments().find(sym);
-    if (init_it == init_transition->assignments().end()) return false;
+    if (init_it == init_transition->assignments().end()) {
+        return false;
+    }
 
     out.name = name;
     out.update_use = update_use;
@@ -252,11 +294,15 @@ bool collect_candidate_cheap(
 bool passes_expensive_checks(
     analysis::UsersView& body_users, analysis::DominanceAnalysis& dominance, const Candidate& cand
 ) {
-    if (!dominance.dominates(*cand.init_use, *cand.update_use)) return false;
+    if (!dominance.dominates(*cand.init_use, *cand.update_use)) {
+        return false;
+    }
 
     auto uses_after = body_users.all_uses_after(*cand.update_use);
     for (auto* use : uses_after) {
-        if (use->container() == cand.name) return false;
+        if (use->container() == cand.name) {
+            return false;
+        }
     }
     return true;
 }
@@ -341,8 +387,12 @@ bool SymbolEvolution::eliminate_symbols(
     structured_control_flow::StructuredLoop& loop,
     structured_control_flow::AssignmentBlock* after_loop_assigns
 ) {
-    if (loop.root().size() == 0) return false;
-    if (!is_canonical(loop)) return false;
+    if (loop.root().size() == 0) {
+        return false;
+    }
+    if (!is_canonical(loop)) {
+        return false;
+    }
 
     auto indvar = loop.indvar();
     auto indvar_init = loop.init();
@@ -356,8 +406,12 @@ bool SymbolEvolution::eliminate_symbols(
     std::unordered_set<std::string> moving;
     for (auto* w : body_users.writes()) {
         auto& type = builder.subject().type(w->container());
-        if (!dynamic_cast<const types::Scalar*>(&type)) continue;
-        if (!types::is_integer(type.primitive_type())) continue;
+        if (!dynamic_cast<const types::Scalar*>(&type)) {
+            continue;
+        }
+        if (!types::is_integer(type.primitive_type())) {
+            continue;
+        }
         moving.insert(w->container());
     }
 
@@ -369,13 +423,19 @@ bool SymbolEvolution::eliminate_symbols(
 
         // Cheap algebraic check next: solver before expensive analyses.
         auto rec = decompose_recurrence(cand.update_expr, symbolic::symbol(name), indvar, moving);
-        if (!rec.ok) continue;
+        if (!rec.ok) {
+            continue;
+        }
 
         auto closed = solve_closed_form(indvar, indvar_init, stride, cand.init_expr, rec);
-        if (closed == SymEngine::null) continue;
+        if (closed == SymEngine::null) {
+            continue;
+        }
 
         // Only now pay for dominance + use-after-update.
-        if (!passes_expensive_checks(body_users, dominance, cand)) continue;
+        if (!passes_expensive_checks(body_users, dominance, cand)) {
+            continue;
+        }
 
         apply_rewrite(builder, parent, loop, &after_loop_assigns, cand, closed);
         return true;
@@ -384,9 +444,12 @@ bool SymbolEvolution::eliminate_symbols(
     return false;
 }
 
-SymbolEvolution::SymbolEvolution() : Pass() {}
+SymbolEvolution::SymbolEvolution() : Pass() {
+}
 
-std::string SymbolEvolution::name() { return "SymbolEvolution"; }
+std::string SymbolEvolution::name() {
+    return "SymbolEvolution";
+}
 
 bool SymbolEvolution::run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     bool any_applied = false;
@@ -402,10 +465,14 @@ bool SymbolEvolution::run_pass(builder::StructuredSDFGBuilder& builder, analysis
             // is not modified by inner-loop rewrites, but indices are stable
             // only when we don't touch the parent ourselves).
             auto idx = entry.parent_seq->index(*entry.loop);
-            if (idx < 0) break;
+            if (idx < 0) {
+                break;
+            }
 
             bool applied = eliminate_symbols(builder, analysis_manager, *entry.parent_seq, *entry.loop, nullptr);
-            if (!applied) break;
+            if (!applied) {
+                break;
+            }
 
             any_applied = true;
             analysis_manager.invalidate_all();

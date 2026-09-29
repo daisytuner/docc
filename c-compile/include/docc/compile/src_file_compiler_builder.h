@@ -34,6 +34,8 @@ class SrcFileCompilerBuilder : public CodegenCompilerBuilderBase<SrcFileCompiler
     std::optional<std::filesystem::path> linker_;
     std::optional<std::string> main_src_ext_;
     std::string bin_ext_ = "elf";
+    int codegen_order_ = 0;
+    int compile_min_order_ = 0;
     std::vector<std::string> common_options_;
     std::vector<std::string> compile_options_;
     std::vector<std::string> link_options_;
@@ -73,6 +75,9 @@ public:
     SrcFileCompilerBuilder& set_linker(const std::filesystem::path& linker);
     SrcFileCompilerBuilder& set_from_paths(std::shared_ptr<util::DefaultDoccPaths> paths) override;
     SrcFileCompilerBuilder& set_bin_extension(const std::string& ext);
+
+    SrcFileCompilerBuilder& set_compile_order(int codegen_order = 0, int compile_min_order = 0);
+
     SrcFileCompilerBuilder& inherit(const SrcFileCompilerBuilder& builder, bool compile_options = false);
     SrcFileCompilerBuilder& codegen_only();
     /**

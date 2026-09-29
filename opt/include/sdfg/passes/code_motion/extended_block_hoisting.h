@@ -44,7 +44,9 @@ protected:
 public:
     ExtendedBlockHoisting(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager);
 
-    static std::string name() { return "ExtendedBlockHoisting"; }
+    static std::string name() {
+        return "ExtendedBlockHoisting";
+    }
 };
 
 typedef VisitorPass<ExtendedBlockHoisting> ExtendedBlockHoistingPass;

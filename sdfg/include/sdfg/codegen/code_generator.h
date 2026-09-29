@@ -66,7 +66,9 @@ public:
 
     virtual ~CodeGenerator() = default;
 
-    [[nodiscard]] const StructuredSDFG& sdfg() const { return this->sdfg_; };
+    [[nodiscard]] const StructuredSDFG& sdfg() const {
+        return this->sdfg_;
+    };
 
     /**
      * @brief Generate the code
@@ -96,13 +98,19 @@ public:
     virtual void append_function_source(std::ostream& ofs_source) = 0;
 
     /// @brief Get the includes
-    const PrettyPrinter& includes() const { return this->includes_stream_; };
+    const PrettyPrinter& includes() const {
+        return this->includes_stream_;
+    };
 
     /// @brief Get the classes
-    const PrettyPrinter& classes() const { return this->classes_stream_; };
+    const PrettyPrinter& classes() const {
+        return this->classes_stream_;
+    };
 
     /// @brief Get the globals
-    const PrettyPrinter& globals() const { return this->globals_stream_; };
+    const PrettyPrinter& globals() const {
+        return this->globals_stream_;
+    };
 
     /// @brief all created library snippets
     const std::unordered_map<std::string, CodeSnippet>& library_snippets() const {
@@ -110,7 +118,9 @@ public:
     };
 
     /// @brief Get the main stream
-    const PrettyPrinter& main() const { return this->main_stream_; };
+    const PrettyPrinter& main() const {
+        return this->main_stream_;
+    };
 };
 
 } // namespace codegen

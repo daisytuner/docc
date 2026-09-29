@@ -20,7 +20,9 @@ protected:
     virtual std::pair<int, std::string> get_prio_and_order(structured_control_flow::Block* block) override;
 
 public:
-    virtual std::string name() override { return "ExtendedBlockSorting"; }
+    virtual std::string name() override {
+        return "ExtendedBlockSorting";
+    }
 };
 
 } // namespace passes

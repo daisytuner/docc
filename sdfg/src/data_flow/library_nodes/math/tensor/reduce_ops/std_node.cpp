@@ -22,7 +22,8 @@ StdNode::StdNode(
     const std::vector<int64_t>& axes,
     bool keepdims
 )
-    : ReduceNode(element_id, debug_info, vertex, parent, LibraryNodeType_Std, shape, axes, keepdims) {}
+    : ReduceNode(element_id, debug_info, vertex, parent, LibraryNodeType_Std, shape, axes, keepdims) {
+}
 
 passes::LibNodeExpander::ExpandOutcome StdNode::expand_inner(
     passes::LibNodeExpander::AccessNodeExpand& expansion,
@@ -178,7 +179,9 @@ bool StdNode::expand_reduction(
     throw std::runtime_error("StdNode::expand_reduction should not be called");
 }
 
-std::string StdNode::identity(types::PrimitiveType primitive_type) const { return "0"; }
+std::string StdNode::identity(types::PrimitiveType primitive_type) const {
+    return "0";
+}
 
 std::unique_ptr<data_flow::DataFlowNode> StdNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {

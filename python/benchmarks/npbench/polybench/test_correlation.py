@@ -60,9 +60,9 @@ def test_correlation(target):
             verification={
                 "GEMM": 1,
                 "CMath": 2,
-                "VECTORIZE": 16,
+                "VECTORIZE": 17,
                 "REDUCE": 3,
-                "MAP": 22,
+                "MAP": 23,
                 "FOR": 1,
                 "SEQUENTIAL": 10,
             }
@@ -74,8 +74,8 @@ def test_correlation(target):
                 "VECTORIZE": 5,
                 "REDUCE": 3,
                 "CMath": 2,
-                "CPU_PARALLEL": 14,
-                "MAP": 16,
+                "CPU_PARALLEL": 15,
+                "MAP": 17,
                 "SEQUENTIAL": 1,
                 "FOR": 1,
             }

@@ -13,7 +13,9 @@ private:
 public:
     ConditionElimination(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager);
 
-    static std::string name() { return "ConditionElimination"; };
+    static std::string name() {
+        return "ConditionElimination";
+    };
 
     bool accept(structured_control_flow::Sequence& node) override;
 };

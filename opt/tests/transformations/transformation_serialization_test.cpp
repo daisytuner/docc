@@ -15,12 +15,11 @@
 #include <sdfg/structured_sdfg.h>
 #include <sdfg/symbolic/symbolic.h>
 
-#include <sdfg/transformations/in_local_storage.h>
+#include <sdfg/tiles/transformations/local_storage.h>
 #include <sdfg/transformations/loop_distribute.h>
 #include <sdfg/transformations/loop_interchange.h>
 #include <sdfg/transformations/loop_skewing.h>
 #include <sdfg/transformations/loop_tiling.h>
-#include <sdfg/transformations/out_local_storage.h>
 #include <sdfg/transformations/transformation_schema.h>
 #include <sdfg/types/type.h>
 
@@ -28,8 +27,6 @@
 #include <sdfg/transformations/offloading/cuda_transform.h>
 #include <sdfg/transformations/offloading/gpu_condition_propagation.h>
 #include <sdfg/transformations/offloading/gpu_loop_reordering.h>
-#include <sdfg/transformations/offloading/gpu_tiling.h>
-#include <sdfg/transformations/offloading/kernel_local_storage.h>
 #include <sdfg/transformations/omp_transform.h>
 
 #ifdef DOCC_HAS_TARGET_TENSTORRENT
@@ -118,7 +115,7 @@ struct LoopFixture {
             structured_control_flow::ScheduleType_Sequential::create()
         );
 
-        // One container for OutLocalStorage / KernelLocalStorage
+        // One container for LocalStorage
         types::Scalar base_desc(types::PrimitiveType::Float);
         types::Array arr_desc(base_desc, symbolic::integer(16));
         types::Pointer ptr_desc(arr_desc);
@@ -159,45 +156,13 @@ TEST(TransformationSerializationTest, CoreLoopTransformationsShape) {
     auto interchange2 = transformations::LoopInterchange::from_json(f.builder, ji);
     ASSERT_EQ(interchange2.name(), interchange.name());
 
-    // OutLocalStorage (default storage = CPU_Stack)
-    transformations::OutLocalStorage ols(*f.outer_map, *f.access_A);
-    nlohmann::json jo;
-    ols.to_json(jo);
-    ValidateSerialization(jo, 2);
-    ASSERT_TRUE(jo["parameters"].contains("storage_type"));
-    ASSERT_TRUE(jo["parameters"]["storage_type"].is_object());
-    ASSERT_EQ(jo["parameters"]["storage_type"]["value"].get<std::string>(), "CPU_Stack");
-    auto ols2 = transformations::OutLocalStorage::from_json(f.builder, jo);
-    ASSERT_EQ(ols2.name(), ols.name());
-
-    // OutLocalStorage with explicit NV_Shared storage
-    transformations::OutLocalStorage ols_shared(*f.outer_map, *f.access_A, types::StorageType::NV_Shared());
-    nlohmann::json jo_sh;
-    ols_shared.to_json(jo_sh);
-    ValidateSerialization(jo_sh, 2);
-    ASSERT_EQ(jo_sh["parameters"]["storage_type"]["value"].get<std::string>(), "NV_Shared");
-    auto ols_shared2 = transformations::OutLocalStorage::from_json(f.builder, jo_sh);
-    ASSERT_EQ(ols_shared2.name(), ols_shared.name());
-
-    // InLocalStorage (default storage = CPU_Stack)
-    transformations::InLocalStorage ils(*f.outer_map, *f.access_A);
+    // LocalStorag
+    transformations::LocalStorage ils(*f.outer_map, *f.access_A);
     nlohmann::json jils;
     ils.to_json(jils);
     ValidateSerialization(jils, 2);
-    ASSERT_TRUE(jils["parameters"].contains("storage_type"));
-    ASSERT_TRUE(jils["parameters"]["storage_type"].is_object());
-    ASSERT_EQ(jils["parameters"]["storage_type"]["value"].get<std::string>(), "CPU_Stack");
-    auto ils2 = transformations::InLocalStorage::from_json(f.builder, jils);
+    auto ils2 = transformations::LocalStorage::from_json(f.builder, jils);
     ASSERT_EQ(ils2.name(), ils.name());
-
-    // InLocalStorage with explicit NV_Shared storage
-    transformations::InLocalStorage ils_shared(*f.outer_map, *f.access_A, types::StorageType::NV_Shared());
-    nlohmann::json jils_sh;
-    ils_shared.to_json(jils_sh);
-    ValidateSerialization(jils_sh, 2);
-    ASSERT_EQ(jils_sh["parameters"]["storage_type"]["value"].get<std::string>(), "NV_Shared");
-    auto ils_shared2 = transformations::InLocalStorage::from_json(f.builder, jils_sh);
-    ASSERT_EQ(ils_shared2.name(), ils_shared.name());
 
     // LoopSkewing
     transformations::LoopSkewing skew(*f.outer_map, *f.inner_map, 1);
@@ -227,24 +192,6 @@ TEST(TransformationSerializationTest, OffloadingAndGPUTransformationsShape) {
     auto nested2 = transformations::CUDAParallelizeNestedMap::from_json(f.builder, jn);
     ASSERT_EQ(nested2.name(), nested.name());
 
-    // GPUTiling
-    transformations::GPUTiling gpu_tiling(*static_cast<structured_control_flow::StructuredLoop*>(f.outer_map), 4);
-    nlohmann::json jgt;
-    gpu_tiling.to_json(jgt);
-    ValidateSerialization(jgt, 1);
-    auto gpu_tiling2 = transformations::GPUTiling::from_json(f.builder, jgt);
-    ASSERT_EQ(gpu_tiling2.name(), gpu_tiling.name());
-
-    // KernelLocalStorage
-    symbolic::Expression offset = symbolic::integer(0);
-    transformations::KernelLocalStorage
-        kls(*static_cast<structured_control_flow::StructuredLoop*>(f.outer_map), offset, *f.access_A);
-    nlohmann::json jkls;
-    kls.to_json(jkls);
-    ValidateSerialization(jkls, 2);
-    auto kls2 = transformations::KernelLocalStorage::from_json(f.builder, jkls);
-    ASSERT_EQ(kls2.name(), kls.name());
-
     // GPULoopReordering
     transformations::GPULoopReordering reordering(*f.outer_map);
     nlohmann::json jr;
@@ -260,6 +207,14 @@ TEST(TransformationSerializationTest, OffloadingAndGPUTransformationsShape) {
     ValidateSerialization(jcp, 1);
     auto cond_prop2 = transformations::GPUConditionPropagation::from_json(f.builder, jcp);
     ASSERT_EQ(cond_prop2.name(), cond_prop.name());
+
+    // GPUConditionPropagationScope
+    transformations::GPUConditionPropagationScope cond_prop_scope(*f.outer_map);
+    nlohmann::json jcps;
+    cond_prop_scope.to_json(jcps);
+    ValidateSerialization(jcps, 1);
+    auto cond_prop_scope2 = transformations::GPUConditionPropagationScope::from_json(f.builder, jcps);
+    ASSERT_EQ(cond_prop_scope2.name(), cond_prop_scope.name());
 }
 
 TEST(TransformationSerializationTest, OtherScheduleTransformationsShape) {

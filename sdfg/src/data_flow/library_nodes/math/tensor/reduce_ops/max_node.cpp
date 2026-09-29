@@ -18,7 +18,8 @@ MaxNode::MaxNode(
     const std::vector<int64_t>& axes,
     bool keepdims
 )
-    : ReduceNode(element_id, debug_info, vertex, parent, LibraryNodeType_Max, shape, axes, keepdims) {}
+    : ReduceNode(element_id, debug_info, vertex, parent, LibraryNodeType_Max, shape, axes, keepdims) {
+}
 
 bool MaxNode::expand_reduction(
     passes::LibNodeExpander::AccessNodeExpand& expansion,

@@ -1,5 +1,7 @@
 #include "sdfg/types/tensor.h"
 
+#include <memory>
+
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/types/scalar.h"
 
@@ -19,7 +21,8 @@ symbolic::MultiExpression Tensor::strides_from_shape(const symbolic::MultiExpres
 }
 
 Tensor::Tensor(const Scalar& element_type, const math::tensor::TensorLayout& layout)
-    : element_type_(std::unique_ptr<Scalar>(static_cast<Scalar*>(element_type.clone().release()))), layout_(layout) {}
+    : element_type_(std::unique_ptr<Scalar>(static_cast<Scalar*>(element_type.clone().release()))), layout_(layout) {
+}
 
 Tensor::Tensor(const Scalar& element_type, const symbolic::MultiExpression& shape)
     : Tensor(element_type, math::tensor::TensorLayout(shape)) {};
@@ -59,33 +62,57 @@ Tensor::Tensor(
           math::tensor::TensorLayout(shape, strides, offset)
       ) {};
 
-PrimitiveType Tensor::primitive_type() const { return this->element_type_->primitive_type(); };
+PrimitiveType Tensor::primitive_type() const {
+    return this->element_type_->primitive_type();
+};
 
-bool Tensor::is_symbol() const { return false; };
+bool Tensor::is_symbol() const {
+    return false;
+};
 
-const Scalar& Tensor::element_type() const { return *this->element_type_; };
+const Scalar& Tensor::element_type() const {
+    return *this->element_type_;
+};
 
-const math::tensor::TensorLayout& Tensor::layout() const { return this->layout_; }
+const math::tensor::TensorLayout& Tensor::layout() const {
+    return this->layout_;
+}
 
-const symbolic::MultiExpression& Tensor::shape() const { return this->layout_.shape(); };
+const symbolic::MultiExpression& Tensor::shape() const {
+    return this->layout_.shape();
+};
 
-const symbolic::MultiExpression& Tensor::strides() const { return this->layout_.strides(); };
+const symbolic::MultiExpression& Tensor::strides() const {
+    return this->layout_.strides();
+};
 
-const symbolic::Expression& Tensor::offset() const { return this->layout_.offset(); };
+const symbolic::Expression& Tensor::offset() const {
+    return this->layout_.offset();
+};
 
-symbolic::Expression Tensor::total_elements() const { return layout_.total_elements(); };
+symbolic::Expression Tensor::total_elements() const {
+    return layout_.total_elements();
+};
 
 symbolic::Expression Tensor::total_size() const {
     return symbolic::mul(layout_.total_elements(), symbolic::size_of_type(*element_type_));
 }
 
-bool Tensor::is_scalar() const { return layout_.is_scalar(); }
+bool Tensor::is_scalar() const {
+    return layout_.is_scalar();
+}
 
-bool Tensor::is_contiguous() const { return layout_.has_linear_accesses(); }
+bool Tensor::is_contiguous() const {
+    return layout_.has_linear_accesses();
+}
 
-bool Tensor::is_tight() const { return layout_.has_linear_accesses_no_padding(); }
+bool Tensor::is_tight() const {
+    return layout_.has_linear_accesses_no_padding();
+}
 
-TypeID Tensor::type_id() const { return TypeID::Tensor; };
+TypeID Tensor::type_id() const {
+    return TypeID::Tensor;
+};
 
 bool Tensor::operator==(const IType& other) const {
     if (!dynamic_cast<const Tensor*>(&other)) {
@@ -127,7 +154,9 @@ std::unique_ptr<Tensor> Tensor::flip(size_t axis) const {
         Tensor>(this->storage_type(), this->alignment(), this->initializer(), *this->element_type_, *layout_.flip(axis));
 }
 
-std::unique_ptr<Tensor> Tensor::unsqueeze(size_t axis) const { return this->newaxis(axis); }
+std::unique_ptr<Tensor> Tensor::unsqueeze(size_t axis) const {
+    return this->newaxis(axis);
+}
 
 std::unique_ptr<Tensor> Tensor::squeeze(size_t axis) const {
     return std::make_unique<Tensor>(
@@ -144,6 +173,15 @@ std::unique_ptr<Tensor> Tensor::reshape(const symbolic::MultiExpression& new_sha
     return std::make_unique<Tensor>(
         this->storage_type(), this->alignment(), this->initializer(), *this->element_type_, *layout_.reshape(new_shape)
     );
+}
+
+std::unique_ptr<Tensor> Tensor::broadcast(const symbolic::MultiExpression& ref_shape) const {
+    auto new_layout = this->layout_.broadcast(ref_shape);
+    if (!new_layout) {
+        return nullptr;
+    }
+    return std::make_unique<
+        Tensor>(this->storage_type(), this->alignment(), this->initializer(), *this->element_type_, *new_layout);
 }
 
 void Tensor::replace_symbols(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {

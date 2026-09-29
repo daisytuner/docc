@@ -112,6 +112,12 @@ SrcFileCompilerBuilder& SrcFileCompilerBuilder::set_bin_extension(const std::str
     return *this;
 }
 
+SrcFileCompilerBuilder& SrcFileCompilerBuilder::set_compile_order(int codegen_order, int compile_min_order) {
+    codegen_order_ = codegen_order;
+    compile_min_order_ = compile_min_order;
+    return *this;
+}
+
 SrcFileCompilerBuilder& SrcFileCompilerBuilder::contribute_parent_link_options(const std::vector<std::string>& opts) {
     parent_link_options_.insert(parent_link_options_.end(), opts.cbegin(), opts.cend());
     return *this;
@@ -139,7 +145,7 @@ std::unique_ptr<SrcFileCompiler> SrcFileCompilerBuilder::build() {
 
     return std::make_unique<SrcFileCompiler>(
         output_dir_.value(),
-        main_src_ext_.value(),
+        main_src_ext_,
         "h",
         bin_ext_,
         compiler_,
@@ -150,7 +156,9 @@ std::unique_ptr<SrcFileCompiler> SrcFileCompilerBuilder::build() {
         link_options_,
         link_immediately_,
         std::move(this->redirects_),
-        parent_link_options_
+        parent_link_options_,
+        codegen_order_,
+        compile_min_order_
     );
 }
 

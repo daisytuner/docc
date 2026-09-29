@@ -9,7 +9,9 @@
 namespace sdfg {
 namespace cuda {
 
-std::string CUDAOffloadTransform::name() const { return "CUDAOffloadTransform"; }
+std::string CUDAOffloadTransform::name() const {
+    return "CUDAOffloadTransform";
+}
 
 CUDAOffloadTransform CUDAOffloadTransform::from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& desc) {
     auto loop_id = desc["subgraph"]["0"]["element_id"].get<size_t>();
@@ -53,7 +55,9 @@ ScheduleType CUDAOffloadTransform::transformed_schedule_type() {
     return ScheduleType_CUDA_Offload::create<ScheduleType_CUDA_Offload>(target_level_, parallel_size_);
 }
 
-std::string CUDAOffloadTransform::copy_prefix() { return CUDA_DEVICE_PREFIX; }
+std::string CUDAOffloadTransform::copy_prefix() {
+    return CUDA_DEVICE_PREFIX;
+}
 
 } // namespace cuda
 } // namespace sdfg

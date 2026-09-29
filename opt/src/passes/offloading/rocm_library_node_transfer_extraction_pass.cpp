@@ -11,9 +11,12 @@ namespace rocm {
 RocmLibraryNodeTransferExtractionVisitor::RocmLibraryNodeTransferExtractionVisitor(
     builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager
 )
-    : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager) {}
+    : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager) {
+}
 
-bool RocmLibraryNodeTransferExtractionVisitor::visit() { return visitor::NonStoppingStructuredSDFGVisitor::visit(); }
+bool RocmLibraryNodeTransferExtractionVisitor::visit() {
+    return visitor::NonStoppingStructuredSDFGVisitor::visit();
+}
 
 bool RocmLibraryNodeTransferExtractionVisitor::accept(structured_control_flow::Block& block) {
     auto& dataflow = block.dataflow();

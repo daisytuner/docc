@@ -21,7 +21,8 @@ FillNode::FillNode(
 )
     : ElementWiseDataflowTensorNode(
           element_id, debug_info, vertex, parent, LibraryNodeType_Fill, shape, "Y", {"X"}, quantization, impl_type
-      ) {}
+      ) {
+}
 
 ElementWiseDataflowTensorNode::ElementOutput FillNode::expand_operation_dataflow(
     builder::StructuredSDFGBuilder& builder,

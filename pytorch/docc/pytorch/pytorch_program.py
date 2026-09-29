@@ -252,14 +252,23 @@ class PyTorchProgram(DoccProgram):
             )
             stable_id: str = hashlib.sha256(hash_input).hexdigest()[:16]
 
+            # Isolate parallel pytest-xdist workers so concurrent compilations of
+            # identically named models don't share (and clobber) one build dir.
+            worker: str = os.environ.get("PYTEST_XDIST_WORKER", "")
+            worker_suffix: str = f"-{worker}" if worker else ""
+
             docc_tmp: str | None = os.environ.get("DOCC_TMP")
             if docc_tmp:
-                output_folder_path: str = f"{docc_tmp}/{self.name}-{stable_id}"
+                output_folder_path: str = (
+                    f"{docc_tmp}/{self.name}-{stable_id}{worker_suffix}"
+                )
             else:
                 user: str = os.getenv("USER", "")
                 if not user:
                     user: str = getpass.getuser()
-                output_folder_path: str = f"/tmp/{user}/DOCC/{self.name}-{stable_id}"
+                output_folder_path: str = (
+                    f"/tmp/{user}/DOCC/{self.name}-{stable_id}{worker_suffix}"
+                )
         else:
             output_folder_path: str = output_folder
 

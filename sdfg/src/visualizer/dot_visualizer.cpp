@@ -17,7 +17,9 @@ namespace visualizer {
 
 static std::regex dotIdBadChars("[^a-zA-Z0-9_]+");
 
-static std::string escapeDotId(size_t id, const std::string& prefix = "") { return prefix + std::to_string(id); }
+static std::string escapeDotId(size_t id, const std::string& prefix = "") {
+    return prefix + std::to_string(id);
+}
 
 static std::string escapeDotId(const std::string& id, const std::string& prefix = "") {
     return prefix + std::regex_replace(id, dotIdBadChars, "_");
@@ -29,9 +31,13 @@ void DotVisualizer::register_chain_elem(const Element& element, const std::strin
     scope.last_chain_elem = SeqChainElem{&element, node_id, cluster_id};
 }
 
-void DotVisualizer::enter_scope() { seq_scope_stack_.emplace_back(); }
+void DotVisualizer::enter_scope() {
+    seq_scope_stack_.emplace_back();
+}
 
-void DotVisualizer::exit_scope() { seq_scope_stack_.pop_back(); }
+void DotVisualizer::exit_scope() {
+    seq_scope_stack_.pop_back();
+}
 
 void DotVisualizer::visualizeSDFG(const SDFG& sdfg) {
     this->stream_.clear();
@@ -355,13 +361,17 @@ void DotVisualizer::visualizeDataFlowGraph(const std::string& id, const data_flo
         } else if (const data_flow::ConstantNode* constant_node = dynamic_cast<const data_flow::ConstantNode*>(node)) {
             this->stream_ << nodeId << " [";
             this->stream_ << "penwidth=3.0,";
-            if (this->sdfg_.is_transient(constant_node->data())) this->stream_ << "style=\"dashed,filled\",";
+            if (this->sdfg_.is_transient(constant_node->data())) {
+                this->stream_ << "style=\"dashed,filled\",";
+            }
             this->stream_ << "label=\"" << constant_node->data() << "\"];" << std::endl;
             is_access_node = true;
         } else if (const data_flow::AccessNode* access_node = dynamic_cast<const data_flow::AccessNode*>(node)) {
             this->stream_ << nodeId << " [";
             this->stream_ << "penwidth=3.0,";
-            if (this->sdfg_.is_transient(access_node->data())) this->stream_ << "style=\"dashed,filled\",";
+            if (this->sdfg_.is_transient(access_node->data())) {
+                this->stream_ << "style=\"dashed,filled\",";
+            }
             this->stream_ << "label=\"" << access_node->data() << "\"];" << std::endl;
             is_access_node = true;
         } else if (const data_flow::LibraryNode* libnode = dynamic_cast<const data_flow::LibraryNode*>(node)) {
@@ -465,7 +475,9 @@ void DotVisualizer::visualizeDataFlowGraph(const std::string& id, const data_flo
     register_chain_elem(*dfg.get_parent(), chain_node_id, cluster_id);
 }
 
-void DotVisualizer::writeToFile(const Function& sdfg, const std::filesystem::path& file) { writeToFile(sdfg, &file); }
+void DotVisualizer::writeToFile(const Function& sdfg, const std::filesystem::path& file) {
+    writeToFile(sdfg, &file);
+}
 
 void DotVisualizer::writeToFile(const Function& sdfg, const std::filesystem::path* file) {
     DotVisualizer viz(sdfg);

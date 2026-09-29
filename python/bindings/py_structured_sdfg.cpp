@@ -19,6 +19,7 @@
 #include <sdfg/codegen/instrumentation/instrumentation_plan.h>
 #include <sdfg/codegen/loop_report.h>
 #include <sdfg/einsum/einsum.h>
+#include <sdfg/parallelization/passes/for_classification.h>
 #include <sdfg/passes/dataflow/dead_data_elimination.h>
 #include <sdfg/passes/dataflow/local_buffer_reuse.h>
 #include <sdfg/passes/dataflow/tensor_to_pointer_conversion.h>
@@ -28,6 +29,7 @@
 #include <sdfg/passes/normalization/normalize.h>
 #include <sdfg/passes/offloading/cuda_library_node_rewriter_pass.h>
 #include <sdfg/passes/offloading/device_buffer_reuse_pass.h>
+#include <sdfg/passes/offloading/reduction_shared_memory_delinearization.h>
 #include <sdfg/passes/opt_pipeline.h>
 #include <sdfg/passes/pipeline.h>
 #include <sdfg/passes/rpc/rpc_scheduling_pass.h>
@@ -37,7 +39,6 @@
 #include <sdfg/passes/scheduler/scheduler_registry.h>
 #include <sdfg/passes/structured_control_flow/common_assignment_elimination.h>
 #include <sdfg/passes/structured_control_flow/condition_elimination.h>
-#include <sdfg/passes/structured_control_flow/for_classification.h>
 #include <sdfg/passes/structured_control_flow/pointer_evolution.h>
 #include <sdfg/passes/structured_control_flow/while_to_for_conversion.h>
 #include <sdfg/passes/symbolic/symbol_evolution.h>
@@ -136,25 +137,41 @@ PyStructuredSDFG PyStructuredSDFG::from_sdfg(sdfg::plugins::Context& ctx, std::u
     return PyStructuredSDFG(ctx, sdfg);
 }
 
-std::string PyStructuredSDFG::name() const { return sdfg_->name(); }
+std::string PyStructuredSDFG::name() const {
+    return sdfg_->name();
+}
 
 void PyStructuredSDFG::set_output_dir(const std::filesystem::path& dir) {
     sdfg_->add_metadata("output_dir", dir.string());
 }
 
-sdfg::plugins::Context& PyStructuredSDFG::docc_context() const { return docc_context_; }
+sdfg::plugins::Context& PyStructuredSDFG::docc_context() const {
+    return docc_context_;
+}
 
-const sdfg::types::IType& PyStructuredSDFG::return_type() const { return sdfg_->return_type(); }
+const sdfg::types::IType& PyStructuredSDFG::return_type() const {
+    return sdfg_->return_type();
+}
 
-const sdfg::types::IType& PyStructuredSDFG::type(const std::string& name) const { return sdfg_->type(name); }
+const sdfg::types::IType& PyStructuredSDFG::type(const std::string& name) const {
+    return sdfg_->type(name);
+}
 
-bool PyStructuredSDFG::exists(const std::string& name) const { return sdfg_->exists(name); }
+bool PyStructuredSDFG::exists(const std::string& name) const {
+    return sdfg_->exists(name);
+}
 
-bool PyStructuredSDFG::is_argument(const std::string& name) const { return sdfg_->is_argument(name); }
+bool PyStructuredSDFG::is_argument(const std::string& name) const {
+    return sdfg_->is_argument(name);
+}
 
-bool PyStructuredSDFG::is_transient(const std::string& name) const { return sdfg_->is_transient(name); }
+bool PyStructuredSDFG::is_transient(const std::string& name) const {
+    return sdfg_->is_transient(name);
+}
 
-std::vector<std::string> PyStructuredSDFG::arguments() const { return sdfg_->arguments(); }
+std::vector<std::string> PyStructuredSDFG::arguments() const {
+    return sdfg_->arguments();
+}
 
 pybind11::dict PyStructuredSDFG::containers() const {
     pybind11::dict result;
@@ -164,7 +181,9 @@ pybind11::dict PyStructuredSDFG::containers() const {
     return result;
 }
 
-void PyStructuredSDFG::validate() { sdfg_->validate(); }
+void PyStructuredSDFG::validate() {
+    sdfg_->validate();
+}
 
 void PyStructuredSDFG::einsum() {
     sdfg::passes::CompileStatistics::enter_stage_if_enabled("einsum");
@@ -341,7 +360,7 @@ void PyStructuredSDFG::simplify(const docc::target::TargetOptions& options) {
     ce.run(builder_opt, analysis_manager);
 
     // Convert for loops into maps and reductions
-    sdfg::passes::ForClassificationPass map_conversion_pass;
+    sdfg::parallelization::ForClassificationPass map_conversion_pass;
     map_conversion_pass.run(builder_opt, analysis_manager);
 
     // Move code out of maps where possible
@@ -496,7 +515,9 @@ void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options, bool
         }
     }
 
-    auto mapped = schedulers | std::views::transform([&](auto& n) { return n.get(); });
+    auto mapped = schedulers | std::views::transform([&](auto& n) {
+                      return n.get();
+                  });
     std::vector<sdfg::passes::scheduler::LoopScheduler*> unwrapped_schedulers(mapped.begin(), mapped.end());
 
     sdfg::passes::scheduler::LoopSchedulingPass loop_scheduling_pass(unwrapped_schedulers, nullptr);
@@ -577,12 +598,17 @@ std::string PyStructuredSDFG::compile(
 
     sdfg::builder::StructuredSDFGBuilder builder_opt(*sdfg_);
 
+    // Prepare already-scheduled graphs before instrumentation and code generation.
+    sdfg::passes::ReductionSharedMemoryDelinearization reduction_buffers;
+    reduction_buffers.run(builder_opt, analysis_manager);
+
     // Instrumentation plan
     std::unique_ptr<sdfg::codegen::InstrumentationPlan> instrumentation_plan;
     if (instrumentation_mode.empty()) {
         instrumentation_plan = sdfg::codegen::InstrumentationPlan::none(*sdfg_);
     } else if (instrumentation_mode == "ols") {
-        instrumentation_plan = sdfg::codegen::InstrumentationPlan::outermost_loops_plan(*sdfg_);
+        bool sampling = options_.get(sdfg::codegen::INSTRUMENTATION_ADAPTIVE_SAMPLING, false);
+        instrumentation_plan = sdfg::codegen::InstrumentationPlan::outermost_loops_plan(*sdfg_, true, sampling);
         sdfg::auto_util::add_offloading_instrumentations(*instrumentation_plan, *sdfg_);
     } else {
         throw std::runtime_error("Unsupported instrumentation plan: " + instrumentation_mode);
@@ -717,6 +743,9 @@ std::string PyStructuredSDFG::to_dot() const {
 std::string PyStructuredSDFG::to_cpp() const {
     sdfg::builder::StructuredSDFGBuilder builder(*sdfg_);
     sdfg::analysis::AnalysisManager analysis_manager(*sdfg_, options_);
+
+    sdfg::passes::ReductionSharedMemoryDelinearization reduction_buffers;
+    reduction_buffers.run(builder, analysis_manager);
 
     auto instrumentation_plan = sdfg::codegen::InstrumentationPlan::none(*sdfg_);
     auto arg_capture_plan = sdfg::codegen::ArgCapturePlan::none(*sdfg_);

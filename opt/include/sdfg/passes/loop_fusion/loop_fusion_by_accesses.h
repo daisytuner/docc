@@ -21,7 +21,8 @@ public:
 protected:
     bool allow_init_hoist_ = true;
 
-    LoopFusionByAccessWorker(bool allow_init_hoist = true) : allow_init_hoist_(allow_init_hoist) {}
+    LoopFusionByAccessWorker(bool allow_init_hoist = true) : allow_init_hoist_(allow_init_hoist) {
+    }
 
     struct Plan {
         structured_control_flow::Map& first;
@@ -38,7 +39,8 @@ protected:
         std::vector<FusionRegCandidate> fusion_candidates_;
 
         Plan(structured_control_flow::Map& first, structured_control_flow::StructuredLoop& second)
-            : first(first), second(second), direction_() {}
+            : first(first), second(second), direction_() {
+        }
 
         // Case 2 (init-into-reduction): when true, the producer is hoisted to the
         // reduction's outer parallel band (before the innermost sequential loop) and
@@ -53,6 +55,9 @@ protected:
         structured_control_flow::Sequence* hoist_body_ = nullptr;
         // The loops being fused match domains exactly, so we can remove the original loop, if we do
         bool domains_match = false;
+
+        // Number of redundant writes copied into the target loop (that could technically by avoided)
+        int64_t copied_redundant_writes = 0;
     };
 
     virtual ~LoopFusionByAccessWorker() = default;
@@ -89,6 +94,7 @@ protected:
         std::unordered_set<RegId> fusion_regs;
         std::unordered_set<RegId> second_outputs;
         bool conflicts;
+        int64_t copied_redundant_writes = 0;
     };
 
     FusionRegs find_fusion_regs(const FusionLoopCandidate& first, const FusionLoopCandidate& second);

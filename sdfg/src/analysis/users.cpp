@@ -13,6 +13,7 @@
 #include "sdfg/graph/graph.h"
 #include "sdfg/structured_control_flow/for.h"
 #include "sdfg/structured_control_flow/map.h"
+#include "sdfg/structured_control_flow/reduce.h"
 #include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/structured_sdfg.h"
 #include "sdfg/symbolic/sets.h"
@@ -26,11 +27,17 @@ User::User(graph::Vertex vertex, const std::string& container, Element* element,
 
       };
 
-Use User::use() const { return this->use_; };
+Use User::use() const {
+    return this->use_;
+};
 
-std::string& User::container() { return this->container_; };
+std::string& User::container() {
+    return this->container_;
+};
 
-Element* User::element() { return this->element_; };
+Element* User::element() {
+    return this->element_;
+};
 
 const std::vector<data_flow::Subset>& User::subsets() const {
     if (this->subsets_cached_) {
@@ -49,6 +56,15 @@ const std::vector<data_flow::Subset>& User::subsets() const {
             for (auto& oedge : graph.in_edges(*access_node)) {
                 this->subsets_.push_back(oedge.subset());
             }
+        }
+    } else if (auto* reduction = dyn_cast<structured_control_flow::Reduce*>(element_)) {
+        for (const auto& entry : reduction->reductions()) {
+            if (entry.container == container_ && !entry.original_index.is_null()) {
+                subsets_.push_back({entry.original_index});
+            }
+        }
+        if (subsets_.empty()) {
+            subsets_.push_back({});
         }
     } else {
         // Use of symbol
@@ -72,11 +88,17 @@ ForUser::ForUser(
 
       };
 
-bool ForUser::is_init() const { return this->is_init_; };
+bool ForUser::is_init() const {
+    return this->is_init_;
+};
 
-bool ForUser::is_condition() const { return this->is_condition_; };
+bool ForUser::is_condition() const {
+    return this->is_condition_;
+};
 
-bool ForUser::is_update() const { return this->is_update_; };
+bool ForUser::is_update() const {
+    return this->is_update_;
+};
 
 std::pair<graph::Vertex, graph::Vertex> Users::traverse(data_flow::DataFlowGraph& dataflow) {
     graph::Vertex first = boost::graph_traits<graph::Graph>::null_vertex();
@@ -119,6 +141,23 @@ std::pair<graph::Vertex, graph::Vertex> Users::traverse(data_flow::DataFlowGraph
                             oedge.type() == data_flow::MemletType::Dereference_Dst) {
                             use = Use::VIEW;
                             break;
+                        }
+                    }
+
+                    // A container feeding a library node's write-only pointer input is
+                    // written *through* that pointer (the node addresses it internally),
+                    // so the out-edge is a write, not a read.
+                    if (use == Use::READ) {
+                        for (auto& oedge : dataflow.out_edges(*access_node)) {
+                            auto* lib = dynamic_cast<data_flow::LibraryNode*>(&oedge.dst());
+                            if (lib == nullptr) {
+                                continue;
+                            }
+                            auto meta = lib->pointer_access_type(oedge);
+                            if (meta && meta->may_contain_writes() && !meta->may_contain_reads()) {
+                                use = Use::WRITE;
+                                break;
+                            }
                         }
                     }
 
@@ -347,6 +386,26 @@ std::pair<graph::Vertex, graph::Vertex> Users::traverse(structured_control_flow:
         auto last = s;
         this->entries_.insert({for_stmt, this->users_.at(s).get()});
 
+        if (auto* reduction = dyn_cast<structured_control_flow::Reduce*>(for_stmt)) {
+            for (const auto& entry : reduction->reductions()) {
+                if (entry.original_index.is_null()) {
+                    continue;
+                }
+                for (auto use : {Use::READ, Use::WRITE}) {
+                    auto vertex = boost::add_vertex(graph_);
+                    add_user(std::make_unique<User>(vertex, entry.container, reduction, use));
+                    boost::add_edge(last, vertex, graph_);
+                    last = vertex;
+                }
+                for (auto atom : symbolic::atoms(entry.original_index)) {
+                    auto vertex = boost::add_vertex(graph_);
+                    add_user(std::make_unique<User>(vertex, atom->get_name(), reduction, Use::READ));
+                    boost::add_edge(last, vertex, graph_);
+                    last = vertex;
+                }
+            }
+        }
+
         // NOP
         auto t = boost::add_vertex(this->graph_);
         this->users_.insert({t, std::make_unique<User>(t, "", for_stmt, Use::NOP)});
@@ -361,8 +420,9 @@ std::pair<graph::Vertex, graph::Vertex> Users::traverse(structured_control_flow:
         }
         // Indvar
         auto v = boost::add_vertex(this->graph_);
-        this->add_user(std::make_unique<
-                       ForUser>(v, for_stmt->indvar()->get_name(), for_stmt, Use::WRITE, true, false, false));
+        this->add_user(
+            std::make_unique<ForUser>(v, for_stmt->indvar()->get_name(), for_stmt, Use::WRITE, true, false, false)
+        );
 
         boost::add_edge(last, v, this->graph_);
         last = v;
@@ -390,8 +450,9 @@ std::pair<graph::Vertex, graph::Vertex> Users::traverse(structured_control_flow:
         }
 
         auto update_v = boost::add_vertex(this->graph_);
-        this->add_user(std::make_unique<
-                       ForUser>(update_v, for_stmt->indvar()->get_name(), for_stmt, Use::WRITE, false, false, true));
+        this->add_user(
+            std::make_unique<ForUser>(update_v, for_stmt->indvar()->get_name(), for_stmt, Use::WRITE, false, false, true)
+        );
 
         if (end != boost::graph_traits<graph::Graph>::null_vertex()) {
             boost::add_edge(end, update_v, this->graph_);
@@ -572,7 +633,9 @@ std::list<User*> Users::uses(const std::string& container) const {
     return us;
 };
 
-size_t Users::num_uses(const std::string& container) const { return this->uses(container).size(); };
+size_t Users::num_uses(const std::string& container) const {
+    return this->uses(container).size();
+};
 
 std::list<User*> Users::writes() const {
     std::list<User*> us;
@@ -586,9 +649,13 @@ std::list<User*> Users::writes() const {
     return us;
 };
 
-const std::list<User*>& Users::writes(const std::string& container) const { return this->writes_.at(container); };
+const std::list<User*>& Users::writes(const std::string& container) const {
+    return this->writes_.at(container);
+};
 
-size_t Users::num_writes(const std::string& container) const { return this->writes(container).size(); };
+size_t Users::num_writes(const std::string& container) const {
+    return this->writes(container).size();
+};
 
 std::list<User*> Users::reads() const {
     std::list<User*> us;
@@ -602,9 +669,13 @@ std::list<User*> Users::reads() const {
     return us;
 };
 
-const std::list<User*>& Users::reads(const std::string& container) const { return this->reads_.at(container); };
+const std::list<User*>& Users::reads(const std::string& container) const {
+    return this->reads_.at(container);
+};
 
-size_t Users::num_reads(const std::string& container) const { return this->reads(container).size(); };
+size_t Users::num_reads(const std::string& container) const {
+    return this->reads(container).size();
+};
 
 std::list<User*> Users::views() const {
     std::list<User*> us;
@@ -618,9 +689,13 @@ std::list<User*> Users::views() const {
     return us;
 };
 
-const std::list<User*>& Users::views(const std::string& container) const { return this->views_.at(container); };
+const std::list<User*>& Users::views(const std::string& container) const {
+    return this->views_.at(container);
+};
 
-size_t Users::num_views(const std::string& container) const { return this->views(container).size(); };
+size_t Users::num_views(const std::string& container) const {
+    return this->views(container).size();
+};
 
 std::list<User*> Users::moves() const {
     std::list<User*> us;
@@ -634,9 +709,13 @@ std::list<User*> Users::moves() const {
     return us;
 };
 
-const std::list<User*>& Users::moves(const std::string& container) const { return this->moves_.at(container); };
+const std::list<User*>& Users::moves(const std::string& container) const {
+    return this->moves_.at(container);
+};
 
-size_t Users::num_moves(const std::string& container) const { return this->moves(container).size(); };
+size_t Users::num_moves(const std::string& container) const {
+    return this->moves(container).size();
+};
 
 structured_control_flow::ControlFlowNode* Users::scope(User* user) {
     if (auto data_node = dynamic_cast<data_flow::DataFlowNode*>(user->element())) {

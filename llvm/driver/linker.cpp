@@ -341,7 +341,9 @@ std::string get_extract_dir(const std::filesystem::path& Obj) {
 
 std::string get_output_file(const std::vector<std::string>& command) {
     auto it = std::find(command.begin(), command.end(), "-o");
-    if (it == command.end()) return std::string{};
+    if (it == command.end()) {
+        return std::string{};
+    }
     ++it;
     assert(it != command.end() && "Ill-formed command-line");
     return *it;
@@ -424,7 +426,9 @@ int final_link_pass(
         std::remove_if(
             final_link_cmd_parts.begin(),
             final_link_cmd_parts.end(),
-            [](const std::string& arg) { return arg.starts_with("-mllvm=-docc"); }
+            [](const std::string& arg) {
+                return arg.starts_with("-mllvm=-docc");
+            }
         ),
         final_link_cmd_parts.end()
     );
@@ -456,7 +460,9 @@ int final_link_pass(
         std::remove_if(
             final_link_cmd_parts.begin(),
             final_link_cmd_parts.end(),
-            [](const std::string& arg) { return arg.starts_with("-mllvm=-docc"); }
+            [](const std::string& arg) {
+                return arg.starts_with("-mllvm=-docc");
+            }
         ),
         final_link_cmd_parts.end()
     );
@@ -495,7 +501,9 @@ int final_link_pass(
 
 static bool is_docc_save_temps(const std::vector<std::string>& args) {
     for (auto& arg : args) {
-        if (arg == "-mllvm=-docc-save-temps" || arg == "-docc-save-temps") return true;
+        if (arg == "-mllvm=-docc-save-temps" || arg == "-docc-save-temps") {
+            return true;
+        }
     }
     return false;
 }

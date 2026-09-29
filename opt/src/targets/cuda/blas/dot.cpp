@@ -13,7 +13,8 @@ DotNodeDispatcher_CUBLASWithTransfers::DotNodeDispatcher_CUBLASWithTransfers(
     const data_flow::DataFlowGraph& data_flow_graph,
     const math::blas::DotNode& node
 )
-    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
+}
 
 void DotNodeDispatcher_CUBLASWithTransfers::dispatch_code(
     codegen::PrettyPrinter& stream,
@@ -94,7 +95,8 @@ DotNodeDispatcher_CUBLASWithoutTransfers::DotNodeDispatcher_CUBLASWithoutTransfe
     const data_flow::DataFlowGraph& data_flow_graph,
     const math::blas::DotNode& node
 )
-    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
+}
 
 void DotNodeDispatcher_CUBLASWithoutTransfers::dispatch_code(
     codegen::PrettyPrinter& stream,

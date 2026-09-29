@@ -25,13 +25,17 @@ void register_memlet(py::module& m) {
         .def_property_readonly("type", &Memlet::type, "Get the memlet type")
         .def_property_readonly(
             "src",
-            [](const Memlet& memlet) -> const DataFlowNode& { return memlet.src(); },
+            [](const Memlet& memlet) -> const DataFlowNode& {
+                return memlet.src();
+            },
             py::return_value_policy::reference,
             "Get the source data flow node"
         )
         .def_property_readonly(
             "dst",
-            [](const Memlet& memlet) -> const DataFlowNode& { return memlet.dst(); },
+            [](const Memlet& memlet) -> const DataFlowNode& {
+                return memlet.dst();
+            },
             py::return_value_policy::reference,
             "Get the destination data flow node"
         )
@@ -50,7 +54,9 @@ void register_memlet(py::module& m) {
         )
         .def_property_readonly(
             "base_type",
-            [](const Memlet& memlet) -> const sdfg::types::IType& { return memlet.base_type(); },
+            [](const Memlet& memlet) -> const sdfg::types::IType& {
+                return memlet.base_type();
+            },
             py::return_value_policy::reference,
             "Get the base type of the data"
         )

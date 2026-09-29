@@ -1,8 +1,10 @@
 #include "sdfg/deepcopy/structured_sdfg_deep_copy.h"
 
+#include <algorithm>
 #include <gtest/gtest.h>
 
 #include "sdfg/data_flow/library_nodes/barrier_local_node.h"
+#include "sdfg/serializer/json_serializer.h"
 
 using namespace sdfg;
 
@@ -27,6 +29,41 @@ TEST(StructuredSDFGDeepCopy, Block) {
 
     EXPECT_EQ(inserted_root->size(), 1);
     EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&inserted_root->at(0)));
+}
+
+TEST(StructuredSDFGDeepCopy, BlockCopyIdsAreStableAcrossClones) {
+    builder::StructuredSDFGBuilder source("copy_ids", FunctionType_CPU);
+    types::Scalar scalar(types::PrimitiveType::Float);
+    source.add_container("input", scalar, true);
+    source.add_container("output", scalar, true);
+    auto& block = source.add_block(source.subject().root());
+    auto& input = source.add_access(block, "input");
+    auto& output = source.add_access(block, "output");
+    auto& tasklet = source.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    source.add_computational_memlet(block, input, tasklet, "_in", {}, scalar);
+    source.add_computational_memlet(block, tasklet, "_out", output, {}, scalar);
+    serializer::JSONSerializer serializer;
+    auto snapshot = [&serializer](const structured_control_flow::Block& copied) {
+        nlohmann::json result;
+        serializer.serialize_node(result, copied);
+        for (const auto* key : {"nodes", "edges"}) {
+            auto& elements = result["dataflow"][key];
+            std::sort(elements.begin(), elements.end(), [](const auto& left, const auto& right) {
+                return left.at("element_id") < right.at("element_id");
+            });
+        }
+        return result;
+    };
+    builder::StructuredSDFGBuilder target("target", FunctionType_CPU);
+    auto& copied = target.add_block(target.subject().root(), block.dataflow());
+    auto expected = snapshot(copied);
+    for (size_t attempt = 0; attempt < 16; ++attempt) {
+        auto clone = source.subject().clone();
+        auto& cloned_block = dynamic_cast<structured_control_flow::Block&>(clone->root().at(0));
+        builder::StructuredSDFGBuilder replay("target", FunctionType_CPU);
+        auto& replayed = replay.add_block(replay.subject().root(), cloned_block.dataflow());
+        EXPECT_EQ(snapshot(replayed), expected);
+    }
 }
 
 TEST(StructuredSDFGDeepCopy, AssignmentBlock) {
@@ -225,6 +262,9 @@ TEST(StructuredSDFGDeepCopy, For) {
     auto init = symbolic::integer(0);
 
     auto& loop = builder_source.add_for(root_source, loopvar, bound, init, update);
+    auto schedule = loop.schedule_type();
+    structured_control_flow::ScheduleType_Unroll::set(schedule);
+    builder_source.update_schedule_type(loop, schedule);
 
     builder::StructuredSDFGBuilder builder_target("sdfg_target", FunctionType_CPU);
     auto& sdfg_target = builder_target.subject();
@@ -248,6 +288,14 @@ TEST(StructuredSDFGDeepCopy, For) {
     EXPECT_TRUE(symbolic::eq(inserted_loop->condition(), bound));
     EXPECT_TRUE(symbolic::eq(inserted_loop->update(), update));
     EXPECT_TRUE(symbolic::eq(inserted_loop->init(), init));
+    EXPECT_TRUE(structured_control_flow::ScheduleType_Unroll::is_set(inserted_loop->schedule_type()));
+
+    deepcopy::StructuredSDFGDeepCopy nest_copy(builder_target, root_target, loop);
+    const auto nodes = nest_copy.copy();
+    const auto* copied_loop = dynamic_cast<const structured_control_flow::For*>(nodes.at(&loop));
+    ASSERT_NE(copied_loop, nullptr);
+    EXPECT_NE(copied_loop->element_id(), loop.element_id());
+    EXPECT_TRUE(structured_control_flow::ScheduleType_Unroll::is_set(copied_loop->schedule_type()));
 }
 
 TEST(StructuredSDFGDeepCopy, Map) {

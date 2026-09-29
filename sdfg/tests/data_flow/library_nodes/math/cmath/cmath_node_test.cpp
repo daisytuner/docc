@@ -143,3 +143,28 @@ TEST(CMathNodeTest, PointerAccessType_ReadOnlyNoCapture) {
     // Out-of-range indices fall back to the base (no metadata).
     EXPECT_EQ(node.pointer_access_type(arity), nullptr);
 }
+
+// Per-category flop-equivalent weights for the libm lookup.
+TEST(CMathNodeTest, FlopEquivalents) {
+    using math::cmath::cmath_function_to_flop;
+    using math::cmath::CMathFunction;
+
+    // Rounding / sign / manipulation / min-max / remainder / sqrt: one fp op.
+    EXPECT_EQ(cmath_function_to_flop(CMathFunction::fabs), 1u);
+    EXPECT_EQ(cmath_function_to_flop(CMathFunction::floor), 1u);
+    EXPECT_EQ(cmath_function_to_flop(CMathFunction::fmax), 1u);
+    EXPECT_EQ(cmath_function_to_flop(CMathFunction::copysign), 1u);
+    EXPECT_EQ(cmath_function_to_flop(CMathFunction::sqrt), 1u);
+    // Fused multiply-add.
+    EXPECT_EQ(cmath_function_to_flop(CMathFunction::fma), 2u);
+    // Exponential / logarithmic / root.
+    EXPECT_EQ(cmath_function_to_flop(CMathFunction::exp), 10u);
+    EXPECT_EQ(cmath_function_to_flop(CMathFunction::log), 10u);
+    EXPECT_EQ(cmath_function_to_flop(CMathFunction::cbrt), 10u);
+    EXPECT_EQ(cmath_function_to_flop(CMathFunction::hypot), 10u);
+    // Trig / hyperbolic / power / error / gamma.
+    EXPECT_EQ(cmath_function_to_flop(CMathFunction::sin), 20u);
+    EXPECT_EQ(cmath_function_to_flop(CMathFunction::tanh), 20u);
+    EXPECT_EQ(cmath_function_to_flop(CMathFunction::pow), 20u);
+    EXPECT_EQ(cmath_function_to_flop(CMathFunction::tgamma), 20u);
+}

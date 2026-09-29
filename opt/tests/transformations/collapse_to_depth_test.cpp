@@ -88,8 +88,12 @@ static structured_control_flow::Map& build_4d_nest(builder::StructuredSDFGBuilde
 static structured_control_flow::Map& build_5d_nest(builder::StructuredSDFGBuilder& builder) {
     auto& root = builder.subject().root();
     types::Scalar sym(types::PrimitiveType::UInt64);
-    for (auto* s : {"N", "M", "P", "Q", "R"}) builder.add_container(s, sym, true);
-    for (auto* s : {"i", "j", "k", "l", "m"}) builder.add_container(s, sym);
+    for (auto* s : {"N", "M", "P", "Q", "R"}) {
+        builder.add_container(s, sym, true);
+    }
+    for (auto* s : {"i", "j", "k", "l", "m"}) {
+        builder.add_container(s, sym);
+    }
 
     auto& m_i = add_map(builder, root, symbolic::symbol("i"), symbolic::symbol("N"));
     auto& m_j = add_map(builder, m_i.root(), symbolic::symbol("j"), symbolic::symbol("M"));
@@ -326,8 +330,8 @@ TEST(CollapseToDepthTest, Apply_4D_Target1) {
     auto M = symbolic::symbol("M");
     auto P = symbolic::symbol("P");
     auto Q = symbolic::symbol("Q");
-    EXPECT_TRUE(symbolic::
-                    eq(result->condition(), symbolic::Lt(civ, symbolic::mul(N, symbolic::mul(M, symbolic::mul(P, Q)))))
+    EXPECT_TRUE(
+        symbolic::eq(result->condition(), symbolic::Lt(civ, symbolic::mul(N, symbolic::mul(M, symbolic::mul(P, Q)))))
     );
 
     // Root: single collapsed map
@@ -418,8 +422,7 @@ TEST(CollapseToDepthTest, Apply_4D_Target2_Structure) {
 
     // Outer range: [0, N*M*P)
     auto civ_outer = outer_result->indvar();
-    EXPECT_TRUE(symbolic::eq(outer_result->condition(), symbolic::Lt(civ_outer, symbolic::mul(symbolic::mul(N, M), P)))
-    );
+    EXPECT_TRUE(symbolic::eq(outer_result->condition(), symbolic::Lt(civ_outer, symbolic::mul(symbolic::mul(N, M), P))));
 
     // Inner range: [0, Q)
     auto civ_inner = inner_result->indvar();
@@ -476,8 +479,7 @@ TEST(CollapseToDepthTest, Apply_5D_Target2_OddSplit) {
 
     // Outer range: [0, N*M*P)
     auto civ_outer = outer_result->indvar();
-    EXPECT_TRUE(symbolic::eq(outer_result->condition(), symbolic::Lt(civ_outer, symbolic::mul(N, symbolic::mul(M, P))))
-    );
+    EXPECT_TRUE(symbolic::eq(outer_result->condition(), symbolic::Lt(civ_outer, symbolic::mul(N, symbolic::mul(M, P)))));
 
     // Inner range: [0, Q*R)
     auto civ_inner = inner_result->indvar();

@@ -194,8 +194,7 @@ TEST(StreamKTest, ApplyBuildsPersistentWorkerLoop) {
 
     // Grid band is now the persistent block index.
     EXPECT_EQ(gmap.indvar()->get_name(), "__streamk_bid");
-    EXPECT_TRUE(symbolic::eq(gpu::ScheduleType_GPU_Offload::parallel_size(gmap.schedule_type()), symbolic::integer(336))
-    );
+    EXPECT_TRUE(symbolic::eq(gpu::ScheduleType_GPU_Offload::parallel_size(gmap.schedule_type()), symbolic::integer(336)));
 
     // Its body is a single sequential worker loop.
     ASSERT_EQ(gmap.root().size(), 1u);

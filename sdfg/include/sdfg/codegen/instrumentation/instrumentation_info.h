@@ -28,6 +28,7 @@ private:
     InstrumentationEventType event_type_;
     analysis::LoopInfo loop_info_;
     std::unordered_map<std::string, std::string> metrics_;
+    bool sampling_ = false;
 
 public:
     InstrumentationInfo(
@@ -50,6 +51,10 @@ public:
     const analysis::LoopInfo& loop_info() const;
 
     const std::unordered_map<std::string, std::string>& metrics() const;
+
+    bool sampling() const;
+
+    void set_sampling(bool sampling);
 };
 
 } // namespace codegen

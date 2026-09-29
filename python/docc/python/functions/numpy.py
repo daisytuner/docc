@@ -72,6 +72,23 @@ class NumPyHandler:
             "copy": self._handle_numpy_copy_func,
             "split": self._handle_numpy_split,
         }
+        # Explicit NumPy scalar-type constructors used as casts, e.g.
+        # np.float32(x), np.int32(arr). Each casts its single (scalar or array)
+        # operand to the named dtype.
+        for _dtype_name in (
+            "float64",
+            "float32",
+            "int64",
+            "int32",
+            "int16",
+            "int8",
+            "uint64",
+            "uint32",
+            "uint16",
+            "uint8",
+            "bool_",
+        ):
+            self.function_handlers[_dtype_name] = self._handle_numpy_dtype_cast
 
     # Expose parent properties for convenience
     @property
@@ -1295,6 +1312,24 @@ class NumPyHandler:
             return True
         f_strides = self._compute_strides(shape, "F")
         return self._strides_equal(strides, f_strides)
+
+    def _handle_numpy_dtype_cast(self, node, func_name):
+        """Handle explicit NumPy scalar-type casts, e.g. np.float32(x), np.int32(arr).
+
+        Casts the single (scalar or array) operand to the dtype named by
+        ``func_name``, returning a new container of that dtype. Mirrors NumPy,
+        where ``np.<dtype>(x)`` yields a value/array of that dtype.
+        """
+        if len(node.args) != 1:
+            raise NotImplementedError(
+                f"np.{func_name}() cast requires exactly one argument"
+            )
+        dtype_node = ast.Attribute(value=ast.Name(id="np"), attr=func_name)
+        target_type = element_type_from_ast_node(
+            dtype_node, self.container_table, self.globals_dict
+        )
+        operand = self.visit(node.args[0])
+        return self._cast_to_type(operand, target_type)
 
     def handle_numpy_call(self, node, func_name):
         if func_name in self.function_handlers:

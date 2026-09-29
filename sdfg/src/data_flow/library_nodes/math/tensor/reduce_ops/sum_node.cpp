@@ -15,7 +15,8 @@ SumNode::SumNode(
     const std::vector<int64_t>& axes,
     bool keepdims
 )
-    : ReduceNode(element_id, debug_info, vertex, parent, LibraryNodeType_Sum, shape, axes, keepdims) {}
+    : ReduceNode(element_id, debug_info, vertex, parent, LibraryNodeType_Sum, shape, axes, keepdims) {
+}
 
 bool SumNode::expand_reduction(
     passes::LibNodeExpander::AccessNodeExpand& expansion,

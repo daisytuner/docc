@@ -73,9 +73,11 @@ TEST(PointerMetadataTest, SerializationTest) {
     meta.push_back(data_flow::PointerAccessMeta::create_invalidate());
     meta.push_back(data_flow::PointerAccessMeta::create_read_only(symbolic::integer(5), false));
     meta.push_back(data_flow::PointerAccessMeta::create_full_write_only(symbolic::integer(8), true));
-    meta.push_back(data_flow::PointerAccessMeta::create_generic(
-        data_flow::ConvexAccessPattern::create(symbolic::integer(3)), data_flow::NoAccessPattern::instance(), true
-    ));
+    meta.push_back(
+        data_flow::PointerAccessMeta::create_generic(
+            data_flow::ConvexAccessPattern::create(symbolic::integer(3)), data_flow::NoAccessPattern::instance(), true
+        )
+    );
 
     auto j = data_flow::PointerAccessMetaSerializer::serialize(meta);
     auto deserialized = data_flow::PointerAccessMetaSerializer::deserialize_list(j);
@@ -85,17 +87,21 @@ TEST(PointerMetadataTest, SerializationTest) {
     EXPECT_TRUE(inv);
     auto* ro = dynamic_cast<data_flow::PointerReadOnly*>(deserialized.at(1).get());
     EXPECT_TRUE(ro);
-    EXPECT_TRUE(symbolic::
-                    eq(dynamic_cast<data_flow::ConvexAccessPattern*>(ro->access_read_pattern().get())->size(),
-                       symbolic::integer(5)));
+    EXPECT_TRUE(
+        symbolic::
+            eq(dynamic_cast<data_flow::ConvexAccessPattern*>(ro->access_read_pattern().get())->size(),
+               symbolic::integer(5))
+    );
     EXPECT_TRUE(dynamic_cast<data_flow::NoAccessPattern*>(ro->access_write_pattern().get()));
     EXPECT_FALSE(ro->no_capture());
     auto* wr = dynamic_cast<data_flow::PointerFullWriteOnly*>(deserialized.at(2).get());
     EXPECT_TRUE(wr);
     EXPECT_TRUE(dynamic_cast<data_flow::NoAccessPattern*>(wr->access_read_pattern().get()));
-    EXPECT_TRUE(symbolic::
-                    eq(dynamic_cast<data_flow::ConvexAccessPattern*>(wr->access_write_pattern().get())->size(),
-                       symbolic::integer(8)));
+    EXPECT_TRUE(
+        symbolic::
+            eq(dynamic_cast<data_flow::ConvexAccessPattern*>(wr->access_write_pattern().get())->size(),
+               symbolic::integer(8))
+    );
     auto* gen = dynamic_cast<data_flow::PointerGenericAccess*>(deserialized.at(3).get());
     EXPECT_TRUE(gen);
 }

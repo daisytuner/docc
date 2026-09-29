@@ -32,7 +32,8 @@ ElementWiseDataflowTensorNode::ElementWiseDataflowTensorNode(
           build_input_conns(modified_tensor_conn, tensor_inputs),
           impl_type
       ),
-      fixed_quantization_(quantization), shape_(shape) {}
+      fixed_quantization_(quantization), shape_(shape) {
+}
 
 std::vector<std::string> ElementWiseDataflowTensorNode::
     build_input_conns(const std::string& modified_tensor_conn, const std::vector<std::string>& tensor_inputs) {
@@ -43,14 +44,15 @@ std::vector<std::string> ElementWiseDataflowTensorNode::
     return input_conns;
 }
 
-types::PrimitiveType ElementWiseDataflowTensorNode::fixed_quantization() const { return fixed_quantization_; }
+types::PrimitiveType ElementWiseDataflowTensorNode::fixed_quantization() const {
+    return fixed_quantization_;
+}
 
 void ElementWiseDataflowTensorNode::set_fixed_quantization(const QuantizationType quant) {
     fixed_quantization_ = quant;
 }
 
-types::PrimitiveType ElementWiseDataflowTensorNode::quantization(const data_flow::DataFlowGraph& data_flow_graph
-) const {
+types::PrimitiveType ElementWiseDataflowTensorNode::quantization(const data_flow::DataFlowGraph& data_flow_graph) const {
     if (fixed_quantization_ != QUANTIZATION_MATCH_INPUTS) {
         return fixed_quantization_;
     } else {
@@ -58,8 +60,8 @@ types::PrimitiveType ElementWiseDataflowTensorNode::quantization(const data_flow
     }
 }
 
-std::optional<types::PrimitiveType> ElementWiseDataflowTensorNode::uniform_quantization(const data_flow::DataFlowGraph&
-                                                                                            data_flow_graph) const {
+std::optional<types::PrimitiveType> ElementWiseDataflowTensorNode::
+    uniform_quantization(const data_flow::DataFlowGraph& data_flow_graph) const {
     if (fixed_quantization_ != QUANTIZATION_MATCH_INPUTS) {
         auto inferred = this->primitive_type(data_flow_graph);
         if (inferred == fixed_quantization_) {
@@ -199,9 +201,8 @@ std::pair<structured_control_flow::Sequence*, std::vector<symbolic::Expression>>
     return {last_scope, loop_vars};
 }
 
-std::unique_ptr<types::IType> ElementWiseDataflowTensorNode::access_type(const std::pair<
-                                                                         types::PrimitiveType,
-                                                                         const TensorLayout*>& pair) {
+std::unique_ptr<types::IType> ElementWiseDataflowTensorNode::
+    access_type(const std::pair<types::PrimitiveType, const TensorLayout*>& pair) {
     if (pair.second) {
         return std::make_unique<types::Tensor>(pair.first, *pair.second);
     } else {

@@ -51,6 +51,14 @@ def test_cat_dim_neg1(target: str) -> None:
     check(CatDimNeg1Net(), *(torch.randn(2, 3), torch.randn(2, 3)), target=target)
 
 
+def test_cat_dim_neg_double(target: str) -> None:
+    class CatDimNegDouble(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.cat((input, input), -1)
+
+    check(CatDimNegDouble(), torch.randn(1, 39, 64), target=target)
+
+
 def test_cat_many(target: str) -> None:
     class CatManyNet(nn.Module):
         def forward(self, inputs: tuple[torch.Tensor, ...]) -> torch.Tensor:
@@ -58,6 +66,14 @@ def test_cat_many(target: str) -> None:
 
     x = torch.randn(2, 3)
     check(CatManyNet(), (x, x, x, x, x, x, x, x, x, x), target=target)
+
+
+def test_cat_empty(target: str) -> None:
+    class CatEmptyNet(nn.Module):
+        def forward(self, input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
+            return torch.cat((input1, input2), 0)
+
+    check(CatEmptyNet(), *(torch.rand(2, 3), torch.randn(0)), target=target)
 
 
 # --- expand_copy ---

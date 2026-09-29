@@ -27,9 +27,13 @@ public:
         types ::PrimitiveType expected_type
     ) override;
 
-    bool supports_integer_types() const override { return true; }
+    bool supports_integer_types() const override {
+        return true;
+    }
 
-    int tensor_input_count() const override { return 1; }
+    int tensor_input_count() const override {
+        return 1;
+    }
 
     void validate_non_tensor_inputs(const data_flow::DataFlowGraph& grap) const override;
 

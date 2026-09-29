@@ -33,7 +33,9 @@ private:
 public:
     explicit FunctionToSDFGPass(const PluginRegistry& plugin_registry);
 
-    static bool available(analysis::AnalysisManager& AM) { return true; }
+    static bool available(analysis::AnalysisManager& AM) {
+        return true;
+    }
 
     llvm::PreservedAnalyses run(llvm::Module& Module, llvm::ModuleAnalysisManager& MAM, analysis::AnalysisManager& AM);
 };

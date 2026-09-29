@@ -12,7 +12,8 @@ AxisSchedule::AxisSchedule(
     Level level, Space space, bool has_scratchpad, unsigned spatial_axis, symbolic::Integer parallel_size, bool needs_sync
 )
     : level_(level), space_(space), has_scratchpad_(has_scratchpad), spatial_axis_(spatial_axis),
-      parallel_size_(std::move(parallel_size)), needs_sync_(needs_sync) {}
+      parallel_size_(std::move(parallel_size)), needs_sync_(needs_sync) {
+}
 
 std::optional<AxisSchedule> TileTargetRegistry::classify(const structured_control_flow::ScheduleType& sched) const {
     // The target that owns this schedule value supplies the classification.
@@ -61,7 +62,8 @@ TileAxis::TileAxis(
     symbolic::Symbol indvar, Role role, AxisSchedule schedule, symbolic::Expression init, symbolic::Integer stride
 )
     : indvar_(std::move(indvar)), role_(role), schedule_(std::move(schedule)), init_(std::move(init)),
-      stride_(std::move(stride)) {}
+      stride_(std::move(stride)) {
+}
 
 std::vector<TileAxis> TileAxis::
     enclosing(structured_control_flow::StructuredLoop& loop, const symbolic::MultiExpression& bases) {
@@ -98,7 +100,8 @@ std::vector<TileAxis> TileAxis::
 
 Tile::Tile(std::string container, Layout source, std::vector<TileAxis> axes, bool reads, bool writes)
     : container_(std::move(container)), source_(std::move(source)), axes_(std::move(axes)), reads_(reads),
-      writes_(writes) {}
+      writes_(writes) {
+}
 
 bool Tile::cooperative() const {
     for (const auto& x : axes_) {

@@ -10,7 +10,9 @@ SequenceFusion::SequenceFusion()
 
       };
 
-std::string SequenceFusion::name() { return "SequenceFusion"; };
+std::string SequenceFusion::name() {
+    return "SequenceFusion";
+};
 
 bool SequenceFusion::run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     bool applied = false;

@@ -30,7 +30,9 @@ constexpr bool is_H2D(const DataTransferDirection& transfer_direction) {
 
 enum class BufferLifecycle : int8_t { FREE = -1, NO_CHANGE = 0, ALLOC = 1 };
 
-constexpr bool is_FREE(const BufferLifecycle& buffer_lifecycle) { return (buffer_lifecycle == BufferLifecycle::FREE); }
+constexpr bool is_FREE(const BufferLifecycle& buffer_lifecycle) {
+    return (buffer_lifecycle == BufferLifecycle::FREE);
+}
 
 constexpr bool is_NO_CHANGE(const BufferLifecycle& buffer_lifecycle) {
     return (buffer_lifecycle == BufferLifecycle::NO_CHANGE);
@@ -141,11 +143,11 @@ public:
 
     data_flow::PointerAccessType pointer_access_type(int input_idx) const override;
 
-    data_flow::EdgeRemoveOption can_remove_out_edge(const data_flow::DataFlowGraph& graph, const data_flow::Memlet* memlet)
-        const override;
+    data_flow::EdgeRemoveOption
+    can_remove_out_edge(const data_flow::DataFlowGraph& graph, const data_flow::Memlet* memlet) const override;
 
-    data_flow::EdgeRemoveOption can_remove_in_edge(const data_flow::DataFlowGraph& graph, const data_flow::Memlet* memlet)
-        const override;
+    data_flow::EdgeRemoveOption
+    can_remove_in_edge(const data_flow::DataFlowGraph& graph, const data_flow::Memlet* memlet) const override;
 
     bool update_edge_removed(const std::string& out_conn) override;
 };

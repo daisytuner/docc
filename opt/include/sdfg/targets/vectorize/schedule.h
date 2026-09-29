@@ -16,7 +16,9 @@ namespace vectorize {
  */
 class ScheduleType_Vectorize {
 public:
-    static const std::string value() { return "VECTORIZE"; }
+    static const std::string value() {
+        return "VECTORIZE";
+    }
 
     static structured_control_flow::ScheduleType create() {
         return structured_control_flow::ScheduleType(value(), structured_control_flow::ScheduleTypeCategory::Vectorizer);

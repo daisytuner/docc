@@ -32,9 +32,14 @@ std::string ROCBLASDataTransferExtraction::create_device_container(
     builder::StructuredSDFGBuilder& builder, const types::Pointer& type, const symbolic::Expression& size
 ) {
     auto new_type = type.clone();
-    new_type->storage_type(types::StorageType(
-        "AMD_Generic", size, types::StorageType::AllocationType::Unmanaged, types::StorageType::AllocationType::Unmanaged
-    ));
+    new_type->storage_type(
+        types::StorageType(
+            "AMD_Generic",
+            size,
+            types::StorageType::AllocationType::Unmanaged,
+            types::StorageType::AllocationType::Unmanaged
+        )
+    );
     auto device_container = builder.find_new_name(ROCM_DEVICE_PREFIX);
     builder.add_container(device_container, *new_type);
     return device_container;
@@ -187,9 +192,12 @@ void ROCBLASDataTransferExtraction::create_copy_from_device_with_deallocation(
     );
 }
 
-ROCBLASDataTransferExtraction::ROCBLASDataTransferExtraction(math::blas::BLASNode& blas_node) : blas_node_(blas_node) {}
+ROCBLASDataTransferExtraction::ROCBLASDataTransferExtraction(math::blas::BLASNode& blas_node) : blas_node_(blas_node) {
+}
 
-std::string ROCBLASDataTransferExtraction::name() const { return "ROCBLASDataTransferExtraction"; }
+std::string ROCBLASDataTransferExtraction::name() const {
+    return "ROCBLASDataTransferExtraction";
+}
 
 bool ROCBLASDataTransferExtraction::
     can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
@@ -338,7 +346,7 @@ void ROCBLASDataTransferExtraction::
     }
 
     // Change the implementation type to ROCMBLAS without data transfers
-    this->blas_node_.implementation_type() = rocm::ImplementationType_ROCMWithoutTransfers;
+    this->blas_node_.set_implementation_type(rocm::ImplementationType_ROCMWithoutTransfers);
 }
 
 void ROCBLASDataTransferExtraction::to_json(nlohmann::json& j) const {

@@ -2,11 +2,13 @@
 
 #include "sdfg/codegen/dispatchers/node_dispatcher_registry.h"
 #include "sdfg/einsum/einsum.h"
+#include "sdfg/parallelization/parallelization.h"
 #include "sdfg/serializer/json_serializer.h"
 #include "sdfg/targets/cuda/plugin.h"
 #include "sdfg/targets/omp/plugin.h"
 #include "sdfg/targets/rocm/plugin.h"
 #include "sdfg/targets/vectorize/plugin.h"
+#include "sdfg/tiles/plugin.h"
 #include "sdfg/visualizer/dot_visualizer.h"
 
 #include "sdfg_debug_dump.h"
@@ -19,6 +21,8 @@ int main(int argc, char** argv) {
     sdfg::codegen::register_default_dispatchers();
     sdfg::serializer::register_default_serializers();
     sdfg::einsum::register_einsum_plugin();
+    sdfg::parallelization::register_parallelization_plugin(context);
+    sdfg::tiles::register_tiles_plugin(context);
     sdfg::vectorize::register_vectorize_plugin();
     sdfg::omp::register_omp_plugin();
     sdfg::cuda::register_cuda_plugin(context);

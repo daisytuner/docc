@@ -2,7 +2,9 @@
 
 #include <cmath>
 #include <limits>
+#include <map>
 #include <numeric>
+#include <regex>
 #include <string>
 
 #include <symengine/parser.h>
@@ -30,26 +32,43 @@ Symbol symbol(const std::string& name) {
     return SymEngine::symbol(name);
 };
 
-Integer integer(int64_t value) { return SymEngine::integer(value); };
+Integer integer(int64_t value) {
+    return SymEngine::integer(value);
+};
 
-Integer zero() { return symbolic::integer(0); };
+Integer zero() {
+    return symbolic::integer(0);
+};
 
-Integer one() { return symbolic::integer(1); };
+Integer one() {
+    return symbolic::integer(1);
+};
 
-Condition __false__() { return SymEngine::boolean(false); };
+Condition __false__() {
+    return SymEngine::boolean(false);
+};
 
-Condition __true__() { return SymEngine::boolean(true); };
+Condition __true__() {
+    return SymEngine::boolean(true);
+};
 
-Symbol __nullptr__() { return SymEngine::symbol("__daisy_nullptr"); };
+Symbol __nullptr__() {
+    return SymEngine::symbol("__daisy_nullptr");
+};
 
-bool is_nullptr(const Symbol symbol) { return symbol->get_name() == "__daisy_nullptr"; };
+bool is_nullptr(const Symbol symbol) {
+    return symbol->get_name() == "__daisy_nullptr";
+};
 
-bool is_pointer(const Symbol symbol) { return is_nullptr(symbol); };
+bool is_pointer(const Symbol symbol) {
+    return is_nullptr(symbol);
+};
 
 bool is_nv(const Symbol symbol) {
-    if (symbol == threadIdx_x() || symbol == threadIdx_y() || symbol == threadIdx_z() || symbol == blockIdx_x() ||
-        symbol == blockIdx_y() || symbol == blockIdx_z() || symbol == blockDim_x() || symbol == blockDim_y() ||
-        symbol == blockDim_z() || symbol == gridDim_x() || symbol == gridDim_y() || symbol == gridDim_z()) {
+    if (eq(symbol, threadIdx_x()) || eq(symbol, threadIdx_y()) || eq(symbol, threadIdx_z()) ||
+        eq(symbol, blockIdx_x()) || eq(symbol, blockIdx_y()) || eq(symbol, blockIdx_z()) || eq(symbol, blockDim_x()) ||
+        eq(symbol, blockDim_y()) || eq(symbol, blockDim_z()) || eq(symbol, gridDim_x()) || eq(symbol, gridDim_y()) ||
+        eq(symbol, gridDim_z())) {
         return true;
     } else {
         return false;
@@ -69,23 +88,39 @@ Expression divide_ceil(const Expression dividend, const Expression divisor) {
 
 /***** Logical Expressions *****/
 
-Condition And(const Condition lhs, const Condition rhs) { return SymEngine::logical_and({lhs, rhs}); };
+Condition And(const Condition lhs, const Condition rhs) {
+    return SymEngine::logical_and({lhs, rhs});
+};
 
-Condition Or(const Condition lhs, const Condition rhs) { return SymEngine::logical_or({lhs, rhs}); };
+Condition Or(const Condition lhs, const Condition rhs) {
+    return SymEngine::logical_or({lhs, rhs});
+};
 
-Condition Not(const Condition expr) { return expr->logical_not(); };
+Condition Not(const Condition expr) {
+    return expr->logical_not();
+};
 
-bool is_true(const Expression expr) { return SymEngine::eq(*SymEngine::boolTrue, *expr); };
+bool is_true(const Expression expr) {
+    return SymEngine::eq(*SymEngine::boolTrue, *expr);
+};
 
-bool is_false(const Expression expr) { return SymEngine::eq(*SymEngine::boolFalse, *expr); };
+bool is_false(const Expression expr) {
+    return SymEngine::eq(*SymEngine::boolFalse, *expr);
+};
 
 /***** Integer Functions *****/
 
-Expression add(const Expression lhs, const Expression rhs) { return SymEngine::add(lhs, rhs); };
+Expression add(const Expression lhs, const Expression rhs) {
+    return SymEngine::add(lhs, rhs);
+};
 
-Expression sub(const Expression lhs, const Expression rhs) { return SymEngine::sub(lhs, rhs); };
+Expression sub(const Expression lhs, const Expression rhs) {
+    return SymEngine::sub(lhs, rhs);
+};
 
-Expression mul(const Expression lhs, const Expression rhs) { return SymEngine::mul(lhs, rhs); };
+Expression mul(const Expression lhs, const Expression rhs) {
+    return SymEngine::mul(lhs, rhs);
+};
 
 Expression div(const Expression lhs, const Expression rhs) {
     if (eq(rhs, integer(0))) {
@@ -112,9 +147,13 @@ Expression div(const Expression lhs, const Expression rhs) {
     return SymEngine::function_symbol("idiv", {lhs, rhs});
 };
 
-Expression min(const Expression lhs, const Expression rhs) { return SymEngine::min({lhs, rhs}); };
+Expression min(const Expression lhs, const Expression rhs) {
+    return SymEngine::min({lhs, rhs});
+};
 
-Expression max(const Expression lhs, const Expression rhs) { return SymEngine::max({lhs, rhs}); };
+Expression max(const Expression lhs, const Expression rhs) {
+    return SymEngine::max({lhs, rhs});
+};
 
 Expression abs(const Expression expr) {
     auto abs = SymEngine::function_symbol("iabs", {expr});
@@ -144,7 +183,9 @@ Expression bit_xor(const Expression lhs, const Expression rhs) {
     return SymEngine::function_symbol("bit_xor", {lhs, rhs});
 };
 
-Expression pow(const Expression base, const Expression exp) { return SymEngine::pow(base, exp); };
+Expression pow(const Expression base, const Expression exp) {
+    return SymEngine::pow(base, exp);
+};
 
 Expression zext_i64(const Expression expr) {
     auto zext = SymEngine::make_rcp<ZExtI64Function>(expr);
@@ -176,17 +217,29 @@ Expression malloc_usable_size(const Symbol symbol) {
 
 /***** Comparisions *****/
 
-Condition Eq(const Expression lhs, const Expression rhs) { return SymEngine::Eq(lhs, rhs); };
+Condition Eq(const Expression lhs, const Expression rhs) {
+    return SymEngine::Eq(lhs, rhs);
+};
 
-Condition Ne(const Expression lhs, const Expression rhs) { return SymEngine::Ne(lhs, rhs); };
+Condition Ne(const Expression lhs, const Expression rhs) {
+    return SymEngine::Ne(lhs, rhs);
+};
 
-Condition Lt(const Expression lhs, const Expression rhs) { return SymEngine::Lt(lhs, rhs); };
+Condition Lt(const Expression lhs, const Expression rhs) {
+    return SymEngine::Lt(lhs, rhs);
+};
 
-Condition Gt(const Expression lhs, const Expression rhs) { return SymEngine::Gt(lhs, rhs); };
+Condition Gt(const Expression lhs, const Expression rhs) {
+    return SymEngine::Gt(lhs, rhs);
+};
 
-Condition Le(const Expression lhs, const Expression rhs) { return SymEngine::Le(lhs, rhs); };
+Condition Le(const Expression lhs, const Expression rhs) {
+    return SymEngine::Le(lhs, rhs);
+};
 
-Condition Ge(const Expression lhs, const Expression rhs) { return SymEngine::Ge(lhs, rhs); };
+Condition Ge(const Expression lhs, const Expression rhs) {
+    return SymEngine::Ge(lhs, rhs);
+};
 
 /***** Modification *****/
 
@@ -220,7 +273,9 @@ Expression factor(const Expression expr) {
         bool changed = false;
         for (const auto& arg : args) {
             auto factored = factor(arg);
-            if (!eq(factored, arg)) changed = true;
+            if (!eq(factored, arg)) {
+                changed = true;
+            }
             result = symbolic::mul(result, factored);
         }
         return changed ? result : expr;
@@ -232,13 +287,17 @@ Expression factor(const Expression expr) {
     }
 
     auto symbol_set = atoms(expr);
-    if (symbol_set.empty()) return expr;
+    if (symbol_set.empty()) {
+        return expr;
+    }
 
     // Try each symbol as the polynomial variable
     for (const auto& sym : symbol_set) {
         SymbolVec gens = {sym};
         auto poly = polynomial(expr, gens);
-        if (poly.is_null()) continue;
+        if (poly.is_null()) {
+            continue;
+        }
 
         auto& dict = poly->get_poly().get_dict();
 
@@ -247,7 +306,9 @@ Expression factor(const Expression expr) {
         for (const auto& [exp, coeff] : dict) {
             degree = std::max(degree, static_cast<int>(exp[0]));
         }
-        if (degree < 2 || degree > 20) continue;
+        if (degree < 2 || degree > 20) {
+            continue;
+        }
 
         std::vector<Expression> sym_coeffs(degree + 1, symbolic::zero());
         for (const auto& [exp, coeff] : dict) {
@@ -277,8 +338,12 @@ Expression factor(const Expression expr) {
             Expression gcd_candidate = SymEngine::null;
             size_t min_complexity = SIZE_MAX;
             for (int i = 0; i <= degree; i++) {
-                if (eq(sym_coeffs[i], symbolic::zero())) continue;
-                if (SymEngine::is_a<SymEngine::Integer>(*sym_coeffs[i])) continue;
+                if (eq(sym_coeffs[i], symbolic::zero())) {
+                    continue;
+                }
+                if (SymEngine::is_a<SymEngine::Integer>(*sym_coeffs[i])) {
+                    continue;
+                }
                 size_t complexity = atoms(sym_coeffs[i]).size();
                 if (complexity < min_complexity) {
                     min_complexity = complexity;
@@ -290,7 +355,9 @@ Expression factor(const Expression expr) {
                 bool all_divide = true;
                 std::vector<Expression> reduced(degree + 1, symbolic::zero());
                 for (int i = 0; i <= degree; i++) {
-                    if (eq(sym_coeffs[i], symbolic::zero())) continue;
+                    if (eq(sym_coeffs[i], symbolic::zero())) {
+                        continue;
+                    }
                     auto [q, r] = polynomial_div(sym_coeffs[i], gcd_candidate);
                     if (!eq(r, symbolic::zero())) {
                         all_divide = false;
@@ -320,7 +387,9 @@ Expression factor(const Expression expr) {
                 }
             }
 
-            if (!all_integer) continue;
+            if (!all_integer) {
+                continue;
+            }
         }
 
         // Extract GCD of integer coefficients
@@ -391,7 +460,9 @@ Expression factor(const Expression expr) {
                         }
                         val = val * root + current[i];
                     }
-                    if (overflow || val != 0) continue;
+                    if (overflow || val != 0) {
+                        continue;
+                    }
 
                     // Found root — extract with multiplicity via synthetic division
                     int mult = 0;
@@ -402,7 +473,9 @@ Expression factor(const Expression expr) {
                             quotient[i - 1] = current[i] + root * quotient[i];
                         }
                         int64_t rem = current[0] + root * quotient[0];
-                        if (rem != 0) break;
+                        if (rem != 0) {
+                            break;
+                        }
 
                         mult++;
                         current_degree--;
@@ -416,10 +489,14 @@ Expression factor(const Expression expr) {
                     found_root = true;
                     break;
                 }
-                if (found_root) break;
+                if (found_root) {
+                    break;
+                }
             }
 
-            if (!found_root) break;
+            if (!found_root) {
+                break;
+            }
         }
 
         // Check remaining degree-2 for perfect square: a*x^2 + b*x + c with b^2 = 4ac
@@ -445,13 +522,17 @@ Expression factor(const Expression expr) {
             }
         }
 
-        if (!made_progress) continue;
+        if (!made_progress) {
+            continue;
+        }
 
         // Add remaining unfactored polynomial
         if (current_degree >= 1) {
             Expression remaining = symbolic::zero();
             for (int i = current_degree; i >= 0; i--) {
-                if (current[i] == 0) continue;
+                if (current[i] == 0) {
+                    continue;
+                }
                 if (i == 0) {
                     remaining = symbolic::add(remaining, symbolic::integer(current[i]));
                 } else if (i == 1) {
@@ -861,7 +942,9 @@ Expression overapproximate(const Expression expr) {
         for (const auto& arg : args) {
             auto new_arg = overapproximate(arg);
             new_args.push_back(new_arg);
-            if (!symbolic::eq(arg, new_arg)) changed = true;
+            if (!symbolic::eq(arg, new_arg)) {
+                changed = true;
+            }
         }
         if (changed) {
             return SymEngine::add(new_args);
@@ -877,7 +960,9 @@ Expression overapproximate(const Expression expr) {
         for (const auto& arg : args) {
             auto new_arg = overapproximate(arg);
             new_args.push_back(new_arg);
-            if (!symbolic::eq(arg, new_arg)) changed = true;
+            if (!symbolic::eq(arg, new_arg)) {
+                changed = true;
+            }
         }
         if (changed) {
             return SymEngine::mul(new_args);
@@ -887,7 +972,9 @@ Expression overapproximate(const Expression expr) {
     return expr;
 };
 
-bool eq(const Expression lhs, const Expression rhs) { return SymEngine::eq(*lhs, *rhs); };
+bool eq(const Expression lhs, const Expression rhs) {
+    return SymEngine::eq(*lhs, *rhs);
+};
 
 bool null_safe_eq(const Expression lhs, const Expression rhs) {
     if (lhs.is_null() && rhs.is_null()) {
@@ -899,9 +986,13 @@ bool null_safe_eq(const Expression lhs, const Expression rhs) {
     }
 }
 
-bool uses(const Expression expr, const Symbol sym) { return SymEngine::has_symbol(*expr, *sym); };
+bool uses(const Expression expr, const Symbol sym) {
+    return SymEngine::has_symbol(*expr, *sym);
+};
 
-bool uses(const Expression expr, const std::string& name) { return symbolic::uses(expr, symbol(name)); };
+bool uses(const Expression expr, const std::string& name) {
+    return symbolic::uses(expr, symbol(name));
+};
 
 SymbolSet atoms(const Expression expr) {
     SymbolSet atoms;
@@ -913,7 +1004,9 @@ SymbolSet atoms(const Expression expr) {
     return atoms;
 };
 
-ExpressionSet muls(const Expression expr) { return SymEngine::atoms<const SymEngine::Mul>(*expr); };
+ExpressionSet muls(const Expression expr) {
+    return SymEngine::atoms<const SymEngine::Mul>(*expr);
+};
 
 Expression subs(const Expression expr, const Expression old_expr, const Expression new_expr) {
     SymEngine::map_basic_basic d;
@@ -965,7 +1058,26 @@ MultiExpression substitute(const MultiExpression& vec, const symbolic::Expressio
 }
 
 Expression parse(const std::string& expr_str) {
-    auto expr = SymEngine::parse(expr_str);
+    static const std::regex gpu_builtin(R"(\b(?:threadIdx|blockIdx|blockDim|gridDim)\.[xyz]\b)");
+    std::map<const std::string, const Expression> constants;
+    std::string parsed_text;
+    std::string prefix = "__daisy_parse_gpu_";
+    while (expr_str.find(prefix) != std::string::npos) {
+        prefix += "_";
+    }
+    size_t position = 0;
+    // SymEngine's lexer rejects dots in identifiers; parser-local tokens restore the original builtin symbols.
+    for (auto match = std::sregex_iterator(expr_str.begin(), expr_str.end(), gpu_builtin);
+         match != std::sregex_iterator();
+         ++match) {
+        parsed_text.append(expr_str, position, match->position() - position);
+        auto token = prefix + std::to_string(constants.size());
+        constants.emplace(token, symbolic::symbol(match->str()));
+        parsed_text += token;
+        position = match->position() + match->length();
+    }
+    parsed_text.append(expr_str, position, std::string::npos);
+    auto expr = SymEngine::parse(parsed_text, true, constants);
     expr = symbolic::subs(expr, symbolic::symbol("true"), symbolic::one());
     expr = symbolic::subs(expr, symbolic::symbol("false"), symbolic::zero());
     return expr;
@@ -984,29 +1096,53 @@ Expression inverse(const Expression expr, const Symbol symbol) {
 
 /***** NV Symbols *****/
 
-Symbol threadIdx_x() { return symbol("threadIdx.x"); };
+Symbol threadIdx_x() {
+    return symbol("threadIdx.x");
+};
 
-Symbol threadIdx_y() { return symbol("threadIdx.y"); };
+Symbol threadIdx_y() {
+    return symbol("threadIdx.y");
+};
 
-Symbol threadIdx_z() { return symbol("threadIdx.z"); };
+Symbol threadIdx_z() {
+    return symbol("threadIdx.z");
+};
 
-Symbol blockDim_x() { return symbol("blockDim.x"); };
+Symbol blockDim_x() {
+    return symbol("blockDim.x");
+};
 
-Symbol blockDim_y() { return symbol("blockDim.y"); };
+Symbol blockDim_y() {
+    return symbol("blockDim.y");
+};
 
-Symbol blockDim_z() { return symbol("blockDim.z"); };
+Symbol blockDim_z() {
+    return symbol("blockDim.z");
+};
 
-Symbol blockIdx_x() { return symbol("blockIdx.x"); };
+Symbol blockIdx_x() {
+    return symbol("blockIdx.x");
+};
 
-Symbol blockIdx_y() { return symbol("blockIdx.y"); };
+Symbol blockIdx_y() {
+    return symbol("blockIdx.y");
+};
 
-Symbol blockIdx_z() { return symbol("blockIdx.z"); };
+Symbol blockIdx_z() {
+    return symbol("blockIdx.z");
+};
 
-Symbol gridDim_x() { return symbol("gridDim.x"); };
+Symbol gridDim_x() {
+    return symbol("gridDim.x");
+};
 
-Symbol gridDim_y() { return symbol("gridDim.y"); };
+Symbol gridDim_y() {
+    return symbol("gridDim.y");
+};
 
-Symbol gridDim_z() { return symbol("gridDim.z"); }
+Symbol gridDim_z() {
+    return symbol("gridDim.z");
+}
 
 bool has_dynamic_sizeof(const Expression expr) {
     for (auto& func : SymEngine::atoms<SymEngine::FunctionSymbol>(*expr)) {

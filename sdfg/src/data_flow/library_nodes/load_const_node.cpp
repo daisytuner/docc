@@ -24,15 +24,24 @@ LoadConstNode::LoadConstNode(
           true,
           data_flow::ImplementationType_NONE
       ),
-      type_(std::move(type)), data_source_(std::move(data_source)) {}
+      type_(std::move(type)), data_source_(std::move(data_source)) {
+}
 
-symbolic::SymbolSet LoadConstNode::symbols() const { return {}; }
+symbolic::SymbolSet LoadConstNode::symbols() const {
+    return {};
+}
 
-const types::IType& LoadConstNode::type() const { return *type_; }
+const types::IType& LoadConstNode::type() const {
+    return *type_;
+}
 
-ConstSource& LoadConstNode::data_source() const { return *data_source_; }
+ConstSource& LoadConstNode::data_source() const {
+    return *data_source_;
+}
 
-std::string LoadConstNode::toStr() const { return "LoadConst(" + type_->print() + ": " + data_source_->toStr() + ")"; }
+std::string LoadConstNode::toStr() const {
+    return "LoadConst(" + type_->print() + ": " + data_source_->toStr() + ")";
+}
 
 std::unique_ptr<data_flow::DataFlowNode> LoadConstNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
@@ -40,9 +49,11 @@ std::unique_ptr<data_flow::DataFlowNode> LoadConstNode::
         LoadConstNode>(element_id, debug_info_, vertex, parent, type_->clone(), data_source_->clone());
 }
 
-void LoadConstNode::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {}
+void LoadConstNode::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
+}
 
-void LoadConstNode::replace(const symbolic::ExpressionMapping& replacements) {}
+void LoadConstNode::replace(const symbolic::ExpressionMapping& replacements) {
+}
 
 nlohmann::json LoadConstNodeSerializer::serialize(const data_flow::LibraryNode& library_node) {
     const LoadConstNode& node = static_cast<const LoadConstNode&>(library_node);
@@ -109,7 +120,8 @@ LoadConstNodeDispatcher::LoadConstNodeDispatcher(
     const data_flow::DataFlowGraph& data_flow_graph,
     const LoadConstNode& node
 )
-    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
+}
 
 void LoadConstNodeDispatcher::dispatch_code(
     codegen::PrettyPrinter& stream,

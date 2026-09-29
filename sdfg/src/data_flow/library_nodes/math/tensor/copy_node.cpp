@@ -353,11 +353,16 @@ TensorCopyNode::TensorCopyNode(
     const data_flow::ImplementationType& impl_type
 )
     : TensorNode(element_id, debug_info, vertex, parent, LibraryNodeType_TensorCopy, {}, {"X", "Y"}, impl_type),
-      layout_x_(layout_x), layout_y_(layout_y) {}
+      layout_x_(layout_x), layout_y_(layout_y) {
+}
 
-const TensorLayout& TensorCopyNode::layout_x() const { return this->layout_x_; }
+const TensorLayout& TensorCopyNode::layout_x() const {
+    return this->layout_x_;
+}
 
-const TensorLayout& TensorCopyNode::layout_y() const { return this->layout_y_; }
+const TensorLayout& TensorCopyNode::layout_y() const {
+    return this->layout_y_;
+}
 
 bool TensorCopyNode::is_identity_mode() const {
     int dims = this->layout_x_.dims();
@@ -454,7 +459,9 @@ void TensorCopyNode::validate(const Function& function) const {
     }
 }
 
-bool TensorCopyNode::supports_integer_types() const { return true; }
+bool TensorCopyNode::supports_integer_types() const {
+    return true;
+}
 
 using Dir = passes::LibNodeExpander::InputUse;
 
@@ -495,7 +502,9 @@ symbolic::SymbolSet TensorCopyNode::symbols() const {
     return syms;
 }
 
-symbolic::Expression TensorCopyNode::flop() const { return symbolic::zero(); }
+symbolic::Expression TensorCopyNode::flop() const {
+    return symbolic::zero();
+}
 
 data_flow::PointerAccessType TensorCopyNode::pointer_access_type(int input_idx) const {
     switch (input_idx) {

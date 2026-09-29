@@ -171,6 +171,27 @@ class TensorInfo:
         else:
             return Pointer(self.element_type())
 
+    def broadcast(self, ref: "TensorInfo | Tensor | list[str]") -> Tensor:
+        """
+        Construct an SDFG tensor type from the SDFG tensor type of this tensor information whose
+        shape and strides are broadcasted to the provided reference. This is skipped if the tensor
+        information shape is empty. Throws an exception if the shapes are incompatible.
+        """
+        if len(self.shape()) == 0:
+            return self.sdfg_tensor_type()
+        if isinstance(ref, TensorInfo):
+            ref_shape: list[str] = ref.shape()
+        elif isinstance(ref, Tensor):
+            ref_shape: list[str] = ref.shape
+        else:
+            ref_shape: list[str] = ref
+        new_tensor: Tensor | None = self.sdfg_tensor_type().broadcast(ref_shape)
+        if new_tensor is None:
+            raise ValueError(
+                f"Cannot broadcast {self.sdfg_tensor_type()} to {new_tensor} because of incompatible shapes"
+            )
+        return new_tensor
+
     def has_container(self) -> bool:
         """True iff the tensot info has an underlying container"""
         return not self._container is None
@@ -274,6 +295,10 @@ class TensorConstant:
     def sdfg_type(self) -> Type:
         """Constructs an SDFG type for the underlying container"""
         return self._sdfg_scalar
+
+    def broadcast(self, ref: TensorInfo | Tensor | list[str]) -> Tensor:
+        """Always returns the SDFG tensor type"""
+        return self.sdfg_tensor_type()
 
     def has_container(self) -> bool:
         """Always returns True to be compatible with TensorInfo"""
@@ -701,6 +726,11 @@ class GraphParserBase:
                     return TensorConstant("INFINITY", constant_scalar)
                 elif arg == -math.inf:
                     return TensorConstant("-INFINITY", constant_scalar)
+            elif isinstance(arg, bool):
+                if arg == True:
+                    return TensorConstant("true", constant_scalar)
+                elif arg == False:
+                    return TensorConstant("false", constant_scalar)
             return TensorConstant(str(arg), constant_scalar)
         raise GraphParserError(
             self, node, f"Cannot convert argument to tensor constant: {type(arg)}"
@@ -743,7 +773,7 @@ class GraphParserBase:
             if constant_prim == PrimitiveType.Bool:
                 int_val: int | None = int(bool(constant.value()))
             elif primitive_type_is_integer(constant_prim):
-                if constant.value() in ("False", "True"):
+                if constant.value() in ("false", "true"):
                     int_val: int | None = int(bool(constant.value()))
                 else:
                     int_val: int | None = int(constant.value())

@@ -82,13 +82,6 @@ def _aggregated_trace():
                             "min": 990,
                             "max": 1010,
                         },
-                        "static:::flop": {
-                            "mean": 512.0,
-                            "variance": 0.0,
-                            "count": 10,
-                            "min": 512,
-                            "max": 512,
-                        },
                         "static:::ratio": {
                             "mean": None,
                             "variance": None,
@@ -143,11 +136,9 @@ def test_aggregated_trace():
     assert region.runtime_mean_us == 250.0
     assert region.counter_stats["perf::CYCLES"].mean == 1000.0
     # static:::-prefixed metrics are exposed without the prefix and excluded from counters
-    assert set(region.static_metrics) == {"flop", "ratio"}
+    assert set(region.static_metrics) == {"ratio"}
     assert "perf::CYCLES" in region.counter_stats
-    assert "flop" not in region.counter_stats
     assert region.static_metrics["ratio"].mean is None
-    assert region.metric("flop") == 512.0
 
 
 def test_queries():

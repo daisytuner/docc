@@ -86,7 +86,9 @@ ReferencePropagation::ReferencePropagation()
 
       };
 
-std::string ReferencePropagation::name() { return "ReferencePropagation"; };
+std::string ReferencePropagation::name() {
+    return "ReferencePropagation";
+};
 
 bool ReferencePropagation::run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     bool applied = false;

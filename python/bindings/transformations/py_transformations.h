@@ -13,7 +13,6 @@ namespace py = pybind11;
  * - LoopInterchange: Interchange two nested loops
  * - LoopDistribute: Distribute a loop into multiple loops
  * - LoopSkewing: Skew a loop by a given factor
- * - OutLocalStorage: Extract output to local storage
  * - TileFusion: Fuse tiled loop nests
  * - MapFusion: Fuse adjacent map operations
  * - Recorder: Record transformation history for replay

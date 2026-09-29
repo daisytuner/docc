@@ -117,7 +117,9 @@ public:
      * [expand_operation_dataflow] is given the inputs that exist and expected to handle whatever is valid without
      * errors
      */
-    virtual int tensor_input_count() const { return inputs_.size(); }
+    virtual int tensor_input_count() const {
+        return inputs_.size();
+    }
 
     /**
      * How many inputs, starting with 0 are optional?
@@ -127,9 +129,13 @@ public:
      * [expand_operation_dataflow] is given the inputs that exist and expected to handle whatever is valid without
      * errors
      */
-    virtual int mandatory_input_count() const { return inputs_.size(); }
+    virtual int mandatory_input_count() const {
+        return inputs_.size();
+    }
 
-    QuantizationType quantization() const { return quantization(get_parent()); }
+    QuantizationType quantization() const {
+        return quantization(get_parent());
+    }
 
     /**
      * type of the math calculations. May be inferred or fixed.
@@ -165,7 +171,9 @@ public:
      * @brief Get the tensor shape
      * @return Logical tensor shape
      */
-    const std::vector<symbolic::Expression>& shape() const { return shape_; }
+    const std::vector<symbolic::Expression>& shape() const {
+        return shape_;
+    }
 
     symbolic::SymbolSet symbols() const override;
 

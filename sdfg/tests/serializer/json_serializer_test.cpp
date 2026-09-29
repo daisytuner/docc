@@ -25,6 +25,38 @@
 
 using namespace sdfg;
 
+TEST(JSONSerializerTest, BooleanExpressionsRoundTrip) {
+    auto first = symbolic::Eq(symbolic::symbol("first"), symbolic::zero());
+    auto second = symbolic::Eq(symbolic::symbol("second"), symbolic::zero());
+    auto third = symbolic::Eq(symbolic::symbol("third"), symbolic::zero());
+    auto negated = symbolic::Not(SymEngine::logical_xor({first, second}));
+    ASSERT_TRUE(SymEngine::is_a<SymEngine::Not>(*negated));
+
+    SymEngine::vec_boolean conditions = {
+        symbolic::__true__(),
+        symbolic::__false__(),
+        symbolic::And(first, second),
+        symbolic::Or(first, second),
+        SymEngine::logical_xor({first, second, third}),
+        negated,
+        symbolic::And(first, symbolic::Or(second, third)),
+        symbolic::
+            Ne(symbolic::__false__(),
+               symbolic::
+                   Or(symbolic::Eq(symbolic::__true__(), first),
+                      symbolic::Eq(symbolic::__true__(), symbolic::Or(second, third)))),
+    };
+
+    for (const auto& condition : conditions) {
+        auto serialized = serializer::JSONSerializer::expression(condition);
+        SCOPED_TRACE(serialized);
+        EXPECT_NO_THROW({
+            auto parsed = symbolic::parse(serialized);
+            EXPECT_TRUE(symbolic::eq(parsed, condition));
+        });
+    }
+}
+
 TEST(JSONSerializerTest, DatatypeToJSON_Scalar) {
     // Create a sample data type
     types::Scalar scalar_type(types::PrimitiveType::Int32);
@@ -512,8 +544,9 @@ TEST(JSONSerializerTest, ForNodeToJSON) {
     EXPECT_TRUE(j.contains("init"));
     EXPECT_EQ(j["init"], "0");
     EXPECT_TRUE(j.contains("update"));
-    EXPECT_TRUE(symbolic::
-                    eq(SymEngine::Expression(j["update"]), symbolic::add(symbolic::symbol("i"), symbolic::integer(1))));
+    EXPECT_TRUE(
+        symbolic::eq(SymEngine::Expression(j["update"]), symbolic::add(symbolic::symbol("i"), symbolic::integer(1)))
+    );
     EXPECT_TRUE(j.contains("root"));
     EXPECT_EQ(j["root"]["type"], "sequence");
     EXPECT_EQ(j["root"]["children"].size(), 1);
@@ -725,8 +758,9 @@ TEST(JSONSerializerTest, MapToJSON) {
     EXPECT_TRUE(j.contains("init"));
     EXPECT_EQ(j["init"], "0");
     EXPECT_TRUE(j.contains("update"));
-    EXPECT_TRUE(symbolic::
-                    eq(SymEngine::Expression(j["update"]), symbolic::add(symbolic::symbol("i"), symbolic::integer(1))));
+    EXPECT_TRUE(
+        symbolic::eq(SymEngine::Expression(j["update"]), symbolic::add(symbolic::symbol("i"), symbolic::integer(1)))
+    );
     EXPECT_TRUE(j.contains("condition"));
     EXPECT_EQ(j["condition"], "(i < 10)");
     EXPECT_TRUE(j.contains("root"));
@@ -768,8 +802,9 @@ TEST(JSONSerializerTest, ReduceToJSON) {
     EXPECT_TRUE(j.contains("init"));
     EXPECT_EQ(j["init"], "0");
     EXPECT_TRUE(j.contains("update"));
-    EXPECT_TRUE(symbolic::
-                    eq(SymEngine::Expression(j["update"]), symbolic::add(symbolic::symbol("i"), symbolic::integer(1))));
+    EXPECT_TRUE(
+        symbolic::eq(SymEngine::Expression(j["update"]), symbolic::add(symbolic::symbol("i"), symbolic::integer(1)))
+    );
     EXPECT_TRUE(j.contains("condition"));
     EXPECT_EQ(j["condition"], "(i < 10)");
     EXPECT_TRUE(j.contains("reductions"));

@@ -6,10 +6,13 @@
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/tasklet.h"
 #include "sdfg/function.h"
+#include "sdfg/passes/offloading/reduction_shared_memory_delinearization.h"
+#include "sdfg/serializer/json_serializer.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/structured_control_flow/reduce.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/cuda/cuda.h"
+#include "sdfg/tiles/analysis/reduction_buffer_analysis.h"
 
 namespace sdfg {
 
@@ -97,7 +100,8 @@ TEST(GPUOffloadNestedLoopTest, XBlockNestedInXGridApplies) {
     transformation.apply(builder, analysis_manager);
     EXPECT_EQ(block.schedule_type().value(), cuda::ScheduleType_CUDA_Offload::value());
     EXPECT_EQ(cuda::ScheduleType_CUDA_Offload::target_level(block.schedule_type()), gpu::TargetLevel::X_BLOCK);
-    EXPECT_TRUE(symbolic::eq(cuda::ScheduleType_CUDA_Offload::parallel_size(block.schedule_type()), symbolic::integer(256))
+    EXPECT_TRUE(
+        symbolic::eq(cuda::ScheduleType_CUDA_Offload::parallel_size(block.schedule_type()), symbolic::integer(256))
     );
 }
 
@@ -183,7 +187,21 @@ TEST(GPUOffloadNestedLoopTest, ReduceWithSupportedOperationApplies) {
     Transform transformation(reduce, gpu::TargetLevel::X_BLOCK, symbolic::integer(256));
     analysis::AnalysisManager analysis_manager(builder.subject());
 
-    EXPECT_TRUE(transformation.can_be_applied(builder, analysis_manager));
+    serializer::JSONSerializer serializer;
+    const auto before = serializer.serialize(builder.subject());
+    EXPECT_TRUE(analysis_manager.get<tiles::ReductionBufferAnalysis>()
+                    .supports_schedule(reduce, gpu_schedule(gpu::TargetLevel::X_BLOCK, 256)));
+    ASSERT_TRUE(transformation.can_be_applied(builder, analysis_manager));
+    EXPECT_EQ(serializer.serialize(builder.subject()), before);
+    transformation.apply(builder, analysis_manager);
+    EXPECT_EQ(analysis_manager.get<tiles::ReductionBufferAnalysis>().require(reduce, "__daisy_cuda_A").shared_bytes, 1024);
+    passes::ReductionSharedMemoryDelinearization packing;
+    ASSERT_TRUE(packing.run_pass(builder, analysis_manager));
+    const auto materialized = serializer.serialize(builder.subject());
+    Transform resized(reduce, gpu::TargetLevel::X_BLOCK, symbolic::integer(128));
+    EXPECT_FALSE(resized.can_be_applied(builder, analysis_manager));
+    EXPECT_THROW(resized.apply(builder, analysis_manager), InvalidSDFGException);
+    EXPECT_EQ(serializer.serialize(builder.subject()), materialized);
 }
 
 // -----------------------------------------------------------------------------

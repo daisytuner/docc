@@ -23,14 +23,19 @@ private:
 
 public:
     PyLoopAnalysis(sdfg::analysis::AnalysisManager& manager)
-        : manager_(manager), analysis_(manager.get<sdfg::analysis::LoopAnalysis>()) {}
+        : manager_(manager), analysis_(manager.get<sdfg::analysis::LoopAnalysis>()) {
+    }
 
-    sdfg::analysis::LoopAnalysis& analysis() { return analysis_; }
+    sdfg::analysis::LoopAnalysis& analysis() {
+        return analysis_;
+    }
 
     /**
      * @brief Get all loops in the SDFG in DFS order
      */
-    std::vector<sdfg::structured_control_flow::ControlFlowNode*> loops() const { return analysis_.loops(); }
+    std::vector<sdfg::structured_control_flow::ControlFlowNode*> loops() const {
+        return analysis_.loops();
+    }
 
     /**
      * @brief Get loop information for a specific loop
@@ -51,8 +56,7 @@ public:
      * @brief Get the parent loop of a given loop
      * @return The parent loop node or nullptr if this is an outermost loop
      */
-    sdfg::structured_control_flow::ControlFlowNode* parent_loop(sdfg::structured_control_flow::ControlFlowNode* loop
-    ) const {
+    sdfg::structured_control_flow::ControlFlowNode* parent_loop(sdfg::structured_control_flow::ControlFlowNode* loop) const {
         return analysis_.parent_loop(loop);
     }
 
@@ -80,8 +84,8 @@ public:
     /**
      * @brief Get the immediate child loops of a given loop
      */
-    std::vector<sdfg::structured_control_flow::ControlFlowNode*> children(sdfg::structured_control_flow::ControlFlowNode*
-                                                                              node) const {
+    std::vector<sdfg::structured_control_flow::ControlFlowNode*>
+    children(sdfg::structured_control_flow::ControlFlowNode* node) const {
         return analysis_.children(node);
     }
 

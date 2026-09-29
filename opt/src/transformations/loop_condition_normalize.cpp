@@ -311,9 +311,10 @@ symbolic::Condition isolate_indvar_in_relational(const symbolic::Condition& cond
     };
 
     // Helper to process a binary relational
-    auto process_relational =
-        [&](const symbolic::Expression& lhs, const symbolic::Expression& rhs, auto make_same_rel, auto make_flipped_rel
-        ) -> symbolic::Condition {
+    auto process_relational = [&](const symbolic::Expression& lhs,
+                                  const symbolic::Expression& rhs,
+                                  auto make_same_rel,
+                                  auto make_flipped_rel) -> symbolic::Condition {
         bool lhs_has_indvar = symbolic::uses(lhs, indvar->get_name());
         bool rhs_has_indvar = symbolic::uses(rhs, indvar->get_name());
 
@@ -348,8 +349,12 @@ symbolic::Condition isolate_indvar_in_relational(const symbolic::Condition& cond
         return process_relational(
             lt->get_arg1(),
             lt->get_arg2(),
-            [](auto a, auto b) { return symbolic::Lt(a, b); },
-            [](auto a, auto b) { return symbolic::Lt(a, b); }
+            [](auto a, auto b) {
+                return symbolic::Lt(a, b);
+            },
+            [](auto a, auto b) {
+                return symbolic::Lt(a, b);
+            }
         );
     }
 
@@ -359,8 +364,12 @@ symbolic::Condition isolate_indvar_in_relational(const symbolic::Condition& cond
         return process_relational(
             le->get_arg1(),
             le->get_arg2(),
-            [](auto a, auto b) { return symbolic::Le(a, b); },
-            [](auto a, auto b) { return symbolic::Le(a, b); }
+            [](auto a, auto b) {
+                return symbolic::Le(a, b);
+            },
+            [](auto a, auto b) {
+                return symbolic::Le(a, b);
+            }
         );
     }
 
@@ -370,8 +379,12 @@ symbolic::Condition isolate_indvar_in_relational(const symbolic::Condition& cond
         return process_relational(
             ne->get_arg1(),
             ne->get_arg2(),
-            [](auto a, auto b) { return symbolic::Ne(a, b); },
-            [](auto a, auto b) { return symbolic::Ne(a, b); }
+            [](auto a, auto b) {
+                return symbolic::Ne(a, b);
+            },
+            [](auto a, auto b) {
+                return symbolic::Ne(a, b);
+            }
         );
     }
 
@@ -556,9 +569,12 @@ bool has_max_init_pattern(const symbolic::Condition& cond, const symbolic::Expre
 
 } // anonymous namespace
 
-LoopConditionNormalize::LoopConditionNormalize(structured_control_flow::StructuredLoop& loop) : loop_(loop) {}
+LoopConditionNormalize::LoopConditionNormalize(structured_control_flow::StructuredLoop& loop) : loop_(loop) {
+}
 
-std::string LoopConditionNormalize::name() const { return "LoopConditionNormalize"; }
+std::string LoopConditionNormalize::name() const {
+    return "LoopConditionNormalize";
+}
 
 bool LoopConditionNormalize::
     can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {

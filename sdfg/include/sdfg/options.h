@@ -39,7 +39,8 @@ struct OptionSpec {
 template<class T>
 struct OptionKey {
     std::string_view key;
-    constexpr explicit OptionKey(std::string_view k) : key(k) {}
+    constexpr explicit OptionKey(std::string_view k) : key(k) {
+    }
 
     // Build the registry spec from this handle so key and type aren't restated.
     OptionSpec spec(T default_value, std::string doc) const {
@@ -51,9 +52,13 @@ struct OptionKey {
 // analyses, and any helper that is handed one; not tied to passes.
 class Options {
 public:
-    void set(std::string key, OptionValue value) { values_.insert_or_assign(std::move(key), std::move(value)); }
+    void set(std::string key, OptionValue value) {
+        values_.insert_or_assign(std::move(key), std::move(value));
+    }
 
-    bool has(std::string_view key) const { return values_.find(std::string(key)) != values_.end(); }
+    bool has(std::string_view key) const {
+        return values_.find(std::string(key)) != values_.end();
+    }
 
     template<class T>
     T get(const OptionKey<T>& key, T fallback = T{}) const {
@@ -87,7 +92,9 @@ public:
         }
     }
 
-    const std::unordered_map<std::string, OptionSpec>& options() const { return options_; }
+    const std::unordered_map<std::string, OptionSpec>& options() const {
+        return options_;
+    }
 
     const OptionSpec* find_option(std::string_view key) const {
         auto it = options_.find(std::string(key));

@@ -5,15 +5,20 @@
 namespace sdfg {
 namespace transformations {
 
-VectorizeTransform::VectorizeTransform(structured_control_flow::StructuredLoop& loop) : loop_(loop) {}
+VectorizeTransform::VectorizeTransform(structured_control_flow::StructuredLoop& loop) : loop_(loop) {
+}
 
-std::string VectorizeTransform::name() const { return "VectorizeTransform"; }
+std::string VectorizeTransform::name() const {
+    return "VectorizeTransform";
+}
 
 bool VectorizeTransform::
     can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     if (dyn_cast<structured_control_flow::Map*>(&loop_) == nullptr &&
         dyn_cast<structured_control_flow::Reduce*>(&loop_) == nullptr) {
-        if (report_) report_->transform_impossible(this, "not a Map or Reduce");
+        if (report_) {
+            report_->transform_impossible(this, "not a Map or Reduce");
+        }
         return false;
     }
 
@@ -32,7 +37,9 @@ bool VectorizeTransform::
 
 void VectorizeTransform::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     builder.update_schedule_type(this->loop_, vectorize::ScheduleType_Vectorize::create());
-    if (report_) report_->transform_applied(this);
+    if (report_) {
+        report_->transform_applied(this);
+    }
 }
 
 void VectorizeTransform::to_json(nlohmann::json& j) const {

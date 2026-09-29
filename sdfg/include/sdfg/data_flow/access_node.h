@@ -108,7 +108,9 @@ public:
     AccessNode(const AccessNode& data_node) = delete;
     AccessNode& operator=(const AccessNode&) = delete;
 
-    ElementType type_id() const override { return ElementType::AccessNode; }
+    ElementType type_id() const override {
+        return ElementType::AccessNode;
+    }
 
     static bool classof(const Element& element) {
         return is_a(element.type_id(), ElementType::AccessNode | ElementType::ConstantNode);
@@ -132,7 +134,9 @@ public:
      */
     const std::string& data() const;
 
-    virtual bool is_constant() const { return false; }
+    virtual bool is_constant() const {
+        return false;
+    }
 
     /**
      * @brief Set the name of the data container
@@ -152,8 +156,8 @@ public:
      * @param parent Parent graph for the clone
      * @return Unique pointer to the cloned node
      */
-    virtual std::unique_ptr<DataFlowNode> clone(size_t element_id, const graph::Vertex vertex, DataFlowGraph& parent)
-        const override;
+    virtual std::unique_ptr<DataFlowNode>
+    clone(size_t element_id, const graph::Vertex vertex, DataFlowGraph& parent) const override;
 
     /**
      * @brief Replace symbolic expressions in this node
@@ -227,9 +231,13 @@ public:
     ConstantNode(const ConstantNode& data_node) = delete;
     ConstantNode& operator=(const ConstantNode&) = delete;
 
-    ElementType type_id() const override { return ElementType::ConstantNode; }
+    ElementType type_id() const override {
+        return ElementType::ConstantNode;
+    }
 
-    static bool classof(const Element& element) { return element.type_id() == ElementType::ConstantNode; }
+    static bool classof(const Element& element) {
+        return element.type_id() == ElementType::ConstantNode;
+    }
 
     /**
      * @brief Get the type of this constant
@@ -237,9 +245,13 @@ public:
      */
     const types::IType& type() const;
 
-    [[nodiscard]] bool side_effect() const override { return false; }
+    [[nodiscard]] bool side_effect() const override {
+        return false;
+    }
 
-    bool is_constant() const override { return true; }
+    bool is_constant() const override {
+        return true;
+    }
 
     /**
      * @brief Validate the constant node
@@ -260,8 +272,8 @@ public:
      * @param parent Parent graph for the clone
      * @return Unique pointer to the cloned node
      */
-    virtual std::unique_ptr<DataFlowNode> clone(size_t element_id, const graph::Vertex vertex, DataFlowGraph& parent)
-        const override;
+    virtual std::unique_ptr<DataFlowNode>
+    clone(size_t element_id, const graph::Vertex vertex, DataFlowGraph& parent) const override;
 };
 
 

@@ -68,17 +68,29 @@ void StructuredLoop::validate(const Function& function) const {
     this->root_->validate(function);
 };
 
-const symbolic::Symbol StructuredLoop::indvar() const { return this->indvar_; };
+const symbolic::Symbol StructuredLoop::indvar() const {
+    return this->indvar_;
+};
 
-const symbolic::Expression StructuredLoop::init() const { return this->init_; };
+const symbolic::Expression StructuredLoop::init() const {
+    return this->init_;
+};
 
-const symbolic::Expression StructuredLoop::update() const { return this->update_; };
+const symbolic::Expression StructuredLoop::update() const {
+    return this->update_;
+};
 
-const symbolic::Condition StructuredLoop::condition() const { return this->condition_; };
+const symbolic::Condition StructuredLoop::condition() const {
+    return this->condition_;
+};
 
-Sequence& StructuredLoop::root() const { return *this->root_; };
+Sequence& StructuredLoop::root() const {
+    return *this->root_;
+};
 
-const ScheduleType& StructuredLoop::schedule_type() const { return this->schedule_type_; };
+const ScheduleType& StructuredLoop::schedule_type() const {
+    return this->schedule_type_;
+};
 
 void StructuredLoop::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
     if (symbolic::eq(this->indvar_, old_expression) && SymEngine::is_a<SymEngine::Symbol>(*new_expression)) {

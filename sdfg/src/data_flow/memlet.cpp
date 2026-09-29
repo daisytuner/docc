@@ -47,8 +47,7 @@ void Memlet::validate(const Function& function) const {
                 data_node = dynamic_cast<const AccessNode*>(&this->src_);
                 code_node = dynamic_cast<const CodeNode*>(&this->dst_);
                 if (!data_node || !code_node) {
-                    throw InvalidSDFGException("Memlet: Computation memlets must connect a code node and an access node"
-                    );
+                    throw InvalidSDFGException("Memlet: Computation memlets must connect a code node and an access node");
                 }
 
                 // Criterion: Non-void connector must be an input of the code node
@@ -60,8 +59,7 @@ void Memlet::validate(const Function& function) const {
                 data_node = dynamic_cast<const AccessNode*>(&this->dst_);
                 code_node = dynamic_cast<const CodeNode*>(&this->src_);
                 if (!data_node || !code_node) {
-                    throw InvalidSDFGException("Memlet: Computation memlets must connect a code node and an access node"
-                    );
+                    throw InvalidSDFGException("Memlet: Computation memlets must connect a code node and an access node");
                 }
 
                 // Criterion: Non-void connector must be an output of the code node
@@ -100,9 +98,13 @@ void Memlet::validate(const Function& function) const {
                     }
                 } else {
                     auto& buffer_type = function.type(data_node->data());
-                    if (buffer_type.type_id() != types::TypeID::Pointer) {
+                    // A non-scalar tensor addresses a contiguous buffer via a base
+                    // pointer; a Pointer container or an addressable Array (e.g. a
+                    // __shared__ tile that decays to a pointer) both qualify.
+                    if (buffer_type.type_id() != types::TypeID::Pointer &&
+                        buffer_type.type_id() != types::TypeID::Array) {
                         throw InvalidSDFGException(
-                            "Memlet: Non-scalar tensors must reference pointer buffers. Base type: " +
+                            "Memlet: Non-scalar tensors must reference pointer or array buffers. Base type: " +
                             this->base_type_->print() + " Buffer type: " + buffer_type.print()
                         );
                     }
@@ -270,11 +272,17 @@ void Memlet::validate(const Function& function) const {
     }
 };
 
-const graph::Edge Memlet::edge() const { return this->edge_; };
+const graph::Edge Memlet::edge() const {
+    return this->edge_;
+};
 
-const DataFlowGraph& Memlet::get_parent() const { return *this->parent_; };
+const DataFlowGraph& Memlet::get_parent() const {
+    return *this->parent_;
+};
 
-DataFlowGraph& Memlet::get_parent() { return *this->parent_; };
+DataFlowGraph& Memlet::get_parent() {
+    return *this->parent_;
+};
 
 MemletType Memlet::type() const {
     if (this->dst_conn_ == "ref") {
@@ -471,25 +479,45 @@ bool Memlet::is_src_constant(int64_t value) const {
     return false;
 }
 
-const DataFlowNode& Memlet::src() const { return this->src_; };
+const DataFlowNode& Memlet::src() const {
+    return this->src_;
+};
 
-DataFlowNode& Memlet::src() { return this->src_; };
+DataFlowNode& Memlet::src() {
+    return this->src_;
+};
 
-const DataFlowNode& Memlet::dst() const { return this->dst_; };
+const DataFlowNode& Memlet::dst() const {
+    return this->dst_;
+};
 
-DataFlowNode& Memlet::dst() { return this->dst_; };
+DataFlowNode& Memlet::dst() {
+    return this->dst_;
+};
 
-const std::string& Memlet::src_conn() const { return this->src_conn_; };
+const std::string& Memlet::src_conn() const {
+    return this->src_conn_;
+};
 
-const std::string& Memlet::dst_conn() const { return this->dst_conn_; };
+const std::string& Memlet::dst_conn() const {
+    return this->dst_conn_;
+};
 
-const Subset& Memlet::subset() const { return this->subset_; };
+const Subset& Memlet::subset() const {
+    return this->subset_;
+};
 
-void Memlet::set_subset(const Subset& subset) { this->subset_ = subset; };
+void Memlet::set_subset(const Subset& subset) {
+    this->subset_ = subset;
+};
 
-const types::IType& Memlet::base_type() const { return *this->base_type_; };
+const types::IType& Memlet::base_type() const {
+    return *this->base_type_;
+};
 
-void Memlet::set_base_type(const types::IType& base_type) { this->base_type_ = base_type.clone(); };
+void Memlet::set_base_type(const types::IType& base_type) {
+    this->base_type_ = base_type.clone();
+};
 
 std::unique_ptr<types::IType> Memlet::result_type(const Function& function) const {
     return types::infer_type(function, *this->base_type_, this->subset_);

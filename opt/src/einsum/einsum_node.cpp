@@ -110,23 +110,41 @@ EinsumNode::EinsumNode(
     this->in_indices_.push_back(this->out_indices_);
 }
 
-const std::vector<EinsumDimension>& EinsumNode::dims() const { return this->dims_; }
+const std::vector<EinsumDimension>& EinsumNode::dims() const {
+    return this->dims_;
+}
 
-const EinsumDimension& EinsumNode::dim(size_t index) const { return this->dims_.at(index); }
+const EinsumDimension& EinsumNode::dim(size_t index) const {
+    return this->dims_.at(index);
+}
 
-const symbolic::Symbol& EinsumNode::indvar(size_t index) const { return this->dims_.at(index).indvar; }
+const symbolic::Symbol& EinsumNode::indvar(size_t index) const {
+    return this->dims_.at(index).indvar;
+}
 
-const symbolic::Expression& EinsumNode::init(size_t index) const { return this->dims_.at(index).init; }
+const symbolic::Expression& EinsumNode::init(size_t index) const {
+    return this->dims_.at(index).init;
+}
 
-const symbolic::Expression& EinsumNode::bound(size_t index) const { return this->dims_.at(index).bound; }
+const symbolic::Expression& EinsumNode::bound(size_t index) const {
+    return this->dims_.at(index).bound;
+}
 
-const data_flow::Subset& EinsumNode::out_indices() const { return this->out_indices_; }
+const data_flow::Subset& EinsumNode::out_indices() const {
+    return this->out_indices_;
+}
 
-const symbolic::Expression& EinsumNode::out_index(size_t index) const { return this->out_indices_.at(index); }
+const symbolic::Expression& EinsumNode::out_index(size_t index) const {
+    return this->out_indices_.at(index);
+}
 
-const std::vector<data_flow::Subset>& EinsumNode::in_indices() const { return this->in_indices_; }
+const std::vector<data_flow::Subset>& EinsumNode::in_indices() const {
+    return this->in_indices_;
+}
 
-const data_flow::Subset& EinsumNode::in_indices(size_t index) const { return this->in_indices_.at(index); }
+const data_flow::Subset& EinsumNode::in_indices(size_t index) const {
+    return this->in_indices_.at(index);
+}
 
 const symbolic::Expression& EinsumNode::in_index(size_t index1, size_t index2) const {
     return this->in_indices_.at(index1).at(index2);
@@ -335,8 +353,7 @@ bool EinsumNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
             new_in_accesses.insert(
                 {iedge.dst_conn(),
                  &builder
-                      .add_constant(*new_block, constant_node->data(), constant_node->type(), constant_node->debug_info())
-                }
+                      .add_constant(*new_block, constant_node->data(), constant_node->type(), constant_node->debug_info())}
             );
         } else if (auto* access_node = dynamic_cast<data_flow::AccessNode*>(&iedge.src())) {
             data_flow::AccessNode* new_access_node = nullptr;

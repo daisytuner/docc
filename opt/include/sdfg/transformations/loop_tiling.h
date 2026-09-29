@@ -20,10 +20,24 @@ class LoopTiling : public Transformation {
 protected:
     structured_control_flow::StructuredLoop& loop_;
     size_t tile_size_;
+    bool simplify_bounds_ = false;
     bool applied_ = false;
 
     structured_control_flow::StructuredLoop* inner_loop_ = nullptr;
     structured_control_flow::StructuredLoop* outer_loop_ = nullptr;
+
+    /**
+     * @brief Check reduction footprints using symbolic tile domains without changing the graph
+     * @param builder The builder for the unchanged original SDFG
+     * @param analysis_manager The analysis manager for the current graph
+     * @param tile_sizes Tile sizes in application order, each applied to the inner loop
+     * @return true if affected reductions are unmaterialized and their proposed footprints are exact
+     */
+    bool reduction_buffers_supported(
+        builder::StructuredSDFGBuilder& builder,
+        analysis::AnalysisManager& analysis_manager,
+        const std::vector<size_t>& tile_sizes
+    ) const;
 
     /**
      * @brief Tile a single loop into an outer tile loop and an inner element loop
@@ -37,18 +51,28 @@ protected:
      * @param builder The SDFG builder
      * @param loop The loop to tile (becomes the inner loop)
      * @param tile_size The size of each tile (must be > 1)
+     * @param simplify_bounds Drop the redundant original bound on the inner loop when the tile
+     *        evenly divides the (constant) trip count, yielding a clean constant-trip tile that
+     *        unrolls/vectorizes. Off by default: keeping the guard preserves the loop shape later
+     *        passes (e.g. cooperative-copy vectorization) rely on.
      * @return The newly created outer tile loop
      */
-    static structured_control_flow::StructuredLoop&
-    tile_loop(builder::StructuredSDFGBuilder& builder, structured_control_flow::StructuredLoop& loop, size_t tile_size);
+    static structured_control_flow::StructuredLoop& tile_loop(
+        builder::StructuredSDFGBuilder& builder,
+        structured_control_flow::StructuredLoop& loop,
+        size_t tile_size,
+        bool simplify_bounds = false
+    );
 
 public:
     /**
      * @brief Construct a loop tiling transformation
      * @param loop The loop to be tiled
      * @param tile_size The size of each tile (must be > 1)
+     * @param simplify_bounds Drop the redundant inner bound for perfectly dividing tiles (off by
+     *        default; see @ref tile_loop)
      */
-    LoopTiling(structured_control_flow::StructuredLoop& loop, size_t tile_size);
+    LoopTiling(structured_control_flow::StructuredLoop& loop, size_t tile_size, bool simplify_bounds = false);
 
     /**
      * @brief Get the name of this transformation
@@ -62,8 +86,8 @@ public:
      * @param analysis_manager The analysis manager
      * @return true if the transformation can be applied safely
      */
-    virtual bool can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager)
-        override;
+    virtual bool
+    can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
 
     /**
      * @brief Apply the loop tiling transformation

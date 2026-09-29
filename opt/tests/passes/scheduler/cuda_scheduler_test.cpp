@@ -342,7 +342,7 @@ TEST(CUDASchedulerTest, PostScheduleRunsTransferExtractionWithoutGpuMaps) {
     auto& softmax_node =
         static_cast<math::tensor::SoftmaxNode&>(builder.add_library_node<
                                                 math::tensor::SoftmaxNode>(block, DebugInfo(), shape, axes, false));
-    softmax_node.implementation_type() = cuda::ImplementationType_CUDAWithTransfers;
+    softmax_node.set_implementation_type(cuda::ImplementationType_CUDAWithTransfers);
 
     types::Tensor tensor_type(desc, shape);
     builder.add_computational_memlet(block, y_node, softmax_node, "Y", {}, tensor_type);

@@ -80,6 +80,19 @@ void __daisy_instrumentation_metric(size_t region_id, const char* name, double v
 // yet. Lets an in-process harness decide when to stop dynamic sampling.
 bool __daisy_instrumentation_stats(size_t region_id, double* mean_us, double* variance_us2, long long* count);
 
+// Decide whether a region's in-place sampling loop should take another sample.
+// Returns true while the running runtime confidence interval has not yet met the
+// target CV (DOCC_MEASURE_CV) and the sample/wall-time caps (DOCC_MEASURE_MAX_SAMPLES,
+// DOCC_MEASURE_MAX_SECONDS, min DOCC_MEASURE_MIN_SAMPLES) are not exhausted. Returns
+// false when no aggregate stats exist (not aggregate mode), so the loop takes a
+// single measurement. Only meaningful in __DAISY_INSTRUMENTATION_MODE=aggregate.
+bool __daisy_instrumentation_should_continue(size_t region_id);
+
+// Cold-sampling primitive: evict the working set from every cache level (streaming
+// writes through a >LLC buffer) so the next sample re-incurs cold-start misses. No-op
+// unless DOCC_MEASURE_COLD is set. Buffer size is DOCC_MEASURE_FLUSH_BYTES (default 128MB).
+void __daisy_instrumentation_flush_caches(void);
+
 // Aggregate running runtime stats over ALL regions (aggregate mode): per-iteration
 // mean is the sum of the regions' means (mirrors the trace's summed durations),
 // variance the sum of variances, count the min sample count across regions.
@@ -370,6 +383,15 @@ inline int __daisy_sym_pow(int base, int exp) {
         __daisy_cur > __daisy_val ? __daisy_cur : __daisy_val                                                               \
     )
 
+#if !defined(__CUDA_ARCH__) || __CUDA_ARCH__ >= 700
+__DAISY_REDUCE_COMBINE_ALL(
+    _Float16,
+    _Float16,
+    unsigned short,
+    __builtin_bit_cast(_Float16, __daisy_assumed),
+    __builtin_bit_cast(unsigned short, __daisy_new)
+)
+#endif
 __DAISY_REDUCE_COMBINE_ALL(float, float, unsigned int, __uint_as_float(__daisy_assumed), __float_as_uint(__daisy_new))
 __DAISY_REDUCE_COMBINE_ALL(
     double,

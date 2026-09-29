@@ -21,9 +21,13 @@ Map::
         const ScheduleType& schedule_type)
     : StructuredLoop(element_id, debug_info, parent, indvar, init, update, condition, schedule_type) {};
 
-bool Map::accept(visitor::ActualStructuredSDFGVisitor& visitor) { return visitor.visit(*this); }
+bool Map::accept(visitor::ActualStructuredSDFGVisitor& visitor) {
+    return visitor.visit(*this);
+}
 
-void Map::validate(const Function& function) const { StructuredLoop::validate(function); };
+void Map::validate(const Function& function) const {
+    StructuredLoop::validate(function);
+};
 
 } // namespace structured_control_flow
 } // namespace sdfg

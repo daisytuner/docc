@@ -70,13 +70,15 @@ public:
         std::unordered_map<analysis::ElementId, std::unique_ptr<loop_fusion::FusionLoopCandidate>> fuse_candidates;
         uint32_t fused_by_domain_count = 0;
         uint32_t fused_by_access_count = 0;
+        int64_t copied_redundant_writes = 0;
 
         State(
             builder::StructuredSDFGBuilder& builder,
             analysis::AnalysisManager& analysis_manager,
             std::unique_ptr<analysis::LoopAnalysis> loop_analysis
         )
-            : builder(builder), analysis_manager(analysis_manager), loop_analysis(std::move(loop_analysis)), run(0) {}
+            : builder(builder), analysis_manager(analysis_manager), loop_analysis(std::move(loop_analysis)), run(0) {
+        }
 
         loop_fusion::FusionLoopCandidate* get_next_level_map_stack(loop_fusion::FusionLoopCandidate& current);
 
@@ -90,7 +92,9 @@ public:
     LoopFusionPass(const LoopFusionConfig& config);
     LoopFusionPass();
 
-    std::string name() override { return "LoopFusionPass"; }
+    std::string name() override {
+        return "LoopFusionPass";
+    }
 
     bool run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
 
@@ -109,8 +113,8 @@ class LoopFusionHandler : public loop_fusion::PatternHandler, loop_fusion::LoopF
 public:
     LoopFusionHandler(const LoopFusionConfig& config, LoopFusionPass::State& state);
 
-    loop_fusion::PatternHandler::MatchResult match(StructuredLoop& first, StructuredLoop& second, bool no_uses_between)
-        override;
+    loop_fusion::PatternHandler::MatchResult
+    match(StructuredLoop& first, StructuredLoop& second, bool no_uses_between) override;
 
     loop_fusion::PatternHandler::MatchResult try_complex_fuse_producer_into_consumer(
         FusionLoopCandidate& first, FusionLoopCandidate& second, bool no_uses_between, bool domains_match

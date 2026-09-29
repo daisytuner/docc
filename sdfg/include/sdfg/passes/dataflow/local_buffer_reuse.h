@@ -39,7 +39,9 @@ LibNode* get_lib_node(structured_control_flow::Block* blk) {
 template<typename LibNode>
 bool lib_node_writes_to_ref(structured_control_flow::Block* blk, const std::string& ref_container) {
     auto* lib_node = get_lib_node<LibNode>(blk);
-    if (lib_node == nullptr) return false;
+    if (lib_node == nullptr) {
+        return false;
+    }
 
     auto& dataflow = blk->dataflow();
     if (dataflow.out_degree(*lib_node) > 0) {
@@ -58,7 +60,9 @@ bool lib_node_writes_to_ref(structured_control_flow::Block* blk, const std::stri
 template<typename LibNode>
 bool lib_node_reads_from_ref(structured_control_flow::Block* blk, const std::string& ref_container) {
     auto* lib_node = get_lib_node<LibNode>(blk);
-    if (lib_node == nullptr) return false;
+    if (lib_node == nullptr) {
+        return false;
+    }
 
     auto& dataflow = blk->dataflow();
     for (auto& edge : dataflow.in_edges(*lib_node)) {
@@ -74,7 +78,9 @@ bool lib_node_reads_from_ref(structured_control_flow::Block* blk, const std::str
 template<typename LibNode>
 bool lib_node_uses_ref(structured_control_flow::Block* blk, const std::string& ref_container) {
     auto* lib_node = get_lib_node<LibNode>(blk);
-    if (lib_node == nullptr) return false;
+    if (lib_node == nullptr) {
+        return false;
+    }
 
     auto& dataflow = blk->dataflow();
     if (dataflow.out_degree(*lib_node) > 0) {
@@ -126,9 +132,13 @@ private:
 
     // Get block at index, return nullptr if not valid
     structured_control_flow::Block* get_block(structured_control_flow::Sequence& seq, int idx) {
-        if (idx >= static_cast<int>(seq.size())) return nullptr;
+        if (idx >= static_cast<int>(seq.size())) {
+            return nullptr;
+        }
         auto* blk = dyn_cast<structured_control_flow::Block*>(&seq.at(idx));
-        if (blk == nullptr) return nullptr;
+        if (blk == nullptr) {
+            return nullptr;
+        }
         return blk;
     }
 
@@ -273,9 +283,12 @@ private:
 
 public:
     LocalBufferReuseN(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager)
-        : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager) {}
+        : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager) {
+    }
 
-    static std::string name() { return "LocalBufferReuseN"; }
+    static std::string name() {
+        return "LocalBufferReuseN";
+    }
 
     virtual bool accept(structured_control_flow::Sequence& node) override {
         bool applied = false;

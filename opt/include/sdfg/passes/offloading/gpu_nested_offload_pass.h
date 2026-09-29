@@ -32,7 +32,9 @@ public:
 
     bool run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
 
-    std::string name() override { return "GPUNestedOffloadPass"; }
+    std::string name() override {
+        return "GPUNestedOffloadPass";
+    }
 };
 
 } // namespace passes

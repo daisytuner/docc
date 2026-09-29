@@ -46,7 +46,9 @@ public:
 
         std::type_index Key = std::type_index(typeid(T));
         auto It = cache_.find(Key);
-        if (It != cache_.end()) return *static_cast<T*>(It->second.get());
+        if (It != cache_.end()) {
+            return *static_cast<T*>(It->second.get());
+        }
 
         cache_[Key] = std::make_unique<T>();
         cache_[Key]->run(*this);

@@ -83,9 +83,12 @@ bool EinsumPromotion::subset_contains_symbol(const data_flow::Subset& subset, co
 }
 
 EinsumPromotion::EinsumPromotion(einsum::EinsumNode& einsum_node)
-    : einsum_node_(einsum_node), new_einsum_node_(nullptr) {}
+    : einsum_node_(einsum_node), new_einsum_node_(nullptr) {
+}
 
-std::string EinsumPromotion::name() const { return "EinsumPromotion"; }
+std::string EinsumPromotion::name() const {
+    return "EinsumPromotion";
+}
 
 bool EinsumPromotion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     // Get & check DFG
@@ -307,7 +310,9 @@ void EinsumPromotion::apply(builder::StructuredSDFGBuilder& builder, analysis::A
     analysis_manager.invalidate_all();
 }
 
-einsum::EinsumNode* EinsumPromotion::new_einsum_node() { return this->new_einsum_node_; }
+einsum::EinsumNode* EinsumPromotion::new_einsum_node() {
+    return this->new_einsum_node_;
+}
 
 void EinsumPromotion::to_json(nlohmann::json& j) const {
     j["transformation_type"] = this->name();

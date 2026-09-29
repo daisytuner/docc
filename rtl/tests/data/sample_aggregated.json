@@ -63,13 +63,6 @@
                         "min": 2834000000,
                         "max": 2834100000
                     },
-                    "static:::flop": {
-                        "mean": 0,
-                        "variance": 0,
-                        "count": 22,
-                        "min": 0,
-                        "max": 0
-                    },
                     "static:::ratio": {
                         "mean": null,
                         "variance": null,

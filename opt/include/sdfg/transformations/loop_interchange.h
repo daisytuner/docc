@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sdfg/structured_control_flow/structured_loop.h"
+#include "sdfg/tiles/analysis/reduction_buffer_analysis.h"
 #include "sdfg/transformations/transformation.h"
 
 namespace sdfg {
@@ -32,6 +33,13 @@ class LoopInterchange : public Transformation {
     structured_control_flow::StructuredLoop* new_outer_loop_;
     structured_control_flow::StructuredLoop* new_inner_loop_;
 
+    /**
+     * @brief Preview affected GPU reduction footprints without modifying the SDFG
+     * @param analysis_manager The analysis manager for the current graph
+     * @return true if affected footprints are exact and any materialized buffers remain compatible
+     */
+    bool reduction_buffers_supported(analysis::AnalysisManager& analysis_manager) const;
+
 public:
     /**
      * @brief Construct a loop interchange transformation
@@ -49,13 +57,23 @@ public:
     virtual std::string name() const override;
 
     /**
+     * @brief Compute the interchanged loop headers without modifying the SDFG
+     *
+     * Includes bound projection and inversion for dependent loops. Shared by
+     * the reduction-footprint preview and apply(); does not check dependence legality.
+     *
+     * @return Original loop IDs and the proposed outer and inner headers
+     */
+    tiles::ReductionInterchangeProposal proposal() const;
+
+    /**
      * @brief Check if this transformation can be applied
      * @param builder The SDFG builder
      * @param analysis_manager The analysis manager
      * @return true if the transformation can be applied safely
      */
-    virtual bool can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager)
-        override;
+    virtual bool
+    can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
 
     /**
      * @brief Apply the loop interchange transformation

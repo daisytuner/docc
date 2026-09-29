@@ -1,31 +1,8 @@
-#include <sdfg/einsum/einsum.h>
-#include <sdfg/tiles/transformations/local_storage.h>
-#include <sdfg/tiles/transformations/tile_fusion.h>
-#include <sdfg/transformations/in_local_storage.h>
-#include <sdfg/transformations/loop_distribute.h>
-#include <sdfg/transformations/loop_interchange.h>
-#include <sdfg/transformations/loop_peeling.h>
-#include <sdfg/transformations/loop_shift.h>
-#include <sdfg/transformations/loop_skewing.h>
-#include <sdfg/transformations/loop_split.h>
-#include <sdfg/transformations/loop_tiling.h>
-#include <sdfg/transformations/map_collapse.h>
-#include <sdfg/transformations/multi_level_tiling.h>
-#include <sdfg/transformations/offloading/cuda_offload_transform.h>
-#include <sdfg/transformations/offloading/cuda_parallelize_nested_map.h>
-#include <sdfg/transformations/offloading/cuda_transform.h>
-#include <sdfg/transformations/offloading/gpu_condition_propagation.h>
-#include <sdfg/transformations/offloading/gpu_loop_reordering.h>
-#include <sdfg/transformations/offloading/gpu_tiling.h>
-#include <sdfg/transformations/offloading/kernel_local_storage.h>
-#include <sdfg/transformations/offloading/rocm_offload_transform.h>
-#include <sdfg/transformations/offloading/rocm_parallelize_nested_map.h>
-#include <sdfg/transformations/offloading/rocm_transform.h>
-#include <sdfg/transformations/omp_transform.h>
-#include <sdfg/transformations/out_local_storage.h>
 #include <sdfg/transformations/replayer.h>
-#include <sdfg/transformations/unroll_transform.h>
-#include <sdfg/transformations/vectorize_transform.h>
+
+#include <iostream>
+
+#include <sdfg/transformations/transformation_registry.h>
 
 namespace sdfg {
 namespace transformations {
@@ -42,78 +19,21 @@ void Replayer::replay(
     }
 
     for (const auto& desc : transformation_data) {
-        auto transformation_name = desc["transformation_type"];
+        auto transformation_name = desc["transformation_type"].get<std::string>();
 
-        if (transformation_name == "LoopTiling") {
-            this->apply<transformations::LoopTiling>(builder, analysis_manager, desc, skip_if_not_applicable);
-        } else if (transformation_name == "MapCollapse") {
-            this->apply<transformations::MapCollapse>(builder, analysis_manager, desc, skip_if_not_applicable);
-        } else if (transformation_name == "MultiLevelTiling") {
-            this->apply<transformations::MultiLevelTiling>(builder, analysis_manager, desc, skip_if_not_applicable);
-        } else if (transformation_name == "LoopDistribute") {
-            this->apply<transformations::LoopDistribute>(builder, analysis_manager, desc, skip_if_not_applicable);
-        } else if (transformation_name == "LoopInterchange") {
-            this->apply<transformations::LoopInterchange>(builder, analysis_manager, desc, skip_if_not_applicable);
-        } else if (transformation_name == "LocalStorage") {
-            this->apply<transformations::LocalStorage>(builder, analysis_manager, desc, skip_if_not_applicable);
-        } else if (transformation_name == "OutLocalStorage") {
-            this->apply<transformations::OutLocalStorage>(builder, analysis_manager, desc, skip_if_not_applicable);
-        } else if (transformation_name == "InLocalStorage") {
-            this->apply<transformations::InLocalStorage>(builder, analysis_manager, desc, skip_if_not_applicable);
-        } else if (transformation_name == "TileFusion") {
-            this->apply<transformations::TileFusion>(builder, analysis_manager, desc, skip_if_not_applicable);
-        } else if (transformation_name == "LoopSkewing") {
-            this->apply<transformations::LoopSkewing>(builder, analysis_manager, desc, skip_if_not_applicable);
-        } else if (transformation_name == "LoopShift") {
-            this->apply<transformations::LoopShift>(builder, analysis_manager, desc, skip_if_not_applicable);
-        } else if (transformation_name == "LoopSplit") {
-            this->apply<transformations::LoopSplit>(builder, analysis_manager, desc, skip_if_not_applicable);
-        } else if (transformation_name == "OMPTransform") {
-            this->apply<transformations::OMPTransform>(builder, analysis_manager, desc, skip_if_not_applicable);
-        } else if (transformation_name == "LoopPeeling") {
-            this->apply<transformations::LoopPeeling>(builder, analysis_manager, desc, skip_if_not_applicable);
-        } else if (transformation_name == "VectorizeTransform") {
-            this->apply<transformations::VectorizeTransform>(builder, analysis_manager, desc, skip_if_not_applicable);
-        } else if (transformation_name == "UnrollTransform") {
-            this->apply<transformations::UnrollTransform>(builder, analysis_manager, desc, skip_if_not_applicable);
-        } else if (transformation_name == "CUDATransform") {
-            this->apply<cuda::CUDATransform>(builder, analysis_manager, desc, skip_if_not_applicable);
-        } else if (transformation_name == "CUDAParallelizeNestedMap") {
-            this->apply<
-                transformations::CUDAParallelizeNestedMap>(builder, analysis_manager, desc, skip_if_not_applicable);
-        } else if (transformation_name == "CUDAOffloadTransform") {
-            this->apply<cuda::CUDAOffloadTransform>(builder, analysis_manager, desc, skip_if_not_applicable);
-        } else if (transformation_name == "ROCMTransform") {
-            this->apply<rocm::ROCMTransform>(builder, analysis_manager, desc, skip_if_not_applicable);
-        } else if (transformation_name == "ROCMOffloadTransform") {
-            this->apply<rocm::ROCMOffloadTransform>(builder, analysis_manager, desc, skip_if_not_applicable);
-        } else if (transformation_name == "ROCMParallelizeNestedMap") {
-            this->apply<
-                transformations::ROCMParallelizeNestedMap>(builder, analysis_manager, desc, skip_if_not_applicable);
-        } else if (transformation_name == "GPUConditionPropagation") {
-            this->apply<
-                transformations::GPUConditionPropagation>(builder, analysis_manager, desc, skip_if_not_applicable);
-        } else if (transformation_name == "GPUTiling") {
-            this->apply<transformations::GPUTiling>(builder, analysis_manager, desc, skip_if_not_applicable);
-        } else if (transformation_name == "GPULoopReordering") {
-            this->apply<transformations::GPULoopReordering>(builder, analysis_manager, desc, skip_if_not_applicable);
-        } else if (transformation_name == "KernelLocalStorage") {
-            this->apply<transformations::KernelLocalStorage>(builder, analysis_manager, desc, skip_if_not_applicable);
-        } else if (transformation_name == "EinsumLift") {
-            this->apply<einsum::EinsumLift>(builder, analysis_manager, desc, skip_if_not_applicable);
-        } else if (transformation_name == "EinsumExtend") {
-            this->apply<einsum::EinsumExtend>(builder, analysis_manager, desc, skip_if_not_applicable);
-        } else if (transformation_name == "EinsumExpand") {
-            this->apply<einsum::EinsumPromotion>(builder, analysis_manager, desc, skip_if_not_applicable);
-        } else if (transformation_name == "Einsum2Dot") {
-            this->apply<einsum::Einsum2Dot>(builder, analysis_manager, desc, skip_if_not_applicable);
-        } else if (transformation_name == "Einsum2Gemm") {
-            this->apply<einsum::Einsum2Gemm>(builder, analysis_manager, desc, skip_if_not_applicable);
-        } else {
-            throw transformations::InvalidTransformationDescriptionException(
-                "Unknown transformation: " + transformation_name.get<std::string>()
-            );
-        }
+        dispatch_transformation(transformation_name, desc, [&]<typename T>() {
+#ifndef NDEBUG
+            // Verify that from_json and to_json are consistent inverses for this description.
+            std::string round_trip_error;
+            if (!verify_round_trip<T>(builder, desc, round_trip_error)) {
+                throw transformations::InvalidTransformationDescriptionException(
+                    "Transformation '" + transformation_name +
+                    "' failed from_json/to_json verification: " + round_trip_error
+                );
+            }
+#endif
+            this->apply<T>(builder, analysis_manager, desc, skip_if_not_applicable);
+        });
 
 #ifndef NDEBUG
         std::cout << "Applied transformation: " << transformation_name << std::endl;

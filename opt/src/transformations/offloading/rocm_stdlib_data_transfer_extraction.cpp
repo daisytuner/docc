@@ -26,9 +26,14 @@ std::string ROCMStdlibDataTransferExtraction::create_device_container(
     builder::StructuredSDFGBuilder& builder, const types::Pointer& type, const symbolic::Expression& size
 ) {
     auto new_type = type.clone();
-    new_type->storage_type(types::StorageType(
-        "AMD_Generic", size, types::StorageType::AllocationType::Unmanaged, types::StorageType::AllocationType::Unmanaged
-    ));
+    new_type->storage_type(
+        types::StorageType(
+            "AMD_Generic",
+            size,
+            types::StorageType::AllocationType::Unmanaged,
+            types::StorageType::AllocationType::Unmanaged
+        )
+    );
     auto device_container = builder.find_new_name(ROCM_DEVICE_PREFIX);
     builder.add_container(device_container, *new_type);
     return device_container;
@@ -132,9 +137,12 @@ void ROCMStdlibDataTransferExtraction::create_copy_to_device_with_allocation(
 }
 
 ROCMStdlibDataTransferExtraction::ROCMStdlibDataTransferExtraction(data_flow::LibraryNode& lib_node)
-    : lib_node_(lib_node) {}
+    : lib_node_(lib_node) {
+}
 
-std::string ROCMStdlibDataTransferExtraction::name() const { return "ROCMStdlibDataTransferExtraction"; }
+std::string ROCMStdlibDataTransferExtraction::name() const {
+    return "ROCMStdlibDataTransferExtraction";
+}
 
 bool ROCMStdlibDataTransferExtraction::
     can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
@@ -176,7 +184,7 @@ void ROCMStdlibDataTransferExtraction::
     }
 
     // Change the implementation type to without transfers
-    this->lib_node_.implementation_type() = rocm::ImplementationType_ROCMWithoutTransfers;
+    this->lib_node_.set_implementation_type(rocm::ImplementationType_ROCMWithoutTransfers);
 }
 
 void ROCMStdlibDataTransferExtraction::apply_memset(
@@ -223,8 +231,8 @@ void ROCMStdlibDataTransferExtraction::apply_memcpy(
 
     // Handle _src (read) - need H2D transfer
     auto src_edge = dfg.in_edge_for_connector(memcpy_node, "_src");
-    auto& src_access_node = const_cast<data_flow::AccessNode&>(static_cast<const data_flow::AccessNode&>(src_edge->src()
-    ));
+    auto& src_access_node =
+        const_cast<data_flow::AccessNode&>(static_cast<const data_flow::AccessNode&>(src_edge->src()));
     auto& src_container_name = src_access_node.data();
     auto& src_type = static_cast<const types::Pointer&>(builder.subject().type(src_container_name));
 
@@ -235,8 +243,8 @@ void ROCMStdlibDataTransferExtraction::apply_memcpy(
 
     // Handle _dst (write) - need D2H transfer
     auto dst_edge = dfg.in_edge_for_connector(memcpy_node, "_dst");
-    auto& dst_access_node = const_cast<data_flow::AccessNode&>(static_cast<const data_flow::AccessNode&>(dst_edge->src()
-    ));
+    auto& dst_access_node =
+        const_cast<data_flow::AccessNode&>(static_cast<const data_flow::AccessNode&>(dst_edge->src()));
     auto& dst_container_name = dst_access_node.data();
     auto& dst_type = static_cast<const types::Pointer&>(builder.subject().type(dst_container_name));
 

@@ -449,12 +449,6 @@ void DotNodeDispatcher_Tenstorrent::dispatch(
 
 codegen::InstrumentationInfo DotNodeDispatcher_Tenstorrent::instrumentation_info() const {
     std::unordered_map<std::string, std::string> metrics;
-
-    auto flops = analysis::FlopAnalysis::get_flops_if_valid_for_codegen(node_);
-    if (!flops.is_null()) {
-        metrics.insert({"flop", language_extension_.expression(flops)});
-    }
-
     metrics.insert({"tt_cores_used_rel", "tt_cores_used_rel"});
     metrics.insert({"tt_work_units_per_core", "tt_work_units_per_core"});
     if (tt_emit_full_metrics) {

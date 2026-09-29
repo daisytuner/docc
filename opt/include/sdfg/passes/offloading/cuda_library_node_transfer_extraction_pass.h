@@ -12,7 +12,9 @@ public:
         builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager
     );
 
-    static std::string name() { return "CudaLibraryNodeTransferExtractionPass"; }
+    static std::string name() {
+        return "CudaLibraryNodeTransferExtractionPass";
+    }
     bool visit() override;
     bool accept(structured_control_flow::Block& block) override;
 };

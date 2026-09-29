@@ -28,13 +28,10 @@ TensorNode::TensorNode(
     const std::vector<std::string>& inputs,
     const data_flow::ImplementationType& impl_type
 )
-    : MathNode(element_id, debug_info, vertex, parent, code, outputs, inputs, impl_type, true) {}
+    : MathNode(element_id, debug_info, vertex, parent, code, outputs, inputs, impl_type, true) {
+}
 
-void TensorNode::validate(const Function& function) const {
-    MathNode::validate(function);
-
-    auto& graph = this->get_parent();
-
+void TensorNode::verify_data_types(const data_flow::DataFlowGraph& graph) const {
     // Validate that all memlets have the same primitive type
     types::PrimitiveType prim_type = primitive_type(graph);
 
@@ -45,6 +42,14 @@ void TensorNode::validate(const Function& function) const {
             std::string(types::primitive_type_to_string(prim_type))
         );
     }
+}
+
+void TensorNode::validate(const Function& function) const {
+    MathNode::validate(function);
+
+    auto& graph = this->get_parent();
+
+    verify_data_types(graph);
 }
 
 types::PrimitiveType TensorNode::primitive_type(const data_flow::DataFlowGraph& graph) const {

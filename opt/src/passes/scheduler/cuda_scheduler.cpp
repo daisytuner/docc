@@ -6,7 +6,6 @@
 #include "sdfg/passes/offloading/cuda_library_node_transfer_extraction_pass.h"
 #include "sdfg/passes/offloading/gpu_loop_reordering_pass.h"
 #include "sdfg/passes/offloading/gpu_nested_parallelization_pass.h"
-#include "sdfg/passes/offloading/gpu_tiling_pass.h"
 #include "sdfg/passes/scheduler/loop_scheduler.h"
 #include "sdfg/passes/structured_control_flow/dead_cfg_elimination.h"
 #include "sdfg/passes/symbolic/symbol_propagation.h"
@@ -141,18 +140,14 @@ void CUDAScheduler::post_schedule(
         analysis_manager.invalidate_all();
     }
 
-    if (!gpu_maps.empty()) {
-        GPUTilingPass tiling_pass(gpu_maps, 8);
-        tiling_pass.run(builder, analysis_manager);
-        analysis_manager.invalidate_all();
-    }
-
     cuda::CudaLibraryNodeTransferExtractionPass transfer_extraction_pass;
     transfer_extraction_pass.run(builder, analysis_manager);
     analysis_manager.invalidate_all();
 }
 
-std::unordered_set<ScheduleTypeCategory> CUDAScheduler::compatible_types() { return {ScheduleTypeCategory::None}; }
+std::unordered_set<ScheduleTypeCategory> CUDAScheduler::compatible_types() {
+    return {ScheduleTypeCategory::None};
+}
 
 } // namespace scheduler
 } // namespace passes

@@ -12,7 +12,8 @@ GEMMNodeDispatcher_ROCMHandTuned::GEMMNodeDispatcher_ROCMHandTuned(
     const data_flow::DataFlowGraph& data_flow_graph,
     const math::blas::GEMMNode& node
 )
-    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {}
+    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
+}
 
 void GEMMNodeDispatcher_ROCMHandTuned::dispatch_code(
     codegen::PrettyPrinter& stream,

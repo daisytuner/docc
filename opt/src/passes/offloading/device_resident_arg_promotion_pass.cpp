@@ -42,7 +42,8 @@ public:
         analysis::AnalysisManager& analysis_manager,
         const std::unordered_set<std::string>& ptr_args
     )
-        : visitor::ImmutableStructuredSDFGVisitor(sdfg, analysis_manager), ptr_args_(ptr_args) {}
+        : visitor::ImmutableStructuredSDFGVisitor(sdfg, analysis_manager), ptr_args_(ptr_args) {
+    }
 
     bool accept(structured_control_flow::Block& node) override {
         auto& dataflow = node.dataflow();
@@ -98,7 +99,8 @@ public:
         std::unordered_set<std::string>& aliased_containers
     )
         : visitor::ImmutableStructuredSDFGVisitor(sdfg, analysis_manager), records_(records),
-          aliased_containers_(aliased_containers) {}
+          aliased_containers_(aliased_containers) {
+    }
 
     bool accept(structured_control_flow::Block& node) override {
         auto& dataflow = node.dataflow();
@@ -153,7 +155,8 @@ public:
 
 } // namespace
 
-DeviceResidentArgPromotionPass::DeviceResidentArgPromotionPass(bool is_rocm) : is_rocm_(is_rocm) {}
+DeviceResidentArgPromotionPass::DeviceResidentArgPromotionPass(bool is_rocm) : is_rocm_(is_rocm) {
+}
 
 bool DeviceResidentArgPromotionPass::
     run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {

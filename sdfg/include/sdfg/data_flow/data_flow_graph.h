@@ -155,8 +155,8 @@ public:
         return memlets;
     };
 
-    std::vector<const data_flow::Memlet*> out_edges_for_connector(const data_flow::CodeNode& node, const std::string& conn)
-        const;
+    std::vector<const data_flow::Memlet*>
+    out_edges_for_connector(const data_flow::CodeNode& node, const std::string& conn) const;
 
     std::vector<data_flow::Memlet*> out_edges_by_connector(const data_flow::CodeNode& node);
 
@@ -211,8 +211,8 @@ public:
 
     auto all_simple_paths(const data_flow::DataFlowNode& src, const data_flow::DataFlowNode& dst) const;
 
-    const std::pair<size_t, const std::unordered_map<const data_flow::DataFlowNode*, size_t>> weakly_connected_components()
-        const;
+    const std::pair<size_t, const std::unordered_map<const data_flow::DataFlowNode*, size_t>>
+    weakly_connected_components() const;
 
     template<typename T>
     T* is_a_library_node() {

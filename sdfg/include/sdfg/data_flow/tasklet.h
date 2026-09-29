@@ -377,9 +377,13 @@ public:
     Tasklet(const Tasklet& data_node) = delete;
     Tasklet& operator=(const Tasklet&) = delete;
 
-    ElementType type_id() const override { return ElementType::Tasklet; }
+    ElementType type_id() const override {
+        return ElementType::Tasklet;
+    }
 
-    static bool classof(const Element& element) { return element.type_id() == ElementType::Tasklet; }
+    static bool classof(const Element& element) {
+        return element.type_id() == ElementType::Tasklet;
+    }
 
     /**
      * @brief Validate the tasklet
@@ -388,7 +392,9 @@ public:
      */
     void validate(const Function& function) const override;
 
-    [[nodiscard]] bool side_effect() const override { return false; }
+    [[nodiscard]] bool side_effect() const override {
+        return false;
+    }
 
     /**
      * @brief Get the operation code
@@ -492,8 +498,8 @@ public:
      * @param parent Parent graph for the clone
      * @return Unique pointer to the cloned tasklet
      */
-    virtual std::unique_ptr<DataFlowNode> clone(size_t element_id, const graph::Vertex vertex, DataFlowGraph& parent)
-        const override;
+    virtual std::unique_ptr<DataFlowNode>
+    clone(size_t element_id, const graph::Vertex vertex, DataFlowGraph& parent) const override;
 
     /**
      * @brief Replace symbolic expressions in this tasklet

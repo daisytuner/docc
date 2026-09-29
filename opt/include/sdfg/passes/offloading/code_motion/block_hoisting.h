@@ -102,7 +102,9 @@ protected:
 public:
     BlockHoisting(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager);
 
-    static std::string name() { return "BlockHoisting"; }
+    static std::string name() {
+        return "BlockHoisting";
+    }
 
     virtual bool accept(structured_control_flow::Map& map_stmt) override;
 
