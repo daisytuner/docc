@@ -148,20 +148,17 @@ TEST(ConstPaddingNodeTest, pointer_access_type) {
     EXPECT_FALSE(y_pam->may_contain_reads());
     EXPECT_TRUE(y_pam->may_contain_writes());
     EXPECT_FALSE(y_pam->invalidated_after());
-    auto y_map = y_pam->access_write_pattern();
-    auto* y_cap = dynamic_cast<data_flow::ConvexAccessPattern*>(y_map.get());
-    ASSERT_NE(y_cap, nullptr);
-    EXPECT_TRUE(symbolic::eq(y_cap->size(), y_layout.total_elements()));
+    ASSERT_NE(y_pam->write_layout(), nullptr);
+    EXPECT_TRUE(y_pam->write_covers_all());
+    EXPECT_TRUE(symbolic::eq(y_pam->write_layout()->memory_span(), y_layout.total_elements()));
 
     auto x_pam = const_padding_node.pointer_access_type(math::tensor::ConstPaddingNode::X_INPUT_IDX);
     EXPECT_TRUE(x_pam->no_capture());
     EXPECT_TRUE(x_pam->may_contain_reads());
     EXPECT_FALSE(x_pam->may_contain_writes());
     EXPECT_FALSE(x_pam->invalidated_after());
-    auto x_map = x_pam->access_read_pattern();
-    auto* x_cap = dynamic_cast<data_flow::ConvexAccessPattern*>(x_map.get());
-    ASSERT_NE(x_cap, nullptr);
-    EXPECT_TRUE(symbolic::eq(x_cap->size(), x_layout.total_elements()));
+    ASSERT_NE(x_pam->read_layout(), nullptr);
+    EXPECT_TRUE(symbolic::eq(x_pam->read_layout()->memory_span(), x_layout.total_elements()));
 
     EXPECT_EQ(const_padding_node.pointer_access_type(math::tensor::ConstPaddingNode::VAL_INPUT_IDX), nullptr);
 }

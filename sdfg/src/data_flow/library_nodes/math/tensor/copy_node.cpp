@@ -509,9 +509,10 @@ symbolic::Expression TensorCopyNode::flop() const {
 data_flow::PointerAccessType TensorCopyNode::pointer_access_type(int input_idx) const {
     switch (input_idx) {
         case X_INPUT_IDX:
-            return data_flow::PointerAccessMeta::create_read_only(this->layout_x_.total_elements(), false);
+            return data_flow::PointerAccessMeta::create_read_only(this->layout_x_.total_elements(), false, this->layout_x_);
         case Y_INPUT_IDX:
-            return data_flow::PointerAccessMeta::create_full_write_only(this->layout_y_.total_elements(), false);
+            return data_flow::PointerAccessMeta::
+                create_full_write_only(this->layout_y_.total_elements(), false, this->layout_y_);
         default:
             return nullptr;
     }
