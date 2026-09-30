@@ -9,8 +9,10 @@
 #pragma once
 
 #include <map>
+#include <optional>
 #include <set>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <string>
@@ -28,19 +30,16 @@ namespace analysis {
 
 typedef math::tensor::TensorLayout MemoryLayout;
 
-struct MemoryAccess {
-    std::string container; // Container name
-    data_flow::Subset subset; // Symbolic indices after delinearization
-    MemoryLayout layout; // Inferred memory layout
-    bool first_dim_bounded; // True if first dimension is bounded (Tensor/Array), false for unbounded pointers
-};
-
 struct MemoryTile {
     std::string container; // Container name
     data_flow::Subset min_subset; // Minimum accessed indices in this tile
     data_flow::Subset max_subset; // Maximum accessed indices in this tile
     MemoryLayout layout; // Inferred tile layout at this loop level
     bool first_dim_bounded; // True if first dimension is bounded (Tensor/Array), false for unbounded pointers
+
+    /// A trivial (point) tile: a single index per dimension (min == max), as
+    /// opposed to a bounded range.
+    bool is_point() const;
 
     /// Per-dimension bounding box extents: max[d] - min[d] + 1.
     /// Returns `SymEngine::null` in slot `d` if that extent would depend on an
@@ -80,7 +79,7 @@ struct MemoryTileGroup {
  */
 class MemoryLayoutAnalysis : public Analysis {
 private:
-    std::unordered_map<const data_flow::Memlet*, MemoryAccess> accesses_;
+    std::unordered_map<const data_flow::Memlet*, MemoryTile> accesses_;
     std::map<std::pair<const structured_control_flow::ControlFlowNode*, std::string>, MemoryTile> tiles_;
     std::map<std::pair<const structured_control_flow::ControlFlowNode*, std::string>, std::vector<MemoryTileGroup>>
         tile_groups_;
@@ -129,7 +128,7 @@ public:
      * @param memlet The memlet to query
      * @return A pointer to the inferred memory layout information if inference was successful, nullptr otherwise
      */
-    const MemoryAccess* access(const data_flow::Memlet& memlet) const;
+    const MemoryTile* access(const data_flow::Memlet& memlet) const;
 
     /**
      * @brief Get the inferred memory layout for a container at a specific scope

@@ -188,6 +188,17 @@ symbolic::SymbolSet MatMulNode::symbols() const {
     return syms;
 }
 
+data_flow::PointerAccessType MatMulNode::pointer_access_type(int input_idx) const {
+    if (input_idx == Y_INPUT_IDX) {
+        return data_flow::PointerAccessMeta::create_full_write_only(layout_y_.total_elements(), true, layout_y_);
+    } else if (input_idx == A_INPUT_IDX) {
+        return data_flow::PointerAccessMeta::create_read_only(layout_a_.total_elements(), true, layout_a_);
+    } else if (input_idx == B_INPUT_IDX) {
+        return data_flow::PointerAccessMeta::create_read_only(layout_b_.total_elements(), true, layout_b_);
+    }
+    return TensorNode::pointer_access_type(input_idx);
+}
+
 void MatMulNode::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
     layout_a_.replace_symbols(old_expression, new_expression);
     layout_b_.replace_symbols(old_expression, new_expression);

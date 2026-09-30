@@ -1137,10 +1137,10 @@ void LocalStorage::rewrite_body(
                     return;
                 }
                 auto* acc = mla.access(memlet);
-                if (!acc || acc->subset.size() != tile_info_.dimensions.size()) {
+                if (!acc || acc->min_subset.size() != tile_info_.dimensions.size()) {
                     return;
                 }
-                memlet.set_subset(buffer.subset(slot_indices, tile_info_.local_index(acc->subset)));
+                memlet.set_subset(buffer.subset(slot_indices, tile_info_.local_index(acc->min_subset)));
                 memlet.set_base_type(buffer_type);
                 rewrote = true;
             };

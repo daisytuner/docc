@@ -1,42 +1,51 @@
 #include "sdfg/data_flow/pointer_metadata.h"
 
 #include "cereal/types/utility.hpp"
+#include "sdfg/data_flow/library_nodes/math/tensor/tensor_layout.h"
 #include "sdfg/serializer/json_serializer.h"
 
 namespace sdfg::data_flow {
 
-MemoryAccessPatternType MemoryAccessPattern::ref() const {
-    return std::unique_ptr<
-        MemoryAccessPattern,
-        AccessPatternsDeleter>(const_cast<MemoryAccessPattern*>(this), AccessPatternsDeleter(false));
+static void
+serialize_region(nlohmann::json& entry, const char* key, const std::optional<math::tensor::TensorLayout>& region) {
+    if (region) {
+        region->serialize_to_json(entry[key]);
+    }
 }
 
-MemoryAccessPatternType ConvexAccessPattern::clone() const {
-    return std::unique_ptr<MemoryAccessPattern, AccessPatternsDeleter>(new ConvexAccessPattern(size_));
+static std::optional<math::tensor::TensorLayout> deserialize_region(const nlohmann::json& entry, const char* key) {
+    auto it = entry.find(key);
+    if (it == entry.end() || it->is_null()) {
+        return std::nullopt;
+    }
+    return math::tensor::TensorLayout::deserialize_from_json(*it);
 }
 
-void ConvexAccessPattern::serialize_to_json(nlohmann::json& entry) {
-    entry["type"] = "ConvexAccessPattern";
-    serializer::JSONSerializer serializer;
-    entry["size"] = serializer.expression(size_);
-    entry["not_sparse"] = not_sparse_;
+// Legacy scalar-size constructors describe a flat 1-D region `{size}`; a null
+// size means the access is unbounded. A structured layout, when given, wins.
+static std::optional<math::tensor::TensorLayout>
+region_from_size(const symbolic::Expression& size, std::optional<math::tensor::TensorLayout> layout) {
+    if (layout) {
+        return layout;
+    }
+    if (size.is_null()) {
+        return std::nullopt;
+    }
+    return math::tensor::TensorLayout(symbolic::MultiExpression{size});
 }
 
-MemoryAccessPatternType ConvexAccessPattern::create(symbolic::Expression size, bool not_sparse) {
-    return std::unique_ptr<MemoryAccessPattern, AccessPatternsDeleter>(new ConvexAccessPattern(size, not_sparse));
+static void serialize_access_region(nlohmann::json& entry, const AccessRegion& r) {
+    entry["may_access"] = r.may_access;
+    entry["covers_all"] = r.covers_all;
+    serialize_region(entry, "region", r.region);
 }
 
-MemoryAccessPatternType NoAccessPattern::instance() {
-    static std::unique_ptr<MemoryAccessPattern, AccessPatternsDeleter> instance(new NoAccessPattern());
-    return instance->ref();
-}
-
-void NoAccessPattern::serialize_to_json(nlohmann::json& entry) {
-    entry["type"] = "NoAccessPattern";
-}
-
-MemoryAccessPatternType NoAccessPattern::clone() const {
-    return this->ref();
+static AccessRegion deserialize_access_region(const nlohmann::json& entry) {
+    AccessRegion r;
+    r.may_access = entry.at("may_access").get<bool>();
+    r.covers_all = entry.at("covers_all").get<bool>();
+    r.region = deserialize_region(entry, "region");
+    return r;
 }
 
 PointerAccessType PointerAccessMeta::ref() const {
@@ -45,150 +54,131 @@ PointerAccessType PointerAccessMeta::ref() const {
         PtrAccessDeleter>(const_cast<PointerAccessMeta*>(this), PtrAccessDeleter(false));
 }
 
-PointerAccessType PointerAccessMeta::create_read_only(const symbolic::Expression& size, bool no_capture) {
-    return std::unique_ptr<PointerAccessMeta, PtrAccessDeleter>(new PointerReadOnly(size, no_capture));
+PointerAccessType PointerAccessMeta::create_read_only(
+    const symbolic::Expression& size, bool no_capture, std::optional<math::tensor::TensorLayout> layout
+) {
+    return std::unique_ptr<
+        PointerAccessMeta,
+        PtrAccessDeleter>(new PointerReadOnly(region_from_size(size, std::move(layout)), no_capture));
 }
 
 PointerAccessType PointerAccessMeta::create_invalidate() {
     return std::unique_ptr<PointerAccessMeta, PtrAccessDeleter>(new PointerInvalidate());
 }
 
-PointerAccessType PointerAccessMeta::create_full_write_only(const symbolic::Expression& size, bool no_capture) {
+PointerAccessType PointerAccessMeta::create_full_write_only(
+    const symbolic::Expression& size, bool no_capture, std::optional<math::tensor::TensorLayout> layout
+) {
+    return std::unique_ptr<PointerAccessMeta, PtrAccessDeleter>(
+        new PointerFullWriteOnly(region_from_size(size, std::move(layout)), no_capture), PtrAccessDeleter(true)
+    );
+}
+
+PointerAccessType PointerAccessMeta::create_generic(AccessRegion read, AccessRegion write, bool no_capture) {
     return std::unique_ptr<
         PointerAccessMeta,
-        PtrAccessDeleter>(new PointerFullWriteOnly(size, no_capture), PtrAccessDeleter(true));
+        PtrAccessDeleter>(new PointerGenericAccess(std::move(read), std::move(write), no_capture));
 }
 
-PointerAccessType PointerAccessMeta::
-    create_generic(MemoryAccessPatternType read_pattern, MemoryAccessPatternType write_pattern, bool no_capture) {
-    return std::unique_ptr<
-        PointerAccessMeta,
-        PtrAccessDeleter>(new PointerGenericAccess(std::move(read_pattern), std::move(write_pattern), no_capture));
+PointerReadOnly::PointerReadOnly(std::optional<math::tensor::TensorLayout> region, bool no_capture)
+    : region_(std::move(region)), no_capture_(no_capture) {
 }
 
-PointerReadOnly::PointerReadOnly(symbolic::Expression size, bool no_capture) : size_(size), no_capture_(no_capture) {
-}
-
-MemoryAccessPatternType PointerReadOnly::access_read_pattern() const {
-    if (size_.is_null()) {
-        return {};
-    } else {
-        return ConvexAccessPattern::create(size_);
-    }
-}
-
-MemoryAccessPatternType PointerReadOnly::access_write_pattern() const {
-    return NoAccessPattern::instance();
+const math::tensor::TensorLayout* PointerReadOnly::read_layout() const {
+    return region_ ? &*region_ : nullptr;
 }
 
 void PointerReadOnly::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
-    size_ = symbolic::subs(size_, old_expression, new_expression);
+    if (region_) {
+        region_->replace_symbols(old_expression, new_expression);
+    }
 }
 
 void PointerReadOnly::replace(const symbolic::ExpressionMapping& replacements) {
-    size_ = SymEngine::subs(size_, replacements);
+    if (region_) {
+        region_->replace_symbols(replacements);
+    }
 }
 
 PointerAccessType PointerReadOnly::clone() const {
-    return PointerAccessType(new PointerReadOnly(size_, no_capture_));
+    return PointerAccessType(new PointerReadOnly(region_, no_capture_));
 }
 
 void PointerReadOnly::serialize_to_json(nlohmann::json& entry) {
-    serializer::JSONSerializer serializer;
     entry["type"] = "PointerReadOnly";
-    entry["size"] = serializer.expression(size_);
     entry["no_capture"] = no_capture_;
+    serialize_region(entry, "region", region_);
 }
 
-PointerFullWriteOnly::PointerFullWriteOnly(symbolic::Expression size, bool no_capture)
-    : size_(size), no_capture_(no_capture) {
+PointerFullWriteOnly::PointerFullWriteOnly(std::optional<math::tensor::TensorLayout> region, bool no_capture)
+    : region_(std::move(region)), no_capture_(no_capture) {
 }
 
-MemoryAccessPatternType PointerFullWriteOnly::access_write_pattern() const {
-    if (size_.is_null()) {
-        return nullptr;
-    } else {
-        return ConvexAccessPattern::create(size_, true);
-    }
-}
-
-MemoryAccessPatternType PointerFullWriteOnly::access_read_pattern() const {
-    return NoAccessPattern::instance();
+const math::tensor::TensorLayout* PointerFullWriteOnly::write_layout() const {
+    return region_ ? &*region_ : nullptr;
 }
 
 void PointerFullWriteOnly::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
-    size_ = symbolic::subs(size_, old_expression, new_expression);
+    if (region_) {
+        region_->replace_symbols(old_expression, new_expression);
+    }
 }
 
 void PointerFullWriteOnly::replace(const symbolic::ExpressionMapping& replacements) {
-    size_ = SymEngine::subs(size_, replacements);
+    if (region_) {
+        region_->replace_symbols(replacements);
+    }
 }
 
 PointerAccessType PointerFullWriteOnly::clone() const {
-    return PointerAccessType(new PointerFullWriteOnly(size_, no_capture_));
+    return PointerAccessType(new PointerFullWriteOnly(region_, no_capture_));
 }
 
 void PointerFullWriteOnly::serialize_to_json(nlohmann::json& entry) {
-    serializer::JSONSerializer serializer;
     entry["type"] = "PointerWriteOnly";
-    entry["size"] = serializer.expression(size_);
     entry["no_capture"] = no_capture_;
+    serialize_region(entry, "region", region_);
 }
 
-PointerGenericAccess::
-    PointerGenericAccess(MemoryAccessPatternType read_pattern, MemoryAccessPatternType write_pattern, bool no_capture)
-    : read_pattern_(std::move(read_pattern)), write_pattern_(std::move(write_pattern)), no_capture_(no_capture) {
+PointerGenericAccess::PointerGenericAccess(AccessRegion read, AccessRegion write, bool no_capture)
+    : read_(std::move(read)), write_(std::move(write)), no_capture_(no_capture) {
 }
 
-MemoryAccessPatternType PointerGenericAccess::access_read_pattern() const {
-    return read_pattern_ ? read_pattern_->ref() : nullptr;
+const math::tensor::TensorLayout* PointerGenericAccess::read_layout() const {
+    return read_.region ? &*read_.region : nullptr;
 }
 
-MemoryAccessPatternType PointerGenericAccess::access_write_pattern() const {
-    return write_pattern_ ? write_pattern_->ref() : nullptr;
-}
-
-bool PointerGenericAccess::may_contain_reads() const {
-    return !read_pattern_ || !read_pattern_->empty();
-}
-
-bool PointerGenericAccess::may_contain_writes() const {
-    return !write_pattern_ || !write_pattern_->empty();
+const math::tensor::TensorLayout* PointerGenericAccess::write_layout() const {
+    return write_.region ? &*write_.region : nullptr;
 }
 
 void PointerGenericAccess::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
-    if (read_pattern_) {
-        read_pattern_->replace(old_expression, new_expression);
+    if (read_.region) {
+        read_.region->replace_symbols(old_expression, new_expression);
     }
-    if (write_pattern_) {
-        write_pattern_->replace(old_expression, new_expression);
+    if (write_.region) {
+        write_.region->replace_symbols(old_expression, new_expression);
     }
 }
 
 void PointerGenericAccess::replace(const symbolic::ExpressionMapping& replacements) {
-    if (read_pattern_) {
-        read_pattern_->replace(replacements);
+    if (read_.region) {
+        read_.region->replace_symbols(replacements);
     }
-    if (write_pattern_) {
-        write_pattern_->replace(replacements);
+    if (write_.region) {
+        write_.region->replace_symbols(replacements);
     }
 }
 
 PointerAccessType PointerGenericAccess::clone() const {
-    auto rd_patt_new = read_pattern_ ? read_pattern_->clone() : nullptr;
-    auto wr_patt_new = write_pattern_ ? write_pattern_->clone() : nullptr;
-    return PointerAccessType(new PointerGenericAccess(std::move(rd_patt_new), std::move(wr_patt_new), no_capture_));
+    return PointerAccessType(new PointerGenericAccess(read_, write_, no_capture_));
 }
 
 void PointerGenericAccess::serialize_to_json(nlohmann::json& entry) {
     entry["type"] = "PointerGenericAccess";
-    if (read_pattern_) {
-        read_pattern_->serialize_to_json(entry["read_pattern"]);
-    }
-    if (write_pattern_) {
-        write_pattern_->serialize_to_json(entry["write_pattern"]);
-    }
     entry["no_capture"] = no_capture_;
+    serialize_access_region(entry["read"], read_);
+    serialize_access_region(entry["write"], write_);
 }
 
 PointerAccessType PointerInvalidate::clone() const {
@@ -214,7 +204,7 @@ PointerAccessType PointerAccessMetaSerializer::deserialize(const nlohmann::json&
         } else if (type == "PointerGenericAccess") {
             return deserialize_generic(entry);
         } else {
-            throw std::runtime_error("Unknown MemoryAccessPattern type: " + type);
+            throw std::runtime_error("Unknown PointerAccessMeta type: " + type);
         }
     }
 }
@@ -237,46 +227,20 @@ std::vector<PointerAccessType> PointerAccessMetaSerializer::
 }
 
 PointerAccessType PointerAccessMetaSerializer::deserialize_read_only(nlohmann::json::const_reference entry) {
-    serializer::JSONSerializer serializer;
     bool no_capture = entry.at("no_capture").get<bool>();
-    auto size = serializer.json_to_expr(entry.at("size"));
-    return PointerAccessMeta::create_read_only(size, no_capture);
+    return PointerAccessType(new PointerReadOnly(deserialize_region(entry, "region"), no_capture));
 }
 
 PointerAccessType PointerAccessMetaSerializer::deserialize_write_only(nlohmann::json::const_reference entry) {
-    serializer::JSONSerializer serializer;
     bool no_capture = entry.at("no_capture").get<bool>();
-    auto size = serializer.json_to_expr(entry.at("size"));
-    return PointerAccessMeta::create_full_write_only(size, no_capture);
+    return PointerAccessType(new PointerFullWriteOnly(deserialize_region(entry, "region"), no_capture));
 }
 
 PointerAccessType PointerAccessMetaSerializer::deserialize_generic(nlohmann::json::const_reference entry) {
-    auto read_pattern = deserialize_access_pattern(entry.at("read_pattern"));
-    auto write_pattern = deserialize_access_pattern(entry.at("write_pattern"));
     bool no_capture = entry.at("no_capture").get<bool>();
-    return PointerAccessMeta::create_generic(std::move(read_pattern), std::move(write_pattern), no_capture);
-}
-
-MemoryAccessPatternType PointerAccessMetaSerializer::deserialize_convex_pattern(nlohmann::json::const_reference entry) {
-    serializer::JSONSerializer serializer;
-    auto size = serializer.json_to_expr(entry.at("size"));
-    bool not_sparse = entry.at("not_sparse").get<bool>();
-    return ConvexAccessPattern::create(size, not_sparse);
-}
-
-MemoryAccessPatternType PointerAccessMetaSerializer::deserialize_access_pattern(nlohmann::json::const_reference entry) {
-    if (entry.is_null()) {
-        return nullptr;
-    } else {
-        auto type = entry.at("type").get<std::string>();
-        if (type == "NoAccessPattern") {
-            return NoAccessPattern::instance();
-        } else if (type == "ConvexAccessPattern") {
-            return deserialize_convex_pattern(entry);
-        } else {
-            throw std::runtime_error("Unknown MemoryAccessPattern type: " + type);
-        }
-    }
+    return PointerAccessMeta::create_generic(
+        deserialize_access_region(entry.at("read")), deserialize_access_region(entry.at("write")), no_capture
+    );
 }
 
 nlohmann::json PointerAccessMetaSerializer::serialize(const std::vector<PointerAccessType>& vector) {
