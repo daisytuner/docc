@@ -34,13 +34,15 @@ private:
     size_t start_column_;
     size_t end_line_;
     size_t end_column_;
+    // For transfer tuning: stores the source element ID associated with this node.
+    long source_element_id_;
 
     bool has_;
 
 public:
     DebugInfo();
 
-    DebugInfo(std::string filename, size_t start_line, size_t start_column, size_t end_line, size_t end_column);
+    DebugInfo(std::string filename, size_t start_line, size_t start_column, size_t end_line, size_t end_column, long source_element_id = -1);
 
     DebugInfo(
         std::string filename,
@@ -48,7 +50,8 @@ public:
         size_t start_line,
         size_t start_column,
         size_t end_line,
-        size_t end_column
+        size_t end_column,
+        long source_element_id = -1
     );
 
     bool has() const;
@@ -64,6 +67,10 @@ public:
     size_t end_line() const;
 
     size_t end_column() const;
+
+    long source_element_id() const;
+
+    DebugInfo with_source_element_id(long source_element_id) const;
 
     static DebugInfo merge(const DebugInfo& left, const DebugInfo& right);
 };
