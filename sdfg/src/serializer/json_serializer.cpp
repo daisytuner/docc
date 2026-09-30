@@ -476,6 +476,7 @@ void JSONSerializer::debug_info_to_json(nlohmann::json& j, const DebugInfo& debu
     j["start_column"] = debug_info.start_column();
     j["end_line"] = debug_info.end_line();
     j["end_column"] = debug_info.end_column();
+    j["source_element_id"] = debug_info.source_element_id();
 }
 
 
@@ -1257,7 +1258,12 @@ DebugInfo JSONSerializer::json_to_debug_info(const nlohmann::json& j) {
     assert(j.contains("end_column"));
     assert(j["end_column"].is_number_integer());
     size_t end_column = j["end_column"];
-    return DebugInfo(filename, function, start_line, start_column, end_line, end_column);
+    long source_element_id = -1;
+    if (j.contains("source_element_id")) {
+        assert(j["source_element_id"].is_number_integer());
+        source_element_id = j["source_element_id"];
+    }
+    return DebugInfo(filename, function, start_line, start_column, end_line, end_column, source_element_id);
 }
 
 ScheduleType JSONSerializer::json_to_schedule_type(const nlohmann::json& j) {
