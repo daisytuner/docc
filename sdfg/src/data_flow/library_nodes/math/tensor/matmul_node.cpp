@@ -199,6 +199,24 @@ data_flow::PointerAccessType MatMulNode::pointer_access_type(int input_idx) cons
     return TensorNode::pointer_access_type(input_idx);
 }
 
+bool MatMulNode::relocalize_operand(int input_idx, const TensorLayout& packed) {
+    if (!can_relocalize_operand(input_idx, packed)) {
+        return false;
+    }
+    if (input_idx == Y_INPUT_IDX) {
+        layout_y_ = packed;
+    } else if (input_idx == A_INPUT_IDX) {
+        layout_a_ = packed;
+    } else {
+        layout_b_ = packed;
+    }
+    return true;
+}
+
+bool MatMulNode::can_relocalize_operand(int input_idx, const TensorLayout&) const {
+    return input_idx == Y_INPUT_IDX || input_idx == A_INPUT_IDX || input_idx == B_INPUT_IDX;
+}
+
 void MatMulNode::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
     layout_a_.replace_symbols(old_expression, new_expression);
     layout_b_.replace_symbols(old_expression, new_expression);

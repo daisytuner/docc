@@ -202,6 +202,20 @@ public:
 
     PointerAccessType pointer_access_type(const Memlet& edge) const;
 
+    /**
+     * Repoint the operand at @p input_idx to a locally staged, densely packed
+     * buffer with layout @p packed (shape/strides/offset in elements), updating the
+     * node's own addressing metadata to match. Returns false
+     * if the node cannot express the packed layout (localization is then rejected).
+     */
+    virtual bool relocalize_operand(int input_idx, const math::tensor::TensorLayout& packed) {
+        return false;
+    }
+    /// Side-effect-free predicate mirroring @ref relocalize_operand: whether the
+    /// operand at @p input_idx can be repointed at a @p packed dense buffer.
+    virtual bool can_relocalize_operand(int input_idx, const math::tensor::TensorLayout& packed) const {
+        return false;
+    }
     EdgeRemoveOption can_remove_out_edge(const data_flow::DataFlowGraph& graph, const Memlet* memlet) const override;
 
     EdgeRemoveOption can_remove_in_edge(const data_flow::DataFlowGraph& graph, const Memlet* memlet) const override;
