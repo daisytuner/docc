@@ -436,6 +436,40 @@ data_flow::PointerAccessType GEMMNode::pointer_access_type(int input_idx) const 
     }
 }
 
+bool GEMMNode::relocalize_operand(int input_idx, const math::tensor::TensorLayout& packed) {
+    if (!can_relocalize_operand(input_idx, packed)) {
+        return false;
+    }
+    // The buffer is stored in the operand's own orientation (the copy preserves it),
+    // so the new leading dimension is the packed non-unit stride; the layout/trans
+    // flags are unchanged.
+    const bool unit0 = symbolic::eq(packed.get_stride(0), symbolic::integer(1));
+    const auto& leading = unit0 ? packed.get_stride(1) : packed.get_stride(0);
+    if (input_idx == A_INPUT_IDX) {
+        lda_ = leading;
+    } else if (input_idx == B_INPUT_IDX) {
+        ldb_ = leading;
+    } else {
+        ldc_ = leading;
+    }
+    return true;
+}
+
+bool GEMMNode::can_relocalize_operand(int input_idx, const math::tensor::TensorLayout& packed) const {
+    // Any operand whose packed tile is a clean 2D dense region (exactly one unit-
+    // stride axis): the buffer keeps the operand's orientation, so localization is
+    // just a tighter leading dimension regardless of layout/transpose.
+    if (packed.dims() != 2) {
+        return false;
+    }
+    if (input_idx != A_INPUT_IDX && input_idx != B_INPUT_IDX && input_idx != C_INPUT_IDX) {
+        return false;
+    }
+    const bool unit0 = symbolic::eq(packed.get_stride(0), symbolic::integer(1));
+    const bool unit1 = symbolic::eq(packed.get_stride(1), symbolic::integer(1));
+    return unit0 != unit1;
+}
+
 nlohmann::json GEMMNodeSerializer::serialize(const data_flow::LibraryNode& library_node) {
     const GEMMNode& gemm_node = static_cast<const GEMMNode&>(library_node);
     nlohmann::json j;

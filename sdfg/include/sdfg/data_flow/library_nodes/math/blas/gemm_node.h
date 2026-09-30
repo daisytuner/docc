@@ -103,6 +103,9 @@ public:
     );
 
     data_flow::PointerAccessType pointer_access_type(int input_idx) const override;
+
+    bool relocalize_operand(int input_idx, const math::tensor::TensorLayout& packed) override;
+    bool can_relocalize_operand(int input_idx, const math::tensor::TensorLayout& packed) const override;
 };
 
 class GEMMNodeSerializer : public serializer::LibraryNodeSerializer {

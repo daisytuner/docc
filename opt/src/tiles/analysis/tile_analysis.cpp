@@ -89,6 +89,25 @@ public:
         const data_flow::Memlet& e,
         const structured_control_flow::Block& b
     ) override {
+        // A bare base pointer consumed by a no_capture library node is a bounded
+        // read/write described by pointer_access_type, not an address leak. Classify
+        // it from the node and skip the escape analysis (which flags the empty-subset
+        // pass as a leak).
+        if (c == policy_.container) {
+            if (auto* lib = dynamic_cast<const data_flow::LibraryNode*>(&e.dst())) {
+                auto access = lib->pointer_access_type(e);
+                if (access && access->no_capture()) {
+                    if (access->may_contain_reads()) {
+                        policy_.on_read_via(c, &b, &e);
+                    }
+                    if (access->may_contain_writes()) {
+                        policy_.on_write_via(c, &b, &e);
+                    }
+                    analysis::PointerUsedAnalyzer<ContainerAccessPolicy>::use_as_src_node(c, n, e, b);
+                    return;
+                }
+            }
+        }
         analysis::PointerEscapeAnalyzer<ContainerAccessPolicy>::use_as_src_node(c, n, e, b);
         analysis::PointerUsedAnalyzer<ContainerAccessPolicy>::use_as_src_node(c, n, e, b);
         if (c == policy_.container) {
