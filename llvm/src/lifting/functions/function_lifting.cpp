@@ -239,7 +239,9 @@ sdfg::control_flow::State& FunctionLifting::visit_call(
                     if (onlyReadsMemory) {
                         meta = sdfg::data_flow::PointerAccessMeta::create_read_only(SymEngine::null, noCapture);
                     } else if (noCapture) {
-                        meta = sdfg::data_flow::PointerAccessMeta::create_generic(nullptr, nullptr, noCapture);
+                        // Black box that may read and write, with an unbounded region.
+                        meta = sdfg::data_flow::PointerAccessMeta::
+                            create_generic({true, std::nullopt, false}, {true, std::nullopt, false}, noCapture);
                     }
                 }
             }

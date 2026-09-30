@@ -6,11 +6,14 @@
 
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/access_node.h"
+#include "sdfg/data_flow/library_nodes/math/blas/gemm_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/matmul_node.h"
 #include "sdfg/data_flow/tasklet.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/types/array.h"
 #include "sdfg/types/pointer.h"
 #include "sdfg/types/scalar.h"
+#include "sdfg/types/tensor.h"
 #include "sdfg/types/type.h"
 
 using namespace sdfg;
@@ -61,9 +64,9 @@ TEST(MemoryLayoutAnalysisTest, Linearized_2D_RowMajor) {
     auto result_in = analysis.access(memlet_in);
     ASSERT_NE(result_in, nullptr);
 
-    ASSERT_EQ(result_in->subset.size(), 2);
-    EXPECT_TRUE(symbolic::eq(result_in->subset.at(0), i));
-    EXPECT_TRUE(symbolic::eq(result_in->subset.at(1), j));
+    ASSERT_EQ(result_in->min_subset.size(), 2);
+    EXPECT_TRUE(symbolic::eq(result_in->min_subset.at(0), i));
+    EXPECT_TRUE(symbolic::eq(result_in->min_subset.at(1), j));
 
     const auto& layout_in = result_in->layout;
     ASSERT_EQ(layout_in.shape().size(), 2);
@@ -187,9 +190,9 @@ TEST(MemoryLayoutAnalysisTest, Linearized_2D_ColMajor) {
     auto result_in = analysis.access(memlet_in);
     ASSERT_NE(result_in, nullptr);
 
-    ASSERT_EQ(result_in->subset.size(), 2);
-    EXPECT_TRUE(symbolic::eq(result_in->subset.at(0), j));
-    EXPECT_TRUE(symbolic::eq(result_in->subset.at(1), i));
+    ASSERT_EQ(result_in->min_subset.size(), 2);
+    EXPECT_TRUE(symbolic::eq(result_in->min_subset.at(0), j));
+    EXPECT_TRUE(symbolic::eq(result_in->min_subset.at(1), i));
 
     const auto& layout_in = result_in->layout;
     ASSERT_EQ(layout_in.shape().size(), 2);
@@ -321,10 +324,10 @@ TEST(MemoryLayoutAnalysisTest, Linearized_3D_RowMajor) {
     auto result_in = analysis.access(memlet_in);
     ASSERT_NE(result_in, nullptr);
 
-    ASSERT_EQ(result_in->subset.size(), 3);
-    EXPECT_TRUE(symbolic::eq(result_in->subset.at(0), i));
-    EXPECT_TRUE(symbolic::eq(result_in->subset.at(1), j));
-    EXPECT_TRUE(symbolic::eq(result_in->subset.at(2), k));
+    ASSERT_EQ(result_in->min_subset.size(), 3);
+    EXPECT_TRUE(symbolic::eq(result_in->min_subset.at(0), i));
+    EXPECT_TRUE(symbolic::eq(result_in->min_subset.at(1), j));
+    EXPECT_TRUE(symbolic::eq(result_in->min_subset.at(2), k));
 
     const auto& layout_in = result_in->layout;
     ASSERT_EQ(layout_in.shape().size(), 3);
@@ -512,10 +515,10 @@ TEST(MemoryLayoutAnalysisTest, Linearized_3D_ColMajor) {
     auto result_in = analysis.access(memlet_in);
     ASSERT_NE(result_in, nullptr);
 
-    ASSERT_EQ(result_in->subset.size(), 3);
-    EXPECT_TRUE(symbolic::eq(result_in->subset.at(0), k));
-    EXPECT_TRUE(symbolic::eq(result_in->subset.at(1), j));
-    EXPECT_TRUE(symbolic::eq(result_in->subset.at(2), i));
+    ASSERT_EQ(result_in->min_subset.size(), 3);
+    EXPECT_TRUE(symbolic::eq(result_in->min_subset.at(0), k));
+    EXPECT_TRUE(symbolic::eq(result_in->min_subset.at(1), j));
+    EXPECT_TRUE(symbolic::eq(result_in->min_subset.at(2), i));
 
     const auto& layout_in = result_in->layout;
     ASSERT_EQ(layout_in.shape().size(), 3);
@@ -721,7 +724,7 @@ TEST(MemoryLayoutAnalysisTest, Stencil_2D_5Point) {
         auto result = analysis.access(*memlet);
         ASSERT_NE(result, nullptr);
 
-        ASSERT_EQ(result->subset.size(), 2);
+        ASSERT_EQ(result->min_subset.size(), 2);
         const auto& layout = result->layout;
         ASSERT_EQ(layout.shape().size(), 2);
         EXPECT_TRUE(symbolic::eq(layout.shape().at(0), symbolic::symbol("__unbounded__")));
@@ -734,31 +737,31 @@ TEST(MemoryLayoutAnalysisTest, Stencil_2D_5Point) {
 
     // Check specific delinearized indices
     auto r_center = analysis.access(m_center);
-    EXPECT_TRUE(symbolic::eq(r_center->subset.at(0), i));
-    EXPECT_TRUE(symbolic::eq(r_center->subset.at(1), j));
+    EXPECT_TRUE(symbolic::eq(r_center->min_subset.at(0), i));
+    EXPECT_TRUE(symbolic::eq(r_center->min_subset.at(1), j));
 
     auto r_north = analysis.access(m_north);
-    EXPECT_TRUE(symbolic::eq(r_north->subset.at(0), symbolic::sub(i, symbolic::one())));
-    EXPECT_TRUE(symbolic::eq(r_north->subset.at(1), j));
+    EXPECT_TRUE(symbolic::eq(r_north->min_subset.at(0), symbolic::sub(i, symbolic::one())));
+    EXPECT_TRUE(symbolic::eq(r_north->min_subset.at(1), j));
 
     auto r_south = analysis.access(m_south);
-    EXPECT_TRUE(symbolic::eq(r_south->subset.at(0), symbolic::add(i, symbolic::one())));
-    EXPECT_TRUE(symbolic::eq(r_south->subset.at(1), j));
+    EXPECT_TRUE(symbolic::eq(r_south->min_subset.at(0), symbolic::add(i, symbolic::one())));
+    EXPECT_TRUE(symbolic::eq(r_south->min_subset.at(1), j));
 
     auto r_west = analysis.access(m_west);
-    EXPECT_TRUE(symbolic::eq(r_west->subset.at(0), i));
-    EXPECT_TRUE(symbolic::eq(r_west->subset.at(1), symbolic::sub(j, symbolic::one())));
+    EXPECT_TRUE(symbolic::eq(r_west->min_subset.at(0), i));
+    EXPECT_TRUE(symbolic::eq(r_west->min_subset.at(1), symbolic::sub(j, symbolic::one())));
 
     auto r_east = analysis.access(m_east);
-    EXPECT_TRUE(symbolic::eq(r_east->subset.at(0), i));
-    EXPECT_TRUE(symbolic::eq(r_east->subset.at(1), symbolic::add(j, symbolic::one())));
+    EXPECT_TRUE(symbolic::eq(r_east->min_subset.at(0), i));
+    EXPECT_TRUE(symbolic::eq(r_east->min_subset.at(1), symbolic::add(j, symbolic::one())));
 
     // Output memlet to B should also delinearize
     auto r_out = analysis.access(m_out);
     ASSERT_NE(r_out, nullptr);
-    ASSERT_EQ(r_out->subset.size(), 2);
-    EXPECT_TRUE(symbolic::eq(r_out->subset.at(0), i));
-    EXPECT_TRUE(symbolic::eq(r_out->subset.at(1), j));
+    ASSERT_EQ(r_out->min_subset.size(), 2);
+    EXPECT_TRUE(symbolic::eq(r_out->min_subset.at(0), i));
+    EXPECT_TRUE(symbolic::eq(r_out->min_subset.at(1), j));
 
     // Check tile at inner loop for A: min/max across all 5 stencil points
     // i indices: {i-1, i, i+1}, j indices: {j-1, j, j+1}
@@ -916,9 +919,9 @@ TEST(MemoryLayoutAnalysisTest, Linearized_2D_TriangularLoop) {
     auto result_in = analysis.access(memlet_in);
     ASSERT_NE(result_in, nullptr);
 
-    ASSERT_EQ(result_in->subset.size(), 2);
-    EXPECT_TRUE(symbolic::eq(result_in->subset.at(0), i));
-    EXPECT_TRUE(symbolic::eq(result_in->subset.at(1), j));
+    ASSERT_EQ(result_in->min_subset.size(), 2);
+    EXPECT_TRUE(symbolic::eq(result_in->min_subset.at(0), i));
+    EXPECT_TRUE(symbolic::eq(result_in->min_subset.at(1), j));
 
     const auto& layout_in = result_in->layout;
     ASSERT_EQ(layout_in.shape().size(), 2);
@@ -1046,9 +1049,9 @@ TEST(MemoryLayoutAnalysisTest, Linearized_2D_TiledLoop) {
     auto result_in = analysis.access(memlet_in);
     ASSERT_NE(result_in, nullptr);
 
-    ASSERT_EQ(result_in->subset.size(), 2);
-    EXPECT_TRUE(symbolic::eq(result_in->subset.at(0), i));
-    EXPECT_TRUE(symbolic::eq(result_in->subset.at(1), j));
+    ASSERT_EQ(result_in->min_subset.size(), 2);
+    EXPECT_TRUE(symbolic::eq(result_in->min_subset.at(0), i));
+    EXPECT_TRUE(symbolic::eq(result_in->min_subset.at(1), j));
 
     const auto& layout_in = result_in->layout;
     ASSERT_EQ(layout_in.shape().size(), 2);
@@ -1229,9 +1232,9 @@ TEST(MemoryLayoutAnalysisTest, Linearized_2D_TiledLoop_ColMajor) {
     auto result_in = analysis.access(memlet_in);
     ASSERT_NE(result_in, nullptr);
 
-    ASSERT_EQ(result_in->subset.size(), 2);
-    EXPECT_TRUE(symbolic::eq(result_in->subset.at(0), j));
-    EXPECT_TRUE(symbolic::eq(result_in->subset.at(1), i));
+    ASSERT_EQ(result_in->min_subset.size(), 2);
+    EXPECT_TRUE(symbolic::eq(result_in->min_subset.at(0), j));
+    EXPECT_TRUE(symbolic::eq(result_in->min_subset.at(1), i));
 
     const auto& layout_in = result_in->layout;
     ASSERT_EQ(layout_in.shape().size(), 2);
@@ -2013,15 +2016,15 @@ TEST(MemoryLayoutAnalysisTest, TileGroups_TwoIndependentAccesses) {
     // Check that raw accesses delinearize correctly
     auto* acc_ik = analysis.access(memlet_A_ik);
     ASSERT_NE(acc_ik, nullptr);
-    ASSERT_EQ(acc_ik->subset.size(), 2);
-    EXPECT_TRUE(symbolic::eq(acc_ik->subset.at(0), i));
-    EXPECT_TRUE(symbolic::eq(acc_ik->subset.at(1), k));
+    ASSERT_EQ(acc_ik->min_subset.size(), 2);
+    EXPECT_TRUE(symbolic::eq(acc_ik->min_subset.at(0), i));
+    EXPECT_TRUE(symbolic::eq(acc_ik->min_subset.at(1), k));
 
     auto* acc_jk = analysis.access(memlet_A_jk);
     ASSERT_NE(acc_jk, nullptr);
-    ASSERT_EQ(acc_jk->subset.size(), 2);
-    EXPECT_TRUE(symbolic::eq(acc_jk->subset.at(0), j));
-    EXPECT_TRUE(symbolic::eq(acc_jk->subset.at(1), k));
+    ASSERT_EQ(acc_jk->min_subset.size(), 2);
+    EXPECT_TRUE(symbolic::eq(acc_jk->min_subset.at(0), j));
+    EXPECT_TRUE(symbolic::eq(acc_jk->min_subset.at(1), k));
 
     // The merged tile at k_loop should still be nullptr or have symbolic extents
     // because merging A[i,k] and A[j,k] gives min(i,j) which is symbolic
@@ -2540,48 +2543,48 @@ TEST(MemoryLayoutAnalysisTest, LU_Factorization_Diagnostic) {
 
     // S1: i*N + k --> [i, k]
     ASSERT_NE(a_S1, nullptr) << "S1 should delinearize";
-    ASSERT_EQ(a_S1->subset.size(), 2u);
-    EXPECT_TRUE(symbolic::eq(a_S1->subset.at(0), i));
-    EXPECT_TRUE(symbolic::eq(a_S1->subset.at(1), k));
+    ASSERT_EQ(a_S1->min_subset.size(), 2u);
+    EXPECT_TRUE(symbolic::eq(a_S1->min_subset.at(0), i));
+    EXPECT_TRUE(symbolic::eq(a_S1->min_subset.at(1), k));
 
     // S2: k*N + j --> [k, j]
     ASSERT_NE(a_S2, nullptr) << "S2 should delinearize";
-    ASSERT_EQ(a_S2->subset.size(), 2u);
-    EXPECT_TRUE(symbolic::eq(a_S2->subset.at(0), k));
-    EXPECT_TRUE(symbolic::eq(a_S2->subset.at(1), j));
+    ASSERT_EQ(a_S2->min_subset.size(), 2u);
+    EXPECT_TRUE(symbolic::eq(a_S2->min_subset.at(0), k));
+    EXPECT_TRUE(symbolic::eq(a_S2->min_subset.at(1), j));
 
     // S3: i*N + j --> [i, j]
     for (auto* acc : {a_S3a, a_S3b, a_S3c, a_S3d}) {
         ASSERT_NE(acc, nullptr) << "S3 should delinearize";
-        ASSERT_EQ(acc->subset.size(), 2u);
-        EXPECT_TRUE(symbolic::eq(acc->subset.at(0), i));
-        EXPECT_TRUE(symbolic::eq(acc->subset.at(1), j));
+        ASSERT_EQ(acc->min_subset.size(), 2u);
+        EXPECT_TRUE(symbolic::eq(acc->min_subset.at(0), i));
+        EXPECT_TRUE(symbolic::eq(acc->min_subset.at(1), j));
     }
 
     // S4: j*N + j --> [j, j]
     ASSERT_NE(a_S4, nullptr) << "S4 should delinearize";
-    ASSERT_EQ(a_S4->subset.size(), 2u);
-    EXPECT_TRUE(symbolic::eq(a_S4->subset.at(0), j));
-    EXPECT_TRUE(symbolic::eq(a_S4->subset.at(1), j));
+    ASSERT_EQ(a_S4->min_subset.size(), 2u);
+    EXPECT_TRUE(symbolic::eq(a_S4->min_subset.at(0), j));
+    EXPECT_TRUE(symbolic::eq(a_S4->min_subset.at(1), j));
 
     // S5: i*N + k2 --> [i, k2]
     ASSERT_NE(a_S5, nullptr) << "S5 should delinearize";
-    ASSERT_EQ(a_S5->subset.size(), 2u);
-    EXPECT_TRUE(symbolic::eq(a_S5->subset.at(0), i));
-    EXPECT_TRUE(symbolic::eq(a_S5->subset.at(1), k2));
+    ASSERT_EQ(a_S5->min_subset.size(), 2u);
+    EXPECT_TRUE(symbolic::eq(a_S5->min_subset.at(0), i));
+    EXPECT_TRUE(symbolic::eq(a_S5->min_subset.at(1), k2));
 
     // S6: k2*N + (i + j2) --> [k2, i + j2]
     ASSERT_NE(a_S6, nullptr) << "S6 should delinearize";
-    ASSERT_EQ(a_S6->subset.size(), 2u);
-    EXPECT_TRUE(symbolic::eq(a_S6->subset.at(0), k2));
-    EXPECT_TRUE(symbolic::eq(a_S6->subset.at(1), symbolic::add(i, j2)));
+    ASSERT_EQ(a_S6->min_subset.size(), 2u);
+    EXPECT_TRUE(symbolic::eq(a_S6->min_subset.at(0), k2));
+    EXPECT_TRUE(symbolic::eq(a_S6->min_subset.at(1), symbolic::add(i, j2)));
 
     // S7: i*N + (i + j2) --> [i, i + j2]
     for (auto* acc : {a_S7a, a_S7b}) {
         ASSERT_NE(acc, nullptr) << "S7 should delinearize";
-        ASSERT_EQ(acc->subset.size(), 2u);
-        EXPECT_TRUE(symbolic::eq(acc->subset.at(0), i));
-        EXPECT_TRUE(symbolic::eq(acc->subset.at(1), symbolic::add(i, j2)));
+        ASSERT_EQ(acc->min_subset.size(), 2u);
+        EXPECT_TRUE(symbolic::eq(acc->min_subset.at(0), i));
+        EXPECT_TRUE(symbolic::eq(acc->min_subset.at(1), symbolic::add(i, j2)));
     }
 }
 
@@ -2811,7 +2814,7 @@ TEST(MemoryLayoutAnalysisTest, LU_BlockedFactorization_Diagnostic) {
         if (!acc) {
             std::cerr << "[BLOCKED-MLA-FAIL] " << label << " no access info\n";
         } else {
-            std::cerr << "[BLOCKED-MLA] " << label << " -> " << fmt_subset(acc->subset) << "\n";
+            std::cerr << "[BLOCKED-MLA] " << label << " -> " << fmt_subset(acc->min_subset) << "\n";
         }
         return acc;
     };
@@ -2830,17 +2833,17 @@ TEST(MemoryLayoutAnalysisTest, LU_BlockedFactorization_Diagnostic) {
     auto* a_S7t_in = get("S7 A[i*N+(i+j20)] in (trailing)", mlt_S7_t_in);
     auto* a_S7t_out = get("S7 A[i*N+(i+j20)] out (trailing)", mlt_S7_t_out);
 
-    auto check_2d = [](const analysis::MemoryAccess* acc,
+    auto check_2d = [](const analysis::MemoryTile* acc,
                        const char* label,
                        const symbolic::Expression& d0,
                        const symbolic::Expression& d1) {
         ASSERT_NE(acc, nullptr) << label << " should delinearize";
-        ASSERT_EQ(acc->subset.size(), 2u) << label;
-        EXPECT_TRUE(symbolic::eq(acc->subset.at(0), d0))
-            << label << " dim0 mismatch: got " << SymEngine::str(*acc->subset.at(0)) << " expected "
+        ASSERT_EQ(acc->min_subset.size(), 2u) << label;
+        EXPECT_TRUE(symbolic::eq(acc->min_subset.at(0), d0))
+            << label << " dim0 mismatch: got " << SymEngine::str(*acc->min_subset.at(0)) << " expected "
             << SymEngine::str(*d0);
-        EXPECT_TRUE(symbolic::eq(acc->subset.at(1), d1))
-            << label << " dim1 mismatch: got " << SymEngine::str(*acc->subset.at(1)) << " expected "
+        EXPECT_TRUE(symbolic::eq(acc->min_subset.at(1), d1))
+            << label << " dim1 mismatch: got " << SymEngine::str(*acc->min_subset.at(1)) << " expected "
             << SymEngine::str(*d1);
     };
 
@@ -3503,4 +3506,190 @@ TEST(MemoryLayoutAnalysisTest, PeeledWithBoundaryGuard_ExtentDivergence) {
     ASSERT_EQ(t_k->extents_approx().size(), 2u);
     EXPECT_TRUE(symbolic::eq(t_k->extents_approx().at(0), T2e)) << "row (i) extent should be T2=8 (tile bound, not N)";
     EXPECT_TRUE(symbolic::eq(t_k->extents_approx().at(1), TKe)) << "col (k) extent should be TK=8 (tile bound, not N)";
+}
+
+// A MatMul library node consumes its whole operands through empty-subset
+// (bare-pointer) memlets. MemoryLayoutAnalysis asks the node for each operand's
+// affine layout and exposes it as a bounded [0..shape-1] tile.
+TEST(MemoryLayoutAnalysisTest, LibraryNode_MatMul_Operands) {
+    builder::StructuredSDFGBuilder builder("mla_matmul", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+
+    types::Scalar desc(types::PrimitiveType::Float);
+    types::Pointer desc_ptr(desc);
+    builder.add_container("a", desc_ptr, true);
+    builder.add_container("b", desc_ptr, true);
+    builder.add_container("y", desc_ptr, true);
+
+    auto& block = builder.add_block(sdfg.root());
+    auto& a_node = builder.add_access(block, "a");
+    auto& b_node = builder.add_access(block, "b");
+    auto& y_node = builder.add_access(block, "y");
+
+    symbolic::MultiExpression shape_a = {symbolic::integer(4), symbolic::integer(8)}; // M=4, K=8
+    symbolic::MultiExpression shape_b = {symbolic::integer(8), symbolic::integer(6)}; // K=8, N=6
+    symbolic::MultiExpression shape_y = {symbolic::integer(4), symbolic::integer(6)};
+    types::Tensor tensor_a(desc.primitive_type(), shape_a);
+    types::Tensor tensor_b(desc.primitive_type(), shape_b);
+    types::Tensor tensor_y(desc.primitive_type(), shape_y);
+
+    auto& matmul = static_cast<math::tensor::MatMulNode&>(builder.add_library_node<math::tensor::MatMulNode>(
+        block, DebugInfo(), math::tensor::TensorLayout(shape_a), math::tensor::TensorLayout(shape_b)
+    ));
+    auto& ml_a = builder.add_computational_memlet(block, a_node, matmul, "A", {}, tensor_a, block.debug_info());
+    builder.add_computational_memlet(block, b_node, matmul, "B", {}, tensor_b, block.debug_info());
+    builder.add_computational_memlet(block, y_node, matmul, "Y", {}, tensor_y, block.debug_info());
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    auto& analysis = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
+
+    // access() reports the operand's consumed affine layout.
+    auto* acc_a = analysis.access(ml_a);
+    ASSERT_NE(acc_a, nullptr);
+    ASSERT_EQ(acc_a->layout.shape().size(), 2u);
+    EXPECT_TRUE(symbolic::eq(acc_a->layout.shape().at(0), symbolic::integer(4)));
+    EXPECT_TRUE(symbolic::eq(acc_a->layout.shape().at(1), symbolic::integer(8)));
+    EXPECT_TRUE(symbolic::eq(acc_a->layout.strides().at(0), symbolic::integer(8)));
+    EXPECT_TRUE(symbolic::eq(acc_a->layout.strides().at(1), symbolic::integer(1)));
+    EXPECT_TRUE(acc_a->first_dim_bounded);
+
+    // tile() exposes the whole-operand bounding box [0..M-1] x [0..K-1].
+    auto* tile_a = analysis.tile(block, "a");
+    ASSERT_NE(tile_a, nullptr);
+    ASSERT_EQ(tile_a->min_subset.size(), 2u);
+    EXPECT_TRUE(symbolic::eq(tile_a->min_subset.at(0), symbolic::zero()));
+    EXPECT_TRUE(symbolic::eq(tile_a->min_subset.at(1), symbolic::zero()));
+    EXPECT_TRUE(symbolic::eq(tile_a->max_subset.at(0), symbolic::integer(3)));
+    EXPECT_TRUE(symbolic::eq(tile_a->max_subset.at(1), symbolic::integer(7)));
+    ASSERT_EQ(tile_a->extents_approx().size(), 2u);
+    EXPECT_TRUE(symbolic::eq(tile_a->extents_approx().at(0), symbolic::integer(4)));
+    EXPECT_TRUE(symbolic::eq(tile_a->extents_approx().at(1), symbolic::integer(8)));
+
+    auto* tile_b = analysis.tile(block, "b");
+    ASSERT_NE(tile_b, nullptr);
+    EXPECT_TRUE(symbolic::eq(tile_b->max_subset.at(0), symbolic::integer(7)));
+    EXPECT_TRUE(symbolic::eq(tile_b->max_subset.at(1), symbolic::integer(5)));
+
+    // Y is the written operand; it is still consumed as a whole [M, N] tile.
+    auto* tile_y = analysis.tile(block, "y");
+    ASSERT_NE(tile_y, nullptr);
+    EXPECT_TRUE(symbolic::eq(tile_y->max_subset.at(0), symbolic::integer(3)));
+    EXPECT_TRUE(symbolic::eq(tile_y->max_subset.at(1), symbolic::integer(5)));
+
+    // tile_groups() returns a single group carrying the operand's memlet.
+    auto* groups_a = analysis.tile_groups(block, "a");
+    ASSERT_NE(groups_a, nullptr);
+    ASSERT_EQ(groups_a->size(), 1u);
+    ASSERT_EQ(groups_a->at(0).memlets.size(), 1u);
+    EXPECT_EQ(groups_a->at(0).memlets.at(0), &ml_a);
+}
+
+// A GEMM operand with a padded leading dimension (lda > k) is reported as a
+// strided affine tile: shape [m, k] with row stride lda, not a flat span.
+TEST(MemoryLayoutAnalysisTest, LibraryNode_GEMM_LeadingDimension) {
+    builder::StructuredSDFGBuilder builder("mla_gemm", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+
+    types::Scalar desc(types::PrimitiveType::Float);
+    types::Pointer desc_ptr(desc);
+    builder.add_container("A", desc_ptr, true);
+    builder.add_container("B", desc_ptr, true);
+    builder.add_container("C", desc_ptr, true);
+
+    auto& block = builder.add_block(sdfg.root());
+    auto& a_node = builder.add_access(block, "A");
+    auto& b_node = builder.add_access(block, "B");
+    auto& c_node = builder.add_access(block, "C");
+
+    const int m = 4, n = 6, k = 8, lda = 16; // lda padded beyond k
+    auto& gemm = static_cast<math::blas::GEMMNode&>(builder.add_library_node<math::blas::GEMMNode>(
+        block,
+        DebugInfo(),
+        data_flow::ImplementationType_NONE,
+        math::blas::BLAS_Precision::s,
+        math::blas::BLAS_Layout::RowMajor,
+        math::blas::BLAS_Transpose::No,
+        math::blas::BLAS_Transpose::No,
+        symbolic::integer(m),
+        symbolic::integer(n),
+        symbolic::integer(k),
+        symbolic::integer(lda),
+        symbolic::integer(n),
+        symbolic::integer(n)
+    ));
+
+    auto& alpha = builder.add_constant(block, "1.0", desc);
+    auto& beta = builder.add_constant(block, "0.0", desc);
+    builder.add_computational_memlet(block, a_node, gemm, "__A", {}, desc_ptr);
+    builder.add_computational_memlet(block, b_node, gemm, "__B", {}, desc_ptr);
+    builder.add_computational_memlet(block, c_node, gemm, "__C", {}, desc_ptr);
+    builder.add_computational_memlet(block, alpha, gemm, "__alpha", {}, desc);
+    builder.add_computational_memlet(block, beta, gemm, "__beta", {}, desc);
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    auto& analysis = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
+
+    auto* tile_a = analysis.tile(block, "A");
+    ASSERT_NE(tile_a, nullptr);
+    ASSERT_EQ(tile_a->layout.shape().size(), 2u);
+    EXPECT_TRUE(symbolic::eq(tile_a->layout.shape().at(0), symbolic::integer(m)));
+    EXPECT_TRUE(symbolic::eq(tile_a->layout.shape().at(1), symbolic::integer(k)));
+    EXPECT_TRUE(symbolic::eq(tile_a->layout.strides().at(0), symbolic::integer(lda)));
+    EXPECT_TRUE(symbolic::eq(tile_a->layout.strides().at(1), symbolic::integer(1)));
+    EXPECT_TRUE(symbolic::eq(tile_a->max_subset.at(0), symbolic::integer(m - 1)));
+    EXPECT_TRUE(symbolic::eq(tile_a->max_subset.at(1), symbolic::integer(k - 1)));
+
+    auto* tile_c = analysis.tile(block, "C");
+    ASSERT_NE(tile_c, nullptr);
+    EXPECT_TRUE(symbolic::eq(tile_c->max_subset.at(0), symbolic::integer(m - 1)));
+    EXPECT_TRUE(symbolic::eq(tile_c->max_subset.at(1), symbolic::integer(n - 1)));
+}
+
+// A whole-operand tile is loop-invariant, so it propagates up to enclosing loop
+// scopes — the tile a later LocalStorage would query.
+TEST(MemoryLayoutAnalysisTest, LibraryNode_MatMul_InLoopPropagates) {
+    builder::StructuredSDFGBuilder builder("mla_matmul_loop", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+
+    types::Scalar index_type(types::PrimitiveType::Int64);
+    types::Scalar desc(types::PrimitiveType::Float);
+    types::Pointer desc_ptr(desc);
+    builder.add_container("t", index_type, true);
+    builder.add_container("i", index_type);
+    builder.add_container("a", desc_ptr, true);
+    builder.add_container("b", desc_ptr, true);
+    builder.add_container("y", desc_ptr, true);
+
+    auto t = symbolic::symbol("t");
+    auto i = symbolic::symbol("i");
+    auto& loop =
+        builder.add_for(sdfg.root(), i, symbolic::Lt(i, t), symbolic::integer(0), symbolic::add(i, symbolic::one()));
+    auto& block = builder.add_block(loop.root());
+    auto& a_node = builder.add_access(block, "a");
+    auto& b_node = builder.add_access(block, "b");
+    auto& y_node = builder.add_access(block, "y");
+
+    symbolic::MultiExpression shape_a = {symbolic::integer(4), symbolic::integer(8)};
+    symbolic::MultiExpression shape_b = {symbolic::integer(8), symbolic::integer(6)};
+    symbolic::MultiExpression shape_y = {symbolic::integer(4), symbolic::integer(6)};
+    types::Tensor tensor_a(desc.primitive_type(), shape_a);
+    types::Tensor tensor_b(desc.primitive_type(), shape_b);
+    types::Tensor tensor_y(desc.primitive_type(), shape_y);
+
+    auto& matmul = static_cast<math::tensor::MatMulNode&>(builder.add_library_node<math::tensor::MatMulNode>(
+        block, DebugInfo(), math::tensor::TensorLayout(shape_a), math::tensor::TensorLayout(shape_b)
+    ));
+    builder.add_computational_memlet(block, a_node, matmul, "A", {}, tensor_a, block.debug_info());
+    builder.add_computational_memlet(block, b_node, matmul, "B", {}, tensor_b, block.debug_info());
+    builder.add_computational_memlet(block, y_node, matmul, "Y", {}, tensor_y, block.debug_info());
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    auto& analysis = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
+
+    auto* tile_a = analysis.tile(loop, "a");
+    ASSERT_NE(tile_a, nullptr);
+    ASSERT_EQ(tile_a->min_subset.size(), 2u);
+    EXPECT_TRUE(symbolic::eq(tile_a->min_subset.at(0), symbolic::zero()));
+    EXPECT_TRUE(symbolic::eq(tile_a->max_subset.at(0), symbolic::integer(3)));
+    EXPECT_TRUE(symbolic::eq(tile_a->max_subset.at(1), symbolic::integer(7)));
 }
