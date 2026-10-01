@@ -175,7 +175,7 @@ std::optional<tiles::Tile> build_tile(
     }
     math::tensor::TensorLayout tl(extents, ml.strides(), off);
 
-    auto axes = tiles::TileAxis::enclosing(loop, mt.min_subset);
+    auto axes = tiles::TileAxis::enclosing(loop, mt.min_subset, ml.offset());
     const auto summary = TileAnalysis::summarize(sdfg, loop, container);
     // TensorLayout is row-major (dim 0 outermost); the tiles geometry is colex
     // (dim 0 fastest), so reverse the mode order at the boundary.
