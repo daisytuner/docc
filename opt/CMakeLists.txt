@@ -225,6 +225,8 @@ set_target_properties(sdfgopt PROPERTIES
 
 ## INSTALLATION
 
+include(GNUInstallDirs)
+
 install(TARGETS sdfgopt
     EXPORT sdfgoptTargets
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
