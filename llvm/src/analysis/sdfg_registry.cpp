@@ -131,7 +131,8 @@ void SDFGRegistry::insert(const llvm::Module& Module, std::list<std::unique_ptr<
 
     std::unordered_map<std::string, std::unique_ptr<SDFGHolder>> holders;
     for (auto& sdfg : sdfgs) {
-        holders.emplace(sdfg->name(), std::make_unique<SDFGHolder>(sdfg));
+        std::string name = sdfg->name();
+        holders.emplace(std::move(name), std::make_unique<SDFGHolder>(sdfg));
     }
     this->registry_.emplace(Module.getName().str(), std::move(holders));
 }
