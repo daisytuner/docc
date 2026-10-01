@@ -3,21 +3,26 @@
 namespace sdfg {
 
 DebugInfo::DebugInfo()
-    : filename_(), function_(), start_line_(0), start_column_(0), end_line_(0), end_column_(0), source_element_id_(-1), has_(false) {
+    : filename_(), function_(), start_line_(0), start_column_(0), end_line_(0), end_column_(0), has_(false) {
 
       };
 
-DebugInfo::DebugInfo(std::string filename, size_t start_line, size_t start_column, size_t end_line, size_t end_column, long source_element_id)
+DebugInfo::DebugInfo(std::string filename, size_t start_line, size_t start_column, size_t end_line, size_t end_column)
     : filename_(filename), function_(), start_line_(start_line), start_column_(start_column), end_line_(end_line),
-      end_column_(end_column), source_element_id_(source_element_id), has_(true) {
+    end_column_(end_column), has_(true) {
 
       };
 
 DebugInfo::DebugInfo(
-    std::string filename, std::string function, size_t start_line, size_t start_column, size_t end_line, size_t end_column, long source_element_id
+        std::string filename,
+        std::string function,
+        size_t start_line,
+        size_t start_column,
+        size_t end_line,
+        size_t end_column
 )
     : filename_(filename), function_(function), start_line_(start_line), start_column_(start_column),
-      end_line_(end_line), end_column_(end_column), source_element_id_(source_element_id), has_(true) {
+            end_line_(end_line), end_column_(end_column), has_(true) {
 
       };
 
@@ -50,16 +55,6 @@ size_t DebugInfo::end_column() const {
     return this->end_column_;
 };
 
-long DebugInfo::source_element_id() const {
-    return this->source_element_id_;
-};
-
-DebugInfo DebugInfo::with_source_element_id(long source_element_id) const {
-    DebugInfo result = *this;
-    result.source_element_id_ = source_element_id;
-    return result;
-};
-
 DebugInfo DebugInfo::merge(const DebugInfo& left, const DebugInfo& right) {
     if (!left.has()) {
         return right;
@@ -78,8 +73,6 @@ DebugInfo DebugInfo::merge(const DebugInfo& left, const DebugInfo& right) {
     size_t start_column = 0;
     size_t end_line = 0;
     size_t end_column = 0;
-    long source_element_id = -1;
-
     if (left.start_line_ < right.start_line_) {
         start_line = left.start_line_;
         start_column = left.start_column_;
@@ -101,7 +94,7 @@ DebugInfo DebugInfo::merge(const DebugInfo& left, const DebugInfo& right) {
         function = right.function_;
     }
 
-    return DebugInfo(left.filename_, function, start_line, start_column, end_line, end_column, source_element_id);
+    return DebugInfo(left.filename_, function, start_line, start_column, end_line, end_column);
 };
 
 Element::Element(size_t element_id, const DebugInfo& debug_info) : element_id_(element_id), debug_info_(debug_info) {};
