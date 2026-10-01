@@ -1,0 +1,22 @@
+# Allowlist: the build context is the whole docc repo, but only these paths are needed.
+*
+!VERSION
+!LICENSE
+!python/README.md
+!tutorial/printf_target/target_tutorial.md
+!sdfg/include
+!opt/include
+!llvm/include
+!mlir/include
+!c-compile/include
+!rpc/include
+!rtl/include
+!arg-capture-io/include
+!targets/et/include
+!docs-site
+docs-site/node_modules
+docs-site/build
+docs-site/.docusaurus
+docs-site/docs/generated
+docs-site/static/api
+docs-site/doxygen-warnings.log

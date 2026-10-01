@@ -1,0 +1,76 @@
+# Doxygen config for the docc C++ API reference.
+# Run from docs-site/ (npm run api). Unlisted options use Doxygen defaults.
+
+PROJECT_NAME           = "docc"
+PROJECT_NUMBER         = $(DOCC_VERSION)
+PROJECT_BRIEF          = "C++ API Reference"
+PROJECT_LOGO           = static/img/logo.svg
+
+OUTPUT_DIRECTORY       = static
+HTML_OUTPUT            = api
+GENERATE_HTML          = YES
+GENERATE_LATEX         = NO
+
+INPUT                  = doxygen/mainpage.md \
+                         ../sdfg/include \
+                         ../opt/include \
+                         ../llvm/include \
+                         ../mlir/include \
+                         ../c-compile/include \
+                         ../rpc/include \
+                         ../rtl/include \
+                         ../arg-capture-io/include \
+                         ../targets/et/include
+USE_MDFILE_AS_MAINPAGE = doxygen/mainpage.md
+FILE_PATTERNS          = *.h *.hpp *.md
+RECURSIVE              = YES
+EXCLUDE_PATTERNS       = */3rdParty/* */build/* */build-*/*
+
+FULL_PATH_NAMES        = YES
+STRIP_FROM_PATH        = ..
+STRIP_FROM_INC_PATH    = ../sdfg/include \
+                         ../opt/include \
+                         ../llvm/include \
+                         ../mlir/include \
+                         ../c-compile/include \
+                         ../rpc/include \
+                         ../rtl/include \
+                         ../arg-capture-io/include \
+                         ../targets/et/include
+
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = YES
+JAVADOC_AUTOBRIEF      = YES
+BUILTIN_STL_SUPPORT    = YES
+
+GENERATE_TREEVIEW      = YES
+DISABLE_INDEX          = NO
+FULL_SIDEBAR           = NO
+HTML_COLORSTYLE        = LIGHT
+HTML_EXTRA_STYLESHEET  = doxygen/doxygen-awesome/doxygen-awesome.css \
+                         doxygen/doxygen-awesome/doxygen-awesome-sidebar-only.css
+SEARCHENGINE           = YES
+SERVER_BASED_SEARCH    = NO
+USE_MATHJAX            = YES
+MATHJAX_VERSION        = MathJax_3
+
+# Graphs are limited to class hierarchies to keep build time and output size manageable.
+HAVE_DOT               = YES
+DOT_IMAGE_FORMAT       = svg
+DOT_NUM_THREADS        = 0
+DOT_GRAPH_MAX_NODES    = 50
+CLASS_GRAPH            = YES
+COLLABORATION_GRAPH    = NO
+INCLUDE_GRAPH          = NO
+INCLUDED_BY_GRAPH      = NO
+CALL_GRAPH             = NO
+CALLER_GRAPH           = NO
+DIRECTORY_GRAPH        = NO
+GROUP_GRAPHS           = NO
+
+NUM_PROC_THREADS       = 0
+QUIET                  = YES
+WARNINGS               = YES
+WARN_IF_UNDOCUMENTED   = NO
+WARN_LOGFILE           = doxygen-warnings.log
