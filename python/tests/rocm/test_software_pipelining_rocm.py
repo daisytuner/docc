@@ -125,10 +125,10 @@ def _build(N, K, block):
 
 @pytest.mark.parametrize(
     "N,K,block,tile",
-    [(64, 24, 64, 8), (128, 32, 64, 8)],
-    ids=["64x24x64", "128x32x64"],
+    [(64, 24, 64, 8), (128, 32, 64, 8), (128, 64, 64, 8)],
+    ids=["64x24x64", "128x32x64", "128x64x64"],
 )
-@pytest.mark.parametrize("stages", [2, 3], ids=["stages2", "stages3"])
+@pytest.mark.parametrize("stages", [2, 3, 4], ids=["stages2", "stages3", "stages4"])
 def test_software_pipelining_cooperative_rocm(N, K, block, tile, stages, tmp_path):
     builder, inner, a = _build(N, K, block)
     am = AnalysisManager(builder)
@@ -146,6 +146,9 @@ def test_software_pipelining_cooperative_rocm(N, K, block, tile, stages, tmp_pat
     SyncConditionPropagation().run(builder, am)
 
     sp = SoftwarePipelining(panel, stages=stages)
+    if K // tile < stages:
+        assert not sp.can_be_applied(builder, am), "fewer panels than stages"
+        return
     assert sp.can_be_applied(
         builder, am
     ), "shared-staging GPU panel loop should be pipelineable"
