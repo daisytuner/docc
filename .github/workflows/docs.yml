@@ -1,0 +1,54 @@
+name: Docs
+
+# Docs are published by daisytuner/docs-platform from main (docs.daisytuner.com/docc).
+# PRs that touch the docs are built with the platform; pushes to main that change docs or the
+# C++ API trigger a rebuild.
+
+on:
+  pull_request:
+    paths:
+      - "docs/**"
+      - "python/README.md"
+      - "tutorial/printf_target/target_tutorial.md"
+      - ".github/workflows/docs.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "docs/**"
+      - "python/README.md"
+      - "tutorial/printf_target/target_tutorial.md"
+      - "VERSION"
+      - "sdfg/include/**"
+      - "opt/include/**"
+      - "llvm/include/**"
+      - "mlir/include/**"
+      - "c-compile/include/**"
+      - "rpc/include/**"
+      - "rtl/include/**"
+      - "arg-capture-io/include/**"
+      - "targets/et/include/**"
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    if: github.event_name == 'pull_request'
+    uses: daisytuner/docs-platform/.github/workflows/check-project.yml@main
+    with:
+      project: docc
+
+  publish:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger docs rebuild
+        env:
+          GH_TOKEN: ${{ secrets.DOCS_PLATFORM_DISPATCH_TOKEN }}
+        run: |
+          if gh workflow run build-deploy.yml --repo daisytuner/docs-platform --ref main -f reason="$GITHUB_REPOSITORY@${GITHUB_SHA::7}"; then
+            echo "Triggered https://github.com/daisytuner/docs-platform/actions/workflows/build-deploy.yml" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::Could not trigger the docs rebuild (DOCS_PLATFORM_DISPATCH_TOKEN missing, unapproved or expired). The nightly build will publish this change."
+          fi
