@@ -463,7 +463,8 @@ bool LocalStorage::prepare(builder::StructuredSDFGBuilder& builder, analysis::An
     }
 
     // Derive the storage space from the enclosing parallel schedule.
-    plan_ = tiles::LocalityPlan::analyze(loop_, tiles::TileAxis::enclosing(loop_, tile_info_.bases), analysis_manager);
+    plan_ = tiles::LocalityPlan::
+        analyze(loop_, tiles::TileAxis::enclosing(loop_, tile_info_.bases, tile_info_.offset), analysis_manager);
     auto space = plan_.required_space(container_written_);
     if (!space) {
         return false;

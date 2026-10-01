@@ -318,6 +318,67 @@ TEST(LocalityTest, Plan_GpuOffload_GridLevel) {
     EXPECT_EQ(plan.required_space(/*written*/ false), tiles::Space::Global);
 }
 
+TEST(LocalityTest, Enclosing_LibraryOperandOffset_ClassifiesPerAxis) {
+    builder::StructuredSDFGBuilder builder("enclosing_operand_offset", FunctionType_CPU);
+    auto& seq = builder.subject().root();
+    types::Scalar loop_var(types::PrimitiveType::Int32);
+    auto block_row = symbolic::symbol("block_row");
+    auto block_col = symbolic::symbol("block_col");
+    auto k = symbolic::symbol("k");
+    auto M = symbolic::symbol("M");
+    auto N = symbolic::symbol("N");
+    auto K = symbolic::symbol("K");
+    builder.add_container("M", loop_var, true);
+    builder.add_container("N", loop_var, true);
+    builder.add_container("K", loop_var, true);
+    builder.add_container("block_row", loop_var);
+    builder.add_container("block_col", loop_var);
+    builder.add_container("k", loop_var);
+
+    auto y_grid = gpu::ScheduleType_GPU_Offload::create<
+        cuda::ScheduleType_CUDA_Offload>(gpu::TargetLevel::Y_GRID, symbolic::integer(8));
+    auto x_grid = gpu::ScheduleType_GPU_Offload::create<
+        cuda::ScheduleType_CUDA_Offload>(gpu::TargetLevel::X_GRID, symbolic::integer(8));
+
+    auto& map_row = builder.add_map(
+        seq,
+        block_row,
+        symbolic::Lt(block_row, M),
+        symbolic::integer(0),
+        symbolic::add(block_row, symbolic::integer(1)),
+        y_grid
+    );
+    auto& map_col = builder.add_map(
+        map_row.root(),
+        block_col,
+        symbolic::Lt(block_col, N),
+        symbolic::integer(0),
+        symbolic::add(block_col, symbolic::integer(1)),
+        x_grid
+    );
+    auto& loop_k =
+        builder
+            .add_for(map_col.root(), k, symbolic::Lt(k, K), symbolic::integer(0), symbolic::add(k, symbolic::integer(1)));
+
+    // A tile: bare pointer -> zero per-dim bases, offset = block_row * K.
+    symbolic::MultiExpression bases{symbolic::integer(0), symbolic::integer(0)};
+    auto offset = symbolic::mul(block_row, K);
+
+    auto axes = tiles::TileAxis::enclosing(loop_k, bases, offset);
+    ASSERT_EQ(axes.size(), 2u);
+    // Innermost-first: block_col then block_row.
+    EXPECT_TRUE(symbolic::eq(axes[0].indvar(), block_col));
+    EXPECT_TRUE(axes[0].cooperative()); // invariant across block_col -> reused
+    EXPECT_TRUE(symbolic::eq(axes[1].indvar(), block_row));
+    EXPECT_FALSE(axes[1].cooperative()); // offset depends on block_row -> private
+
+    // Without the offset the all-zero bases hide the dependence: both cooperative.
+    auto blind = tiles::TileAxis::enclosing(loop_k, bases);
+    ASSERT_EQ(blind.size(), 2u);
+    EXPECT_TRUE(blind[0].cooperative());
+    EXPECT_TRUE(blind[1].cooperative());
+}
+
 // A GPU-scheduled Reduce enclosing the loop is a cooperative block level too, so
 // analyze classifies a read tile inside a block reduction as shared (previously it
 // saw only Maps and mis-derived a private per-thread buffer).
