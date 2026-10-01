@@ -1946,6 +1946,10 @@ TEST(JSONSerializerTest, SerializeDeserialize) {
 
     // Serialize the SDFG to JSON
     auto j = serializer.serialize(*sdfg);
+    EXPECT_FALSE(j["root"]["debug_info"].contains("source_element_id"));
+
+    // Older files may contain this transient field; it should be ignored on input.
+    j["root"]["debug_info"]["source_element_id"] = 42;
 
     // Deserialize the JSON back into a StructuredSDFG object
     auto sdfg_new = serializer.deserialize(j);
@@ -1954,6 +1958,20 @@ TEST(JSONSerializerTest, SerializeDeserialize) {
     EXPECT_EQ(sdfg_new->name(), "test_sdfg");
     EXPECT_EQ(sdfg_new->metadata("key"), "value");
     EXPECT_EQ(sdfg_new->type(), FunctionType_CPU);
+}
+
+TEST(JSONSerializerTest, LoopProvenanceMetadataRoundTrips) {
+    sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+    const std::string provenance_json = R"({"101": 7, "202": 8})";
+    builder.subject().add_metadata("sdfg.loop_provenance.v1", provenance_json);
+
+    sdfg::serializer::JSONSerializer serializer;
+    auto serialized = serializer.serialize(builder.subject());
+    auto deserialized = serializer.deserialize(serialized);
+
+    EXPECT_EQ(
+        deserialized->metadata("sdfg.loop_provenance.v1"), provenance_json
+    );
 }
 
 TEST(JSONSerializerTest, SerializeDeserialize_Arguments) {
