@@ -618,6 +618,33 @@ class TraceRegion:
         return self._docc.get("element_id")
 
     @property
+    def original_loop_id(self) -> Optional[int]:
+        """Original loop ID shared by tuned loop events from one cutout, if known."""
+        return self._docc.get("original_loop_id")
+
+    @property
+    def member_loops(self) -> List[dict]:
+        """Loop IDs and source ranges enclosed by a provenance-grouped span."""
+        return list(self._docc.get("member_loops", []))
+
+    @property
+    def member_element_ids(self) -> List[int]:
+        """SDFG element IDs for all loops enclosed by a provenance-grouped span."""
+        return [member["element_id"] for member in self.member_loops]
+
+    @property
+    def expected_speedup(self) -> Optional[float]:
+        """Transfer-tuning's predicted speedup; this is not measured runtime speedup."""
+        rpc_optimization = self._docc.get("rpc_optimization")
+        return rpc_optimization.get("expected_speedup") if rpc_optimization else None
+
+    @property
+    def vector_distance(self) -> Optional[float]:
+        """Embedding distance to the transfer-tuning result, if recorded."""
+        rpc_optimization = self._docc.get("rpc_optimization")
+        return rpc_optimization.get("vector_distance") if rpc_optimization else None
+
+    @property
     def element_type(self) -> Optional[str]:
         return self._docc.get("element_type")
 
@@ -817,6 +844,27 @@ class Trace:
     def total_runtime_us(self) -> float:
         """Sum of mean runtimes across all regions (microseconds)."""
         return sum((r.runtime_mean_us or 0.0) for r in self._regions)
+
+    def provenance_group_runtime_us(self) -> Dict[int, float]:
+        """Return total measured span durations grouped by original tuned-loop ID.
+
+        With span-based instrumentation, every event is already one complete
+        execution of the related optimized loops. Aggregate traces store total
+        duration as ``runtime.mean * runtime.count``; per-invocation traces store
+        one span duration in ``dur``.
+        """
+        totals: Dict[int, float] = {}
+        for region in self._regions:
+            original_loop_id = region.original_loop_id
+            if original_loop_id is None:
+                continue
+            if region.is_aggregated:
+                runtime = region.runtime
+                duration = runtime.mean * runtime.count if runtime and runtime.mean is not None else 0.0
+            else:
+                duration = region.dur_us or 0.0
+            totals[original_loop_id] = totals.get(original_loop_id, 0.0) + duration
+        return totals
 
     # -- Combining ---------------------------------------------------------
     @staticmethod

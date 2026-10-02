@@ -51,6 +51,59 @@ def test_instrumentation_compile():
     vec_add_capture(A, B, C)
 
 
+def test_trace_sums_group_span_durations_by_original_loop():
+    from docc.benchmarks.rtl import Trace
+
+    common = {
+        "ph": "X",
+        "cat": "region,daisy",
+        "name": "kernel [L1-2]",
+        "pid": 1,
+        "tid": 1,
+        "args": {
+            "function": "kernel",
+            "module": "kernel.c",
+            "source_ranges": [],
+            "docc": {"original_loop_id": 42},
+            "metrics": {},
+        },
+    }
+    first = {**common, "dur": 11.0}
+    second = {**common, "dur": 17.0}
+    unrelated = {**common, "dur": 5.0, "args": {**common["args"], "docc": {}}}
+    trace = Trace.from_dict({"traceEvents": [first, second, unrelated]}, validate_schema=False)
+
+    assert [region.original_loop_id for region in trace.regions] == [42, 42, None]
+    assert trace.provenance_group_runtime_us() == {42: 28.0}
+
+    aggregated = Trace.from_dict(
+        {
+            "traceEvents": [
+                {
+                    **common,
+                    "cat": "aggregated_region,daisy",
+                    "dur": 28.0,
+                    "args": {
+                        **common["args"],
+                        "docc": {"original_loop_id": 42},
+                        "metrics": {
+                            "runtime": {
+                                "mean": 14.0,
+                                "variance": 0.0,
+                                "count": 2,
+                                "min": 11.0,
+                                "max": 17.0,
+                            }
+                        },
+                    },
+                }
+            ]
+        },
+        validate_schema=False,
+    )
+    assert aggregated.provenance_group_runtime_us() == {42: 28.0}
+
+
 @pytest.mark.skipif(
     sys.platform == "darwin", reason="Instrumentation not supported on macOS"
 )

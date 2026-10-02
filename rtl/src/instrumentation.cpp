@@ -474,6 +474,19 @@ private:
 
             // Element metadata
             entry << "\"element_id\":" << md.element_id << ",";
+            if (md.original_loop_id > 0) {
+                entry << "\"original_loop_id\":" << md.original_loop_id << ",";
+            }
+            if (md.member_loops_json && std::strcmp(md.member_loops_json, "[]") != 0) {
+                entry << "\"member_loops\":" << md.member_loops_json << ",";
+            }
+            if (md.expected_speedup >= 0.0) {
+                entry << "\"rpc_optimization\":{\"expected_speedup\":" << md.expected_speedup;
+                if (md.vector_distance >= 0.0) {
+                    entry << ",\"vector_distance\":" << md.vector_distance;
+                }
+                entry << "},";
+            }
             entry << "\"element_type\":\"" << md.element_type << "\",";
 
             // Deprecated, is also inside loop info
@@ -607,6 +620,19 @@ private:
 
             // Element metadata
             entry << "\"element_id\":" << md.element_id << ",";
+            if (md.original_loop_id > 0) {
+                entry << "\"original_loop_id\":" << md.original_loop_id << ",";
+            }
+            if (md.member_loops_json && std::strcmp(md.member_loops_json, "[]") != 0) {
+                entry << "\"member_loops\":" << md.member_loops_json << ",";
+            }
+            if (md.expected_speedup >= 0.0) {
+                entry << "\"rpc_optimization\":{\"expected_speedup\":" << md.expected_speedup;
+                if (md.vector_distance >= 0.0) {
+                    entry << ",\"vector_distance\":" << md.vector_distance;
+                }
+                entry << "},";
+            }
             entry << "\"element_type\":\"" << md.element_type << "\",";
 
             // Deprecated, is also inside loop info

@@ -21,6 +21,10 @@ bool NodeDispatcher::begin_node(PrettyPrinter& stream) {
     return false;
 };
 
+InstrumentationInfo NodeDispatcher::instrumentation_info_for_group() const {
+    return instrumentation_info();
+}
+
 void NodeDispatcher::end_node(PrettyPrinter& stream, bool applied) {};
 
 InstrumentationInfo NodeDispatcher::instrumentation_info() const {
@@ -37,11 +41,16 @@ void NodeDispatcher::
         this->arg_capture_plan_.begin_instrumentation(node_, main_stream, language_extension_);
     }
 
-    bool should_instrument = this->instrumentation_plan_.should_instrument(node_);
+    bool should_instrument = this->instrumentation_plan_.should_instrument(node_) &&
+                             !this->instrumentation_plan_.is_group_member(node_);
     std::optional<InstrumentationInfo> instrumentation_info;
     if (should_instrument) {
         instrumentation_info = this->instrumentation_info();
         instrumentation_info->set_sampling(this->instrumentation_plan_.sampling());
+        instrumentation_info->set_logical_region_id(this->instrumentation_plan_.logical_region_id(node_));
+        instrumentation_info->set_original_loop_id(this->instrumentation_plan_.original_loop_id(node_));
+        instrumentation_info->set_expected_speedup(this->instrumentation_plan_.expected_speedup(node_));
+        instrumentation_info->set_vector_distance(this->instrumentation_plan_.vector_distance(node_));
         this->instrumentation_plan_
             .begin_instrumentation(node_, main_stream, language_extension_, instrumentation_info.value());
     }

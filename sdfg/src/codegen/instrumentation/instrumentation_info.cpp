@@ -49,5 +49,45 @@ void InstrumentationInfo::set_sampling(bool sampling) {
     sampling_ = sampling;
 }
 
+std::optional<ElementId> InstrumentationInfo::logical_region_id() const {
+    return logical_region_id_;
+}
+
+void InstrumentationInfo::set_logical_region_id(std::optional<ElementId> logical_region_id) {
+    logical_region_id_ = logical_region_id;
+}
+
+std::optional<ElementId> InstrumentationInfo::original_loop_id() const {
+    return original_loop_id_;
+}
+
+void InstrumentationInfo::set_original_loop_id(std::optional<ElementId> original_loop_id) {
+    original_loop_id_ = original_loop_id;
+}
+
+std::optional<double> InstrumentationInfo::expected_speedup() const {
+    return expected_speedup_;
+}
+
+void InstrumentationInfo::set_expected_speedup(std::optional<double> expected_speedup) {
+    expected_speedup_ = expected_speedup;
+}
+
+std::optional<double> InstrumentationInfo::vector_distance() const {
+    return vector_distance_;
+}
+
+void InstrumentationInfo::set_vector_distance(std::optional<double> vector_distance) {
+    vector_distance_ = vector_distance;
+}
+
+const std::vector<InstrumentationMemberInfo>& InstrumentationInfo::members() const {
+    return members_;
+}
+
+void InstrumentationInfo::set_members(std::vector<InstrumentationMemberInfo> members) {
+    members_ = std::move(members);
+}
+
 } // namespace codegen
 } // namespace sdfg

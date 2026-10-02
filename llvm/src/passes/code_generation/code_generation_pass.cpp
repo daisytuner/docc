@@ -397,6 +397,10 @@ bool CodeGenerationPass::generate_code(
         } else if (codegen_instrumentation_mode == "ols") {
             instrumentation_plan = sdfg::codegen::InstrumentationPlan::outermost_loops_plan(*part_sdfg);
             sdfg::auto_util::add_offloading_instrumentations(*instrumentation_plan, *part_sdfg);
+        } else if (codegen_instrumentation_mode == "ols_tuned") {
+            instrumentation_plan =
+                sdfg::codegen::InstrumentationPlan::provenance_grouped_outermost_loops_plan(*part_sdfg);
+            sdfg::auto_util::add_offloading_instrumentations(*instrumentation_plan, *part_sdfg);
         } else {
             throw std::runtime_error("Unsupported instrumentation plan: " + codegen_instrumentation_mode);
         }
