@@ -40,9 +40,9 @@ After all regions are finished, calling `__daisy_instrumentation_finalize_all` i
 
 For the full list of API calls and metadata fields, refer to [rtl/include/daisy_rtl/daisy_rtl.h](include/daisy_rtl/daisy_rtl.h).
 
-DOCC's `-docc-instrument=ols_tuned` mode (or Python `instrumentation_mode="ols_tuned"`) emits one instrumentation span around contiguous optimized sibling loops that share an original-loop provenance ID. The trace identifies the group with `docc.original_loop_id` and lists every member's ID and source range in `docc.member_loops`; scalar element/source/loop fields remain representative metadata from the first member. Non-contiguous or return-containing groups fall back to individual OLS regions. Runtime `__DAISY_INSTRUMENTATION_MODE` still independently selects per-invocation or aggregate output.
+DOCC's `-docc-instrument=ols_tuned` mode (or Python `instrumentation_mode="ols_tuned"`) emits one instrumentation span around contiguous optimized sibling loops that share an original-loop provenance ID. The trace identifies the group with `docc.original_loop_id` and lists every member's ID and source range in `docc.member_loops`; scalar element/source/loop fields remain representative metadata from the first member. Non-contiguous or return-containing groups fall back to individual loop regions. Runtime `__DAISY_INSTRUMENTATION_MODE` still independently selects per-invocation or aggregate output.
 
-Each event measures one complete span execution. Python `Trace.provenance_group_runtime_us()` totals span durations by logical original-loop ID. This mode measures tuned execution only; compare against a separately instrumented baseline to calculate empirical speedup.
+Each event measures one complete span execution. This mode measures tuned execution only; compare against a separately instrumented baseline to calculate empirical speedup.
 
 ### Argument capturing
 

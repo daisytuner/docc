@@ -15,6 +15,7 @@
 #include "sdfg/analysis/loop_analysis.h"
 #include "sdfg/codegen/language_extension.h"
 #include "sdfg/element.h"
+#include "sdfg/metadata/loop_provenance.h"
 #include "sdfg/structured_control_flow/if_else.h"
 #include "sdfg/structured_control_flow/return.h"
 #include "sdfg/structured_control_flow/sequence.h"
@@ -157,31 +158,31 @@ void InstrumentationPlan::begin_instrumentation(
     // Element metadata
     stream << metadata_var << ".element_id = " << info.element_id() << ";" << std::endl;
     stream << metadata_var << ".original_loop_id = "
-            << (info.original_loop_id().has_value() ? std::to_string(info.original_loop_id().value()) : "0") << ";"
-            << std::endl;
+           << (info.original_loop_id().has_value() ? std::to_string(info.original_loop_id().value()) : "0") << ";"
+           << std::endl;
     stream << metadata_var << ".element_type = \"" << info.element_desc() << "\";" << std::endl;
     stream << metadata_var << ".target_type = \"" << info.target_type().value() << "\";" << std::endl;
 
     nlohmann::json member_metadata = nlohmann::json::array();
     for (const auto& member : info.members()) {
-        member_metadata.push_back({
-            {"element_id", member.element_id},
-            {"filename", member.filename},
-            {"function", member.function},
-            {"start_line", member.start_line},
-            {"start_column", member.start_column},
-            {"end_line", member.end_line},
-            {"end_column", member.end_column}
-        });
+        member_metadata.push_back(
+            {{"element_id", member.element_id},
+             {"filename", member.filename},
+             {"function", member.function},
+             {"start_line", member.start_line},
+             {"start_column", member.start_column},
+             {"end_line", member.end_line},
+             {"end_column", member.end_column}}
+        );
     }
     stream << metadata_var << ".member_loops_json = \"" << escape_cpp_string(member_metadata.dump()) << "\";"
            << std::endl;
-        stream << metadata_var << ".expected_speedup = "
-            << (info.expected_speedup().has_value() ? std::to_string(info.expected_speedup().value()) : "-1.0") << ";"
-            << std::endl;
-        stream << metadata_var << ".vector_distance = "
-            << (info.vector_distance().has_value() ? std::to_string(info.vector_distance().value()) : "-1.0") << ";"
-            << std::endl;
+    stream << metadata_var << ".expected_speedup = "
+           << (info.expected_speedup().has_value() ? std::to_string(info.expected_speedup().value()) : "-1.0") << ";"
+           << std::endl;
+    stream << metadata_var << ".vector_distance = "
+           << (info.vector_distance().has_value() ? std::to_string(info.vector_distance().value()) : "-1.0") << ";"
+           << std::endl;
 
     // Loop info metadata
     stream << metadata_var << ".loopnest_index = " << info.loop_info().loopnest_index << ";" << std::endl;
@@ -291,69 +292,20 @@ std::unique_ptr<InstrumentationPlan> InstrumentationPlan::
     return std::make_unique<InstrumentationPlan>(sdfg, nodes, emit_finalize_all, sampling);
 }
 
-std::unique_ptr<InstrumentationPlan> InstrumentationPlan::provenance_grouped_outermost_loops_plan(
-    StructuredSDFG& sdfg, bool emit_finalize_all, bool sampling
-) {
+std::unique_ptr<InstrumentationPlan> InstrumentationPlan::
+    provenance_grouped_outermost_loops_plan(StructuredSDFG& sdfg, bool emit_finalize_all, bool sampling) {
     analysis::AnalysisManager analysis_manager(sdfg);
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
 
-    // Utilities for reading/writing loop provenance are currently in sdfglib-auto, so we manually parse the metadata here.
-    std::unordered_map<ElementId, ElementId> provenance;
-    constexpr const char* provenance_key = "sdfg.loop_provenance.v1";
-    if (const auto* serialized = sdfg.metadata_if_exists(provenance_key)) {
-        const auto json = nlohmann::json::parse(*serialized);
-        if (!json.is_object()) {
-            throw std::runtime_error("SDFG loop provenance metadata must be a JSON object");
-        }
-        for (const auto& [output_id_text, original_id_json] : json.items()) {
-            ElementId output_id = 0;
-            const auto [end, error] = std::from_chars(
-                output_id_text.data(), output_id_text.data() + output_id_text.size(), output_id
-            );
-            if (error != std::errc{} || end != output_id_text.data() + output_id_text.size() || output_id == 0 ||
-                (!original_id_json.is_number_unsigned() &&
-                 (!original_id_json.is_number_integer() || original_id_json.get<int64_t>() < 0))) {
-                throw std::runtime_error("Invalid entry in SDFG loop provenance metadata");
-            }
-            provenance.emplace(output_id, original_id_json.get<ElementId>());
-        }
-    }
-
-    std::unordered_map<ElementId, RpcLoopResult> rpc_loop_results;
-    constexpr const char* rpc_results_key = "docc.rpc_loop_results.v1";
-    if (const auto* serialized = sdfg.metadata_if_exists(rpc_results_key)) {
-        const auto json = nlohmann::json::parse(*serialized);
-        if (!json.is_object()) {
-            throw std::runtime_error("RPC loop results metadata must be a JSON object");
-        }
-        for (const auto& [origin_id_text, result] : json.items()) {
-            ElementId origin_id = 0;
-            const auto [end, error] = std::from_chars(
-                origin_id_text.data(), origin_id_text.data() + origin_id_text.size(), origin_id
-            );
-            if (error != std::errc{} || end != origin_id_text.data() + origin_id_text.size() || origin_id == 0 ||
-                !result.is_object() || !result.contains("expected_speedup") ||
-                !result["expected_speedup"].is_number()) {
-                throw std::runtime_error("Invalid entry in RPC loop results metadata");
-            }
-            RpcLoopResult rpc_result{result["expected_speedup"].get<double>(), std::nullopt};
-            if (result.contains("vector_distance") && result["vector_distance"].is_number()) {
-                rpc_result.vector_distance = result["vector_distance"].get<double>();
-            }
-            rpc_loop_results.emplace(origin_id, rpc_result);
-        }
-    }
-
     std::unordered_set<const Element*> nodes;
     std::unordered_map<const Element*, ElementId> logical_region_ids;
-    std::unordered_map<const Element*, ElementId> original_loop_ids;
     std::unordered_map<ElementId, std::vector<const structured_control_flow::ControlFlowNode*>> loops_by_origin;
     for (auto* loop : loop_analysis.outermost_loops()) {
         nodes.insert(loop);
-        auto provenance_entry = provenance.find(loop->element_id());
-        if (provenance_entry != provenance.end()) {
-            original_loop_ids.emplace(loop, provenance_entry->second);
-            loops_by_origin[provenance_entry->second].push_back(loop);
+        const auto origin_id = metadata::original_loop_id(*loop);
+        if (origin_id.has_value()) {
+            logical_region_ids.emplace(loop, origin_id.value());
+            loops_by_origin[origin_id.value()].push_back(loop);
         }
     }
 
@@ -398,8 +350,6 @@ std::unique_ptr<InstrumentationPlan> InstrumentationPlan::provenance_grouped_out
         }
     }
     plan->logical_region_ids_ = std::move(logical_region_ids);
-    plan->original_loop_ids_ = std::move(original_loop_ids);
-    plan->rpc_loop_results_ = std::move(rpc_loop_results);
 
     DEBUG_PRINTLN(
         "Created provenance-grouped OLS instrumentation plan for " << nodes.size() << " nodes and "

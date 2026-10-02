@@ -1,7 +1,7 @@
 #pragma once
 
-#include <unordered_map>
 #include <optional>
+#include <unordered_map>
 #include <vector>
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/codegen/instrumentation/instrumentation_info.h"
@@ -9,6 +9,8 @@
 #include "sdfg/codegen/utils.h"
 #include "sdfg/data_flow/library_node.h"
 #include "sdfg/element.h"
+#include "sdfg/metadata/loop_provenance.h"
+#include "sdfg/metadata/rpc_optimization.h"
 #include "sdfg/options.h"
 #include "sdfg/structured_control_flow/control_flow_node.h"
 #include "sdfg/structured_sdfg.h"
@@ -26,12 +28,6 @@ protected:
     StructuredSDFG& sdfg_;
     std::unordered_set<const Element*> nodes_;
     std::unordered_map<const Element*, ElementId> logical_region_ids_;
-    std::unordered_map<const Element*, ElementId> original_loop_ids_;
-    struct RpcLoopResult {
-        double expected_speedup;
-        std::optional<double> vector_distance;
-    };
-    std::unordered_map<ElementId, RpcLoopResult> rpc_loop_results_;
     struct GroupSpan {
         ElementId original_loop_id;
         const structured_control_flow::Sequence* sequence;
@@ -99,22 +95,17 @@ public:
     }
 
     std::optional<ElementId> original_loop_id(const Element& node) const {
-        auto it = original_loop_ids_.find(&node);
-        return it == original_loop_ids_.end() ? std::nullopt : std::optional<ElementId>(it->second);
+        return metadata::original_loop_id(node);
     }
 
     std::optional<double> expected_speedup(const Element& node) const {
-        auto original_id = original_loop_id(node);
-        const ElementId lookup_id = original_id.has_value() ? original_id.value() : node.element_id();
-        auto it = rpc_loop_results_.find(lookup_id);
-        return it == rpc_loop_results_.end() ? std::nullopt : std::optional<double>(it->second.expected_speedup);
+        const auto result = metadata::rpc_optimization(node);
+        return result.has_value() ? std::optional<double>(result->expected_speedup) : std::nullopt;
     }
 
     std::optional<double> vector_distance(const Element& node) const {
-        auto original_id = original_loop_id(node);
-        const ElementId lookup_id = original_id.has_value() ? original_id.value() : node.element_id();
-        auto it = rpc_loop_results_.find(lookup_id);
-        return it == rpc_loop_results_.end() ? std::nullopt : it->second.vector_distance;
+        const auto result = metadata::rpc_optimization(node);
+        return result.has_value() ? result->vector_distance : std::nullopt;
     }
 
     const GroupSpan* group_span_starting_at(const structured_control_flow::ControlFlowNode& node) const {

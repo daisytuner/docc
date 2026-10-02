@@ -1960,18 +1960,55 @@ TEST(JSONSerializerTest, SerializeDeserialize) {
     EXPECT_EQ(sdfg_new->type(), FunctionType_CPU);
 }
 
-TEST(JSONSerializerTest, LoopProvenanceMetadataRoundTrips) {
+TEST(JSONSerializerTest, PerElementMetadataRoundTrips) {
     sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
-    const std::string provenance_json = R"({"101": 7, "202": 8})";
-    builder.subject().add_metadata("sdfg.loop_provenance.v1", provenance_json);
+    auto& loop = builder.add_map(
+        builder.subject().root(),
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::symbol("i"), symbolic::integer(10)),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+    loop.add_metadata("sdfg.original_loop_id.v1", "77");
+
+    types::Scalar scalar(types::PrimitiveType::Float);
+    types::Pointer pointer(scalar);
+    builder.add_container("A", pointer, true);
+    builder.add_container("B", pointer, true);
+    builder.add_container("i", types::Scalar(types::PrimitiveType::Int64));
+    auto& block = builder.add_block(loop.root());
+    auto& input = builder.add_access(block, "A");
+    auto& output = builder.add_access(block, "B");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    tasklet.add_metadata("test.node", "tasklet-metadata");
+    auto& edge = builder.add_computational_memlet(block, input, tasklet, "_in", {}, scalar);
+    edge.add_metadata("test.edge", "edge-metadata");
+    builder.add_computational_memlet(block, tasklet, "_out", output, {}, scalar);
 
     sdfg::serializer::JSONSerializer serializer;
     auto serialized = serializer.serialize(builder.subject());
     auto deserialized = serializer.deserialize(serialized);
 
-    EXPECT_EQ(
-        deserialized->metadata("sdfg.loop_provenance.v1"), provenance_json
-    );
+    auto& restored_loop = sdfg::dyn_cast<structured_control_flow::StructuredLoop&>(deserialized->root().at(0));
+    EXPECT_EQ(metadata::original_loop_id(restored_loop), std::optional<ElementId>(77));
+    auto& restored_block = sdfg::dyn_cast<structured_control_flow::Block&>(restored_loop.root().at(0));
+    bool found_tasklet = false;
+    for (const auto& node : restored_block.dataflow().nodes()) {
+        if (const auto* value = node.metadata_if_exists("test.node")) {
+            found_tasklet = true;
+            EXPECT_EQ(*value, "tasklet-metadata");
+        }
+    }
+    EXPECT_TRUE(found_tasklet);
+    bool found_edge = false;
+    for (const auto& memlet : restored_block.dataflow().edges()) {
+        if (const auto* value = memlet.metadata_if_exists("test.edge")) {
+            found_edge = true;
+            EXPECT_EQ(*value, "edge-metadata");
+        }
+    }
+    EXPECT_TRUE(found_edge);
 }
 
 TEST(JSONSerializerTest, SerializeDeserialize_Arguments) {

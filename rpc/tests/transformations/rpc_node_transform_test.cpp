@@ -11,7 +11,8 @@
 #include "sdfg/codegen/utils.h"
 #include "sdfg/deepcopy/structured_sdfg_deep_copy.h"
 #include "sdfg/passes/rpc/rpc_context.h"
-#include "sdfg/passes/rpc/loop_provenance_metadata.h"
+#include "sdfg/metadata/rpc_optimization.h"
+#include "sdfg/metadata/loop_provenance.h"
 #include "sdfg/serializer/json_serializer.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
@@ -251,46 +252,20 @@ TEST_F(RPCNodeTransformTest, UniqueElementIDs) {
     }
 }
 
-TEST_F(RPCNodeTransformTest, CopiesLoopProvenanceMetadataVerbatim) {
-    builder_->subject().add_metadata(sdfg::passes::rpc::LOOP_PROVENANCE_METADATA_KEY, "old provenance");
-    builder_->subject().add_metadata("unrelated", "keep this");
+TEST_F(RPCNodeTransformTest, StoresProvenanceAndScoresOnTheOutputLoop) {
+    analysis::AnalysisManager analysis_manager(builder_->subject());
+    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
+    auto* loop = loop_analysis.outermost_loops().front();
 
-    sdfg::builder::StructuredSDFGBuilder response_builder("rpc_response", FunctionType_CPU);
-    const std::string response_provenance = R"({"701": 42, "702": 42})";
-    response_builder.subject().add_metadata(sdfg::passes::rpc::LOOP_PROVENANCE_METADATA_KEY, response_provenance);
+    metadata::set_original_loop_id(*loop, 42);
+    metadata::set_rpc_optimization(*loop, 1.75, 0.125);
 
-    sdfg::passes::rpc::copy_loop_provenance_metadata(builder_->subject(), response_builder.subject());
-
-    EXPECT_EQ(
-        builder_->subject().metadata(sdfg::passes::rpc::LOOP_PROVENANCE_METADATA_KEY), response_provenance
-    );
-    EXPECT_EQ(builder_->subject().metadata("unrelated"), "keep this");
-}
-
-TEST_F(RPCNodeTransformTest, RemovesLoopProvenanceWhenResponseOmitsIt) {
-    builder_->subject().add_metadata(sdfg::passes::rpc::LOOP_PROVENANCE_METADATA_KEY, "stale provenance");
-
-    sdfg::builder::StructuredSDFGBuilder response_builder("rpc_response", FunctionType_CPU);
-    sdfg::passes::rpc::copy_loop_provenance_metadata(builder_->subject(), response_builder.subject());
-
-    EXPECT_TRUE(builder_->subject().metadata_if_exists(sdfg::passes::rpc::LOOP_PROVENANCE_METADATA_KEY) == nullptr);
-}
-
-TEST_F(RPCNodeTransformTest, RecordsExpectedRpcScoresByOriginalLoopId) {
-    builder_->subject().add_metadata("unrelated", "preserve");
-    sdfg::passes::rpc::record_rpc_loop_result(builder_->subject(), 42, 1.75, 0.125);
-    sdfg::passes::rpc::record_rpc_loop_result(builder_->subject(), 84, 2.5, NAN);
-
-    const auto* serialized = builder_->subject().metadata_if_exists(sdfg::passes::rpc::RPC_LOOP_RESULTS_METADATA_KEY);
-    ASSERT_NE(serialized, nullptr);
-    const auto results = nlohmann::json::parse(*serialized);
-    ASSERT_TRUE(results.contains("42"));
-    EXPECT_DOUBLE_EQ(results["42"]["expected_speedup"], 1.75);
-    EXPECT_DOUBLE_EQ(results["42"]["vector_distance"], 0.125);
-    ASSERT_TRUE(results.contains("84"));
-    EXPECT_DOUBLE_EQ(results["84"]["expected_speedup"], 2.5);
-    EXPECT_FALSE(results["84"].contains("vector_distance"));
-    EXPECT_EQ(builder_->subject().metadata("unrelated"), "preserve");
+    EXPECT_EQ(metadata::original_loop_id(*loop), std::optional<ElementId>(42));
+    const auto result = metadata::rpc_optimization(*loop);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_DOUBLE_EQ(result->expected_speedup, 1.75);
+    ASSERT_TRUE(result->vector_distance.has_value());
+    EXPECT_DOUBLE_EQ(result->vector_distance.value(), 0.125);
 }
 
 TEST_F(RPCNodeTransformTest, HandleUnauthenticatedError) {

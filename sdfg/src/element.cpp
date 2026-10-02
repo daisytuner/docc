@@ -9,20 +9,15 @@ DebugInfo::DebugInfo()
 
 DebugInfo::DebugInfo(std::string filename, size_t start_line, size_t start_column, size_t end_line, size_t end_column)
     : filename_(filename), function_(), start_line_(start_line), start_column_(start_column), end_line_(end_line),
-    end_column_(end_column), has_(true) {
+      end_column_(end_column), has_(true) {
 
       };
 
 DebugInfo::DebugInfo(
-        std::string filename,
-        std::string function,
-        size_t start_line,
-        size_t start_column,
-        size_t end_line,
-        size_t end_column
+    std::string filename, std::string function, size_t start_line, size_t start_column, size_t end_line, size_t end_column
 )
     : filename_(filename), function_(function), start_line_(start_line), start_column_(start_column),
-            end_line_(end_line), end_column_(end_column), has_(true) {
+      end_line_(end_line), end_column_(end_column), has_(true) {
 
       };
 
@@ -109,6 +104,27 @@ const DebugInfo& Element::debug_info() const {
 
 void Element::set_debug_info(const DebugInfo& debug_info) {
     this->debug_info_ = debug_info;
+}
+
+void Element::add_metadata(const std::string& key, const std::string& value) {
+    this->metadata_[key] = value;
+}
+
+void Element::remove_metadata(const std::string& key) {
+    this->metadata_.erase(key);
+}
+
+const std::string& Element::metadata(const std::string& key) const {
+    return this->metadata_.at(key);
+}
+
+const std::string* Element::metadata_if_exists(const std::string& key) const {
+    const auto it = this->metadata_.find(key);
+    return it == this->metadata_.end() ? nullptr : &it->second;
+}
+
+const std::unordered_map<std::string, std::string>& Element::metadata() const {
+    return this->metadata_;
 }
 
 void Element::replace(const symbolic::ExpressionMapping& replacements) {

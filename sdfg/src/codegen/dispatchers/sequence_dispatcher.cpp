@@ -21,7 +21,8 @@ SequenceDispatcher::SequenceDispatcher(
 void SequenceDispatcher::dispatch_node(
     PrettyPrinter& main_stream, PrettyPrinter& globals_stream, CodeSnippetFactory& library_snippet_factory
 ) {
-    for (size_t i = 0; i < node_.size();) {
+    size_t i = 0;
+    while (i < node_.size()) {
         auto& child = node_.at(i);
 
         const auto* group = instrumentation_plan_.group_span_starting_at(child);
@@ -39,18 +40,19 @@ void SequenceDispatcher::dispatch_node(
             members.reserve(group->members.size());
             for (const auto* member : group->members) {
                 const auto& debug_info = member->debug_info();
-                members.push_back({
-                    member->element_id(),
-                    debug_info.filename(),
-                    debug_info.function(),
-                    debug_info.start_line(),
-                    debug_info.start_column(),
-                    debug_info.end_line(),
-                    debug_info.end_column()
-                });
+                members.push_back(
+                    {member->element_id(),
+                     debug_info.filename(),
+                     debug_info.function(),
+                     debug_info.start_line(),
+                     debug_info.start_column(),
+                     debug_info.end_line(),
+                     debug_info.end_column()}
+                );
             }
             group_info.set_members(std::move(members));
 
+            // For groups, we begin instrumentation before dispatching the members and end it afterward.
             instrumentation_plan_.begin_instrumentation(child, main_stream, language_extension_, group_info);
             for (size_t member_index = 0; member_index < group->members.size(); ++member_index) {
                 const size_t child_index = i + member_index;
@@ -69,7 +71,7 @@ void SequenceDispatcher::dispatch_node(
             continue;
         }
 
-        // Node
+        // Single node dispatch
         auto dispatcher = create_dispatcher(
             language_extension_, sdfg_, analysis_manager_, child, instrumentation_plan_, arg_capture_plan_
         );

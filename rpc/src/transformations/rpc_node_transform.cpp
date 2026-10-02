@@ -8,13 +8,15 @@
 #include <nlohmann/json_fwd.hpp>
 #include <string>
 #include <variant>
+#include <vector>
 
 #include "sdfg/analysis/loop_analysis.h"
 #include "sdfg/codegen/utils.h"
 #include "sdfg/cutouts/cutouts.h"
 #include "sdfg/optimization_report/pass_report_consumer.h"
 #include "sdfg/passes/rpc/rpc_context.h"
-#include "sdfg/passes/rpc/loop_provenance_metadata.h"
+#include "sdfg/metadata/loop_provenance.h"
+#include "sdfg/metadata/rpc_optimization.h"
 #include "sdfg/passes/rpc/rpc_responses.h"
 #include "sdfg/serializer/json_serializer.h"
 #include "sdfg/structured_control_flow/control_flow_node.h"
@@ -304,7 +306,7 @@ void RPCNodeTransform::
         builder.subject().add_metadata("transfer_tuning_session_id", session_id.value());
     }
 
-    const auto input_provenance = passes::rpc::read_loop_provenance(builder.subject());
+    const auto input_origin_id = metadata::original_loop_id(this->node_);
 
     if (opt.sdfg_result.has_value()) {
         auto& sdfg_response = opt.sdfg_result->sdfg;
@@ -327,8 +329,6 @@ void RPCNodeTransform::
                                                                                 // place
             builder.remove_child(*parent_scope, index + num_children); // remove old loop
         }
-
-        passes::rpc::copy_loop_provenance_metadata(builder.subject(), *sdfg_response);
 
         if (opt.sdfg_result->sdfg->element_counter() > builder.subject().element_counter()) {
             builder.set_element_counter(opt.sdfg_result->sdfg->element_counter());
@@ -358,14 +358,33 @@ void RPCNodeTransform::
         }
     }
 
+    analysis::AnalysisManager result_analysis_manager(builder.subject());
+    auto& result_loop_analysis = result_analysis_manager.get<analysis::LoopAnalysis>();
     for (const auto& region_result : opt.results) {
-        const auto result_loop_id = region_result.element_id.has_value()
-                                        ? static_cast<sdfg::ElementId>(region_result.element_id.value())
-                                        : element_id;
-        const auto original_id = passes::rpc::original_loop_id(input_provenance, result_loop_id);
-        passes::rpc::record_rpc_loop_result(
-            builder.subject(), original_id, region_result.metadata.speedup, region_result.metadata.vector_distance
-        );
+        const ElementId result_loop_id = region_result.element_id.has_value()
+                                             ? static_cast<ElementId>(region_result.element_id.value())
+                                             : input_origin_id.value_or(element_id);
+        std::vector<structured_control_flow::ControlFlowNode*> exact_matches;
+        std::vector<structured_control_flow::ControlFlowNode*> origin_matches;
+        for (auto* result_loop : result_loop_analysis.loops()) {
+            const auto result_origin_id = metadata::original_loop_id(*result_loop);
+            if (result_loop->element_id() == result_loop_id) {
+                exact_matches.push_back(result_loop);
+            } else if (result_origin_id.has_value() && result_origin_id.value() == result_loop_id) {
+                origin_matches.push_back(result_loop);
+            }
+        }
+        auto& matches = exact_matches.empty() ? origin_matches : exact_matches;
+        if (matches.size() == 1) {
+            sdfg::metadata::set_rpc_optimization(
+                *matches.front(), region_result.metadata.speedup, region_result.metadata.vector_distance
+            );
+        } else {
+            DEBUG_PRINTLN(
+                "[RPC] Could not uniquely associate score with output loop " << result_loop_id << " (matches: "
+                                                                             << matches.size() << ")"
+            );
+        }
     }
 
     if (opt.local_replay.has_value()) {
