@@ -37,17 +37,26 @@ void TileCopyNodeDispatcher::dispatch_code_with_edges(
     // CpAsync on CDNA is a per-word direct global->LDS load (tracked by vmcnt, drained
     // by the pipeline wait); RDNA has no async path, so #else copies synchronously.
     auto async_stmt = [](const std::string& dst_addr, const std::string& src_addr, size_t bytes) {
-        const std::string words = std::to_string(bytes / 4);
+        // global_load_lds moves 1/2/4 bytes per lane per call; chunk at the largest
+        // power-of-2 <= 4 that divides `bytes` so sub-dword (e.g. fp16 = 2B) elements
+        // still copy (a hardcoded 4B dword gave bytes/4 == 0 and a dead loop for fp16).
+        size_t chunk = 4;
+        while (chunk > 1 && bytes % chunk != 0) {
+            chunk /= 2;
+        }
+        const std::string words = std::to_string(bytes / chunk);
+        const std::string sz = std::to_string(chunk);
+        const char* word = chunk == 4 ? "unsigned" : chunk == 2 ? "unsigned short" : "unsigned char";
         std::string s;
         s += "#if ";
         s += kCdnaArchGuard;
         s += "\n";
         s += "for (size_t __i = 0; __i < " + words + "; ++__i) __builtin_amdgcn_global_load_lds(" +
-             "reinterpret_cast<const unsigned*>(" + src_addr + ") + __i, reinterpret_cast<unsigned*>(" + dst_addr +
-             ") + __i, 4, 0, 0);\n";
+             "reinterpret_cast<const " + word + "*>(" + src_addr + ") + __i, reinterpret_cast<" + word + "*>(" +
+             dst_addr + ") + __i, " + sz + ", 0, 0);\n";
         s += "#else\n";
-        s += "for (size_t __i = 0; __i < " + words + "; ++__i) reinterpret_cast<unsigned*>(" + dst_addr +
-             ")[__i] = reinterpret_cast<const unsigned*>(" + src_addr + ")[__i];\n";
+        s += "for (size_t __i = 0; __i < " + words + "; ++__i) reinterpret_cast<" + word + "*>(" + dst_addr +
+             ")[__i] = reinterpret_cast<const " + word + "*>(" + src_addr + ")[__i];\n";
         s += "#endif";
         return s;
     };
