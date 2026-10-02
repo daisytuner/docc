@@ -40,6 +40,10 @@ After all regions are finished, calling `__daisy_instrumentation_finalize_all` i
 
 For the full list of API calls and metadata fields, refer to [rtl/include/daisy_rtl/daisy_rtl.h](include/daisy_rtl/daisy_rtl.h).
 
+DOCC's `-docc-instrument=ols_tuned` mode (or Python `instrumentation_mode="ols_tuned"`) emits one instrumentation span around contiguous optimized sibling loops that share an original-loop provenance ID. The trace identifies the group with `docc.original_loop_id` and lists every member's ID and source range in `docc.member_loops`; scalar element/source/loop fields remain representative metadata from the first member. Non-contiguous or return-containing groups fall back to individual OLS regions. Runtime `__DAISY_INSTRUMENTATION_MODE` still independently selects per-invocation or aggregate output.
+
+Each event measures one complete span execution. Python `Trace.provenance_group_runtime_us()` totals span durations by logical original-loop ID. This mode measures tuned execution only; compare against a separately instrumented baseline to calculate empirical speedup.
+
 ### Argument capturing
 
 Besides recording performance metrics, the RTL handles capturing kernel arguments to be used as input for autotuning.
@@ -78,3 +82,5 @@ The default capturing behavior is defined by `__DAISY_CAPTURE_STRATEGY_DEFAULT`:
 - `never`: disable capture
 - `once`: capture the first invocation
 - `always` capture all invocations
+
+When RPC tuning scores are available, the same `docc` object contains `rpc_optimization.expected_speedup` and, when available, `rpc_optimization.vector_distance`. `expected_speedup` is the backend's prediction, not the runtime-measured speedup.

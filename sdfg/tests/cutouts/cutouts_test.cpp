@@ -1,6 +1,9 @@
 #include <gtest/gtest.h>
 
+#include <nlohmann/json.hpp>
+
 #include <memory>
+#include <string>
 
 #include "sdfg/analysis/loop_analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
@@ -141,6 +144,103 @@ TEST_F(CutoutTest, TestCutoutInstrumentation) {
 
     EXPECT_TRUE(code_generator_opt.generate());
     EXPECT_TRUE(code_generator_opt.as_source("cutout_sdfg.h", "cutout_sdfg.cpp"));
+}
+
+TEST_F(CutoutTest, ProvenanceGroupedInstrumentationSharesLogicalOrigin) {
+    auto& root = builder_->subject().root();
+    for (const auto* name : {"extra_i", "extra_j"}) {
+        builder_->add_container(name, types::Scalar(types::PrimitiveType::Int64));
+        auto indvar = symbolic::symbol(name);
+        builder_->add_map(
+            root,
+            indvar,
+            symbolic::Lt(indvar, symbolic::integer(4)),
+            symbolic::integer(0),
+            symbolic::add(indvar, symbolic::integer(1)),
+            structured_control_flow::ScheduleType_Sequential::create()
+        );
+    }
+
+    analysis::AnalysisManager analysis_manager(builder_->subject());
+    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
+    const auto& outermost_loops = loop_analysis.outermost_loops();
+    ASSERT_EQ(outermost_loops.size(), 3u);
+
+    nlohmann::json provenance = nlohmann::json::object();
+    provenance[std::to_string(outermost_loops[1]->element_id())] = 777;
+    provenance[std::to_string(outermost_loops[2]->element_id())] = 777;
+    builder_->subject().add_metadata("sdfg.loop_provenance.v1", provenance.dump());
+    builder_->subject().add_metadata(
+        "docc.rpc_loop_results.v1", R"({"777":{"expected_speedup":1.75,"vector_distance":0.125}})"
+    );
+
+    auto plan =
+        codegen::InstrumentationPlan::provenance_grouped_outermost_loops_plan(builder_->subject(), true, true);
+    for (size_t i = 0; i < outermost_loops.size(); ++i) {
+        EXPECT_TRUE(plan->should_instrument(*outermost_loops[i]));
+    }
+    EXPECT_FALSE(plan->logical_region_id(*outermost_loops[0]).has_value());
+    EXPECT_EQ(plan->logical_region_id(*outermost_loops[1]), 777u);
+    EXPECT_EQ(plan->logical_region_id(*outermost_loops[2]), 777u);
+
+    auto arg_capture_plan = codegen::ArgCapturePlan::none(builder_->subject());
+    codegen::CPPCodeGenerator generator(builder_->subject(), analysis_manager, *plan, *arg_capture_plan);
+    ASSERT_TRUE(generator.generate());
+    const std::string generated = generator.main().str();
+    EXPECT_NE(generated.find("sdfg_test_origin_777"), std::string::npos);
+    EXPECT_NE(generated.find("member_loops_json"), std::string::npos);
+    EXPECT_NE(generated.find("original_loop_id = 777"), std::string::npos);
+    EXPECT_NE(generated.find("expected_speedup = 1.750000"), std::string::npos);
+    EXPECT_NE(generated.find("vector_distance = 0.125000"), std::string::npos);
+    EXPECT_NE(generated.find(std::to_string(outermost_loops[0]->element_id())), std::string::npos);
+    EXPECT_NE(generated.find(std::to_string(outermost_loops[1]->element_id())), std::string::npos);
+
+    auto count_occurrences = [&](const std::string& needle) {
+        size_t count = 0;
+        for (size_t position = 0; (position = generated.find(needle, position)) != std::string::npos;
+             position += needle.size()) {
+            ++count;
+        }
+        return count;
+    };
+    // The two contiguous mapped loops share one span; the unmapped outermost loop has its own OLS region.
+    EXPECT_EQ(count_occurrences("__daisy_instrumentation_init("), 2u);
+    EXPECT_EQ(count_occurrences("__daisy_instrumentation_enter("), 2u);
+    EXPECT_EQ(count_occurrences("__daisy_instrumentation_exit("), 2u);
+    EXPECT_EQ(count_occurrences("__daisy_instrumentation_should_continue("), 2u);
+    EXPECT_EQ(count_occurrences("__daisy_instrumentation_finalize("), 2u);
+}
+
+TEST_F(CutoutTest, ProvenanceGroupedInstrumentationFallsBackForNoncontiguousMembers) {
+    auto& root = builder_->subject().root();
+    for (const auto* name : {"gap_i", "gap_j"}) {
+        builder_->add_container(name, types::Scalar(types::PrimitiveType::Int64));
+        auto indvar = symbolic::symbol(name);
+        builder_->add_map(
+            root,
+            indvar,
+            symbolic::Lt(indvar, symbolic::integer(4)),
+            symbolic::integer(0),
+            symbolic::add(indvar, symbolic::integer(1)),
+            structured_control_flow::ScheduleType_Sequential::create()
+        );
+    }
+
+    analysis::AnalysisManager analysis_manager(builder_->subject());
+    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
+    const auto& loops = loop_analysis.outermost_loops();
+    ASSERT_EQ(loops.size(), 3u);
+
+    nlohmann::json provenance = nlohmann::json::object();
+    provenance[std::to_string(loops[0]->element_id())] = 900;
+    provenance[std::to_string(loops[2]->element_id())] = 900;
+    builder_->subject().add_metadata("sdfg.loop_provenance.v1", provenance.dump());
+
+    auto plan = codegen::InstrumentationPlan::provenance_grouped_outermost_loops_plan(builder_->subject());
+    for (const auto* loop : loops) {
+        EXPECT_TRUE(plan->should_instrument(*loop));
+        EXPECT_TRUE(plan->group_span_starting_at(*loop) == nullptr);
+    }
 }
 
 // Regression: an external read inside a cutout used to be emitted both as an

@@ -3,6 +3,7 @@
 #include <curl/curl.h>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
 #include <string>
@@ -13,6 +14,7 @@
 #include "sdfg/cutouts/cutouts.h"
 #include "sdfg/optimization_report/pass_report_consumer.h"
 #include "sdfg/passes/rpc/rpc_context.h"
+#include "sdfg/passes/rpc/loop_provenance_metadata.h"
 #include "sdfg/passes/rpc/rpc_responses.h"
 #include "sdfg/serializer/json_serializer.h"
 #include "sdfg/structured_control_flow/control_flow_node.h"
@@ -293,7 +295,7 @@ void RPCNodeTransform::
         throw std::runtime_error("RPCNodeTransform: No SDFG result or replay to apply.");
     }
 
-    int element_id = this->node_.element_id();
+    const sdfg::ElementId element_id = this->node_.element_id();
 
     // Record the transfer-tuning session on the SDFG. Prefer the client-owned id from start_session
     // (authoritative, independent of whether the server echoes it), falling back to the response.
@@ -301,6 +303,8 @@ void RPCNodeTransform::
     if (session_id.has_value()) {
         builder.subject().add_metadata("transfer_tuning_session_id", session_id.value());
     }
+
+    const auto input_provenance = passes::rpc::read_loop_provenance(builder.subject());
 
     if (opt.sdfg_result.has_value()) {
         auto& sdfg_response = opt.sdfg_result->sdfg;
@@ -323,6 +327,8 @@ void RPCNodeTransform::
                                                                                 // place
             builder.remove_child(*parent_scope, index + num_children); // remove old loop
         }
+
+        passes::rpc::copy_loop_provenance_metadata(builder.subject(), *sdfg_response);
 
         if (opt.sdfg_result->sdfg->element_counter() > builder.subject().element_counter()) {
             builder.set_element_counter(opt.sdfg_result->sdfg->element_counter());
@@ -350,6 +356,16 @@ void RPCNodeTransform::
             std::cerr << "[ERROR] Failed to replay rpc optimization: " << e.what() << std::endl;
             return;
         }
+    }
+
+    for (const auto& region_result : opt.results) {
+        const auto result_loop_id = region_result.element_id.has_value()
+                                        ? static_cast<sdfg::ElementId>(region_result.element_id.value())
+                                        : element_id;
+        const auto original_id = passes::rpc::original_loop_id(input_provenance, result_loop_id);
+        passes::rpc::record_rpc_loop_result(
+            builder.subject(), original_id, region_result.metadata.speedup, region_result.metadata.vector_distance
+        );
     }
 
     if (opt.local_replay.has_value()) {
