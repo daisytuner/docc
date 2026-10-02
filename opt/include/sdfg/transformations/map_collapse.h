@@ -90,8 +90,8 @@ public:
      * @param analysis_manager The analysis manager
      * @return true if the transformation can be applied safely
      */
-    virtual bool can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager)
-        override;
+    virtual bool
+    can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
 
     /**
      * @brief Apply the map collapse transformation

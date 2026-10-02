@@ -293,8 +293,9 @@ TEST(SymbolPropagationTest, Transition2IfElse_Argument) {
 
     auto case2_1 = dyn_cast<AssignmentBlock*>(&child2.at(1).first.at(0));
     EXPECT_EQ(case2_1->assignments().size(), 1);
-    EXPECT_TRUE(SymEngine::
-                    eq(*case2_1->assignments().at(sym2), *symbolic::add(symbolic::symbol("A"), symbolic::integer(1))));
+    EXPECT_TRUE(
+        SymEngine::eq(*case2_1->assignments().at(sym2), *symbolic::add(symbolic::symbol("A"), symbolic::integer(1)))
+    );
 }
 
 TEST(SymbolPropagationTest, Transition2IfElse_Negative) {

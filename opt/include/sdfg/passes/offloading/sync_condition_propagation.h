@@ -12,8 +12,7 @@ public:
         return "SyncConditionPropagation";
     };
 
-    bool run_pass(sdfg::builder::StructuredSDFGBuilder& builder, sdfg::analysis::AnalysisManager& analysis_manager)
-        override;
+    bool run_pass(sdfg::builder::StructuredSDFGBuilder& builder, sdfg::analysis::AnalysisManager& analysis_manager) override;
 };
 
 } // namespace sdfg::passes

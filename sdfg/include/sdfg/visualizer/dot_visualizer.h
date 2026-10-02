@@ -40,19 +40,16 @@ private:
     virtual void visualizeAssignmentBlock(
         const StructuredSDFG& sdfg, const structured_control_flow::AssignmentBlock& assignment_block
     ) override;
-    virtual void visualizeSequence(const StructuredSDFG& sdfg, const structured_control_flow::Sequence& sequence)
-        override;
+    virtual void visualizeSequence(const StructuredSDFG& sdfg, const structured_control_flow::Sequence& sequence) override;
     virtual void visualizeIfElse(const StructuredSDFG& sdfg, const structured_control_flow::IfElse& if_else) override;
     virtual void visualizeWhile(const StructuredSDFG& sdfg, const structured_control_flow::While& while_loop) override;
     virtual void visualizeFor(const StructuredSDFG& sdfg, const structured_control_flow::For& loop) override;
-    virtual void visualizeReturn(const StructuredSDFG& sdfg, const structured_control_flow::Return& return_node)
-        override;
+    virtual void visualizeReturn(const StructuredSDFG& sdfg, const structured_control_flow::Return& return_node) override;
     virtual void visualizeBreak(const StructuredSDFG& sdfg, const structured_control_flow::Break& break_node) override;
-    virtual void visualizeContinue(const StructuredSDFG& sdfg, const structured_control_flow::Continue& continue_node)
-        override;
+    virtual void
+    visualizeContinue(const StructuredSDFG& sdfg, const structured_control_flow::Continue& continue_node) override;
     virtual void visualizeMap(const StructuredSDFG& sdfg, const structured_control_flow::Map& map_node) override;
-    virtual void visualizeReduce(const StructuredSDFG& sdfg, const structured_control_flow::Reduce& reduce_node)
-        override;
+    virtual void visualizeReduce(const StructuredSDFG& sdfg, const structured_control_flow::Reduce& reduce_node) override;
 
     virtual void visualizeDataFlowGraph(const std::string& id, const data_flow::DataFlowGraph& dfg) override;
 

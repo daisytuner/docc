@@ -859,9 +859,9 @@ DelinearizeResult delinearize(const Expression& expr, AssumptionsBounds& bounds)
                 }
             }
             if (merge_target >= 0) {
-                Expression merged_index = symbolic::expand(symbolic::add(
-                    symbolic::mul(symbolic::integer(merge_factor), best_index), groups[merge_target].second
-                ));
+                Expression merged_index = symbolic::expand(
+                    symbolic::add(symbolic::mul(symbolic::integer(merge_factor), best_index), groups[merge_target].second)
+                );
                 groups[merge_target].second = merged_index;
                 groups.erase(groups.begin() + best_idx);
                 remaining = saved_remaining; // undo peel mutation

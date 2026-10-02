@@ -55,8 +55,14 @@
 namespace sdfg {
 namespace codegen {
 
-using NodeDispatcherFn = std::function<std::unique_ptr<
-    NodeDispatcher>(LanguageExtension&, StructuredSDFG&, analysis::AnalysisManager&, structured_control_flow::ControlFlowNode&, InstrumentationPlan&, ArgCapturePlan&)>;
+using NodeDispatcherFn = std::function<std::unique_ptr<NodeDispatcher>(
+    LanguageExtension&,
+    StructuredSDFG&,
+    analysis::AnalysisManager&,
+    structured_control_flow::ControlFlowNode&,
+    InstrumentationPlan&,
+    ArgCapturePlan&
+)>;
 
 class NodeDispatcherRegistry {
 private:
@@ -99,8 +105,14 @@ std::unique_ptr<NodeDispatcher> create_dispatcher(
     ArgCapturePlan& arg_capture_plan
 );
 
-using MapDispatcherFn = std::function<std::unique_ptr<
-    NodeDispatcher>(LanguageExtension&, StructuredSDFG&, analysis::AnalysisManager&, structured_control_flow::Map&, InstrumentationPlan&, ArgCapturePlan&)>;
+using MapDispatcherFn = std::function<std::unique_ptr<NodeDispatcher>(
+    LanguageExtension&,
+    StructuredSDFG&,
+    analysis::AnalysisManager&,
+    structured_control_flow::Map&,
+    InstrumentationPlan&,
+    ArgCapturePlan&
+)>;
 
 /**
  * @class MapDispatcherRegistry
@@ -142,8 +154,14 @@ public:
     }
 };
 
-using ReduceDispatcherFn = std::function<std::unique_ptr<
-    NodeDispatcher>(LanguageExtension&, StructuredSDFG&, analysis::AnalysisManager&, structured_control_flow::Reduce&, InstrumentationPlan&, ArgCapturePlan&)>;
+using ReduceDispatcherFn = std::function<std::unique_ptr<NodeDispatcher>(
+    LanguageExtension&,
+    StructuredSDFG&,
+    analysis::AnalysisManager&,
+    structured_control_flow::Reduce&,
+    InstrumentationPlan&,
+    ArgCapturePlan&
+)>;
 
 /**
  * @class ReduceDispatcherRegistry
@@ -186,8 +204,9 @@ public:
     }
 };
 
-using LibraryNodeDispatcherFn = std::function<std::unique_ptr<
-    LibraryNodeDispatcher>(LanguageExtension&, const Function&, const data_flow::DataFlowGraph&, const data_flow::LibraryNode&)>;
+using LibraryNodeDispatcherFn = std::function<std::unique_ptr<LibraryNodeDispatcher>(
+    LanguageExtension&, const Function&, const data_flow::DataFlowGraph&, const data_flow::LibraryNode&
+)>;
 
 /**
  * @class LibraryNodeDispatcherRegistry

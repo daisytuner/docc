@@ -51,8 +51,8 @@ void TestUnary(std::vector<size_t> shape_dims, types::PrimitiveType expected_ind
     types::Tensor tensor_type(types::PrimitiveType::Double, shape);
 
     auto& node =
-        static_cast<NodeType&>(builder.add_library_node<NodeType>(block, DebugInfo(), shape, std::forward<Args>(args)...)
-        );
+        static_cast<NodeType&>(builder
+                                   .add_library_node<NodeType>(block, DebugInfo(), shape, std::forward<Args>(args)...));
 
     builder.add_computational_memlet(block, a_node, node, "X", {}, tensor_type, block.debug_info());
     builder.add_computational_memlet(block, b_node, node, "Y", {}, tensor_type, block.debug_info());

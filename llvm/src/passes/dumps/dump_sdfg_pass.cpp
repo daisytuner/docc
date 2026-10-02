@@ -9,13 +9,13 @@ namespace docc {
 namespace passes {
 
 llvm::PreservedAnalyses DumpSDFGPass::
-    run(llvm::Module &Module, llvm::ModuleAnalysisManager &MAM, analysis::AnalysisManager &AM) {
-    auto &registry = AM.get<analysis::SDFGRegistry>();
+    run(llvm::Module& Module, llvm::ModuleAnalysisManager& MAM, analysis::AnalysisManager& AM) {
+    auto& registry = AM.get<analysis::SDFGRegistry>();
     if (!registry.has_module(Module)) {
         return llvm::PreservedAnalyses::all();
     }
 
-    registry.for_each_sdfg_const(Module, [&](const sdfg::StructuredSDFG &sdfg) {
+    registry.for_each_sdfg_const(Module, [&](const sdfg::StructuredSDFG& sdfg) {
         sdfg::serializer::JSONSerializer serializer;
         nlohmann::json j = serializer.serialize(sdfg);
 

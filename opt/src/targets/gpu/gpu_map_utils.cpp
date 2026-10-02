@@ -575,9 +575,11 @@ void get_nested_schedule_types(
                 // Sibling offloaders can share a level with different parallel_size; keep the
                 // largest so the launch dimension covers every sibling.
                 if (it == output.end() ||
-                    symbolic::is_true(symbolic::
-                                          Gt(ScheduleType_GPU_Offload::parallel_size(struc_loop->schedule_type()),
-                                             ScheduleType_GPU_Offload::parallel_size(it->second)))) {
+                    symbolic::is_true(
+                        symbolic::
+                            Gt(ScheduleType_GPU_Offload::parallel_size(struc_loop->schedule_type()),
+                               ScheduleType_GPU_Offload::parallel_size(it->second))
+                    )) {
                     output.insert_or_assign(level, struc_loop->schedule_type());
                 }
             }
@@ -599,9 +601,11 @@ void get_nested_level_maps(
                 auto level = ScheduleType_GPU_Offload::target_level(struc_loop->schedule_type());
                 auto it = output.find(level);
                 if (it == output.end() ||
-                    symbolic::is_true(symbolic::
-                                          Gt(ScheduleType_GPU_Offload::parallel_size(struc_loop->schedule_type()),
-                                             ScheduleType_GPU_Offload::parallel_size(it->second->schedule_type())))) {
+                    symbolic::is_true(
+                        symbolic::
+                            Gt(ScheduleType_GPU_Offload::parallel_size(struc_loop->schedule_type()),
+                               ScheduleType_GPU_Offload::parallel_size(it->second->schedule_type()))
+                    )) {
                     output.insert_or_assign(level, struc_loop);
                 }
             }

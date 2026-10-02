@@ -343,8 +343,8 @@ bool ArgumentExpansionPass::expand_arguments(
                 i,
                 (arg_attrs.copy_out ? sdfg::offloading::DataTransferDirection::D2H
                                     : sdfg::offloading::DataTransferDirection::NONE),
-                (arg_attrs.free ? sdfg::offloading::BufferLifecycle::FREE : sdfg::offloading::BufferLifecycle::NO_CHANGE
-                )
+                (arg_attrs.free ? sdfg::offloading::BufferLifecycle::FREE
+                                : sdfg::offloading::BufferLifecycle::NO_CHANGE)
             );
 
             std::string buffer_name = arg_to_buffer_map.at(i);

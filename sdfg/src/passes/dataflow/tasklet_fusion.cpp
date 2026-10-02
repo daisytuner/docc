@@ -121,8 +121,7 @@ bool TaskletFusion::accept(structured_control_flow::Block& block) {
                     );
                     this->builder_.remove_memlet(block, *other_iedge);
                     new_access_node
-                        .set_debug_info(DebugInfo::merge(new_access_node.debug_info(), other_access_node->debug_info())
-                        );
+                        .set_debug_info(DebugInfo::merge(new_access_node.debug_info(), other_access_node->debug_info()));
                     if (dfg.in_degree(*other_access_node) == 0 && dfg.out_degree(*other_access_node) == 0) {
                         removed_in_input_loop.insert(other_access_node);
                         this->builder_.remove_node(block, *other_access_node);

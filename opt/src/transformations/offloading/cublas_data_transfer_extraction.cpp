@@ -32,9 +32,14 @@ std::string CUBLASDataTransferExtraction::create_device_container(
     builder::StructuredSDFGBuilder& builder, const types::Pointer& type, const symbolic::Expression& size
 ) {
     auto new_type = type.clone();
-    new_type->storage_type(types::StorageType(
-        "NV_Generic", size, types::StorageType::AllocationType::Unmanaged, types::StorageType::AllocationType::Unmanaged
-    ));
+    new_type->storage_type(
+        types::StorageType(
+            "NV_Generic",
+            size,
+            types::StorageType::AllocationType::Unmanaged,
+            types::StorageType::AllocationType::Unmanaged
+        )
+    );
     auto device_container = builder.find_new_name(CUDA_DEVICE_PREFIX);
     builder.add_container(device_container, *new_type);
     return device_container;

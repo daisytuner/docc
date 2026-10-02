@@ -12,26 +12,26 @@ namespace passes {
 
 class SchedulingPass : public llvm::PassInfoMixin<SchedulingPass> {
 private:
-    const sdfg::passes::scheduler::SchedulerRegistry &scheduler_registry_;
+    const sdfg::passes::scheduler::SchedulerRegistry& scheduler_registry_;
     const bool dump_visualization_;
     const bool force_synchronous_;
     bool transfer_opt_;
-    sdfg::PassReportConsumer *const report_ = nullptr;
+    sdfg::PassReportConsumer* const report_ = nullptr;
 
 public:
     SchedulingPass(
-        const sdfg::passes::scheduler::SchedulerRegistry &scheduler_registry,
+        const sdfg::passes::scheduler::SchedulerRegistry& scheduler_registry,
         bool force_synchronous = false,
         bool dump_visualization = false,
         bool transfer_opt = true,
-        sdfg::PassReportConsumer *report = nullptr
+        sdfg::PassReportConsumer* report = nullptr
     );
 
-    static bool available(analysis::AnalysisManager &AM) {
+    static bool available(analysis::AnalysisManager& AM) {
         return true;
     }
 
-    llvm::PreservedAnalyses run(llvm::Module &Module, llvm::ModuleAnalysisManager &MAM, analysis::AnalysisManager &AM);
+    llvm::PreservedAnalyses run(llvm::Module& Module, llvm::ModuleAnalysisManager& MAM, analysis::AnalysisManager& AM);
 };
 
 } // namespace passes

@@ -30,9 +30,8 @@ public:
         : builder_(builder), parent_(parent), child_idx_(child_idx), block_(block), node_(node), options_(options) {
     }
 
-    std::unique_ptr<LibNodeExpander::AccessNodeExpand> replacement_requires_access_nodes(const std::vector<
-                                                                                         LibNodeExpander::InputUse>&
-                                                                                             access_dirs) override;
+    std::unique_ptr<LibNodeExpander::AccessNodeExpand>
+    replacement_requires_access_nodes(const std::vector<LibNodeExpander::InputUse>& access_dirs) override;
 
     LibNodeExpander::ExpandOutcome successfully_modified_node_only() override;
 

@@ -3132,8 +3132,8 @@ TEST(LoopFusionPassTest, Domain_2D_Apply_StridedIndexSubstitution) {
             for (auto& memlet : producer_df.out_edges(*access)) {
                 ASSERT_EQ(memlet.subset().size(), 2) << "Producer's A access should have 2D subset";
                 EXPECT_TRUE(symbolic::eq(memlet.subset()[0], symbolic::symbol("k"))) << "First index should be k";
-                EXPECT_TRUE(symbolic::eq(memlet.subset()[1], symbolic::mul(symbolic::integer(2), symbolic::symbol("l")))
-                ) << "Second index should be 2*l";
+                EXPECT_TRUE(symbolic::eq(memlet.subset()[1], symbolic::mul(symbolic::integer(2), symbolic::symbol("l"))))
+                    << "Second index should be 2*l";
             }
         }
     }

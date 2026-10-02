@@ -43,8 +43,7 @@ namespace passes {
 
 class MathNodeExpander : public TypedLibNodeExpander<math::MathNode> {
 public:
-    LibNodeExpander::ExpandOutcome handle_expand(ExpandContext& context, Block& block, math::MathNode& node)
-        const override;
+    LibNodeExpander::ExpandOutcome handle_expand(ExpandContext& context, Block& block, math::MathNode& node) const override;
 };
 
 namespace expansion {
@@ -214,8 +213,8 @@ public:
                                 return n != nullptr;
                             }) |
                             std::views::filter([last_element_id, force_expand](auto* n) {
-                                return (force_expand || n->implementation_type() == data_flow::ImplementationType_NONE
-                                       ) &&
+                                return (force_expand ||
+                                        n->implementation_type() == data_flow::ImplementationType_NONE) &&
                                        n->element_id() > last_element_id;
                             });
             std::vector<const data_flow::LibraryNode*> sorted_nodes(libnodes.begin(), libnodes.end());

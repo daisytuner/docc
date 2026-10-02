@@ -170,8 +170,7 @@ void DataFlowDispatcher::dispatch_deref_src(PrettyPrinter& stream, const data_fl
         }
         case types::TypeID::Reference:
         case types::TypeID::Function: {
-            throw InvalidSDFGException("Memlet: Dereference memlets cannot have reference or function destination types"
-            );
+            throw InvalidSDFGException("Memlet: Dereference memlets cannot have reference or function destination types");
         }
         case types::TypeID::Tensor: {
             throw InvalidSDFGException(
@@ -486,8 +485,8 @@ void LibraryNodeDispatcher::require_locally_modifiable_var(CodegenOutput& out, D
     input.is_locally_modifiable = true;
 }
 
-void LibraryNodeDispatcher::pre_allocate_output(CodegenOutput& out, DispatchOutput& output, const std::string& var_name)
-    const {
+void LibraryNodeDispatcher::
+    pre_allocate_output(CodegenOutput& out, DispatchOutput& output, const std::string& var_name) const {
     out.stream << out.language_extension.declaration(var_name, *output.out_type) << ";" << std::endl;
     output.local_name = &var_name;
 }
@@ -496,8 +495,8 @@ void LibraryNodeDispatcher::register_output(DispatchOutput& output, const std::s
     output.local_name = &result_identifier;
 }
 
-void LibraryNodeDispatcher::copy_output(CodegenOutput& out, const DispatchOutput& output, const data_flow::Memlet& oedge)
-    const {
+void LibraryNodeDispatcher::
+    copy_output(CodegenOutput& out, const DispatchOutput& output, const data_flow::Memlet& oedge) const {
     auto* dst = dynamic_cast<const data_flow::AccessNode*>(&oedge.dst());
     if (!dst) {
         throw InvalidSDFGException(

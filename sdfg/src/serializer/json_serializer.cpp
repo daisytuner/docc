@@ -656,8 +656,8 @@ void JSONSerializer::json_to_dataflow(
             }
             auto serializer = serializer_fn();
             auto& lib_node = serializer->deserialize(node, builder, parent);
-            lib_node.set_implementation_type(data_flow::ImplementationType(node["implementation_type"].get<std::string>()
-            ));
+            lib_node
+                .set_implementation_type(data_flow::ImplementationType(node["implementation_type"].get<std::string>()));
             lib_node.element_id_ = node["element_id"];
             nodes_map.insert({node["element_id"], lib_node});
         } else if (type == "access_node") {
@@ -1054,13 +1054,15 @@ void JSONSerializer::json_to_reduce_node(
         assert(reduction_json["op"].is_string());
         assert(reduction_json.contains("container"));
         assert(reduction_json["container"].is_string());
-        reductions.push_back(structured_control_flow::ReductionInfo{
-            structured_control_flow::reduction_operation_from_string(reduction_json["op"].get<std::string>()),
-            reduction_json["container"].get<std::string>(),
-            reduction_json.contains("original_index")
-                ? symbolic::parse(reduction_json["original_index"].get<std::string>())
-                : symbolic::Expression(SymEngine::null)
-        });
+        reductions.push_back(
+            structured_control_flow::ReductionInfo{
+                structured_control_flow::reduction_operation_from_string(reduction_json["op"].get<std::string>()),
+                reduction_json["container"].get<std::string>(),
+                reduction_json.contains("original_index")
+                    ? symbolic::parse(reduction_json["original_index"].get<std::string>())
+                    : symbolic::Expression(SymEngine::null)
+            }
+        );
     }
 
     structured_control_flow::ScheduleType schedule_type = json_to_schedule_type(j["schedule_type"]);

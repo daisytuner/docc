@@ -39,9 +39,9 @@ TEST(SymbolicTest, GpuBuiltinExpressionsRoundTrip) {
     expression = symbolic::add(expression, symbolic::symbol("__daisy_parse_gpu_0"));
     expression = symbolic::add(expression, symbolic::symbol("__daisy_parse_gpu__0"));
     EXPECT_TRUE(symbolic::eq(symbolic::parse(expression->__str__()), expression));
-    EXPECT_TRUE(symbolic::
-                    eq(symbolic::parse("threadIdx.x + 1.5"),
-                       symbolic::add(symbolic::threadIdx_x(), symbolic::parse("1.5"))));
+    EXPECT_TRUE(
+        symbolic::eq(symbolic::parse("threadIdx.x + 1.5"), symbolic::add(symbolic::threadIdx_x(), symbolic::parse("1.5")))
+    );
     EXPECT_TRUE(symbolic::eq(symbolic::parse("threadIdx_x"), symbolic::symbol("threadIdx_x")));
     EXPECT_THROW(symbolic::parse("threadIdx.xx"), SymEngine::SymEngineException);
 }

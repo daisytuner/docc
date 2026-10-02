@@ -445,20 +445,22 @@ TEST(StrideMinimizationTest, Polybench_correlation) {
         auto loop_i_1 = dyn_cast<structured_control_flow::StructuredLoop*>(&root.at(0));
         EXPECT_TRUE(loop_i_1 != nullptr);
         EXPECT_TRUE(SymEngine::eq(*loop_i_1->init(), *symbolic::integer(0)));
-        EXPECT_TRUE(SymEngine::
-                        eq(*loop_i_1->condition(),
-                           *symbolic::Lt(loop_i_1->indvar(), symbolic::sub(symbolic::symbol("M"), symbolic::integer(1)))
-                        ));
+        EXPECT_TRUE(
+            SymEngine::
+                eq(*loop_i_1->condition(),
+                   *symbolic::Lt(loop_i_1->indvar(), symbolic::sub(symbolic::symbol("M"), symbolic::integer(1))))
+        );
         EXPECT_TRUE(SymEngine::eq(*loop_i_1->update(), *symbolic::add(loop_i_1->indvar(), symbolic::integer(1))));
         EXPECT_EQ(loop_i_1->root().size(), 1);
 
         auto loop_i_2 = dyn_cast<structured_control_flow::StructuredLoop*>(&root.at(1));
         EXPECT_TRUE(loop_i_2 != nullptr);
         EXPECT_TRUE(SymEngine::eq(*loop_i_2->init(), *symbolic::integer(0)));
-        EXPECT_TRUE(SymEngine::
-                        eq(*loop_i_2->condition(),
-                           *symbolic::Lt(loop_i_2->indvar(), symbolic::sub(symbolic::symbol("M"), symbolic::integer(1)))
-                        ));
+        EXPECT_TRUE(
+            SymEngine::
+                eq(*loop_i_2->condition(),
+                   *symbolic::Lt(loop_i_2->indvar(), symbolic::sub(symbolic::symbol("M"), symbolic::integer(1))))
+        );
         EXPECT_TRUE(SymEngine::eq(*loop_i_2->update(), *symbolic::add(loop_i_2->indvar(), symbolic::integer(1))));
         EXPECT_EQ(loop_i_2->root().size(), 1);
         auto loop_j_2 = dyn_cast<structured_control_flow::StructuredLoop*>(&loop_i_2->root().at(0));
@@ -470,10 +472,11 @@ TEST(StrideMinimizationTest, Polybench_correlation) {
         auto loop_i_3 = dyn_cast<structured_control_flow::StructuredLoop*>(&root.at(2));
         EXPECT_TRUE(loop_i_3 != nullptr);
         EXPECT_TRUE(SymEngine::eq(*loop_i_3->init(), *symbolic::integer(0)));
-        EXPECT_TRUE(SymEngine::
-                        eq(*loop_i_3->condition(),
-                           *symbolic::Lt(loop_i_3->indvar(), symbolic::sub(symbolic::symbol("M"), symbolic::integer(1)))
-                        ));
+        EXPECT_TRUE(
+            SymEngine::
+                eq(*loop_i_3->condition(),
+                   *symbolic::Lt(loop_i_3->indvar(), symbolic::sub(symbolic::symbol("M"), symbolic::integer(1))))
+        );
         EXPECT_TRUE(SymEngine::eq(*loop_i_3->update(), *symbolic::add(loop_i_3->indvar(), symbolic::integer(1))));
         EXPECT_EQ(loop_i_3->root().size(), 1);
         auto loop_k_3 = dyn_cast<structured_control_flow::StructuredLoop*>(&loop_i_3->root().at(0));
@@ -491,10 +494,11 @@ TEST(StrideMinimizationTest, Polybench_correlation) {
         auto loop_i_4 = dyn_cast<structured_control_flow::StructuredLoop*>(&root.at(3));
         EXPECT_TRUE(loop_i_4 != nullptr);
         EXPECT_TRUE(SymEngine::eq(*loop_i_4->init(), *symbolic::integer(0)));
-        EXPECT_TRUE(SymEngine::
-                        eq(*loop_i_4->condition(),
-                           *symbolic::Lt(loop_i_4->indvar(), symbolic::sub(symbolic::symbol("M"), symbolic::integer(1)))
-                        ));
+        EXPECT_TRUE(
+            SymEngine::
+                eq(*loop_i_4->condition(),
+                   *symbolic::Lt(loop_i_4->indvar(), symbolic::sub(symbolic::symbol("M"), symbolic::integer(1))))
+        );
         EXPECT_TRUE(SymEngine::eq(*loop_i_4->update(), *symbolic::add(loop_i_4->indvar(), symbolic::integer(1))));
         EXPECT_EQ(loop_i_4->root().size(), 1);
         auto loop_j_4 = dyn_cast<structured_control_flow::StructuredLoop*>(&loop_i_4->root().at(0));
@@ -948,8 +952,7 @@ TEST(StrideMinimizationTest, Polybench_syr2k) {
                 auto loop_k = dyn_cast<structured_control_flow::StructuredLoop*>(&loop_j_2->root().at(0));
                 EXPECT_TRUE(loop_k != nullptr);
                 EXPECT_TRUE(SymEngine::eq(*loop_k->init(), *symbolic::integer(0)));
-                EXPECT_TRUE(SymEngine::eq(*loop_k->condition(), *symbolic::Lt(loop_k->indvar(), symbolic::symbol("M")))
-                );
+                EXPECT_TRUE(SymEngine::eq(*loop_k->condition(), *symbolic::Lt(loop_k->indvar(), symbolic::symbol("M"))));
                 EXPECT_TRUE(SymEngine::eq(*loop_k->update(), *symbolic::add(loop_k->indvar(), symbolic::integer(1))));
             }
         }
@@ -1028,8 +1031,7 @@ TEST(StrideMinimizationTest, Polybench_syrk) {
                 auto loop_k = dyn_cast<structured_control_flow::StructuredLoop*>(&loop_j_2->root().at(0));
                 EXPECT_TRUE(loop_k != nullptr);
                 EXPECT_TRUE(SymEngine::eq(*loop_k->init(), *symbolic::integer(0)));
-                EXPECT_TRUE(SymEngine::eq(*loop_k->condition(), *symbolic::Lt(loop_k->indvar(), symbolic::symbol("M")))
-                );
+                EXPECT_TRUE(SymEngine::eq(*loop_k->condition(), *symbolic::Lt(loop_k->indvar(), symbolic::symbol("M"))));
                 EXPECT_TRUE(SymEngine::eq(*loop_k->update(), *symbolic::add(loop_k->indvar(), symbolic::integer(1))));
             }
         }
@@ -1090,17 +1092,16 @@ TEST(StrideMinimizationTest, Polybench_trmm) {
             auto loop_k_1 = dyn_cast<structured_control_flow::StructuredLoop*>(&loop_i_1->root().at(0));
             EXPECT_TRUE(loop_k_1 != nullptr);
             EXPECT_TRUE(SymEngine::eq(*loop_k_1->init(), *symbolic::add(loop_i_1->indvar(), symbolic::integer(1))));
-            EXPECT_TRUE(SymEngine::eq(*loop_k_1->condition(), *symbolic::Lt(loop_k_1->indvar(), symbolic::symbol("M")))
-            );
+            EXPECT_TRUE(SymEngine::eq(*loop_k_1->condition(), *symbolic::Lt(loop_k_1->indvar(), symbolic::symbol("M"))));
             EXPECT_TRUE(SymEngine::eq(*loop_k_1->update(), *symbolic::add(loop_k_1->indvar(), symbolic::integer(1))));
             {
                 auto loop_j_1 = dyn_cast<structured_control_flow::StructuredLoop*>(&loop_k_1->root().at(0));
                 EXPECT_TRUE(loop_j_1 != nullptr);
                 EXPECT_TRUE(SymEngine::eq(*loop_j_1->init(), *symbolic::integer(0)));
-                EXPECT_TRUE(SymEngine::eq(*loop_j_1->condition(), *symbolic::Lt(loop_j_1->indvar(), symbolic::symbol("N")))
+                EXPECT_TRUE(
+                    SymEngine::eq(*loop_j_1->condition(), *symbolic::Lt(loop_j_1->indvar(), symbolic::symbol("N")))
                 );
-                EXPECT_TRUE(SymEngine::eq(*loop_j_1->update(), *symbolic::add(loop_j_1->indvar(), symbolic::integer(1)))
-                );
+                EXPECT_TRUE(SymEngine::eq(*loop_j_1->update(), *symbolic::add(loop_j_1->indvar(), symbolic::integer(1))));
             }
         }
         auto loop_i_2 = dyn_cast<structured_control_flow::StructuredLoop*>(&root.at(1));
@@ -1113,8 +1114,7 @@ TEST(StrideMinimizationTest, Polybench_trmm) {
             auto loop_j_2 = dyn_cast<structured_control_flow::StructuredLoop*>(&loop_i_2->root().at(0));
             EXPECT_TRUE(loop_j_2 != nullptr);
             EXPECT_TRUE(SymEngine::eq(*loop_j_2->init(), *symbolic::integer(0)));
-            EXPECT_TRUE(SymEngine::eq(*loop_j_2->condition(), *symbolic::Lt(loop_j_2->indvar(), symbolic::symbol("N")))
-            );
+            EXPECT_TRUE(SymEngine::eq(*loop_j_2->condition(), *symbolic::Lt(loop_j_2->indvar(), symbolic::symbol("N"))));
             EXPECT_TRUE(SymEngine::eq(*loop_j_2->update(), *symbolic::add(loop_j_2->indvar(), symbolic::integer(1))));
         }
     }

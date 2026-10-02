@@ -156,8 +156,7 @@ public:
      * @param block the block in which the node is contained
      * @return outcome of expand, created by context
      */
-    passes::LibNodeExpander::ExpandOutcome expand(passes::LibNodeExpander::ExpandContext& context, Block& block)
-        override;
+    passes::LibNodeExpander::ExpandOutcome expand(passes::LibNodeExpander::ExpandContext& context, Block& block) override;
 
     /**
      * @brief Generate the actual reduction code

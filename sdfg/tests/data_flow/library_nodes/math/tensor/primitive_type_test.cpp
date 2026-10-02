@@ -167,8 +167,8 @@ TEST(TensorPrimitiveTypeTest, ExpNodeRejectsInt32) {
     std::vector<symbolic::Expression> shape = {symbolic::integer(10)};
     types::Tensor tensor_type(types::PrimitiveType::Int32, shape);
     auto& node =
-        static_cast<math::tensor::TensorNode&>(builder.add_library_node<math::tensor::ExpNode>(block, DebugInfo(), shape)
-        );
+        static_cast<math::tensor::TensorNode&>(builder
+                                                   .add_library_node<math::tensor::ExpNode>(block, DebugInfo(), shape));
 
     builder.add_computational_memlet(block, a_node, node, "X", {}, tensor_type, block.debug_info());
     builder.add_computational_memlet(block, b_node, node, "Y", {}, tensor_type, block.debug_info());
@@ -200,8 +200,8 @@ TEST(TensorPrimitiveTypeTest, MixedTypesRejected) {
     types::Tensor tensor_float(types::PrimitiveType::Float, shape);
     types::Tensor tensor_double(types::PrimitiveType::Double, shape);
     auto& node =
-        static_cast<math::tensor::TensorNode&>(builder.add_library_node<math::tensor::AddNode>(block, DebugInfo(), shape)
-        );
+        static_cast<math::tensor::TensorNode&>(builder
+                                                   .add_library_node<math::tensor::AddNode>(block, DebugInfo(), shape));
 
     builder.add_computational_memlet(block, a_node, node, "A", {}, tensor_float, block.debug_info());
     builder.add_computational_memlet(block, b_node, node, "B", {}, tensor_double, block.debug_info());
@@ -229,8 +229,8 @@ TEST(TensorPrimitiveTypeTest, AbsNodeInt32) {
     std::vector<symbolic::Expression> shape = {symbolic::integer(10)};
     types::Tensor tensor_type(types::PrimitiveType::Int32, shape);
     auto& node =
-        static_cast<math::tensor::TensorNode&>(builder.add_library_node<math::tensor::AbsNode>(block, DebugInfo(), shape)
-        );
+        static_cast<math::tensor::TensorNode&>(builder
+                                                   .add_library_node<math::tensor::AbsNode>(block, DebugInfo(), shape));
 
     builder.add_computational_memlet(block, a_node, node, "X", {}, tensor_type, block.debug_info());
     builder.add_computational_memlet(block, b_node, node, "Y", {}, tensor_type, block.debug_info());
@@ -329,8 +329,8 @@ TEST(TensorPrimitiveTypeTest, ScalarInputFloat) {
     types::Tensor tensor_type_float(types::PrimitiveType::Float, shape);
     types::Tensor tensor_type_A(types::PrimitiveType::Float, {});
     auto& node =
-        static_cast<math::tensor::TensorNode&>(builder.add_library_node<math::tensor::AddNode>(block, DebugInfo(), shape)
-        );
+        static_cast<math::tensor::TensorNode&>(builder
+                                                   .add_library_node<math::tensor::AddNode>(block, DebugInfo(), shape));
 
     // Connect scalar and pointer - should still validate
     builder.add_computational_memlet(block, a_node, node, "A", {}, tensor_type_A, block.debug_info());
@@ -360,8 +360,8 @@ TEST(TensorPrimitiveTypeTest, AddNodeInt32GeneratesIntAddTasklet) {
     std::vector<symbolic::Expression> shape = {symbolic::integer(10)};
     types::Tensor tensor_type(types::PrimitiveType::Int32, shape);
     auto& node =
-        static_cast<math::tensor::TensorNode&>(builder.add_library_node<math::tensor::AddNode>(block, DebugInfo(), shape)
-        );
+        static_cast<math::tensor::TensorNode&>(builder
+                                                   .add_library_node<math::tensor::AddNode>(block, DebugInfo(), shape));
 
     builder.add_computational_memlet(block, a_node, node, "A", {}, tensor_type, block.debug_info());
     builder.add_computational_memlet(block, b_node, node, "B", {}, tensor_type, block.debug_info());
@@ -406,8 +406,8 @@ TEST(TensorPrimitiveTypeTest, AddNodeFloatGeneratesFpAddTasklet) {
     std::vector<symbolic::Expression> shape = {symbolic::integer(10)};
     types::Tensor tensor_type(types::PrimitiveType::Float, shape);
     auto& node =
-        static_cast<math::tensor::TensorNode&>(builder.add_library_node<math::tensor::AddNode>(block, DebugInfo(), shape)
-        );
+        static_cast<math::tensor::TensorNode&>(builder
+                                                   .add_library_node<math::tensor::AddNode>(block, DebugInfo(), shape));
 
     builder.add_computational_memlet(block, a_node, node, "A", {}, tensor_type, block.debug_info());
     builder.add_computational_memlet(block, b_node, node, "B", {}, tensor_type, block.debug_info());
@@ -452,8 +452,8 @@ TEST(TensorPrimitiveTypeTest, DivNodeInt32GeneratesIntSdivTasklet) {
     std::vector<symbolic::Expression> shape = {symbolic::integer(10)};
     types::Tensor tensor_type(types::PrimitiveType::Int32, shape);
     auto& node =
-        static_cast<math::tensor::TensorNode&>(builder.add_library_node<math::tensor::DivNode>(block, DebugInfo(), shape)
-        );
+        static_cast<math::tensor::TensorNode&>(builder
+                                                   .add_library_node<math::tensor::DivNode>(block, DebugInfo(), shape));
 
     builder.add_computational_memlet(block, a_node, node, "A", {}, tensor_type, block.debug_info());
     builder.add_computational_memlet(block, b_node, node, "B", {}, tensor_type, block.debug_info());
@@ -498,8 +498,8 @@ TEST(TensorPrimitiveTypeTest, DivNodeUInt32GeneratesIntUdivTasklet) {
     std::vector<symbolic::Expression> shape = {symbolic::integer(10)};
     types::Tensor tensor_type(types::PrimitiveType::UInt32, shape);
     auto& node =
-        static_cast<math::tensor::TensorNode&>(builder.add_library_node<math::tensor::DivNode>(block, DebugInfo(), shape)
-        );
+        static_cast<math::tensor::TensorNode&>(builder
+                                                   .add_library_node<math::tensor::DivNode>(block, DebugInfo(), shape));
 
     builder.add_computational_memlet(block, a_node, node, "A", {}, tensor_type, block.debug_info());
     builder.add_computational_memlet(block, b_node, node, "B", {}, tensor_type, block.debug_info());
@@ -681,8 +681,8 @@ TEST(TensorPrimitiveTypeTest, ExpNodeFloatGeneratesExpfIntrinsic) {
     std::vector<symbolic::Expression> shape = {symbolic::integer(10)};
     types::Tensor tensor_type(types::PrimitiveType::Float, shape);
     auto& node =
-        static_cast<math::tensor::TensorNode&>(builder.add_library_node<math::tensor::ExpNode>(block, DebugInfo(), shape)
-        );
+        static_cast<math::tensor::TensorNode&>(builder
+                                                   .add_library_node<math::tensor::ExpNode>(block, DebugInfo(), shape));
 
     builder.add_computational_memlet(block, a_node, node, "X", {}, tensor_type, block.debug_info());
     builder.add_computational_memlet(block, b_node, node, "Y", {}, tensor_type, block.debug_info());

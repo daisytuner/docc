@@ -42,8 +42,8 @@ void OffloadState::found_full_barrier(ControlFlowNode& node) {
 /**
  * @return { type, killing node }
  */
-std::pair<OffloadState::KillingType, OffloadHolder*> OffloadState::find_killing_entry_node(const ExposedOffload&
-                                                                                               in_flight) const {
+std::pair<OffloadState::KillingType, OffloadHolder*> OffloadState::
+    find_killing_entry_node(const ExposedOffload& in_flight) const {
     auto& holder = *in_flight.offload;
     static const types::Scalar void_type(types::Void);
     auto& host_access_type = holder.host_access ? holder.host_access->base_type() : void_type;
@@ -230,16 +230,18 @@ void OffloadState::found_offload_node(Block& block, offloading::DataOffloadingNo
             )
         );
     } else if (starts_dev_lifetime || updates_on_dev) {
-        add_h2d_entry(OffloadHolder{
-            &offload,
-            found_host_access,
-            found_host_memlet,
-            found_dev_access,
-            starts_dev_lifetime,
-            ends_dev_lifetime,
-            updates_on_dev,
-            updates_on_host
-        });
+        add_h2d_entry(
+            OffloadHolder{
+                &offload,
+                found_host_access,
+                found_host_memlet,
+                found_dev_access,
+                starts_dev_lifetime,
+                ends_dev_lifetime,
+                updates_on_dev,
+                updates_on_host
+            }
+        );
     }
 }
 

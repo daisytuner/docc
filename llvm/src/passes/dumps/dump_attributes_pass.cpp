@@ -229,8 +229,8 @@ void AttributesAnalysis::run(sdfg::analysis::AnalysisManager& analysis_manager) 
             } else {
                 break;
             }
-        } else if (auto* external_offloading_node = dynamic_cast<sdfg::offloading::ExternalDataOffloadingNode*>(libnode
-                   )) {
+        } else if (auto* external_offloading_node =
+                       dynamic_cast<sdfg::offloading::ExternalDataOffloadingNode*>(libnode)) {
             if (external_offloading_node->is_h2d()) {
                 auto* src = this->get_in_access(external_offloading_node, external_offloading_node->inputs().back());
                 auto* dst = this->get_out_access(
@@ -399,8 +399,8 @@ void AttributesAnalysis::run(sdfg::analysis::AnalysisManager& analysis_manager) 
             } else {
                 break;
             }
-        } else if (auto* external_offloading_node = dynamic_cast<sdfg::offloading::ExternalDataOffloadingNode*>(libnode
-                   )) {
+        } else if (auto* external_offloading_node =
+                       dynamic_cast<sdfg::offloading::ExternalDataOffloadingNode*>(libnode)) {
             if (external_offloading_node->is_d2h()) {
                 auto* src = this->get_in_access(
                     external_offloading_node,

@@ -189,8 +189,8 @@ passes::LibNodeExpander::ExpandOutcome UpsampleBilinear2DNode::
         builder.add_computational_memlet(blk, tk, "_out", r_acc, {}, double_type, dbg);
         return name;
     };
-    auto emit_one_minus = [&](structured_control_flow::Sequence& scope, const std::string& lam, const std::string& hint
-                          ) -> std::string {
+    auto emit_one_minus =
+        [&](structured_control_flow::Sequence& scope, const std::string& lam, const std::string& hint) -> std::string {
         std::string name = builder.find_new_name(hint);
         builder.add_container(name, double_type);
         auto& blk = builder.add_block(scope, {}, dbg);

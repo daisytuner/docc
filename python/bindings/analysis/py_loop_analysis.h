@@ -56,8 +56,7 @@ public:
      * @brief Get the parent loop of a given loop
      * @return The parent loop node or nullptr if this is an outermost loop
      */
-    sdfg::structured_control_flow::ControlFlowNode* parent_loop(sdfg::structured_control_flow::ControlFlowNode* loop
-    ) const {
+    sdfg::structured_control_flow::ControlFlowNode* parent_loop(sdfg::structured_control_flow::ControlFlowNode* loop) const {
         return analysis_.parent_loop(loop);
     }
 
@@ -85,8 +84,8 @@ public:
     /**
      * @brief Get the immediate child loops of a given loop
      */
-    std::vector<sdfg::structured_control_flow::ControlFlowNode*> children(sdfg::structured_control_flow::ControlFlowNode*
-                                                                              node) const {
+    std::vector<sdfg::structured_control_flow::ControlFlowNode*>
+    children(sdfg::structured_control_flow::ControlFlowNode* node) const {
         return analysis_.children(node);
     }
 

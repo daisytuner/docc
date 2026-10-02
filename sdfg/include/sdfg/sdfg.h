@@ -70,14 +70,14 @@ public:
         auto edges = std::ranges::subrange(eb, ee);
 
         // Convert Edge to const InterstateEdge&
-        auto interstate_edges = std::views::transform(
-                                    edges,
-                                    [&lookup_table = this->edges_](const graph::Edge& edge
-                                    ) -> control_flow::InterstateEdge& {
-                                        return *(lookup_table.find(edge)->second);
-                                    }
-                                ) |
-                                std::views::transform(helpers::add_const<control_flow::InterstateEdge>);
+        auto interstate_edges =
+            std::views::transform(
+                edges,
+                [&lookup_table = this->edges_](const graph::Edge& edge) -> control_flow::InterstateEdge& {
+                    return *(lookup_table.find(edge)->second);
+                }
+            ) |
+            std::views::transform(helpers::add_const<control_flow::InterstateEdge>);
 
         return interstate_edges;
     };
@@ -87,14 +87,14 @@ public:
         auto edges = std::ranges::subrange(eb, ee);
 
         // Convert Edge to const InterstateEdge&
-        auto interstate_edges = std::views::transform(
-                                    edges,
-                                    [&lookup_table = this->edges_](const graph::Edge& edge
-                                    ) -> control_flow::InterstateEdge& {
-                                        return *(lookup_table.find(edge)->second);
-                                    }
-                                ) |
-                                std::views::transform(helpers::add_const<control_flow::InterstateEdge>);
+        auto interstate_edges =
+            std::views::transform(
+                edges,
+                [&lookup_table = this->edges_](const graph::Edge& edge) -> control_flow::InterstateEdge& {
+                    return *(lookup_table.find(edge)->second);
+                }
+            ) |
+            std::views::transform(helpers::add_const<control_flow::InterstateEdge>);
 
         return interstate_edges;
     };

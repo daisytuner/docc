@@ -141,8 +141,7 @@ sdfg::control_flow::State& FunctionLifting::visit_call(
             if (auto* called_operand_func = llvm::dyn_cast<llvm::Function>(global_alias->getAliaseeObject())) {
                 // This is not 100% safe but a good heuristic for now: Only replace the aliased function with its
                 // aliasee if the function is guaranteed to never throw an exception.
-                if (called_operand_func->getAttributes().getFnAttrs().hasAttribute(llvm::Attribute::AttrKind::NoUnwind
-                    )) {
+                if (called_operand_func->getAttributes().getFnAttrs().hasAttribute(llvm::Attribute::AttrKind::NoUnwind)) {
                     called_operand = global_alias->getAliaseeObject();
                     callee_llvm_type = called_operand_func->getFunctionType();
                 }
@@ -240,7 +239,9 @@ sdfg::control_flow::State& FunctionLifting::visit_call(
                     if (onlyReadsMemory) {
                         meta = sdfg::data_flow::PointerAccessMeta::create_read_only(SymEngine::null, noCapture);
                     } else if (noCapture) {
-                        meta = sdfg::data_flow::PointerAccessMeta::create_generic(nullptr, nullptr, noCapture);
+                        // Black box that may read and write, with an unbounded region.
+                        meta = sdfg::data_flow::PointerAccessMeta::
+                            create_generic({true, std::nullopt, false}, {true, std::nullopt, false}, noCapture);
                     }
                 }
             }

@@ -283,8 +283,7 @@ LoopAnalysis::loop_tree() const {
     return this->loop_tree_;
 }
 
-structured_control_flow::ControlFlowNode* LoopAnalysis::parent_loop(structured_control_flow::ControlFlowNode* loop
-) const {
+structured_control_flow::ControlFlowNode* LoopAnalysis::parent_loop(structured_control_flow::ControlFlowNode* loop) const {
     return this->loop_tree_.at(loop);
 }
 
@@ -489,8 +488,7 @@ void LoopAnalysis::copied_loop(
     reindex_loop_nest_idx();
 }
 
-uint32_t LoopAnalysis::child_insertion_index(structured_control_flow::ControlFlowNode* new_parent, bool start_not_end)
-    const {
+uint32_t LoopAnalysis::child_insertion_index(structured_control_flow::ControlFlowNode* new_parent, bool start_not_end) const {
     const auto& children = loop_children_.at(new_parent);
     auto it = start_not_end ? children.begin() : children.end();
     if (it != children.end()) {

@@ -400,8 +400,7 @@ passes::LibNodeExpander::ExpandOutcome LayerNormNode::
     expand(passes::LibNodeExpander::ExpandContext& context, structured_control_flow::Block& block) {
     // y, mean, rstd, x, eps, ?(gamma, ?(beta))
     std::vector<Dir>
-        access_dirs({Dir::IndirectWrite, Dir::IndirectReadWrite, Dir::IndirectReadWrite, Dir::IndirectRead, Dir::Scalar}
-        );
+        access_dirs({Dir::IndirectWrite, Dir::IndirectReadWrite, Dir::IndirectReadWrite, Dir::IndirectRead, Dir::Scalar});
     if (this->elementwise_affine_) {
         access_dirs.push_back(Dir::IndirectRead);
         if (this->bias_) {

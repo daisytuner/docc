@@ -110,8 +110,10 @@ public:
         if (symbolic::null_safe_eq(symbolic::sub(indvar_bounds->map(), indvar_bounds->symbol()), stride)) {
             return SymEngine::function_symbol(
                 "indvar",
-                {indvar_bounds->tight_lower_bound(), indvar_bounds->tight_upper_bound(), stride, symbolic::integer(level)
-                }
+                {indvar_bounds->tight_lower_bound(),
+                 indvar_bounds->tight_upper_bound(),
+                 stride,
+                 symbolic::integer(level)}
             );
         } else {
             return {};

@@ -526,8 +526,8 @@ TEST(StructuredSDFGConversionTest, ComplexLoopWithBreakAndUpdates) {
                             ASSERT_GE(c2_case.first.size(), 1);
                             EXPECT_NE(
                                 dynamic_cast<const structured_control_flow::Continue*>(&c2_case.first
-                                                                                            .at(c2_case.first.size() - 1
-                                                                                            )),
+                                                                                            .at(c2_case.first.size() -
+                                                                                                1)),
                                 nullptr
                             );
                         } else if (symbolic::eq(c2_case.second, symbolic::Not(c2))) {
@@ -535,8 +535,8 @@ TEST(StructuredSDFGConversionTest, ComplexLoopWithBreakAndUpdates) {
                             ASSERT_GE(c2_case.first.size(), 1);
                             EXPECT_NE(
                                 dynamic_cast<const structured_control_flow::Continue*>(&c2_case.first
-                                                                                            .at(c2_case.first.size() - 1
-                                                                                            )),
+                                                                                            .at(c2_case.first.size() -
+                                                                                                1)),
                                 nullptr
                             );
                         }

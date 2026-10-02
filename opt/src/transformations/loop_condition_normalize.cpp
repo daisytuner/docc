@@ -311,9 +311,10 @@ symbolic::Condition isolate_indvar_in_relational(const symbolic::Condition& cond
     };
 
     // Helper to process a binary relational
-    auto process_relational =
-        [&](const symbolic::Expression& lhs, const symbolic::Expression& rhs, auto make_same_rel, auto make_flipped_rel
-        ) -> symbolic::Condition {
+    auto process_relational = [&](const symbolic::Expression& lhs,
+                                  const symbolic::Expression& rhs,
+                                  auto make_same_rel,
+                                  auto make_flipped_rel) -> symbolic::Condition {
         bool lhs_has_indvar = symbolic::uses(lhs, indvar->get_name());
         bool rhs_has_indvar = symbolic::uses(rhs, indvar->get_name());
 

@@ -161,18 +161,21 @@ symbolic::MultiExpression ConvNode::get_out_shape() {
     // out_shape[i] = (shape[i + 2] + pads[i] + pads[dims + i] - dilations[i] * (kernel_shape[i] - 1) - 1)
     //                 / strides[i] + 1
     for (size_t i = 0; i < dims; i++) {
-        out_shape.push_back(symbolic::add(
-            symbolic::div(
-                symbolic::sub(
-                    symbolic::
-                        sub(symbolic::add(this->shape_[i + 2], symbolic::add(this->pads_[i], this->pads_[dims + i])),
-                            symbolic::mul(this->dilations_[i], symbolic::sub(this->kernel_shape_[i], symbolic::one()))),
-                    symbolic::one()
+        out_shape.push_back(
+            symbolic::add(
+                symbolic::div(
+                    symbolic::sub(
+                        symbolic::sub(
+                            symbolic::add(this->shape_[i + 2], symbolic::add(this->pads_[i], this->pads_[dims + i])),
+                            symbolic::mul(this->dilations_[i], symbolic::sub(this->kernel_shape_[i], symbolic::one()))
+                        ),
+                        symbolic::one()
+                    ),
+                    this->strides_[i]
                 ),
-                this->strides_[i]
-            ),
-            symbolic::one()
-        ));
+                symbolic::one()
+            )
+        );
     }
     return out_shape;
 }
@@ -382,9 +385,11 @@ passes::LibNodeExpander::ExpandOutcome ConvNode::
     symbolic::MultiExpression is;
     is.reserve(dims);
     for (size_t i = 0; i < dims; i++) {
-        is.push_back(symbolic::
-                         add(symbolic::sub(symbolic::mul(os[i], this->strides_[i]), this->pads_[i]),
-                             symbolic::mul(ks[i], this->dilations_[i])));
+        is.push_back(
+            symbolic::
+                add(symbolic::sub(symbolic::mul(os[i], this->strides_[i]), this->pads_[i]),
+                    symbolic::mul(ks[i], this->dilations_[i]))
+        );
     }
 
     // If convolution is padded, add branch to stay in bounds for computation

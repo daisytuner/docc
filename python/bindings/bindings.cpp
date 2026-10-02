@@ -79,15 +79,16 @@ void register_core_passes(plugins::Context& context) {
         context.option_registry().register_option(spec);
     }
     // Shared option consumed by BoundAnalysis across many analyses/passes.
-    context.option_registry()
-        .register_option(symbolic::BOUND_BUDGET
-                             .spec(symbolic::DEFAULT_BOUND_BUDGET, "Proof-search work budget for symbolic bound analysis")
-        );
+    context.option_registry().register_option(
+        symbolic::BOUND_BUDGET
+            .spec(symbolic::DEFAULT_BOUND_BUDGET, "Proof-search work budget for symbolic bound analysis")
+    );
     // Opt-in adaptive sampling: wrap each instrumented region in a loop that
     // repeats the measurement until its runtime confidence interval converges.
-    context.option_registry()
-        .register_option(codegen::INSTRUMENTATION_ADAPTIVE_SAMPLING
-                             .spec(false, "Wrap instrumented regions in an adaptive (CI-based) sampling loop"));
+    context.option_registry().register_option(
+        codegen::INSTRUMENTATION_ADAPTIVE_SAMPLING
+            .spec(false, "Wrap instrumented regions in an adaptive (CI-based) sampling loop")
+    );
 }
 } // namespace passes
 } // namespace sdfg
@@ -367,8 +368,8 @@ PYBIND11_MODULE(_sdfg, m) {
         )
         .def(
             "schedule",
-            static_cast<void (PyStructuredSDFG::*)(const docc::target::TargetOptions&, bool)>(&PyStructuredSDFG::schedule
-            ),
+            static_cast<
+                void (PyStructuredSDFG::*)(const docc::target::TargetOptions&, bool)>(&PyStructuredSDFG::schedule),
             py::arg("options"),
             py::arg("schedule_loops") = true,
             "Schedule the SDFG"

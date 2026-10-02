@@ -26,9 +26,14 @@ std::string CUDAStdlibDataTransferExtraction::create_device_container(
     builder::StructuredSDFGBuilder& builder, const types::Pointer& type, const symbolic::Expression& size
 ) {
     auto new_type = type.clone();
-    new_type->storage_type(types::StorageType(
-        "NV_Generic", size, types::StorageType::AllocationType::Unmanaged, types::StorageType::AllocationType::Unmanaged
-    ));
+    new_type->storage_type(
+        types::StorageType(
+            "NV_Generic",
+            size,
+            types::StorageType::AllocationType::Unmanaged,
+            types::StorageType::AllocationType::Unmanaged
+        )
+    );
     auto device_container = builder.find_new_name(CUDA_DEVICE_PREFIX);
     builder.add_container(device_container, *new_type);
     return device_container;
@@ -226,8 +231,8 @@ void CUDAStdlibDataTransferExtraction::apply_memcpy(
 
     // Handle _src (read) - need H2D transfer
     auto src_edge = dfg.in_edge_for_connector(memcpy_node, "_src");
-    auto& src_access_node = const_cast<data_flow::AccessNode&>(static_cast<const data_flow::AccessNode&>(src_edge->src()
-    ));
+    auto& src_access_node =
+        const_cast<data_flow::AccessNode&>(static_cast<const data_flow::AccessNode&>(src_edge->src()));
     auto& src_container_name = src_access_node.data();
     auto& src_type = static_cast<const types::Pointer&>(builder.subject().type(src_container_name));
 
@@ -238,8 +243,8 @@ void CUDAStdlibDataTransferExtraction::apply_memcpy(
 
     // Handle _dst (write) - need D2H transfer
     auto dst_edge = dfg.in_edge_for_connector(memcpy_node, "_dst");
-    auto& dst_access_node = const_cast<data_flow::AccessNode&>(static_cast<const data_flow::AccessNode&>(dst_edge->src()
-    ));
+    auto& dst_access_node =
+        const_cast<data_flow::AccessNode&>(static_cast<const data_flow::AccessNode&>(dst_edge->src()));
     auto& dst_container_name = dst_access_node.data();
     auto& dst_type = static_cast<const types::Pointer&>(builder.subject().type(dst_container_name));
 

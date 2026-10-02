@@ -419,9 +419,9 @@ sdfg::structured_control_flow::Reduce& PyStructuredSDFGBuilder::begin_reduce(
     std::vector<sdfg::structured_control_flow::ReductionInfo> reduction_infos;
     reduction_infos.reserve(reductions.size());
     for (const auto& reduction : reductions) {
-        reduction_infos
-            .push_back({sdfg::structured_control_flow::reduction_operation_from_string(reduction.first), reduction.second}
-            );
+        reduction_infos.push_back(
+            {sdfg::structured_control_flow::reduction_operation_from_string(reduction.first), reduction.second}
+        );
     }
 
     auto& reduce_node = builder_.add_reduce(
@@ -519,54 +519,54 @@ void PyStructuredSDFGBuilder::
         elem_type = &dynamic_cast<const sdfg::types::Array&>(target_container_type).element_type();
     }
 
-    auto create_source_memlet = [&](const std::string& name, sdfg::data_flow::Tasklet& tasklet, const std::string& conn
-                                ) {
-        std::string src_name = name;
-        std::vector<SymEngine::RCP<const SymEngine::Basic>> src_indices;
+    auto create_source_memlet =
+        [&](const std::string& name, sdfg::data_flow::Tasklet& tasklet, const std::string& conn) {
+            std::string src_name = name;
+            std::vector<SymEngine::RCP<const SymEngine::Basic>> src_indices;
 
-        size_t open_paren = name.find('(');
-        if (open_paren != std::string::npos) {
-            src_name = name.substr(0, open_paren);
+            size_t open_paren = name.find('(');
+            if (open_paren != std::string::npos) {
+                src_name = name.substr(0, open_paren);
 
-            // Find matching closing parenthesis
-            size_t close_paren = std::string::npos;
-            int balance = 0;
-            for (size_t i = open_paren; i < name.length(); ++i) {
-                if (name[i] == '(') {
-                    balance++;
-                } else if (name[i] == ')') {
-                    balance--;
+                // Find matching closing parenthesis
+                size_t close_paren = std::string::npos;
+                int balance = 0;
+                for (size_t i = open_paren; i < name.length(); ++i) {
+                    if (name[i] == '(') {
+                        balance++;
+                    } else if (name[i] == ')') {
+                        balance--;
+                    }
+
+                    if (balance == 0) {
+                        close_paren = i;
+                        break;
+                    }
                 }
 
-                if (balance == 0) {
-                    close_paren = i;
-                    break;
+                if (close_paren != std::string::npos) {
+                    std::string idx_str = name.substr(open_paren + 1, close_paren - open_paren - 1);
+                    auto index_sym = parse_and_expand(idx_str);
+                    src_indices.push_back(index_sym);
                 }
             }
 
-            if (close_paren != std::string::npos) {
-                std::string idx_str = name.substr(open_paren + 1, close_paren - open_paren - 1);
-                auto index_sym = parse_and_expand(idx_str);
-                src_indices.push_back(index_sym);
+            if (builder_.subject().exists(src_name)) {
+                auto& src = builder_.add_access(block, src_name, debug_info);
+                auto& src_type = builder_.subject().type(src_name);
+
+                const sdfg::types::IType* src_memlet_type = &src_type;
+                sdfg::types::Scalar ptr_scalar(sdfg::types::PrimitiveType::UInt64);
+                if (src_type.type_id() == sdfg::types::TypeID::Pointer && src_indices.empty()) {
+                    src_memlet_type = &ptr_scalar;
+                }
+
+                builder_.add_computational_memlet(block, src, tasklet, conn, src_indices, *src_memlet_type, debug_info);
+            } else {
+                auto& src = builder_.add_constant(block, name, *elem_type, debug_info);
+                builder_.add_computational_memlet(block, src, tasklet, conn, {}, *elem_type, debug_info);
             }
-        }
-
-        if (builder_.subject().exists(src_name)) {
-            auto& src = builder_.add_access(block, src_name, debug_info);
-            auto& src_type = builder_.subject().type(src_name);
-
-            const sdfg::types::IType* src_memlet_type = &src_type;
-            sdfg::types::Scalar ptr_scalar(sdfg::types::PrimitiveType::UInt64);
-            if (src_type.type_id() == sdfg::types::TypeID::Pointer && src_indices.empty()) {
-                src_memlet_type = &ptr_scalar;
-            }
-
-            builder_.add_computational_memlet(block, src, tasklet, conn, src_indices, *src_memlet_type, debug_info);
-        } else {
-            auto& src = builder_.add_constant(block, name, *elem_type, debug_info);
-            builder_.add_computational_memlet(block, src, tasklet, conn, {}, *elem_type, debug_info);
-        }
-    };
+        };
 
     // 1. Assignment (s = 0 or s = x or A[i] = x)
     if (SymEngine::is_a<SymEngine::Integer>(*expr) || SymEngine::is_a<SymEngine::RealDouble>(*expr) ||
@@ -769,8 +769,7 @@ void PyStructuredSDFGBuilder::add_memlet(
         }
     }
     if (!type) {
-        throw std::runtime_error("Could not determine type for memlet (neither src nor dst is AccessNode/ConstantNode)"
-        );
+        throw std::runtime_error("Could not determine type for memlet (neither src nor dst is AccessNode/ConstantNode)");
     }
 
     if (auto* t_src = dynamic_cast<sdfg::data_flow::Tasklet*>(&src)) {

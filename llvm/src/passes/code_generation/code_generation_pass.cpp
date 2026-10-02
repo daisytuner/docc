@@ -948,8 +948,8 @@ std::list<std::unique_ptr<sdfg::StructuredSDFG>> CodeGenerationPass::
                 auto& dst = static_cast<sdfg::data_flow::AccessNode&>(oedge.dst());
                 copy_buffer = dst.data();
             }
-        } else if (auto* external_offloading_node = dynamic_cast<sdfg::offloading::ExternalDataOffloadingNode*>(libnode
-                   )) {
+        } else if (auto* external_offloading_node =
+                       dynamic_cast<sdfg::offloading::ExternalDataOffloadingNode*>(libnode)) {
             if (external_offloading_node->is_h2d()) {
                 copy_in = true;
                 alloc = external_offloading_node->is_alloc();
@@ -1372,8 +1372,8 @@ std::list<std::unique_ptr<sdfg::StructuredSDFG>> CodeGenerationPass::
                 auto& src = static_cast<sdfg::data_flow::AccessNode&>(iedge.src());
                 copy_buffer = src.data();
             }
-        } else if (auto* external_offloading_node = dynamic_cast<sdfg::offloading::ExternalDataOffloadingNode*>(libnode
-                   )) {
+        } else if (auto* external_offloading_node =
+                       dynamic_cast<sdfg::offloading::ExternalDataOffloadingNode*>(libnode)) {
             if (external_offloading_node->is_d2h()) {
                 copy_out = true;
                 free = external_offloading_node->is_free();

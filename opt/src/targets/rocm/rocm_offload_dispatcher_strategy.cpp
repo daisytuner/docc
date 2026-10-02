@@ -83,8 +83,7 @@ std::string ROCMOffloadDispatcherStrategy::kernel_header_file_extension() const 
     return KERNEL_SNIPPET_HEADER_EXT;
 }
 
-std::string ROCMOffloadDispatcherStrategy::warp_shuffle_xor(const std::string& value, const std::string& lane_mask)
-    const {
+std::string ROCMOffloadDispatcherStrategy::warp_shuffle_xor(const std::string& value, const std::string& lane_mask) const {
     // HIP's __shfl_xor_sync requires a 64-bit membership mask (static_assert on
     // sizeof(mask) == 8), so the literal is always ULL-typed. The value covers
     // exactly the physical wavefront: the low 32 bits for wave32 (RDNA), all 64

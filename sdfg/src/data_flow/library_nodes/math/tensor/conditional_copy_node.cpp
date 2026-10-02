@@ -212,10 +212,9 @@ using Dir = passes::LibNodeExpander::InputUse;
 
 passes::LibNodeExpander::ExpandOutcome ConditionalTensorCopyNode::
     expand(passes::LibNodeExpander::ExpandContext& context, structured_control_flow::Block& block) {
-    auto standalone =
-        context
-            .replacement_requires_access_nodes({Dir::IndirectRead, Dir::IndirectRead, Dir::IndirectRead, Dir::IndirectWrite}
-            );
+    auto standalone = context.replacement_requires_access_nodes(
+        {Dir::IndirectRead, Dir::IndirectRead, Dir::IndirectRead, Dir::IndirectWrite}
+    );
 
     if (!standalone) {
         return context.unable();
@@ -402,8 +401,8 @@ void ConditionalTensorCopyNode::replace(const symbolic::ExpressionMapping& repla
 }
 
 nlohmann::json ConditionalTensorCopyNodeSerializer::serialize(const data_flow::LibraryNode& library_node) {
-    const ConditionalTensorCopyNode& conditional_copy_node = static_cast<const ConditionalTensorCopyNode&>(library_node
-    );
+    const ConditionalTensorCopyNode& conditional_copy_node =
+        static_cast<const ConditionalTensorCopyNode&>(library_node);
     nlohmann::json j;
 
     j["code"] = conditional_copy_node.code().value();

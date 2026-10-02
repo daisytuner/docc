@@ -294,12 +294,15 @@ TEST(MultiLevelTilingTest, ConstantExtentDropsRedundantBounds) {
     ASSERT_NE(inner, nullptr);
 
     // Middle and inner drop the global `i < 64` guard, keeping only their tile bound.
-    EXPECT_TRUE(symbolic::
-                    eq(middle->condition(),
-                       symbolic::Lt(middle->indvar(), symbolic::add(outer->indvar(), symbolic::integer(32)))));
-    EXPECT_TRUE(symbolic::
-                    eq(inner->condition(),
-                       symbolic::Lt(inner->indvar(), symbolic::add(middle->indvar(), symbolic::integer(8)))));
+    EXPECT_TRUE(
+        symbolic::
+            eq(middle->condition(),
+               symbolic::Lt(middle->indvar(), symbolic::add(outer->indvar(), symbolic::integer(32))))
+    );
+    EXPECT_TRUE(
+        symbolic::
+            eq(inner->condition(), symbolic::Lt(inner->indvar(), symbolic::add(middle->indvar(), symbolic::integer(8))))
+    );
 
     // The point loop therefore has a constant trip (unroll-ready).
     auto trip = inner->num_iterations();

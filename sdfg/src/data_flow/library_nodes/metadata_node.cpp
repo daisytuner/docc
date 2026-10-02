@@ -31,8 +31,8 @@ symbolic::SymbolSet MetadataNode::symbols() const {
     return symbolic::SymbolSet();
 }
 
-std::unique_ptr<DataFlowNode> MetadataNode::clone(size_t element_id, const graph::Vertex vertex, DataFlowGraph& parent)
-    const {
+std::unique_ptr<DataFlowNode> MetadataNode::
+    clone(size_t element_id, const graph::Vertex vertex, DataFlowGraph& parent) const {
     return std::make_unique<MetadataNode>(element_id, debug_info_, vertex, parent, outputs_, inputs_, metadata_);
 }
 

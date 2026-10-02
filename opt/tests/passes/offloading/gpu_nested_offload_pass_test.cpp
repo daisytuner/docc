@@ -136,8 +136,7 @@ TEST(GPUNestedOffloadPassTest, Depth2_XBlock_CUDA) {
 
     EXPECT_EQ(inner.schedule_type().value(), cuda::ScheduleType_CUDA_Offload::value());
     EXPECT_EQ(cuda::ScheduleType_CUDA_Offload::target_level(inner.schedule_type()), gpu::TargetLevel::X_BLOCK);
-    EXPECT_TRUE(symbolic::eq(cuda::ScheduleType_CUDA_Offload::parallel_size(inner.schedule_type()), symbolic::integer(64))
-    );
+    EXPECT_TRUE(symbolic::eq(cuda::ScheduleType_CUDA_Offload::parallel_size(inner.schedule_type()), symbolic::integer(64)));
 }
 
 TEST(GPUNestedOffloadPassTest, Depth2_XBlock_ROCM) {
@@ -351,8 +350,7 @@ TEST(GPUNestedOffloadPassTest, Depth4_YGridXBlockYBlock) {
     EXPECT_EQ(cuda::ScheduleType_CUDA_Offload::target_level(c2.schedule_type()), gpu::TargetLevel::Y_BLOCK);
 
     // Y_GRID uses the exact iteration count.
-    EXPECT_TRUE(symbolic::eq(cuda::ScheduleType_CUDA_Offload::parallel_size(c0.schedule_type()), symbolic::integer(100))
-    );
+    EXPECT_TRUE(symbolic::eq(cuda::ScheduleType_CUDA_Offload::parallel_size(c0.schedule_type()), symbolic::integer(100)));
 }
 
 TEST(GPUNestedOffloadPassTest, OuterNotOffloaded_ReturnsFalse) {

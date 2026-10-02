@@ -124,8 +124,8 @@ public:
          * @return null, if cannot be provided. Otherwise a handle to create arbitrarily many copies of access nodes
          * fitting the access_dirs
          */
-        virtual std::unique_ptr<AccessNodeExpand> replacement_requires_access_nodes(const std::vector<InputUse>&
-                                                                                        access_dirs) = 0;
+        virtual std::unique_ptr<AccessNodeExpand>
+        replacement_requires_access_nodes(const std::vector<InputUse>& access_dirs) = 0;
 
         // TODO virtual std::unique_ptr<DataflowExpand> replace_dataflow() = 0;
         // this would be a quicker way, when the expansion only consists of pure dataflow, where base expansion

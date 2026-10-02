@@ -186,8 +186,9 @@ TEST(CudaTransformIm2colTest, ExplicitSixDimMap) {
 
     ScheduleType seq = ScheduleType_Sequential::create();
 
-    auto add_simple_map = [&](structured_control_flow::Sequence& parent, const std::string& name, long long bound
-                          ) -> structured_control_flow::Map& {
+    auto add_simple_map = [&](structured_control_flow::Sequence& parent,
+                              const std::string& name,
+                              long long bound) -> structured_control_flow::Map& {
         return builder
             .add_map(parent, s(name), symbolic::Lt(s(name), i(bound)), i(0), symbolic::add(s(name), i(1)), seq);
     };

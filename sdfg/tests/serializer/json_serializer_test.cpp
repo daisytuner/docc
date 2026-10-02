@@ -544,8 +544,9 @@ TEST(JSONSerializerTest, ForNodeToJSON) {
     EXPECT_TRUE(j.contains("init"));
     EXPECT_EQ(j["init"], "0");
     EXPECT_TRUE(j.contains("update"));
-    EXPECT_TRUE(symbolic::
-                    eq(SymEngine::Expression(j["update"]), symbolic::add(symbolic::symbol("i"), symbolic::integer(1))));
+    EXPECT_TRUE(
+        symbolic::eq(SymEngine::Expression(j["update"]), symbolic::add(symbolic::symbol("i"), symbolic::integer(1)))
+    );
     EXPECT_TRUE(j.contains("root"));
     EXPECT_EQ(j["root"]["type"], "sequence");
     EXPECT_EQ(j["root"]["children"].size(), 1);
@@ -757,8 +758,9 @@ TEST(JSONSerializerTest, MapToJSON) {
     EXPECT_TRUE(j.contains("init"));
     EXPECT_EQ(j["init"], "0");
     EXPECT_TRUE(j.contains("update"));
-    EXPECT_TRUE(symbolic::
-                    eq(SymEngine::Expression(j["update"]), symbolic::add(symbolic::symbol("i"), symbolic::integer(1))));
+    EXPECT_TRUE(
+        symbolic::eq(SymEngine::Expression(j["update"]), symbolic::add(symbolic::symbol("i"), symbolic::integer(1)))
+    );
     EXPECT_TRUE(j.contains("condition"));
     EXPECT_EQ(j["condition"], "(i < 10)");
     EXPECT_TRUE(j.contains("root"));
@@ -800,8 +802,9 @@ TEST(JSONSerializerTest, ReduceToJSON) {
     EXPECT_TRUE(j.contains("init"));
     EXPECT_EQ(j["init"], "0");
     EXPECT_TRUE(j.contains("update"));
-    EXPECT_TRUE(symbolic::
-                    eq(SymEngine::Expression(j["update"]), symbolic::add(symbolic::symbol("i"), symbolic::integer(1))));
+    EXPECT_TRUE(
+        symbolic::eq(SymEngine::Expression(j["update"]), symbolic::add(symbolic::symbol("i"), symbolic::integer(1)))
+    );
     EXPECT_TRUE(j.contains("condition"));
     EXPECT_EQ(j["condition"], "(i < 10)");
     EXPECT_TRUE(j.contains("reductions"));

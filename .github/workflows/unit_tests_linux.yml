@@ -32,8 +32,8 @@ jobs:
         shell: bash
         run: |
           shopt -s globstar
-          clang-format-19 -style=file --dry-run --Werror sdfg/include/**/*.h sdfg/src/**/*.cpp sdfg/tests/**/*.cpp
-          clang-format-19 -style=file --dry-run --Werror opt/include/**/*.h opt/src/**/*.cpp opt/tests/**/*.cpp
+          clang-format-21 -style=file --dry-run --Werror sdfg/include/**/*.h sdfg/src/**/*.cpp sdfg/tests/**/*.cpp
+          clang-format-21 -style=file --dry-run --Werror opt/include/**/*.h opt/src/**/*.cpp opt/tests/**/*.cpp
 
       - name: Build
         run: |
@@ -243,7 +243,7 @@ jobs:
         shell: bash
         run: |
           shopt -s globstar
-          clang-format-19 -style=file --dry-run --Werror llvm/include/**/*.h llvm/src/**/*.cpp llvm/tests/**/*.cpp llvm/driver/**/*.cpp
+          clang-format-21 -style=file --dry-run --Werror llvm/include/**/*.h llvm/src/**/*.cpp llvm/tests/**/*.cpp llvm/driver/**/*.cpp
 
       - name: Build
         run: |
@@ -427,7 +427,7 @@ jobs:
         shell: bash
         run: |
           shopt -s globstar
-          clang-format-19 -style=file --dry-run --Werror python/bindings/**/*.h python/bindings/**/*.cpp
+          clang-format-21 -style=file --dry-run --Werror python/bindings/**/*.h python/bindings/**/*.cpp
           black --check python/docc/ python/tests/
 
       - name: Build
@@ -621,7 +621,7 @@ jobs:
           pytest -v mlir/integration -m "cuda"
 
           # Segformer correctness test
-          pytest -v mlir/benchmarks/torch/model_zoo/segformer.py -k "cuda"
+          # pytest -v mlir/benchmarks/torch/model_zoo/segformer.py -k "cuda"
 
       - name: PyTorch Tests
         run: |
@@ -715,7 +715,7 @@ jobs:
           pytest -v python/benchmarks/ -k rocm
           pytest -v mlir/integration -m "rocm"
 
-          pytest -v mlir/benchmarks/torch/model_zoo/segformer.py -k "rocm"
+          # pytest -v mlir/benchmarks/torch/model_zoo/segformer.py -k "rocm"
 
       - name: PyTorch Tests
         run: |

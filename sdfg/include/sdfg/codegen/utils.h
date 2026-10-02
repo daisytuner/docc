@@ -89,8 +89,8 @@ public:
      *
      * Replaces occurrences of symbolic expressions on the type.
      */
-    virtual void replace_symbols(const symbolic::Expression old_expression, const symbolic::Expression new_expression)
-        override;
+    virtual void
+    replace_symbols(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override;
     virtual void replace_symbols(const symbolic::ExpressionMapping& replacements) override;
 };
 

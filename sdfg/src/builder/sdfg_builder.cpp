@@ -155,8 +155,7 @@ control_flow::ReturnState& SDFGBuilder::
     auto res = this->sdfg_->states_.insert(
         {vertex,
          std::unique_ptr<
-             control_flow::State>(new control_flow::ReturnState(this->new_element_id(), debug_info, vertex, data, type))
-        }
+             control_flow::State>(new control_flow::ReturnState(this->new_element_id(), debug_info, vertex, data, type))}
     );
 
     assert(res.second);
@@ -355,8 +354,7 @@ data_flow::AccessNode& SDFGBuilder::
     auto res = dataflow.nodes_.insert(
         {vertex,
          std::unique_ptr<
-             data_flow::AccessNode>(new data_flow::AccessNode(this->new_element_id(), debug_info, vertex, dataflow, data)
-         )}
+             data_flow::AccessNode>(new data_flow::AccessNode(this->new_element_id(), debug_info, vertex, dataflow, data))}
     );
 
     return static_cast<data_flow::AccessNode&>(*(res.first->second));

@@ -24,8 +24,10 @@ llvm::cl::opt<std::string> DOCC_WORK_DIR(
 llvm::cl::opt<bool> DOCC_FORCE_SYNCHRONOUS_OFFLOADING(
     "docc-offloading-force-synchronous",
     llvm::cl::init(false),
-    llvm::cl::desc("Force all parts of offloading possible to be synchronous (slower, but easier "
-                   "to debug and to see the time it takes")
+    llvm::cl::desc(
+        "Force all parts of offloading possible to be synchronous (slower, but easier "
+        "to debug and to see the time it takes"
+    )
 );
 
 llvm::cl::opt<bool> DOCC_SAVE_TEMPS(
@@ -37,7 +39,7 @@ llvm::cl::opt<std::string> DOCC_DUMP_GLBL_CFG(
     "docc-dump-glbl-cfg",
     llvm::cl::desc("Path to dump global cfgs"),
     llvm::cl::ValueOptional,
-    llvm::cl::callback([](const std::string &Val) {
+    llvm::cl::callback([](const std::string& Val) {
         DOCC_DUMP_GLBL_CFG_EN = true;
     })
 );
@@ -89,7 +91,7 @@ std::string collect_subcompile_override_flags() {
     } else {
         std::ostringstream buf;
 
-        for (const auto &item : DOCC_COMP_OPTS) {
+        for (const auto& item : DOCC_COMP_OPTS) {
             buf << item << " ";
         }
         return buf.str();

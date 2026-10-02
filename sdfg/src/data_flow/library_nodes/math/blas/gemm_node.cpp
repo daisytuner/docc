@@ -2,11 +2,28 @@
 
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/tensor_layout.h"
 #include "sdfg/types/utils.h"
 
 namespace sdfg {
 namespace math {
 namespace blas {
+
+namespace {
+
+math::tensor::TensorLayout build_operand_layout(
+    const symbolic::Expression& outer,
+    const symbolic::Expression& inner,
+    const symbolic::Expression& ld,
+    bool row_major_branch
+) {
+    symbolic::MultiExpression shape = {outer, inner};
+    symbolic::MultiExpression strides = row_major_branch ? symbolic::MultiExpression{ld, symbolic::integer(1)}
+                                                         : symbolic::MultiExpression{symbolic::integer(1), ld};
+    return math::tensor::TensorLayout(shape, strides, symbolic::integer(0));
+}
+
+} // namespace
 
 GEMMNode::GEMMNode(
     size_t element_id,
@@ -188,8 +205,9 @@ passes::LibNodeExpander::ExpandOutcome GEMMNode::
     bool beta_is_zero = beta_edge->is_src_constant(0.0);
     bool beta_is_one = beta_edge->is_src_constant(1.0);
 
-    auto add_loop = [&](structured_control_flow::Sequence& scope, size_t dim, bool as_map
-                    ) -> structured_control_flow::StructuredLoop& {
+    auto add_loop = [&](structured_control_flow::Sequence& scope,
+                        size_t dim,
+                        bool as_map) -> structured_control_flow::StructuredLoop& {
         std::string iv = builder.find_new_name(indvar_names[dim]);
         auto& indvar_end = indvar_ends[dim];
         auto indvar_type = types::get_primitive_type_to_hold_upper_bound(indvar_end);
@@ -381,29 +399,75 @@ symbolic::Expression GEMMNode::calc_matrix_access_range(
 
 
 data_flow::PointerAccessType GEMMNode::pointer_access_type(int input_idx) const {
+    // Whether operand X's consumed region is row-major (unit inner stride): the
+    // physical contiguous axis flips with both the transpose flag and the global
+    // CBLAS layout. Mirrors calc_matrix_access_range's outer/inner span choice.
+    const bool a_row_major = (trans_a_ == BLAS_Transpose::No) ^ (layout_ == BLAS_Layout::ColMajor);
+    const bool b_row_major = (trans_b_ == BLAS_Transpose::No) ^ (layout_ == BLAS_Layout::ColMajor);
+    const bool c_row_major = (layout_ == BLAS_Layout::RowMajor);
     if (input_idx == 0) { // A: m x k
-        return data_flow::PointerAccessMeta::
-            create_read_only(calc_matrix_access_range(m_, k_, lda_, trans_a_, layout_), true);
+        return data_flow::PointerAccessMeta::create_read_only(
+            calc_matrix_access_range(m_, k_, lda_, trans_a_, layout_),
+            true,
+            build_operand_layout(m_, k_, lda_, a_row_major)
+        );
     } else if (input_idx == 1) { // B: k x n
-        return data_flow::PointerAccessMeta::
-            create_read_only(calc_matrix_access_range(k_, n_, ldb_, trans_b_, layout_), true);
+        return data_flow::PointerAccessMeta::create_read_only(
+            calc_matrix_access_range(k_, n_, ldb_, trans_b_, layout_),
+            true,
+            build_operand_layout(k_, n_, ldb_, b_row_major)
+        );
     } else if (input_idx == 2) {
+        auto c_layout = build_operand_layout(m_, n_, ldc_, c_row_major);
         // for beta == 0, there would no reads of C. But we currently have no mechanism to access const-prop knowledge
         // like tha
         if (symbolic::eq(ldc_, n_)) { // non-sparse access over the m x n range
-            return data_flow::PointerAccessMeta::
-                create_full_write_only(calc_matrix_access_range(m_, n_, ldc_, BLAS_Transpose::No, layout_), true);
+            return data_flow::PointerAccessMeta::create_full_write_only(
+                calc_matrix_access_range(m_, n_, ldc_, BLAS_Transpose::No, layout_), true, std::move(c_layout)
+            );
         } else {
-            // sparse access. But with only Convex Pattern for now, we cannot represent which values are
-            auto pattern =
-                data_flow::ConvexAccessPattern::create(calc_matrix_access_range(m_, n_, ldc_, BLAS_Transpose::No, layout_)
-                );
-            // full-overwritten and which are DC.
-            return data_flow::PointerAccessMeta::create_generic(pattern->ref(), std::move(pattern), true);
+            // Strided C (ldc != n): the layout describes the accessed m x n region
+            // exactly (covers_all), unlike the old flat convex over-approximation.
+            data_flow::AccessRegion region{true, c_layout, true};
+            return data_flow::PointerAccessMeta::create_generic(region, region, true);
         }
     } else {
         return LibraryNode::pointer_access_type(input_idx);
     }
+}
+
+bool GEMMNode::relocalize_operand(int input_idx, const math::tensor::TensorLayout& packed) {
+    if (!can_relocalize_operand(input_idx, packed)) {
+        return false;
+    }
+    // The buffer is stored in the operand's own orientation (the copy preserves it),
+    // so the new leading dimension is the packed non-unit stride; the layout/trans
+    // flags are unchanged.
+    const bool unit0 = symbolic::eq(packed.get_stride(0), symbolic::integer(1));
+    const auto& leading = unit0 ? packed.get_stride(1) : packed.get_stride(0);
+    if (input_idx == A_INPUT_IDX) {
+        lda_ = leading;
+    } else if (input_idx == B_INPUT_IDX) {
+        ldb_ = leading;
+    } else {
+        ldc_ = leading;
+    }
+    return true;
+}
+
+bool GEMMNode::can_relocalize_operand(int input_idx, const math::tensor::TensorLayout& packed) const {
+    // Any operand whose packed tile is a clean 2D dense region (exactly one unit-
+    // stride axis): the buffer keeps the operand's orientation, so localization is
+    // just a tighter leading dimension regardless of layout/transpose.
+    if (packed.dims() != 2) {
+        return false;
+    }
+    if (input_idx != A_INPUT_IDX && input_idx != B_INPUT_IDX && input_idx != C_INPUT_IDX) {
+        return false;
+    }
+    const bool unit0 = symbolic::eq(packed.get_stride(0), symbolic::integer(1));
+    const bool unit1 = symbolic::eq(packed.get_stride(1), symbolic::integer(1));
+    return unit0 != unit1;
 }
 
 nlohmann::json GEMMNodeSerializer::serialize(const data_flow::LibraryNode& library_node) {

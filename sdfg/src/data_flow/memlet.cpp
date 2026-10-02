@@ -47,8 +47,7 @@ void Memlet::validate(const Function& function) const {
                 data_node = dynamic_cast<const AccessNode*>(&this->src_);
                 code_node = dynamic_cast<const CodeNode*>(&this->dst_);
                 if (!data_node || !code_node) {
-                    throw InvalidSDFGException("Memlet: Computation memlets must connect a code node and an access node"
-                    );
+                    throw InvalidSDFGException("Memlet: Computation memlets must connect a code node and an access node");
                 }
 
                 // Criterion: Non-void connector must be an input of the code node
@@ -60,8 +59,7 @@ void Memlet::validate(const Function& function) const {
                 data_node = dynamic_cast<const AccessNode*>(&this->dst_);
                 code_node = dynamic_cast<const CodeNode*>(&this->src_);
                 if (!data_node || !code_node) {
-                    throw InvalidSDFGException("Memlet: Computation memlets must connect a code node and an access node"
-                    );
+                    throw InvalidSDFGException("Memlet: Computation memlets must connect a code node and an access node");
                 }
 
                 // Criterion: Non-void connector must be an output of the code node

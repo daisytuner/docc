@@ -30,8 +30,10 @@ static llvm::cl::opt<std::string> PrintEntrypoints(
 static llvm::cl::opt<std::string> LibEntrypoints(
     "docc-globalcfg-lib-entry-points",
     llvm::cl::init(""),
-    llvm::cl::desc("Path to a file containing a list of function names, defining relevant entry points into the "
-                   "globalcfg. main is always included.")
+    llvm::cl::desc(
+        "Path to a file containing a list of function names, defining relevant entry points into the "
+        "globalcfg. main is always included."
+    )
 );
 
 static llvm::raw_ostream& warning() {

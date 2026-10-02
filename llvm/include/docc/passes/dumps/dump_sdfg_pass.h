@@ -20,11 +20,11 @@ public:
     }
 
 
-    static bool available(analysis::AnalysisManager &AM) {
+    static bool available(analysis::AnalysisManager& AM) {
         return true;
     }
 
-    llvm::PreservedAnalyses run(llvm::Module &Module, llvm::ModuleAnalysisManager &MAM, analysis::AnalysisManager &AM);
+    llvm::PreservedAnalyses run(llvm::Module& Module, llvm::ModuleAnalysisManager& MAM, analysis::AnalysisManager& AM);
 };
 
 } // namespace passes

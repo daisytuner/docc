@@ -39,8 +39,7 @@ public:
 
     void replace(const symbolic::ExpressionMapping& replacements) override;
 
-    std::unique_ptr<DataFlowNode> clone(size_t element_id, const graph::Vertex vertex, DataFlowGraph& parent)
-        const override;
+    std::unique_ptr<DataFlowNode> clone(size_t element_id, const graph::Vertex vertex, DataFlowGraph& parent) const override;
 };
 
 class InvokeNodeSerializer : public serializer::LibraryNodeSerializer {

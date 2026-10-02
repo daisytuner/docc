@@ -113,8 +113,8 @@ class LoopFusionHandler : public loop_fusion::PatternHandler, loop_fusion::LoopF
 public:
     LoopFusionHandler(const LoopFusionConfig& config, LoopFusionPass::State& state);
 
-    loop_fusion::PatternHandler::MatchResult match(StructuredLoop& first, StructuredLoop& second, bool no_uses_between)
-        override;
+    loop_fusion::PatternHandler::MatchResult
+    match(StructuredLoop& first, StructuredLoop& second, bool no_uses_between) override;
 
     loop_fusion::PatternHandler::MatchResult try_complex_fuse_producer_into_consumer(
         FusionLoopCandidate& first, FusionLoopCandidate& second, bool no_uses_between, bool domains_match

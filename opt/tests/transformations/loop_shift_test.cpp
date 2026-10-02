@@ -74,9 +74,10 @@ TEST(LoopShiftTest, ShiftToZero) {
     // Verify loop now starts at 0
     EXPECT_TRUE(symbolic::eq(loop->init(), symbolic::integer(0)));
     EXPECT_TRUE(symbolic::eq(loop->indvar(), symbolic::symbol("i")));
-    EXPECT_TRUE(symbolic::
-                    eq(loop->condition(),
-                       symbolic::Lt(symbolic::add(symbolic::symbol("i"), symbolic::integer(3)), symbolic::symbol("N")))
+    EXPECT_TRUE(
+        symbolic::
+            eq(loop->condition(),
+               symbolic::Lt(symbolic::add(symbolic::symbol("i"), symbolic::integer(3)), symbolic::symbol("N")))
     );
     EXPECT_TRUE(symbolic::eq(loop->update(), symbolic::add(symbolic::symbol("i"), symbolic::integer(1))));
 

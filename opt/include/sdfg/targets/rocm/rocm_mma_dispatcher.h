@@ -57,8 +57,9 @@ protected:
         MmaFragmentLayout layout
     ) const override;
 
-    void emit_frag_zero_init(codegen::CodegenOutput& out, const std::string& frag_name, types::PrimitiveType scalar_type)
-        const override;
+    void emit_frag_zero_init(
+        codegen::CodegenOutput& out, const std::string& frag_name, types::PrimitiveType scalar_type
+    ) const override;
     void emit_mma_compute(
         codegen::CodegenOutput& out,
         const std::string& frag_d_out,

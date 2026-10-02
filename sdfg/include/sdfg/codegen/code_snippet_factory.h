@@ -127,8 +127,8 @@ public:
      * Checks if this dependency would conflict with existing ones.
      * @return conflict if any: {conflicting ID, source of that ID}
      */
-    std::optional<std::pair<const std::string&, const LibDependency*>> check_for_conflicts(const LibDependency*
-                                                                                               dependency) const;
+    std::optional<std::pair<const std::string&, const LibDependency*>>
+    check_for_conflicts(const LibDependency* dependency) const;
 
     /**
      * Adds conflicts of this dependency to the list, throws if conflicts exist

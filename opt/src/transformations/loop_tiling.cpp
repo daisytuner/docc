@@ -77,10 +77,8 @@ std::vector<tiles::ReductionLoopDomain> projected_tile_domains(
     auto stride = loop.stride();
     std::vector<tiles::ReductionLoopDomain> result;
     for (size_t level = 0; level < tile_sizes.size(); ++level) {
-        auto tile_indvar =
-            symbolic::symbol(builder
-                                 .find_new_name(loop.indvar()->get_name() + "_tile_preview_" + std::to_string(level) + "_")
-            );
+        auto tile_indvar = symbolic::
+            symbol(builder.find_new_name(loop.indvar()->get_name() + "_tile_preview_" + std::to_string(level) + "_"));
         auto geometry =
             tile_geometry(loop.indvar(), header, stride, count, tile_indvar, tile_sizes[level], simplify_bounds);
         auto outer_domain = tiles::ReductionLoopDomain::from_header(tile_indvar, geometry.outer);

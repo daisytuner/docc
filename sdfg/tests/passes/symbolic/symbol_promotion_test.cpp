@@ -965,8 +965,7 @@ TEST(SymbolPromotionTest, Abs_Signed_Constant) {
     auto block1 = dynamic_cast<const structured_control_flow::AssignmentBlock*>(&child1);
     EXPECT_NE(block1, nullptr);
     EXPECT_EQ(block1->assignments().size(), 1);
-    EXPECT_TRUE(SymEngine::eq(*block1->assignments().at(sym), *symbolic::simplify(symbolic::abs(symbolic::integer(-5))))
-    );
+    EXPECT_TRUE(SymEngine::eq(*block1->assignments().at(sym), *symbolic::simplify(symbolic::abs(symbolic::integer(-5)))));
 }
 
 TEST(SymbolPromotionTest, ASHR_Constant) {

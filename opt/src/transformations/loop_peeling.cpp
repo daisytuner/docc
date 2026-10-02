@@ -178,8 +178,7 @@ static bool has_predicable_boundary(structured_control_flow::StructuredLoop& loo
 
 /// Collect the perfectly nested chain of peelable loops starting at `loop`
 /// (each level's body being exactly the next peelable loop).
-static std::vector<structured_control_flow::StructuredLoop*> collect_nest(structured_control_flow::StructuredLoop& loop
-) {
+static std::vector<structured_control_flow::StructuredLoop*> collect_nest(structured_control_flow::StructuredLoop& loop) {
     std::vector<structured_control_flow::StructuredLoop*> nest{&loop};
     auto* current = &loop;
     while (true) {

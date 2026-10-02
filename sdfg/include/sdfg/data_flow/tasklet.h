@@ -498,8 +498,8 @@ public:
      * @param parent Parent graph for the clone
      * @return Unique pointer to the cloned tasklet
      */
-    virtual std::unique_ptr<DataFlowNode> clone(size_t element_id, const graph::Vertex vertex, DataFlowGraph& parent)
-        const override;
+    virtual std::unique_ptr<DataFlowNode>
+    clone(size_t element_id, const graph::Vertex vertex, DataFlowGraph& parent) const override;
 
     /**
      * @brief Replace symbolic expressions in this tasklet

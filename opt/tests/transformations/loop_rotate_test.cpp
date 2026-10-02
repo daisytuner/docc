@@ -167,9 +167,10 @@ TEST(LoopRotateTest, SymbolicBounds) {
     EXPECT_TRUE(symbolic::eq(loop->init(), symbolic::integer(1)));
 
     // New condition: i < N + 1
-    EXPECT_TRUE(symbolic::
-                    eq(loop->condition(),
-                       symbolic::Lt(symbolic::symbol("i"), symbolic::add(symbolic::symbol("N"), symbolic::integer(1))))
+    EXPECT_TRUE(
+        symbolic::
+            eq(loop->condition(),
+               symbolic::Lt(symbolic::symbol("i"), symbolic::add(symbolic::symbol("N"), symbolic::integer(1))))
     );
 
     // Assignment should be: __i_orig__ = N + 1 - i

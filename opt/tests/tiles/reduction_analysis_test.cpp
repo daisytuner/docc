@@ -457,12 +457,16 @@ TEST(ReductionBufferAnalysisTest, SymbolicHeadersPreserveAffineCounts) {
          symbolic::add(point, symbolic::one())}
     );
     ASSERT_FALSE(guarded.count.is_null());
-    EXPECT_TRUE(symbolic::
-                    eq(SymEngine::subs(guarded.count, {{origin, symbolic::integer(3)}, {limit, symbolic::integer(5)}}),
-                       symbolic::integer(2)));
-    EXPECT_TRUE(symbolic::
-                    eq(SymEngine::subs(guarded.count, {{origin, symbolic::integer(3)}, {limit, symbolic::integer(20)}}),
-                       symbolic::integer(4)));
+    EXPECT_TRUE(
+        symbolic::
+            eq(SymEngine::subs(guarded.count, {{origin, symbolic::integer(3)}, {limit, symbolic::integer(5)}}),
+               symbolic::integer(2))
+    );
+    EXPECT_TRUE(
+        symbolic::
+            eq(SymEngine::subs(guarded.count, {{origin, symbolic::integer(3)}, {limit, symbolic::integer(20)}}),
+               symbolic::integer(4))
+    );
     const auto nonlinear = tiles::ReductionLoopDomain::from_header(
         point, {origin, symbolic::Lt(symbolic::mul(point, point), limit), symbolic::add(point, symbolic::one())}
     );
@@ -730,8 +734,7 @@ TEST(ReductionBufferAnalysisTest, DenseFootprintAndInvalidation) {
     EXPECT_EQ(result.element_bytes, 4);
     EXPECT_EQ(result.private_bytes, 16);
     EXPECT_EQ(result.shared_bytes, 0);
-    EXPECT_TRUE(symbolic::eq(result.layout->unpack(symbolic::integer(3)), symbolic::add(origin, symbolic::integer(33)))
-    );
+    EXPECT_TRUE(symbolic::eq(result.layout->unpack(symbolic::integer(3)), symbolic::add(origin, symbolic::integer(33))));
     auto independent = manager.get<tiles::ReductionBufferAnalysis>().buffer(reduction, "acc");
     static_assert(std::is_same_v<
                   decltype(manager.get<tiles::ReductionBufferAnalysis>().buffer(reduction, "acc")),

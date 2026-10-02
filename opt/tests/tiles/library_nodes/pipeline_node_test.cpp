@@ -18,16 +18,14 @@ TEST(PipelineNodeTest, ConstructAndProperties) {
     auto builder = make_builder();
     auto& block = builder.add_block(builder.subject().root());
 
-    auto& commit =
-        static_cast<tiles::PipelineCommitNode&>(builder.add_library_node<
-                                                tiles::PipelineCommitNode>(block, DebugInfo(), ImplementationType_DUMMY)
-        );
+    auto& commit = static_cast<
+        tiles::PipelineCommitNode&>(builder.add_library_node<
+                                    tiles::PipelineCommitNode>(block, DebugInfo(), ImplementationType_DUMMY));
     EXPECT_EQ(commit.code().value(), "pipeline_commit");
 
     auto& wait =
         static_cast<tiles::PipelineWaitNode&>(builder.add_library_node<
-                                              tiles::PipelineWaitNode>(block, DebugInfo(), ImplementationType_DUMMY, 1)
-        );
+                                              tiles::PipelineWaitNode>(block, DebugInfo(), ImplementationType_DUMMY, 1));
     EXPECT_EQ(wait.code().value(), "pipeline_wait");
     EXPECT_EQ(wait.keep_outstanding(), 1u);
 }
@@ -38,8 +36,7 @@ TEST(PipelineNodeTest, Clone) {
 
     auto& wait =
         static_cast<tiles::PipelineWaitNode&>(builder.add_library_node<
-                                              tiles::PipelineWaitNode>(block, DebugInfo(), ImplementationType_DUMMY, 3)
-        );
+                                              tiles::PipelineWaitNode>(block, DebugInfo(), ImplementationType_DUMMY, 3));
     auto wcloned = wait.clone(wait.element_id(), wait.vertex(), wait.get_parent());
     auto* wait_clone = dynamic_cast<tiles::PipelineWaitNode*>(wcloned.get());
     ASSERT_NE(wait_clone, nullptr);

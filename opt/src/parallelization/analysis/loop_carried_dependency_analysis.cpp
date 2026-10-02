@@ -83,7 +83,7 @@ std::vector<data_flow::Subset> collect_subsets(analysis::User& user, analysis::M
     if (user.use() == analysis::Use::READ || user.use() == analysis::Use::VIEW) {
         for (auto& edge : graph.out_edges(*access_node)) {
             if (auto* acc = mla.access(edge)) {
-                result.push_back(acc->subset);
+                result.push_back(acc->min_subset);
             } else {
                 result.push_back(edge.subset());
             }
@@ -91,7 +91,7 @@ std::vector<data_flow::Subset> collect_subsets(analysis::User& user, analysis::M
     } else if (user.use() == analysis::Use::WRITE || user.use() == analysis::Use::MOVE) {
         for (auto& edge : graph.in_edges(*access_node)) {
             if (auto* acc = mla.access(edge)) {
-                result.push_back(acc->subset);
+                result.push_back(acc->min_subset);
             } else {
                 result.push_back(edge.subset());
             }
@@ -625,8 +625,8 @@ const std::unordered_map<std::string, LoopCarriedDependencyInfo>& LoopCarriedDep
     return it->second;
 }
 
-const std::vector<LoopCarriedDependencyPair>& LoopCarriedDependencyAnalysis::pairs(structured_control_flow::StructuredLoop&
-                                                                                       loop) const {
+const std::vector<LoopCarriedDependencyPair>& LoopCarriedDependencyAnalysis::
+    pairs(structured_control_flow::StructuredLoop& loop) const {
     auto it = pairs_.find(&loop);
     assert(it != pairs_.end() && "LoopCarriedDependencyAnalysis: loop not analyzed");
     return it->second;

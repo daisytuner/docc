@@ -12,6 +12,7 @@
 #include "sdfg/data_flow/library_node.h"
 #include "sdfg/data_flow/library_nodes/atomic_op_node.h"
 #include "sdfg/data_flow/library_nodes/barrier_local_node.h"
+#include "sdfg/data_flow/library_nodes/math/math_node.h"
 #include "sdfg/data_flow/tasklet.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/if_else.h"
@@ -37,6 +38,20 @@ namespace sdfg {
 namespace transformations {
 
 namespace {
+
+bool is_col_major_operand(const std::vector<symbolic::Expression>& strides) {
+    return strides.size() == 2 && symbolic::eq(strides[0], symbolic::one()) &&
+           !symbolic::eq(strides[1], symbolic::one());
+}
+
+math::tensor::TensorLayout
+packed_operand_layout(const std::vector<symbolic::Expression>& dims, const std::vector<symbolic::Expression>& strides) {
+    if (is_col_major_operand(strides)) {
+        symbolic::MultiExpression col_major = {symbolic::one(), dims[0]};
+        return math::tensor::TensorLayout(dims, col_major, symbolic::integer(0));
+    }
+    return math::tensor::TensorLayout(dims, math::tensor::TensorLayout::linear_strides(dims), symbolic::integer(0));
+}
 
 // Assumptions for discharging a copy's boundary guard: the enclosing scope's
 // assumptions (tile-tight bounds + coupled constraints on the grid/block
@@ -225,13 +240,13 @@ tiles::Layout LocalStorage::TileInfo::source_layout() const {
     return tiles::Layout(shape, stride, folded_offset);
 }
 
-std::vector<symbolic::Expression> LocalStorage::TileInfo::original_subset(const std::vector<symbolic::Expression>&
-                                                                              tile_indices) const {
+std::vector<symbolic::Expression> LocalStorage::TileInfo::
+    original_subset(const std::vector<symbolic::Expression>& tile_indices) const {
     return {source_layout().resolve_element(tile_indices, /*require_to_element=*/false)};
 }
 
-std::vector<symbolic::Expression> LocalStorage::TileInfo::local_index(const std::vector<symbolic::Expression>&
-                                                                          access_subset) const {
+std::vector<symbolic::Expression> LocalStorage::TileInfo::
+    local_index(const std::vector<symbolic::Expression>& access_subset) const {
     std::vector<symbolic::Expression> local;
     for (size_t d = 0; d < dimensions.size(); d++) {
         if (!symbolic::eq(dimensions.at(d), symbolic::integer(1))) {
@@ -248,17 +263,13 @@ bool LocalStorage::has_side_effect(structured_control_flow::StructuredLoop& loop
             return;
         }
         for (auto* lib_node : block.dataflow().library_nodes()) {
-            // A __syncthreads barrier accesses no data (a control-only scheduling
-            // primitive), so it cannot reference the localized container and does
-            // not block staging — unlike genuine side effects (malloc/memset/…).
             if (dynamic_cast<data_flow::BarrierLocalNode*>(lib_node)) {
                 continue;
             }
-            // A cooperative TileCopyNode moves data through no_capture pointers
-            // precisely described by pointer_access_type, so the per-container alias
-            // analysis already accounts for it; it cannot independently reach the
-            // localized container. Its side_effect flag only keeps DCE from dropping it.
             if (dynamic_cast<tiles::TileCopyNode*>(lib_node)) {
+                continue;
+            }
+            if (dynamic_cast<math::MathNode*>(lib_node)) {
                 continue;
             }
             if (lib_node->side_effect()) {
@@ -441,8 +452,26 @@ bool LocalStorage::prepare(builder::StructuredSDFGBuilder& builder, analysis::An
     tile_info_.offset = t.layout.offset();
     group_memlets_.insert(group->memlets.begin(), group->memlets.end());
 
+    // A library-node operand can only be localized if the node can repoint it at a
+    // dense packed buffer (e.g. MatMul, or GEMM with a clean row/column-major tile).
+    {
+        math::tensor::TensorLayout packed = packed_operand_layout(tile_info_.dimensions, tile_info_.strides);
+        for (const auto* m : group_memlets_) {
+            const auto* lib = dynamic_cast<const data_flow::LibraryNode*>(&m->dst());
+            if (lib == nullptr) {
+                continue;
+            }
+            const auto& inputs = lib->inputs();
+            auto it = std::find(inputs.begin(), inputs.end(), m->dst_conn());
+            if (it == inputs.end() || !lib->can_relocalize_operand(static_cast<int>(it - inputs.begin()), packed)) {
+                return false;
+            }
+        }
+    }
+
     // Derive the storage space from the enclosing parallel schedule.
-    plan_ = tiles::LocalityPlan::analyze(loop_, tiles::TileAxis::enclosing(loop_, tile_info_.bases), analysis_manager);
+    plan_ = tiles::LocalityPlan::
+        analyze(loop_, tiles::TileAxis::enclosing(loop_, tile_info_.bases, tile_info_.offset), analysis_manager);
     auto space = plan_.required_space(container_written_);
     if (!space) {
         return false;
@@ -593,6 +622,10 @@ void LocalStorage::apply_prepared(builder::StructuredSDFGBuilder& builder, analy
                 }
             }
         }
+    } else if (is_col_major_operand(tile_info_.strides)) {
+        // Private column-major operand: store the tile column-major so the node
+        // reads it with the same orientation and only a tighter leading dimension.
+        buffer.kind = tiles::BufferKind::Transposed;
     }
     // Cooperative-store conflict avoidance: pad the inner stride to the coop axis's
     // per-warp thread count (mod 32). Compute it from the block dims + the coop
@@ -1143,11 +1176,32 @@ void LocalStorage::rewrite_body(
                 if (group_memlets_.count(&memlet) == 0) {
                     return;
                 }
-                auto* acc = mla.access(memlet);
-                if (!acc || acc->subset.size() != tile_info_.dimensions.size()) {
+                // A library-node operand is a bare base pointer addressed via the
+                // node's own layout, not a per-element subset. Repoint it at the
+                // packed local buffer and let the node rewrite its operand layout to
+                // the buffer's dense packing.
+                if (auto* lib = dynamic_cast<data_flow::LibraryNode*>(&memlet.dst())) {
+                    const auto& inputs = lib->inputs();
+                    auto it = std::find(inputs.begin(), inputs.end(), memlet.dst_conn());
+                    if (it == inputs.end()) {
+                        return;
+                    }
+                    math::tensor::TensorLayout packed =
+                        packed_operand_layout(tile_info_.dimensions, tile_info_.strides);
+                    if (!lib->relocalize_operand(static_cast<int>(it - inputs.begin()), packed)) {
+                        return;
+                    }
+                    types::Pointer pointer_type(types::Scalar(buffer_type.primitive_type()));
+                    memlet.set_subset({});
+                    memlet.set_base_type(pointer_type);
+                    rewrote = true;
                     return;
                 }
-                memlet.set_subset(buffer.subset(slot_indices, tile_info_.local_index(acc->subset)));
+                auto* acc = mla.access(memlet);
+                if (!acc || acc->min_subset.size() != tile_info_.dimensions.size()) {
+                    return;
+                }
+                memlet.set_subset(buffer.subset(slot_indices, tile_info_.local_index(acc->min_subset)));
                 memlet.set_base_type(buffer_type);
                 rewrote = true;
             };

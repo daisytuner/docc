@@ -219,8 +219,8 @@ types::StructureDefinition& FunctionBuilder::add_structure(const std::string& na
         throw InvalidSDFGException("Structure " + name + " already exists");
     }
 
-    auto res = this->function().structures_.insert({name, std::make_unique<types::StructureDefinition>(name, is_packed)}
-    );
+    auto res =
+        this->function().structures_.insert({name, std::make_unique<types::StructureDefinition>(name, is_packed)});
     if (!res.second) {
         throw InvalidSDFGException("Structure " + name + " already exists");
     }

@@ -174,8 +174,8 @@ public:
      * Pure virtual function that must be implemented by derived classes
      * to support graph transformations and optimizations.
      */
-    virtual std::unique_ptr<DataFlowNode> clone(size_t element_id, const graph::Vertex vertex, DataFlowGraph& parent)
-        const = 0;
+    virtual std::unique_ptr<DataFlowNode>
+    clone(size_t element_id, const graph::Vertex vertex, DataFlowGraph& parent) const = 0;
 
     /**
      * Is the edge in question removable, or will this make the node its an output on invalid?

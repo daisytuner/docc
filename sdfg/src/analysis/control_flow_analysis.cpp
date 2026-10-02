@@ -25,8 +25,7 @@ ControlFlowAnalysis::ControlFlowAnalysis(StructuredSDFG& sdfg)
 
       };
 
-std::pair<graph::Vertex, graph::Vertex> ControlFlowAnalysis::traverse(structured_control_flow::ControlFlowNode& current
-) {
+std::pair<graph::Vertex, graph::Vertex> ControlFlowAnalysis::traverse(structured_control_flow::ControlFlowNode& current) {
     // Leaf nodes
     if (auto block_node = dyn_cast<structured_control_flow::Block*>(&current)) {
         auto v = boost::add_vertex(graph_);

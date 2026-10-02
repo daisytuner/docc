@@ -107,12 +107,21 @@ symbolic::Expression TensorLayout::total_elements() const {
     return SymEngine::mul(shape_);
 }
 
+symbolic::Expression TensorLayout::memory_span() const {
+    // Highest addressed element + 1: offset + sum_d (shape[d]-1) * strides[d] + 1.
+    // Assumes non-negative strides (true for all row/col-major and BLAS layouts).
+    symbolic::Expression span = offset_;
+    for (size_t d = 0; d < shape_.size(); ++d) {
+        span = symbolic::add(span, symbolic::mul(symbolic::sub(shape_.at(d), symbolic::one()), strides_.at(d)));
+    }
+    return symbolic::add(span, symbolic::one());
+}
+
 symbolic::MultiExpression TensorLayout::linear_strides() const {
     return std::move(linear_strides(shape_));
 }
 
-symbolic::Expression TensorLayout::resolve_element(const symbolic::MultiExpression& indices, bool require_to_element)
-    const {
+symbolic::Expression TensorLayout::resolve_element(const symbolic::MultiExpression& indices, bool require_to_element) const {
     auto resolve_dims = indices.size();
     if (resolve_dims != shape_.size() && require_to_element) {
         throw std::invalid_argument(

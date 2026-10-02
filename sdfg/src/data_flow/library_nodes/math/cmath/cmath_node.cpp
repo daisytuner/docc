@@ -328,8 +328,7 @@ void CMathNode::validate(const Function& function) const {
 std::unique_ptr<data_flow::DataFlowNode> CMathNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
     return std::unique_ptr<
-        CMathNode>(new CMathNode(element_id, this->debug_info(), vertex, parent, this->function_, this->primitive_type_)
-    );
+        CMathNode>(new CMathNode(element_id, this->debug_info(), vertex, parent, this->function_, this->primitive_type_));
 }
 
 symbolic::Expression CMathNode::flop() const {

@@ -279,8 +279,7 @@ data_flow::PointerAccessType DataOffloadingNode::pointer_access_type(int input_i
 void DataOffloadingNode::remove_free() {
     if (this->is_free()) {
         if (!this->has_transfer()) {
-            throw InvalidSDFGException("DataOffloadingNode: Tried removing free but no data transfer direction present"
-            );
+            throw InvalidSDFGException("DataOffloadingNode: Tried removing free but no data transfer direction present");
         }
         this->buffer_lifecycle_ = BufferLifecycle::NO_CHANGE;
     }

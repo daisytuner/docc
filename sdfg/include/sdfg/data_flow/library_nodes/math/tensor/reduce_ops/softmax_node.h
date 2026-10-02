@@ -22,8 +22,7 @@ public:
 
     void validate(const Function& function) const override;
 
-    passes::LibNodeExpander::ExpandOutcome expand(passes::LibNodeExpander::ExpandContext& context, Block& block)
-        override;
+    passes::LibNodeExpander::ExpandOutcome expand(passes::LibNodeExpander::ExpandContext& context, Block& block) override;
 
     bool expand_reduction(
         passes::LibNodeExpander::AccessNodeExpand& expansion,

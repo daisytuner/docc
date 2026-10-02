@@ -41,8 +41,7 @@ inline void register_vectorize_plugin() {
     );
 
     passes::scheduler::SchedulerRegistry::instance()
-        .register_loop_scheduler<passes::scheduler::VectorizeScheduler>(passes::scheduler::VectorizeScheduler::target()
-        );
+        .register_loop_scheduler<passes::scheduler::VectorizeScheduler>(passes::scheduler::VectorizeScheduler::target());
 }
 
 } // namespace vectorize

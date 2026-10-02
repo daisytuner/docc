@@ -1289,8 +1289,8 @@ sdfg::control_flow::State& Lifting::visit_SelectInst(
     }
     auto& output_type = this->builder_.subject().type(output);
     assert(
-        (output_type.type_id() == sdfg::types::TypeID::Scalar || output_type.type_id() == sdfg::types::TypeID::Pointer
-        ) &&
+        (output_type.type_id() == sdfg::types::TypeID::Scalar ||
+         output_type.type_id() == sdfg::types::TypeID::Pointer) &&
         "SelectInst: Expected scalar, array, or pointer type as output"
     );
 
@@ -1470,8 +1470,8 @@ sdfg::control_flow::State& Lifting::visit_FCmpInst(
     }
     auto& output_type = this->builder_.subject().type(output);
     assert(
-        (output_type.type_id() == sdfg::types::TypeID::Scalar || output_type.type_id() == sdfg::types::TypeID::Structure
-        ) &&
+        (output_type.type_id() == sdfg::types::TypeID::Scalar ||
+         output_type.type_id() == sdfg::types::TypeID::Structure) &&
         "FCmpInst: Expected scalar or structure type as output"
     );
 
@@ -1685,8 +1685,8 @@ sdfg::control_flow::State& Lifting::visit_UnaryOperator(
     }
     auto& output_type = this->builder_.subject().type(output);
     assert(
-        (output_type.type_id() == sdfg::types::TypeID::Scalar || output_type.type_id() == sdfg::types::TypeID::Structure
-        ) &&
+        (output_type.type_id() == sdfg::types::TypeID::Scalar ||
+         output_type.type_id() == sdfg::types::TypeID::Structure) &&
         "UnaryOperator: Expected scalar or structure type as output"
     );
 
@@ -1789,8 +1789,8 @@ sdfg::control_flow::State& Lifting::visit_BinaryOperator(
     }
     auto& output_type = this->builder_.subject().type(output);
     assert(
-        (output_type.type_id() == sdfg::types::TypeID::Scalar || output_type.type_id() == sdfg::types::TypeID::Structure
-        ) &&
+        (output_type.type_id() == sdfg::types::TypeID::Scalar ||
+         output_type.type_id() == sdfg::types::TypeID::Structure) &&
         "BinaryOperator: Expected scalar or structure type as output"
     );
 

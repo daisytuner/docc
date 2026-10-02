@@ -903,8 +903,8 @@ void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
                                 builder.add_container(
                                     new_index_name, builder.subject().type(first_map_.indvar()->get_name())
                                 );
-                                init_assignment_block->assignments().insert({symbolic::symbol(new_index_name), new_expr}
-                                );
+                                init_assignment_block->assignments()
+                                    .insert({symbolic::symbol(new_index_name), new_expr});
                                 access_node->data(new_index_name);
                             }
                         }
@@ -1273,10 +1273,8 @@ bool ::sdfg::transformations::FusionConsumerSubsetVisitor::visit(sdfg::structure
     return false;
 }
 
-::sdfg::transformations::FusionConsumerSubsetVisitor::FusionConsumerSubsetVisitor(std::unordered_map<
-                                                                                  std::string,
-                                                                                  const data_flow::Subset*>&
-                                                                                      target_containers)
+::sdfg::transformations::FusionConsumerSubsetVisitor::
+    FusionConsumerSubsetVisitor(std::unordered_map<std::string, const data_flow::Subset*>& target_containers)
     : target_containers_(target_containers) {
 }
 

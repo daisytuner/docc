@@ -411,9 +411,9 @@ void SoftwarePipelining::apply(builder::StructuredSDFGBuilder& builder, analysis
                                               tiles::PipelineWaitNode>(waitb, loop_.debug_info(), impl, stages_ - 1));
 
     auto& drainb = builder.add_block(else_branch, loop_.debug_info());
-    auto& drain_wait_node = static_cast<
-        tiles::PipelineWaitNode&>(builder.add_library_node<tiles::PipelineWaitNode>(drainb, loop_.debug_info(), impl, 0)
-    );
+    auto& drain_wait_node =
+        static_cast<tiles::PipelineWaitNode&>(builder.add_library_node<
+                                              tiles::PipelineWaitNode>(drainb, loop_.debug_info(), impl, 0));
 
     // ---- Step 3: convert the synchronous copies to cp.async ----------------
     // A whole-copy TileCopyNode switches its atom to CpAsync (its dispatcher emits

@@ -121,8 +121,8 @@ public:
      * Returns a map from container name to the (kind, merged delta-set) for
      * each container that participates in any loop-carried dependency.
      */
-    const std::unordered_map<std::string, LoopCarriedDependencyInfo>& dependencies(structured_control_flow::StructuredLoop&
-                                                                                       loop) const;
+    const std::unordered_map<std::string, LoopCarriedDependencyInfo>&
+    dependencies(structured_control_flow::StructuredLoop& loop) const;
 
     /**
      * @brief Per-pair list of loop-carried dependencies for a loop.
@@ -168,8 +168,8 @@ public:
      * operator (`acc = acc OP x`) over a loop-invariant accumulator location.
      * Empty for loops with no recognized reduction (or not analyzed).
      */
-    const std::vector<structured_control_flow::ReductionInfo>& reductions(structured_control_flow::StructuredLoop& loop
-    ) const;
+    const std::vector<structured_control_flow::ReductionInfo>&
+    reductions(structured_control_flow::StructuredLoop& loop) const;
 
     /**
      * @brief True if the loop carries at least one recognized reduction.

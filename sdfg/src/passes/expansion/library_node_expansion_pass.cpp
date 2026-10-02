@@ -8,8 +8,8 @@
 namespace sdfg {
 namespace passes {
 
-LibNodeExpander::ExpandOutcome MathNodeExpander::handle_expand(ExpandContext& context, Block& block, math::MathNode& node)
-    const {
+LibNodeExpander::ExpandOutcome MathNodeExpander::
+    handle_expand(ExpandContext& context, Block& block, math::MathNode& node) const {
     return node.expand(context, block);
 }
 

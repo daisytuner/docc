@@ -162,8 +162,8 @@ void Visualizer::visualizeSubset(data_flow::Subset const& sub, types::IType cons
         auto& memberIdx = sub.at(subIdx);
         if (!memberIdx.is_null() && SymEngine::is_a<SymEngine::Integer>(*memberIdx)) {
             this->stream_ << ".member_" << this->expression(memberIdx->__str__());
-            auto& member_type = definition.member_type(SymEngine::rcp_dynamic_cast<const SymEngine::Integer>(memberIdx)
-            );
+            auto& member_type =
+                definition.member_type(SymEngine::rcp_dynamic_cast<const SymEngine::Integer>(memberIdx));
             this->visualizeSubset(sub, &member_type, subIdx + 1);
         } else {
             this->stream_ << ".member[" << subsetRangeString(sub, subIdx) << "]";

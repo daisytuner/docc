@@ -1299,20 +1299,24 @@ TEST(ExtremeValuesTest, CopyGuard_TileBaseCancels_IDivImodResidual) {
     assums.insert({coop, a_coop});
 
     // idiv(coop, 32) in [0, 3]: base + idiv(coop,32) <= 3 + base.
-    EXPECT_TRUE(symbolic::is_le(
-        symbolic::add(base, symbolic::div(coop, symbolic::integer(32))),
-        symbolic::add(symbolic::integer(3), base),
-        {},
-        assums,
-        true
-    )) << "base + idiv(coop,32) <= 3 + base failed";
+    EXPECT_TRUE(
+        symbolic::is_le(
+            symbolic::add(base, symbolic::div(coop, symbolic::integer(32))),
+            symbolic::add(symbolic::integer(3), base),
+            {},
+            assums,
+            true
+        )
+    ) << "base + idiv(coop,32) <= 3 + base failed";
 
     // imod(coop, 32) in [0, 31]: base + imod(coop,32) <= 31 + base.
-    EXPECT_TRUE(symbolic::is_le(
-        symbolic::add(base, symbolic::mod(coop, symbolic::integer(32))),
-        symbolic::add(symbolic::integer(31), base),
-        {},
-        assums,
-        true
-    )) << "base + imod(coop,32) <= 31 + base failed";
+    EXPECT_TRUE(
+        symbolic::is_le(
+            symbolic::add(base, symbolic::mod(coop, symbolic::integer(32))),
+            symbolic::add(symbolic::integer(31), base),
+            {},
+            assums,
+            true
+        )
+    ) << "base + imod(coop,32) <= 31 + base failed";
 }

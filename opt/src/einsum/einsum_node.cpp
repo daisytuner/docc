@@ -353,8 +353,7 @@ bool EinsumNode::expand(builder::StructuredSDFGBuilder& builder, analysis::Analy
             new_in_accesses.insert(
                 {iedge.dst_conn(),
                  &builder
-                      .add_constant(*new_block, constant_node->data(), constant_node->type(), constant_node->debug_info())
-                }
+                      .add_constant(*new_block, constant_node->data(), constant_node->type(), constant_node->debug_info())}
             );
         } else if (auto* access_node = dynamic_cast<data_flow::AccessNode*>(&iedge.src())) {
             data_flow::AccessNode* new_access_node = nullptr;

@@ -17,11 +17,11 @@ namespace passes {
 template<typename PassT>
 class DOCCPass : public llvm::PassInfoMixin<DOCCPass<PassT>> {
 public:
-    DOCCPass(PassT Impl, analysis::AnalysisManager &AM) : Impl_(std::move(Impl)), AM_(AM) {
+    DOCCPass(PassT Impl, analysis::AnalysisManager& AM) : Impl_(std::move(Impl)), AM_(AM) {
     }
 
     template<typename... Ts>
-    llvm::PreservedAnalyses run(llvm::Module &Mod, llvm::ModuleAnalysisManager &MAM) {
+    llvm::PreservedAnalyses run(llvm::Module& Mod, llvm::ModuleAnalysisManager& MAM) {
         if (!PassT::available(AM_)) {
             return llvm::PreservedAnalyses::all();
         }
@@ -31,11 +31,11 @@ public:
 
 private:
     PassT Impl_;
-    analysis::AnalysisManager &AM_;
+    analysis::AnalysisManager& AM_;
 };
 
 template<typename PassT>
-DOCCPass<PassT> createDOCCPass(PassT Pass, analysis::AnalysisManager &AM) {
+DOCCPass<PassT> createDOCCPass(PassT Pass, analysis::AnalysisManager& AM) {
     return DOCCPass<PassT>(std::move(Pass), AM);
 }
 

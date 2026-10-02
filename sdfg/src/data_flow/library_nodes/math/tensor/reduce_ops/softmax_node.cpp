@@ -406,8 +406,8 @@ bool SoftmaxNode::expand_reduction(
 
 std::unique_ptr<data_flow::DataFlowNode> SoftmaxNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
-    return std::unique_ptr<
-        data_flow::DataFlowNode>(new SoftmaxNode(element_id, this->debug_info(), vertex, parent, this->shape_, this->axes_)
+    return std::unique_ptr<data_flow::DataFlowNode>(
+        new SoftmaxNode(element_id, this->debug_info(), vertex, parent, this->shape_, this->axes_)
     );
 }
 

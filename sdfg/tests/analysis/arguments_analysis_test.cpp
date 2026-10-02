@@ -410,9 +410,10 @@ TEST(ArgumentsAnalysisTest, Map_2d_Array_Polybench) {
     auto arg_sizes = analysis.argument_sizes(analysis_manager, loop, false);
     EXPECT_EQ(arg_sizes.size(), 3);
     EXPECT_TRUE(arg_sizes.contains("arg1"));
-    EXPECT_TRUE(symbolic::
-                    eq(arg_sizes.at("arg1"),
-                       symbolic::mul(symbolic::mul(symbolic::symbol("N"), symbolic::symbol("M")), symbolic::integer(4)))
+    EXPECT_TRUE(
+        symbolic::
+            eq(arg_sizes.at("arg1"),
+               symbolic::mul(symbolic::mul(symbolic::symbol("N"), symbolic::symbol("M")), symbolic::integer(4)))
     );
     EXPECT_TRUE(arg_sizes.contains("N"));
     EXPECT_TRUE(symbolic::eq(arg_sizes.at("N"), symbolic::integer(4)));

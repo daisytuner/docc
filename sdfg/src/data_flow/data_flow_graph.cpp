@@ -45,8 +45,8 @@ Element* DataFlowGraph::get_parent() {
     return this->parent_;
 };
 
-const data_flow::Memlet* DataFlowGraph::in_edge_for_connector(const data_flow::CodeNode& node, const std::string& conn)
-    const {
+const data_flow::Memlet* DataFlowGraph::
+    in_edge_for_connector(const data_flow::CodeNode& node, const std::string& conn) const {
     for (auto& edge : this->in_edges(node)) {
         if (edge.dst_conn() == conn) {
             return &edge;
@@ -343,8 +343,7 @@ std::unordered_set<data_flow::DataFlowNode*> DataFlowGraph::sinks() {
     return ss;
 };
 
-std::unordered_set<const data_flow::DataFlowNode*> DataFlowGraph::predecessors(const data_flow::DataFlowNode& node
-) const {
+std::unordered_set<const data_flow::DataFlowNode*> DataFlowGraph::predecessors(const data_flow::DataFlowNode& node) const {
     std::unordered_set<const data_flow::DataFlowNode*> ss;
     for (auto& edge : this->in_edges(node)) {
         ss.insert(&edge.src());
@@ -353,8 +352,7 @@ std::unordered_set<const data_flow::DataFlowNode*> DataFlowGraph::predecessors(c
     return ss;
 };
 
-std::unordered_set<const data_flow::DataFlowNode*> DataFlowGraph::successors(const data_flow::DataFlowNode& node
-) const {
+std::unordered_set<const data_flow::DataFlowNode*> DataFlowGraph::successors(const data_flow::DataFlowNode& node) const {
     std::unordered_set<const data_flow::DataFlowNode*> ss;
     for (auto& edge : this->out_edges(node)) {
         ss.insert(&edge.dst());

@@ -100,7 +100,8 @@ TEST(GPUOffloadNestedLoopTest, XBlockNestedInXGridApplies) {
     transformation.apply(builder, analysis_manager);
     EXPECT_EQ(block.schedule_type().value(), cuda::ScheduleType_CUDA_Offload::value());
     EXPECT_EQ(cuda::ScheduleType_CUDA_Offload::target_level(block.schedule_type()), gpu::TargetLevel::X_BLOCK);
-    EXPECT_TRUE(symbolic::eq(cuda::ScheduleType_CUDA_Offload::parallel_size(block.schedule_type()), symbolic::integer(256))
+    EXPECT_TRUE(
+        symbolic::eq(cuda::ScheduleType_CUDA_Offload::parallel_size(block.schedule_type()), symbolic::integer(256))
     );
 }
 

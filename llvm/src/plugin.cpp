@@ -73,166 +73,166 @@ extern "C" LLVM_ATTRIBUTE_WEAK ::llvm::PassPluginLibraryInfo llvmGetPassPluginIn
         .APIVersion = LLVM_PLUGIN_API_VERSION,
         .PluginName = "DOCC",
         .PluginVersion = "v0.0.1",
-        .RegisterPassBuilderCallbacks =
-            [](llvm::PassBuilder &PB) {
-                docc::register_sdfg_dispatchers();
+        .RegisterPassBuilderCallbacks = [](llvm::PassBuilder& PB) {
+            docc::register_sdfg_dispatchers();
 
-                auto &sched_registry = sdfg::passes::scheduler::SchedulerRegistry::instance();
+            auto& sched_registry = sdfg::passes::scheduler::SchedulerRegistry::instance();
 
-                // Compile-Time Pass Registration
-                PB.registerPipelineStartEPCallback([&sched_registry](
-                                                       llvm::ModulePassManager &MPM, llvm::OptimizationLevel Level
-                                                   ) {
-                    // Simplification
-                    {
-                        llvm::FunctionPassManager FPM;
-                        FPM.addPass(llvm::PromotePass());
-                        FPM.addPass(llvm::EarlyCSEPass(true));
-                        FPM.addPass(llvm::InstCombinePass());
+            // Compile-Time Pass Registration
+            PB.registerPipelineStartEPCallback([&sched_registry](
+                                                   llvm::ModulePassManager& MPM, llvm::OptimizationLevel Level
+                                               ) {
+                // Simplification
+                {
+                    llvm::FunctionPassManager FPM;
+                    FPM.addPass(llvm::PromotePass());
+                    FPM.addPass(llvm::EarlyCSEPass(true));
+                    FPM.addPass(llvm::InstCombinePass());
+                    FPM.addPass(llvm::SimplifyCFGPass());
+                    FPM.addPass(llvm::TailCallElimPass());
+                    FPM.addPass(llvm::SimplifyCFGPass());
+                    FPM.addPass(llvm::ReassociatePass());
+                    MPM.addPass(llvm::createModuleToFunctionPassAdaptor(std::move(FPM)));
+                }
+
+                // Inlining
+                {
+                    llvm::ModuleInlinerWrapperPass MIWP(llvm::getInlineParams());
+                    MIWP.addModulePass(llvm::RequireAnalysisPass<llvm::GlobalsAA, llvm::Module>());
+                    auto aa = llvm::InvalidateAnalysisPass<llvm::AAManager>();
+                    MIWP.addModulePass(llvm::createModuleToFunctionPassAdaptor(std::move(aa)));
+                    MIWP.addModulePass(llvm::RequireAnalysisPass<llvm::ProfileSummaryAnalysis, llvm::Module>());
+                    llvm::CGSCCPassManager& MainCGPipeline = MIWP.getPM();
+                    MainCGPipeline.addPass(llvm::PostOrderFunctionAttrsPass());
+
+                    MPM.addPass(std::move(MIWP));
+                }
+
+                // Simplification
+                {
+                    llvm::FunctionPassManager FPM;
+                    FPM.addPass(llvm::PromotePass());
+                    FPM.addPass(llvm::EarlyCSEPass(true));
+                    FPM.addPass(llvm::InstCombinePass());
+                    FPM.addPass(llvm::SimplifyCFGPass());
+                    FPM.addPass(llvm::TailCallElimPass());
+                    FPM.addPass(llvm::SimplifyCFGPass());
+                    FPM.addPass(llvm::ReassociatePass());
+                    MPM.addPass(llvm::createModuleToFunctionPassAdaptor(std::move(FPM)));
+                }
+
+                // Loop rotation
+                {
+                    llvm::LoopPassManager LPM;
+                    LPM.addPass(llvm::LoopSimplifyCFGPass());
+                    LPM.addPass(llvm::SimpleLoopUnswitchPass(true));
+
+                    llvm::FunctionPassManager FPM;
+                    FPM.addPass(llvm::createFunctionToLoopPassAdaptor<llvm::LoopPassManager>(std::move(LPM), false, false));
+                    MPM.addPass(llvm::createModuleToFunctionPassAdaptor(std::move(FPM)));
+                }
+
+                // Loop simplification
+                {
+                    llvm::FunctionPassManager FPM;
+
+                    llvm::LoopPassManager LPM;
+                    LPM.addPass(llvm::IndVarSimplifyPass());
+                    FPM.addPass(llvm::createFunctionToLoopPassAdaptor<llvm::LoopPassManager>(std::move(LPM), false, true));
+                    MPM.addPass(llvm::createModuleToFunctionPassAdaptor(std::move(FPM)));
+                }
+
+                // Simplification
+                {
+                    llvm::FunctionPassManager FPM;
+                    FPM.addPass(llvm::PromotePass());
+                    FPM.addPass(llvm::EarlyCSEPass(true));
+                    FPM.addPass(llvm::InstCombinePass());
+                    FPM.addPass(llvm::SimplifyCFGPass());
+                    FPM.addPass(llvm::TailCallElimPass());
+                    FPM.addPass(llvm::SimplifyCFGPass());
+                    FPM.addPass(llvm::ReassociatePass());
+                    MPM.addPass(llvm::createModuleToFunctionPassAdaptor(std::move(FPM)));
+                }
+
+                // CFG Simplifications
+                {
+                    llvm::FunctionPassManager FPM;
+                    if (DOCC_LowerInvoke.getValue()) {
+                        FPM.addPass(llvm::LowerInvokePass());
                         FPM.addPass(llvm::SimplifyCFGPass());
-                        FPM.addPass(llvm::TailCallElimPass());
-                        FPM.addPass(llvm::SimplifyCFGPass());
-                        FPM.addPass(llvm::ReassociatePass());
-                        MPM.addPass(llvm::createModuleToFunctionPassAdaptor(std::move(FPM)));
                     }
+                    FPM.addPass(llvm::LowerSwitchPass());
+                    FPM.addPass(llvm::LoopSimplifyPass());
+                    MPM.addPass(llvm::createModuleToFunctionPassAdaptor(std::move(FPM)));
+                }
 
-                    // Inlining
-                    {
-                        llvm::ModuleInlinerWrapperPass MIWP(llvm::getInlineParams());
-                        MIWP.addModulePass(llvm::RequireAnalysisPass<llvm::GlobalsAA, llvm::Module>());
-                        auto aa = llvm::InvalidateAnalysisPass<llvm::AAManager>();
-                        MIWP.addModulePass(llvm::createModuleToFunctionPassAdaptor(std::move(aa)));
-                        MIWP.addModulePass(llvm::RequireAnalysisPass<llvm::ProfileSummaryAnalysis, llvm::Module>());
-                        llvm::CGSCCPassManager &MainCGPipeline = MIWP.getPM();
-                        MainCGPipeline.addPass(llvm::PostOrderFunctionAttrsPass());
+                std::shared_ptr<docc::passes::PassReportCollector> report_consumer;
+                bool generate_opt_report_file = true;
 
-                        MPM.addPass(std::move(MIWP));
-                    }
+                report_consumer = std::make_shared<docc::passes::PassReportCollector>();
 
-                    // Simplification
-                    {
-                        llvm::FunctionPassManager FPM;
-                        FPM.addPass(llvm::PromotePass());
-                        FPM.addPass(llvm::EarlyCSEPass(true));
-                        FPM.addPass(llvm::InstCombinePass());
-                        FPM.addPass(llvm::SimplifyCFGPass());
-                        FPM.addPass(llvm::TailCallElimPass());
-                        FPM.addPass(llvm::SimplifyCFGPass());
-                        FPM.addPass(llvm::ReassociatePass());
-                        MPM.addPass(llvm::createModuleToFunctionPassAdaptor(std::move(FPM)));
-                    }
+                // Lift SDFGs from functions
+                MPM.addPass(docc::passes::createDOCCPass(docc::passes::FunctionToSDFGPass(docc::plugin_registry), AM));
 
-                    // Loop rotation
-                    {
-                        llvm::LoopPassManager LPM;
-                        LPM.addPass(llvm::LoopSimplifyCFGPass());
-                        LPM.addPass(llvm::SimpleLoopUnswitchPass(true));
+                // Normalization Pass
+                if (docc::DOCC_TUNE != "none") {
+                    MPM.addPass(docc::passes::createDOCCPass(docc::passes::NormalizationPass(), AM));
+                }
 
-                        llvm::FunctionPassManager FPM;
-                        FPM.addPass(llvm::createFunctionToLoopPassAdaptor<
-                                    llvm::LoopPassManager>(std::move(LPM), false, false));
-                        MPM.addPass(llvm::createModuleToFunctionPassAdaptor(std::move(FPM)));
-                    }
+                // Einsum Pass
+                if (DOCC_Einsum) {
+                    MPM.addPass(docc::passes::createDOCCPass(docc::passes::EinsumPass(), AM));
+                    MPM.addPass(docc::passes::createDOCCPass(docc::passes::NormalizationPass(), AM));
+                }
 
-                    // Loop simplification
-                    {
-                        llvm::FunctionPassManager FPM;
+                bool enable_offloading_transfer_opt = !docc::args::DOCC_NO_OFFLOADING_TRANSFER_OPT.getValue();
 
-                        llvm::LoopPassManager LPM;
-                        LPM.addPass(llvm::IndVarSimplifyPass());
-                        FPM.addPass(llvm::createFunctionToLoopPassAdaptor<
-                                    llvm::LoopPassManager>(std::move(LPM), false, true));
-                        MPM.addPass(llvm::createModuleToFunctionPassAdaptor(std::move(FPM)));
-                    }
-
-                    // Simplification
-                    {
-                        llvm::FunctionPassManager FPM;
-                        FPM.addPass(llvm::PromotePass());
-                        FPM.addPass(llvm::EarlyCSEPass(true));
-                        FPM.addPass(llvm::InstCombinePass());
-                        FPM.addPass(llvm::SimplifyCFGPass());
-                        FPM.addPass(llvm::TailCallElimPass());
-                        FPM.addPass(llvm::SimplifyCFGPass());
-                        FPM.addPass(llvm::ReassociatePass());
-                        MPM.addPass(llvm::createModuleToFunctionPassAdaptor(std::move(FPM)));
-                    }
-
-                    // CFG Simplifications
-                    {
-                        llvm::FunctionPassManager FPM;
-                        if (DOCC_LowerInvoke.getValue()) {
-                            FPM.addPass(llvm::LowerInvokePass());
-                            FPM.addPass(llvm::SimplifyCFGPass());
-                        }
-                        FPM.addPass(llvm::LowerSwitchPass());
-                        FPM.addPass(llvm::LoopSimplifyPass());
-                        MPM.addPass(llvm::createModuleToFunctionPassAdaptor(std::move(FPM)));
-                    }
-
-                    std::shared_ptr<docc::passes::PassReportCollector> report_consumer;
-                    bool generate_opt_report_file = true;
-
-                    report_consumer = std::make_shared<docc::passes::PassReportCollector>();
-
-                    // Lift SDFGs from functions
-                    MPM.addPass(docc::passes::createDOCCPass(docc::passes::FunctionToSDFGPass(docc::plugin_registry), AM)
-                    );
-
-                    // Normalization Pass
-                    if (docc::DOCC_TUNE != "none") {
-                        MPM.addPass(docc::passes::createDOCCPass(docc::passes::NormalizationPass(), AM));
-                    }
-
-                    // Einsum Pass
-                    if (DOCC_Einsum) {
-                        MPM.addPass(docc::passes::createDOCCPass(docc::passes::EinsumPass(), AM));
-                        MPM.addPass(docc::passes::createDOCCPass(docc::passes::NormalizationPass(), AM));
-                    }
-
-                    bool enable_offloading_transfer_opt = !docc::args::DOCC_NO_OFFLOADING_TRANSFER_OPT.getValue();
-
-                    if (docc::DOCC_TUNE != "none") {
-                        // Dump sdfg and features after all seuquential optimizations are done but
-                        // before offloading
-                        MPM.addPass(docc::passes::createDOCCPass(docc::passes::DumpSDFGPass(), AM));
-                        MPM.addPass(docc::passes::createDOCCPass(
+                if (docc::DOCC_TUNE != "none") {
+                    // Dump sdfg and features after all seuquential optimizations are done but
+                    // before offloading
+                    MPM.addPass(docc::passes::createDOCCPass(docc::passes::DumpSDFGPass(), AM));
+                    MPM.addPass(
+                        docc::passes::createDOCCPass(
                             docc::passes::SchedulingPass(
                                 sched_registry, false, false, enable_offloading_transfer_opt, report_consumer.get()
                             ),
                             AM
-                        ));
-                    }
+                        )
+                    );
+                }
 
-                    if (generate_opt_report_file) {
-                        MPM.addPass(docc::passes::createDOCCPass(docc::passes::OPTReportPass(report_consumer), AM));
-                    }
+                if (generate_opt_report_file) {
+                    MPM.addPass(docc::passes::createDOCCPass(docc::passes::OPTReportPass(report_consumer), AM));
+                }
 
-                    MPM.addPass(docc::passes::createDOCCPass(
+                MPM.addPass(
+                    docc::passes::createDOCCPass(
                         docc::passes::DumpSDFGPass("scheduled", docc::args::DOCC_DOT_DUMP_SCHEDULED.getValue()), AM
-                    ));
-                    if (enable_offloading_transfer_opt) {
-                        MPM.addPass(docc::passes::createDOCCPass(docc::passes::DumpAttributesPass(), AM));
-                    }
-                });
+                    )
+                );
+                if (enable_offloading_transfer_opt) {
+                    MPM.addPass(docc::passes::createDOCCPass(docc::passes::DumpAttributesPass(), AM));
+                }
+            });
 
-                // Link-Time Pass Registration (Early and Late)
-                PB.registerOptimizerLastEPCallback([](llvm::ModulePassManager &MPM,
-                                                      llvm::OptimizationLevel Level,
-                                                      llvm::ThinOrFullLTOPhase) {
-                    // Minimize data transfers
-                    MPM.addPass(docc::passes::createDOCCPass(docc::passes::ArgumentExpansionPass(), AM));
+            // Link-Time Pass Registration (Early and Late)
+            PB.registerOptimizerLastEPCallback([](llvm::ModulePassManager& MPM,
+                                                  llvm::OptimizationLevel Level,
+                                                  llvm::ThinOrFullLTOPhase) {
+                // Minimize data transfers
+                MPM.addPass(docc::passes::createDOCCPass(docc::passes::ArgumentExpansionPass(), AM));
 
-                    if (docc::DOCC_DUMP_GLBL_CFG_EN) {
-                        std::string *path_opt = docc::DOCC_DUMP_GLBL_CFG.getValue().empty()
-                                                    ? nullptr
-                                                    : &docc::DOCC_DUMP_GLBL_CFG.getValue();
-                        MPM.addPass(docc::passes::createDOCCPass(docc::passes::GlobalCFGPrinterPass(path_opt), AM));
-                    }
+                if (docc::DOCC_DUMP_GLBL_CFG_EN) {
+                    std::string* path_opt = docc::DOCC_DUMP_GLBL_CFG.getValue().empty()
+                                                ? nullptr
+                                                : &docc::DOCC_DUMP_GLBL_CFG.getValue();
+                    MPM.addPass(docc::passes::createDOCCPass(docc::passes::GlobalCFGPrinterPass(path_opt), AM));
+                }
 
-                    // Code Generation Passes
-                    MPM.addPass(docc::passes::createDOCCPass(docc::passes::CodeGenerationPass(), AM));
-                });
-            }
+                // Code Generation Passes
+                MPM.addPass(docc::passes::createDOCCPass(docc::passes::CodeGenerationPass(), AM));
+            });
+        }
     };
 }

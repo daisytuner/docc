@@ -26,8 +26,8 @@ public:
 
     bool run(builder::SDFGBuilder& builder, bool create_report = false);
 
-    bool
-    run(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager, bool create_report = false
+    bool run(
+        builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager, bool create_report = false
     );
 
     virtual bool run_pass(builder::SDFGBuilder& builder);

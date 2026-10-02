@@ -337,12 +337,11 @@ TEST(AssumptionsAnalysisTest, Init_i32) {
 
     // Check
     EXPECT_TRUE(symbolic::eq(*assumptions.at(symbolic::symbol("N")).lower_bounds().begin(), symbolic::integer(0)));
-    EXPECT_TRUE(symbolic::eq(*assumptions.at(symbolic::symbol("N")).upper_bounds().begin(), symbolic::integer(4294967295))
+    EXPECT_TRUE(symbolic::eq(*assumptions.at(symbolic::symbol("N")).upper_bounds().begin(), symbolic::integer(4294967295)));
+    EXPECT_TRUE(
+        symbolic::eq(*assumptions.at(symbolic::symbol("M")).lower_bounds().begin(), symbolic::integer(-2147483648))
     );
-    EXPECT_TRUE(symbolic::eq(*assumptions.at(symbolic::symbol("M")).lower_bounds().begin(), symbolic::integer(-2147483648))
-    );
-    EXPECT_TRUE(symbolic::eq(*assumptions.at(symbolic::symbol("M")).upper_bounds().begin(), symbolic::integer(2147483647))
-    );
+    EXPECT_TRUE(symbolic::eq(*assumptions.at(symbolic::symbol("M")).upper_bounds().begin(), symbolic::integer(2147483647)));
     EXPECT_TRUE(assumptions.at(symbolic::symbol("N")).tight_lower_bound().is_null());
     EXPECT_TRUE(assumptions.at(symbolic::symbol("N")).tight_upper_bound().is_null());
     EXPECT_TRUE(assumptions.at(symbolic::symbol("M")).tight_lower_bound().is_null());
@@ -372,12 +371,16 @@ TEST(AssumptionsAnalysisTest, Init_i64) {
     // Check
     EXPECT_TRUE(symbolic::eq(*assumptions.at(symbolic::symbol("N")).lower_bounds().begin(), symbolic::integer(0)));
     EXPECT_TRUE(symbolic::eq(*assumptions.at(symbolic::symbol("N")).upper_bounds().begin(), SymEngine::Inf));
-    EXPECT_TRUE(symbolic::
-                    eq(*assumptions.at(symbolic::symbol("M")).lower_bounds().begin(),
-                       symbolic::integer(std::numeric_limits<int64_t>::min())));
-    EXPECT_TRUE(symbolic::
-                    eq(*assumptions.at(symbolic::symbol("M")).upper_bounds().begin(),
-                       symbolic::integer(std::numeric_limits<int64_t>::max())));
+    EXPECT_TRUE(
+        symbolic::
+            eq(*assumptions.at(symbolic::symbol("M")).lower_bounds().begin(),
+               symbolic::integer(std::numeric_limits<int64_t>::min()))
+    );
+    EXPECT_TRUE(
+        symbolic::
+            eq(*assumptions.at(symbolic::symbol("M")).upper_bounds().begin(),
+               symbolic::integer(std::numeric_limits<int64_t>::max()))
+    );
     EXPECT_TRUE(assumptions.at(symbolic::symbol("N")).tight_lower_bound().is_null());
     EXPECT_TRUE(assumptions.at(symbolic::symbol("N")).tight_upper_bound().is_null());
     EXPECT_TRUE(assumptions.at(symbolic::symbol("M")).tight_lower_bound().is_null());
@@ -422,8 +425,7 @@ TEST(AssumptionsAnalysisTest, For_1D) {
     EXPECT_TRUE(!i_assumptions.tight_upper_bound().is_null());
     EXPECT_TRUE(symbolic::eq(*i_assumptions.lower_bounds().begin(), symbolic::integer(0)));
     EXPECT_TRUE(symbolic::eq(i_assumptions.tight_lower_bound(), symbolic::integer(0)));
-    EXPECT_TRUE(symbolic::eq(*i_assumptions.upper_bounds().begin(), symbolic::sub(symbolic::symbol("N"), symbolic::one()))
-    );
+    EXPECT_TRUE(symbolic::eq(*i_assumptions.upper_bounds().begin(), symbolic::sub(symbolic::symbol("N"), symbolic::one())));
     EXPECT_TRUE(symbolic::eq(i_assumptions.tight_upper_bound(), symbolic::sub(symbolic::symbol("N"), symbolic::one())));
 
     auto& n_assumptions = assumptions.at(symbolic::symbol("N"));
@@ -470,8 +472,9 @@ TEST(AssumptionsAnalysisTest, For_1D_And) {
     EXPECT_TRUE(!i_assumptions.tight_upper_bound().is_null());
     EXPECT_TRUE(symbolic::eq(*i_assumptions.lower_bounds().begin(), symbolic::integer(0)));
     EXPECT_TRUE(symbolic::eq(i_assumptions.tight_lower_bound(), symbolic::integer(0)));
-    EXPECT_TRUE(symbolic::
-                    eq(i_assumptions.tight_upper_bound(), symbolic::min(symbolic::symbol("N"), symbolic::symbol("M"))));
+    EXPECT_TRUE(
+        symbolic::eq(i_assumptions.tight_upper_bound(), symbolic::min(symbolic::symbol("N"), symbolic::symbol("M")))
+    );
     bool found_m = false;
     bool found_n = false;
     for (const auto& ub : i_assumptions.upper_bounds()) {
@@ -532,7 +535,8 @@ TEST(AssumptionsAnalysisTest, For_2D) {
     EXPECT_TRUE(
         symbolic::eq(*i_assumptions.upper_bounds().begin(), symbolic::sub(symbolic::symbol("N"), symbolic::integer(2)))
     );
-    EXPECT_TRUE(symbolic::eq(i_assumptions.tight_upper_bound(), symbolic::sub(symbolic::symbol("N"), symbolic::integer(2)))
+    EXPECT_TRUE(
+        symbolic::eq(i_assumptions.tight_upper_bound(), symbolic::sub(symbolic::symbol("N"), symbolic::integer(2)))
     );
 
     auto& j_assumptions = assumptions.at(symbolic::symbol("j"));
@@ -540,11 +544,9 @@ TEST(AssumptionsAnalysisTest, For_2D) {
     EXPECT_EQ(j_assumptions.upper_bounds().size(), 1);
     EXPECT_TRUE(!j_assumptions.tight_lower_bound().is_null());
     EXPECT_TRUE(!j_assumptions.tight_upper_bound().is_null());
-    EXPECT_TRUE(symbolic::eq(*j_assumptions.lower_bounds().begin(), symbolic::add(symbolic::symbol("i"), symbolic::one()))
-    );
+    EXPECT_TRUE(symbolic::eq(*j_assumptions.lower_bounds().begin(), symbolic::add(symbolic::symbol("i"), symbolic::one())));
     EXPECT_TRUE(symbolic::eq(j_assumptions.tight_lower_bound(), symbolic::add(symbolic::symbol("i"), symbolic::one())));
-    EXPECT_TRUE(symbolic::eq(*j_assumptions.upper_bounds().begin(), symbolic::sub(symbolic::symbol("N"), symbolic::one()))
-    );
+    EXPECT_TRUE(symbolic::eq(*j_assumptions.upper_bounds().begin(), symbolic::sub(symbolic::symbol("N"), symbolic::one())));
     EXPECT_TRUE(symbolic::eq(j_assumptions.tight_upper_bound(), symbolic::sub(symbolic::symbol("N"), symbolic::one())));
 }
 
@@ -1125,13 +1127,15 @@ TEST(AssumptionsAnalysisTest, TileNest_StrideTightAndCoupledConstraintEnableProo
     EXPECT_TRUE(has_constraint) << "Expected coupled constraint `i - it - 60` on i.";
 
     // End-to-end: `3 + i < 64 + it` provable (the GEMM dead-remainder literal).
-    EXPECT_TRUE(symbolic::is_lt(
-        symbolic::add(symbolic::integer(3), i),
-        symbolic::add(symbolic::integer(64), it),
-        analysis.parameters(),
-        assums,
-        true
-    )) << "`3 + i < 64 + it` must be provable from the tile assumptions.";
+    EXPECT_TRUE(
+        symbolic::is_lt(
+            symbolic::add(symbolic::integer(3), i),
+            symbolic::add(symbolic::integer(64), it),
+            analysis.parameters(),
+            assums,
+            true
+        )
+    ) << "`3 + i < 64 + it` must be provable from the tile assumptions.";
 }
 
 // Int32 indvar variant of StreamK_AffineWorker_TileBaseBounded. The migration of

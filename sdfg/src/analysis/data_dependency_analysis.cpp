@@ -1120,8 +1120,8 @@ bool DataDependencyAnalysis::has_loop_boundary(structured_control_flow::Structur
     return this->loop_boundaries_.find(&loop) != this->loop_boundaries_.end();
 }
 
-const std::unordered_set<User*>& DataDependencyAnalysis::upward_exposed_reads(structured_control_flow::StructuredLoop&
-                                                                                  loop) const {
+const std::unordered_set<User*>& DataDependencyAnalysis::
+    upward_exposed_reads(structured_control_flow::StructuredLoop& loop) const {
     return this->loop_boundaries_.at(&loop).first;
 }
 

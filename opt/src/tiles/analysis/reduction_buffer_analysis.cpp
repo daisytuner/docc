@@ -68,14 +68,20 @@ public:
     }
     symbolic::Expression index = SymEngine::null;
 
-    void
-    use_as_src_node(const std::string& container, const data_flow::AccessNode&, const data_flow::Memlet& edge, const structured_control_flow::Block&)
-        override {
+    void use_as_src_node(
+        const std::string& container,
+        const data_flow::AccessNode&,
+        const data_flow::Memlet& edge,
+        const structured_control_flow::Block&
+    ) override {
         record(container, edge);
     }
-    void
-    use_as_dst_node(const std::string& container, const data_flow::AccessNode&, const data_flow::Memlet& edge, const structured_control_flow::Block&)
-        override {
+    void use_as_dst_node(
+        const std::string& container,
+        const data_flow::AccessNode&,
+        const data_flow::Memlet& edge,
+        const structured_control_flow::Block&
+    ) override {
         record(container, edge);
     }
     void use_as_symbol_read(
@@ -692,8 +698,8 @@ ReductionBufferInfo ReductionBufferAnalysis::
             }
             if (result.shared_owner && *result.shared_owner != reduction.element_id()) {
                 builder::StructuredSDFGBuilder builder(sdfg_);
-                auto* owner = dyn_cast<structured_control_flow::Reduce*>(builder.find_element_by_id(*result.shared_owner
-                ));
+                auto* owner =
+                    dyn_cast<structured_control_flow::Reduce*>(builder.find_element_by_id(*result.shared_owner));
                 if (!owner) {
                     throw InvalidSDFGException("missing shared buffer owner");
                 }

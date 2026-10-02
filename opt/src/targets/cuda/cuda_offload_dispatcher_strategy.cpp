@@ -85,8 +85,7 @@ void CUDAOffloadDispatcherStrategy::emit_target_header_declarations(codegen::Pre
     kernel_header_stream << "#include <cuda_pipeline.h>" << std::endl;
 }
 
-std::string CUDAOffloadDispatcherStrategy::warp_shuffle_xor(const std::string& value, const std::string& lane_mask)
-    const {
+std::string CUDAOffloadDispatcherStrategy::warp_shuffle_xor(const std::string& value, const std::string& lane_mask) const {
     return "__shfl_xor_sync(0xffffffff, " + value + ", " + lane_mask + ")";
 }
 

@@ -178,8 +178,8 @@ bool ReductionSharedMemoryDelinearization::
             const auto* layout = &*info.layout;
             auto linear_thread_index = info.linear_thread_index;
             if (info.shared_owner && *info.shared_owner != reduction->element_id()) {
-                auto* owner = dyn_cast<structured_control_flow::Reduce*>(builder.find_element_by_id(*info.shared_owner)
-                );
+                auto* owner =
+                    dyn_cast<structured_control_flow::Reduce*>(builder.find_element_by_id(*info.shared_owner));
                 if (!owner) {
                     throw InvalidSDFGException("missing enclosing shared reduction buffer owner");
                 }

@@ -211,6 +211,11 @@ public:
 
     symbolic::Expression flop() const override;
 
+    data_flow::PointerAccessType pointer_access_type(int input_idx) const override;
+
+    bool relocalize_operand(int input_idx, const TensorLayout& packed) override;
+    bool can_relocalize_operand(int input_idx, const TensorLayout& packed) const override;
+
     bool supports_integer_types() const override {
         return true;
     }

@@ -163,8 +163,7 @@ public:
         structured_control_flow::StructuredLoop& loop, const structured_control_flow::ScheduleType& schedule
     ) const;
     /// Return GPU reductions at, above, or below @p loop in the current graph.
-    std::vector<structured_control_flow::Reduce*> affected_reductions(structured_control_flow::StructuredLoop& loop
-    ) const;
+    std::vector<structured_control_flow::Reduce*> affected_reductions(structured_control_flow::StructuredLoop& loop) const;
 
     /// Sum shared allocation contributions at or below @p root, charging each owner
     /// once. Unknown costs, duplicate named allocations, or overflow are unsupported.

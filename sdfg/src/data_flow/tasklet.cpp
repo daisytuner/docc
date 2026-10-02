@@ -283,8 +283,7 @@ const std::string& Tasklet::output() const {
     return this->outputs_[0];
 };
 
-std::unique_ptr<DataFlowNode> Tasklet::clone(size_t element_id, const graph::Vertex vertex, DataFlowGraph& parent)
-    const {
+std::unique_ptr<DataFlowNode> Tasklet::clone(size_t element_id, const graph::Vertex vertex, DataFlowGraph& parent) const {
     return std::unique_ptr<Tasklet>(
         new Tasklet(element_id, this->debug_info_, vertex, parent, this->code_, this->outputs_.at(0), this->inputs_)
     );

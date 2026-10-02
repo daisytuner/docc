@@ -44,14 +44,20 @@ public:
         return has_indexed_;
     }
 
-    void
-    use_as_src_node(const std::string& container, const data_flow::AccessNode&, const data_flow::Memlet& edge, const structured_control_flow::Block&)
-        override {
+    void use_as_src_node(
+        const std::string& container,
+        const data_flow::AccessNode&,
+        const data_flow::Memlet& edge,
+        const structured_control_flow::Block&
+    ) override {
         record(container, edge);
     }
-    void
-    use_as_dst_node(const std::string& container, const data_flow::AccessNode&, const data_flow::Memlet& edge, const structured_control_flow::Block&)
-        override {
+    void use_as_dst_node(
+        const std::string& container,
+        const data_flow::AccessNode&,
+        const data_flow::Memlet& edge,
+        const structured_control_flow::Block&
+    ) override {
         record(container, edge);
     }
 

@@ -36,8 +36,8 @@ QuantizationType SpatialTensorNode::quantization(const data_flow::DataFlowGraph&
     }
 }
 
-std::optional<QuantizationType> SpatialTensorNode::uniform_quantization(const data_flow::DataFlowGraph& data_flow_graph
-) const {
+std::optional<QuantizationType> SpatialTensorNode::
+    uniform_quantization(const data_flow::DataFlowGraph& data_flow_graph) const {
     if (fixed_quantization_ != QUANTIZATION_MATCH_INPUTS) {
         auto inferred = this->primitive_type(data_flow_graph);
         if (inferred == fixed_quantization_) {
@@ -242,8 +242,8 @@ void SpatialTensorNodeBaseSerializer::fill_base_values(const SpatialTensorNode& 
     j["result_quant"] = node.quantization();
 }
 
-SpatialTensorNodeBaseSerializer::BaseDeser SpatialTensorNodeBaseSerializer::deserialize_base_values(const nlohmann::json&
-                                                                                                        j) {
+SpatialTensorNodeBaseSerializer::BaseDeser SpatialTensorNodeBaseSerializer::
+    deserialize_base_values(const nlohmann::json& j) {
     assert(j.contains("element_id"));
     assert(j.contains("code"));
     assert(j.contains("debug_info"));

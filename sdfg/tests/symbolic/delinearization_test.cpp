@@ -996,20 +996,18 @@ TEST(DelinearizeTest, Im2colExplicit6D_RequiresOffsetAwareStrideCheck) {
     // Upper-bound literals canonicalised to `delta <= 0`:
     //   2*hout + kh - 3 - (Hin - 1) <= 0  ->  2*hout + kh - (Hin + 2) <= 0
     //   2*wout + kw - (Hin + 2) <= 0
-    auto c_h_ub = symbolic::
-        expand(symbolic::sub(symbolic::add(symbolic::mul(symbolic::integer(2), hout), kh), symbolic::integer(kHin + 2))
-        );
-    auto c_w_ub = symbolic::
-        expand(symbolic::sub(symbolic::add(symbolic::mul(symbolic::integer(2), wout), kw), symbolic::integer(kHin + 2))
-        );
+    auto c_h_ub = symbolic::expand(
+        symbolic::sub(symbolic::add(symbolic::mul(symbolic::integer(2), hout), kh), symbolic::integer(kHin + 2))
+    );
+    auto c_w_ub = symbolic::expand(
+        symbolic::sub(symbolic::add(symbolic::mul(symbolic::integer(2), wout), kw), symbolic::integer(kHin + 2))
+    );
     // Lower-bound literals (`delta <= 0` form of `h_in >= 0`):
     //   -(2*hout + kh - 3) <= 0  ->  -2*hout - kh + 3 <= 0
-    auto c_h_lb =
-        symbolic::expand(symbolic::sub(symbolic::integer(3), symbolic::add(symbolic::mul(symbolic::integer(2), hout), kh))
-        );
-    auto c_w_lb =
-        symbolic::expand(symbolic::sub(symbolic::integer(3), symbolic::add(symbolic::mul(symbolic::integer(2), wout), kw))
-        );
+    auto c_h_lb = symbolic::
+        expand(symbolic::sub(symbolic::integer(3), symbolic::add(symbolic::mul(symbolic::integer(2), hout), kh)));
+    auto c_w_lb = symbolic::
+        expand(symbolic::sub(symbolic::integer(3), symbolic::add(symbolic::mul(symbolic::integer(2), wout), kw)));
     ahout.add_constraint(c_h_ub);
     akh.add_constraint(c_h_ub);
     awout.add_constraint(c_w_ub);

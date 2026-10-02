@@ -55,6 +55,8 @@ public:
 
     symbolic::Expression total_elements() const;
 
+    symbolic::Expression memory_span() const;
+
     symbolic::MultiExpression linear_strides() const;
 
     /// apply the index to the layout, returning an "element-address"

@@ -129,8 +129,7 @@ passes::LibNodeExpander::ExpandOutcome ArangeNode::
     using Use = passes::LibNodeExpander::InputUse;
     // _end is Skip: it is captured symbolically in shape_ and not needed in the expansion body
     auto standalone =
-        context.replacement_requires_access_nodes({Use::IndirectWrite, Use::IndirectRead, Use::Skip, Use::IndirectRead}
-        );
+        context.replacement_requires_access_nodes({Use::IndirectWrite, Use::IndirectRead, Use::Skip, Use::IndirectRead});
 
     if (!standalone) {
         return context.unable();

@@ -420,8 +420,9 @@ std::pair<graph::Vertex, graph::Vertex> Users::traverse(structured_control_flow:
         }
         // Indvar
         auto v = boost::add_vertex(this->graph_);
-        this->add_user(std::make_unique<
-                       ForUser>(v, for_stmt->indvar()->get_name(), for_stmt, Use::WRITE, true, false, false));
+        this->add_user(
+            std::make_unique<ForUser>(v, for_stmt->indvar()->get_name(), for_stmt, Use::WRITE, true, false, false)
+        );
 
         boost::add_edge(last, v, this->graph_);
         last = v;
@@ -449,8 +450,9 @@ std::pair<graph::Vertex, graph::Vertex> Users::traverse(structured_control_flow:
         }
 
         auto update_v = boost::add_vertex(this->graph_);
-        this->add_user(std::make_unique<
-                       ForUser>(update_v, for_stmt->indvar()->get_name(), for_stmt, Use::WRITE, false, false, true));
+        this->add_user(
+            std::make_unique<ForUser>(update_v, for_stmt->indvar()->get_name(), for_stmt, Use::WRITE, false, false, true)
+        );
 
         if (end != boost::graph_traits<graph::Graph>::null_vertex()) {
             boost::add_edge(end, update_v, this->graph_);

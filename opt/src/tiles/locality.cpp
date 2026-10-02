@@ -179,8 +179,8 @@ std::optional<Space> LocalityPlan::required_space(bool container_written) const 
     return Space::Register;
 }
 
-LocalityPlan Tile::placement(structured_control_flow::StructuredLoop& loop, analysis::AnalysisManager& analysis_manager)
-    const {
+LocalityPlan Tile::
+    placement(structured_control_flow::StructuredLoop& loop, analysis::AnalysisManager& analysis_manager) const {
     return LocalityPlan::analyze(loop, axes_, analysis_manager);
 }
 
