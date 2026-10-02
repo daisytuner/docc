@@ -166,13 +166,10 @@ TEST_F(CutoutTest, ProvenanceGroupedInstrumentationSharesLogicalOrigin) {
     const auto& outermost_loops = loop_analysis.outermost_loops();
     ASSERT_EQ(outermost_loops.size(), 3u);
 
-    nlohmann::json provenance = nlohmann::json::object();
-    provenance[std::to_string(outermost_loops[1]->element_id())] = 777;
-    provenance[std::to_string(outermost_loops[2]->element_id())] = 777;
-    builder_->subject().add_metadata("sdfg.loop_provenance.v1", provenance.dump());
-    builder_->subject().add_metadata(
-        "docc.rpc_loop_results.v1", R"({"777":{"expected_speedup":1.75,"vector_distance":0.125}})"
-    );
+    for (size_t i = 1; i < outermost_loops.size(); ++i) {
+        metadata::set_original_loop_id(*outermost_loops[i], 777);
+        metadata::set_rpc_optimization(*outermost_loops[i], 1.75, 0.125);
+    }
 
     auto plan =
         codegen::InstrumentationPlan::provenance_grouped_outermost_loops_plan(builder_->subject(), true, true);
@@ -231,10 +228,8 @@ TEST_F(CutoutTest, ProvenanceGroupedInstrumentationFallsBackForNoncontiguousMemb
     const auto& loops = loop_analysis.outermost_loops();
     ASSERT_EQ(loops.size(), 3u);
 
-    nlohmann::json provenance = nlohmann::json::object();
-    provenance[std::to_string(loops[0]->element_id())] = 900;
-    provenance[std::to_string(loops[2]->element_id())] = 900;
-    builder_->subject().add_metadata("sdfg.loop_provenance.v1", provenance.dump());
+    metadata::set_original_loop_id(*loops[0], 900);
+    metadata::set_original_loop_id(*loops[2], 900);
 
     auto plan = codegen::InstrumentationPlan::provenance_grouped_outermost_loops_plan(builder_->subject());
     for (const auto* loop : loops) {

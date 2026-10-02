@@ -111,6 +111,27 @@ void Element::set_debug_info(const DebugInfo& debug_info) {
     this->debug_info_ = debug_info;
 }
 
+void Element::add_metadata(const std::string& key, const std::string& value) {
+    this->metadata_[key] = value;
+}
+
+void Element::remove_metadata(const std::string& key) {
+    this->metadata_.erase(key);
+}
+
+const std::string& Element::metadata(const std::string& key) const {
+    return this->metadata_.at(key);
+}
+
+const std::string* Element::metadata_if_exists(const std::string& key) const {
+    const auto it = this->metadata_.find(key);
+    return it == this->metadata_.end() ? nullptr : &it->second;
+}
+
+const std::unordered_map<std::string, std::string>& Element::metadata() const {
+    return this->metadata_;
+}
+
 void Element::replace(const symbolic::ExpressionMapping& replacements) {
     for (auto& pair : replacements) {
         replace(pair.first, pair.second);

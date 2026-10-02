@@ -1485,7 +1485,11 @@ void StructuredSDFGBuilder::add_dataflow(const data_flow::DataFlowGraph& from, B
     std::unordered_map<graph::Vertex, graph::Vertex> node_mapping;
     for (const auto* node : nodes) {
         auto vertex = boost::add_vertex(to_dataflow.graph_);
-        to_dataflow.nodes_.insert({vertex, node->clone(this->new_element_id(), vertex, to_dataflow)});
+        auto copied_node = node->clone(this->new_element_id(), vertex, to_dataflow);
+        for (const auto& [key, value] : node->metadata()) {
+            copied_node->add_metadata(key, value);
+        }
+        to_dataflow.nodes_.insert({vertex, std::move(copied_node)});
         node_mapping.insert({node->vertex(), vertex});
     }
 
@@ -1495,12 +1499,13 @@ void StructuredSDFGBuilder::add_dataflow(const data_flow::DataFlowGraph& from, B
 
         auto edge = boost::add_edge(src, dst, to_dataflow.graph_);
 
-        to_dataflow.edges_.insert(
-            {edge.first,
-             memlet->clone(
-                 this->new_element_id(), edge.first, to_dataflow, *to_dataflow.nodes_[src], *to_dataflow.nodes_[dst]
-             )}
+        auto copied_memlet = memlet->clone(
+            this->new_element_id(), edge.first, to_dataflow, *to_dataflow.nodes_[src], *to_dataflow.nodes_[dst]
         );
+        for (const auto& [key, value] : memlet->metadata()) {
+            copied_memlet->add_metadata(key, value);
+        }
+        to_dataflow.edges_.insert({edge.first, std::move(copied_memlet)});
     }
 };
 
