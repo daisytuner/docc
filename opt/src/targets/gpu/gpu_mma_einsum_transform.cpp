@@ -88,8 +88,9 @@ einsum::ReplaceOutcome GpuMmaEinsumReplacer::
     }
 
     auto mma_tiling = mma_arch->get_mma_tiling({analysis.m, analysis.n, analysis.k});
-    auto impl_type = mma_arch->get_matmul_impl_type(*arch_, mma_tiling);
-    if (!impl_type) {
+    // get_matmul_impl_type gates applicability; nodes are stamped with the unified
+    // MMA impl type (the dispatcher key).
+    if (!mma_arch->get_matmul_impl_type(*arch_, mma_tiling).has_value()) {
         return context.unable();
     }
 
@@ -111,7 +112,7 @@ einsum::ReplaceOutcome GpuMmaEinsumReplacer::
         analysis.input_type,
         analysis.output_type,
         analysis.output_type,
-        impl_type.value(),
+        mma_arch->get_mma_impl_type(),
         true,
         cluster.consumed_loops.front()->debug_info()
     );

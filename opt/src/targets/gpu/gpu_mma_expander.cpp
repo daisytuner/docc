@@ -409,11 +409,9 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::handle_expand(
     auto input_type = node.uniform_quantization(node.get_parent()).value();
     auto output_type = input_type;
 
+    // Nodes are stamped with the unified MMA impl type (the dispatcher key); the
+    // arch-specific get_matmul_impl_type is only an applicability gate.
     auto new_impl_type = arch_->mma_support()->get_mma_impl_type();
-
-    if (!new_impl_type.has_value()) {
-        return context.unable();
-    }
 
     auto standalone = context.replacement_requires_access_nodes({InputUse::Scalar, InputUse::Scalar, InputUse::Scalar});
 
@@ -428,7 +426,7 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::handle_expand(
             input_type,
             output_type,
             output_type,
-            new_impl_type.value(),
+            new_impl_type,
             true,
             node.debug_info()
         );

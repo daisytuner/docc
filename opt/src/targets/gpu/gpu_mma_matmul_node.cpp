@@ -75,11 +75,9 @@ symbolic::Expression GpuMmaMatmulNode::flop() const {
 
 data_flow::PointerAccessType GpuMmaMatmulNode::pointer_access_type(int input_idx) const {
     if (input_idx == Y_INPUT_IDX) {
-        return data_flow::PointerAccessMeta::create_generic(
-            data_flow::ConvexAccessPattern::create(symbolic::integer(mma_block_size_.m * mma_block_size_.n), true),
-            data_flow::ConvexAccessPattern::create(symbolic::integer(mma_block_size_.m * mma_block_size_.n), true),
-            true
-        );
+        auto y_size = symbolic::integer(mma_block_size_.m * mma_block_size_.n);
+        data_flow::AccessRegion rw{/*may_access=*/true, math::tensor::TensorLayout({y_size}), /*covers_all=*/true};
+        return data_flow::PointerAccessMeta::create_generic(rw, rw, true);
     } else if (input_idx == A_INPUT_IDX) {
         return data_flow::PointerAccessMeta::
             create_read_only(symbolic::integer(mma_block_size_.m * mma_block_size_.k), true);
