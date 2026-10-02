@@ -7,7 +7,7 @@
 #include <sdfg/exceptions.h>
 #include <sdfg/helpers/helpers.h>
 
-#include "sdfg/codegen/language_extensions/rocm_language_extension.h"
+#include "sdfg/targets/rocm/codegen/rocm_language_extension.h"
 #include "sdfg/targets/rocm/rocm.h"
 
 namespace sdfg {
@@ -33,7 +33,7 @@ codegen::TargetType ROCMReduceDispatcher::target_type() const {
 }
 
 std::unique_ptr<codegen::LanguageExtension> ROCMReduceDispatcher::create_device_language_extension() const {
-    return std::make_unique<codegen::ROCMLanguageExtension>(sdfg_);
+    return std::make_unique<rocm::ROCMLanguageExtension>(sdfg_);
 }
 
 bool ROCMReduceDispatcher::is_device_pointer_storage(const types::StorageType& storage) const {

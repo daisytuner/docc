@@ -2,8 +2,6 @@
 
 #include "sdfg/codegen/language_extensions/c_language_extension.h"
 #include "sdfg/codegen/language_extensions/cpp_language_extension.h"
-#include "sdfg/codegen/language_extensions/cuda_language_extension.h"
-#include "sdfg/codegen/language_extensions/rocm_language_extension.h"
 
 namespace sdfg {
 namespace data_flow {
@@ -56,39 +54,6 @@ data_flow::LibraryNode& BarrierLocalNodeSerializer::deserialize(
     }
     return builder.add_library_node<data_flow::BarrierLocalNode>(parent, DebugInfo());
 };
-
-BarrierLocalNodeDispatcher::BarrierLocalNodeDispatcher(
-    codegen::LanguageExtension& language_extension,
-    const Function& function,
-    const data_flow::DataFlowGraph& data_flow_graph,
-    const BarrierLocalNode& node
-)
-    : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
-}
-
-void BarrierLocalNodeDispatcher::dispatch(
-    codegen::PrettyPrinter& stream,
-    codegen::PrettyPrinter& globals_stream,
-    codegen::CodeSnippetFactory& library_snippet_factory
-) {
-    if (dynamic_cast<codegen::CLanguageExtension*>(&this->language_extension_) != nullptr) {
-        throw std::runtime_error(
-            "ThreadBarrierDispatcher is not supported for C language extension. Use CUDA or ROCM "
-            "language extension instead."
-        );
-    } else if (dynamic_cast<codegen::CPPLanguageExtension*>(&this->language_extension_) != nullptr) {
-        throw std::runtime_error(
-            "ThreadBarrierDispatcher is not supported for C++ language extension. Use CUDA or ROCM "
-            "language extension instead."
-        );
-    } else if (dynamic_cast<codegen::CUDALanguageExtension*>(&this->language_extension_) != nullptr) {
-        stream << "__syncthreads();" << std::endl;
-    } else if (dynamic_cast<codegen::ROCMLanguageExtension*>(&this->language_extension_) != nullptr) {
-        stream << "__syncthreads();" << std::endl;
-    } else {
-        throw std::runtime_error("Unsupported language extension for ThreadBarrierDispatcher");
-    }
-}
 
 
 } // namespace data_flow

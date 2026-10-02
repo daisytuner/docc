@@ -7,7 +7,7 @@
 #include <sdfg/exceptions.h>
 #include <sdfg/helpers/helpers.h>
 
-#include "sdfg/codegen/language_extensions/cuda_language_extension.h"
+#include "sdfg/targets/cuda/codegen/cuda_language_extension.h"
 #include "sdfg/targets/cuda/cuda.h"
 
 namespace sdfg {
@@ -33,7 +33,7 @@ codegen::TargetType CUDAReduceDispatcher::target_type() const {
 }
 
 std::unique_ptr<codegen::LanguageExtension> CUDAReduceDispatcher::create_device_language_extension() const {
-    return std::make_unique<codegen::CUDALanguageExtension>(sdfg_);
+    return std::make_unique<CUDALanguageExtension>(sdfg_);
 }
 
 bool CUDAReduceDispatcher::is_device_pointer_storage(const types::StorageType& storage) const {

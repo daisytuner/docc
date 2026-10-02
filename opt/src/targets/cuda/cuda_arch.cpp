@@ -98,7 +98,7 @@ std::vector<CudaComputeCapability> query_cuda_compute_capabilities() {
 
 bool CudaMmaSupport::supported_types(types::PrimitiveType input_type, types::PrimitiveType output_type) const {
     if (input_type == types::PrimitiveType::Half) {
-        return this->mma_block_m > 0;
+        return this->mma_block_size.m > 0;
     } else if (input_type == types::PrimitiveType::BFloat) { // TF32 would go here
         return this->tf32_support;
     } else if (input_type == types::PrimitiveType::Double) {
@@ -113,16 +113,18 @@ std::optional<data_flow::ImplementationType> CudaMmaSupport::
     return std::nullopt;
 }
 
+data_flow::ImplementationType CudaMmaSupport::get_mma_impl_type() const {
+    return {"CUDA_MMA"};
+}
+
 GpuMmaTiling CudaMmaSupport::get_mma_tiling(const symbolic::MultiExpression& res_shape) const {
     GpuMmaTiling tiling;
-    tiling.mma_block_m = mma_block_m;
-    tiling.mma_block_n = mma_block_n;
-    tiling.mma_block_k = mma_block_k;
+    tiling.mma_block_size = mma_block_size;
     tiling.threads_per_mma_block_m = threads_per_mma_block;
 
-    auto mma_blocks_m = get_integer_block_count(res_shape.at(0), tiling.mma_block_m);
-    auto mma_blocks_n = get_integer_block_count(res_shape.at(1), tiling.mma_block_n);
-    auto mma_blocks_k = get_integer_block_count(res_shape.at(2), tiling.mma_block_k);
+    auto mma_blocks_m = get_integer_block_count(res_shape.at(0), tiling.mma_block_size.m);
+    auto mma_blocks_n = get_integer_block_count(res_shape.at(1), tiling.mma_block_size.n);
+    auto mma_blocks_k = get_integer_block_count(res_shape.at(2), tiling.mma_block_size.k);
 
     if (!mma_blocks_m || !mma_blocks_n || !mma_blocks_k) {
         throw std::runtime_error("Result shape is not compatible with MMA block sizes.");
@@ -153,6 +155,23 @@ GpuMmaTiling CudaMmaSupport::get_mma_tiling(const symbolic::MultiExpression& res
     }
 
     return tiling;
+}
+
+void CudaMmaSupport::set_mma_fragment_storage_type(
+    types::StorageType& storage_type, const MmaBlockSize& size, MmaFragmentType type, MmaFragmentLayout layout
+) const {
+    storage_type.value() = MMA_STORAGE_TYPE;
+    storage_type.args(
+        {symbolic::integer(size.m),
+         symbolic::integer(size.n),
+         symbolic::integer(size.k),
+         symbolic::integer(static_cast<int>(type)),
+         symbolic::integer(static_cast<int>(layout))}
+    );
+}
+
+bool CudaMmaSupport::is_mma_type(const types::StorageType& storage) {
+    return storage.value() == MMA_STORAGE_TYPE;
 }
 
 bool CudaMmaSupport::valid_block_counts(uint16_t block_base, int m_blocks, int n_blocks, int k_blocks) const {

@@ -362,6 +362,13 @@ bool LocalStorage::prepare(builder::StructuredSDFGBuilder& builder, analysis::An
     // whole grid. Stage once, reuse across every sibling consumer below.
     if (container_read_ && !container_written_) {
         tiles::LocalityPlan topo =
+            //     tiles::LocalityPlan{
+            //     {},
+            //     false,
+            //     true,
+            //     false,
+            //     false
+            // };
             tiles::LocalityPlan::analyze(loop_, tiles::TileAxis::enclosing(loop_, {}), analysis_manager);
         if (topo.enclosing_cooperative()) {
             auto consumers = block_scheduled_consumers(loop_, container_, analysis_manager);

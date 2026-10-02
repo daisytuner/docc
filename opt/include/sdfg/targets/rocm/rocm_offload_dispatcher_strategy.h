@@ -3,8 +3,8 @@
 #include <string>
 #include <vector>
 
+#include "codegen/rocm_language_extension.h"
 #include "sdfg/codegen/language_extension.h"
-#include "sdfg/codegen/language_extensions/rocm_language_extension.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/gpu/gpu_offload_base_dispatcher.h"
 
@@ -20,7 +20,7 @@ namespace rocm {
  */
 class ROCMOffloadDispatcherStrategy : public gpu::GPUOffloadDispatcherStrategy {
 public:
-    codegen::ROCMLanguageExtension kernel_language_extension_;
+    ROCMLanguageExtension kernel_language_extension_;
 
     codegen::LanguageExtension& create_kernel_language_extension() override;
 

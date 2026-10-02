@@ -40,21 +40,6 @@ public:
     ) override;
 };
 
-class BarrierLocalNodeDispatcher : public codegen::LibraryNodeDispatcher {
-public:
-    BarrierLocalNodeDispatcher(
-        codegen::LanguageExtension& language_extension,
-        const Function& function,
-        const data_flow::DataFlowGraph& data_flow_graph,
-        const data_flow::BarrierLocalNode& node
-    );
-
-    void dispatch(
-        codegen::PrettyPrinter& stream,
-        codegen::PrettyPrinter& globals_stream,
-        codegen::CodeSnippetFactory& library_snippet_factory
-    ) override;
-};
 
 } // namespace data_flow
 } // namespace sdfg

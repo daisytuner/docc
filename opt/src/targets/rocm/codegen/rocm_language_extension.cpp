@@ -1,12 +1,12 @@
-#include "sdfg/codegen/language_extensions/rocm_language_extension.h"
+#include "sdfg/targets/rocm/codegen/rocm_language_extension.h"
 
 #include "sdfg/codegen/language_extensions/cpp_language_extension.h"
 #include "sdfg/codegen/utils.h"
 #include "sdfg/data_flow/library_node.h"
 #include "sdfg/data_flow/tasklet.h"
+#include "sdfg/targets/rocm/rocm_arch.h"
 
-namespace sdfg {
-namespace codegen {
+namespace sdfg::rocm {
 
 std::string ROCMLanguageExtension::primitive_type(const types::PrimitiveType prim_type) {
     switch (prim_type) {
@@ -67,11 +67,17 @@ std::string ROCMLanguageExtension::
         val << " ";
         val << name;
     } else if (auto array_type = dynamic_cast<const types::Array*>(&type)) {
-        if (array_type->storage_type().is_nv_shared()) {
-            val << "__shared__ ";
+        if (gpu::rocm::RocmMmaSupport::is_mma_type(array_type->storage_type())) {
+            arch_->mma_support()
+                ->emit_block_frag_type(val, array_type->storage_type(), array_type->element_type().primitive_type());
+            val << " " << name;
+        } else {
+            if (array_type->storage_type().is_nv_shared()) {
+                val << "__shared__ ";
+            }
+            auto& element_type = array_type->element_type();
+            val << declaration(name + "[" + this->expression(array_type->num_elements()) + "]", element_type);
         }
-        auto& element_type = array_type->element_type();
-        val << declaration(name + "[" + this->expression(array_type->num_elements()) + "]", element_type);
     } else if (auto pointer_type = dynamic_cast<const types::Pointer*>(&type)) {
         if (pointer_type->has_pointee_type()) {
             const types::IType& pointee = pointer_type->pointee_type();
@@ -87,7 +93,7 @@ std::string ROCMLanguageExtension::
             val << "void*";
             val << " " << name;
         }
-    } else if (auto ref_type = dynamic_cast<const Reference*>(&type)) {
+    } else if (auto ref_type = dynamic_cast<const codegen::Reference*>(&type)) {
         val << declaration("&" + name, ref_type->reference_type());
     } else if (auto structure_type = dynamic_cast<const types::Structure*>(&type)) {
         if (structure_type->storage_type().is_nv_shared()) {
@@ -183,7 +189,7 @@ std::string ROCMLanguageExtension::subset(const types::IType& type, const data_f
 };
 
 std::string ROCMLanguageExtension::expression(const symbolic::Expression expr) {
-    CPPSymbolicPrinter printer(this->function_, this->external_prefix_);
+    codegen::CPPSymbolicPrinter printer(this->function_, this->external_prefix_);
     return printer.apply(expr);
 };
 
@@ -369,5 +375,4 @@ std::string ROCMLanguageExtension::zero(const types::PrimitiveType prim_type) {
     }
 }
 
-} // namespace codegen
-} // namespace sdfg
+} // namespace sdfg::rocm

@@ -1,6 +1,11 @@
 #include "sdfg/targets/gpu/gpu_mma_dispatcher.h"
 
 #include "sdfg/symbolic/symbolic.h"
+#include "sdfg/targets/gpu/gpu_mma_fill_node.h"
+#include "sdfg/targets/gpu/gpu_mma_fragment_eltwise_add_node.h"
+#include "sdfg/targets/gpu/gpu_mma_fragment_load_node.h"
+#include "sdfg/targets/gpu/gpu_mma_fragment_store_node.h"
+#include "sdfg/targets/gpu/gpu_mma_matmul_node.h"
 #include "sdfg/types/scalar.h"
 #include "sdfg/types/type.h"
 
@@ -58,9 +63,9 @@ void GpuMmaMatmulDispatcher::dispatch_code_with_edges(
 
     auto tiling = get_mma_tiling({result_layout.get_dim(0), result_layout.get_dim(1), k_dim});
 
-    auto wave_tile_m = tiling.wave_tile_blocks_m * tiling.mma_block_m;
-    auto wave_tile_n = tiling.wave_tile_blocks_n * tiling.mma_block_n;
-    auto wave_tile_k = tiling.mma_block_k;
+    auto wave_tile_m = tiling.wave_tile_blocks_m * tiling.mma_block_size.m;
+    auto wave_tile_n = tiling.wave_tile_blocks_n * tiling.mma_block_size.n;
+    auto wave_tile_k = tiling.mma_block_size.k;
 
     std::array<int, 3> wave_tile_dims = {wave_tile_m, wave_tile_n, wave_tile_k};
 
@@ -84,28 +89,30 @@ void GpuMmaMatmulDispatcher::dispatch_code_with_edges(
     emit_block_frag_declaration(
         out,
         "fragA",
-        FragmentType::A,
+        MmaFragmentType::A,
         wave_tile_dims,
-        layout_org_a_col_major ? TensorLayout::LAYOUT_COL_MAJOR : TensorLayout::LAYOUT_ROW_MAJOR,
+        layout_org_a_col_major ? MmaFragmentLayout::MMA_LAYOUT_COL_MAJOR : MmaFragmentLayout::MMA_LAYOUT_ROW_MAJOR,
         uniform_type
     );
     emit_block_frag_declaration(
         out,
         "fragB",
-        FragmentType::B,
+        MmaFragmentType::B,
         wave_tile_dims,
-        layout_org_b_col_major ? TensorLayout::LAYOUT_COL_MAJOR : TensorLayout::LAYOUT_ROW_MAJOR,
+        layout_org_b_col_major ? MmaFragmentLayout::MMA_LAYOUT_COL_MAJOR : MmaFragmentLayout::MMA_LAYOUT_ROW_MAJOR,
         uniform_type
     );
 
-    emit_block_frag_declaration(out, "fragAcc", FragmentType::C, wave_tile_dims, TensorLayout::LAYOUT_OTHER, uniform_type);
+    emit_block_frag_declaration(
+        out, "fragAcc", MmaFragmentType::C, wave_tile_dims, MmaFragmentLayout::MMA_LAYOUT_UNSPECIFIED, uniform_type
+    );
 
     emit_frag_zero_init(out, "fragAcc", uniform_type);
 
     auto sym_k = symbolic::symbol("k");
 
-    out.stream << "for (int k = 0; k < " << language_extension_.expression(k_dim) << "; k += " << tiling.mma_block_k
-               << ") {" << std::endl;
+    out.stream << "for (int k = 0; k < " << language_extension_.expression(k_dim)
+               << "; k += " << tiling.mma_block_size.k << ") {" << std::endl;
     out.stream.changeIndent(+4);
 
     emit_load_macro(
@@ -125,7 +132,7 @@ void GpuMmaMatmulDispatcher::dispatch_code_with_edges(
 
     emit_mma_compute(out, "fragAcc", "fragA", "fragB", "fragAcc");
 
-    auto mma_k = symbolic::integer(tiling.mma_block_k);
+    auto mma_k = symbolic::integer(tiling.mma_block_size.k);
 
     out.stream << matA_glbl_offset
                << " += " << language_extension_.expression(symbolic::mul(mma_k, layout_org_a.get_stride(1))) << ";"
@@ -137,14 +144,16 @@ void GpuMmaMatmulDispatcher::dispatch_code_with_edges(
     out.stream.changeIndent(-4);
     out.stream << "}" << std::endl;
 
-    emit_block_frag_declaration(out, "fragC", FragmentType::C, wave_tile_dims, TensorLayout::LAYOUT_OTHER, uniform_type);
+    emit_block_frag_declaration(
+        out, "fragC", MmaFragmentType::C, wave_tile_dims, MmaFragmentLayout::MMA_LAYOUT_UNSPECIFIED, uniform_type
+    );
     emit_load_macro(
         out,
         "fragC",
         inputs.at(math::tensor::MatMulNode::Y_INPUT_IDX).expr,
         get_start_offset(result_layout),
         result_line_size,
-        result_col_major ? TensorLayout::LAYOUT_COL_MAJOR : TensorLayout::LAYOUT_ROW_MAJOR
+        result_col_major ? MmaFragmentLayout::MMA_LAYOUT_COL_MAJOR : MmaFragmentLayout::MMA_LAYOUT_ROW_MAJOR
     );
 
     emit_eltwise_compute(out, "fragAcc", {"fragC"}, [](auto& out, auto& main_elem, auto& idx, auto& args) {
@@ -157,7 +166,7 @@ void GpuMmaMatmulDispatcher::dispatch_code_with_edges(
         inputs.at(0).expr,
         get_start_offset(result_layout),
         result_line_size,
-        result_col_major ? TensorLayout::LAYOUT_COL_MAJOR : TensorLayout::LAYOUT_ROW_MAJOR
+        result_col_major ? MmaFragmentLayout::MMA_LAYOUT_COL_MAJOR : MmaFragmentLayout::MMA_LAYOUT_ROW_MAJOR
     );
 }
 
@@ -174,6 +183,80 @@ bool GpuMmaMatmulDispatcher::is_col_major(const math::tensor::TensorLayout& layo
 
 symbolic::Expression GpuMmaMatmulDispatcher::get_start_offset(const math::tensor::TensorLayout& layout) const {
     return layout.offset();
+}
+
+void GpuMmaMatmulDispatcher::dispatch_single_mma(codegen::CodegenOutput& out, std::vector<codegen::DispatchInput>& inputs)
+    const {
+    emit_needed_declarations(out);
+
+    // All three operands are fragments (declared by their containers); this is only the mma_sync.
+    const std::string& acc = inputs.at(GpuMmaMatmulNode::Y_INPUT_IDX).expr;
+    const std::string& frag_a = inputs.at(GpuMmaMatmulNode::A_INPUT_IDX).expr;
+    const std::string& frag_b = inputs.at(GpuMmaMatmulNode::B_INPUT_IDX).expr;
+
+    emit_mma_compute(out, acc, frag_a, frag_b, acc);
+}
+
+void GpuMmaMatmulDispatcher::
+    dispatch_fragment_load(codegen::CodegenOutput& out, std::vector<codegen::DispatchInput>& inputs) const {
+    auto& node = static_cast<const GpuMmaFragmentLoadNode&>(node_);
+    auto& layout = node.layout();
+
+    emit_needed_declarations(out);
+
+    const std::string& frag = inputs.at(GpuMmaFragmentLoadNode::FRAG_INPUT_IDX).expr;
+    const std::string& base = inputs.at(GpuMmaFragmentLoadNode::PTR_INPUT_IDX).expr;
+
+    emit_load_macro(out, frag, base, layout.offset, layout.ldstride, layout.layout);
+}
+
+void GpuMmaMatmulDispatcher::
+    dispatch_fragment_store(codegen::CodegenOutput& out, std::vector<codegen::DispatchInput>& inputs) const {
+    auto& node = static_cast<const GpuMmaFragmentStoreNode&>(node_);
+    auto& layout = node.layout();
+
+    emit_needed_declarations(out);
+
+    const std::string& frag = inputs.at(GpuMmaFragmentStoreNode::FRAG_INPUT_IDX).expr;
+    const std::string& base = inputs.at(GpuMmaFragmentStoreNode::PTR_INPUT_IDX).expr;
+
+    emit_store_macro(out, frag, base, layout.offset, layout.ldstride, layout.layout);
+}
+
+void GpuMmaMatmulDispatcher::dispatch_eltwise_add(codegen::CodegenOutput& out, std::vector<codegen::DispatchInput>& inputs)
+    const {
+    auto& node = static_cast<const GpuMmaFragmentEltwiseAddNode&>(node_);
+
+    auto otype = out.language_extension.primitive_type(node.output_type());
+    auto atype = out.language_extension.primitive_type(node.acc_type());
+
+    emit_needed_declarations(out);
+
+    const std::string& frag_d = inputs.at(GpuMmaFragmentEltwiseAddNode::FRAG_D_INPUT_IDX).expr;
+    const std::string& frag_acc = inputs.at(GpuMmaFragmentEltwiseAddNode::FRAG_ACC_INPUT_IDX).expr;
+    const std::string& frag_c = inputs.at(GpuMmaFragmentEltwiseAddNode::FRAG_C_INPUT_IDX).expr;
+
+    emit_eltwise_compute(
+        out,
+        frag_d,
+        {frag_acc, frag_c},
+        [&otype, &atype](auto& out, auto& main_elem, auto& idx, auto& args) {
+            out.stream << main_elem << " = static_cast<" << otype << ">(" << args.at(0) << " + static_cast<" << atype
+                       << ">(" << args.at(1) << "));" << std::endl;
+        }
+    );
+}
+
+void GpuMmaMatmulDispatcher::
+    dispatch_accumulator_fill(codegen::CodegenOutput& out, std::vector<codegen::DispatchInput>& inputs) const {
+    auto& node = static_cast<const GpuMmaFillNode&>(node_);
+    auto fill_type = node.fill_type();
+
+    emit_needed_declarations(out);
+
+    const std::string& acc = inputs.at(GpuMmaFillNode::Y_INPUT_IDX).expr;
+
+    emit_frag_zero_init(out, acc, fill_type);
 }
 
 } // namespace sdfg::gpu

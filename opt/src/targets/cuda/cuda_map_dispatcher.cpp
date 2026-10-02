@@ -22,7 +22,7 @@
 
 
 #include "sdfg/analysis/arguments_analysis.h"
-#include "sdfg/codegen/language_extensions/cuda_language_extension.h"
+#include "sdfg/targets/cuda/codegen/cuda_language_extension.h"
 
 namespace sdfg {
 namespace cuda {
@@ -200,7 +200,7 @@ void CUDAMapDispatcher::dispatch_kernel_body(
     std::vector<std::string>& scope_variables,
     symbolic::Expression& num_iterations
 ) {
-    codegen::CUDALanguageExtension cuda_language_extension(sdfg_);
+    CUDALanguageExtension cuda_language_extension(sdfg_);
     if (gpu::is_outermost_gpu_map<ScheduleType_CUDA>(node_, analysis_manager_)) {
         // Declare and optionally allocate scope variables
         for (auto& local : scope_variables) {

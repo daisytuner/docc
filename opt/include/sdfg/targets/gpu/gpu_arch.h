@@ -1,47 +1,15 @@
 #pragma once
 
+#include <ostream>
 #include <stdint.h>
 #include <string>
 
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/symbolic/symbolic.h"
+#include "sdfg/targets/gpu/gpu_mma_fragment.h"
 #include "sdfg/types/type.h"
 
 namespace sdfg::gpu {
-class GpuArch;
-
-struct GpuMmaTiling {
-    int mma_block_m = 0;
-    int mma_block_n = 0;
-    int mma_block_k = 0;
-    int wave_tile_blocks_m = 0;
-    int wave_tile_blocks_n = 0;
-    int threads_per_mma_block_m = 0;
-    int macro_blocks_m = 0;
-    int macro_blocks_n = 0;
-};
-
-struct GpuMmaSupport {
-    const uint16_t mma_block_m;
-    const uint16_t mma_block_n;
-    const uint16_t mma_block_k;
-    const uint16_t threads_per_mma_block;
-
-    GpuMmaSupport(uint16_t block_m, uint16_t block_n, uint16_t block_k, uint16_t threads_per_mma_block)
-        : mma_block_m(block_m), mma_block_n(block_n), mma_block_k(block_k),
-          threads_per_mma_block(threads_per_mma_block) {
-    }
-    virtual bool valid_block_counts(uint16_t block_base, int m_blocks, int n_blocks, int k_blocks) const = 0;
-
-    virtual std::optional<data_flow::ImplementationType>
-    get_matmul_impl_type(const GpuArch& arch, const GpuMmaTiling& tiling) const = 0;
-
-    static int get_integer_block_count(const symbolic::Expression& size, uint16_t block_size);
-
-    virtual bool supported_types(types::PrimitiveType input_type, types::PrimitiveType output_type) const = 0;
-
-    virtual GpuMmaTiling get_mma_tiling(const symbolic::MultiExpression& res_shape) const = 0;
-};
 
 class GpuArch {
 public:

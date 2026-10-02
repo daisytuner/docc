@@ -3,8 +3,8 @@
 #include <string>
 #include <vector>
 
+#include "codegen/cuda_language_extension.h"
 #include "sdfg/codegen/language_extension.h"
-#include "sdfg/codegen/language_extensions/cuda_language_extension.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/gpu/gpu_offload_base_dispatcher.h"
 
@@ -20,7 +20,7 @@ namespace cuda {
  */
 class CUDAOffloadDispatcherStrategy : public gpu::GPUOffloadDispatcherStrategy {
 public:
-    codegen::CUDALanguageExtension kernel_language_extension_;
+    CUDALanguageExtension kernel_language_extension_;
 
     codegen::LanguageExtension& create_kernel_language_extension() override;
 

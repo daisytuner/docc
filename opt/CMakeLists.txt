@@ -99,6 +99,7 @@ set(SOURCE_FILES
     src/targets/cuda/blas/utils.cpp
     src/targets/cuda/tiles/pipeline_node.cpp
     src/targets/cuda/tiles/tile_copy_node.cpp
+    src/targets/cuda/codegen/cuda_language_extension.cpp
     src/targets/cuda/cuda_arch.cpp
     src/targets/cuda/cuda_data_offloading_node.cpp
     src/targets/cuda/cuda_map_dispatcher.cpp
@@ -111,11 +112,18 @@ set(SOURCE_FILES
     src/targets/cuda/plugin.cpp
     src/targets/cuda/stdlib/memcpy.cpp
     src/targets/cuda/stdlib/memset.cpp
+    src/targets/gpu/barrier_local_node_dispatcher.cpp
     src/targets/gpu/gpu_arch.cpp
     src/targets/gpu/gpu_mma_einsum_transform.cpp
     src/targets/gpu/gpu_map_utils.cpp
     src/targets/gpu/gpu_mma_dispatcher.cpp
     src/targets/gpu/gpu_mma_expander.cpp
+    src/targets/gpu/gpu_mma_fill_node.cpp
+    src/targets/gpu/gpu_mma_fragment.cpp
+    src/targets/gpu/gpu_mma_fragment_eltwise_add_node.cpp
+    src/targets/gpu/gpu_mma_fragment_load_node.cpp
+    src/targets/gpu/gpu_mma_fragment_store_node.cpp
+    src/targets/gpu/gpu_mma_matmul_node.cpp
     src/targets/gpu/gpu_offload_base_dispatcher.cpp
     src/targets/gpu/gpu_offload_map_dispatcher.cpp
     src/targets/gpu/gpu_offload_reduce_dispatcher.cpp
@@ -131,6 +139,7 @@ set(SOURCE_FILES
     src/targets/rocm/blas/gemm_handtuned.cpp
     src/targets/rocm/blas/gemm.cpp
     src/targets/rocm/blas/utils.cpp
+    src/targets/rocm/codegen/rocm_language_extension.cpp
     src/targets/rocm/tiles/pipeline_node.cpp
     src/targets/rocm/tiles/tile_copy_node.cpp
     src/targets/rocm/math/tensor/batched_matmul_expander.cpp

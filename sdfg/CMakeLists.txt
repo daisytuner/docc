@@ -41,7 +41,6 @@ set(SOURCE_FILES
     src/codegen/code_generators/c_code_generator.cpp
     src/codegen/code_generators/c_style_base_code_generator.cpp
     src/codegen/code_generators/cpp_code_generator.cpp
-    src/codegen/code_generators/cuda_code_generator.cpp
     src/codegen/code_snippet_factory.cpp
     src/codegen/dispatchers/block_dispatcher.cpp
     src/codegen/dispatchers/for_dispatcher.cpp
@@ -57,8 +56,6 @@ set(SOURCE_FILES
     src/codegen/instrumentation/instrumentation_plan.cpp
     src/codegen/language_extensions/c_language_extension.cpp
     src/codegen/language_extensions/cpp_language_extension.cpp
-    src/codegen/language_extensions/cuda_language_extension.cpp
-    src/codegen/language_extensions/rocm_language_extension.cpp
     src/codegen/loop_report.cpp
     src/codegen/utils.cpp
     src/control_flow/interstate_edge.cpp

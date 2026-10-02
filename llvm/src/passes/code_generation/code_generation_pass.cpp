@@ -12,7 +12,6 @@
 #include <sdfg/codegen/code_generator.h>
 #include <sdfg/codegen/code_generators/c_code_generator.h>
 #include <sdfg/codegen/code_generators/cpp_code_generator.h>
-#include <sdfg/codegen/code_generators/cuda_code_generator.h>
 #include <sdfg/data_flow/library_nodes/call_node.h>
 #include <sdfg/data_flow/library_nodes/stdlib/stdlib.h>
 #include <sdfg/helpers/helpers.h>

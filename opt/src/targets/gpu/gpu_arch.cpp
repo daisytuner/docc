@@ -8,6 +8,17 @@
 
 namespace sdfg::gpu {
 
+std::ostream& operator<<(std::ostream& os, const MmaBlockSize& block_size) {
+    os << block_size.m << "x" << block_size.n << "x" << block_size.k;
+    return os;
+}
+
+std::string MmaBlockSize::toStr() const {
+    std::stringstream ss;
+    ss << "MmaBlock(" << *this << ")";
+    return ss.str();
+}
+
 int GpuMmaSupport::get_integer_block_count(const symbolic::Expression& size, uint16_t block_size) {
     auto blocks = symbolic::simplify(SymEngine::div(size, symbolic::integer(block_size)));
     if (SymEngine::is_a<SymEngine::Integer>(*blocks)) {
