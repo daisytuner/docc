@@ -11,20 +11,19 @@
 namespace sdfg::gpu {
 
 class GpuMmaMatmulDispatcher : public codegen::LibraryNodeDispatcher {
-public:
-    enum class FragmentType { A, B, C };
-
 protected:
-    virtual const GpuMmaSupport* get_mma_arch() const = 0;
+    virtual const GpuMmaSupport* get_mma_arch_from_impl_type_hack() const = 0;
+
+    virtual const GpuArch* get_gpu_arch_from_context(codegen::CodegenOutput& out) const = 0;
 
     virtual GpuMmaTiling get_mma_tiling(const symbolic::MultiExpression& res_shape) const = 0;
 
     virtual void emit_block_frag_declaration(
         codegen::CodegenOutput& out,
         const std::string& name,
-        FragmentType type,
+        MmaFragmentType type,
         std::array<int, 3> dims,
-        math::tensor::TensorLayout::TensorLayoutType layout,
+        MmaFragmentLayout layout,
         types::PrimitiveType scalar_type,
         std::optional<std::pair<int, int>> coop_dims = std::nullopt
     ) const = 0;
@@ -35,7 +34,7 @@ protected:
         const std::string& base_addr,
         const symbolic::Expression& offset,
         const symbolic::Expression& line_size,
-        math::tensor::TensorLayout::TensorLayoutType layout = math::tensor::TensorLayout::LAYOUT_OTHER
+        MmaFragmentLayout layout = MmaFragmentLayout::MMA_LAYOUT_UNSPECIFIED
     ) const = 0;
     virtual void emit_store_macro(
         const codegen::CodegenOutput& out,
@@ -43,7 +42,7 @@ protected:
         const std::string& base_addr,
         const symbolic::Expression& offset,
         const symbolic::Expression& line_size,
-        math::tensor::TensorLayout::TensorLayoutType layout = math::tensor::TensorLayout::LAYOUT_OTHER
+        MmaFragmentLayout layout = MmaFragmentLayout::MMA_LAYOUT_UNSPECIFIED
     ) const = 0;
 
     symbolic::Expression get_start_offset(const math::tensor::TensorLayout& layout) const;
@@ -72,6 +71,23 @@ protected:
 
     virtual void emit_needed_declarations(codegen::CodegenOutput& out) const {
     }
+
+    /// Emit a single MMA accumulation of A * B into the preinitialized accumulator behind Y
+    /// (used by GpuMmaFragmentMatmulNode). Operates purely on fragments; no memory access.
+    void dispatch_single_mma(codegen::CodegenOutput& out, std::vector<codegen::DispatchInput>& inputs) const;
+
+    /// Emit code that declares and zero-initializes the MMA accumulator fragment behind Y
+    /// (used by GpuMmaFillNode).
+    void dispatch_accumulator_fill(codegen::CodegenOutput& out, std::vector<codegen::DispatchInput>& inputs) const;
+
+    /// Emit a fragment load from memory into the fragment behind "frag" (used by MmaFragmentLoadNode).
+    void dispatch_fragment_load(codegen::CodegenOutput& out, std::vector<codegen::DispatchInput>& inputs) const;
+
+    /// Emit a fragment store to memory from the fragment behind "frag" (used by MmaFragmentStoreNode).
+    void dispatch_fragment_store(codegen::CodegenOutput& out, std::vector<codegen::DispatchInput>& inputs) const;
+
+    /// Emit code to add any input of C together with the accumulator fragment together with correct types
+    void dispatch_eltwise_add(codegen::CodegenOutput& out, std::vector<codegen::DispatchInput>& inputs) const;
 
 public:
     GpuMmaMatmulDispatcher(

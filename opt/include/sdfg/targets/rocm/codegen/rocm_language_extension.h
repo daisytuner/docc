@@ -1,17 +1,17 @@
 #pragma once
 
-#include <symengine/printers/codegen.h>
-
 #include <string>
 
 #include "sdfg/codegen/language_extension.h"
 #include "sdfg/symbolic/symbolic.h"
+#include "sdfg/targets/rocm/rocm_arch.h"
 #include "sdfg/types/type.h"
 
-namespace sdfg {
-namespace codegen {
+namespace sdfg::rocm {
 
-class ROCMLanguageExtension : public LanguageExtension {
+class ROCMLanguageExtension : public sdfg::codegen::LanguageExtension {
+    const gpu::rocm::RocmArch* arch_;
+
 public:
     ROCMLanguageExtension(sdfg::Function& function, const std::string& external_prefix = "")
         : LanguageExtension(function, external_prefix) {
@@ -19,6 +19,10 @@ public:
 
     const std::string language() const override {
         return "ROCM";
+    }
+
+    const gpu::rocm::RocmArch* gpu_arch() const {
+        return arch_;
     }
 
     std::string primitive_type(const types::PrimitiveType prim_type) override;
@@ -40,5 +44,4 @@ public:
     std::string zero(const types::PrimitiveType prim_type) override;
 };
 
-} // namespace codegen
-} // namespace sdfg
+} // namespace sdfg::rocm

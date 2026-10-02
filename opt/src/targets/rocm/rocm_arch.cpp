@@ -258,14 +258,12 @@ bool RocmMmaSupport::supported_types(types::PrimitiveType input_type, types::Pri
 
 GpuMmaTiling RocmMmaSupport::get_mma_tiling(const symbolic::MultiExpression& res_shape) const {
     GpuMmaTiling tiling;
-    tiling.mma_block_m = mma_block_m;
-    tiling.mma_block_n = mma_block_n;
-    tiling.mma_block_k = mma_block_k;
+    tiling.mma_block_size = mma_block_size;
     tiling.threads_per_mma_block_m = threads_per_mma_block;
 
-    auto mma_blocks_m = get_integer_block_count(res_shape.at(0), tiling.mma_block_m);
-    auto mma_blocks_n = get_integer_block_count(res_shape.at(1), tiling.mma_block_n);
-    auto mma_blocks_k = get_integer_block_count(res_shape.at(2), tiling.mma_block_k);
+    auto mma_blocks_m = get_integer_block_count(res_shape.at(0), tiling.mma_block_size.m);
+    auto mma_blocks_n = get_integer_block_count(res_shape.at(1), tiling.mma_block_size.n);
+    auto mma_blocks_k = get_integer_block_count(res_shape.at(2), tiling.mma_block_size.k);
 
     if (!mma_blocks_m || !mma_blocks_n || !mma_blocks_k) {
         throw std::runtime_error("Result shape is not compatible with MMA block sizes.");
@@ -296,6 +294,96 @@ GpuMmaTiling RocmMmaSupport::get_mma_tiling(const symbolic::MultiExpression& res
     }
 
     return tiling;
+}
+
+void RocmMmaSupport::set_mma_fragment_storage_type(
+    types::StorageType& storage_type, const MmaBlockSize& size, MmaFragmentType type, MmaFragmentLayout layout
+) const {
+    storage_type.value() = MMA_STORAGE_TYPE;
+    storage_type.args(
+        {symbolic::integer(size.m),
+         symbolic::integer(size.n),
+         symbolic::integer(size.k),
+         symbolic::integer(static_cast<int>(type)),
+         symbolic::integer(static_cast<int>(layout))}
+    );
+}
+
+bool RocmMmaSupport::is_mma_type(const types::StorageType& storage) {
+    return storage.value() == MMA_STORAGE_TYPE;
+}
+
+data_flow::ImplementationType RocmMmaSupport::get_mma_impl_type() const {
+    return ImplementationType_ROCM_MMA;
+}
+
+void RocmMmaSupport::emit_block_frag_type(
+    std::ostream& os, const types::StorageType& storage_type, types::PrimitiveType element_type
+) const {
+    emit_block_frag_type(
+        os,
+        static_cast<MmaFragmentType>(get_storage_type_arg_as_int(storage_type, 3)),
+        {get_storage_type_arg_as_int(storage_type, 0),
+         get_storage_type_arg_as_int(storage_type, 1),
+         get_storage_type_arg_as_int(storage_type, 2)},
+        static_cast<MmaFragmentLayout>(get_storage_type_arg_as_int(storage_type, 4)),
+        element_type,
+        std::nullopt
+    );
+}
+
+void RocmMmaSupport::emit_block_frag_type(
+    std::ostream& os,
+    MmaFragmentType type,
+    std::array<int, 3> dims,
+    MmaFragmentLayout layout,
+    types::PrimitiveType scalar_type,
+    std::optional<std::pair<int, int>> coop_dims
+) {
+    os << "rocwmma::fragment<";
+    switch (type) {
+        case MmaFragmentType::A:
+            os << "rocwmma::matrix_a, ";
+            break;
+        case MmaFragmentType::B:
+            os << "rocwmma::matrix_b, ";
+            break;
+        case MmaFragmentType::C:
+            os << "rocwmma::accumulator, ";
+            break;
+        default:
+            throw std::invalid_argument("invalid fragment type");
+    }
+    os << dims[0] << ", ";
+    os << dims[1] << ", ";
+    os << dims[2] << ", ";
+    switch (scalar_type) {
+        case types::PrimitiveType::BFloat:
+            os << "rocwmma::bfloat16_t";
+            break;
+        case types::PrimitiveType::Half:
+            os << "rocwmma::float16_t";
+            break;
+        case types::PrimitiveType::Float:
+            os << "rocwmma::float32_t";
+            break;
+        default:
+            throw std::invalid_argument(
+                "invalid scalar type: " + std::string(types::primitive_type_to_string(scalar_type)) +
+                " on mma fragment declaration"
+            );
+    }
+
+    if (layout == MmaFragmentLayout::MMA_LAYOUT_COL_MAJOR) {
+        os << ", rocwmma::col_major";
+    } else if (layout == MmaFragmentLayout::MMA_LAYOUT_ROW_MAJOR) {
+        os << ", rocwmma::row_major";
+    }
+
+    if (coop_dims) {
+        os << ", rocwmma::fragment_scheduler::coop_row_major_2d<" << coop_dims->first << ", " << coop_dims->second
+           << ">";
+    }
 }
 
 std::optional<data_flow::ImplementationType> RocmMmaSupport::

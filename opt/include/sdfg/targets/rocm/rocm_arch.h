@@ -3,8 +3,10 @@
 #include <string>
 #include <vector>
 
+#include "sdfg/codegen/dispatchers/block_dispatcher.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/targets/gpu/gpu_arch.h"
+#include "sdfg/types/array.h"
 
 namespace sdfg::gpu::rocm {
 
@@ -16,6 +18,8 @@ struct RocmMmaSupport : public GpuMmaSupport {
     }
 
 public:
+    static constexpr const char* MMA_STORAGE_TYPE = "ROCM_MMA";
+
     bool valid_block_counts(uint16_t block_base, int m_blocks, int n_blocks, int k_blocks) const override;
     bool supported_types(types::PrimitiveType input_type, types::PrimitiveType output_type) const override;
 
@@ -23,6 +27,26 @@ public:
         const override;
 
     GpuMmaTiling get_mma_tiling(const symbolic::MultiExpression& res_shape) const override;
+
+    void set_mma_fragment_storage_type(
+        types::StorageType& storage_type, const MmaBlockSize& size, MmaFragmentType type, MmaFragmentLayout layout
+    ) const override;
+
+    static bool is_mma_type(const types::StorageType& storage);
+
+    data_flow::ImplementationType get_mma_impl_type() const override;
+
+    void emit_block_frag_type(std::ostream& os, const types::StorageType& storage_type, types::PrimitiveType element_type)
+        const;
+
+    static void emit_block_frag_type(
+        std::ostream& os,
+        MmaFragmentType type,
+        std::array<int, 3> dims,
+        MmaFragmentLayout layout,
+        types::PrimitiveType scalar_type,
+        std::optional<std::pair<int, int>> coop_dims
+    );
 };
 
 
@@ -45,7 +69,7 @@ public:
     }
 
     const RocmMmaSupport* mma_support() const override {
-        if (mma_support_.mma_block_m > 0) {
+        if (mma_support_.mma_block_size.m > 0) {
             return &mma_support_;
         } else {
             return nullptr;

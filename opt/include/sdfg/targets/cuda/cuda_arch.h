@@ -40,11 +40,19 @@ struct CudaMmaSupport : public GpuMmaSupport {
     }
 
 public:
+    static constexpr const char* MMA_STORAGE_TYPE = "CUDA_MMA";
+
     bool valid_block_counts(uint16_t block_base, int m_blocks, int n_blocks, int k_blocks) const override;
     bool supported_types(types::PrimitiveType input_type, types::PrimitiveType output_type) const override;
     std::optional<data_flow::ImplementationType> get_matmul_impl_type(const GpuArch& arch, const GpuMmaTiling& tiling)
         const override;
+    data_flow::ImplementationType get_mma_impl_type() const override;
     GpuMmaTiling get_mma_tiling(const symbolic::MultiExpression& res_shape) const override;
+    void set_mma_fragment_storage_type(
+        types::StorageType& storage_type, const MmaBlockSize& size, MmaFragmentType type, MmaFragmentLayout layout
+    ) const override;
+
+    static bool is_mma_type(const types::StorageType& storage);
 };
 
 
@@ -66,7 +74,7 @@ public:
     }
 
     const CudaMmaSupport* mma_support() const override {
-        if (mma_support_.mma_block_m > 0) {
+        if (mma_support_.mma_block_size.m > 0) {
             return &mma_support_;
         } else {
             return nullptr;

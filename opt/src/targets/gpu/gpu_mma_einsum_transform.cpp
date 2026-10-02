@@ -48,15 +48,15 @@ bool GpuMmaEinsumReplacer::matches_possible_mma_pattern(const MatMulAnalysis& an
     auto& n = dims_b.get_dim(1);
     auto& k = dims_a.get_dim(1);
 
-    auto m_blocks = GpuMmaSupport::get_integer_block_count(m, mma_arch->mma_block_m);
-    auto n_blocks = GpuMmaSupport::get_integer_block_count(n, mma_arch->mma_block_n);
-    auto k_blocks = GpuMmaSupport::get_integer_block_count(k, mma_arch->mma_block_k);
+    auto m_blocks = GpuMmaSupport::get_integer_block_count(m, mma_arch->mma_block_size.m);
+    auto n_blocks = GpuMmaSupport::get_integer_block_count(n, mma_arch->mma_block_size.n);
+    auto k_blocks = GpuMmaSupport::get_integer_block_count(k, mma_arch->mma_block_size.k);
 
     if (!m_blocks || !n_blocks || !k_blocks) {
         return false;
     }
 
-    if (!mma_arch->valid_block_counts(mma_arch->mma_block_m, m_blocks, n_blocks, k_blocks)) {
+    if (!mma_arch->valid_block_counts(mma_arch->mma_block_size.m, m_blocks, n_blocks, k_blocks)) {
         return false;
     }
 
@@ -101,7 +101,7 @@ einsum::ReplaceOutcome GpuMmaEinsumReplacer::
         return context.unable();
     }
 
-    return GpuMmaExpander::expand_mma(
+    return GpuMmaExpander::expand_mma_standalone(
         *standalone,
         *arch_,
         mma_tiling,
@@ -110,7 +110,10 @@ einsum::ReplaceOutcome GpuMmaEinsumReplacer::
         analysis.layout_y.value(),
         analysis.input_type,
         analysis.output_type,
-        impl_type.value()
+        analysis.output_type,
+        impl_type.value(),
+        true,
+        cluster.consumed_loops.front()->debug_info()
     );
 }
 

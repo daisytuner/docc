@@ -77,6 +77,8 @@ set(TEST_FILES
     passes/scheduler/omp_scheduler_test.cpp
     passes/scheduler/rocm_scheduler_test.cpp
     passes/scheduler/vectorize_scheduler_test.cpp
+    targets/cuda/cuda_language_extension_test.cpp
+    targets/cuda/cuda_lib_dispatcher_test.cpp
     targets/omp/codegen/omp_map_dispatcher_test.cpp
     targets/omp/schedule_test.cpp
     transformations/collapse_to_depth_test.cpp

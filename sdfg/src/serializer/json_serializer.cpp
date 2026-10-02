@@ -495,11 +495,13 @@ void JSONSerializer::storage_type_to_json(nlohmann::json& j, const types::Storag
     if (!storage_type.allocation_size().is_null()) {
         j["allocation_size"] = expression(storage_type.allocation_size());
     }
-    const symbolic::Expression& arg1 = storage_type.arg1();
-    if (!arg1.is_null()) {
-        auto args = nlohmann::json::array();
-        args.push_back(expression(arg1));
-        j["args"] = args;
+    auto& args = storage_type.args();
+    if (!args.empty()) {
+        auto jargs = nlohmann::json::array();
+        for (const auto& a : args) {
+            jargs.push_back(expression(a));
+        }
+        j["args"] = jargs;
     }
 }
 
@@ -1296,9 +1298,13 @@ types::StorageType JSONSerializer::json_to_storage_type(const nlohmann::json& j)
     auto storageType = types::StorageType(j["value"].get<std::string>(), allocation_size, allocation, deallocation);
 
     if (j.contains("args")) {
-        nlohmann::json::array_t args = j["args"];
-        if (args.size() > 0) {
-            storageType.arg1(symbolic::parse(args[0].get<std::string>()));
+        nlohmann::json::array_t jargs = j["args"];
+        if (jargs.size() > 0) {
+            std::vector<symbolic::Expression> args;
+            for (size_t i = 0; i < jargs.size(); ++i) {
+                args.push_back(symbolic::parse(jargs[i].get<std::string>()));
+            }
+            storageType.args(std::move(args));
         }
     }
     return storageType;
