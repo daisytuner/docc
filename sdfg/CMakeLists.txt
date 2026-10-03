@@ -184,7 +184,6 @@ set(SOURCE_FILES
     src/passes/symbolic/symbol_evolution.cpp
     src/passes/symbolic/symbol_promotion.cpp
     src/passes/symbolic/symbol_propagation.cpp
-    src/passes/symbolic/type_minimization.cpp
     src/sdfg.cpp
     src/serializer/json_serializer.cpp
     src/structured_control_flow/block.cpp
