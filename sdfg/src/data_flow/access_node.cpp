@@ -53,6 +53,7 @@ const std::string& AccessNode::data() const {
 
 void AccessNode::data(const std::string data) {
     this->data_ = data;
+    this->get_parent().invalidate_topological_order();
 }
 
 bool AccessNode::side_effect() const {
@@ -69,6 +70,7 @@ void AccessNode::replace(const symbolic::Expression old_expression, const symbol
         if (this->data_ == old_symbol->get_name()) {
             auto new_symbol = SymEngine::rcp_static_cast<const SymEngine::Symbol>(new_expression);
             this->data_ = new_symbol->get_name();
+            this->get_parent().invalidate_topological_order();
         }
     }
 }

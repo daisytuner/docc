@@ -344,32 +344,6 @@ bool DataFlowGraph::is_valid_topological_order(const std::list<const DataFlowNod
     return true;
 }
 
-bool DataFlowGraph::is_valid_topological_order(const std::list<DataFlowNode*>& order) const {
-    std::unordered_map<const DataFlowNode*, size_t> pos;
-    size_t idx = 0;
-    for (const auto* node : order) {
-        pos[node] = idx++;
-    }
-    for (const auto& edge : this->edges()) {
-        auto src_it = pos.find(&edge.src());
-        auto dst_it = pos.find(&edge.dst());
-        if (src_it == pos.end() || dst_it == pos.end() || src_it->second >= dst_it->second) {
-            return false;
-        }
-    }
-    return true;
-}
-
-std::list<DataFlowNode*> DataFlowGraph::boost_topological_sort() {
-    auto order_vertices = graph::topological_sort(this->graph_);
-
-    std::list<DataFlowNode*> order;
-    for (const auto& v : order_vertices) {
-        order.push_back(this->nodes_.at(v).get());
-    }
-    return order;
-}
-
 std::list<const DataFlowNode*> DataFlowGraph::boost_topological_sort() const {
     auto order_vertices = graph::topological_sort(this->graph_);
 
@@ -637,275 +611,33 @@ std::list<const DataFlowNode*> DataFlowGraph::semantic_topological_sort() const 
     return order;
 }
 
-std::list<DataFlowNode*> DataFlowGraph::semantic_topological_sort() {
-    auto [num_components, components_map] = graph::weakly_connected_components(this->graph_);
-
-    // Build deterministic topological sort for each weakly connected component
-    std::vector<std::list<DataFlowNode*>> components(num_components);
-    for (size_t i = 0; i < num_components; i++) {
-        // Get all sinks of the current component
-        std::vector<DataFlowNode*> sinks;
-        bool component_empty = true;
-        for (auto [v, comp] : components_map) {
-            if (comp == i) {
-                component_empty = false;
-                if (boost::out_degree(v, this->graph_) == 0) {
-                    sinks.push_back(this->nodes_.at(v).get());
-                }
-            }
+const std::list<const DataFlowNode*>& DataFlowGraph::cached_topological_order() const {
+    if (!this->topological_order_) {
+        auto order = semantic_topological_sort();
+        if (!is_valid_topological_order(order)) {
+            order = boost_topological_sort();
         }
-        if (sinks.size() == 0) {
-            if (component_empty) {
-                continue;
-            } else {
-                throw boost::not_a_dag();
-            }
-        }
-
-        // Create a queue with all sinks
-        std::list<DataFlowNode*> queue;
-        queue.insert(queue.end(), sinks.begin(), sinks.end());
-
-        // Perform a reversed DFS for each element in the queue
-        std::unordered_map<DataFlowNode*, std::list<DataFlowNode*>> lists;
-        std::unordered_map<DataFlowNode*, std::list<std::pair<DataFlowNode*, long long>>> dependencies;
-        std::map<std::pair<DataFlowNode*, long long>, DataFlowNode*> backward_dependencies;
-        std::unordered_set<DataFlowNode*> visited;
-        while (!queue.empty()) {
-            auto* start = queue.front();
-            queue.pop_front();
-
-            if (visited.contains(start)) {
-                continue;
-            }
-
-            // Reversed DFS
-            lists.insert({start, {}});
-            dependencies.insert({start, {}});
-            std::stack<std::pair<DataFlowNode*, DataFlowNode*>> stack({{start, nullptr}});
-            while (!stack.empty()) {
-                auto* current = stack.top().first;
-                auto* successor = stack.top().second;
-                stack.pop();
-
-                // If multiple out edges, add to queue, add dependency, and skip
-                if (current != start && this->out_degree(*current) > 1) {
-                    queue.push_back(current);
-                    long long dependency_id = -1;
-                    if (auto* code_node = dynamic_cast<CodeNode*>(current)) {
-                        for (auto& oedge : this->out_edges(*current)) {
-                            auto* dst = &oedge.dst();
-                            if (dst == successor) {
-                                for (long long j = 0; j < code_node->outputs().size(); j++) {
-                                    if (oedge.src_conn() == code_node->output(j)) {
-                                        dependency_id = j;
-                                        break;
-                                    }
-                                }
-                                break;
-                            }
-                        }
-                    } else {
-                        std::vector<std::pair<DataFlowNode*, size_t>> tmp_outputs;
-                        std::unordered_set<DataFlowNode*> local_visited;
-                        for (auto& oedge : this->out_edges(*current)) {
-                            auto* dst = &oedge.dst();
-                            if (local_visited.contains(dst)) {
-                                continue;
-                            }
-                            local_visited.insert(dst);
-                            size_t value = 0;
-                            if (auto* tasklet = dynamic_cast<Tasklet*>(dst)) {
-                                value = tasklet->code();
-                            } else if (auto* libnode = dynamic_cast<LibraryNode*>(dst)) {
-                                value = 52;
-                                for (char c : libnode->code().value()) {
-                                    value += c;
-                                }
-                            }
-                            tmp_outputs.push_back({dst, value});
-                        }
-                        std::sort(tmp_outputs.begin(), tmp_outputs.end(), [](const auto& a, const auto& b) {
-                            return a.second > b.second ||
-                                   (a.second == b.second && a.first->element_id() < b.first->element_id());
-                        });
-                        for (long long j = 0; j < tmp_outputs.size(); j++) {
-                            if (tmp_outputs.at(j).first == successor) {
-                                dependency_id = j;
-                                break;
-                            }
-                        }
-                    }
-                    if (dependency_id == -1 || backward_dependencies.contains({current, dependency_id})) {
-                        throw std::runtime_error("Could not create dependency in topological sort");
-                    }
-                    dependencies.at(start).push_front({current, dependency_id});
-                    backward_dependencies.insert({{current, dependency_id}, start});
-                    continue;
-                }
-
-                // Put the current element in the list
-                if (visited.contains(current)) {
-                    throw boost::not_a_dag();
-                }
-                visited.insert(current);
-                lists.at(start).push_front(current);
-
-                // Put all predecessors on the stack
-                if (auto* code_node = dynamic_cast<CodeNode*>(current)) {
-                    std::unordered_set<DataFlowNode*> local_visited;
-                    for (auto& input : code_node->inputs()) {
-                        Memlet* iedge = nullptr;
-                        for (auto& in_edge : this->in_edges(*code_node)) {
-                            if (in_edge.dst_conn() == input) {
-                                iedge = &in_edge;
-                                break;
-                            }
-                        }
-                        if (!iedge) {
-                            continue;
-                        }
-                        auto* src = &iedge->src();
-                        if (!local_visited.contains(src)) {
-                            local_visited.insert(src);
-                            stack.push({src, current});
-                        }
-                    }
-                } else {
-                    std::vector<std::pair<DataFlowNode*, size_t>> tmp_inputs;
-                    std::unordered_set<DataFlowNode*> local_visited;
-                    for (auto& iedge : this->in_edges(*current)) {
-                        auto* src = &iedge.src();
-                        if (local_visited.contains(src)) {
-                            continue;
-                        }
-                        local_visited.insert(src);
-                        size_t value = 0;
-                        if (auto* tasklet = dynamic_cast<Tasklet*>(src)) {
-                            value = tasklet->code();
-                        } else if (auto* libnode = dynamic_cast<LibraryNode*>(src)) {
-                            value = 52;
-                            for (char c : libnode->code().value()) {
-                                value += c;
-                            }
-                        }
-                        tmp_inputs.push_back({src, value});
-                    }
-                    std::sort(tmp_inputs.begin(), tmp_inputs.end(), [](const auto& a, const auto& b) {
-                        return a.second > b.second ||
-                               (a.second == b.second && a.first->element_id() < b.first->element_id());
-                    });
-                    for (auto& tmp_input : tmp_inputs) {
-                        stack.push({tmp_input.first, current});
-                    }
-                }
-            }
-        }
-
-        // Sort sinks if necessary
-        if (sinks.size() > 1) {
-            std::sort(sinks.begin(), sinks.end(), [](const DataFlowNode* a, const DataFlowNode* b) {
-                const auto* a_tasklet = dynamic_cast<const Tasklet*>(a);
-                const auto* b_tasklet = dynamic_cast<const Tasklet*>(b);
-                const auto* a_libnode = dynamic_cast<const LibraryNode*>(a);
-                const auto* b_libnode = dynamic_cast<const LibraryNode*>(b);
-                const auto* a_access_node = dynamic_cast<const AccessNode*>(a);
-                const auto* b_access_node = dynamic_cast<const AccessNode*>(b);
-                if (a_tasklet && b_tasklet) {
-                    return a_tasklet->code() < b_tasklet->code() || (a_tasklet->code() == b_tasklet->code() &&
-                                                                     a_tasklet->element_id() < b_tasklet->element_id());
-                } else if (a_tasklet && b_libnode) {
-                    return true;
-                } else if (a_tasklet && b_access_node) {
-                    return true;
-                } else if (a_libnode && b_libnode) {
-                    return a_libnode->code().value() < b_libnode->code().value() ||
-                           (a_libnode->code().value() == b_libnode->code().value() &&
-                            a_libnode->element_id() < b_libnode->element_id());
-                } else if (a_libnode && b_access_node) {
-                    return true;
-                } else if (a_access_node && b_access_node) {
-                    return a_access_node->data() < b_access_node->data() ||
-                           (a_access_node->data() == b_access_node->data() &&
-                            a_access_node->element_id() < b_access_node->element_id());
-                } else {
-                    return false;
-                }
-            });
-        }
-
-        // Stich together by resolving dependencies
-        visited.clear();
-        for (auto* sink : sinks) {
-            if (visited.contains(sink)) {
-                continue;
-            }
-
-            std::stack<DataFlowNode*> stack({sink});
-            while (!stack.empty()) {
-                auto* current = stack.top();
-                visited.insert(current);
-
-                bool all_resolved = true;
-                for (auto [node, dependency_id] : dependencies.at(current)) {
-                    if (!visited.contains(node)) {
-                        stack.push(node);
-                        all_resolved = false;
-                        break;
-                    }
-
-                    for (long long j = 0; j < dependency_id; j++) {
-                        if (!backward_dependencies.contains({node, j})) {
-                            continue;
-                        }
-                        auto* node2 = backward_dependencies.at({node, j});
-                        if (!visited.contains(node2)) {
-                            stack.push(node2);
-                            all_resolved = false;
-                            break;
-                        }
-                    }
-                    if (!all_resolved) {
-                        break;
-                    }
-                }
-                if (!all_resolved) {
-                    continue;
-                }
-
-                components.at(i).insert(components.at(i).end(), lists.at(current).begin(), lists.at(current).end());
-                stack.pop();
-            }
-        }
+        this->topological_order_ = std::move(order);
     }
+    return *this->topological_order_;
+}
 
-    // Sort components
-    std::sort(components.begin(), components.end(), [](const auto& a, const auto& b) {
-        return a.size() > b.size() ||
-               (a.size() == b.size() && a.size() > 0 && a.front()->element_id() < b.front()->element_id());
-    });
-
-    // Resulting data structure
-    std::list<DataFlowNode*> order;
-    for (auto& component : components) {
-        order.insert(order.end(), component.begin(), component.end());
-    }
-
-    return order;
+void DataFlowGraph::invalidate_topological_order() {
+    this->topological_order_.reset();
 }
 
 std::list<const DataFlowNode*> DataFlowGraph::topological_sort() const {
-    auto order = semantic_topological_sort();
-    if (!is_valid_topological_order(order)) {
-        order = boost_topological_sort();
-    }
-    return order;
+    return cached_topological_order();
+}
+
+const std::list<const DataFlowNode*>& DataFlowGraph::topological_order() const {
+    return cached_topological_order();
 }
 
 std::list<DataFlowNode*> DataFlowGraph::topological_sort() {
-    auto order = semantic_topological_sort();
-    if (!is_valid_topological_order(order)) {
-        order = boost_topological_sort();
+    std::list<DataFlowNode*> order;
+    for (const auto* node : cached_topological_order()) {
+        order.push_back(const_cast<DataFlowNode*>(node));
     }
     return order;
 }

@@ -1095,6 +1095,7 @@ void StructuredSDFGBuilder::update_schedule_type(StructuredLoop& loop, const Sch
 data_flow::AccessNode& StructuredSDFGBuilder::
     add_access(structured_control_flow::Block& block, const std::string& data, const DebugInfo& debug_info) {
     auto vertex = boost::add_vertex(block.dataflow_->graph_);
+    block.dataflow_->invalidate_topological_order();
     auto res = block.dataflow_->nodes_.insert(
         {vertex,
          std::unique_ptr<data_flow::AccessNode>(
@@ -1109,6 +1110,7 @@ data_flow::ConstantNode& StructuredSDFGBuilder::add_constant(
     structured_control_flow::Block& block, const std::string& data, const types::IType& type, const DebugInfo& debug_info
 ) {
     auto vertex = boost::add_vertex(block.dataflow_->graph_);
+    block.dataflow_->invalidate_topological_order();
     auto res = block.dataflow_->nodes_.insert(
         {vertex,
          std::unique_ptr<data_flow::ConstantNode>(
@@ -1128,6 +1130,7 @@ data_flow::Tasklet& StructuredSDFGBuilder::add_tasklet(
     const DebugInfo& debug_info
 ) {
     auto vertex = boost::add_vertex(block.dataflow_->graph_);
+    block.dataflow_->invalidate_topological_order();
     auto res = block.dataflow_->nodes_.insert(
         {vertex,
          std::unique_ptr<data_flow::Tasklet>(
@@ -1149,6 +1152,7 @@ data_flow::Memlet& StructuredSDFGBuilder::add_memlet(
     const DebugInfo& debug_info
 ) {
     auto edge = boost::add_edge(src.vertex_, dst.vertex_, block.dataflow_->graph_);
+    block.dataflow_->invalidate_topological_order();
     auto res = block.dataflow_->edges_.insert(
         {edge.first,
          std::unique_ptr<data_flow::Memlet>(new data_flow::Memlet(
@@ -1255,6 +1259,7 @@ void StructuredSDFGBuilder::remove_memlet(structured_control_flow::Block& block,
     auto& graph = block.dataflow();
     auto e = edge.edge();
     boost::remove_edge(e, graph.graph_);
+    graph.invalidate_topological_order();
     graph.edges_.erase(e);
 };
 
@@ -1262,6 +1267,7 @@ void StructuredSDFGBuilder::remove_node(structured_control_flow::Block& block, c
     auto& graph = block.dataflow();
     auto v = node.vertex();
     boost::remove_vertex(v, graph.graph_);
+    graph.invalidate_topological_order();
     graph.nodes_.erase(v);
 };
 
@@ -1300,6 +1306,7 @@ void StructuredSDFGBuilder::clear_code_node_legacy(structured_control_flow::Bloc
         auto edge = iedge->edge();
         graph.edges_.erase(edge);
         boost::remove_edge(edge, graph.graph_);
+        graph.invalidate_topological_order();
     }
 
     // Delete outgoing
@@ -1314,6 +1321,7 @@ void StructuredSDFGBuilder::clear_code_node_legacy(structured_control_flow::Bloc
         auto edge = oedge->edge();
         graph.edges_.erase(edge);
         boost::remove_edge(edge, graph.graph_);
+        graph.invalidate_topological_order();
     }
 
     // Delete nodes
@@ -1322,6 +1330,7 @@ void StructuredSDFGBuilder::clear_code_node_legacy(structured_control_flow::Bloc
             auto vertex = obsolete_node->vertex();
             graph.nodes_.erase(vertex);
             boost::remove_vertex(vertex, graph.graph_);
+            graph.invalidate_topological_order();
         }
     }
 }
@@ -1354,12 +1363,14 @@ void StructuredSDFGBuilder::
             auto edge = iedge->edge();
             graph.edges_.erase(edge);
             boost::remove_edge(edge, graph.graph_);
+            graph.invalidate_topological_order();
         }
 
         if (current != &node || graph.out_degree(*current) == 0) {
             auto vertex = current->vertex();
             graph.nodes_.erase(vertex);
             boost::remove_vertex(vertex, graph.graph_);
+            graph.invalidate_topological_order();
         }
     }
 }
@@ -1413,6 +1424,7 @@ int StructuredSDFGBuilder::clear_node(
                         auto edge = iedge->edge();
                         graph.edges_.erase(edge);
                         boost::remove_edge(edge, graph.graph_);
+                        graph.invalidate_topological_order();
                         if (edge_rem == data_flow::EdgeRemoveOption::RequiresUpdate) {
                             const_cast<data_flow::DataFlowNode&>(src).update_edge_removed(src_conn);
                         } else if (edge_rem == data_flow::EdgeRemoveOption::RemoveNodeAfter) {
@@ -1428,6 +1440,7 @@ int StructuredSDFGBuilder::clear_node(
                     auto vertex = current->vertex();
                     graph.nodes_.erase(vertex);
                     boost::remove_vertex(vertex, graph.graph_);
+                    graph.invalidate_topological_order();
                     ++removed_nodes;
                 } else if (!no_more_consumers && force_remove) {
                     throw std::runtime_error(
@@ -1485,6 +1498,7 @@ void StructuredSDFGBuilder::add_dataflow(const data_flow::DataFlowGraph& from, B
     std::unordered_map<graph::Vertex, graph::Vertex> node_mapping;
     for (const auto* node : nodes) {
         auto vertex = boost::add_vertex(to_dataflow.graph_);
+        to_dataflow.invalidate_topological_order();
         to_dataflow.nodes_.insert({vertex, node->clone(this->new_element_id(), vertex, to_dataflow)});
         node_mapping.insert({node->vertex(), vertex});
     }
@@ -1494,6 +1508,7 @@ void StructuredSDFGBuilder::add_dataflow(const data_flow::DataFlowGraph& from, B
         auto dst = node_mapping[memlet->dst().vertex()];
 
         auto edge = boost::add_edge(src, dst, to_dataflow.graph_);
+        to_dataflow.invalidate_topological_order();
 
         to_dataflow.edges_.insert(
             {edge.first,
