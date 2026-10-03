@@ -27,6 +27,8 @@ private:
 
     std::unordered_map<Node*, symbolic::Assumptions> assumptions_;
     std::unordered_map<Node*, symbolic::Assumptions> assumptions_with_trivial_;
+    std::unordered_map<Node*, symbolic::SymbolSet> constant_symbols_;
+    std::unordered_map<Node*, symbolic::SymbolSet> constant_symbols_with_trivial_;
 
     symbolic::SymbolSet parameters_;
 
@@ -50,6 +52,8 @@ private:
 
     const symbolic::Assumptions& materialize(Node& scope, bool include_trivial_bounds);
 
+    const symbolic::SymbolSet& materialize_constants(Node& scope, bool include_trivial_bounds);
+
     void determine_parameters(analysis::AnalysisManager& analysis_manager);
 
 public:
@@ -59,6 +63,10 @@ public:
     void run(analysis::AnalysisManager& analysis_manager) override;
 
     const symbolic::Assumptions& get(structured_control_flow::ControlFlowNode& node, bool include_trivial_bounds = false);
+
+    /// Symbols whose assumption at `node` is `constant()`; equals filtering `get(node, ...)`, without the scan.
+    const symbolic::SymbolSet&
+    constant_symbols(structured_control_flow::ControlFlowNode& node, bool include_trivial_bounds = false);
 
     const symbolic::SymbolSet& parameters();
 

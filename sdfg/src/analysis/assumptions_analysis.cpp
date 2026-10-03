@@ -309,6 +309,8 @@ void AssumptionsAnalysis::run(analysis::AnalysisManager& analysis_manager) {
     this->scope_of_.clear();
     this->assumptions_.clear();
     this->assumptions_with_trivial_.clear();
+    this->constant_symbols_.clear();
+    this->constant_symbols_with_trivial_.clear();
 
     this->parameters_.clear();
     this->users_analysis_ = &analysis_manager.get<Users>();
@@ -605,6 +607,32 @@ const symbolic::Assumptions& AssumptionsAnalysis::materialize(Node& scope, bool 
     return cache.emplace(&scope, std::move(merged)).first->second;
 }
 
+// Merging ORs `constant()`, so a scope's constants are its parent's plus its own constant entries.
+const symbolic::SymbolSet& AssumptionsAnalysis::materialize_constants(Node& scope, bool include_trivial_bounds) {
+    auto& cache = include_trivial_bounds ? this->constant_symbols_with_trivial_ : this->constant_symbols_;
+    auto it = cache.find(&scope);
+    if (it != cache.end()) {
+        return it->second;
+    }
+    symbolic::SymbolSet constants;
+    auto parent = this->parent_scope_.find(&scope);
+    if (parent == this->parent_scope_.end()) {
+        for (const auto& [sym, assum] : this->materialize(scope, include_trivial_bounds)) {
+            if (assum.constant()) {
+                constants.insert(sym);
+            }
+        }
+    } else {
+        constants = this->materialize_constants(*parent->second, include_trivial_bounds);
+        for (const auto& [sym, assum] : this->own_assumptions_.at(&scope)) {
+            if (assum.constant()) {
+                constants.insert(sym);
+            }
+        }
+    }
+    return cache.emplace(&scope, std::move(constants)).first->second;
+}
+
 void AssumptionsAnalysis::determine_parameters(analysis::AnalysisManager& analysis_manager) {
     for (auto& container : this->sdfg_.arguments()) {
         bool readonly = true;
@@ -638,6 +666,11 @@ void AssumptionsAnalysis::determine_parameters(analysis::AnalysisManager& analys
 const symbolic::Assumptions& AssumptionsAnalysis::
     get(structured_control_flow::ControlFlowNode& node, bool include_trivial_bounds) {
     return this->materialize(*this->scope_of_.at(&node), include_trivial_bounds);
+}
+
+const symbolic::SymbolSet& AssumptionsAnalysis::
+    constant_symbols(structured_control_flow::ControlFlowNode& node, bool include_trivial_bounds) {
+    return this->materialize_constants(*this->scope_of_.at(&node), include_trivial_bounds);
 }
 
 const symbolic::SymbolSet& AssumptionsAnalysis::parameters() {
