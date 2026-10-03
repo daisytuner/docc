@@ -7,7 +7,9 @@
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/access_node.h"
 #include "sdfg/data_flow/library_nodes/barrier_local_node.h"
+#include "sdfg/data_flow/library_nodes/math/blas/gemm_node.h"
 #include "sdfg/data_flow/library_nodes/math/cmath/cmath_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/matmul_node.h"
 #include "sdfg/data_flow/library_nodes/metadata_node.h"
 #include "sdfg/data_flow/library_nodes/stdlib/memset.h"
 #include "sdfg/data_flow/tasklet.h"
@@ -3182,4 +3184,411 @@ TEST(LocalStorageTest, Matmul_WrongTiledLoop) {
 
     ASSERT_NO_THROW(sdfg.validate());
     dump_sdfg(sdfg, "1.after");
+}
+
+// A MatMul reads its operand A as a bare pointer (empty-subset memlet). Localizing
+// A stages it into a packed local buffer before the loop and repoints the node at
+// the buffer, rewriting its A layout to the dense packing (dropping the lda padding).
+TEST(LocalStorageTest, Apply_MatMulOperand_Packed) {
+    builder::StructuredSDFGBuilder builder("ls_matmul_operand", FunctionType_CPU);
+
+    types::Scalar sym(types::PrimitiveType::Int64);
+    types::Scalar elem(types::PrimitiveType::Float);
+    types::Pointer ptr(elem);
+    builder.add_container("i", sym);
+    builder.add_container("a", ptr, true);
+    builder.add_container("b", ptr, true);
+    builder.add_container("y", ptr, true);
+
+    auto i = symbolic::symbol("i");
+    auto& loop = builder.add_for(
+        builder.subject().root(),
+        i,
+        symbolic::Lt(i, symbolic::integer(8)),
+        symbolic::integer(0),
+        symbolic::add(i, symbolic::one())
+    );
+    auto& block = builder.add_block(loop.root());
+    auto& a_in = builder.add_access(block, "a");
+    auto& b_in = builder.add_access(block, "b");
+    auto& y_io = builder.add_access(block, "y");
+
+    // A is [4, 8] stored with a padded leading dimension (lda = 16): localizing it
+    // packs the tile dense ([8, 1] strides).
+    symbolic::MultiExpression shape_a = {symbolic::integer(4), symbolic::integer(8)};
+    symbolic::MultiExpression strides_a = {symbolic::integer(16), symbolic::integer(1)};
+    symbolic::MultiExpression shape_b = {symbolic::integer(8), symbolic::integer(6)};
+    auto& mm = static_cast<math::tensor::MatMulNode&>(builder.add_library_node<math::tensor::MatMulNode>(
+        block, DebugInfo(), math::tensor::TensorLayout(shape_a, strides_a), math::tensor::TensorLayout(shape_b)
+    ));
+    builder.add_computational_memlet(block, a_in, mm, "A", {}, ptr);
+    builder.add_computational_memlet(block, b_in, mm, "B", {}, ptr);
+    builder.add_computational_memlet(block, y_io, mm, "Y", {}, ptr);
+
+    analysis::AnalysisManager am(builder.subject());
+    LocalStorage xform(loop, a_in);
+    ASSERT_TRUE(xform.can_be_applied(builder, am));
+    xform.apply(builder, am);
+
+    auto buf = xform.local_container();
+    ASSERT_TRUE(builder.subject().exists(buf));
+
+    // Structure: [copy_in_block (TileCopyNode), main_loop] (A is read-only).
+    auto& root = builder.subject().root();
+    ASSERT_EQ(root.size(), 2u);
+    EXPECT_TRUE(is_tile_copy_block(root.at(0)));
+    auto* main_loop = dyn_cast<structured_control_flow::For*>(&root.at(1));
+    ASSERT_NE(main_loop, nullptr);
+
+    // The MatMul now reads the packed buffer instead of A.
+    auto* main_block = dyn_cast<structured_control_flow::Block*>(&main_loop->root().at(0));
+    ASSERT_NE(main_block, nullptr);
+    EXPECT_TRUE(block_uses(*main_block, buf));
+    EXPECT_FALSE(block_uses(*main_block, "a"));
+
+    // Its A operand layout is now the dense packing (row stride K = 8, not lda = 16).
+    math::tensor::MatMulNode* mm2 = nullptr;
+    for (auto* ln : main_block->dataflow().library_nodes()) {
+        if (auto* m = dynamic_cast<math::tensor::MatMulNode*>(ln)) {
+            mm2 = m;
+        }
+    }
+    ASSERT_NE(mm2, nullptr);
+    EXPECT_TRUE(symbolic::eq(mm2->layout_a().get_stride(0), symbolic::integer(8)));
+    EXPECT_TRUE(symbolic::eq(mm2->layout_a().get_stride(1), symbolic::integer(1)));
+
+    ASSERT_NO_THROW(builder.subject().validate());
+}
+
+// GEMM reads A as a bare pointer. Localizing A packs it dense and drops the
+// leading-dimension padding (lda 16 -> k = 8).
+TEST(LocalStorageTest, Apply_GEMMOperand_Packed) {
+    builder::StructuredSDFGBuilder builder("ls_gemm_operand", FunctionType_CPU);
+
+    types::Scalar sym(types::PrimitiveType::Int64);
+    types::Scalar elem(types::PrimitiveType::Float);
+    types::Pointer ptr(elem);
+    builder.add_container("i", sym);
+    builder.add_container("a", ptr, true);
+    builder.add_container("b", ptr, true);
+    builder.add_container("c", ptr, true);
+
+    auto i = symbolic::symbol("i");
+    auto& loop = builder.add_for(
+        builder.subject().root(),
+        i,
+        symbolic::Lt(i, symbolic::integer(8)),
+        symbolic::integer(0),
+        symbolic::add(i, symbolic::one())
+    );
+    auto& block = builder.add_block(loop.root());
+    auto& a_in = builder.add_access(block, "a");
+    auto& b_in = builder.add_access(block, "b");
+    auto& c_io = builder.add_access(block, "c");
+    auto& alpha = builder.add_constant(block, "1.0", elem);
+    auto& beta = builder.add_constant(block, "0.0", elem);
+
+    const int m = 4, n = 6, k = 8, lda = 16; // A padded (lda > k)
+    auto& gemm = static_cast<math::blas::GEMMNode&>(builder.add_library_node<math::blas::GEMMNode>(
+        block,
+        DebugInfo(),
+        data_flow::ImplementationType_NONE,
+        math::blas::BLAS_Precision::s,
+        math::blas::BLAS_Layout::RowMajor,
+        math::blas::BLAS_Transpose::No,
+        math::blas::BLAS_Transpose::No,
+        symbolic::integer(m),
+        symbolic::integer(n),
+        symbolic::integer(k),
+        symbolic::integer(lda),
+        symbolic::integer(n),
+        symbolic::integer(n)
+    ));
+    builder.add_computational_memlet(block, a_in, gemm, "__A", {}, ptr);
+    builder.add_computational_memlet(block, b_in, gemm, "__B", {}, ptr);
+    builder.add_computational_memlet(block, c_io, gemm, "__C", {}, ptr);
+    builder.add_computational_memlet(block, alpha, gemm, "__alpha", {}, elem);
+    builder.add_computational_memlet(block, beta, gemm, "__beta", {}, elem);
+
+    analysis::AnalysisManager am(builder.subject());
+    LocalStorage xform(loop, a_in);
+    ASSERT_TRUE(xform.can_be_applied(builder, am));
+    xform.apply(builder, am);
+
+    auto buf = xform.local_container();
+    ASSERT_TRUE(builder.subject().exists(buf));
+    auto& root = builder.subject().root();
+    ASSERT_EQ(root.size(), 2u);
+    EXPECT_TRUE(is_tile_copy_block(root.at(0)));
+    auto* main_loop = dyn_cast<structured_control_flow::For*>(&root.at(1));
+    ASSERT_NE(main_loop, nullptr);
+    auto* main_block = dyn_cast<structured_control_flow::Block*>(&main_loop->root().at(0));
+    ASSERT_NE(main_block, nullptr);
+    EXPECT_TRUE(block_uses(*main_block, buf));
+    EXPECT_FALSE(block_uses(*main_block, "a"));
+
+    math::blas::GEMMNode* g2 = nullptr;
+    for (auto* ln : main_block->dataflow().library_nodes()) {
+        if (auto* g = dynamic_cast<math::blas::GEMMNode*>(ln)) {
+            g2 = g;
+        }
+    }
+    ASSERT_NE(g2, nullptr);
+    EXPECT_TRUE(symbolic::eq(g2->lda(), symbolic::integer(k)));
+
+    ASSERT_NO_THROW(builder.subject().validate());
+}
+
+// GEMM reads AND writes C (strided ldc): localizing it stages a packed copy in
+// before the loop and writes it back after, dropping the padding (ldc 16 -> n = 6).
+TEST(LocalStorageTest, Apply_GEMMWriteOperand_C) {
+    builder::StructuredSDFGBuilder builder("ls_gemm_write", FunctionType_CPU);
+
+    types::Scalar sym(types::PrimitiveType::Int64);
+    types::Scalar elem(types::PrimitiveType::Float);
+    types::Pointer ptr(elem);
+    builder.add_container("i", sym);
+    builder.add_container("a", ptr, true);
+    builder.add_container("b", ptr, true);
+    builder.add_container("c", ptr, true);
+
+    auto i = symbolic::symbol("i");
+    auto& loop = builder.add_for(
+        builder.subject().root(),
+        i,
+        symbolic::Lt(i, symbolic::integer(8)),
+        symbolic::integer(0),
+        symbolic::add(i, symbolic::one())
+    );
+    auto& block = builder.add_block(loop.root());
+    auto& a_in = builder.add_access(block, "a");
+    auto& b_in = builder.add_access(block, "b");
+    auto& c_io = builder.add_access(block, "c");
+    auto& alpha = builder.add_constant(block, "1.0", elem);
+    auto& beta = builder.add_constant(block, "1.0", elem);
+
+    const int m = 4, n = 6, k = 8, ldc = 16; // C padded (ldc > n) -> read+write generic
+    auto& gemm = static_cast<math::blas::GEMMNode&>(builder.add_library_node<math::blas::GEMMNode>(
+        block,
+        DebugInfo(),
+        data_flow::ImplementationType_NONE,
+        math::blas::BLAS_Precision::s,
+        math::blas::BLAS_Layout::RowMajor,
+        math::blas::BLAS_Transpose::No,
+        math::blas::BLAS_Transpose::No,
+        symbolic::integer(m),
+        symbolic::integer(n),
+        symbolic::integer(k),
+        symbolic::integer(k),
+        symbolic::integer(n),
+        symbolic::integer(ldc)
+    ));
+    builder.add_computational_memlet(block, a_in, gemm, "__A", {}, ptr);
+    builder.add_computational_memlet(block, b_in, gemm, "__B", {}, ptr);
+    builder.add_computational_memlet(block, c_io, gemm, "__C", {}, ptr);
+    builder.add_computational_memlet(block, alpha, gemm, "__alpha", {}, elem);
+    builder.add_computational_memlet(block, beta, gemm, "__beta", {}, elem);
+
+    analysis::AnalysisManager am(builder.subject());
+    LocalStorage xform(loop, c_io);
+    ASSERT_TRUE(xform.can_be_applied(builder, am));
+    xform.apply(builder, am);
+
+    auto buf = xform.local_container();
+    ASSERT_TRUE(builder.subject().exists(buf));
+
+    // C is read and written: [copy_in, main_loop, copy_out].
+    auto& root = builder.subject().root();
+    ASSERT_EQ(root.size(), 3u);
+    EXPECT_TRUE(is_tile_copy_block(root.at(0)));
+    auto* main_loop = dyn_cast<structured_control_flow::For*>(&root.at(1));
+    ASSERT_NE(main_loop, nullptr);
+    EXPECT_TRUE(is_tile_copy_block(root.at(2)));
+
+    auto* main_block = dyn_cast<structured_control_flow::Block*>(&main_loop->root().at(0));
+    ASSERT_NE(main_block, nullptr);
+    EXPECT_TRUE(block_uses(*main_block, buf));
+    EXPECT_FALSE(block_uses(*main_block, "c"));
+
+    math::blas::GEMMNode* g2 = nullptr;
+    for (auto* ln : main_block->dataflow().library_nodes()) {
+        if (auto* g = dynamic_cast<math::blas::GEMMNode*>(ln)) {
+            g2 = g;
+        }
+    }
+    ASSERT_NE(g2, nullptr);
+    EXPECT_TRUE(symbolic::eq(g2->ldc(), symbolic::integer(n)));
+
+    ASSERT_NO_THROW(builder.subject().validate());
+}
+
+// A column-major GEMM operand (layout ColMajor) is staged column-major (Transposed
+// buffer), preserving the orientation: only lda drops to m (16 -> 4), and the local
+// buffer's outer array dimension is k (reversed tile dims), not m.
+TEST(LocalStorageTest, Apply_GEMMColMajorOperand_Packed) {
+    builder::StructuredSDFGBuilder builder("ls_gemm_colmajor", FunctionType_CPU);
+
+    types::Scalar sym(types::PrimitiveType::Int64);
+    types::Scalar elem(types::PrimitiveType::Float);
+    types::Pointer ptr(elem);
+    builder.add_container("i", sym);
+    builder.add_container("a", ptr, true);
+    builder.add_container("b", ptr, true);
+    builder.add_container("c", ptr, true);
+
+    auto i = symbolic::symbol("i");
+    auto& loop = builder.add_for(
+        builder.subject().root(),
+        i,
+        symbolic::Lt(i, symbolic::integer(8)),
+        symbolic::integer(0),
+        symbolic::add(i, symbolic::one())
+    );
+    auto& block = builder.add_block(loop.root());
+    auto& a_in = builder.add_access(block, "a");
+    auto& b_in = builder.add_access(block, "b");
+    auto& c_io = builder.add_access(block, "c");
+    auto& alpha = builder.add_constant(block, "1.0", elem);
+    auto& beta = builder.add_constant(block, "0.0", elem);
+
+    const int m = 4, n = 6, k = 8, lda = 16; // ColMajor A padded (lda > m)
+    auto& gemm = static_cast<math::blas::GEMMNode&>(builder.add_library_node<math::blas::GEMMNode>(
+        block,
+        DebugInfo(),
+        data_flow::ImplementationType_NONE,
+        math::blas::BLAS_Precision::s,
+        math::blas::BLAS_Layout::ColMajor,
+        math::blas::BLAS_Transpose::No,
+        math::blas::BLAS_Transpose::No,
+        symbolic::integer(m),
+        symbolic::integer(n),
+        symbolic::integer(k),
+        symbolic::integer(lda),
+        symbolic::integer(k),
+        symbolic::integer(m)
+    ));
+    builder.add_computational_memlet(block, a_in, gemm, "__A", {}, ptr);
+    builder.add_computational_memlet(block, b_in, gemm, "__B", {}, ptr);
+    builder.add_computational_memlet(block, c_io, gemm, "__C", {}, ptr);
+    builder.add_computational_memlet(block, alpha, gemm, "__alpha", {}, elem);
+    builder.add_computational_memlet(block, beta, gemm, "__beta", {}, elem);
+
+    analysis::AnalysisManager am(builder.subject());
+    LocalStorage xform(loop, a_in);
+    ASSERT_TRUE(xform.can_be_applied(builder, am));
+    xform.apply(builder, am);
+
+    auto buf = xform.local_container();
+    ASSERT_TRUE(builder.subject().exists(buf));
+    auto& root = builder.subject().root();
+    ASSERT_EQ(root.size(), 2u);
+    EXPECT_TRUE(is_tile_copy_block(root.at(0)));
+    auto* main_loop = dyn_cast<structured_control_flow::For*>(&root.at(1));
+    ASSERT_NE(main_loop, nullptr);
+    auto* main_block = dyn_cast<structured_control_flow::Block*>(&main_loop->root().at(0));
+    ASSERT_NE(main_block, nullptr);
+    EXPECT_TRUE(block_uses(*main_block, buf));
+    EXPECT_FALSE(block_uses(*main_block, "a"));
+
+    math::blas::GEMMNode* g2 = nullptr;
+    for (auto* ln : main_block->dataflow().library_nodes()) {
+        if (auto* g = dynamic_cast<math::blas::GEMMNode*>(ln)) {
+            g2 = g;
+        }
+    }
+    ASSERT_NE(g2, nullptr);
+    // Orientation preserved: new lda is the tight column-major leading dim = m.
+    EXPECT_TRUE(symbolic::eq(g2->lda(), symbolic::integer(m)));
+
+    // Buffer stored column-major (Transposed): outer array dimension is k, not m.
+    const auto& buf_type = builder.subject().type(buf);
+    const auto* outer = dynamic_cast<const types::Array*>(&buf_type);
+    ASSERT_NE(outer, nullptr);
+    EXPECT_TRUE(symbolic::eq(outer->num_elements(), symbolic::integer(k)));
+
+    ASSERT_NO_THROW(builder.subject().validate());
+}
+
+// A transposed operand under RowMajor GEMM (trans_a = Trans) is also column-major in
+// memory, so it is staged the same way: lda drops to m and the buffer is Transposed.
+TEST(LocalStorageTest, Apply_GEMMTransposedOperand_Packed) {
+    builder::StructuredSDFGBuilder builder("ls_gemm_transposed", FunctionType_CPU);
+
+    types::Scalar sym(types::PrimitiveType::Int64);
+    types::Scalar elem(types::PrimitiveType::Float);
+    types::Pointer ptr(elem);
+    builder.add_container("i", sym);
+    builder.add_container("a", ptr, true);
+    builder.add_container("b", ptr, true);
+    builder.add_container("c", ptr, true);
+
+    auto i = symbolic::symbol("i");
+    auto& loop = builder.add_for(
+        builder.subject().root(),
+        i,
+        symbolic::Lt(i, symbolic::integer(8)),
+        symbolic::integer(0),
+        symbolic::add(i, symbolic::one())
+    );
+    auto& block = builder.add_block(loop.root());
+    auto& a_in = builder.add_access(block, "a");
+    auto& b_in = builder.add_access(block, "b");
+    auto& c_io = builder.add_access(block, "c");
+    auto& alpha = builder.add_constant(block, "1.0", elem);
+    auto& beta = builder.add_constant(block, "0.0", elem);
+
+    const int m = 4, n = 6, k = 8, lda = 16; // RowMajor trans A: op(A) is m x k, A padded
+    auto& gemm = static_cast<math::blas::GEMMNode&>(builder.add_library_node<math::blas::GEMMNode>(
+        block,
+        DebugInfo(),
+        data_flow::ImplementationType_NONE,
+        math::blas::BLAS_Precision::s,
+        math::blas::BLAS_Layout::RowMajor,
+        math::blas::BLAS_Transpose::Trans,
+        math::blas::BLAS_Transpose::No,
+        symbolic::integer(m),
+        symbolic::integer(n),
+        symbolic::integer(k),
+        symbolic::integer(lda),
+        symbolic::integer(n),
+        symbolic::integer(n)
+    ));
+    builder.add_computational_memlet(block, a_in, gemm, "__A", {}, ptr);
+    builder.add_computational_memlet(block, b_in, gemm, "__B", {}, ptr);
+    builder.add_computational_memlet(block, c_io, gemm, "__C", {}, ptr);
+    builder.add_computational_memlet(block, alpha, gemm, "__alpha", {}, elem);
+    builder.add_computational_memlet(block, beta, gemm, "__beta", {}, elem);
+
+    analysis::AnalysisManager am(builder.subject());
+    LocalStorage xform(loop, a_in);
+    ASSERT_TRUE(xform.can_be_applied(builder, am));
+    xform.apply(builder, am);
+
+    auto buf = xform.local_container();
+    ASSERT_TRUE(builder.subject().exists(buf));
+    auto& root = builder.subject().root();
+    ASSERT_EQ(root.size(), 2u);
+    EXPECT_TRUE(is_tile_copy_block(root.at(0)));
+    auto* main_loop = dyn_cast<structured_control_flow::For*>(&root.at(1));
+    ASSERT_NE(main_loop, nullptr);
+    auto* main_block = dyn_cast<structured_control_flow::Block*>(&main_loop->root().at(0));
+    ASSERT_NE(main_block, nullptr);
+    EXPECT_TRUE(block_uses(*main_block, buf));
+    EXPECT_FALSE(block_uses(*main_block, "a"));
+
+    math::blas::GEMMNode* g2 = nullptr;
+    for (auto* ln : main_block->dataflow().library_nodes()) {
+        if (auto* g = dynamic_cast<math::blas::GEMMNode*>(ln)) {
+            g2 = g;
+        }
+    }
+    ASSERT_NE(g2, nullptr);
+    EXPECT_TRUE(symbolic::eq(g2->lda(), symbolic::integer(m)));
+
+    const auto& buf_type = builder.subject().type(buf);
+    const auto* outer = dynamic_cast<const types::Array*>(&buf_type);
+    ASSERT_NE(outer, nullptr);
+    EXPECT_TRUE(symbolic::eq(outer->num_elements(), symbolic::integer(k)));
+
+    ASSERT_NO_THROW(builder.subject().validate());
 }

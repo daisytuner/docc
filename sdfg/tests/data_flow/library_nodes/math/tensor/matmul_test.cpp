@@ -393,3 +393,43 @@ TEST(MatMulTest, MatMul_NoCopyForDefaultStrides) {
     EXPECT_EQ(free_count, 0) << "No FreeNode expected for default strides";
     EXPECT_TRUE(found_gemm) << "GEMMNode should still be present";
 }
+
+// The MatMul node reports each operand's consumed affine layout through its
+// pointer access metadata, so MemoryLayoutAnalysis can localize a whole operand.
+TEST(MatMulTest, MatMul_ConsumedLayout) {
+    builder::StructuredSDFGBuilder builder("matmul_consumed_layout", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    auto& block = builder.add_block(sdfg.root());
+
+    symbolic::MultiExpression shape_a = {symbolic::integer(4), symbolic::integer(8)}; // M=4, K=8
+    symbolic::MultiExpression shape_b = {symbolic::integer(8), symbolic::integer(6)}; // K=8, N=6
+    auto& mm = static_cast<math::tensor::MatMulNode&>(builder.add_library_node<math::tensor::MatMulNode>(
+        block, DebugInfo(), math::tensor::TensorLayout(shape_a), math::tensor::TensorLayout(shape_b)
+    ));
+
+    auto a = mm.pointer_access_type(math::tensor::MatMulNode::A_INPUT_IDX);
+    ASSERT_NE(a, nullptr);
+    EXPECT_TRUE(a->may_contain_reads());
+    EXPECT_FALSE(a->may_contain_writes());
+    auto a_read = a->access_read_pattern();
+    ASSERT_NE(a_read, nullptr);
+    ASSERT_NE(a_read->layout(), nullptr);
+    EXPECT_TRUE(symbolic::eq(a_read->layout()->get_dim(0), symbolic::integer(4)));
+    EXPECT_TRUE(symbolic::eq(a_read->layout()->get_dim(1), symbolic::integer(8)));
+
+    auto b = mm.pointer_access_type(math::tensor::MatMulNode::B_INPUT_IDX);
+    auto b_read = b->access_read_pattern();
+    ASSERT_NE(b_read, nullptr);
+    ASSERT_NE(b_read->layout(), nullptr);
+    EXPECT_TRUE(symbolic::eq(b_read->layout()->get_dim(0), symbolic::integer(8)));
+    EXPECT_TRUE(symbolic::eq(b_read->layout()->get_dim(1), symbolic::integer(6)));
+
+    auto y = mm.pointer_access_type(math::tensor::MatMulNode::Y_INPUT_IDX);
+    ASSERT_NE(y, nullptr);
+    EXPECT_TRUE(y->may_contain_writes());
+    auto y_write = y->access_write_pattern();
+    ASSERT_NE(y_write, nullptr);
+    ASSERT_NE(y_write->layout(), nullptr);
+    EXPECT_TRUE(symbolic::eq(y_write->layout()->get_dim(0), symbolic::integer(4)));
+    EXPECT_TRUE(symbolic::eq(y_write->layout()->get_dim(1), symbolic::integer(6)));
+}

@@ -65,11 +65,19 @@ TileAxis::TileAxis(
       stride_(std::move(stride)) {
 }
 
-std::vector<TileAxis> TileAxis::
-    enclosing(structured_control_flow::StructuredLoop& loop, const symbolic::MultiExpression& bases) {
+std::vector<TileAxis> TileAxis::enclosing(
+    structured_control_flow::StructuredLoop& loop,
+    const symbolic::MultiExpression& bases,
+    const symbolic::Expression& offset
+) {
     // An axis is cooperative when its indvar addresses no tile base (all
-    // iterations share the same tile); otherwise it is per-iteration private.
+    // iterations share the same tile); otherwise it is per-iteration private. The
+    // offset holds a library operand's grid/block indvars (its per-dim bases are
+    // zero), so it participates in the test like any base.
     auto is_cooperative = [&](const symbolic::Symbol& indvar) {
+        if (!offset.is_null() && symbolic::uses(offset, indvar)) {
+            return false;
+        }
         for (const auto& base : bases) {
             if (symbolic::uses(base, indvar)) {
                 return false;
