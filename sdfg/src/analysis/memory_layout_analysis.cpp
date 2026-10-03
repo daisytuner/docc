@@ -72,8 +72,13 @@ std::optional<MemoryTile> try_library_node_access(const data_flow::Memlet& memle
     std::optional<MemoryLayout> layout;
     auto meta = lib->pointer_access_type(memlet);
     if (meta) {
-        // The consumed region is whichever direction the operand accesses.
-        const auto* reported = meta->read_layout() ? meta->read_layout() : meta->write_layout();
+        // The consumed region is whichever direction the operand accesses; a
+        // structured operand reports it through a TensorLayoutPattern.
+        auto read = meta->access_read_pattern();
+        auto write = meta->access_write_pattern();
+        const auto* reported = (read && read->layout())     ? read->layout()
+                               : (write && write->layout()) ? write->layout()
+                                                            : nullptr;
         if (reported) {
             layout = *reported;
         }

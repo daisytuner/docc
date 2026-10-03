@@ -426,10 +426,13 @@ data_flow::PointerAccessType GEMMNode::pointer_access_type(int input_idx) const 
                 calc_matrix_access_range(m_, n_, ldc_, BLAS_Transpose::No, layout_), true, std::move(c_layout)
             );
         } else {
-            // Strided C (ldc != n): the layout describes the accessed m x n region
-            // exactly (covers_all), unlike the old flat convex over-approximation.
-            data_flow::AccessRegion region{true, c_layout, true};
-            return data_flow::PointerAccessMeta::create_generic(region, region, true);
+            // Strided C (ldc != n): the TensorLayoutPattern describes the accessed
+            // m x n region exactly (not_sparse), unlike a flat convex over-approximation.
+            return data_flow::PointerAccessMeta::create_generic(
+                data_flow::TensorLayoutPattern::create(c_layout, true),
+                data_flow::TensorLayoutPattern::create(c_layout, true),
+                true
+            );
         }
     } else {
         return LibraryNode::pointer_access_type(input_idx);

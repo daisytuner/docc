@@ -411,19 +411,25 @@ TEST(MatMulTest, MatMul_ConsumedLayout) {
     ASSERT_NE(a, nullptr);
     EXPECT_TRUE(a->may_contain_reads());
     EXPECT_FALSE(a->may_contain_writes());
-    ASSERT_NE(a->read_layout(), nullptr);
-    EXPECT_TRUE(symbolic::eq(a->read_layout()->get_dim(0), symbolic::integer(4)));
-    EXPECT_TRUE(symbolic::eq(a->read_layout()->get_dim(1), symbolic::integer(8)));
+    auto a_read = a->access_read_pattern();
+    ASSERT_NE(a_read, nullptr);
+    ASSERT_NE(a_read->layout(), nullptr);
+    EXPECT_TRUE(symbolic::eq(a_read->layout()->get_dim(0), symbolic::integer(4)));
+    EXPECT_TRUE(symbolic::eq(a_read->layout()->get_dim(1), symbolic::integer(8)));
 
     auto b = mm.pointer_access_type(math::tensor::MatMulNode::B_INPUT_IDX);
-    ASSERT_NE(b->read_layout(), nullptr);
-    EXPECT_TRUE(symbolic::eq(b->read_layout()->get_dim(0), symbolic::integer(8)));
-    EXPECT_TRUE(symbolic::eq(b->read_layout()->get_dim(1), symbolic::integer(6)));
+    auto b_read = b->access_read_pattern();
+    ASSERT_NE(b_read, nullptr);
+    ASSERT_NE(b_read->layout(), nullptr);
+    EXPECT_TRUE(symbolic::eq(b_read->layout()->get_dim(0), symbolic::integer(8)));
+    EXPECT_TRUE(symbolic::eq(b_read->layout()->get_dim(1), symbolic::integer(6)));
 
     auto y = mm.pointer_access_type(math::tensor::MatMulNode::Y_INPUT_IDX);
     ASSERT_NE(y, nullptr);
     EXPECT_TRUE(y->may_contain_writes());
-    ASSERT_NE(y->write_layout(), nullptr);
-    EXPECT_TRUE(symbolic::eq(y->write_layout()->get_dim(0), symbolic::integer(4)));
-    EXPECT_TRUE(symbolic::eq(y->write_layout()->get_dim(1), symbolic::integer(6)));
+    auto y_write = y->access_write_pattern();
+    ASSERT_NE(y_write, nullptr);
+    ASSERT_NE(y_write->layout(), nullptr);
+    EXPECT_TRUE(symbolic::eq(y_write->layout()->get_dim(0), symbolic::integer(4)));
+    EXPECT_TRUE(symbolic::eq(y_write->layout()->get_dim(1), symbolic::integer(6)));
 }

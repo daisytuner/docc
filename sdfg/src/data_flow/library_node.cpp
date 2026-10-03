@@ -78,8 +78,8 @@ bool LibraryNode::pointer_use_creates_side_effects(const DataFlowGraph& dataflow
         auto* edge = dataflow.in_edge_for_connector(*this, conn);
         if (edge && edge->result_type(func)->type_id() == types::TypeID::Pointer) {
             auto access = pointer_access_type(i);
-            if (!access || !access->no_capture() || (access->may_contain_reads() && !access->read_layout()) ||
-                (access->may_contain_writes() && !access->write_layout())) {
+            if (!access || !access->no_capture() || (access->may_contain_reads() && !access->access_read_pattern()) ||
+                (access->may_contain_writes() && !access->access_write_pattern())) {
                 return true;
             }
         }
