@@ -304,10 +304,11 @@ AssumptionsAnalysis::AssumptionsAnalysis(StructuredSDFG& sdfg, bool with_branch_
       };
 
 void AssumptionsAnalysis::run(analysis::AnalysisManager& analysis_manager) {
+    this->own_assumptions_.clear();
+    this->parent_scope_.clear();
+    this->scope_of_.clear();
     this->assumptions_.clear();
     this->assumptions_with_trivial_.clear();
-    this->ref_assumptions_.clear();
-    this->ref_assumptions_with_trivial_.clear();
 
     this->parameters_.clear();
     this->users_analysis_ = &analysis_manager.get<Users>();
@@ -315,12 +316,13 @@ void AssumptionsAnalysis::run(analysis::AnalysisManager& analysis_manager) {
     // Determine parameters
     this->determine_parameters(analysis_manager);
 
-    // Initialize root assumptions with SDFG-level assumptions
-    this->assumptions_.insert({&sdfg_.root(), this->additional_assumptions_});
-    auto& initial = this->assumptions_[&sdfg_.root()];
+    // Root scope is materialized eagerly from the SDFG-level assumptions
+    auto& root = sdfg_.root();
+    this->assumptions_.insert({&root, this->additional_assumptions_});
+    auto& initial = this->assumptions_[&root];
 
-    this->assumptions_with_trivial_.insert({&sdfg_.root(), initial});
-    auto& initial_with_trivial = this->assumptions_with_trivial_[&sdfg_.root()];
+    this->assumptions_with_trivial_.insert({&root, initial});
+    auto& initial_with_trivial = this->assumptions_with_trivial_[&root];
     for (auto& entry : sdfg_.assumptions()) {
         if (initial_with_trivial.find(entry.first) == initial_with_trivial.end()) {
             initial_with_trivial.insert({entry.first, entry.second});
@@ -334,20 +336,15 @@ void AssumptionsAnalysis::run(analysis::AnalysisManager& analysis_manager) {
         }
     }
 
-    // Traverse and propagate
-    this->traverse(sdfg_.root(), initial, initial_with_trivial);
+    this->traverse(root, root);
 };
 
-void AssumptionsAnalysis::traverse(
-    structured_control_flow::ControlFlowNode& current,
-    const symbolic::Assumptions& outer_assumptions,
-    const symbolic::Assumptions& outer_assumptions_with_trivial
-) {
-    this->propagate_ref(current, outer_assumptions, outer_assumptions_with_trivial);
+void AssumptionsAnalysis::traverse(Node& current, Node& scope) {
+    this->scope_of_[&current] = &scope;
 
     if (auto sequence_stmt = dyn_cast<structured_control_flow::Sequence*>(&current)) {
         for (size_t i = 0; i < sequence_stmt->size(); i++) {
-            this->traverse(sequence_stmt->at(i), outer_assumptions, outer_assumptions_with_trivial);
+            this->traverse(sequence_stmt->at(i), scope);
         }
     } else if (auto if_else_stmt = dyn_cast<structured_control_flow::IfElse*>(&current)) {
         if (!with_branch_conditions_) {
@@ -358,16 +355,14 @@ void AssumptionsAnalysis::traverse(
             // entirely.
             for (size_t i = 0; i < if_else_stmt->size(); i++) {
                 auto& branch_seq = if_else_stmt->at(i).first;
-                this->traverse(
-                    const_cast<structured_control_flow::Sequence&>(branch_seq),
-                    outer_assumptions,
-                    outer_assumptions_with_trivial
-                );
+                this->traverse(const_cast<structured_control_flow::Sequence&>(branch_seq), scope);
             }
             return;
         }
+        // Branch refinement looks symbols up in the full outer scope.
+        const auto& outer_assumptions = this->materialize(scope, /*include_trivial_bounds=*/false);
         for (size_t i = 0; i < if_else_stmt->size(); i++) {
-            auto& branch_seq = if_else_stmt->at(i).first;
+            auto& branch_seq = const_cast<structured_control_flow::Sequence&>(if_else_stmt->at(i).first);
             const auto& condition = if_else_stmt->at(i).second;
 
             // Build per-branch assumption deltas from the case condition.
@@ -378,35 +373,19 @@ void AssumptionsAnalysis::traverse(
             ensure_assumption_entries(condition, branch_assumptions);
             extract_assumptions_from_condition(condition, outer_assumptions, branch_assumptions);
 
-            // Same propagation pattern as traverse_structured_loop: install
-            // the merged set for the branch sequence, then recurse with the
-            // installed scope as the new outer scope.
-            this->propagate(
-                const_cast<structured_control_flow::Sequence&>(branch_seq),
-                branch_assumptions,
-                outer_assumptions,
-                outer_assumptions_with_trivial
-            );
-            this->traverse(
-                const_cast<structured_control_flow::Sequence&>(branch_seq),
-                this->assumptions_[&branch_seq],
-                this->assumptions_with_trivial_[&branch_seq]
-            );
+            this->add_scope(branch_seq, std::move(branch_assumptions), scope);
+            this->traverse(branch_seq, branch_seq);
         }
     } else if (auto while_stmt = dyn_cast<structured_control_flow::While*>(&current)) {
-        this->traverse(while_stmt->root(), outer_assumptions, outer_assumptions_with_trivial);
+        this->traverse(while_stmt->root(), scope);
     } else if (auto loop_stmt = dyn_cast<structured_control_flow::StructuredLoop*>(&current)) {
-        this->traverse_structured_loop(loop_stmt, outer_assumptions, outer_assumptions_with_trivial);
+        this->traverse_structured_loop(loop_stmt, scope);
     } else {
         // Other control flow nodes (e.g., Block) do not introduce assumptions or comprise scopes
     }
 };
 
-void AssumptionsAnalysis::traverse_structured_loop(
-    structured_control_flow::StructuredLoop* loop,
-    const symbolic::Assumptions& outer_assumptions,
-    const symbolic::Assumptions& outer_assumptions_with_trivial
-) {
+void AssumptionsAnalysis::traverse_structured_loop(structured_control_flow::StructuredLoop* loop, Node& scope) {
     // A structured loop induces assumption for the loop body
     auto& body = loop->root();
     symbolic::Assumptions body_assumptions;
@@ -567,112 +546,63 @@ void AssumptionsAnalysis::traverse_structured_loop(
         }
     }
 
-    this->propagate(body, body_assumptions, outer_assumptions, outer_assumptions_with_trivial);
-    this->traverse(body, this->assumptions_[&body], this->assumptions_with_trivial_[&body]);
+    this->add_scope(body, std::move(body_assumptions), scope);
+    this->traverse(body, body);
 }
 
-void AssumptionsAnalysis::propagate(
-    structured_control_flow::ControlFlowNode& node,
-    const symbolic::Assumptions& node_assumptions,
-    const symbolic::Assumptions& outer_assumptions,
-    const symbolic::Assumptions& outer_assumptions_with_trivial
-) {
-    // Propagate assumptions
-    this->assumptions_.insert({&node, node_assumptions});
-    auto& propagated_assumptions = this->assumptions_[&node];
-    for (auto& entry : outer_assumptions) {
-        if (propagated_assumptions.find(entry.first) == propagated_assumptions.end()) {
-            // New assumption
-            propagated_assumptions.insert({entry.first, entry.second});
+namespace {
+
+// Inner-scope assumptions take precedence; outer bounds/constraints accumulate.
+void merge_outer(symbolic::Assumptions& into, const symbolic::Assumptions& outer) {
+    for (auto& entry : outer) {
+        auto it = into.find(entry.first);
+        if (it == into.end()) {
+            into.insert({entry.first, entry.second});
             continue;
         }
-
-        // Merge assumptions from lower scopes
-        auto& lower_assum = propagated_assumptions[entry.first];
-
-        // Add to set of bounds
-        for (auto ub : entry.second.upper_bounds()) {
+        auto& lower_assum = it->second;
+        for (auto& ub : entry.second.upper_bounds()) {
             lower_assum.add_upper_bound(ub);
         }
-        for (auto lb : entry.second.lower_bounds()) {
+        for (auto& lb : entry.second.lower_bounds()) {
             lower_assum.add_lower_bound(lb);
         }
-
-        // Add to set of constraints
         for (auto& c : entry.second.constraints()) {
             lower_assum.add_constraint(c);
         }
-
-        // Set tight bounds
         if (lower_assum.tight_upper_bound().is_null()) {
             lower_assum.tight_upper_bound(entry.second.tight_upper_bound());
         }
         if (lower_assum.tight_lower_bound().is_null()) {
             lower_assum.tight_lower_bound(entry.second.tight_lower_bound());
         }
-
-        // Set map
         if (lower_assum.map().is_null()) {
             lower_assum.map(entry.second.map());
         }
-
-        // Set constant
-        if (!lower_assum.constant()) {
-            lower_assum.constant(entry.second.constant());
-        }
-    }
-
-    this->assumptions_with_trivial_.insert({&node, node_assumptions});
-    auto& assumptions_with_trivial = this->assumptions_with_trivial_[&node];
-    for (auto& entry : outer_assumptions_with_trivial) {
-        if (assumptions_with_trivial.find(entry.first) == assumptions_with_trivial.end()) {
-            // New assumption
-            assumptions_with_trivial.insert({entry.first, entry.second});
-            continue;
-        }
-        // Merge assumptions from lower scopes
-        auto& lower_assum = assumptions_with_trivial[entry.first];
-
-        // Add to set of bounds
-        for (auto ub : entry.second.upper_bounds()) {
-            lower_assum.add_upper_bound(ub);
-        }
-        for (auto lb : entry.second.lower_bounds()) {
-            lower_assum.add_lower_bound(lb);
-        }
-
-        // Add to set of constraints
-        for (auto& c : entry.second.constraints()) {
-            lower_assum.add_constraint(c);
-        }
-
-        // Set tight bounds
-        if (lower_assum.tight_upper_bound().is_null()) {
-            lower_assum.tight_upper_bound(entry.second.tight_upper_bound());
-        }
-        if (lower_assum.tight_lower_bound().is_null()) {
-            lower_assum.tight_lower_bound(entry.second.tight_lower_bound());
-        }
-
-        // Set map
-        if (lower_assum.map().is_null()) {
-            lower_assum.map(entry.second.map());
-        }
-
-        // Set constant
         if (!lower_assum.constant()) {
             lower_assum.constant(entry.second.constant());
         }
     }
 }
 
-void AssumptionsAnalysis::propagate_ref(
-    structured_control_flow::ControlFlowNode& node,
-    const symbolic::Assumptions& outer_assumptions,
-    const symbolic::Assumptions& outer_assumptions_with_trivial
-) {
-    this->ref_assumptions_.insert({&node, &outer_assumptions});
-    this->ref_assumptions_with_trivial_.insert({&node, &outer_assumptions_with_trivial});
+} // namespace
+
+void AssumptionsAnalysis::add_scope(Node& node, symbolic::Assumptions own, Node& parent) {
+    this->own_assumptions_[&node] = std::move(own);
+    this->parent_scope_[&node] = &parent;
+}
+
+const symbolic::Assumptions& AssumptionsAnalysis::materialize(Node& scope, bool include_trivial_bounds) {
+    auto& cache = include_trivial_bounds ? this->assumptions_with_trivial_ : this->assumptions_;
+    auto it = cache.find(&scope);
+    if (it != cache.end()) {
+        return it->second;
+    }
+    // Node-based map: `outer` stays valid while the recursion inserts other scopes.
+    const auto& outer = this->materialize(*this->parent_scope_.at(&scope), include_trivial_bounds);
+    symbolic::Assumptions merged = this->own_assumptions_.at(&scope);
+    merge_outer(merged, outer);
+    return cache.emplace(&scope, std::move(merged)).first->second;
 }
 
 void AssumptionsAnalysis::determine_parameters(analysis::AnalysisManager& analysis_manager) {
@@ -707,11 +637,7 @@ void AssumptionsAnalysis::determine_parameters(analysis::AnalysisManager& analys
 
 const symbolic::Assumptions& AssumptionsAnalysis::
     get(structured_control_flow::ControlFlowNode& node, bool include_trivial_bounds) {
-    if (include_trivial_bounds) {
-        return *this->ref_assumptions_with_trivial_[&node];
-    } else {
-        return *this->ref_assumptions_[&node];
-    }
+    return this->materialize(*this->scope_of_.at(&node), include_trivial_bounds);
 }
 
 const symbolic::SymbolSet& AssumptionsAnalysis::parameters() {
