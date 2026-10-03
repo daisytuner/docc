@@ -519,6 +519,7 @@ void Users::run(analysis::AnalysisManager& analysis_manager) {
     this->exits_.clear();
     this->users_lookup_.clear();
 
+    uses_.clear();
     reads_.clear();
     writes_.clear();
     views_.clear();
@@ -582,6 +583,7 @@ void Users::run(analysis::AnalysisManager& analysis_manager) {
         if (container == "") {
             continue;
         }
+        this->uses_[container].push_back(entry.second.get());
 
         switch (entry.second->use()) {
             case Use::READ: {
@@ -619,6 +621,10 @@ std::list<User*> Users::uses() const {
 };
 
 std::list<User*> Users::uses(const std::string& container) const {
+    if (!container.empty()) {
+        auto it = this->uses_.find(container);
+        return it != this->uses_.end() ? it->second : std::list<User*>{};
+    }
     std::list<User*> us;
     for (auto& entry : this->users_) {
         if (entry.second->container() != container) {
@@ -1085,9 +1091,7 @@ User* Users::
 
 void Users::add_user(std::unique_ptr<User> user) {
     auto vertex = user->vertex_;
-    this->users_.insert({vertex, std::move(user)});
-
-    auto user_ptr = this->users_.at(vertex).get();
+    auto user_ptr = this->users_.insert({vertex, std::move(user)}).first->second.get();
     bool is_init = false;
     bool is_condition = false;
     bool is_update = false;

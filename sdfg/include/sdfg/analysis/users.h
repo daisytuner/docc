@@ -131,6 +131,7 @@ private:
     std::unordered_map<UserProps, User*, UserPropsHash> users_lookup_;
 
     // Lookup tables for different use types
+    std::unordered_map<std::string, std::list<User*>> uses_;
     std::unordered_map<std::string, std::list<User*>> reads_;
     std::unordered_map<std::string, std::list<User*>> writes_;
     std::unordered_map<std::string, std::list<User*>> views_;
