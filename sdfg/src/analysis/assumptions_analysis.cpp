@@ -1,12 +1,14 @@
 #include "sdfg/analysis/assumptions_analysis.h"
 
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
 #include "sdfg/analysis/analysis.h"
-#include "sdfg/analysis/users.h"
 #include "sdfg/data_flow/access_node.h"
+#include "sdfg/data_flow/library_node.h"
 #include "sdfg/data_flow/memlet.h"
+#include "sdfg/structured_control_flow/reduce.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/symbolic/assumptions.h"
 #include "sdfg/symbolic/conjunctive_normal_form.h"
@@ -251,6 +253,55 @@ void ensure_assumption_entries(const symbolic::Condition& cond, symbolic::Assump
     }
 }
 
+// Containers that may be written anywhere in `node`; address-taken containers count as written.
+void collect_written_containers(structured_control_flow::ControlFlowNode& node, std::unordered_set<std::string>& written) {
+    if (auto* block = dyn_cast<structured_control_flow::Block*>(&node)) {
+        auto& dataflow = block->dataflow();
+        for (auto* access_node : dataflow.data_nodes()) {
+            if (dataflow.in_degree(*access_node) > 0) {
+                written.insert(access_node->data());
+                continue;
+            }
+            for (auto& oedge : dataflow.out_edges(*access_node)) {
+                if (oedge.type() == data_flow::MemletType::Reference ||
+                    oedge.type() == data_flow::MemletType::Dereference_Dst) {
+                    written.insert(access_node->data());
+                    break;
+                }
+                if (auto* lib = dynamic_cast<data_flow::LibraryNode*>(&oedge.dst())) {
+                    auto meta = lib->pointer_access_type(oedge);
+                    if (meta && meta->may_contain_writes()) {
+                        written.insert(access_node->data());
+                        break;
+                    }
+                }
+            }
+        }
+    } else if (auto* assignment_block = dyn_cast<structured_control_flow::AssignmentBlock*>(&node)) {
+        for (auto& entry : assignment_block->assignments()) {
+            written.insert(entry.first->get_name());
+        }
+    } else if (auto* sequence = dyn_cast<structured_control_flow::Sequence*>(&node)) {
+        for (size_t i = 0; i < sequence->size(); i++) {
+            collect_written_containers(sequence->at(i), written);
+        }
+    } else if (auto* if_else = dyn_cast<structured_control_flow::IfElse*>(&node)) {
+        for (size_t i = 0; i < if_else->size(); i++) {
+            collect_written_containers(if_else->at(i).first, written);
+        }
+    } else if (auto* while_stmt = dyn_cast<structured_control_flow::While*>(&node)) {
+        collect_written_containers(while_stmt->root(), written);
+    } else if (auto* loop = dyn_cast<structured_control_flow::StructuredLoop*>(&node)) {
+        written.insert(loop->indvar()->get_name());
+        if (auto* reduce = dyn_cast<structured_control_flow::Reduce*>(loop)) {
+            for (const auto& entry : reduce->reductions()) {
+                written.insert(entry.container);
+            }
+        }
+        collect_written_containers(loop->root(), written);
+    }
+}
+
 } // namespace
 
 symbolic::SymbolSet AssumptionsAnalysis::per_symbol_refined_symbols(const symbolic::Condition& cond) {
@@ -310,7 +361,6 @@ void AssumptionsAnalysis::run(analysis::AnalysisManager& analysis_manager) {
     this->ref_assumptions_with_trivial_.clear();
 
     this->parameters_.clear();
-    this->users_analysis_ = &analysis_manager.get<Users>();
 
     // Determine parameters
     this->determine_parameters(analysis_manager);
@@ -676,30 +726,14 @@ void AssumptionsAnalysis::propagate_ref(
 }
 
 void AssumptionsAnalysis::determine_parameters(analysis::AnalysisManager& analysis_manager) {
+    // Only scalar arguments: proving pointers are never moved needs alias reasoning.
+    std::unordered_set<std::string> written;
+    collect_written_containers(this->sdfg_.root(), written);
     for (auto& container : this->sdfg_.arguments()) {
-        bool readonly = true;
-        Use not_allowed;
-        switch (this->sdfg_.type(container).type_id()) {
-            case types::TypeID::Scalar:
-                not_allowed = Use::WRITE;
-                break;
-            case types::TypeID::Pointer:
-                not_allowed = Use::MOVE;
-                break;
-            case types::TypeID::Array:
-            case types::TypeID::Structure:
-            case types::TypeID::Reference:
-            case types::TypeID::Function:
-            case types::TypeID::Tensor:
-                continue;
+        if (this->sdfg_.type(container).type_id() != types::TypeID::Scalar) {
+            continue;
         }
-        for (auto user : this->users_analysis_->uses(container)) {
-            if (user->use() == not_allowed) {
-                readonly = false;
-                break;
-            }
-        }
-        if (readonly) {
+        if (!written.contains(container)) {
             this->parameters_.insert(symbolic::symbol(container));
         }
     }
