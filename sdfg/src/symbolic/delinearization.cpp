@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <optional>
+#include <unordered_map>
 
 #include "sdfg/symbolic/assumptions.h"
 #include "sdfg/symbolic/extreme_values.h"
@@ -218,8 +219,15 @@ std::optional<sdfg::symbolic::DelinearizeResult> delinearize_affine(
     auto stride_ge_one = [&](const sym::Expression& e) {
         return sym::is_ge(e, sym::one(), params_set, assums, /*tight=*/false);
     };
+    std::unordered_map<sym::Expression, bool, SymEngine::RCPBasicHash, SymEngine::RCPBasicKeyEq> nonneg_memo;
     auto index_nonneg = [&](const sym::Expression& e) {
-        return sym::is_nonneg(e, params_set, assums, /*tight=*/false);
+        auto it = nonneg_memo.find(e);
+        if (it != nonneg_memo.end()) {
+            return it->second;
+        }
+        bool r = sym::is_nonneg(e, params_set, assums, /*tight=*/false);
+        nonneg_memo.emplace(e, r);
+        return r;
     };
     auto index_negative = [&](const sym::Expression& e) {
         return sym::is_negative(e, params_set, assums, /*tight=*/false);
@@ -391,7 +399,8 @@ std::optional<sdfg::symbolic::DelinearizeResult> delinearize_affine(
             continue; // not a clean ratio (shouldn't happen after step 5)
         }
         int guard = 0;
-        while (index_negative(groups[t].index) && guard++ < 64) {
+        // A failed negativity proof exhausts the whole search; a nonneg proof is usually cheap.
+        while (!index_nonneg(groups[t].index) && index_negative(groups[t].index) && guard++ < 64) {
             groups[t].index = sym::simplify(sym::expand(sym::add(groups[t].index, d)));
             groups[t - 1].index = sym::simplify(sym::expand(sym::sub(groups[t - 1].index, sym::one())));
         }
