@@ -630,6 +630,10 @@ std::list<const DataFlowNode*> DataFlowGraph::topological_sort() const {
     return cached_topological_order();
 }
 
+const std::list<const DataFlowNode*>& DataFlowGraph::topological_order() const {
+    return cached_topological_order();
+}
+
 std::list<DataFlowNode*> DataFlowGraph::topological_sort() {
     std::list<DataFlowNode*> order;
     for (const auto* node : cached_topological_order()) {

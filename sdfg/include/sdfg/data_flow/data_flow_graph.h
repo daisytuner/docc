@@ -203,6 +203,8 @@ public:
 
     std::list<data_flow::DataFlowNode*> topological_sort();
 
+    const std::list<const data_flow::DataFlowNode*>& topological_order() const;
+
     /// Must be called after any change that can affect topological_sort() (nodes, edges, access-node names).
     void invalidate_topological_order();
 
