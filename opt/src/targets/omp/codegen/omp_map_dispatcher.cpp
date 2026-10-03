@@ -31,7 +31,7 @@ void OMPMapDispatcher::dispatch_node(
     codegen::CodeSnippetFactory& library_snippet_factory
 ) {
     // Mark written locals as private
-    analysis::AnalysisManager analysis_manager(sdfg_);
+    auto& analysis_manager = analysis_manager_;
     auto& users = analysis_manager.get<analysis::Users>();
     analysis::UsersView users_view(users, node_.root());
 
