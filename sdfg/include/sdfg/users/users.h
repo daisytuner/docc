@@ -32,43 +32,40 @@ private:
     std::unordered_map<const structured_control_flow::ControlFlowNode*, bool> may_return_;
     std::unordered_map<const structured_control_flow::ControlFlowNode*, std::vector<size_t>> loop_conditions_;
 
-    struct UserProps {
-        std::string container;
-        Element* element;
+    // Lookup of users by (element, use, loop part); the few candidates are matched by container name.
+    struct UserKey {
+        size_t element_id;
         Use use;
-        bool is_init;
-        bool is_condition;
-        bool is_update;
+        uint8_t loop_part;
 
-        bool operator==(const UserProps& other) const {
-            return container == other.container && element->element_id() == other.element->element_id() &&
-                   use == other.use && is_init == other.is_init && is_condition == other.is_condition &&
-                   is_update == other.is_update;
-        }
+        bool operator==(const UserKey& other) const = default;
     };
 
-    struct UserPropsHash {
-        std::size_t operator()(const UserProps& k) const {
-            std::size_t h = 0;
-            boost::hash_combine(h, k.container);
-            boost::hash_combine(h, k.element->element_id());
+    struct UserKeyHash {
+        std::size_t operator()(const UserKey& k) const {
+            std::size_t h = k.element_id;
             boost::hash_combine(h, static_cast<int>(k.use));
-            boost::hash_combine(h, k.is_init);
-            boost::hash_combine(h, k.is_condition);
-            boost::hash_combine(h, k.is_update);
+            boost::hash_combine(h, k.loop_part);
             return h;
         }
     };
 
-    // Lookup table for users by (container, element, use, is_init, is_condition, is_update)
-    std::unordered_map<UserProps, User*, UserPropsHash> users_lookup_;
+    static UserKey user_key(Element* element, Use use, bool is_init, bool is_condition, bool is_update);
 
-    // Lookup tables for different use types
-    std::unordered_map<std::string, std::list<User*>> uses_;
-    std::unordered_map<std::string, std::list<User*>> reads_;
-    std::unordered_map<std::string, std::list<User*>> writes_;
-    std::unordered_map<std::string, std::list<User*>> views_;
-    std::unordered_map<std::string, std::list<User*>> moves_;
+    std::unordered_map<UserKey, std::vector<User*>, UserKeyHash> users_lookup_;
+
+    // Users of each container, by use type (only containers with at least one user).
+    struct ContainerUsers {
+        std::vector<User*> uses;
+        std::vector<User*> reads;
+        std::vector<User*> writes;
+        std::vector<User*> views;
+        std::vector<User*> moves;
+    };
+
+    std::unordered_map<std::string, ContainerUsers> container_users_;
+
+    const ContainerUsers& container_users(const std::string& container) const;
 
     // Enclosing owner and range begin of each node currently being traversed.
     std::vector<std::pair<structured_control_flow::ControlFlowNode*, size_t>> traversal_stack_;
@@ -143,33 +140,33 @@ public:
 
     /**** Users ****/
 
-    std::list<User*> uses() const;
+    std::vector<User*> uses() const;
 
-    std::list<User*> uses(const std::string& container) const;
+    std::vector<User*> uses(const std::string& container) const;
 
     size_t num_uses(const std::string& container) const;
 
-    std::list<User*> writes() const;
+    std::vector<User*> writes() const;
 
-    const std::list<User*>& writes(const std::string& container) const;
+    const std::vector<User*>& writes(const std::string& container) const;
 
     size_t num_writes(const std::string& container) const;
 
-    std::list<User*> reads() const;
+    std::vector<User*> reads() const;
 
-    const std::list<User*>& reads(const std::string& container) const;
+    const std::vector<User*>& reads(const std::string& container) const;
 
     size_t num_reads(const std::string& container) const;
 
-    std::list<User*> views() const;
+    std::vector<User*> views() const;
 
-    const std::list<User*>& views(const std::string& container) const;
+    const std::vector<User*>& views(const std::string& container) const;
 
     size_t num_views(const std::string& container) const;
 
-    std::list<User*> moves() const;
+    std::vector<User*> moves() const;
 
-    const std::list<User*>& moves(const std::string& container) const;
+    const std::vector<User*>& moves(const std::string& container) const;
 
     size_t num_moves(const std::string& container) const;
 

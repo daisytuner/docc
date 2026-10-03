@@ -1,6 +1,8 @@
 #include "sdfg/users/legacy_user_visitor.h"
 
+#include <algorithm>
 #include <unordered_set>
+#include <vector>
 
 #include "sdfg/data_flow/access_node.h"
 #include "sdfg/data_flow/library_node.h"
@@ -17,7 +19,8 @@ void LegacyUserVisitor::traverse(structured_control_flow::ControlFlowNode& node)
 
 bool LegacyUserVisitor::visit(structured_control_flow::Block& node) {
     auto& dataflow = node.dataflow();
-    for (auto dnode : dataflow.topological_sort()) {
+    for (const auto* const_dnode : dataflow.topological_order()) {
+        auto* dnode = const_cast<data_flow::DataFlowNode*>(const_dnode);
         if (dynamic_cast<data_flow::ConstantNode*>(dnode) != nullptr) {
             continue;
         }
@@ -77,11 +80,14 @@ bool LegacyUserVisitor::visit(structured_control_flow::Block& node) {
         }
 
         for (auto& oedge : dataflow.out_edges(*dnode)) {
-            std::unordered_set<std::string> used;
+            // Subsets have few symbols; a linear scan beats a hash set.
+            std::vector<std::string> used;
             for (auto dim : oedge.subset()) {
                 for (auto atom : symbolic::atoms(dim)) {
-                    if (used.insert(atom->get_name()).second) {
-                        this->on_use(atom->get_name(), &oedge, Use::READ, LoopPart::None);
+                    const auto& name = atom->get_name();
+                    if (std::find(used.begin(), used.end(), name) == used.end()) {
+                        used.push_back(name);
+                        this->on_use(name, &oedge, Use::READ, LoopPart::None);
                     }
                 }
             }

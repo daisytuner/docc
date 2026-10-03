@@ -64,58 +64,50 @@ void Users::run(analysis::AnalysisManager& analysis_manager) {
     may_return_.clear();
     loop_conditions_.clear();
     this->users_lookup_.clear();
-
-    uses_.clear();
-    reads_.clear();
-    writes_.clear();
-    views_.clear();
-    moves_.clear();
+    this->container_users_.clear();
 
     this->traverse(node_);
 
-    for (auto& container : sdfg_.containers()) {
-        this->reads_.insert({container, {}});
-        this->writes_.insert({container, {}});
-        this->views_.insert({container, {}});
-        this->moves_.insert({container, {}});
-    }
-
-    // Collect sub structures
     for (auto& entry : this->users_) {
-        auto container = entry->container();
-        if (entry->use() == Use::NOP) {
+        const auto& container = entry->container();
+        if (entry->use() == Use::NOP || container.empty()) {
             continue;
         }
-        if (container == "") {
-            continue;
-        }
-        this->uses_[container].push_back(entry.get());
-
+        auto& tables = this->container_users_[container];
+        tables.uses.push_back(entry.get());
         switch (entry->use()) {
-            case Use::READ: {
-                this->reads_[container].push_back(entry.get());
+            case Use::READ:
+                tables.reads.push_back(entry.get());
                 break;
-            }
-            case Use::WRITE: {
-                this->writes_[container].push_back(entry.get());
+            case Use::WRITE:
+                tables.writes.push_back(entry.get());
                 break;
-            }
-            case Use::VIEW: {
-                this->views_[container].push_back(entry.get());
+            case Use::VIEW:
+                tables.views.push_back(entry.get());
                 break;
-            }
-            case Use::MOVE: {
-                this->moves_[container].push_back(entry.get());
+            case Use::MOVE:
+                tables.moves.push_back(entry.get());
                 break;
-            }
             default:
                 break;
         }
     }
 };
 
-std::list<User*> Users::uses() const {
-    std::list<User*> us;
+const Users::ContainerUsers& Users::container_users(const std::string& container) const {
+    auto it = this->container_users_.find(container);
+    if (it != this->container_users_.end()) {
+        return it->second;
+    }
+    if (!this->sdfg_.exists(container)) {
+        throw std::out_of_range("Users: unknown container " + container);
+    }
+    static const ContainerUsers no_users;
+    return no_users;
+}
+
+std::vector<User*> Users::uses() const {
+    std::vector<User*> us;
     for (auto& entry : this->users_) {
         if (entry->use() == Use::NOP) {
             continue;
@@ -126,12 +118,12 @@ std::list<User*> Users::uses() const {
     return us;
 };
 
-std::list<User*> Users::uses(const std::string& container) const {
+std::vector<User*> Users::uses(const std::string& container) const {
     if (!container.empty()) {
-        auto it = this->uses_.find(container);
-        return it != this->uses_.end() ? it->second : std::list<User*>{};
+        auto it = this->container_users_.find(container);
+        return it != this->container_users_.end() ? it->second.uses : std::vector<User*>{};
     }
-    std::list<User*> us;
+    std::vector<User*> us;
     for (auto& entry : this->users_) {
         if (entry->container() != container) {
             continue;
@@ -149,8 +141,8 @@ size_t Users::num_uses(const std::string& container) const {
     return this->uses(container).size();
 };
 
-std::list<User*> Users::writes() const {
-    std::list<User*> us;
+std::vector<User*> Users::writes() const {
+    std::vector<User*> us;
     for (auto& entry : this->users_) {
         if (entry->use() != Use::WRITE) {
             continue;
@@ -161,16 +153,16 @@ std::list<User*> Users::writes() const {
     return us;
 };
 
-const std::list<User*>& Users::writes(const std::string& container) const {
-    return this->writes_.at(container);
+const std::vector<User*>& Users::writes(const std::string& container) const {
+    return this->container_users(container).writes;
 };
 
 size_t Users::num_writes(const std::string& container) const {
     return this->writes(container).size();
 };
 
-std::list<User*> Users::reads() const {
-    std::list<User*> us;
+std::vector<User*> Users::reads() const {
+    std::vector<User*> us;
     for (auto& entry : this->users_) {
         if (entry->use() != Use::READ) {
             continue;
@@ -181,16 +173,16 @@ std::list<User*> Users::reads() const {
     return us;
 };
 
-const std::list<User*>& Users::reads(const std::string& container) const {
-    return this->reads_.at(container);
+const std::vector<User*>& Users::reads(const std::string& container) const {
+    return this->container_users(container).reads;
 };
 
 size_t Users::num_reads(const std::string& container) const {
     return this->reads(container).size();
 };
 
-std::list<User*> Users::views() const {
-    std::list<User*> us;
+std::vector<User*> Users::views() const {
+    std::vector<User*> us;
     for (auto& entry : this->users_) {
         if (entry->use() != Use::VIEW) {
             continue;
@@ -201,16 +193,16 @@ std::list<User*> Users::views() const {
     return us;
 };
 
-const std::list<User*>& Users::views(const std::string& container) const {
-    return this->views_.at(container);
+const std::vector<User*>& Users::views(const std::string& container) const {
+    return this->container_users(container).views;
 };
 
 size_t Users::num_views(const std::string& container) const {
     return this->views(container).size();
 };
 
-std::list<User*> Users::moves() const {
-    std::list<User*> us;
+std::vector<User*> Users::moves() const {
+    std::vector<User*> us;
     for (auto& entry : this->users_) {
         if (entry->use() != Use::MOVE) {
             continue;
@@ -221,8 +213,8 @@ std::list<User*> Users::moves() const {
     return us;
 };
 
-const std::list<User*>& Users::moves(const std::string& container) const {
-    return this->moves_.at(container);
+const std::vector<User*>& Users::moves(const std::string& container) const {
+    return this->container_users(container).moves;
 };
 
 size_t Users::num_moves(const std::string& container) const {
@@ -416,19 +408,36 @@ std::unordered_set<User*> UsersView::all_uses_after(User& user) {
     return this->users_.collect_uses(intervals, &user, nullptr, false);
 };
 
+Users::UserKey Users::user_key(Element* element, Use use, bool is_init, bool is_condition, bool is_update) {
+    uint8_t loop_part = is_init ? 1 : is_condition ? 2 : is_update ? 3 : 0;
+    return UserKey{element->element_id(), use, loop_part};
+}
+
 bool Users::
     has_user(const std::string& container, Element* element, Use use, bool is_init, bool is_condition, bool is_update) {
-    UserProps key{container, element, use, is_init, is_condition, is_update};
-    if (this->users_lookup_.find(key) == this->users_lookup_.end()) {
+    auto it = this->users_lookup_.find(user_key(element, use, is_init, is_condition, is_update));
+    if (it == this->users_lookup_.end()) {
         return false;
     }
-    return true;
+    for (auto* user : it->second) {
+        if (user->container() == container) {
+            return true;
+        }
+    }
+    return false;
 }
 
 User* Users::
     get_user(const std::string& container, Element* element, Use use, bool is_init, bool is_condition, bool is_update) {
-    UserProps key{container, element, use, is_init, is_condition, is_update};
-    return this->users_lookup_.at(key);
+    auto it = this->users_lookup_.find(user_key(element, use, is_init, is_condition, is_update));
+    if (it != this->users_lookup_.end()) {
+        for (auto* user : it->second) {
+            if (user->container() == container) {
+                return user;
+            }
+        }
+    }
+    throw std::out_of_range("Users: no user of " + container);
 }
 
 void Users::add_user(std::unique_ptr<User> user) {
@@ -456,8 +465,8 @@ void Users::add_user(std::unique_ptr<User> user) {
         }
     }
 
-    UserProps key{user_ptr->container(), user_ptr->element(), user_ptr->use(), is_init, is_condition, is_update};
-    this->users_lookup_.insert({key, user_ptr});
+    this->users_lookup_[user_key(user_ptr->element(), user_ptr->use(), is_init, is_condition, is_update)]
+        .push_back(user_ptr);
 }
 
 std::unordered_set<std::string> Users::locals(structured_control_flow::ControlFlowNode& node) {
