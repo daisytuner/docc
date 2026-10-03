@@ -1,8 +1,8 @@
 #include "sdfg/passes/structured_control_flow/pointer_evolution.h"
 
 #include "sdfg/analysis/assumptions_analysis.h"
-#include "sdfg/analysis/dominance_analysis.h"
 #include "sdfg/analysis/loop_analysis.h"
+#include "sdfg/analysis/users.h"
 #include "sdfg/symbolic/conjunctive_normal_form.h"
 #include "sdfg/symbolic/polynomials.h"
 
@@ -67,7 +67,6 @@ bool IteratorToIndvar::accept(structured_control_flow::For& loop) {
 
     // All uses of iterator happen before update
     std::unordered_set<data_flow::Memlet*> edges;
-    auto& dominance_analysis = analysis_manager_.get<analysis::DominanceAnalysis>();
     for (auto& use : body_users.uses(iterator)) {
         // Ignore move
         if (use == move) {
@@ -88,7 +87,7 @@ bool IteratorToIndvar::accept(structured_control_flow::For& loop) {
             return false;
         }
         // Happens before
-        if (!dominance_analysis.post_dominates(*move, *use)) {
+        if (!users_analysis.post_dominates(*move, *use)) {
             return false;
         }
 

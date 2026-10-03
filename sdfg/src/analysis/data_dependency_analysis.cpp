@@ -75,7 +75,6 @@ void DataDependencyAnalysis::visit_block(
     std::unordered_map<User*, std::unordered_set<User*>>& open_definitions,
     std::unordered_map<User*, std::unordered_set<User*>>& closed_definitions
 ) {
-    auto& dominance_analysis = analysis_manager.get<analysis::DominanceAnalysis>();
     auto& users = analysis_manager.get<analysis::Users>();
 
     auto& dataflow = block.dataflow();
@@ -414,7 +413,6 @@ void DataDependencyAnalysis::visit_for(
     }
 
     // Merge for with outside
-    auto& dominance_analysis = analysis_manager.get<analysis::DominanceAnalysis>();
 
     // Closed definitions are simply merged
     for (auto& entry : closed_definitions_for) {
@@ -443,7 +441,7 @@ void DataDependencyAnalysis::visit_for(
         // Users found, check if they fully cover the read
         bool covered = false;
         for (auto& entry : frontier) {
-            if (!dominance_analysis.dominates(*entry, *open_read)) {
+            if (!users.dominates(*entry, *open_read)) {
                 continue;
             }
             bool covers = supersedes_restrictive(*open_read, *entry, analysis_manager);
@@ -645,8 +643,7 @@ void DataDependencyAnalysis::visit_if_else(
         for (auto& branch : open_definitions_branches) {
             for (auto& open_definition : branch) {
                 auto write = open_definition.first;
-                auto artificial_user = std::make_unique<
-                    User>(boost::graph_traits<graph::Graph>::null_vertex(), write->container(), nullptr, Use::WRITE);
+                auto artificial_user = std::make_unique<User>(write->container(), nullptr, Use::WRITE);
                 this->undefined_users_.push_back(std::move(artificial_user));
                 open_definitions.insert({this->undefined_users_.back().get(), {}});
             }
@@ -959,8 +956,7 @@ bool DataDependencyAnalysis::
 
     // Check dominance
     if (requires_dominance) {
-        auto& dominance_analysis = analysis_manager.get<analysis::DominanceAnalysis>();
-        if (!dominance_analysis.post_dominates(current, previous)) {
+        if (!analysis_manager.get<analysis::Users>().post_dominates(current, previous)) {
             return false;
         }
     }
@@ -1113,7 +1109,7 @@ std::unordered_set<User*> DataDependencyAnalysis::defined_by(User& read) {
 };
 
 bool DataDependencyAnalysis::is_undefined_user(User& user) const {
-    return user.vertex_ == boost::graph_traits<graph::Graph>::null_vertex();
+    return user.owner_ == nullptr;
 };
 
 bool DataDependencyAnalysis::has_loop_boundary(structured_control_flow::StructuredLoop& loop) const {

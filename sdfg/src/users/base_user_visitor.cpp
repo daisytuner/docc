@@ -1,6 +1,6 @@
-#include "sdfg/analysis/base_user_visitor.h"
+#include "sdfg/users/base_user_visitor.h"
 
-namespace sdfg::analysis {
+namespace sdfg::users {
 
 void BaseUserVisitor::handle_lib_node(Block& block, data_flow::LibraryNode& libnode) {
     for (auto atom : libnode.symbols()) {
@@ -137,4 +137,4 @@ bool BaseUserVisitor::handleStructuredLoop(StructuredLoop& loop) {
     return true;
 }
 
-} // namespace sdfg::analysis
+} // namespace sdfg::users
