@@ -15,7 +15,6 @@
 #include "py_arguments_analysis.h"
 #include "py_assumptions_analysis.h"
 #include "py_control_flow_analysis.h"
-#include "py_dominance_analysis.h"
 #include "py_loop_analysis.h"
 #include "py_tile_analysis.h"
 #include "py_type_analysis.h"
@@ -38,7 +37,6 @@ private:
     std::optional<PyArgumentsAnalysis> arguments_analysis_;
     std::optional<PyAssumptionsAnalysis> assumptions_analysis_;
     std::optional<PyControlFlowAnalysis> control_flow_analysis_;
-    std::optional<PyDominanceAnalysis> dominance_analysis_;
     std::optional<PyLoopAnalysis> loop_analysis_;
     std::optional<PyTileAnalysis> tile_analysis_;
     std::optional<PyTypeAnalysis> type_analysis_;
@@ -62,7 +60,6 @@ public:
         arguments_analysis_.reset();
         assumptions_analysis_.reset();
         control_flow_analysis_.reset();
-        dominance_analysis_.reset();
         loop_analysis_.reset();
         tile_analysis_.reset();
         type_analysis_.reset();
@@ -90,13 +87,6 @@ public:
             control_flow_analysis_.emplace(*manager_);
         }
         return *control_flow_analysis_;
-    }
-
-    PyDominanceAnalysis& dominance_analysis() {
-        if (!dominance_analysis_) {
-            dominance_analysis_.emplace(*manager_);
-        }
-        return *dominance_analysis_;
     }
 
     PyLoopAnalysis& loop_analysis() {
@@ -156,12 +146,6 @@ inline void register_analysis(py::module& m) {
             "Get the ControlFlowAnalysis"
         )
         .def(
-            "dominance_analysis",
-            &PyAnalysisManager::dominance_analysis,
-            py::return_value_policy::reference_internal,
-            "Get the DominanceAnalysis"
-        )
-        .def(
             "loop_analysis",
             &PyAnalysisManager::loop_analysis,
             py::return_value_policy::reference_internal,
@@ -215,10 +199,6 @@ inline void register_analysis(py::module& m) {
 
     py::class_<PyControlFlowAnalysis>(m, "ControlFlowAnalysis").def("__repr__", [](const PyControlFlowAnalysis&) {
         return "<ControlFlowAnalysis>";
-    });
-
-    py::class_<PyDominanceAnalysis>(m, "DominanceAnalysis").def("__repr__", [](const PyDominanceAnalysis&) {
-        return "<DominanceAnalysis>";
     });
 
     // LoopInfo struct binding

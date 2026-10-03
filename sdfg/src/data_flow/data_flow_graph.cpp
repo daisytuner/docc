@@ -356,6 +356,10 @@ std::list<const DataFlowNode*> DataFlowGraph::boost_topological_sort() const {
 
 std::list<const DataFlowNode*> DataFlowGraph::semantic_topological_sort() const {
     auto [num_components, components_map] = graph::weakly_connected_components(this->graph_);
+    std::vector<std::vector<graph::Vertex>> members(num_components);
+    for (auto [v, comp] : components_map) {
+        members[comp].push_back(v);
+    }
 
     // Build deterministic topological sort for each weakly connected component
     std::vector<std::list<const DataFlowNode*>> components(num_components);
@@ -363,12 +367,10 @@ std::list<const DataFlowNode*> DataFlowGraph::semantic_topological_sort() const 
         // Get all sinks of the current component
         std::vector<const DataFlowNode*> sinks;
         bool component_empty = true;
-        for (auto [v, comp] : components_map) {
-            if (comp == i) {
-                component_empty = false;
-                if (boost::out_degree(v, this->graph_) == 0) {
-                    sinks.push_back(this->nodes_.at(v).get());
-                }
+        for (auto v : members[i]) {
+            component_empty = false;
+            if (boost::out_degree(v, this->graph_) == 0) {
+                sinks.push_back(this->nodes_.at(v).get());
             }
         }
         if (sinks.size() == 0) {

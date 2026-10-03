@@ -1,6 +1,5 @@
 #include "sdfg/passes/memory/allocation_management.h"
 
-#include "sdfg/analysis/dominance_analysis.h"
 #include "sdfg/analysis/users.h"
 
 #include "sdfg/data_flow/library_nodes/stdlib/stdlib.h"
@@ -67,14 +66,13 @@ bool AllocationManagement::can_be_applied_allocation(data_flow::DataFlowGraph& g
 
     // Criterion 2: Allocation dominates all uses
     auto& users_analysis = this->analysis_manager_.get<analysis::Users>();
-    auto& dominance_analysis = this->analysis_manager_.get<analysis::DominanceAnalysis>();
     auto uses = users_analysis.uses(container);
     analysis::User* allocation_user = users_analysis.get_user(container, &dst, analysis::Use::WRITE);
     for (auto& use : uses) {
         if (use == allocation_user) {
             continue;
         }
-        if (!dominance_analysis.dominates(*allocation_user, *use)) {
+        if (!users_analysis.dominates(*allocation_user, *use)) {
             return false;
         }
     }
@@ -151,7 +149,6 @@ bool AllocationManagement::
 
     // Criterion 2: Allocation post-dominates all uses
     auto& users_analysis = this->analysis_manager_.get<analysis::Users>();
-    auto& dominance_analysis = this->analysis_manager_.get<analysis::DominanceAnalysis>();
     auto uses = users_analysis.uses(container);
     analysis::User* deallocation_user =
         users_analysis.get_user(container, const_cast<data_flow::AccessNode*>(&src), analysis::Use::READ);
@@ -159,7 +156,7 @@ bool AllocationManagement::
         if (use == deallocation_user) {
             continue;
         }
-        if (!dominance_analysis.post_dominates(*deallocation_user, *use)) {
+        if (!users_analysis.post_dominates(*deallocation_user, *use)) {
             return false;
         }
     }

@@ -26,15 +26,12 @@ set(SOURCE_FILES
     src/analysis/analysis.cpp
     src/analysis/arguments_analysis.cpp
     src/analysis/assumptions_analysis.cpp
-    src/analysis/base_user_visitor.cpp
     src/analysis/control_flow_analysis.cpp
     src/analysis/data_dependency_analysis.cpp
-    src/analysis/dominance_analysis.cpp
     src/analysis/loop_analysis.cpp
     src/analysis/memory_layout_analysis.cpp
     src/analysis/reference_analysis.cpp
     src/analysis/type_analysis.cpp
-    src/analysis/users.cpp
     src/builder/function_builder.cpp
     src/builder/sdfg_builder.cpp
     src/builder/structured_sdfg_builder.cpp
@@ -214,6 +211,10 @@ set(SOURCE_FILES
     src/types/structure.cpp
     src/types/tensor.cpp
     src/types/utils.cpp
+    src/users/base_user_visitor.cpp
+    src/users/legacy_user_visitor.cpp
+    src/users/user.cpp
+    src/users/users.cpp
     src/visitor/for_each.cpp
     src/visitor/immutable_structured_sdfg_visitor.cpp
     src/visitor/structured_sdfg_visitor.cpp

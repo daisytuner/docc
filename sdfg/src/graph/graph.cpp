@@ -63,28 +63,36 @@ std::pair<int, std::unordered_map<Vertex, size_t>> strongly_connected_components
 };
 
 std::pair<size_t, const std::unordered_map<Vertex, size_t>> weakly_connected_components(const Graph& graph) {
-    const auto& undirected_graph = undirected(graph);
-
-    IndexMap vertex_index_map;
-    boost::associative_property_map<IndexMap> boost_index_map(vertex_index_map);
-    boost::graph_traits<UndirectedGraph>::vertex_iterator vi, vend;
-    size_t i = 0;
-    for (boost::tie(vi, vend) = boost::vertices(*std::get<0>(undirected_graph)); vi != vend; ++vi, ++i) {
-        boost::put(boost_index_map, *vi, i);
-    }
-
-    std::unordered_map<Vertex, size_t> undirected_component_map;
-    boost::associative_property_map<std::unordered_map<Vertex, size_t>> boost_component_map(undirected_component_map);
-
-    size_t num_ccs = boost::connected_components(
-        *std::get<0>(undirected_graph), boost_component_map, boost::vertex_index_map(boost_index_map)
-    );
-
+    // Direct traversal over in/out edges; numbering matches boost::connected_components (vertex order).
     std::unordered_map<Vertex, size_t> component_map;
-    for (const auto& entry : undirected_component_map) {
-        component_map.emplace(std::get<2>(undirected_graph).at(entry.first), entry.second);
+    component_map.reserve(boost::num_vertices(graph));
+    std::vector<Vertex> stack;
+    size_t num_ccs = 0;
+    boost::graph_traits<Graph>::vertex_iterator vi, vend;
+    for (boost::tie(vi, vend) = boost::vertices(graph); vi != vend; ++vi) {
+        if (component_map.contains(*vi)) {
+            continue;
+        }
+        component_map.emplace(*vi, num_ccs);
+        stack.push_back(*vi);
+        while (!stack.empty()) {
+            auto v = stack.back();
+            stack.pop_back();
+            for (auto [ei, eend] = boost::out_edges(v, graph); ei != eend; ++ei) {
+                auto w = boost::target(*ei, graph);
+                if (component_map.emplace(w, num_ccs).second) {
+                    stack.push_back(w);
+                }
+            }
+            for (auto [ei, eend] = boost::in_edges(v, graph); ei != eend; ++ei) {
+                auto w = boost::source(*ei, graph);
+                if (component_map.emplace(w, num_ccs).second) {
+                    stack.push_back(w);
+                }
+            }
+        }
+        ++num_ccs;
     }
-
     return {num_ccs, component_map};
 };
 
