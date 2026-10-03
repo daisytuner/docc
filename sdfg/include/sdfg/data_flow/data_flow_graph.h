@@ -2,6 +2,7 @@
 
 #include <boost/graph/graphviz.hpp>
 #include <nlohmann/json.hpp>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -37,17 +38,16 @@ private:
 
     Element* parent_;
 
-    bool is_valid_topological_order(const std::list<const DataFlowNode*>& order) const;
+    // Cached canonical order; reset by the builders on every structural change.
+    mutable std::optional<std::list<const DataFlowNode*>> topological_order_;
 
-    bool is_valid_topological_order(const std::list<DataFlowNode*>& order) const;
+    bool is_valid_topological_order(const std::list<const DataFlowNode*>& order) const;
 
     std::list<const DataFlowNode*> boost_topological_sort() const;
 
-    std::list<DataFlowNode*> boost_topological_sort();
-
     std::list<const DataFlowNode*> semantic_topological_sort() const;
 
-    std::list<DataFlowNode*> semantic_topological_sort();
+    const std::list<const DataFlowNode*>& cached_topological_order() const;
 
 public:
     DataFlowGraph() = default;
@@ -202,6 +202,9 @@ public:
     std::list<const data_flow::DataFlowNode*> topological_sort() const;
 
     std::list<data_flow::DataFlowNode*> topological_sort();
+
+    /// Must be called after any change that can affect topological_sort() (nodes, edges, access-node names).
+    void invalidate_topological_order();
 
     std::unordered_map<std::string, const data_flow::AccessNode*> dominators() const;
 

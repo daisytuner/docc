@@ -217,6 +217,7 @@ public:
 
         auto& dataflow = state.dataflow();
         auto vertex = boost::add_vertex(dataflow.graph_);
+        dataflow.invalidate_topological_order();
         auto node = std::unique_ptr<T>(new T(this->new_element_id(), debug_info, vertex, dataflow, arguments...));
         auto res = dataflow.nodes_.insert({vertex, std::move(node)});
 
