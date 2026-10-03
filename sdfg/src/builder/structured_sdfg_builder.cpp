@@ -458,6 +458,17 @@ void StructuredSDFGBuilder::rename_container(const std::string& old_name, const 
     this->structured_sdfg_->root_->replace(symbolic::symbol(old_name), symbolic::symbol(new_name));
 };
 
+void StructuredSDFGBuilder::rename_containers(const std::vector<std::pair<std::string, std::string>>& renames) const {
+    symbolic::ExpressionMapping mapping;
+    for (auto& [old_name, new_name] : renames) {
+        FunctionBuilder::rename_container(old_name, new_name);
+        mapping[symbolic::symbol(old_name)] = symbolic::symbol(new_name);
+    }
+    if (!mapping.empty()) {
+        this->structured_sdfg_->root_->replace(mapping);
+    }
+}
+
 Element* StructuredSDFGBuilder::find_element_by_id(const size_t& element_id) const {
     auto& sdfg = this->subject();
     std::list<Element*> queue = {&sdfg.root()};
