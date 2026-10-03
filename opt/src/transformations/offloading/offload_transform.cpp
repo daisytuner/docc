@@ -53,10 +53,11 @@ bool OffloadTransform::can_be_applied(builder::StructuredSDFGBuilder& builder, a
         return false;
     }
     auto& arguments = arguments_analysis.arguments(analysis_manager, this->loop_);
+    auto& type_analysis = arguments_analysis.type_analysis(analysis_manager, this->loop_);
 
     // Criterion: arg Data Types must be continuous
     for (auto& [argument, meta] : arguments) {
-        auto base_type = analysis::TypeAnalysis(sdfg, &loop_, analysis_manager).get_outer_type(argument);
+        auto base_type = type_analysis.get_outer_type(argument);
         if (base_type == nullptr) {
             if (report_) {
                 report_->transform_impossible(this, "cannot infer type");
