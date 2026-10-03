@@ -47,6 +47,11 @@ private:
 
     std::list<std::unique_ptr<User>> undefined_users_;
 
+    // Per-run cache of whether a container is a scalar; queried for every candidate pair.
+    std::unordered_map<std::string, bool> scalar_containers_;
+
+    bool is_scalar(const std::string& container);
+
     // When false (default), the symbolic-subset/disjointness helpers below
     // (`supersedes_restrictive`, `intersects`, `closes`, `depends`) take
     // conservative shortcuts and skip the expensive ISL queries. Sound but
@@ -86,7 +91,64 @@ private:
     bool fully_covered(
         analysis::AnalysisManager& analysis_manager,
         User& current,
-        const std::unordered_map<User*, std::unordered_set<User*>>& open_definitions
+        const std::unordered_map<User*, std::unordered_set<User*>>* open_definitions
+    );
+
+    using Definitions = std::unordered_map<User*, std::unordered_set<User*>>;
+    // Open definitions grouped by container: every query only concerns writes to the same container.
+    using OpenDefinitions = std::unordered_map<std::string, Definitions>;
+
+    static OpenDefinitions group_by_container(const Definitions& definitions);
+    static Definitions flatten(const OpenDefinitions& definitions);
+
+    void visit_block_impl(
+        analysis::AnalysisManager& analysis_manager,
+        structured_control_flow::Block& block,
+        std::unordered_set<User*>& undefined,
+        OpenDefinitions& open_definitions,
+        Definitions& closed_definitions
+    );
+    void visit_assignment_block_impl(
+        analysis::AnalysisManager& analysis_manager,
+        structured_control_flow::AssignmentBlock& assignments,
+        std::unordered_set<User*>& undefined,
+        OpenDefinitions& open_definitions,
+        Definitions& closed_definitions
+    );
+    void visit_for_impl(
+        analysis::AnalysisManager& analysis_manager,
+        structured_control_flow::StructuredLoop& for_loop,
+        std::unordered_set<User*>& undefined,
+        OpenDefinitions& open_definitions,
+        Definitions& closed_definitions
+    );
+    void visit_if_else_impl(
+        analysis::AnalysisManager& analysis_manager,
+        structured_control_flow::IfElse& if_else,
+        std::unordered_set<User*>& undefined,
+        OpenDefinitions& open_definitions,
+        Definitions& closed_definitions
+    );
+    void visit_while_impl(
+        analysis::AnalysisManager& analysis_manager,
+        structured_control_flow::While& while_loop,
+        std::unordered_set<User*>& undefined,
+        OpenDefinitions& open_definitions,
+        Definitions& closed_definitions
+    );
+    void visit_return_impl(
+        analysis::AnalysisManager& analysis_manager,
+        structured_control_flow::Return& return_statement,
+        std::unordered_set<User*>& undefined,
+        OpenDefinitions& open_definitions,
+        Definitions& closed_definitions
+    );
+    void visit_sequence_impl(
+        analysis::AnalysisManager& analysis_manager,
+        structured_control_flow::Sequence& sequence,
+        std::unordered_set<User*>& undefined,
+        OpenDefinitions& open_definitions,
+        Definitions& closed_definitions
     );
 
 public:
