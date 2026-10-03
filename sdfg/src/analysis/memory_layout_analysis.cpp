@@ -108,6 +108,7 @@ MemoryLayoutAnalysis::MemoryLayoutAnalysis(StructuredSDFG& sdfg, const Options& 
 
 void MemoryLayoutAnalysis::run(analysis::AnalysisManager& analysis_manager) {
     accesses_.clear();
+    access_order_.clear();
     tiles_.clear();
     tile_groups_.clear();
 
@@ -120,20 +121,12 @@ void MemoryLayoutAnalysis::run(analysis::AnalysisManager& analysis_manager) {
     detailed_assumptions_->run(analysis_manager);
 
     traverse(sdfg_.root(), analysis_manager);
+    bounds_cache_.clear();
 }
 
 void MemoryLayoutAnalysis::
     traverse(structured_control_flow::ControlFlowNode& node, analysis::AnalysisManager& analysis_manager) {
-    // Snapshot current memlets and tile keys before recursing into the scope's children
-    std::vector<const data_flow::Memlet*> memlets_before;
-    memlets_before.reserve(accesses_.size());
-    for (const auto& entry : accesses_) {
-        memlets_before.push_back(entry.first);
-    }
-    std::set<std::pair<const structured_control_flow::ControlFlowNode*, std::string>> tiles_before;
-    for (const auto& entry : tiles_) {
-        tiles_before.insert(entry.first);
-    }
+    const size_t first_new_access = access_order_.size();
 
     if (auto block = dyn_cast<structured_control_flow::Block*>(&node)) {
         process_block(*block, analysis_manager);
@@ -155,7 +148,13 @@ void MemoryLayoutAnalysis::
     }
 
     // Merge tiles for containers accessed within this scope
-    merge_scope_layouts(node, memlets_before, tiles_before, analysis_manager);
+    merge_scope_layouts(node, first_new_access, analysis_manager);
+}
+
+void MemoryLayoutAnalysis::record_access(const data_flow::Memlet& memlet, MemoryAccess access) {
+    if (accesses_.emplace(&memlet, std::move(access)).second) {
+        access_order_.push_back(&memlet);
+    }
 }
 
 void MemoryLayoutAnalysis::
@@ -164,6 +163,11 @@ void MemoryLayoutAnalysis::
     // Use trivial bounds (type-derived, e.g. unsigned >= 0) so delinearization
     // can soundly discharge non-negativity proof obligations on parameters.
     auto& assumptions = assumptions_analysis.get(block, /*include_trivial_bounds=*/true);
+    auto& bounds_slot = bounds_cache_[&assumptions];
+    if (!bounds_slot) {
+        bounds_slot = std::make_unique<symbolic::AssumptionsBounds>(assumptions);
+    }
+    auto& bounds = *bounds_slot;
 
     auto& dfg = block.dataflow();
     for (auto& memlet : dfg.edges()) {
@@ -193,7 +197,7 @@ void MemoryLayoutAnalysis::
 
                 MemoryLayout layout(tensor_type.shape(), tensor_type.strides(), tensor_type.offset());
                 MemoryAccess layout_info{container_name, subset, layout, true};
-                this->accesses_.emplace(&memlet, layout_info);
+                record_access(memlet, layout_info);
                 continue;
             }
             case types::TypeID::Array: {
@@ -210,7 +214,7 @@ void MemoryLayoutAnalysis::
 
                 MemoryLayout layout(shape);
                 MemoryAccess layout_info{container_name, subset, layout, true};
-                this->accesses_.emplace(&memlet, layout_info);
+                record_access(memlet, layout_info);
                 continue;
             }
             case types::TypeID::Pointer: {
@@ -245,7 +249,7 @@ void MemoryLayoutAnalysis::
 
                     MemoryLayout layout(shape);
                     MemoryAccess layout_info{container_name, subset, layout, false};
-                    this->accesses_.emplace(&memlet, layout_info);
+                    record_access(memlet, layout_info);
                     continue;
                 }
 
@@ -258,7 +262,7 @@ void MemoryLayoutAnalysis::
                 }
                 auto& linearized_expr = subset.at(0);
 
-                auto result = symbolic::delinearize(linearized_expr, assumptions);
+                auto result = symbolic::delinearize(linearized_expr, bounds);
                 if (!result.success) {
                     continue; // Delinearization failed, skip
                 }
@@ -276,7 +280,7 @@ void MemoryLayoutAnalysis::
                 // The merge phase will attempt to bound the first dimension using loop assumptions
                 MemoryLayout layout(shape);
                 MemoryAccess layout_info{container_name, result.indices, layout, false};
-                this->accesses_.emplace(&memlet, layout_info);
+                record_access(memlet, layout_info);
                 continue;
             }
             default:
@@ -295,20 +299,17 @@ const MemoryAccess* MemoryLayoutAnalysis::access(const data_flow::Memlet& memlet
 
 void MemoryLayoutAnalysis::merge_scope_layouts(
     structured_control_flow::ControlFlowNode& scope,
-    const std::vector<const data_flow::Memlet*>& memlets_before,
-    const std::set<std::pair<const structured_control_flow::ControlFlowNode*, std::string>>& tiles_before,
+    size_t first_new_access,
     analysis::AnalysisManager& analysis_manager
 ) {
-    // Convert memlets_before to a set for O(1) lookup
-    std::unordered_set<const data_flow::Memlet*> before_set(memlets_before.begin(), memlets_before.end());
-
-    // Group all new accesses by container
+    // Group the accesses recorded while traversing this scope by container
     std::unordered_map<std::string, std::vector<const data_flow::Memlet*>> all_container_groups;
-    for (auto& [memlet_ptr, acc] : accesses_) {
-        if (before_set.find(memlet_ptr) != before_set.end()) {
-            continue;
-        }
-        all_container_groups[acc.container].push_back(memlet_ptr);
+    for (size_t k = first_new_access; k < access_order_.size(); ++k) {
+        const auto* memlet_ptr = access_order_[k];
+        all_container_groups[accesses_.at(memlet_ptr).container].push_back(memlet_ptr);
+    }
+    if (all_container_groups.empty()) {
+        return;
     }
 
     // Sort memlets within each container group by element_id for deterministic processing order

@@ -34,6 +34,7 @@
 #include "sdfg/symbolic/polynomials.h"
 #include "sdfg/symbolic/symbolic.h"
 
+#include <string>
 #include <unordered_map>
 
 namespace sdfg {
@@ -105,7 +106,8 @@ public:
         const SymbolSet& parameters,
         const Assumptions& assumptions,
         bool use_tight_assumptions,
-        int64_t budget = DEFAULT_BOUND_BUDGET
+        int64_t budget = DEFAULT_BOUND_BUDGET,
+        bool project_constraints = true
     );
 
     /** @brief Compute both lower and upper bounds of an expression */
@@ -125,6 +127,8 @@ private:
     const Assumptions& assumptions_;
     bool use_tight_;
     int64_t budget_;
+    // When false, skip coupled-constraint projection: cheaper, sound, but looser bounds.
+    bool project_constraints_;
 
     // Cycle detection: symbols currently being bounded
     SymbolSet visiting_;
@@ -139,13 +143,14 @@ private:
     // exit of `visit_uncached`; if it grew, the result is tainted.
     size_t cycle_hits_ = 0;
 
+    // Like `cycle_hits_`, for the `MAX_DEPTH` cutoff (results computed under it are depth-dependent).
+    size_t limit_hits_ = 0;
+
     // Memoization cache for visit() results, keyed by canonical SymEngine
-    // hash+eq on the input expression. Only fully-successful intervals
-    // (both endpoints non-null) are cached: such results are derived purely
-    // from assumption bounds and are independent of the call context.
-    // Failures and one-sided intervals can arise from cycle detection in
-    // `visit_symbol`, whose state is context-dependent and must not be
-    // reused, so they are recomputed every time.
+    // hash+eq on the input expression. Only results computed without hitting
+    // the cycle guard, the depth limit, or the work budget are cached (including
+    // failures and one-sided intervals): those depend solely on the expression
+    // and this instance's fixed inputs. Tainted results are recomputed.
     struct BasicHash {
         size_t operator()(const Expression& e) const noexcept {
             return e->hash();
@@ -361,6 +366,11 @@ public:
         return tight_;
     }
 
+    /// Memoized loose-mode `is_nonneg(expr, parameters, assums(), false)`.
+    bool is_nonneg(const Expression& expr, const SymbolSet& parameters);
+    /// Memoized loose-mode `is_positive(expr, parameters, assums(), false)`.
+    bool is_positive(const Expression& expr, const SymbolSet& parameters);
+
 private:
     static const SymbolSet& empty_params() {
         static const SymbolSet kEmpty;
@@ -370,6 +380,12 @@ private:
     const Assumptions& assums_;
     BoundAnalysis loose_;
     BoundAnalysis tight_;
+
+    // Keyed by (strict, parameter names), then expression.
+    std::unordered_map<
+        std::string,
+        std::unordered_map<Expression, bool, SymEngine::RCPBasicHash, SymEngine::RCPBasicKeyEq>>
+        proof_memo_;
 };
 
 } // namespace symbolic

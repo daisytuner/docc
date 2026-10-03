@@ -3,7 +3,6 @@
 #include <unordered_map>
 
 #include "sdfg/analysis/analysis.h"
-#include "sdfg/analysis/users.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/structured_sdfg.h"
 #include "sdfg/symbolic/assumptions.h"
@@ -29,8 +28,6 @@ private:
         ref_assumptions_with_trivial_;
 
     symbolic::SymbolSet parameters_;
-
-    analysis::Users* users_analysis_;
 
     // When false (default), IfElse branch conditions are not refined into
     // per-branch assumption bounds / coupled constraints. The branch bodies

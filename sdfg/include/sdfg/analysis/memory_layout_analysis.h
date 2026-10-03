@@ -81,6 +81,7 @@ struct MemoryTileGroup {
 class MemoryLayoutAnalysis : public Analysis {
 private:
     std::unordered_map<const data_flow::Memlet*, MemoryAccess> accesses_;
+    std::vector<const data_flow::Memlet*> access_order_;
     std::map<std::pair<const structured_control_flow::ControlFlowNode*, std::string>, MemoryTile> tiles_;
     std::map<std::pair<const structured_control_flow::ControlFlowNode*, std::string>, std::vector<MemoryTileGroup>>
         tile_groups_;
@@ -92,14 +93,18 @@ private:
     // its own instance rebuilt on every `run()`.
     std::unique_ptr<AssumptionsAnalysis> detailed_assumptions_;
 
+    // Per-run bounds/proof caches, shared by all blocks with the same assumption set.
+    std::unordered_map<const symbolic::Assumptions*, std::unique_ptr<symbolic::AssumptionsBounds>> bounds_cache_;
+
     void traverse(structured_control_flow::ControlFlowNode& node, analysis::AnalysisManager& analysis_manager);
 
     void process_block(structured_control_flow::Block& block, analysis::AnalysisManager& analysis_manager);
 
+    void record_access(const data_flow::Memlet& memlet, MemoryAccess access);
+
     void merge_scope_layouts(
         structured_control_flow::ControlFlowNode& scope,
-        const std::vector<const data_flow::Memlet*>& memlets_before,
-        const std::set<std::pair<const structured_control_flow::ControlFlowNode*, std::string>>& tiles_before,
+        size_t first_new_access,
         analysis::AnalysisManager& analysis_manager
     );
 
