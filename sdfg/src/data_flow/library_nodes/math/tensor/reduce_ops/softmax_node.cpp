@@ -121,7 +121,7 @@ passes::LibNodeExpander::ExpandOutcome SoftmaxNode::expand(passes::LibNodeExpand
         loop_vars[dim_idx] = indvar;
     }
 
-    auto build_inner_nest = [&](structured_control_flow::Sequence& start) {
+    auto build_inner_for_nest = [&](structured_control_flow::Sequence& start) {
         std::map<size_t, symbolic::Expression> vars = loop_vars;
         structured_control_flow::Sequence* scope = &start;
         for (size_t j = 0; j < inner_dims.size(); ++j) {
@@ -130,7 +130,6 @@ passes::LibNodeExpander::ExpandOutcome SoftmaxNode::expand(passes::LibNodeExpand
             auto& limit = shape_[dim_idx];
             builder.add_container(indvar_str, types::Scalar(types::get_primitive_type_to_hold_upper_bound(limit)));
             auto indvar = symbolic::symbol(indvar_str);
-            bool innermost = (j + 1 == inner_dims.size());
             structured_control_flow::StructuredLoop* loop;
             loop = &builder.add_for(
                 *scope,
@@ -141,6 +140,65 @@ passes::LibNodeExpander::ExpandOutcome SoftmaxNode::expand(passes::LibNodeExpand
                 this->debug_info()
             );
             scope = &loop->root();
+            vars[dim_idx] = indvar;
+        }
+        data_flow::Subset index;
+        for (size_t i = 0; i < shape_.size(); ++i) {
+            index.push_back(vars.at(i));
+        }
+        return std::make_pair(scope, index);
+    };
+
+    auto build_inner_reduce_nest = [&](structured_control_flow::Sequence& start,
+                                       structured_control_flow::ReductionOperation op,
+                                       const std::string& accum_container) {
+        std::map<size_t, symbolic::Expression> vars = loop_vars;
+        structured_control_flow::Sequence* scope = &start;
+        for (size_t j = 0; j < inner_dims.size(); ++j) {
+            size_t dim_idx = inner_dims[j];
+            std::string indvar_str = builder.find_new_name("_k");
+            auto& limit = shape_[dim_idx];
+            builder.add_container(indvar_str, types::Scalar(types::get_primitive_type_to_hold_upper_bound(limit)));
+            auto indvar = symbolic::symbol(indvar_str);
+            auto& reduce = builder.add_reduce(
+                *scope,
+                indvar,
+                symbolic::Lt(indvar, limit),
+                symbolic::zero(),
+                symbolic::add(indvar, symbolic::one()),
+                {{.operation = op, .container = accum_container}},
+                structured_control_flow::ScheduleType_Sequential::create(),
+                this->debug_info()
+            );
+            scope = &reduce.root();
+            vars[dim_idx] = indvar;
+        }
+        data_flow::Subset index;
+        for (size_t i = 0; i < shape_.size(); ++i) {
+            index.push_back(vars.at(i));
+        }
+        return std::make_pair(scope, index);
+    };
+
+    auto build_inner_map_nest = [&](structured_control_flow::Sequence& start) {
+        std::map<size_t, symbolic::Expression> vars = loop_vars;
+        structured_control_flow::Sequence* scope = &start;
+        for (size_t j = 0; j < inner_dims.size(); ++j) {
+            size_t dim_idx = inner_dims[j];
+            std::string indvar_str = builder.find_new_name("_k");
+            auto& limit = shape_[dim_idx];
+            builder.add_container(indvar_str, types::Scalar(types::get_primitive_type_to_hold_upper_bound(limit)));
+            auto indvar = symbolic::symbol(indvar_str);
+            auto& map = builder.add_map(
+                *scope,
+                indvar,
+                symbolic::Lt(indvar, limit),
+                symbolic::zero(),
+                symbolic::add(indvar, symbolic::one()),
+                structured_control_flow::ScheduleType_Sequential::create(),
+                this->debug_info()
+            );
+            scope = &map.root();
             vars[dim_idx] = indvar;
         }
         data_flow::Subset index;
@@ -185,7 +243,7 @@ passes::LibNodeExpander::ExpandOutcome SoftmaxNode::expand(passes::LibNodeExpand
         //    denominator d = sum(exp(X - m)) via the running-max correction
         //    d <- d * exp(m_old - m_new) + exp(x - m_new).
         {
-            auto [scope, index] = build_inner_nest(*outer_scope);
+            auto [scope, index] = build_inner_for_nest(*outer_scope);
 
             // m_old = m ; m = fmax(m_old, X[idx])   (in-place running-max update)
             {
@@ -249,7 +307,7 @@ passes::LibNodeExpander::ExpandOutcome SoftmaxNode::expand(passes::LibNodeExpand
 
         // 3. Normalize: Y[idx] = exp(X[idx] - m) / d over the reduced dimensions
         {
-            auto [scope, index] = build_inner_nest(*outer_scope);
+            auto [scope, index] = build_inner_map_nest(*outer_scope);
 
             // e = exp(X[idx] - m)
             {
@@ -307,7 +365,8 @@ passes::LibNodeExpander::ExpandOutcome SoftmaxNode::expand(passes::LibNodeExpand
             builder.add_computational_memlet(blk, tasklet, "_out", m_write, {}, element_type, this->debug_info());
         }
         {
-            auto [scope, index] = build_inner_nest(*outer_scope);
+            auto [scope, index] =
+                build_inner_reduce_nest(*outer_scope, structured_control_flow::ReductionOperation::Max, m_name);
             auto& blk = builder.add_block(*scope, {}, this->debug_info());
             auto& fmax_node = builder.add_library_node<
                 cmath::CMathNode>(blk, this->debug_info(), cmath::CMathFunction::fmax, element_type.primitive_type());
@@ -330,7 +389,8 @@ passes::LibNodeExpander::ExpandOutcome SoftmaxNode::expand(passes::LibNodeExpand
             builder.add_computational_memlet(blk, tasklet, "_out", d_write, {}, element_type, this->debug_info());
         }
         {
-            auto [scope, index] = build_inner_nest(*outer_scope);
+            auto [scope, index] =
+                build_inner_reduce_nest(*outer_scope, structured_control_flow::ReductionOperation::Add, d_name);
             auto& blk = builder.add_block(*scope, {}, this->debug_info());
             auto& sub =
                 builder.add_tasklet(blk, data_flow::TaskletCode::fp_sub, {"_out"}, {"_in1", "_in2"}, this->debug_info());
@@ -356,7 +416,7 @@ passes::LibNodeExpander::ExpandOutcome SoftmaxNode::expand(passes::LibNodeExpand
 
         // Pass 3: Y[idx] = exp(X[idx] - m) / d
         {
-            auto [scope, index] = build_inner_nest(*outer_scope);
+            auto [scope, index] = build_inner_map_nest(*outer_scope);
             {
                 auto& blk = builder.add_block(*scope, {}, this->debug_info());
                 auto& sub =
