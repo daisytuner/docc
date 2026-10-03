@@ -40,6 +40,7 @@
 
 #pragma once
 
+#include <memory>
 #include <unordered_map>
 
 #include "sdfg/symbolic/symbolic.h"
@@ -54,14 +55,21 @@ namespace symbolic {
  */
 class Assumption {
 private:
+    // Copy-on-write payload: scope propagation copies whole Assumptions maps, so copies share it.
+    struct Data {
+        ExpressionSet lower_bounds;
+        ExpressionSet upper_bounds;
+        Expression tight_lower_bound;
+        Expression tight_upper_bound;
+        ExpressionSet constraints;
+        bool constant = false;
+        Expression map;
+    };
+
     Symbol symbol_;
-    ExpressionSet lower_bounds_;
-    ExpressionSet upper_bounds_;
-    Expression tight_lower_bound_;
-    Expression tight_upper_bound_;
-    ExpressionSet constraints_;
-    bool constant_;
-    Expression map_;
+    std::shared_ptr<Data> data_;
+
+    Data& mut();
 
 public:
     /**

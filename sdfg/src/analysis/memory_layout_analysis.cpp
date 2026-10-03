@@ -418,12 +418,9 @@ void MemoryLayoutAnalysis::merge_scope_layouts(
         }
     }
     symbolic::SymbolSet parameters = assumptions_analysis.parameters();
-    for (auto& entry : assumptions) {
-        if (excluded_indvars.contains(entry.first)) {
-            continue; // unfolded via AA bounds, not treated as opaque
-        }
-        if (entry.second.constant()) {
-            parameters.insert(entry.first);
+    for (const auto& sym : assumptions_analysis.constant_symbols(assumption_node, /*include_trivial_bounds=*/true)) {
+        if (!excluded_indvars.contains(sym)) {
+            parameters.insert(sym); // excluded indvars are unfolded via AA bounds, not treated as opaque
         }
     }
 
