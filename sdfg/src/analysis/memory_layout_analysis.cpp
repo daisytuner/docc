@@ -308,6 +308,9 @@ void MemoryLayoutAnalysis::merge_scope_layouts(
         const auto* memlet_ptr = access_order_[k];
         all_container_groups[accesses_.at(memlet_ptr).container].push_back(memlet_ptr);
     }
+    if (all_container_groups.empty()) {
+        return;
+    }
 
     // Sort memlets within each container group by element_id for deterministic processing order
     for (auto& [container, memlets] : all_container_groups) {
