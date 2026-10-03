@@ -25,7 +25,6 @@
 #include <sdfg/passes/structured_control_flow/unify_loop_exits.h>
 #include <sdfg/passes/structured_control_flow/while_to_for_conversion.h>
 #include <sdfg/passes/symbolic/symbol_promotion.h>
-#include <sdfg/passes/symbolic/type_minimization.h>
 
 #include "docc/analysis/sdfg_registry.h"
 #include "docc/cmd_args.h"
@@ -814,36 +813,30 @@ std::unique_ptr<sdfg::StructuredSDFG> FunctionToSDFG::simplify(std::unique_ptr<s
 
     dump_structured_sdfg(builder_opt.subject(), "12.memorymgmt");
 
-    sdfg::passes::TypeMinimizationPass type_minimization_pass;
-    type_minimization_pass.run(builder_opt, analysis_manager);
-    type_minimization_pass.run(builder_opt, analysis_manager);
-
-    dump_structured_sdfg(builder_opt.subject(), "13.typemin");
-
     // Dead code elimination
     symbol_propagation_pass.run(builder_opt, analysis_manager);
     dce.run(builder_opt, analysis_manager);
     dde.run(builder_opt, analysis_manager);
 
-    dump_structured_sdfg(builder_opt.subject(), "14.dde");
+    dump_structured_sdfg(builder_opt.subject(), "13.dde");
 
     // Convert for loops into maps and reductions
     sdfg::parallelization::ForClassificationPass map_conversion_pass;
     map_conversion_pass.run(builder_opt, analysis_manager);
 
-    dump_structured_sdfg(builder_opt.subject(), "15.for_classification");
+    dump_structured_sdfg(builder_opt.subject(), "14.for_classification");
 
     // Move code out of maps where possible
     code_motion.run(builder_opt, analysis_manager);
 
-    dump_structured_sdfg(builder_opt.subject(), "16.codemotion");
+    dump_structured_sdfg(builder_opt.subject(), "15.codemotion");
 
     // Dead code elimination
     dde.run(builder_opt, analysis_manager);
     dce.run(builder_opt, analysis_manager);
     dataflow_simplification.run(builder_opt, analysis_manager);
 
-    dump_structured_sdfg(builder_opt.subject(), "17.dde");
+    dump_structured_sdfg(builder_opt.subject(), "16.dde");
 
     return builder_opt.move();
 }

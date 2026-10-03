@@ -988,11 +988,15 @@ def test_particlefilter(compiler="clang-21"):
     verifier = SDFGVerification(
         verification={
             "sdfgs": 17,
+            "Free": 2,
+            "Malloc": 4,
             "REDUCE": 1,
+            "Call": 29,
             "WHILE": 12,
             "CPU_PARALLEL": 14,
-            "MAP": 20,
-            "FOR": 29,
+            "CMath": 7,
+            "MAP": 17,
+            "FOR": 32,
             "SEQUENTIAL": 36,
         }
     )

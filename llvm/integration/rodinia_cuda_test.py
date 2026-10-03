@@ -640,7 +640,7 @@ def test_hotspot3D(compiler="clang-21"):
     )
 
     verifier = SDFGVerification(
-        verification={"sdfgs": 8, "WHILE": 2, "MAP": 4, "FOR": 13, "SEQUENTIAL": 17},
+        verification={"sdfgs": 8, "WHILE": 2, "FOR": 17, "SEQUENTIAL": 17},
     )
     runner = TestRunner(
         "Rodinia",
@@ -1030,11 +1030,14 @@ def test_particlefilter(compiler="clang-21"):
             "Free": 2,
             "Malloc": 4,
             "CUDA_Offload": 22,
+            "REDUCE": 1,
+            "Call": 29,
             "WHILE": 12,
+            "CMath": 7,
             "CUDAOffloading": 34,
-            "MAP": 33,
+            "MAP": 30,
+            "FOR": 32,
             "SEQUENTIAL": 41,
-            "FOR": 29,
         }
     )
     runner = TestRunner(
