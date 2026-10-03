@@ -637,6 +637,23 @@ Expression simplify_minmax(const SymEngine::vec_basic& args) {
     return SymEngine::null;
 }
 
+// SymEngine::simplify only rewrites Pow/functions/Min/Max; on these trees it is the identity.
+bool is_plain_polynomial(const Expression& expr) {
+    if (SymEngine::is_a<SymEngine::Integer>(*expr) || SymEngine::is_a<SymEngine::Rational>(*expr) ||
+        SymEngine::is_a<SymEngine::Symbol>(*expr)) {
+        return true;
+    }
+    if (!SymEngine::is_a<SymEngine::Add>(*expr) && !SymEngine::is_a<SymEngine::Mul>(*expr)) {
+        return false;
+    }
+    for (const auto& arg : expr->get_args()) {
+        if (!is_plain_polynomial(arg)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 } // anonymous namespace
 
 Expression simplify(const Expression expr) {
@@ -816,6 +833,10 @@ Expression simplify(const Expression expr) {
                 }
             }
         }
+    }
+
+    if (is_plain_polynomial(expr)) {
+        return expr;
     }
 
     try {
