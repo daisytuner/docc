@@ -13,6 +13,7 @@
 
 #include <sdfg/einsum/einsum.h>
 #include <sdfg/tiles/transformations/local_storage.h>
+#include <sdfg/tiles/transformations/software_pipelining.h>
 #include <sdfg/tiles/transformations/tile_fusion.h>
 #include <sdfg/transformations/loop_distribute.h>
 #include <sdfg/transformations/loop_interchange.h>
@@ -116,6 +117,8 @@ dispatch_transformation(const std::string& transformation_name, const nlohmann::
         return detail::invoke_for<transformations::LoopInterchange>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "LocalStorage") {
         return detail::invoke_for<transformations::LocalStorage>(std::forward<Visitor>(visitor));
+    } else if (transformation_name == "SoftwarePipelining") {
+        return detail::invoke_for<transformations::SoftwarePipelining>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "TileFusion") {
         return detail::invoke_for<transformations::TileFusion>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "LoopSkewing") {
