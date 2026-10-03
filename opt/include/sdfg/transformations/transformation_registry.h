@@ -33,6 +33,7 @@
 #include <sdfg/transformations/offloading/rocm_parallelize_nested_map.h>
 #include <sdfg/transformations/offloading/rocm_transform.h>
 #include <sdfg/transformations/omp_transform.h>
+#include <sdfg/transformations/stream_k.h>
 #include <sdfg/transformations/unroll_transform.h>
 #include <sdfg/transformations/vectorize_transform.h>
 
@@ -127,6 +128,8 @@ dispatch_transformation(const std::string& transformation_name, const nlohmann::
         return detail::invoke_for<transformations::OMPTransform>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "LoopPeeling") {
         return detail::invoke_for<transformations::LoopPeeling>(std::forward<Visitor>(visitor));
+    } else if (transformation_name == "StreamK") {
+        return detail::invoke_for<transformations::StreamK>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "VectorizeTransform") {
         return detail::invoke_for<transformations::VectorizeTransform>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "UnrollTransform") {
