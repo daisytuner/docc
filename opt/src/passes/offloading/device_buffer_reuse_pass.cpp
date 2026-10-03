@@ -369,6 +369,7 @@ bool DeviceBufferReusePass::run_pass(builder::StructuredSDFGBuilder& builder, an
     // SWEEP: apply every merge in a single pass.
     // =======================================================================================
     bool changed = false;
+    std::vector<std::pair<std::string, std::string>> renames;
     for (auto& members : colors) {
         if (members.size() < 2) {
             continue;
@@ -412,7 +413,7 @@ bool DeviceBufferReusePass::run_pass(builder::StructuredSDFGBuilder& builder, an
         // Alias every member onto the representative container.
         for (size_t m : members) {
             if (candidates[m].container != representative) {
-                builder.rename_container(candidates[m].container, representative);
+                renames.emplace_back(candidates[m].container, representative);
             }
         }
 
@@ -431,6 +432,8 @@ bool DeviceBufferReusePass::run_pass(builder::StructuredSDFGBuilder& builder, an
 
         changed = true;
     }
+
+    builder.rename_containers(renames);
 
     return changed;
 }
