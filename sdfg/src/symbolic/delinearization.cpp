@@ -217,20 +217,13 @@ std::optional<sdfg::symbolic::DelinearizeResult> delinearize_affine(
     // empty parameters, which loses that cancellation, so route these through
     // the assumptions-based overload with the real parameter set.
     auto stride_ge_one = [&](const sym::Expression& e) {
-        return sym::is_ge(e, sym::one(), params_set, assums, /*tight=*/false);
+        return bounds.is_nonneg(sym::sub(e, sym::one()), params_set);
     };
-    std::unordered_map<sym::Expression, bool, SymEngine::RCPBasicHash, SymEngine::RCPBasicKeyEq> nonneg_memo;
     auto index_nonneg = [&](const sym::Expression& e) {
-        auto it = nonneg_memo.find(e);
-        if (it != nonneg_memo.end()) {
-            return it->second;
-        }
-        bool r = sym::is_nonneg(e, params_set, assums, /*tight=*/false);
-        nonneg_memo.emplace(e, r);
-        return r;
+        return bounds.is_nonneg(e, params_set);
     };
     auto index_negative = [&](const sym::Expression& e) {
-        return sym::is_negative(e, params_set, assums, /*tight=*/false);
+        return bounds.is_positive(sym::mul(sym::integer(-1), e), params_set);
     };
 
     // 1. Decompose into (stride, index) groups plus a scalar offset. This

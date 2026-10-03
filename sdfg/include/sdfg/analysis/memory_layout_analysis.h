@@ -92,6 +92,9 @@ private:
     // its own instance rebuilt on every `run()`.
     std::unique_ptr<AssumptionsAnalysis> detailed_assumptions_;
 
+    // Per-run bounds/proof caches, shared by all blocks with the same assumption set.
+    std::unordered_map<const symbolic::Assumptions*, std::unique_ptr<symbolic::AssumptionsBounds>> bounds_cache_;
+
     void traverse(structured_control_flow::ControlFlowNode& node, analysis::AnalysisManager& analysis_manager);
 
     void process_block(structured_control_flow::Block& block, analysis::AnalysisManager& analysis_manager);

@@ -34,6 +34,7 @@
 #include "sdfg/symbolic/polynomials.h"
 #include "sdfg/symbolic/symbolic.h"
 
+#include <string>
 #include <unordered_map>
 
 namespace sdfg {
@@ -365,6 +366,11 @@ public:
         return tight_;
     }
 
+    /// Memoized loose-mode `is_nonneg(expr, parameters, assums(), false)`.
+    bool is_nonneg(const Expression& expr, const SymbolSet& parameters);
+    /// Memoized loose-mode `is_positive(expr, parameters, assums(), false)`.
+    bool is_positive(const Expression& expr, const SymbolSet& parameters);
+
 private:
     static const SymbolSet& empty_params() {
         static const SymbolSet kEmpty;
@@ -374,6 +380,12 @@ private:
     const Assumptions& assums_;
     BoundAnalysis loose_;
     BoundAnalysis tight_;
+
+    // Keyed by (strict, parameter names), then expression.
+    std::unordered_map<
+        std::string,
+        std::unordered_map<Expression, bool, SymEngine::RCPBasicHash, SymEngine::RCPBasicKeyEq>>
+        proof_memo_;
 };
 
 } // namespace symbolic

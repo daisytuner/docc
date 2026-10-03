@@ -1684,6 +1684,43 @@ bool is_positive(const Expression& expr, const SymbolSet& parameters, const Assu
     return prove_ge_zero_top(expr, parameters, assumptions, tight, /*strict=*/true);
 }
 
+namespace {
+
+bool memoized_proof(
+    std::unordered_map<
+        std::string,
+        std::unordered_map<Expression, bool, SymEngine::RCPBasicHash, SymEngine::RCPBasicKeyEq>>& memo,
+    const Expression& expr,
+    const SymbolSet& parameters,
+    const Assumptions& assums,
+    bool strict
+) {
+    std::string key = strict ? "s" : "n";
+    for (const auto& p : parameters) {
+        key += '|';
+        key += p->get_name();
+    }
+    auto& by_expr = memo[key];
+    auto it = by_expr.find(expr);
+    if (it != by_expr.end()) {
+        return it->second;
+    }
+    bool result = strict ? is_positive(expr, parameters, assums, /*tight=*/false)
+                         : is_nonneg(expr, parameters, assums, /*tight=*/false);
+    by_expr.emplace(expr, result);
+    return result;
+}
+
+} // namespace
+
+bool AssumptionsBounds::is_nonneg(const Expression& expr, const SymbolSet& parameters) {
+    return memoized_proof(proof_memo_, expr, parameters, assums_, /*strict=*/false);
+}
+
+bool AssumptionsBounds::is_positive(const Expression& expr, const SymbolSet& parameters) {
+    return memoized_proof(proof_memo_, expr, parameters, assums_, /*strict=*/true);
+}
+
 bool is_nonpos(const Expression& expr, const SymbolSet& parameters, const Assumptions& assumptions, bool tight) {
     // expr <= 0  iff  -expr >= 0
     return is_nonneg(symbolic::mul(symbolic::integer(-1), expr), parameters, assumptions, tight);

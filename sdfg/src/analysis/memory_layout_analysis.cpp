@@ -120,6 +120,7 @@ void MemoryLayoutAnalysis::run(analysis::AnalysisManager& analysis_manager) {
     detailed_assumptions_->run(analysis_manager);
 
     traverse(sdfg_.root(), analysis_manager);
+    bounds_cache_.clear();
 }
 
 void MemoryLayoutAnalysis::
@@ -164,6 +165,11 @@ void MemoryLayoutAnalysis::
     // Use trivial bounds (type-derived, e.g. unsigned >= 0) so delinearization
     // can soundly discharge non-negativity proof obligations on parameters.
     auto& assumptions = assumptions_analysis.get(block, /*include_trivial_bounds=*/true);
+    auto& bounds_slot = bounds_cache_[&assumptions];
+    if (!bounds_slot) {
+        bounds_slot = std::make_unique<symbolic::AssumptionsBounds>(assumptions);
+    }
+    auto& bounds = *bounds_slot;
 
     auto& dfg = block.dataflow();
     for (auto& memlet : dfg.edges()) {
@@ -258,7 +264,7 @@ void MemoryLayoutAnalysis::
                 }
                 auto& linearized_expr = subset.at(0);
 
-                auto result = symbolic::delinearize(linearized_expr, assumptions);
+                auto result = symbolic::delinearize(linearized_expr, bounds);
                 if (!result.success) {
                     continue; // Delinearization failed, skip
                 }
