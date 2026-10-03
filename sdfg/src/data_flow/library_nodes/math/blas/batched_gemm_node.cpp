@@ -224,9 +224,10 @@ data_flow::PointerAccessType BatchedGEMMNode::pointer_access_type(int input_idx)
             return data_flow::PointerAccessMeta::create_full_write_only(range, true);
         } else {
             // Strided C: bounded by the total range, but the touched elements within
-            // it are an over-approximation (no structured layout here) -> covers_all=false.
-            data_flow::AccessRegion region{true, math::tensor::TensorLayout(symbolic::MultiExpression{range}), false};
-            return data_flow::PointerAccessMeta::create_generic(region, region, true);
+            // it are an over-approximation (no structured layout here).
+            return data_flow::PointerAccessMeta::create_generic(
+                data_flow::ConvexAccessPattern::create(range), data_flow::ConvexAccessPattern::create(range), true
+            );
         }
     } else {
         return LibraryNode::pointer_access_type(input_idx);

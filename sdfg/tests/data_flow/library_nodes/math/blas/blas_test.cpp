@@ -827,20 +827,24 @@ TEST(BlasTest, GemmNode_ConsumedLayout) {
     auto a = gemm.pointer_access_type(math::blas::GEMMNode::A_INPUT_IDX);
     ASSERT_NE(a, nullptr);
     EXPECT_TRUE(a->may_contain_reads());
-    ASSERT_NE(a->read_layout(), nullptr);
-    EXPECT_TRUE(symbolic::eq(a->read_layout()->get_dim(0), symbolic::integer(m)));
-    EXPECT_TRUE(symbolic::eq(a->read_layout()->get_dim(1), symbolic::integer(k)));
-    EXPECT_TRUE(symbolic::eq(a->read_layout()->get_stride(0), symbolic::integer(lda)));
-    EXPECT_TRUE(symbolic::eq(a->read_layout()->get_stride(1), symbolic::integer(1)));
+    auto a_read = a->access_read_pattern();
+    ASSERT_NE(a_read, nullptr);
+    ASSERT_NE(a_read->layout(), nullptr);
+    EXPECT_TRUE(symbolic::eq(a_read->layout()->get_dim(0), symbolic::integer(m)));
+    EXPECT_TRUE(symbolic::eq(a_read->layout()->get_dim(1), symbolic::integer(k)));
+    EXPECT_TRUE(symbolic::eq(a_read->layout()->get_stride(0), symbolic::integer(lda)));
+    EXPECT_TRUE(symbolic::eq(a_read->layout()->get_stride(1), symbolic::integer(1)));
 
     // C (m x n, ldc == n) is written densely.
     auto c = gemm.pointer_access_type(math::blas::GEMMNode::C_INPUT_IDX);
     ASSERT_NE(c, nullptr);
     EXPECT_TRUE(c->may_contain_writes());
-    EXPECT_TRUE(c->write_covers_all());
-    ASSERT_NE(c->write_layout(), nullptr);
-    EXPECT_TRUE(symbolic::eq(c->write_layout()->get_dim(0), symbolic::integer(m)));
-    EXPECT_TRUE(symbolic::eq(c->write_layout()->get_dim(1), symbolic::integer(n)));
+    auto c_write = c->access_write_pattern();
+    ASSERT_NE(c_write, nullptr);
+    EXPECT_TRUE(c_write->every_element_accessed());
+    ASSERT_NE(c_write->layout(), nullptr);
+    EXPECT_TRUE(symbolic::eq(c_write->layout()->get_dim(0), symbolic::integer(m)));
+    EXPECT_TRUE(symbolic::eq(c_write->layout()->get_dim(1), symbolic::integer(n)));
 
     // Transposing A under row-major flips the unit-stride axis to the leading dim.
     auto& gemm_ta = static_cast<math::blas::GEMMNode&>(builder.add_library_node<math::blas::GEMMNode>(
@@ -859,9 +863,11 @@ TEST(BlasTest, GemmNode_ConsumedLayout) {
         symbolic::integer(n)
     ));
     auto a_t = gemm_ta.pointer_access_type(math::blas::GEMMNode::A_INPUT_IDX);
-    ASSERT_NE(a_t->read_layout(), nullptr);
-    EXPECT_TRUE(symbolic::eq(a_t->read_layout()->get_stride(0), symbolic::integer(1)));
-    EXPECT_TRUE(symbolic::eq(a_t->read_layout()->get_stride(1), symbolic::integer(lda)));
+    auto a_t_read = a_t->access_read_pattern();
+    ASSERT_NE(a_t_read, nullptr);
+    ASSERT_NE(a_t_read->layout(), nullptr);
+    EXPECT_TRUE(symbolic::eq(a_t_read->layout()->get_stride(0), symbolic::integer(1)));
+    EXPECT_TRUE(symbolic::eq(a_t_read->layout()->get_stride(1), symbolic::integer(lda)));
 }
 
 } // namespace
