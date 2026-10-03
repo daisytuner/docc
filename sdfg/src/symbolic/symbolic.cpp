@@ -637,13 +637,24 @@ Expression simplify_minmax(const SymEngine::vec_basic& args) {
     return SymEngine::null;
 }
 
-// SymEngine::simplify only rewrites Pow/functions/Min/Max; on these trees it is the identity.
+// SymEngine::simplify (refine without assumptions + SimplifyVisitor) is the identity on trees of
+// numbers, symbols, Add/Mul, FunctionSymbols and Min/Max with at most one numeric argument:
+// without assumptions only numbers have a known sign, and Min/Max already fold numeric args.
 bool is_plain_polynomial(const Expression& expr) {
     if (SymEngine::is_a<SymEngine::Integer>(*expr) || SymEngine::is_a<SymEngine::Rational>(*expr) ||
         SymEngine::is_a<SymEngine::Symbol>(*expr)) {
         return true;
     }
-    if (!SymEngine::is_a<SymEngine::Add>(*expr) && !SymEngine::is_a<SymEngine::Mul>(*expr)) {
+    if (SymEngine::is_a<SymEngine::Min>(*expr) || SymEngine::is_a<SymEngine::Max>(*expr)) {
+        size_t numbers = 0;
+        for (const auto& arg : expr->get_args()) {
+            numbers += SymEngine::is_a_Number(*arg) ? 1 : 0;
+        }
+        if (numbers > 1) {
+            return false;
+        }
+    } else if (!SymEngine::is_a<SymEngine::Add>(*expr) && !SymEngine::is_a<SymEngine::Mul>(*expr) &&
+               !SymEngine::is_a<SymEngine::FunctionSymbol>(*expr)) {
         return false;
     }
     for (const auto& arg : expr->get_args()) {

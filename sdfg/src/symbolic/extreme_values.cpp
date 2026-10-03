@@ -689,9 +689,13 @@ Interval BoundAnalysis::visit_add(const SymEngine::RCP<const SymEngine::Add>& ad
                     SymEngine::eq(*dict.begin()->second, *SymEngine::one)) {
                     const auto& base = dict.begin()->first;
                     if (SymEngine::is_a<SymEngine::Min>(*base) || SymEngine::is_a<SymEngine::Max>(*base)) {
+                        auto c = SymEngine::rcp_static_cast<const SymEngine::Integer>(mul->get_coef());
+                        if (!mp_fits_slong_p(c->as_integer_class())) {
+                            return false;
+                        }
                         ext = base;
                         ext_is_min = SymEngine::is_a<SymEngine::Min>(*base);
-                        ext_coeff = SymEngine::rcp_static_cast<const SymEngine::Integer>(mul->get_coef())->as_int();
+                        ext_coeff = c->as_int();
                         return true;
                     }
                 }
@@ -1384,6 +1388,9 @@ constexpr int kProofDepthLimit = 4;
 
 const SymbolSet kNoParameters;
 
+// Sub-goal results within one top-level proof: INT_MAX = proven, otherwise the largest depth that failed.
+using ProofMemo = std::unordered_map<Expression, int, SymEngine::RCPBasicHash, SymEngine::RCPBasicKeyEq>;
+
 // One top-level proof shares its BoundAnalysis instances so sub-proofs reuse cached intervals.
 struct ProofCtx {
     const SymbolSet& parameters;
@@ -1391,6 +1398,8 @@ struct ProofCtx {
     bool tight;
     BoundAnalysis& ba; // built with `parameters`
     BoundAnalysis* ba_no_params; // built with empty parameters; null iff `parameters` is empty
+    ProofMemo& memo;
+    ProofMemo* memo_no_params;
 };
 
 // Forward decl: shared core that proves `diff >= 0` (when strict=false)
@@ -1454,6 +1463,43 @@ bool descend_min_and(const Expression& e, const ProofCtx& ctx, bool strict, int 
         }
     }
     return true;
+}
+
+// OR-style descent for a `k*min(...)` addend with k < 0: `k*min(a_1..a_n) >= k*a_i` for every i,
+// so substituting any single argument yields a sound lower bound.
+bool descend_neg_min(const Expression& e, const ProofCtx& ctx, bool strict, int depth) {
+    SymEngine::vec_basic terms;
+    if (SymEngine::is_a<SymEngine::Add>(*e)) {
+        terms = e->get_args();
+    } else {
+        terms.push_back(e);
+    }
+    for (size_t t = 0; t < terms.size(); ++t) {
+        if (!SymEngine::is_a<SymEngine::Mul>(*terms[t])) {
+            continue;
+        }
+        auto mul = SymEngine::rcp_static_cast<const SymEngine::Mul>(terms[t]);
+        if (mul->get_dict().size() != 1 || !mul->get_coef()->is_negative()) {
+            continue;
+        }
+        const auto& [base, exp] = *mul->get_dict().begin();
+        if (!SymEngine::is_a<SymEngine::Min>(*base) || !symbolic::eq(exp, symbolic::one())) {
+            continue;
+        }
+        Expression rest = symbolic::zero();
+        for (size_t o = 0; o < terms.size(); ++o) {
+            if (o != t) {
+                rest = symbolic::add(rest, terms[o]);
+            }
+        }
+        for (const auto& arg : base->get_args()) {
+            auto replaced = symbolic::expand(symbolic::add(rest, symbolic::mul(mul->get_coef(), arg)));
+            if (prove_ge_zero(replaced, ctx, strict, depth - 1)) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 // Substitute a symbol with its SYMBOLIC bound to recover coupling that
@@ -1544,9 +1590,23 @@ bool descend_symbol_bounds(const Expression& diff, const ProofCtx& ctx, bool str
     return false;
 }
 
+bool prove_ge_zero_uncached(const Expression& e, const ProofCtx& ctx, bool strict, int depth);
+
+// Descents commute (max/min/idiv/symbol substitutions), so identical sub-goals recur along many paths.
 bool prove_ge_zero(const Expression& diff, const ProofCtx& ctx, bool strict, int depth) {
-    BoundWorkGuard guard;
     auto e = symbolic::expand(diff);
+    auto it = ctx.memo.find(e);
+    if (it != ctx.memo.end() && (it->second == std::numeric_limits<int>::max() || it->second >= depth)) {
+        return it->second == std::numeric_limits<int>::max();
+    }
+    bool result = prove_ge_zero_uncached(e, ctx, strict, depth);
+    int& slot = ctx.memo[e];
+    slot = result ? std::numeric_limits<int>::max() : std::max(slot, depth);
+    return result;
+}
+
+bool prove_ge_zero_uncached(const Expression& e, const ProofCtx& ctx, bool strict, int depth) {
+    BoundWorkGuard guard;
 
     // Constant integer fast path.
     if (SymEngine::is_a<SymEngine::Integer>(*e)) {
@@ -1622,7 +1682,9 @@ bool prove_ge_zero(const Expression& diff, const ProofCtx& ctx, bool strict, int
     // Fallback with empty parameters: lets BoundAnalysis substitute
     // assumption-derived bounds on parameters themselves (e.g. `N >= 1`).
     if (ctx.ba_no_params) {
-        ProofCtx no_params{kNoParameters, ctx.assumptions, ctx.tight, *ctx.ba_no_params, nullptr};
+        ProofCtx no_params{
+            kNoParameters, ctx.assumptions, ctx.tight, *ctx.ba_no_params, nullptr, *ctx.memo_no_params, nullptr
+        };
         if (try_lb(no_params)) {
             return true;
         }
@@ -1642,6 +1704,10 @@ bool prove_ge_zero(const Expression& diff, const ProofCtx& ctx, bool strict, int
     // Stream-K store bound `min(N-1, min(3+_j1, 63+base)) - _j1 - d` needs the
     // branches split so the per-branch symbolic substitution below can fire.
     if (descend_min_and(e, ctx, strict, depth)) {
+        return true;
+    }
+
+    if (descend_neg_min(e, ctx, strict, depth)) {
         return true;
     }
 
@@ -1666,7 +1732,17 @@ bool prove_ge_zero_top(
         if (!parameters.empty()) {
             ba_no_params.emplace(kNoParameters, assumptions, tight, DEFAULT_BOUND_BUDGET, project);
         }
-        ProofCtx ctx{parameters, assumptions, tight, ba, ba_no_params ? &*ba_no_params : nullptr};
+        ProofMemo memo;
+        ProofMemo memo_no_params;
+        ProofCtx ctx{
+            parameters,
+            assumptions,
+            tight,
+            ba,
+            ba_no_params ? &*ba_no_params : nullptr,
+            memo,
+            ba_no_params ? &memo_no_params : nullptr
+        };
         if (prove_ge_zero(expr, ctx, strict, project ? kProofDepthLimit : 0)) {
             return true;
         }
@@ -1705,8 +1781,7 @@ bool memoized_proof(
     if (it != by_expr.end()) {
         return it->second;
     }
-    bool result = strict ? is_positive(expr, parameters, assums, /*tight=*/false)
-                         : is_nonneg(expr, parameters, assums, /*tight=*/false);
+    bool result = prove_ge_zero_top(expr, parameters, assums, /*tight=*/false, strict);
     by_expr.emplace(expr, result);
     return result;
 }

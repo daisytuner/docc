@@ -503,32 +503,38 @@ void AssumptionsAnalysis::traverse_structured_loop(
             }
 
             // ub is a general upper bound
-            // Compute tight upper bound based on stride
-            if (symbolic::eq(stride, symbolic::one())) {
-                // Stride == 1: tight upper bound is simply ub - 1
-                body_assumptions[indvar].tight_upper_bound(ub_inclusive);
-            } else if (!stride.is_null()) {
-                // Non-unit stride: tight upper bound = init + idiv(ub_inclusive - init, stride) * stride
-                // This is the largest value of init + k*stride that is <= ub_inclusive
-                auto range = symbolic::sub(ub_inclusive, init);
-                auto num_steps = symbolic::div(range, stride);
-                auto tight_ub = symbolic::add(init, symbolic::mul(num_steps, stride));
-                body_assumptions[indvar].tight_upper_bound(tight_ub);
-            }
-
-            // If combined bound, each arg is also an upper bound
-            // Stride-tighten each arg to its largest in-range value `init + k*stride`.
+            // Stride-tighten an inclusive bound to its largest in-range value `init + k*stride`.
             // Subtracting `init` cancels the arg's parent-relative part (e.g.
             // `(63 + tile0) - tile0 = 63`), so `idiv(63, stride)*stride` folds to a
-            // clean constant offset (`tile0 + 60`) the inequality prover can use —
-            // unlike the combined `min(...)` tight bound, whose `min` stays opaque.
+            // clean constant offset (`tile0 + 60`) the inequality prover can use.
             auto stride_tighten = [&](const symbolic::Expression& incl) -> symbolic::Expression {
                 if (symbolic::eq(stride, symbolic::one())) {
                     return incl;
                 }
-                auto steps = symbolic::div(symbolic::sub(incl, init), stride);
-                return symbolic::add(init, symbolic::mul(steps, stride));
+                auto range = symbolic::expand(symbolic::sub(incl, init));
+                if (SymEngine::is_a<SymEngine::Integer>(*range)) {
+                    auto steps = symbolic::div(range, stride);
+                    return symbolic::add(init, symbolic::mul(steps, stride));
+                }
+                // C semantics: s*(x/s) == x - x%s, so `init + s*idiv(incl-init, s) == incl - imod(incl-init, s)`.
+                // This form keeps `init` out of the dominant term: BoundAnalysis bounds imod to [0, s-1].
+                return symbolic::sub(incl, symbolic::mod(range, stride));
             };
+
+            // Tight upper bound: the last iteration value. idiv is monotone, so for a Min bound
+            // `init + s*idiv(min(a,b) - init, s) == min(tighten(a), tighten(b))`; the flat form
+            // keeps the Min out of idiv, where it would be non-monotone in `init` for BoundAnalysis.
+            if (SymEngine::is_a<SymEngine::Min>(*ub_inclusive)) {
+                symbolic::Expression tight_ub = SymEngine::null;
+                for (const auto& arg : ub_inclusive->get_args()) {
+                    auto t = stride_tighten(arg);
+                    tight_ub = tight_ub.is_null() ? t : symbolic::min(tight_ub, t);
+                }
+                body_assumptions[indvar].tight_upper_bound(tight_ub);
+            } else {
+                body_assumptions[indvar].tight_upper_bound(stride_tighten(ub_inclusive));
+            }
+
             // Register the coupled constraint `indvar - tight <= 0` when `tight`
             // couples the indvar with another loop variable (e.g. `tile1 <= tile0 +
             // 60`). Per-symbol bounding decorrelates such a bound (`tile0 + 60 ->
