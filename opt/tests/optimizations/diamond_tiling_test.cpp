@@ -174,7 +174,10 @@ struct Jacobi1DFixture {
 
 /// Multi-kernel diamond tiling pipeline:
 ///   Tile(K1,32) + Tile(K2,32) → cleanup → TileFusion → Skew(t,tile,32) → FM IC(t,tile)
-TEST(DiamondTilingTest, Jacobi1D) {
+// Disabled: the final interchange is illegal (TileFusion's pipeline buffer carries data from tile s to s+32
+// within one t, which (t+1, s-32) overwrites after interchange). It only passed while the dependence analysis
+// could not parse the skewed `max` bounds; re-enable with the interchange legality fixes.
+TEST(DiamondTilingTest, DISABLED_Jacobi1D) {
     Jacobi1DFixture fixture;
     fixture.build();
 
@@ -557,7 +560,8 @@ struct Jacobi2DFixture {
 
 /// Jacobi-2D with 1D spatial diamond tiling (tile only i dimension):
 ///   Tile(K1_i,32) + Tile(K2_i,32) → cleanup → TileFusion → Skew(t,tile,32) → IC(t,tile)
-TEST(DiamondTilingTest, Jacobi2D_1DSpatial) {
+// Disabled for the same reason as DISABLED_Jacobi1D.
+TEST(DiamondTilingTest, DISABLED_Jacobi2D_1DSpatial) {
     Jacobi2DFixture fixture;
     fixture.build();
 
