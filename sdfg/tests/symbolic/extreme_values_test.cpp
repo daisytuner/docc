@@ -499,11 +499,9 @@ TEST(ExtremeValuesTest, IMod_Symbolic) {
     auto min = symbolic::minimum(expr, {N, M}, assums, false);
     auto max = symbolic::maximum(expr, {N, M}, assums, false);
 
-
-    auto expected_min = symbolic::zero();
-    EXPECT_TRUE(symbolic::eq(min, expected_min));
-    auto expected_max = symbolic::integer(3);
-    EXPECT_TRUE(symbolic::eq(max, expected_max));
+    // N may be negative, and a C remainder takes the dividend's sign.
+    EXPECT_TRUE(symbolic::eq(min, symbolic::integer(-3)));
+    EXPECT_TRUE(symbolic::eq(max, symbolic::integer(3)));
 }
 
 TEST(ExtremeValuesTest, IMod_Integral_reduced) {
@@ -583,9 +581,8 @@ TEST(ExtremeValuesTest, Mul_IMod_NonNegativeNoUpper) {
     EXPECT_TRUE(symbolic::eq(symbolic::maximum(expr, {}, assums, false), symbolic::integer(960)));
 }
 
-TEST(ExtremeValuesTest, IMod_NegativeLowerNoUpper_Fails) {
-    // Without an upper bound and a possibly-negative dividend, imod is not
-    // determinable -> null (the non-negative shortcut must not fire).
+TEST(ExtremeValuesTest, IMod_NegativeLowerNoUpper_SignAgnostic) {
+    // A possibly-negative dividend without an upper bound still bounds a % 16 to [-15, 15].
     auto a = symbolic::symbol("a");
     symbolic::Assumption assum = symbolic::Assumption(a);
     assum.add_lower_bound(symbolic::integer(-5));
@@ -593,8 +590,8 @@ TEST(ExtremeValuesTest, IMod_NegativeLowerNoUpper_Fails) {
     assums.insert({a, assum});
 
     auto expr = symbolic::mod(a, symbolic::integer(16));
-    EXPECT_TRUE(symbolic::minimum(expr, {}, assums, false).is_null());
-    EXPECT_TRUE(symbolic::maximum(expr, {}, assums, false).is_null());
+    EXPECT_TRUE(symbolic::eq(symbolic::minimum(expr, {}, assums, false), symbolic::integer(-15)));
+    EXPECT_TRUE(symbolic::eq(symbolic::maximum(expr, {}, assums, false), symbolic::integer(15)));
 }
 
 TEST(ExtremeValuesTest, StreamK_CoopGuard_Discharge) {

@@ -205,7 +205,8 @@ DotNodeDispatcher_Tenstorrent::DotNodeDispatcher_Tenstorrent(
     const sdfg::data_flow::DataFlowGraph& data_flow_graph,
     const sdfg::math::blas::DotNode& node
 )
-    : LibraryNodeDispatcherBase(language_extension, function, data_flow_graph, node) {}
+    : LibraryNodeDispatcherBase(language_extension, function, data_flow_graph, node) {
+}
 
 std::vector<const data_flow::AccessNode*>
 find_dot_access_nodes(const data_flow::DataFlowGraph& dfg, const math::blas::DotNode& node) {
@@ -279,7 +280,7 @@ void DotNodeDispatcher_Tenstorrent::dispatch(
     auto tile_bytes = symbolic::mul(tile_elems, prim_bytes);
     auto one_value = symbolic::integer(1);
 
-    auto input_tiles = symbolic::divide_ceil(dot_node.n(), tile_elems);
+    auto input_tiles = symbolic::ceil_count(dot_node.n(), tile_elems);
     auto output_tiles = symbolic::symbol("num_cores");
 
     TTKernelManagementCodegen codegen(

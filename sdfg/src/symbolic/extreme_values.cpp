@@ -413,79 +413,59 @@ Interval BoundAnalysis::visit_function(const SymEngine::RCP<const SymEngine::Fun
         return {lb, ub};
     }
 
-    // idiv(numerator, denominator) — only for constant positive denominator
+    // idiv(numerator, denominator) — C truncating division by a non-zero constant
     if (func_id == "idiv") {
         auto numerator = func->get_args()[0];
         auto denominator = func->get_args()[1];
-        if (!SymEngine::is_a<const SymEngine::Integer>(*denominator)) {
+        if (!SymEngine::is_a<const SymEngine::Integer>(*denominator) || symbolic::eq(denominator, symbolic::zero())) {
             return Interval::failure();
         }
-        // Denominator must be strictly positive
-        if (symbolic::is_true(symbolic::Le(denominator, symbolic::zero()))) {
-            return Interval::failure();
-        }
-        // Monotonic increasing in the numerator for a positive denominator, so pass
-        // each numerator bound through independently: a one-sided numerator bound
-        // (e.g. a lower bound of 0 with no upper bound) still yields a one-sided
-        // result rather than failing outright.
+        // Truncation is monotone in the numerator: increasing for a positive and decreasing for a negative
+        // denominator, so each numerator bound maps through independently (one-sided bounds stay one-sided).
         auto num_iv = visit(numerator, depth + 1);
         Expression lb = num_iv.has_lower() ? symbolic::div(num_iv.lower, denominator) : Expression(SymEngine::null);
         Expression ub = num_iv.has_upper() ? symbolic::div(num_iv.upper, denominator) : Expression(SymEngine::null);
+        if (SymEngine::down_cast<const SymEngine::Integer&>(*denominator).is_negative()) {
+            std::swap(lb, ub);
+        }
         if (lb.is_null() && ub.is_null()) {
             return Interval::failure();
         }
         return {lb, ub};
     }
 
-    // imod(lhs, rhs) — only for constant integer rhs
+    // imod(lhs, rhs) — C remainder by a non-zero constant: sign of lhs, magnitude below |rhs|
     if (func_id == "imod") {
         auto lhs = func->get_args()[0];
         auto rhs = func->get_args()[1];
-        if (!SymEngine::is_a<const SymEngine::Integer>(*rhs)) {
+        if (!SymEngine::is_a<const SymEngine::Integer>(*rhs) || symbolic::eq(rhs, symbolic::zero())) {
             return Interval::failure();
         }
+        auto zero = symbolic::zero();
+        auto max_magnitude =
+            symbolic::integer(std::abs(SymEngine::down_cast<const SymEngine::Integer&>(*rhs).as_int()) - 1);
 
         auto lhs_iv = visit(lhs, depth + 1);
-        auto zero = symbolic::zero();
-        auto pos_bound = symbolic::sub(rhs, symbolic::one());
 
-        // A non-negative dividend modulo a positive divisor is always [0, rhs-1],
-        // regardless of whether the dividend has a (finite) upper bound. This is the
-        // common case for offset decodes like imod(idiv(iter, ...), n).
-        bool rhs_positive = symbolic::is_true(symbolic::Gt(rhs, zero));
-        bool lhs_non_negative = lhs_iv.has_lower() && symbolic::is_true(symbolic::Ge(lhs_iv.lower, zero));
-        if (rhs_positive && lhs_non_negative && !lhs_iv.has_upper()) {
-            return {zero, pos_bound};
-        }
-
-        if (!lhs_iv.has_lower() || !lhs_iv.has_upper()) {
-            return Interval::failure();
-        }
-        auto lhs_lb = lhs_iv.lower;
-        auto lhs_ub = lhs_iv.upper;
-
-        bool can_be_negative = symbolic::is_true(symbolic::Lt(lhs_lb, symbolic::zero())) ||
-                               symbolic::is_true(symbolic::Lt(rhs, symbolic::zero()));
-        bool all_negative = symbolic::is_true(symbolic::Lt(lhs_ub, symbolic::zero())) ||
-                            symbolic::is_true(symbolic::Lt(rhs, symbolic::zero()));
-        auto neg_bound = symbolic::sub(symbolic::one(), symbolic::simplify(symbolic::abs(rhs)));
-
-        auto width = symbolic::sub(lhs_ub, lhs_lb);
-        if (symbolic::is_true(symbolic::Lt(width, rhs))) {
-            // Range doesn't span full modulus cycle
-            bool wraps = symbolic::is_true(symbolic::Lt(symbolic::mod(lhs_ub, rhs), symbolic::mod(lhs_lb, rhs)));
-            if (wraps) {
-                Expression lb = can_be_negative ? Expression(neg_bound) : Expression(zero);
-                Expression ub = all_negative ? Expression(zero) : Expression(pos_bound);
-                return {lb, ub};
+        // Exact for literal bounds with a common quotient: the remainder is then lhs - rhs*q, increasing in lhs.
+        if (lhs_iv.has_lower() && lhs_iv.has_upper() && SymEngine::is_a<SymEngine::Integer>(*lhs_iv.lower) &&
+            SymEngine::is_a<SymEngine::Integer>(*lhs_iv.upper)) {
+            auto q_lower = symbolic::div(lhs_iv.lower, rhs);
+            auto q_upper = symbolic::div(lhs_iv.upper, rhs);
+            if (SymEngine::is_a<SymEngine::Integer>(*q_lower) && symbolic::eq(q_lower, q_upper)) {
+                return {symbolic::mod(lhs_iv.lower, rhs), symbolic::mod(lhs_iv.upper, rhs)};
             }
-            return {symbolic::simplify(symbolic::mod(lhs_lb, rhs)), symbolic::simplify(symbolic::mod(lhs_ub, rhs))};
         }
 
-        // Range spans full cycle
-        Expression lb = can_be_negative ? Expression(neg_bound) : Expression(zero);
-        Expression ub = all_negative ? Expression(zero) : Expression(pos_bound);
-        return {lb, ub};
+        bool non_negative = lhs_iv.has_lower() && symbolic::is_true(symbolic::Ge(lhs_iv.lower, zero));
+        bool non_positive = lhs_iv.has_upper() && symbolic::is_true(symbolic::Le(lhs_iv.upper, zero));
+        if (non_negative) {
+            return {zero, max_magnitude};
+        }
+        if (non_positive) {
+            return {symbolic::mul(symbolic::integer(-1), max_magnitude), zero};
+        }
+        return {symbolic::mul(symbolic::integer(-1), max_magnitude), max_magnitude};
     }
 
     return Interval::failure();

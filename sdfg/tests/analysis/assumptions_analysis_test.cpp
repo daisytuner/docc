@@ -72,14 +72,11 @@ TEST(AssumptionsAnalysisTest, StreamK_WorkerIter_TileBaseBounded) {
 
     auto base = symbolic::
         mul(symbolic::integer(64), symbolic::mod(symbolic::div(iter, symbolic::integer(16)), symbolic::integer(16)));
+    // A C remainder by 16 lies in [-15, 15] whatever the sign of the dividend, so the tile base is bounded
+    // even though AA carries no lower bound for iter's non-affine update.
     auto mx = symbolic::maximum(base, aa.parameters(), assums, true);
-    EXPECT_TRUE(mx.is_null());
+    EXPECT_TRUE(symbolic::eq(mx, symbolic::integer(960)));
 
-    // Even injecting iter >= 0 at the root does not help: the loop's own indvar
-    // processing does not carry a tight lower bound for a non-affine update, so
-    // BoundAnalysis still treats iter as unbounded. The fix belongs in AA (derive
-    // lower_bound = init for increasing loops regardless of stride) or in the
-    // worker's update (keep it affine). Once fixed, flip these to expect a bound.
     symbolic::Assumption a_iter(iter);
     a_iter.add_lower_bound(symbolic::integer(0));
     symbolic::Assumptions additional;
@@ -88,7 +85,7 @@ TEST(AssumptionsAnalysisTest, StreamK_WorkerIter_TileBaseBounded) {
     auto& aa2 = am2.get<analysis::AssumptionsAnalysis>();
     auto& assums2 = aa2.get(block, true);
     auto mx2 = symbolic::maximum(base, aa2.parameters(), assums2, true);
-    EXPECT_TRUE(mx2.is_null());
+    EXPECT_TRUE(symbolic::eq(mx2, symbolic::integer(960)));
 }
 
 TEST(AssumptionsAnalysisTest, StreamK_AffineWorker_TileBaseBounded) {
