@@ -25,6 +25,10 @@ public:
         if (x.get_name() == "idiv") {
             // ISL uses floord(a, b) for floor division
             str_ = "floord(" + apply(x.get_args()[0]) + ", " + apply(x.get_args()[1]) + ")";
+        } else if (x.get_name() == "imod") {
+            // Floor-mod, consistent with idiv -> floord: a - b*floord(a, b) == a mod b.
+            // ISL only accepts a bare integer literal as the modulus.
+            str_ = "((" + apply(x.get_args()[0]) + ") mod " + apply(x.get_args()[1]) + ")";
         } else if (x.get_name() == "iabs") {
             // ISL doesn't support abs directly, but we can express it
             str_ = apply(x.get_args()[0]); // Simplify: assume non-negative for ISL constraints
