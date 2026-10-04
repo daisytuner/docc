@@ -29,6 +29,8 @@ class DataDependencyAnalysis : public Analysis {
 
 private:
     structured_control_flow::Sequence& node_;
+    // When set, only this loop nest is analyzed (instead of node_).
+    structured_control_flow::StructuredLoop* loop_ = nullptr;
 
     std::unordered_map<std::string, std::unordered_map<User*, std::unordered_set<User*>>> results_;
 
@@ -155,6 +157,8 @@ public:
     DataDependencyAnalysis(StructuredSDFG& sdfg);
 
     DataDependencyAnalysis(StructuredSDFG& sdfg, structured_control_flow::Sequence& node);
+
+    DataDependencyAnalysis(StructuredSDFG& sdfg, structured_control_flow::StructuredLoop& loop);
 
     // Enable detailed symbolic subset/disjointness checks. Off by default;
     // `LoopCarriedDependencyAnalysis` flips it on for its own manually

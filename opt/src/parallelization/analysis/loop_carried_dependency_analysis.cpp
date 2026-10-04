@@ -1,10 +1,13 @@
 #include "sdfg/parallelization/analysis/loop_carried_dependency_analysis.h"
 
+#include <algorithm>
 #include <cassert>
 #include <map>
+#include <memory>
 #include <optional>
 #include <set>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <isl/ctx.h>
@@ -33,26 +36,55 @@
 namespace sdfg {
 namespace parallelization {
 
-LoopCarriedDependencyAnalysis::LoopCarriedDependencyAnalysis(StructuredSDFG& sdfg)
-    : Analysis(sdfg), node_(sdfg.root()) {
+LoopCarriedDependencyAnalysis::LoopCarriedDependencyAnalysis(StructuredSDFG& sdfg) : Analysis(sdfg) {
 }
 
-LoopCarriedDependencyAnalysis::LoopCarriedDependencyAnalysis(StructuredSDFG& sdfg, structured_control_flow::Sequence& node)
-    : Analysis(sdfg), node_(node) {
+void LoopCarriedDependencyAnalysis::run(analysis::AnalysisManager& analysis_manager) {
+    analysis_manager_ = &analysis_manager;
+    results_.clear();
+    nest_ddas_.clear();
+    detailed_assumptions_.reset();
 }
 
-analysis::DataDependencyAnalysis& LoopCarriedDependencyAnalysis::detailed_dda() {
-    if (!detailed_dda_) {
-        detailed_dda_ = std::make_unique<analysis::DataDependencyAnalysis>(this->sdfg_, this->node_);
-        detailed_dda_->set_detailed(true);
+analysis::AssumptionsAnalysis& LoopCarriedDependencyAnalysis::detailed_assumptions() {
+    if (!detailed_assumptions_) {
+        detailed_assumptions_ =
+            std::make_unique<analysis::AssumptionsAnalysis>(this->sdfg_, /*with_branch_conditions=*/true);
+        detailed_assumptions_->run(*analysis_manager_);
     }
-    return *detailed_dda_;
+    return *detailed_assumptions_;
 }
 
-void LoopCarriedDependencyAnalysis::analyze_loop(
-    analysis::AnalysisManager& /*analysis_manager*/, structured_control_flow::StructuredLoop& /*loop*/
-) {
-    // Per-loop work is done inline in `run()`.
+analysis::DataDependencyAnalysis& LoopCarriedDependencyAnalysis::nest_dda(structured_control_flow::StructuredLoop& loop) {
+    // Boundary snapshots of a loop do not depend on the code around it, so one run over the outermost
+    // loop of the nest serves every loop inside it.
+    structured_control_flow::StructuredLoop* outermost = &loop;
+    for (auto* cur = loop.get_parent(); cur != nullptr; cur = cur->get_parent()) {
+        if (auto* ancestor = dynamic_cast<structured_control_flow::StructuredLoop*>(cur)) {
+            outermost = ancestor;
+        }
+    }
+    auto& dda = nest_ddas_[outermost];
+    if (!dda) {
+        passes::CompileStatistics::enter_analysis_if_enabled("DetailedDDA");
+        dda = std::make_unique<analysis::DataDependencyAnalysis>(this->sdfg_, *outermost);
+        dda->set_detailed(true);
+        dda->run(*analysis_manager_);
+        passes::CompileStatistics::exit_analysis_if_enabled();
+    }
+    return *dda;
+}
+
+const LoopCarriedDependencyAnalysis::LoopResult& LoopCarriedDependencyAnalysis::
+    result(structured_control_flow::StructuredLoop& loop) {
+    assert(analysis_manager_ != nullptr && "LoopCarriedDependencyAnalysis: run() must be called before queries");
+    auto it = results_.find(&loop);
+    if (it != results_.end()) {
+        return it->second;
+    }
+    auto& entry = results_[&loop];
+    compute(loop, entry);
+    return entry;
 }
 
 namespace {
@@ -108,13 +140,59 @@ std::vector<data_flow::Subset> collect_subsets(analysis::User& user, analysis::M
 // Returns {empty=true} when no loop-carried dependence exists between the two
 // users. Returns {empty=false, deltas_str=""} for the scalar shortcut and for
 // undefined users (dependence exists, distance unrepresentable).
+// Assumptions of a user scope with the loop's (and nested loops') indvars
+// marked non-constant, plus the bounds bundle derived from them. Shared by all
+// pairs of one loop so BoundAnalysis/delinearize memoization amortizes.
+struct ScopeBounds {
+    explicit ScopeBounds(symbolic::Assumptions a) : assums(std::move(a)), bounds(assums) {
+    }
+    symbolic::Assumptions assums;
+    symbolic::AssumptionsBounds bounds;
+};
+
+using ScopeBoundsCache =
+    std::unordered_map<const structured_control_flow::ControlFlowNode*, std::unique_ptr<ScopeBounds>>;
+
+symbolic::AssumptionsBounds& scope_bounds(
+    ScopeBoundsCache& cache,
+    structured_control_flow::ControlFlowNode& scope,
+    analysis::AnalysisManager& analysis_manager,
+    analysis::AssumptionsAnalysis& assumptions_analysis,
+    structured_control_flow::StructuredLoop& loop
+) {
+    auto it = cache.find(&scope);
+    if (it != cache.end()) {
+        return it->second->bounds;
+    }
+    auto assumptions = assumptions_analysis.get(scope, true);
+
+    // Mark loop's indvar and all nested loop indvars as non-constant from this
+    // loop's perspective.
+    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
+    if (assumptions.find(loop.indvar()) != assumptions.end()) {
+        assumptions.at(loop.indvar()).constant(false);
+    }
+    for (auto& inner_loop : loop_analysis.descendants(&loop)) {
+        if (auto structured_loop = dynamic_cast<const structured_control_flow::StructuredLoop*>(inner_loop)) {
+            auto indvar = structured_loop->indvar();
+            if (assumptions.find(indvar) != assumptions.end()) {
+                assumptions.at(indvar).constant(false);
+            }
+        }
+    }
+    auto& entry = cache[&scope];
+    entry = std::make_unique<ScopeBounds>(std::move(assumptions));
+    return entry->bounds;
+}
+
 symbolic::maps::DependenceDeltas pair_deltas(
     StructuredSDFG& sdfg,
     analysis::User& previous,
     analysis::User& current,
     analysis::AnalysisManager& analysis_manager,
     analysis::AssumptionsAnalysis& assumptions_analysis,
-    structured_control_flow::StructuredLoop& loop
+    structured_control_flow::StructuredLoop& loop,
+    ScopeBoundsCache& bounds_cache
 ) {
     symbolic::maps::DependenceDeltas empty_result{true, "", {}};
 
@@ -139,36 +217,12 @@ symbolic::maps::DependenceDeltas pair_deltas(
     auto previous_subsets = collect_subsets(previous, mla);
     auto current_subsets = collect_subsets(current, mla);
 
-    auto previous_scope = analysis::Users::scope(&previous);
-    auto previous_assumptions = assumptions_analysis.get(*previous_scope, true);
-    auto current_scope = analysis::Users::scope(&current);
-    auto current_assumptions = assumptions_analysis.get(*current_scope, true);
-
-    // Mark loop's indvar and all nested loop indvars as non-constant from this
-    // loop's perspective.
-    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
-    if (previous_assumptions.find(loop.indvar()) != previous_assumptions.end()) {
-        previous_assumptions.at(loop.indvar()).constant(false);
-    }
-    if (current_assumptions.find(loop.indvar()) != current_assumptions.end()) {
-        current_assumptions.at(loop.indvar()).constant(false);
-    }
-    for (auto& inner_loop : loop_analysis.descendants(&loop)) {
-        if (auto structured_loop = dynamic_cast<const structured_control_flow::StructuredLoop*>(inner_loop)) {
-            auto indvar = structured_loop->indvar();
-            if (previous_assumptions.find(indvar) != previous_assumptions.end()) {
-                previous_assumptions.at(indvar).constant(false);
-            }
-            if (current_assumptions.find(indvar) != current_assumptions.end()) {
-                current_assumptions.at(indvar).constant(false);
-            }
-        }
-    }
+    auto& previous_bounds =
+        scope_bounds(bounds_cache, *analysis::Users::scope(&previous), analysis_manager, assumptions_analysis, loop);
+    auto& current_bounds =
+        scope_bounds(bounds_cache, *analysis::Users::scope(&current), analysis_manager, assumptions_analysis, loop);
 
     // Collect deltas across all subset pairs and union them.
-    symbolic::AssumptionsBounds previous_bounds(previous_assumptions);
-    symbolic::AssumptionsBounds current_bounds(current_assumptions);
-
     isl_ctx* union_ctx = nullptr;
     isl_set* accumulated = nullptr;
     std::vector<std::string> result_dimensions;
@@ -378,126 +432,77 @@ bool address_invariant_in_indvar(const data_flow::Subset& subset, const symbolic
 
 } // namespace
 
-void LoopCarriedDependencyAnalysis::run(analysis::AnalysisManager& analysis_manager) {
-    dependencies_.clear();
-    pairs_.clear();
-
-    // Build a fresh branch-condition-aware assumptions analysis. The
-    // manager-cached `AssumptionsAnalysis` deliberately skips IfElse-branch
-    // refinement to stay cheap; LCDA needs the refined coupled constraints
-    // so that `dependence_deltas`'s ISL formulation can prove halo-style
-    // patterns are non-loop-carried.
-    detailed_assumptions_ =
-        std::make_unique<analysis::AssumptionsAnalysis>(this->sdfg_, /*with_branch_conditions=*/true);
-    detailed_assumptions_->run(analysis_manager);
-
-    // Drive entirely from DDA's reaching-definitions scaffold:
-    //   - DDA computes per-loop boundary snapshots (upward-exposed reads,
-    //     escaping definitions) — its primary job.
-    //   - LCDA enumerates the cross-iteration pair space and computes delta
-    //     sets via `pair_deltas` (using `symbolic::maps::dependence_deltas`).
-    //
-    // For a structured loop L with indvar i_L:
-    //   pairs(L) = { (W,R, RAW, Δ_L(W,R)) : W ∈ esc(L), R ∈ ue(L),
-    //                                       cont(W) = cont(R), Δ ≠ ∅ }
-    //            ∪ { (W₁,W₂, WAW, Δ_L(W₁,W₂)) : W₁,W₂ ∈ esc(L),
-    //                                           cont(W₁) = cont(W₂), Δ ≠ ∅ }
-    passes::CompileStatistics::enter_analysis_if_enabled("DetailedDDA");
-    auto& dda = detailed_dda();
-    dda.run(analysis_manager);
-    passes::CompileStatistics::exit_analysis_if_enabled();
-    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
-
-    for (auto* loop_node : loop_analysis.loops()) {
-        auto* loop = dyn_cast<structured_control_flow::StructuredLoop*>(loop_node);
-        if (loop == nullptr) {
-            continue;
-        }
-
-        // Restrict to loops within the analysis scope (`node_`).
-        bool in_scope = false;
-        structured_control_flow::ControlFlowNode* cur = loop;
-        while (cur != nullptr) {
-            if (cur == &node_) {
-                in_scope = true;
-                break;
-            }
-            cur = cur->get_parent();
-        }
-        if (!in_scope) {
-            continue;
-        }
-
-        // Non-monotonic / unanalyzable loops: don't register; consumers must
-        // treat absence as "no info" and fall back to safe defaults.
-        if (!loop->is_monotonic()) {
-            continue;
-        }
-        if (!dda.has_loop_boundary(*loop)) {
-            continue;
-        }
-
-        auto& ue_reads = dda.upward_exposed_reads(*loop);
-        auto& esc_defs = dda.escaping_definitions(*loop);
-
-        auto& deps = dependencies_[loop];
-        auto& pair_list = pairs_[loop];
-
-        // RAW: escaping_writes × upward_exposed_reads
-        for (auto& write_entry : esc_defs) {
-            auto* write = write_entry.first;
-            for (auto* read : ue_reads) {
-                if (write->container() != read->container()) {
-                    continue;
-                }
-                auto deltas = pair_deltas(this->sdfg_, *write, *read, analysis_manager, *detailed_assumptions_, *loop);
-                if (deltas.empty) {
-                    continue;
-                }
-                pair_list.push_back(LoopCarriedDependencyPair{write, read, LOOP_CARRIED_DEPENDENCY_READ_WRITE, deltas});
-                auto it = deps.find(read->container());
-                if (it == deps.end()) {
-                    deps[read->container()] = LoopCarriedDependencyInfo{LOOP_CARRIED_DEPENDENCY_READ_WRITE, deltas};
-                } else {
-                    it->second.type = LOOP_CARRIED_DEPENDENCY_READ_WRITE;
-                    merge_deltas(it->second, deltas);
-                }
-            }
-        }
-
-        // WAW: escaping_writes × escaping_writes (ordered pairs incl. self)
-        for (auto& w1_entry : esc_defs) {
-            auto* w1 = w1_entry.first;
-            for (auto& w2_entry : esc_defs) {
-                auto* w2 = w2_entry.first;
-                if (w1->container() != w2->container()) {
-                    continue;
-                }
-                auto deltas = pair_deltas(this->sdfg_, *w1, *w2, analysis_manager, *detailed_assumptions_, *loop);
-                if (deltas.empty) {
-                    continue;
-                }
-                pair_list.push_back(LoopCarriedDependencyPair{w1, w2, LOOP_CARRIED_DEPENDENCY_WRITE_WRITE, deltas});
-                if (deps.find(w1->container()) == deps.end()) {
-                    deps[w1->container()] = LoopCarriedDependencyInfo{LOOP_CARRIED_DEPENDENCY_WRITE_WRITE, deltas};
-                }
-            }
-        }
-
-        detect_reductions(*loop);
-    }
-}
-
-void LoopCarriedDependencyAnalysis::detect_reductions(structured_control_flow::StructuredLoop& loop) {
-    // Ensure an entry exists for every analyzed loop so queries on reduction-free
-    // loops return an empty list rather than asserting.
-    auto& result = reductions_[&loop];
-
-    auto dep_it = dependencies_.find(&loop);
-    if (dep_it == dependencies_.end()) {
+void LoopCarriedDependencyAnalysis::compute(structured_control_flow::StructuredLoop& loop, LoopResult& result) {
+    // Non-monotonic / unanalyzable loops stay unavailable; consumers must treat
+    // that as "no info" and fall back to safe defaults.
+    if (!loop.is_monotonic()) {
         return;
     }
-    auto& deps = dep_it->second;
+    auto& dda = nest_dda(loop);
+    if (!dda.has_loop_boundary(loop)) {
+        return;
+    }
+    result.available = true;
+
+    auto& analysis_manager = *analysis_manager_;
+    auto& assumptions_analysis = detailed_assumptions();
+    auto& ue_reads = dda.upward_exposed_reads(loop);
+    auto& esc_defs = dda.escaping_definitions(loop);
+    auto& deps = result.dependencies;
+    auto& pair_list = result.pairs;
+    ScopeBoundsCache bounds_cache;
+
+    // RAW: escaping_writes × upward_exposed_reads
+    for (auto& write_entry : esc_defs) {
+        auto* write = write_entry.first;
+        for (auto* read : ue_reads) {
+            if (write->container() != read->container()) {
+                continue;
+            }
+            auto deltas =
+                pair_deltas(this->sdfg_, *write, *read, analysis_manager, assumptions_analysis, loop, bounds_cache);
+            if (deltas.empty) {
+                continue;
+            }
+            pair_list.push_back(LoopCarriedDependencyPair{write, read, LOOP_CARRIED_DEPENDENCY_READ_WRITE, deltas});
+            auto it = deps.find(read->container());
+            if (it == deps.end()) {
+                deps[read->container()] = LoopCarriedDependencyInfo{LOOP_CARRIED_DEPENDENCY_READ_WRITE, deltas};
+            } else {
+                it->second.type = LOOP_CARRIED_DEPENDENCY_READ_WRITE;
+                merge_deltas(it->second, deltas);
+            }
+        }
+    }
+
+    // WAW: escaping_writes × escaping_writes (ordered pairs incl. self)
+    for (auto& w1_entry : esc_defs) {
+        auto* w1 = w1_entry.first;
+        for (auto& w2_entry : esc_defs) {
+            auto* w2 = w2_entry.first;
+            if (w1->container() != w2->container()) {
+                continue;
+            }
+            auto deltas =
+                pair_deltas(this->sdfg_, *w1, *w2, analysis_manager, assumptions_analysis, loop, bounds_cache);
+            if (deltas.empty) {
+                continue;
+            }
+            pair_list.push_back(LoopCarriedDependencyPair{w1, w2, LOOP_CARRIED_DEPENDENCY_WRITE_WRITE, deltas});
+            if (deps.find(w1->container()) == deps.end()) {
+                deps[w1->container()] = LoopCarriedDependencyInfo{LOOP_CARRIED_DEPENDENCY_WRITE_WRITE, deltas};
+            }
+        }
+    }
+
+    detect_reductions(loop, result);
+}
+
+void LoopCarriedDependencyAnalysis::detect_reductions(structured_control_flow::StructuredLoop& loop, LoopResult& result) {
+    auto& deps = result.dependencies;
+    if (deps.empty()) {
+        return;
+    }
 
     std::vector<const structured_control_flow::Block*> blocks;
     collect_body_blocks(loop.root(), blocks);
@@ -510,7 +515,7 @@ void LoopCarriedDependencyAnalysis::detect_reductions(structured_control_flow::S
     // the domain. The induction variable must additionally be treated as
     // evolving (a domain dimension) rather than a constant parameter so that
     // shifted accesses such as A[i] vs A[i-1] are correctly rejected.
-    symbolic::Assumptions assums = detailed_assumptions_->get(loop.root(), true);
+    symbolic::Assumptions assums = detailed_assumptions().get(loop.root(), true);
     auto indvar_it = assums.find(indvar);
     if (indvar_it != assums.end()) {
         indvar_it->second.constant(false);
@@ -610,67 +615,53 @@ void LoopCarriedDependencyAnalysis::detect_reductions(structured_control_flow::S
         if (rejected.count(entry.first) != 0) {
             continue;
         }
-        result.push_back(structured_control_flow::ReductionInfo{entry.second, entry.first});
+        result.reductions.push_back(structured_control_flow::ReductionInfo{entry.second, entry.first});
     }
 }
 
-bool LoopCarriedDependencyAnalysis::available(structured_control_flow::StructuredLoop& loop) const {
-    return pairs_.find(&loop) != pairs_.end();
+bool LoopCarriedDependencyAnalysis::available(structured_control_flow::StructuredLoop& loop) {
+    return result(loop).available;
 }
 
 const std::unordered_map<std::string, LoopCarriedDependencyInfo>& LoopCarriedDependencyAnalysis::
-    dependencies(structured_control_flow::StructuredLoop& loop) const {
-    auto it = dependencies_.find(&loop);
-    assert(it != dependencies_.end() && "LoopCarriedDependencyAnalysis: loop not analyzed");
-    return it->second;
+    dependencies(structured_control_flow::StructuredLoop& loop) {
+    auto& r = result(loop);
+    assert(r.available && "LoopCarriedDependencyAnalysis: loop not analyzable");
+    return r.dependencies;
 }
 
 const std::vector<LoopCarriedDependencyPair>& LoopCarriedDependencyAnalysis::
-    pairs(structured_control_flow::StructuredLoop& loop) const {
-    auto it = pairs_.find(&loop);
-    assert(it != pairs_.end() && "LoopCarriedDependencyAnalysis: loop not analyzed");
-    return it->second;
+    pairs(structured_control_flow::StructuredLoop& loop) {
+    auto& r = result(loop);
+    assert(r.available && "LoopCarriedDependencyAnalysis: loop not analyzable");
+    return r.pairs;
 }
 
 std::vector<const LoopCarriedDependencyPair*> LoopCarriedDependencyAnalysis::pairs_between(
     structured_control_flow::StructuredLoop& loop,
     const structured_control_flow::ControlFlowNode& subtree_a,
-    const structured_control_flow::ControlFlowNode& subtree_b,
-    analysis::AnalysisManager& analysis_manager
-) const {
-    std::vector<const LoopCarriedDependencyPair*> result;
-    auto it = pairs_.find(&loop);
-    if (it == pairs_.end()) {
-        return result;
-    }
-
-    for (auto& pair : it->second) {
+    const structured_control_flow::ControlFlowNode& subtree_b
+) {
+    std::vector<const LoopCarriedDependencyPair*> between;
+    for (auto& pair : result(loop).pairs) {
         bool wa = user_in_subtree(*pair.writer, subtree_a);
         bool wb = user_in_subtree(*pair.writer, subtree_b);
         bool ra = user_in_subtree(*pair.reader, subtree_a);
         bool rb = user_in_subtree(*pair.reader, subtree_b);
 
         if ((wa && rb) || (wb && ra)) {
-            result.push_back(&pair);
+            between.push_back(&pair);
         }
     }
-    return result;
+    return between;
 }
 
-bool LoopCarriedDependencyAnalysis::has_loop_carried(structured_control_flow::StructuredLoop& loop) const {
-    auto it = pairs_.find(&loop);
-    if (it == pairs_.end()) {
-        return false;
-    }
-    return !it->second.empty();
+bool LoopCarriedDependencyAnalysis::has_loop_carried(structured_control_flow::StructuredLoop& loop) {
+    return !result(loop).pairs.empty();
 }
 
-bool LoopCarriedDependencyAnalysis::has_loop_carried_raw(structured_control_flow::StructuredLoop& loop) const {
-    auto it = pairs_.find(&loop);
-    if (it == pairs_.end()) {
-        return false;
-    }
-    for (auto& p : it->second) {
+bool LoopCarriedDependencyAnalysis::has_loop_carried_raw(structured_control_flow::StructuredLoop& loop) {
+    for (auto& p : result(loop).pairs) {
         if (p.type == LOOP_CARRIED_DEPENDENCY_READ_WRITE) {
             return true;
         }
@@ -678,12 +669,8 @@ bool LoopCarriedDependencyAnalysis::has_loop_carried_raw(structured_control_flow
     return false;
 }
 
-bool LoopCarriedDependencyAnalysis::has_loop_carried_hazard(structured_control_flow::StructuredLoop& loop) const {
-    auto it = pairs_.find(&loop);
-    if (it == pairs_.end()) {
-        return false;
-    }
-    for (auto& p : it->second) {
+bool LoopCarriedDependencyAnalysis::has_loop_carried_hazard(structured_control_flow::StructuredLoop& loop) {
+    for (auto& p : result(loop).pairs) {
         if (p.type != LOOP_CARRIED_DEPENDENCY_WRITE_WRITE) {
             return true;
         }
@@ -692,32 +679,26 @@ bool LoopCarriedDependencyAnalysis::has_loop_carried_hazard(structured_control_f
 }
 
 const std::vector<structured_control_flow::ReductionInfo>& LoopCarriedDependencyAnalysis::
-    reductions(structured_control_flow::StructuredLoop& loop) const {
-    auto it = reductions_.find(&loop);
-    assert(it != reductions_.end() && "LoopCarriedDependencyAnalysis: loop not analyzed");
-    return it->second;
+    reductions(structured_control_flow::StructuredLoop& loop) {
+    auto& r = result(loop);
+    assert(r.available && "LoopCarriedDependencyAnalysis: loop not analyzable");
+    return r.reductions;
 }
 
-bool LoopCarriedDependencyAnalysis::has_reductions(structured_control_flow::StructuredLoop& loop) const {
-    auto it = reductions_.find(&loop);
-    return it != reductions_.end() && !it->second.empty();
+bool LoopCarriedDependencyAnalysis::has_reductions(structured_control_flow::StructuredLoop& loop) {
+    return !result(loop).reductions.empty();
 }
 
-bool LoopCarriedDependencyAnalysis::is_reduction_only(structured_control_flow::StructuredLoop& loop) const {
-    auto rit = reductions_.find(&loop);
-    if (rit == reductions_.end() || rit->second.empty()) {
+bool LoopCarriedDependencyAnalysis::is_reduction_only(structured_control_flow::StructuredLoop& loop) {
+    auto& r = result(loop);
+    if (r.reductions.empty()) {
         return false;
     }
     std::set<std::string> reduction_containers;
-    for (auto& reduction : rit->second) {
+    for (auto& reduction : r.reductions) {
         reduction_containers.insert(reduction.container);
     }
-
-    auto pit = pairs_.find(&loop);
-    if (pit == pairs_.end()) {
-        return false;
-    }
-    for (auto& pair : pit->second) {
+    for (auto& pair : r.pairs) {
         if (pair.type == LOOP_CARRIED_DEPENDENCY_WRITE_WRITE) {
             continue;
         }
