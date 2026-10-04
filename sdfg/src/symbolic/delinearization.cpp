@@ -441,7 +441,20 @@ std::optional<sdfg::symbolic::DelinearizeResult> delinearize_affine(
 
 } // namespace
 
+static DelinearizeResult delinearize_impl(const Expression& expr, AssumptionsBounds& bounds);
+
 DelinearizeResult delinearize(const Expression& expr, AssumptionsBounds& bounds) {
+    auto& memo = bounds.delinearize_memo();
+    auto it = memo.find(expr);
+    if (it != memo.end()) {
+        return *it->second;
+    }
+    auto result = std::make_shared<const DelinearizeResult>(delinearize_impl(expr, bounds));
+    memo.emplace(expr, result);
+    return *result;
+}
+
+static DelinearizeResult delinearize_impl(const Expression& expr, AssumptionsBounds& bounds) {
     auto dim = expr;
     const Assumptions& assums = bounds.assums();
 
