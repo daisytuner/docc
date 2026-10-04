@@ -745,12 +745,14 @@ Sequence& StructuredSDFGBuilder::add_case(IfElse& scope, const sdfg::symbolic::C
     scope.cases_.push_back(std::unique_ptr<Sequence>(new Sequence(this->new_element_id(), debug_info, &scope)));
 
     scope.conditions_.push_back(cond);
+    scope.is_complete_.reset();
     return *scope.cases_.back();
 };
 
 void StructuredSDFGBuilder::remove_case(IfElse& scope, size_t index, const DebugInfo& debug_info) {
     scope.cases_.erase(scope.cases_.begin() + index);
     scope.conditions_.erase(scope.conditions_.begin() + index);
+    scope.is_complete_.reset();
 };
 
 While& StructuredSDFGBuilder::add_while(Sequence& parent, const DebugInfo& debug_info) {
@@ -1082,6 +1084,7 @@ void StructuredSDFGBuilder::update_if_else_condition(IfElse& if_else, size_t ind
         throw InvalidSDFGException("StructuredSDFGBuilder: Index out of range");
     }
     if_else.conditions_.at(index) = condition;
+    if_else.is_complete_.reset();
 };
 
 void StructuredSDFGBuilder::update_loop(

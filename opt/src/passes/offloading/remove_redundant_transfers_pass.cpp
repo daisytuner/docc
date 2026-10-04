@@ -1,6 +1,5 @@
 #include "sdfg/passes/offloading/remove_redundant_transfers_pass.h"
 
-#include "sdfg/analysis/dominance_analysis.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/data_flow/access_node.h"
 #include "sdfg/structured_control_flow/block.h"
@@ -23,7 +22,6 @@ bool RemoveRedundantTransfersPass::
     bool applied = false;
 
     auto& users = analysis_manager.get<analysis::Users>();
-    auto& dominance_analysis = analysis_manager.get<analysis::DominanceAnalysis>();
 
     std::unordered_set<offloading::DataOffloadingNode*> redundant_transfers;
 
@@ -46,8 +44,7 @@ bool RemoveRedundantTransfersPass::
                     if (write == write2) {
                         continue;
                     }
-                    if (!(dominance_analysis.dominates(*write, *write2) &&
-                          dominance_analysis.post_dominates(*write2, *write))) {
+                    if (!(users.dominates(*write, *write2) && users.post_dominates(*write2, *write))) {
                         continue;
                     }
 

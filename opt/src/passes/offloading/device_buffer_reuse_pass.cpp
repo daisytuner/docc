@@ -7,7 +7,6 @@
 #include <unordered_set>
 #include <vector>
 
-#include "sdfg/analysis/dominance_analysis.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/data_flow/access_node.h"
 #include "sdfg/data_flow/code_node.h"
@@ -225,36 +224,34 @@ void add_edge(std::vector<std::unordered_set<size_t>>& adjacency, size_t a, size
 
 // Control-flow ordering of two buffers: 1 if `a` is entirely before `b` (a's free dominates b's
 // alloc), 2 if `b` is entirely before `a`, 0 if they are not totally ordered (overlap/divergent).
-int ordering(const Candidate& a, const Candidate& b, analysis::DominanceAnalysis& dominance) {
+int ordering(const Candidate& a, const Candidate& b, analysis::Users& users) {
     if (a.alloc_user == nullptr || a.free_user == nullptr || b.alloc_user == nullptr || b.free_user == nullptr) {
         return 0;
     }
-    if (dominance.dominates(*a.free_user, *b.alloc_user)) {
+    if (users.dominates(*a.free_user, *b.alloc_user)) {
         return 1;
     }
-    if (dominance.dominates(*b.free_user, *a.alloc_user)) {
+    if (users.dominates(*b.free_user, *a.alloc_user)) {
         return 2;
     }
     return 0;
 }
 
 // Whether a user lies within a candidate's live range [alloc, free].
-bool in_range(const Candidate& c, analysis::User* user, analysis::DominanceAnalysis& dominance) {
-    return dominance.dominates(*c.alloc_user, *user) && dominance.post_dominates(*c.free_user, *user);
+bool in_range(const Candidate& c, analysis::User* user, analysis::Users& users) {
+    return users.dominates(*c.alloc_user, *user) && users.post_dominates(*c.free_user, *user);
 };
 
 // For a control-flow-ordered pair, decide whether a data dependency forces the later buffer's
 // use to happen-after the earlier's. If so, the two are not independent dataflow branches.
-bool data_serialized(
-    const Candidate& earlier, const Candidate& later, analysis::Users& users, analysis::DominanceAnalysis& dominance
-) {
+bool data_serialized(const Candidate& earlier, const Candidate& later, analysis::Users& users) {
     std::unordered_set<std::string> produced;
     for (auto* w : users.writes()) {
         const std::string& c = w->container();
         if (c == earlier.container || c == later.container) {
             continue;
         }
-        if (in_range(earlier, w, dominance)) {
+        if (in_range(earlier, w, users)) {
             produced.insert(c);
         }
     }
@@ -266,7 +263,7 @@ bool data_serialized(
         if (c == earlier.container || c == later.container) {
             continue;
         }
-        if (produced.count(c) && in_range(later, u, dominance)) {
+        if (produced.count(c) && in_range(later, u, users)) {
             return true;
         }
     }
@@ -275,7 +272,6 @@ bool data_serialized(
 
 bool DeviceBufferReusePass::run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     auto& users = analysis_manager.get<analysis::Users>();
-    auto& dominance = analysis_manager.get<analysis::DominanceAnalysis>();
 
     // =======================================================================================
     // MARK: build candidates and the interference graph in a single visitor traversal.
@@ -315,14 +311,14 @@ bool DeviceBufferReusePass::run_pass(builder::StructuredSDFGBuilder& builder, an
                 if (adjacency[i].count(j) || candidates[i].dtype != candidates[j].dtype) {
                     continue;
                 }
-                int ord = ordering(candidates[i], candidates[j], dominance);
+                int ord = ordering(candidates[i], candidates[j], users);
                 if (ord == 0) {
                     add_edge(adjacency, i, j);
                     continue;
                 }
                 const Candidate& earlier = (ord == 1) ? candidates[i] : candidates[j];
                 const Candidate& later = (ord == 1) ? candidates[j] : candidates[i];
-                if (!data_serialized(earlier, later, users, dominance)) {
+                if (!data_serialized(earlier, later, users)) {
                     add_edge(adjacency, i, j);
                 }
             }
@@ -395,10 +391,10 @@ bool DeviceBufferReusePass::run_pass(builder::StructuredSDFGBuilder& builder, an
                 if (o == m) {
                     continue;
                 }
-                if (ordering(candidates[m], candidates[o], dominance) != 1) {
+                if (ordering(candidates[m], candidates[o], users) != 1) {
                     is_earliest = false;
                 }
-                if (ordering(candidates[o], candidates[m], dominance) != 1) {
+                if (ordering(candidates[o], candidates[m], users) != 1) {
                     is_latest = false;
                 }
             }

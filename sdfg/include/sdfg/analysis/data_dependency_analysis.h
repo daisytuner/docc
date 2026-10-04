@@ -5,7 +5,6 @@
 
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/analysis/assumptions_analysis.h"
-#include "sdfg/analysis/dominance_analysis.h"
 #include "sdfg/analysis/loop_analysis.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/structured_sdfg.h"

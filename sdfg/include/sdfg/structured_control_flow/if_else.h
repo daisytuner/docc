@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 
 #include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/symbolic/symbolic.h"
@@ -49,8 +50,12 @@ class IfElse : public ControlFlowNode {
 private:
     std::vector<std::unique_ptr<Sequence>> cases_;
     std::vector<symbolic::Condition> conditions_;
+    // Lazily computed; reset whenever `conditions_` changes.
+    mutable std::optional<bool> is_complete_;
 
     IfElse(size_t element_id, const DebugInfo& debug_info, ControlFlowNode* parent);
+
+    bool compute_is_complete() const;
 
     static constexpr size_t REQUIRED_ELEMENT_IDS = 1;
 
