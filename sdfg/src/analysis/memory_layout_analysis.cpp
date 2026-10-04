@@ -225,7 +225,7 @@ void MemoryLayoutAnalysis::
     auto& dfg = block.dataflow();
     for (auto& memlet : dfg.edges()) {
         if (auto lib_access = try_library_node_access(memlet)) {
-            this->accesses_.emplace(&memlet, std::move(*lib_access));
+            record_access(memlet, std::move(*lib_access));
             continue;
         }
 
