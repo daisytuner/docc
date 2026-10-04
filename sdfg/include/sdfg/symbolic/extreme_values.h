@@ -34,11 +34,14 @@
 #include "sdfg/symbolic/polynomials.h"
 #include "sdfg/symbolic/symbolic.h"
 
+#include <memory>
 #include <string>
 #include <unordered_map>
 
 namespace sdfg {
 namespace symbolic {
+
+struct DelinearizeResult;
 
 // Default proof-search work budget (node visits per top-level query). Some
 // queries over deeply-nested tile nests fan out into many fruitless sub-proofs;
@@ -371,6 +374,16 @@ public:
     /// Memoized loose-mode `is_positive(expr, parameters, assums(), false)`.
     bool is_positive(const Expression& expr, const SymbolSet& parameters);
 
+    /// Memo for `delinearize(expr, *this)`, which is pure in (expr, assums()).
+    std::unordered_map<
+        Expression,
+        std::shared_ptr<const DelinearizeResult>,
+        SymEngine::RCPBasicHash,
+        SymEngine::RCPBasicKeyEq>&
+    delinearize_memo() {
+        return delinearize_memo_;
+    }
+
 private:
     static const SymbolSet& empty_params() {
         static const SymbolSet kEmpty;
@@ -386,6 +399,13 @@ private:
         std::string,
         std::unordered_map<Expression, bool, SymEngine::RCPBasicHash, SymEngine::RCPBasicKeyEq>>
         proof_memo_;
+
+    std::unordered_map<
+        Expression,
+        std::shared_ptr<const DelinearizeResult>,
+        SymEngine::RCPBasicHash,
+        SymEngine::RCPBasicKeyEq>
+        delinearize_memo_;
 };
 
 } // namespace symbolic
