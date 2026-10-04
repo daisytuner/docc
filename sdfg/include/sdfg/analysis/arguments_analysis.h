@@ -1,7 +1,9 @@
 #pragma once
 
+#include <memory>
 #include <unordered_map>
 #include "sdfg/analysis/analysis.h"
+#include "sdfg/analysis/type_analysis.h"
 #include "sdfg/structured_control_flow/control_flow_node.h"
 #include "sdfg/symbolic/symbolic.h"
 
@@ -82,6 +84,7 @@ private:
     std::unordered_map<structured_control_flow::ControlFlowNode*, std::unordered_map<std::string, symbolic::Expression>>
         argument_element_sizes_;
     std::unordered_map<structured_control_flow::ControlFlowNode*, bool> known_sizes_;
+    std::unordered_map<structured_control_flow::ControlFlowNode*, std::unique_ptr<TypeAnalysis>> node_type_analyses_;
 
     void find_arguments_and_locals(
         analysis::AnalysisManager& analysis_manager, structured_control_flow::ControlFlowNode& node
@@ -110,6 +113,10 @@ public:
     locals(analysis::AnalysisManager& analysis_manager, structured_control_flow::ControlFlowNode& node);
 
     bool inferred_types(analysis::AnalysisManager& analysis_manager, structured_control_flow::ControlFlowNode& node);
+
+    /// Type analysis restricted to the uses inside node.
+    const TypeAnalysis&
+    type_analysis(analysis::AnalysisManager& analysis_manager, structured_control_flow::ControlFlowNode& node);
 
     const std::unordered_map<std::string, symbolic::Expression>& argument_sizes(
         analysis::AnalysisManager& analysis_manager,
