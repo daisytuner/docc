@@ -995,12 +995,33 @@ bool uses(const Expression expr, const std::string& name) {
 };
 
 SymbolSet atoms(const Expression expr) {
+    struct Hash {
+        size_t operator()(const Expression& e) const noexcept {
+            return e->hash();
+        }
+    };
+    struct Eq {
+        bool operator()(const Expression& a, const Expression& b) const noexcept {
+            return a.get() == b.get() || SymEngine::eq(*a, *b);
+        }
+    };
+    // Pure and very hot (bounding, delinearization, MLA); memoized per thread.
+    static constexpr size_t kMaxEntries = 1 << 15;
+    thread_local std::unordered_map<Expression, SymbolSet, Hash, Eq> memo;
+    auto it = memo.find(expr);
+    if (it != memo.end()) {
+        return it->second;
+    }
+    if (memo.size() >= kMaxEntries) {
+        memo.clear();
+    }
     SymbolSet atoms;
     for (auto& atom : SymEngine::atoms<const SymEngine::Basic>(*expr)) {
         if (SymEngine::is_a<SymEngine::Symbol>(*atom)) {
             atoms.insert(SymEngine::rcp_static_cast<const SymEngine::Symbol>(atom));
         }
     }
+    memo.emplace(expr, atoms);
     return atoms;
 };
 
