@@ -1487,4 +1487,48 @@ TEST(StructuredLoopTest, AllowsPtrAsIndvar) {
     EXPECT_TRUE(!str.empty());
 }
 
+
+// stride/canonical_bound/num_iterations are memoized; every header change must invalidate them.
+TEST(ForLoopTest, ResetCache) {
+    builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+    types::Scalar int_type(types::PrimitiveType::Int64);
+    builder.add_container("i", int_type);
+    builder.add_container("j", int_type);
+    builder.add_container("N", int_type, true);
+    auto i = symbolic::symbol("i");
+    auto j = symbolic::symbol("j");
+    auto n = symbolic::symbol("N");
+
+    auto& loop = builder.add_for(
+        builder.subject().root(),
+        i,
+        symbolic::Lt(i, symbolic::integer(10)),
+        symbolic::zero(),
+        symbolic::add(i, symbolic::one())
+    );
+    EXPECT_TRUE(symbolic::eq(loop.stride(), symbolic::one()));
+    EXPECT_TRUE(symbolic::eq(loop.canonical_bound(), symbolic::integer(10)));
+    EXPECT_TRUE(symbolic::eq(loop.num_iterations(), symbolic::integer(10)));
+
+    builder.update_loop(
+        loop, i, symbolic::Lt(i, symbolic::integer(10)), symbolic::zero(), symbolic::add(i, symbolic::integer(2))
+    );
+    EXPECT_TRUE(symbolic::eq(loop.stride(), symbolic::integer(2)));
+    EXPECT_TRUE(symbolic::eq(loop.num_iterations(), symbolic::integer(5)));
+
+    loop.replace(symbolic::integer(10), n);
+    EXPECT_TRUE(symbolic::eq(loop.canonical_bound(), n));
+    EXPECT_FALSE(symbolic::eq(loop.num_iterations(), symbolic::integer(5)));
+
+    loop.replace(symbolic::ExpressionMapping{{i, j}});
+    EXPECT_TRUE(symbolic::eq(loop.indvar(), j));
+    EXPECT_TRUE(symbolic::eq(loop.stride(), symbolic::integer(2)));
+    EXPECT_TRUE(symbolic::eq(loop.canonical_bound(), n));
+
+    builder.update_loop(loop, j, symbolic::Lt(j, n), symbolic::zero(), symbolic::mul(j, symbolic::integer(2)));
+    EXPECT_TRUE(loop.stride().is_null());
+    EXPECT_TRUE(loop.canonical_bound().is_null());
+    EXPECT_TRUE(loop.num_iterations().is_null());
+}
+
 } // namespace sdfg::structured_control_flow
