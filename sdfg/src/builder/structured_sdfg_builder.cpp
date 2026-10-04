@@ -1098,6 +1098,7 @@ void StructuredSDFGBuilder::update_loop(
     loop.condition_ = condition;
     loop.init_ = init;
     loop.update_ = update;
+    loop.reset_cache();
 };
 
 void StructuredSDFGBuilder::update_schedule_type(StructuredLoop& loop, const ScheduleType& schedule_type) {
