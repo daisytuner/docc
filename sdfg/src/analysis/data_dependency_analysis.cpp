@@ -26,6 +26,9 @@ DataDependencyAnalysis::DataDependencyAnalysis(StructuredSDFG& sdfg) : Analysis(
 DataDependencyAnalysis::DataDependencyAnalysis(StructuredSDFG& sdfg, structured_control_flow::Sequence& node)
     : Analysis(sdfg), node_(node) {};
 
+DataDependencyAnalysis::DataDependencyAnalysis(StructuredSDFG& sdfg, structured_control_flow::StructuredLoop& loop)
+    : Analysis(sdfg), node_(loop.root()), loop_(&loop) {};
+
 AssumptionsAnalysis& DataDependencyAnalysis::ensure_detailed_assumptions(analysis::AnalysisManager& analysis_manager) {
     if (!detailed_assumptions_) {
         detailed_assumptions_ = std::make_unique<AssumptionsAnalysis>(sdfg_, /*with_branch_conditions=*/true);
@@ -53,7 +56,11 @@ void DataDependencyAnalysis::run(analysis::AnalysisManager& analysis_manager) {
     OpenDefinitions open_definitions;
     Definitions closed_definitions;
 
-    visit_sequence_impl(analysis_manager, node_, undefined, open_definitions, closed_definitions);
+    if (loop_ != nullptr) {
+        visit_for_impl(analysis_manager, *loop_, undefined, open_definitions, closed_definitions);
+    } else {
+        visit_sequence_impl(analysis_manager, node_, undefined, open_definitions, closed_definitions);
+    }
 
     for (auto& [container, group] : open_definitions) {
         for (auto& entry : group) {
