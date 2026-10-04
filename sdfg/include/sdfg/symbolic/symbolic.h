@@ -181,6 +181,9 @@ Symbol __nullptr__();
  */
 bool is_nullptr(const Symbol symbol);
 
+/// Same as `is_nullptr(symbol(name))` without constructing a symbol.
+bool is_nullptr(const std::string& name);
+
 /**
  * @brief Checks if a symbol represents a pointer
  * @param symbol The symbol to check

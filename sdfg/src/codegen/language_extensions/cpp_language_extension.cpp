@@ -174,7 +174,7 @@ std::string CPPLanguageExtension::expression(const symbolic::Expression expr) {
 std::string CPPLanguageExtension::access_node(const data_flow::AccessNode& node) {
     if (dynamic_cast<const data_flow::ConstantNode*>(&node)) {
         std::string name = node.data();
-        if (symbolic::is_nullptr(symbolic::symbol(name))) {
+        if (symbolic::is_nullptr(name)) {
             return "nullptr";
         }
         return name;
@@ -367,7 +367,7 @@ void CPPSymbolicPrinter::bvisit(const SymEngine::BooleanAtom& x) {
 };
 
 void CPPSymbolicPrinter::bvisit(const SymEngine::Symbol& x) {
-    if (symbolic::is_nullptr(symbolic::symbol(x.get_name()))) {
+    if (symbolic::is_nullptr(x.get_name())) {
         str_ = "(reinterpret_cast<uintptr_t>(nullptr))";
         return;
     }
