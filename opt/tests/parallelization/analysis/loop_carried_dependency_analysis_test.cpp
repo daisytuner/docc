@@ -2906,4 +2906,120 @@ TEST(LoopCarriedDependencyAnalysisTest, LinearizedMultiDimReductionToScalar) {
     EXPECT_EQ(lcd.reductions(loop_j)[0].container, "sum");
     EXPECT_TRUE(lcd.is_reduction_only(loop_j));
 }
+
+// for i: for j: { A[i][j] = A[i-1][j] + 1; B[i] += A[i][j]; }   for k: { C[k] = C[k-1]; }
+// Results are computed lazily per loop and must not depend on which loops were queried before.
+TEST(LoopCarriedDependencyAnalysisTest, LazyResultsIndependentOfQueryOrder) {
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Array row_desc(base_desc, symbolic::symbol("M"));
+    types::Pointer matrix_desc(row_desc);
+    types::Pointer vector_desc(base_desc);
+    types::Pointer opaque_desc;
+
+    builder.add_container("A", opaque_desc, true);
+    builder.add_container("B", opaque_desc, true);
+    builder.add_container("C", opaque_desc, true);
+    builder.add_container("N", sym_desc, true);
+    builder.add_container("M", sym_desc, true);
+    for (auto name : {"i", "j", "k"}) {
+        builder.add_container(name, sym_desc);
+    }
+    auto i = symbolic::symbol("i");
+    auto j = symbolic::symbol("j");
+    auto k = symbolic::symbol("k");
+    auto one = symbolic::one();
+
+    auto& loop_i = builder.add_for(root, i, symbolic::Lt(i, symbolic::symbol("N")), one, symbolic::add(i, one));
+    auto& loop_j =
+        builder
+            .add_for(loop_i.root(), j, symbolic::Lt(j, symbolic::symbol("M")), symbolic::zero(), symbolic::add(j, one));
+    {
+        auto& block = builder.add_block(loop_j.root());
+        auto& a_in = builder.add_access(block, "A");
+        auto& c1 = builder.add_constant(block, "1.0", base_desc);
+        auto& a_out = builder.add_access(block, "A");
+        auto& t = builder.add_tasklet(block, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
+        builder.add_computational_memlet(block, a_in, t, "_in1", {symbolic::sub(i, one), j}, matrix_desc);
+        builder.add_computational_memlet(block, c1, t, "_in2", {});
+        builder.add_computational_memlet(block, t, "_out", a_out, {i, j}, matrix_desc);
+    }
+    {
+        auto& block = builder.add_block(loop_j.root());
+        auto& a_in = builder.add_access(block, "A");
+        auto& b_in = builder.add_access(block, "B");
+        auto& b_out = builder.add_access(block, "B");
+        auto& t = builder.add_tasklet(block, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
+        builder.add_computational_memlet(block, a_in, t, "_in1", {i, j}, matrix_desc);
+        builder.add_computational_memlet(block, b_in, t, "_in2", {i}, vector_desc);
+        builder.add_computational_memlet(block, t, "_out", b_out, {i}, vector_desc);
+    }
+    auto& loop_k = builder.add_for(root, k, symbolic::Lt(k, symbolic::symbol("N")), one, symbolic::add(k, one));
+    {
+        auto& block = builder.add_block(loop_k.root());
+        auto& c_in = builder.add_access(block, "C");
+        auto& c_out = builder.add_access(block, "C");
+        auto& t = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(block, c_in, t, "_in", {symbolic::sub(k, one)}, vector_desc);
+        builder.add_computational_memlet(block, t, "_out", c_out, {k}, vector_desc);
+    }
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    auto& outer_first = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
+    for (auto* loop : {&loop_i, &loop_j, &loop_k}) {
+        ASSERT_TRUE(outer_first.available(*loop));
+    }
+    // Inner loop queried first: its nest is analyzed from a cold cache.
+    parallelization::LoopCarriedDependencyAnalysis inner_first(sdfg);
+    inner_first.run(analysis_manager);
+
+    auto expect_same = [&](structured_control_flow::StructuredLoop& loop) {
+        SCOPED_TRACE(loop.indvar()->get_name());
+        ASSERT_TRUE(inner_first.available(loop));
+        auto& expected = outer_first.dependencies(loop);
+        auto& actual = inner_first.dependencies(loop);
+        ASSERT_EQ(actual.size(), expected.size());
+        for (auto& [container, info] : expected) {
+            ASSERT_EQ(actual.count(container), 1u) << container;
+            EXPECT_EQ(actual.at(container).type, info.type) << container;
+            EXPECT_EQ(actual.at(container).deltas.empty, info.deltas.empty) << container;
+            EXPECT_EQ(actual.at(container).deltas.deltas_str, info.deltas.deltas_str) << container;
+            EXPECT_EQ(actual.at(container).deltas.dimensions, info.deltas.dimensions) << container;
+        }
+        ASSERT_EQ(inner_first.pairs(loop).size(), outer_first.pairs(loop).size());
+        for (size_t p = 0; p < outer_first.pairs(loop).size(); ++p) {
+            EXPECT_EQ(inner_first.pairs(loop)[p].writer, outer_first.pairs(loop)[p].writer);
+            EXPECT_EQ(inner_first.pairs(loop)[p].reader, outer_first.pairs(loop)[p].reader);
+            EXPECT_EQ(inner_first.pairs(loop)[p].type, outer_first.pairs(loop)[p].type);
+            EXPECT_EQ(inner_first.pairs(loop)[p].deltas.deltas_str, outer_first.pairs(loop)[p].deltas.deltas_str);
+        }
+        ASSERT_EQ(inner_first.reductions(loop).size(), outer_first.reductions(loop).size());
+        for (size_t r = 0; r < outer_first.reductions(loop).size(); ++r) {
+            EXPECT_EQ(inner_first.reductions(loop)[r].container, outer_first.reductions(loop)[r].container);
+            EXPECT_EQ(inner_first.reductions(loop)[r].operation, outer_first.reductions(loop)[r].operation);
+        }
+    };
+
+    // The fixture must exercise carried dependences and reductions, otherwise equality is vacuous.
+    ASSERT_EQ(outer_first.dependencies(loop_i).count("A"), 1u);
+    ASSERT_TRUE(outer_first.has_reductions(loop_j));
+    ASSERT_EQ(outer_first.dependencies(loop_k).count("C"), 1u);
+
+    expect_same(loop_j);
+    expect_same(loop_k);
+    expect_same(loop_i);
+
+    // Repeated queries return the cached result.
+    EXPECT_EQ(&outer_first.pairs(loop_i), &outer_first.pairs(loop_i));
+    EXPECT_EQ(&outer_first.dependencies(loop_j), &outer_first.dependencies(loop_j));
+
+    // Re-running drops the cache; results are recomputed identically.
+    auto cached_size = outer_first.pairs(loop_k).size();
+    outer_first.run(analysis_manager);
+    EXPECT_EQ(outer_first.pairs(loop_k).size(), cached_size);
+}
 } // namespace

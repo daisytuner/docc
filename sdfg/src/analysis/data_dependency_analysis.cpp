@@ -26,6 +26,9 @@ DataDependencyAnalysis::DataDependencyAnalysis(StructuredSDFG& sdfg) : Analysis(
 DataDependencyAnalysis::DataDependencyAnalysis(StructuredSDFG& sdfg, structured_control_flow::Sequence& node)
     : Analysis(sdfg), node_(node) {};
 
+DataDependencyAnalysis::DataDependencyAnalysis(StructuredSDFG& sdfg, structured_control_flow::StructuredLoop& loop)
+    : Analysis(sdfg), node_(loop.root()), loop_(&loop) {};
+
 AssumptionsAnalysis& DataDependencyAnalysis::ensure_detailed_assumptions(analysis::AnalysisManager& analysis_manager) {
     if (!detailed_assumptions_) {
         detailed_assumptions_ = std::make_unique<AssumptionsAnalysis>(sdfg_, /*with_branch_conditions=*/true);
@@ -38,6 +41,7 @@ void DataDependencyAnalysis::run(analysis::AnalysisManager& analysis_manager) {
     results_.clear();
     undefined_users_.clear();
     loop_boundaries_.clear();
+    scalar_containers_.clear();
 
     // Reset the detailed assumptions-analysis cache. It will be lazily
     // (re)constructed by `ensure_detailed_assumptions()` on first symbolic
@@ -49,37 +53,107 @@ void DataDependencyAnalysis::run(analysis::AnalysisManager& analysis_manager) {
     detailed_assumptions_.reset();
 
     std::unordered_set<User*> undefined;
-    std::unordered_map<User*, std::unordered_set<User*>> open_definitions;
-    std::unordered_map<User*, std::unordered_set<User*>> closed_definitions;
+    OpenDefinitions open_definitions;
+    Definitions closed_definitions;
 
-    visit_sequence(analysis_manager, node_, undefined, open_definitions, closed_definitions);
+    if (loop_ != nullptr) {
+        visit_for_impl(analysis_manager, *loop_, undefined, open_definitions, closed_definitions);
+    } else {
+        visit_sequence_impl(analysis_manager, node_, undefined, open_definitions, closed_definitions);
+    }
 
-    for (auto& entry : open_definitions) {
-        closed_definitions.insert(entry);
+    for (auto& [container, group] : open_definitions) {
+        for (auto& entry : group) {
+            closed_definitions.insert(std::move(entry));
+        }
     }
 
     for (auto& entry : closed_definitions) {
-        if (results_.find(entry.first->container()) == results_.end()) {
-            results_.insert({entry.first->container(), {}});
-        }
-        results_.at(entry.first->container()).insert(entry);
+        results_[entry.first->container()].insert(std::move(entry));
     }
 };
 
 /****** Visitor API ******/
 
-void DataDependencyAnalysis::visit_block(
+DataDependencyAnalysis::OpenDefinitions DataDependencyAnalysis::group_by_container(const Definitions& definitions) {
+    OpenDefinitions grouped;
+    for (auto& entry : definitions) {
+        grouped[entry.first->container()].insert(entry);
+    }
+    return grouped;
+}
+
+DataDependencyAnalysis::Definitions DataDependencyAnalysis::flatten(const OpenDefinitions& definitions) {
+    Definitions flat;
+    for (auto& [container, group] : definitions) {
+        flat.insert(group.begin(), group.end());
+    }
+    return flat;
+}
+
+namespace {
+
+template<typename OpenDefinitions>
+auto* find_group(OpenDefinitions& open_definitions, const std::string& container) {
+    using Group = typename OpenDefinitions::mapped_type;
+    auto it = open_definitions.find(container);
+    return it == open_definitions.end() ? static_cast<Group*>(nullptr) : &it->second;
+}
+
+} // namespace
+
+#define DDA_PUBLIC_VISIT(name, node_type)                                            \
+    void DataDependencyAnalysis::name(                                               \
+        analysis::AnalysisManager& analysis_manager,                                 \
+        node_type& node,                                                             \
+        std::unordered_set<User*>& undefined,                                        \
+        Definitions& open_definitions,                                               \
+        Definitions& closed_definitions                                              \
+    ) {                                                                              \
+        auto grouped = group_by_container(open_definitions);                         \
+        name##_impl(analysis_manager, node, undefined, grouped, closed_definitions); \
+        open_definitions = flatten(grouped);                                         \
+    }
+
+DDA_PUBLIC_VISIT(visit_block, structured_control_flow::Block)
+DDA_PUBLIC_VISIT(visit_assignment_block, structured_control_flow::AssignmentBlock)
+DDA_PUBLIC_VISIT(visit_for, structured_control_flow::StructuredLoop)
+DDA_PUBLIC_VISIT(visit_if_else, structured_control_flow::IfElse)
+DDA_PUBLIC_VISIT(visit_while, structured_control_flow::While)
+DDA_PUBLIC_VISIT(visit_return, structured_control_flow::Return)
+DDA_PUBLIC_VISIT(visit_sequence, structured_control_flow::Sequence)
+
+#undef DDA_PUBLIC_VISIT
+
+void DataDependencyAnalysis::visit_block_impl(
     analysis::AnalysisManager& analysis_manager,
     structured_control_flow::Block& block,
     std::unordered_set<User*>& undefined,
-    std::unordered_map<User*, std::unordered_set<User*>>& open_definitions,
-    std::unordered_map<User*, std::unordered_set<User*>>& closed_definitions
+    OpenDefinitions& open_definitions,
+    Definitions& closed_definitions
 ) {
     auto& users = analysis_manager.get<analysis::Users>();
 
     auto& dataflow = block.dataflow();
 
-    for (auto node : dataflow.topological_sort()) {
+    // Assign a read to the matching open definitions; returns {found, found_undefined}.
+    auto assign_read = [&](User& current_user, bool undefined_from_current) {
+        bool found_user = false;
+        bool found_undefined_user = false;
+        if (auto* group = find_group(open_definitions, current_user.container())) {
+            for (auto& user : *group) {
+                if (this->depends(analysis_manager, *user.first, current_user)) {
+                    user.second.insert(&current_user);
+                    found_user = true;
+                    found_undefined_user = this->is_undefined_user(undefined_from_current ? current_user : *user.first);
+                }
+            }
+        }
+        return std::make_pair(found_user, found_undefined_user);
+    };
+
+    for (const auto* const_node : dataflow.topological_order()) {
+        auto* node = const_cast<data_flow::DataFlowNode*>(const_node);
         if (dynamic_cast<data_flow::ConstantNode*>(node) != nullptr) {
             continue;
         }
@@ -101,19 +175,20 @@ void DataDependencyAnalysis::visit_block(
                         auto current_user = users.get_user(access_node->data(), access_node, use);
 
                         // Close open definitions if possible
-                        std::unordered_map<User*, std::unordered_set<User*>> to_close;
-                        for (auto& user : open_definitions) {
+                        auto& group = open_definitions[current_user->container()];
+                        Definitions to_close;
+                        for (auto& user : group) {
                             if (this->closes(analysis_manager, *user.first, *current_user, false)) {
                                 to_close.insert(user);
                             }
                         }
                         for (auto& user : to_close) {
-                            open_definitions.erase(user.first);
+                            group.erase(user.first);
                             closed_definitions.insert(user);
                         }
 
                         // Start new open definition
-                        open_definitions.insert({current_user, {}});
+                        group.insert({current_user, {}});
                     }
                 }
                 if (dataflow.out_degree(*access_node) > 0) {
@@ -170,16 +245,7 @@ void DataDependencyAnalysis::visit_block(
                     if (use == Use::READ) {
                         auto current_user = users.get_user(access_node->data(), access_node, use);
 
-                        // Assign to open definitions
-                        bool found_user = false;
-                        bool found_undefined_user = false;
-                        for (auto& user : open_definitions) {
-                            if (this->depends(analysis_manager, *user.first, *current_user)) {
-                                user.second.insert(current_user);
-                                found_user = true;
-                                found_undefined_user = this->is_undefined_user(*user.first);
-                            }
-                        }
+                        auto [found_user, found_undefined_user] = assign_read(*current_user, false);
                         // If no definition found, undefined user found, or
                         // the read's subset footprint is only partially
                         // covered by the matching open writers, mark as
@@ -190,7 +256,9 @@ void DataDependencyAnalysis::visit_block(
                         // out-edges where only one edge is killed inside
                         // the current scope).
                         if (!found_user || found_undefined_user ||
-                            !this->fully_covered(analysis_manager, *current_user, open_definitions)) {
+                            !this->fully_covered(
+                                analysis_manager, *current_user, find_group(open_definitions, current_user->container())
+                            )) {
                             undefined.insert(current_user);
                         }
                     }
@@ -200,16 +268,7 @@ void DataDependencyAnalysis::visit_block(
             for (auto& symbol : library_node->symbols()) {
                 auto current_user = users.get_user(symbol->get_name(), library_node, Use::READ);
 
-                // Assign to open definitions
-                bool found_user = false;
-                bool found_undefined_user = false;
-                for (auto& user : open_definitions) {
-                    if (this->depends(analysis_manager, *user.first, *current_user)) {
-                        user.second.insert(current_user);
-                        found_user = true;
-                        found_undefined_user = this->is_undefined_user(*current_user);
-                    }
-                }
+                auto [found_user, found_undefined_user] = assign_read(*current_user, true);
                 // If no definition found or undefined user found, mark as undefined
                 if (!found_user || found_undefined_user) {
                     undefined.insert(current_user);
@@ -227,16 +286,7 @@ void DataDependencyAnalysis::visit_block(
             for (auto& atom : used) {
                 auto current_user = users.get_user(atom, &oedge, Use::READ);
 
-                // Assign to open definitions
-                bool found_user = false;
-                bool found_undefined_user = false;
-                for (auto& user : open_definitions) {
-                    if (this->depends(analysis_manager, *user.first, *current_user)) {
-                        user.second.insert(current_user);
-                        found_user = true;
-                        found_undefined_user = this->is_undefined_user(*user.first);
-                    }
-                }
+                auto [found_user, found_undefined_user] = assign_read(*current_user, false);
                 // If no definition found or undefined user found, mark as undefined
                 if (!found_user || found_undefined_user) {
                     undefined.insert(current_user);
@@ -246,12 +296,12 @@ void DataDependencyAnalysis::visit_block(
     }
 }
 
-void DataDependencyAnalysis::visit_assignment_block(
+void DataDependencyAnalysis::visit_assignment_block_impl(
     AnalysisManager& analysis_manager,
     structured_control_flow::AssignmentBlock& assignments,
     std::unordered_set<User*>& undefined,
-    std::unordered_map<User*, std::unordered_set<User*>>& open_definitions,
-    std::unordered_map<User*, std::unordered_set<User*>>& closed_definitions
+    OpenDefinitions& open_definitions,
+    Definitions& closed_definitions
 ) {
     auto& users = analysis_manager.get<analysis::Users>();
 
@@ -264,8 +314,8 @@ void DataDependencyAnalysis::visit_assignment_block(
             auto current_user = users.get_user(atom->get_name(), &assignments, Use::READ);
 
             bool found = false;
-            for (auto& user : open_definitions) {
-                if (user.first->container() == atom->get_name()) {
+            if (auto* group = find_group(open_definitions, atom->get_name())) {
+                for (auto& user : *group) {
                     user.second.insert(current_user);
                     found = true;
                 }
@@ -280,47 +330,52 @@ void DataDependencyAnalysis::visit_assignment_block(
     for (auto& entry : assignments.assignments()) {
         auto current_user = users.get_user(entry.first->get_name(), &assignments, Use::WRITE);
 
+        auto& group = open_definitions[current_user->container()];
         std::unordered_set<User*> to_close;
-        for (auto& user : open_definitions) {
+        for (auto& user : group) {
             if (this->closes(analysis_manager, *user.first, *current_user, true)) {
                 to_close.insert(user.first);
             }
         }
         for (auto& user : to_close) {
-            closed_definitions.insert({user, open_definitions.at(user)});
-            open_definitions.erase(user);
+            closed_definitions.insert({user, group.at(user)});
+            group.erase(user);
         }
-        open_definitions.insert({current_user, {}});
+        group.insert({current_user, {}});
     }
 }
 
-void DataDependencyAnalysis::visit_for(
+void DataDependencyAnalysis::visit_for_impl(
     analysis::AnalysisManager& analysis_manager,
     structured_control_flow::StructuredLoop& for_loop,
     std::unordered_set<User*>& undefined,
-    std::unordered_map<User*, std::unordered_set<User*>>& open_definitions,
-    std::unordered_map<User*, std::unordered_set<User*>>& closed_definitions
+    OpenDefinitions& open_definitions,
+    Definitions& closed_definitions
 ) {
     auto& users = analysis_manager.get<analysis::Users>();
 
-    // Init - Read
-    for (auto atom : symbolic::atoms(for_loop.init())) {
-        auto current_user = users.get_user(atom->get_name(), &for_loop, Use::READ, true);
-
-        // Assign to open definitions
+    // Assign a read to the matching definitions of `open`; marks it undefined in `undefined_target` if unmatched.
+    auto assign_read = [&](User* current_user, OpenDefinitions& open, std::unordered_set<User*>& undefined_target) {
         bool found_user = false;
         bool found_undefined_user = false;
-        for (auto& user : open_definitions) {
-            if (this->depends(analysis_manager, *user.first, *current_user)) {
-                user.second.insert(current_user);
-                found_user = true;
-                found_undefined_user = this->is_undefined_user(*user.first);
+        if (auto* group = find_group(open, current_user->container())) {
+            for (auto& user : *group) {
+                if (this->depends(analysis_manager, *user.first, *current_user)) {
+                    user.second.insert(current_user);
+                    found_user = true;
+                    found_undefined_user = this->is_undefined_user(*user.first);
+                }
             }
         }
         // If no definition found or undefined user found, mark as undefined
         if (!found_user || found_undefined_user) {
-            undefined.insert(current_user);
+            undefined_target.insert(current_user);
         }
+    };
+
+    // Init - Read
+    for (auto atom : symbolic::atoms(for_loop.init())) {
+        assign_read(users.get_user(atom->get_name(), &for_loop, Use::READ, true), open_definitions, undefined);
     }
 
     // Init - Write
@@ -329,49 +384,35 @@ void DataDependencyAnalysis::visit_for(
         auto current_user = users.get_user(for_loop.indvar()->get_name(), &for_loop, Use::WRITE, true);
 
         // Close open definitions if possible
-        std::unordered_map<User*, std::unordered_set<User*>> to_close;
-        for (auto& user : open_definitions) {
+        auto& group = open_definitions[current_user->container()];
+        Definitions to_close;
+        for (auto& user : group) {
             if (this->closes(analysis_manager, *user.first, *current_user, true)) {
                 to_close.insert(user);
             }
         }
         for (auto& user : to_close) {
-            open_definitions.erase(user.first);
+            group.erase(user.first);
             closed_definitions.insert(user);
         }
 
         // Start new open definition
-        open_definitions.insert({current_user, {}});
+        group.insert({current_user, {}});
     }
 
     // Update - Write
     {
         auto current_user = users.get_user(for_loop.indvar()->get_name(), &for_loop, Use::WRITE, false, false, true);
-        open_definitions.insert({current_user, {}});
+        open_definitions[current_user->container()].insert({current_user, {}});
     }
 
     // Condition - Read
     for (auto atom : symbolic::atoms(for_loop.condition())) {
-        auto current_user = users.get_user(atom->get_name(), &for_loop, Use::READ, false, true);
-
-        // Assign to open definitions
-        bool found_user = false;
-        bool found_undefined_user = false;
-        for (auto& user : open_definitions) {
-            if (this->depends(analysis_manager, *user.first, *current_user)) {
-                user.second.insert(current_user);
-                found_user = true;
-                found_undefined_user = this->is_undefined_user(*user.first);
-            }
-        }
-        // If no definition found or undefined user found, mark as undefined
-        if (!found_user || found_undefined_user) {
-            undefined.insert(current_user);
-        }
+        assign_read(users.get_user(atom->get_name(), &for_loop, Use::READ, false, true), open_definitions, undefined);
     }
 
-    std::unordered_map<User*, std::unordered_set<User*>> open_definitions_for;
-    std::unordered_map<User*, std::unordered_set<User*>> closed_definitions_for;
+    OpenDefinitions open_definitions_for;
+    Definitions closed_definitions_for;
     std::unordered_set<User*> undefined_for;
 
     // Packed bodies use partials, but the final combine still reads and writes the original accumulator.
@@ -381,7 +422,7 @@ void DataDependencyAnalysis::visit_for(
                 continue;
             }
             undefined_for.insert(users.get_user(entry.container, reduction, Use::READ));
-            open_definitions_for
+            open_definitions_for[entry.container]
                 .emplace(users.get_user(entry.container, reduction, Use::WRITE), std::unordered_set<User*>{});
             for (const auto& symbol : symbolic::atoms(entry.original_index)) {
                 undefined_for.insert(users.get_user(symbol->get_name(), reduction, Use::READ));
@@ -390,33 +431,22 @@ void DataDependencyAnalysis::visit_for(
     }
 
     // Add assumptions for body
-    visit_sequence(analysis_manager, for_loop.root(), undefined_for, open_definitions_for, closed_definitions_for);
+    visit_sequence_impl(analysis_manager, for_loop.root(), undefined_for, open_definitions_for, closed_definitions_for);
 
     // Update - Read
     for (auto atom : symbolic::atoms(for_loop.update())) {
-        auto current_user = users.get_user(atom->get_name(), &for_loop, Use::READ, false, false, true);
-
-        // Assign to open definitions
-        bool found_user = false;
-        bool found_undefined_user = false;
-        for (auto& user : open_definitions_for) {
-            if (this->depends(analysis_manager, *user.first, *current_user)) {
-                user.second.insert(current_user);
-                found_user = true;
-                found_undefined_user = this->is_undefined_user(*user.first);
-            }
-        }
-        // If no definition found or undefined user found, mark as undefined
-        if (!found_user || found_undefined_user) {
-            undefined_for.insert(current_user);
-        }
+        assign_read(
+            users.get_user(atom->get_name(), &for_loop, Use::READ, false, false, true),
+            open_definitions_for,
+            undefined_for
+        );
     }
 
     // Merge for with outside
 
     // Closed definitions are simply merged
     for (auto& entry : closed_definitions_for) {
-        closed_definitions.insert(entry);
+        closed_definitions.insert(std::move(entry));
     }
 
     // Undefined reads are matched or forwarded
@@ -425,12 +455,14 @@ void DataDependencyAnalysis::visit_for(
         std::unordered_set<User*> frontier;
         bool found = false;
         bool found_undefined_user = false;
-        for (auto& entry : open_definitions) {
-            if (intersects(*entry.first, *open_read, analysis_manager)) {
-                entry.second.insert(open_read);
-                found = true;
-                found_undefined_user = this->is_undefined_user(*entry.first);
-                frontier.insert(entry.first);
+        if (auto* group = find_group(open_definitions, open_read->container())) {
+            for (auto& entry : *group) {
+                if (intersects(*entry.first, *open_read, analysis_manager)) {
+                    entry.second.insert(open_read);
+                    found = true;
+                    found_undefined_user = this->is_undefined_user(*entry.first);
+                    frontier.insert(entry.first);
+                }
             }
         }
         if (!found || found_undefined_user) {
@@ -456,18 +488,24 @@ void DataDependencyAnalysis::visit_for(
     }
 
     // Open definitions may close outside open definitions after loop
-    std::unordered_set<User*> to_close;
-    for (auto& previous : open_definitions) {
-        for (auto& user : open_definitions_for) {
-            if (this->closes(analysis_manager, *previous.first, *user.first, true)) {
-                to_close.insert(previous.first);
-                break;
+    for (auto& [container, group] : open_definitions) {
+        auto* group_for = find_group(open_definitions_for, container);
+        if (group_for == nullptr) {
+            continue;
+        }
+        std::unordered_set<User*> to_close;
+        for (auto& previous : group) {
+            for (auto& user : *group_for) {
+                if (this->closes(analysis_manager, *previous.first, *user.first, true)) {
+                    to_close.insert(previous.first);
+                    break;
+                }
             }
         }
-    }
-    for (auto& user : to_close) {
-        closed_definitions.insert({user, open_definitions.at(user)});
-        open_definitions.erase(user);
+        for (auto& user : to_close) {
+            closed_definitions.insert({user, group.at(user)});
+            group.erase(user);
+        }
     }
 
     // Cross-iteration linkage for SCALARS only.
@@ -494,14 +532,14 @@ void DataDependencyAnalysis::visit_for(
     // outer `open_definitions`, since both perform by-value copies of the
     // (writer -> readers) sets we are mutating.
     for (auto* open_read : undefined_for) {
-        auto& type = this->sdfg_.type(open_read->container());
-        if (!dynamic_cast<const types::Scalar*>(&type)) {
+        if (!this->is_scalar(open_read->container())) {
             continue;
         }
-        for (auto& write_entry : open_definitions_for) {
-            if (write_entry.first->container() != open_read->container()) {
-                continue;
-            }
+        auto* group_for = find_group(open_definitions_for, open_read->container());
+        if (group_for == nullptr) {
+            continue;
+        }
+        for (auto& write_entry : *group_for) {
             if (this->is_undefined_user(*write_entry.first)) {
                 continue;
             }
@@ -510,51 +548,58 @@ void DataDependencyAnalysis::visit_for(
     }
 
     // Snapshot loop boundary sets so LoopCarriedDependencyAnalysis can compute LCDs.
-    loop_boundaries_[&for_loop] = std::make_pair(undefined_for, open_definitions_for);
+    loop_boundaries_[&for_loop] = std::make_pair(std::move(undefined_for), flatten(open_definitions_for));
 
     // Add open definitions from for to outside
-    for (auto& entry : open_definitions_for) {
-        open_definitions.insert(entry);
+    for (auto& [container, group_for] : open_definitions_for) {
+        auto& group = open_definitions[container];
+        for (auto& entry : group_for) {
+            group.insert(std::move(entry));
+        }
     }
 }
 
-void DataDependencyAnalysis::visit_if_else(
+void DataDependencyAnalysis::visit_if_else_impl(
     analysis::AnalysisManager& analysis_manager,
     structured_control_flow::IfElse& if_else,
     std::unordered_set<User*>& undefined,
-    std::unordered_map<User*, std::unordered_set<User*>>& open_definitions,
-    std::unordered_map<User*, std::unordered_set<User*>>& closed_definitions
+    OpenDefinitions& open_definitions,
+    Definitions& closed_definitions
 ) {
     auto& users = analysis_manager.get<analysis::Users>();
 
-    // Read Conditions
-    for (size_t i = 0; i < if_else.size(); i++) {
-        auto child = if_else.at(i).second;
-        for (auto atom : symbolic::atoms(child)) {
-            auto current_user = users.get_user(atom->get_name(), &if_else, Use::READ);
-
-            bool found_user = false;
-            bool found_undefined_user = false;
-            for (auto& user : open_definitions) {
+    auto assign_read = [&](User* current_user) {
+        bool found_user = false;
+        bool found_undefined_user = false;
+        if (auto* group = find_group(open_definitions, current_user->container())) {
+            for (auto& user : *group) {
                 if (this->depends(analysis_manager, *user.first, *current_user)) {
                     user.second.insert(current_user);
                     found_user = true;
                     found_undefined_user = this->is_undefined_user(*user.first);
                 }
             }
-            // If no definition found or undefined user found, mark as undefined
-            if (!found_user || found_undefined_user) {
-                undefined.insert(current_user);
-            }
+        }
+        // If no definition found or undefined user found, mark as undefined
+        if (!found_user || found_undefined_user) {
+            undefined.insert(current_user);
+        }
+    };
+
+    // Read Conditions
+    for (size_t i = 0; i < if_else.size(); i++) {
+        auto child = if_else.at(i).second;
+        for (auto atom : symbolic::atoms(child)) {
+            assign_read(users.get_user(atom->get_name(), &if_else, Use::READ));
         }
     }
 
     std::vector<std::unordered_set<User*>> undefined_branches(if_else.size());
-    std::vector<std::unordered_map<User*, std::unordered_set<User*>>> open_definitions_branches(if_else.size());
-    std::vector<std::unordered_map<User*, std::unordered_set<User*>>> closed_definitionss_branches(if_else.size());
+    std::vector<OpenDefinitions> open_definitions_branches(if_else.size());
+    std::vector<Definitions> closed_definitionss_branches(if_else.size());
     for (size_t i = 0; i < if_else.size(); i++) {
         auto& child = if_else.at(i).first;
-        visit_sequence(
+        visit_sequence_impl(
             analysis_manager,
             child,
             undefined_branches.at(i),
@@ -566,19 +611,7 @@ void DataDependencyAnalysis::visit_if_else(
     // merge partial open reads
     for (size_t i = 0; i < if_else.size(); i++) {
         for (auto& entry : undefined_branches.at(i)) {
-            bool found_user = false;
-            bool found_undefined_user = false;
-            for (auto& user : open_definitions) {
-                if (this->depends(analysis_manager, *user.first, *entry)) {
-                    user.second.insert(entry);
-                    found_user = true;
-                    found_undefined_user = this->is_undefined_user(*user.first);
-                }
-            }
-            // If no definition found or undefined user found, mark as undefined
-            if (!found_user || found_undefined_user) {
-                undefined.insert(entry);
-            }
+            assign_read(entry);
         }
     }
 
@@ -591,7 +624,6 @@ void DataDependencyAnalysis::visit_if_else(
 
     // Close open reads_after_writes for complete branches
     if (if_else.is_complete()) {
-        std::unordered_map<User*, std::unordered_set<User*>> to_close;
         std::unordered_set<std::string> candidates;
         std::unordered_set<std::string> candidates_tmp;
 
@@ -601,32 +633,32 @@ void DataDependencyAnalysis::visit_if_else(
         3. find prior writes for remaining candidates
         4. close open reads_after_writes for all candidates
         */
-        for (auto& entry : open_definitions_branches.at(0)) {
-            candidates.insert(entry.first->container());
+        for (auto& [container, group] : open_definitions_branches.at(0)) {
+            if (!group.empty()) {
+                candidates.insert(container);
+            }
         }
         for (auto& entry : closed_definitionss_branches.at(0)) {
             candidates.insert(entry.first->container());
         }
 
         for (size_t i = 1; i < if_else.size(); i++) {
-            for (auto& entry : open_definitions_branches.at(i)) {
-                if (candidates.find(entry.first->container()) != candidates.end()) {
-                    candidates_tmp.insert(entry.first->container());
+            for (auto& [container, group] : open_definitions_branches.at(i)) {
+                if (!group.empty() && candidates.find(container) != candidates.end()) {
+                    candidates_tmp.insert(container);
                 }
             }
             candidates.swap(candidates_tmp);
             candidates_tmp.clear();
         }
 
-        for (auto& entry : open_definitions) {
-            if (candidates.find(entry.first->container()) != candidates.end()) {
-                to_close.insert(entry);
+        for (auto& container : candidates) {
+            if (auto* group = find_group(open_definitions, container)) {
+                for (auto& entry : *group) {
+                    closed_definitions.insert(entry);
+                }
+                group->clear();
             }
-        }
-
-        for (auto& entry : to_close) {
-            open_definitions.erase(entry.first);
-            closed_definitions.insert(entry);
         }
     } else {
         // Incomplete if-else
@@ -641,35 +673,41 @@ void DataDependencyAnalysis::visit_if_else(
         // Hence, we can mark the read as (partially) undefined.
 
         for (auto& branch : open_definitions_branches) {
-            for (auto& open_definition : branch) {
-                auto write = open_definition.first;
-                auto artificial_user = std::make_unique<User>(write->container(), nullptr, Use::WRITE);
-                this->undefined_users_.push_back(std::move(artificial_user));
-                open_definitions.insert({this->undefined_users_.back().get(), {}});
+            for (auto& [container, group] : branch) {
+                for (size_t k = 0; k < group.size(); k++) {
+                    auto artificial_user = std::make_unique<User>(container, nullptr, Use::WRITE);
+                    this->undefined_users_.push_back(std::move(artificial_user));
+                    open_definitions[container].insert({this->undefined_users_.back().get(), {}});
+                }
             }
         }
     }
 
     // Add open definitions from branches to outside
     for (auto& branch : open_definitions_branches) {
-        for (auto& entry : branch) {
-            open_definitions.insert(entry);
+        for (auto& [container, group_branch] : branch) {
+            auto& group = open_definitions[container];
+            for (auto& entry : group_branch) {
+                group.insert(entry);
+            }
         }
     }
 }
 
-void DataDependencyAnalysis::visit_while(
+void DataDependencyAnalysis::visit_while_impl(
     analysis::AnalysisManager& analysis_manager,
     structured_control_flow::While& while_loop,
     std::unordered_set<User*>& undefined,
-    std::unordered_map<User*, std::unordered_set<User*>>& open_definitions,
-    std::unordered_map<User*, std::unordered_set<User*>>& closed_definitions
+    OpenDefinitions& open_definitions,
+    Definitions& closed_definitions
 ) {
-    std::unordered_map<User*, std::unordered_set<User*>> open_definitions_while;
-    std::unordered_map<User*, std::unordered_set<User*>> closed_definitions_while;
+    OpenDefinitions open_definitions_while;
+    Definitions closed_definitions_while;
     std::unordered_set<User*> undefined_while;
 
-    visit_sequence(analysis_manager, while_loop.root(), undefined_while, open_definitions_while, closed_definitions_while);
+    visit_sequence_impl(
+        analysis_manager, while_loop.root(), undefined_while, open_definitions_while, closed_definitions_while
+    );
 
     // Scope-local closed definitions
     for (auto& entry : closed_definitions_while) {
@@ -678,16 +716,16 @@ void DataDependencyAnalysis::visit_while(
 
     for (auto open_read : undefined_while) {
         // Over-Approximation: Add loop-carried dependencies for all open reads
-        for (auto& entry : open_definitions_while) {
-            if (entry.first->container() == open_read->container()) {
+        if (auto* group = find_group(open_definitions_while, open_read->container())) {
+            for (auto& entry : *group) {
                 entry.second.insert(open_read);
             }
         }
 
         // Connect to outside
         bool found = false;
-        for (auto& entry : open_definitions) {
-            if (entry.first->container() == open_read->container()) {
+        if (auto* group = find_group(open_definitions, open_read->container())) {
+            for (auto& entry : *group) {
                 entry.second.insert(open_read);
                 found = true;
             }
@@ -698,17 +736,20 @@ void DataDependencyAnalysis::visit_while(
     }
 
     // Add open definitions from while to outside
-    for (auto& entry : open_definitions_while) {
-        open_definitions.insert(entry);
+    for (auto& [container, group_while] : open_definitions_while) {
+        auto& group = open_definitions[container];
+        for (auto& entry : group_while) {
+            group.insert(entry);
+        }
     }
 }
 
-void DataDependencyAnalysis::visit_return(
+void DataDependencyAnalysis::visit_return_impl(
     analysis::AnalysisManager& analysis_manager,
     structured_control_flow::Return& return_statement,
     std::unordered_set<User*>& undefined,
-    std::unordered_map<User*, std::unordered_set<User*>>& open_definitions,
-    std::unordered_map<User*, std::unordered_set<User*>>& closed_definitions
+    OpenDefinitions& open_definitions,
+    Definitions& closed_definitions
 ) {
     auto& users = analysis_manager.get<analysis::Users>();
 
@@ -716,8 +757,8 @@ void DataDependencyAnalysis::visit_return(
         auto current_user = users.get_user(return_statement.data(), &return_statement, Use::READ);
 
         bool found = false;
-        for (auto& user : open_definitions) {
-            if (user.first->container() == return_statement.data()) {
+        if (auto* group = find_group(open_definitions, return_statement.data())) {
+            for (auto& user : *group) {
                 user.second.insert(current_user);
                 found = true;
             }
@@ -728,35 +769,37 @@ void DataDependencyAnalysis::visit_return(
     }
 
     // close all open reads_after_writes
-    for (auto& entry : open_definitions) {
-        closed_definitions.insert(entry);
+    for (auto& [container, group] : open_definitions) {
+        for (auto& entry : group) {
+            closed_definitions.insert(entry);
+        }
     }
     open_definitions.clear();
 }
 
-void DataDependencyAnalysis::visit_sequence(
+void DataDependencyAnalysis::visit_sequence_impl(
     analysis::AnalysisManager& analysis_manager,
     structured_control_flow::Sequence& sequence,
     std::unordered_set<User*>& undefined,
-    std::unordered_map<User*, std::unordered_set<User*>>& open_definitions,
-    std::unordered_map<User*, std::unordered_set<User*>>& closed_definitions
+    OpenDefinitions& open_definitions,
+    Definitions& closed_definitions
 ) {
     for (size_t i = 0; i < sequence.size(); i++) {
         auto& child = sequence.at(i);
         if (auto block = dyn_cast<structured_control_flow::Block*>(&child)) {
-            visit_block(analysis_manager, *block, undefined, open_definitions, closed_definitions);
+            visit_block_impl(analysis_manager, *block, undefined, open_definitions, closed_definitions);
         } else if (auto assignments = dyn_cast<structured_control_flow::AssignmentBlock*>(&child)) {
-            visit_assignment_block(analysis_manager, *assignments, undefined, open_definitions, closed_definitions);
+            visit_assignment_block_impl(analysis_manager, *assignments, undefined, open_definitions, closed_definitions);
         } else if (auto for_loop = dyn_cast<structured_control_flow::StructuredLoop*>(&child)) {
-            visit_for(analysis_manager, *for_loop, undefined, open_definitions, closed_definitions);
+            visit_for_impl(analysis_manager, *for_loop, undefined, open_definitions, closed_definitions);
         } else if (auto if_else = dyn_cast<structured_control_flow::IfElse*>(&child)) {
-            visit_if_else(analysis_manager, *if_else, undefined, open_definitions, closed_definitions);
+            visit_if_else_impl(analysis_manager, *if_else, undefined, open_definitions, closed_definitions);
         } else if (auto while_loop = dyn_cast<structured_control_flow::While*>(&child)) {
-            visit_while(analysis_manager, *while_loop, undefined, open_definitions, closed_definitions);
+            visit_while_impl(analysis_manager, *while_loop, undefined, open_definitions, closed_definitions);
         } else if (auto return_statement = dyn_cast<structured_control_flow::Return*>(&child)) {
-            visit_return(analysis_manager, *return_statement, undefined, open_definitions, closed_definitions);
+            visit_return_impl(analysis_manager, *return_statement, undefined, open_definitions, closed_definitions);
         } else if (auto sequence = dyn_cast<structured_control_flow::Sequence*>(&child)) {
-            visit_sequence(analysis_manager, *sequence, undefined, open_definitions, closed_definitions);
+            visit_sequence_impl(analysis_manager, *sequence, undefined, open_definitions, closed_definitions);
         }
     }
 }
@@ -767,8 +810,7 @@ bool DataDependencyAnalysis::
         return false;
     }
     // Shortcut for scalars
-    auto& type = this->sdfg_.type(previous.container());
-    if (dynamic_cast<const types::Scalar*>(&type)) {
+    if (this->is_scalar(previous.container())) {
         return true;
     }
 
@@ -818,12 +860,14 @@ bool DataDependencyAnalysis::
 bool DataDependencyAnalysis::fully_covered(
     analysis::AnalysisManager& analysis_manager,
     User& current,
-    const std::unordered_map<User*, std::unordered_set<User*>>& open_definitions
+    const std::unordered_map<User*, std::unordered_set<User*>>* open_definitions
 ) {
+    // open_definitions holds only writes to current's container (or is null if there are none).
+    static const Definitions no_definitions;
+    const Definitions& same_container = open_definitions ? *open_definitions : no_definitions;
     // Scalar reads: container-level open definition is full coverage.
-    auto& type = this->sdfg_.type(current.container());
-    if (dynamic_cast<const types::Scalar*>(&type)) {
-        for (auto& w : open_definitions) {
+    if (this->is_scalar(current.container())) {
+        for (auto& w : same_container) {
             if (w.first->container() == current.container() && !this->is_undefined_user(*w.first)) {
                 return true;
             }
@@ -840,7 +884,7 @@ bool DataDependencyAnalysis::fully_covered(
     // path to drop the read into `undefined` only when truly unmatched,
     // matching pre-`fully_covered` behavior, while skipping ISL queries.
     if (!detailed_) {
-        for (auto& w : open_definitions) {
+        for (auto& w : same_container) {
             if (w.first->container() == current.container() && !this->is_undefined_user(*w.first)) {
                 return true;
             }
@@ -852,7 +896,7 @@ bool DataDependencyAnalysis::fully_covered(
     if (current_subsets.empty()) {
         // Symbol use / no real read footprint -- fall back to existence of any
         // matching open definition (depends() semantics).
-        for (auto& w : open_definitions) {
+        for (auto& w : same_container) {
             if (w.first->container() == current.container() && !this->is_undefined_user(*w.first)) {
                 return true;
             }
@@ -867,7 +911,7 @@ bool DataDependencyAnalysis::fully_covered(
     // Each read subset must be contained in some single open writer's subset.
     for (auto& read_subset : current_subsets) {
         bool covered = false;
-        for (auto& w_entry : open_definitions) {
+        for (auto& w_entry : same_container) {
             auto* w = w_entry.first;
             if (w->container() != current.container()) {
                 continue;
@@ -899,8 +943,7 @@ bool DataDependencyAnalysis::intersects(User& previous, User& current, analysis:
         return false;
     }
     // Shortcut for scalars
-    auto& type = this->sdfg_.type(previous.container());
-    if (dynamic_cast<const types::Scalar*>(&type)) {
+    if (this->is_scalar(previous.container())) {
         return true;
     }
 
@@ -954,6 +997,12 @@ bool DataDependencyAnalysis::
         return false;
     }
 
+    // Without detailed subset checks only scalars can be closed; skip the dominance query otherwise.
+    bool scalar = this->is_scalar(previous.container());
+    if (!scalar && !detailed_) {
+        return false;
+    }
+
     // Check dominance
     if (requires_dominance) {
         if (!analysis_manager.get<analysis::Users>().post_dominates(current, previous)) {
@@ -962,16 +1011,8 @@ bool DataDependencyAnalysis::
     }
 
     // Previous memlets are subsets of current memlets
-    auto& type = sdfg_.type(previous.container());
-    if (type.type_id() == types::TypeID::Scalar) {
+    if (scalar) {
         return true;
-    }
-
-    // Conservative shortcut: assume `current` does not fully overwrite
-    // `previous`. Sound (we just keep more open definitions live) and
-    // avoids ISL hangs.
-    if (!detailed_) {
-        return false;
     }
 
     // Collect memlets and assumptions
@@ -1009,8 +1050,7 @@ bool DataDependencyAnalysis::depends(analysis::AnalysisManager& analysis_manager
     }
 
     // Previous memlets are subsets of current memlets
-    auto& type = sdfg_.type(previous.container());
-    if (type.type_id() == types::TypeID::Scalar) {
+    if (this->is_scalar(previous.container())) {
         return true;
     }
 
@@ -1107,6 +1147,15 @@ std::unordered_set<User*> DataDependencyAnalysis::defined_by(User& read) {
     }
     return writes;
 };
+
+bool DataDependencyAnalysis::is_scalar(const std::string& container) {
+    auto it = this->scalar_containers_.find(container);
+    if (it == this->scalar_containers_.end()) {
+        bool scalar = dynamic_cast<const types::Scalar*>(&this->sdfg_.type(container)) != nullptr;
+        it = this->scalar_containers_.emplace(container, scalar).first;
+    }
+    return it->second;
+}
 
 bool DataDependencyAnalysis::is_undefined_user(User& user) const {
     return user.owner_ == nullptr;
