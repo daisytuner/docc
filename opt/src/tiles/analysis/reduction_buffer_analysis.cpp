@@ -438,7 +438,7 @@ ReductionLoopDomain ReductionLoopDomain::from_header(const symbolic::Symbol& ind
         auto distance = symbolic::expand(
             symbolic::sub(symbolic::sub(symbolic::zero(), affine.offset), symbolic::mul(affine.coeff, header.init))
         );
-        auto bound = symbolic::divide_ceil(distance, symbolic::mul(affine.coeff, stride));
+        auto bound = symbolic::ceil_count(distance, symbolic::mul(affine.coeff, stride));
         count = count.is_null() ? bound : symbolic::min(count, bound);
     }
     if (!count.is_null()) {

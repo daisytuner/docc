@@ -115,6 +115,7 @@ set(TEST_FILES
     symbolic/conjunctive_normal_form_test.cpp
     symbolic/delinearization_test.cpp
     symbolic/extreme_values_test.cpp
+    symbolic/integer_division_test.cpp
     symbolic/maps_test.cpp
     symbolic/polyhedral_test.cpp
     symbolic/polynomials_test.cpp

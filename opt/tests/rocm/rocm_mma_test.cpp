@@ -113,7 +113,7 @@ static std::tuple<Block&, math::tensor::MatMulNode&> build_offloaded_mma_structu
         gpu::ScheduleType_GPU_Offload::create<ScheduleType_ROCM_Offload>(
             gpu::TargetLevel::Y_GRID,
             SymEngine::rcp_dynamic_cast<
-                const SymEngine::Integer>(symbolic::divide_ceil(symbolic::integer(M), symbolic::integer(tile_m)))
+                const SymEngine::Integer>(symbolic::ceil_div(symbolic::integer(M), symbolic::integer(tile_m)))
         )
     );
 
@@ -127,7 +127,7 @@ static std::tuple<Block&, math::tensor::MatMulNode&> build_offloaded_mma_structu
         gpu::ScheduleType_GPU_Offload::create<ScheduleType_ROCM_Offload>(
             gpu::TargetLevel::X_GRID,
             SymEngine::rcp_dynamic_cast<
-                const SymEngine::Integer>(symbolic::divide_ceil(symbolic::integer(N), symbolic::integer(tile_n)))
+                const SymEngine::Integer>(symbolic::ceil_div(symbolic::integer(N), symbolic::integer(tile_n)))
         )
     );
 

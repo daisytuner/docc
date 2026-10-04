@@ -74,19 +74,20 @@ bool is_vector_or_tensor_of_sdfg_primitive(Type type) {
             auto affine_binary_op_expr = llvm::dyn_cast<AffineBinaryOpExpr>(affine_expr);
             auto lhs = affine_expr_to_symbolic_expr(affine_binary_op_expr.getLHS(), dimensions, symbols, strict);
             auto rhs = affine_expr_to_symbolic_expr(affine_binary_op_expr.getRHS(), dimensions, symbols, strict);
-            return ::sdfg::symbolic::mod(lhs, rhs);
+            // Affine `mod` is the non-negative floor remainder, not C's `%`.
+            return ::sdfg::symbolic::sub(lhs, ::sdfg::symbolic::mul(rhs, ::sdfg::symbolic::floor_div(lhs, rhs)));
         }
         case AffineExprKind::FloorDiv: {
             auto affine_binary_op_expr = llvm::dyn_cast<AffineBinaryOpExpr>(affine_expr);
             auto lhs = affine_expr_to_symbolic_expr(affine_binary_op_expr.getLHS(), dimensions, symbols, strict);
             auto rhs = affine_expr_to_symbolic_expr(affine_binary_op_expr.getRHS(), dimensions, symbols, strict);
-            return ::sdfg::symbolic::div(lhs, rhs);
+            return ::sdfg::symbolic::floor_div(lhs, rhs);
         }
         case AffineExprKind::CeilDiv: {
             auto affine_binary_op_expr = llvm::dyn_cast<AffineBinaryOpExpr>(affine_expr);
             auto lhs = affine_expr_to_symbolic_expr(affine_binary_op_expr.getLHS(), dimensions, symbols, strict);
             auto rhs = affine_expr_to_symbolic_expr(affine_binary_op_expr.getRHS(), dimensions, symbols, strict);
-            return ::sdfg::symbolic::divide_ceil(lhs, rhs);
+            return ::sdfg::symbolic::ceil_div(lhs, rhs);
         }
         case AffineExprKind::Constant: {
             auto affine_constant_expr = llvm::dyn_cast<AffineConstantExpr>(affine_expr);

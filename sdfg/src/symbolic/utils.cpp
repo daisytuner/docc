@@ -14,7 +14,9 @@
 namespace sdfg {
 namespace symbolic {
 
-// ISL-compatible printer that converts idiv to floord
+// ISL-compatible printer. idiv/imod are C truncating `/` and `%`:
+// trunc(a/b) = floord(max(a,0), b) - floord(max(-a,0), b) for b > 0, and for b < 0
+// a / b == -(a / -b), a % b == a % -b. Non-literal divisors print as-is, which ISL rejects.
 class ISLSymbolicPrinter : public SymEngine::BaseVisitor<ISLSymbolicPrinter, SymEngine::CodePrinter> {
 public:
     using SymEngine::CodePrinter::apply;
@@ -22,16 +24,22 @@ public:
     using SymEngine::CodePrinter::str_;
 
     void bvisit(const SymEngine::FunctionSymbol& x) {
-        if (x.get_name() == "idiv") {
-            // ISL uses floord(a, b) for floor division
-            str_ = "floord(" + apply(x.get_args()[0]) + ", " + apply(x.get_args()[1]) + ")";
-        } else if (x.get_name() == "imod") {
-            // Floor-mod, consistent with idiv -> floord: a - b*floord(a, b) == a mod b.
-            // ISL only accepts a bare integer literal as the modulus.
-            str_ = "((" + apply(x.get_args()[0]) + ") mod " + apply(x.get_args()[1]) + ")";
+        const auto& args = x.get_args();
+        if ((x.get_name() == "idiv" || x.get_name() == "imod") && args.size() == 2 &&
+            SymEngine::is_a<SymEngine::Integer>(*args[1]) && !symbolic::eq(args[1], symbolic::zero())) {
+            bool negative = SymEngine::down_cast<const SymEngine::Integer&>(*args[1]).is_negative();
+            auto a = apply(args[0]);
+            auto b = apply(negative ? symbolic::mul(symbolic::integer(-1), args[1]) : args[1]);
+            auto quotient = "(floord(max((" + a + "), 0), " + b + ") - floord(max(-(" + a + "), 0), " + b + "))";
+            if (x.get_name() == "imod") {
+                // ISL rejects a parenthesized constant factor such as `(8)*(...)`.
+                str_ = "((" + a + ") - " + b + "*" + quotient + ")";
+            } else {
+                str_ = negative ? "(-" + quotient + ")" : quotient;
+            }
         } else if (x.get_name() == "iabs") {
-            // ISL doesn't support abs directly, but we can express it
-            str_ = apply(x.get_args()[0]); // Simplify: assume non-negative for ISL constraints
+            auto arg = apply(x.get_args()[0]);
+            str_ = "max((" + arg + "), -(" + arg + "))";
         } else {
             // Unknown function - print as-is and let ISL reject it during parsing
             std::ostringstream ss;

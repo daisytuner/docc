@@ -327,7 +327,7 @@ void GPUReduceDispatcher::dispatch_node(
     symbolic::Integer block_size = gpu_block_size(node_.schedule_type());
     symbolic::Expression num_iters = node_.num_iterations();
     symbolic::Expression block_size_expr = block_size;
-    symbolic::Expression num_blocks = symbolic::max(symbolic::divide_ceil(num_iters, block_size_expr), symbolic::one());
+    symbolic::Expression num_blocks = symbolic::max(symbolic::ceil_count(num_iters, block_size_expr), symbolic::one());
 
     std::string kernel_name = "kernel_" + sdfg_.name() + "_" + std::to_string(node_.element_id());
 

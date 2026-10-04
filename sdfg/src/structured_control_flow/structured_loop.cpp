@@ -407,8 +407,8 @@ symbolic::Expression StructuredLoop::num_iterations() const {
         divisor = symbolic::integer(-stride_int);
     }
 
-    auto num_iters = symbolic::divide_ceil(numerator, divisor);
-    num_iters = symbolic::simplify(symbolic::max(symbolic::zero(), num_iters));
+    auto num_iters = symbolic::ceil_count(numerator, divisor);
+    num_iters = symbolic::simplify(num_iters);
     return num_iters;
 }
 
@@ -446,8 +446,8 @@ symbolic::Expression StructuredLoop::num_iterations_approx() const {
     }
     numerator = symbolic::simplify(symbolic::expand(symbolic::overapproximate(numerator)));
 
-    auto num_iters = symbolic::divide_ceil(numerator, divisor);
-    num_iters = symbolic::simplify(symbolic::max(symbolic::zero(), num_iters));
+    auto num_iters = symbolic::ceil_count(numerator, divisor);
+    num_iters = symbolic::simplify(num_iters);
     return num_iters;
 }
 

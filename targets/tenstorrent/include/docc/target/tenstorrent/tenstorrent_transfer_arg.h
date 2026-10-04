@@ -23,11 +23,12 @@ struct TransferArg : public docc::offloading::TransferArg {
         const analysis::RegionArgument& meta
     )
         : docc::offloading::TransferArg(name, type, data_size, meta), page_size(page_size),
-          allocated_size(calc_allocated_size(data_size, page_size)) {}
+          allocated_size(calc_allocated_size(data_size, page_size)) {
+    }
 
     static symbolic::Expression
     calc_allocated_size(const symbolic::Expression& data_size, const symbolic::Expression& page_size) {
-        auto allocated = symbolic::mul(symbolic::divide_ceil(data_size, page_size), page_size);
+        auto allocated = symbolic::mul(symbolic::ceil_count(data_size, page_size), page_size);
 
         return std::move(allocated);
     }
