@@ -133,7 +133,7 @@ void Memlet::validate(const Function& function) const {
             }
             auto dst_data = dst_node->data();
             // Criterion: Destination must be non-constant
-            if (helpers::is_number(dst_data) || symbolic::is_nullptr(symbolic::symbol(dst_data))) {
+            if (helpers::is_number(dst_data) || symbolic::is_nullptr(dst_data)) {
                 throw InvalidSDFGException("Memlet: Reference memlets must have a non-constant destination");
             }
 
@@ -153,7 +153,7 @@ void Memlet::validate(const Function& function) const {
             }
 
             // Case: Constant
-            if (helpers::is_number(src_node->data()) || symbolic::is_nullptr(symbolic::symbol(src_node->data()))) {
+            if (helpers::is_number(src_node->data()) || symbolic::is_nullptr(src_node->data())) {
                 if (!this->subset_.empty()) {
                     throw InvalidSDFGException("Memlet: Reference memlets for raw addresses must not have a subset");
                 }

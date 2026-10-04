@@ -78,7 +78,7 @@ bool Function::exists(const std::string& name) const {
 };
 
 const types::IType& Function::type(const std::string& name) const {
-    if (symbolic::is_nullptr(symbolic::symbol(name))) {
+    if (symbolic::is_nullptr(name)) {
         return this->opaque_pointer_;
     }
     auto entry = this->containers_.find(name);

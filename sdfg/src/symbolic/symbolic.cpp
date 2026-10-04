@@ -57,7 +57,11 @@ Symbol __nullptr__() {
 };
 
 bool is_nullptr(const Symbol symbol) {
-    return symbol->get_name() == "__daisy_nullptr";
+    return is_nullptr(symbol->get_name());
+};
+
+bool is_nullptr(const std::string& name) {
+    return name == "__daisy_nullptr";
 };
 
 bool is_pointer(const Symbol symbol) {
