@@ -5,9 +5,11 @@
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/parallelization/passes/for_classification.h"
 #include "sdfg/structured_control_flow/for.h"
+#include "sdfg/structured_control_flow/if_else.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/transformations/loop_interchange.h"
 #include "sdfg/transformations/loop_skewing.h"
+#include "sdfg/transformations/loop_tiling.h"
 
 namespace parallelogram_tiling_test {
 
@@ -52,6 +54,76 @@ std::unique_ptr<builder::StructuredSDFGBuilder> build_gauss_seidel() {
     );
     builder->add_computational_memlet(block, a_in, tasklet, "_in2", {i, symbolic::sub(j, symbolic::one())}, desc);
     builder->add_computational_memlet(block, tasklet, "_out", a_out, {i, j}, desc);
+    return builder;
+}
+
+// Jacobi-1D after shift+fusion, built directly:
+//   for t in [0, T): for f in [0, N-1):
+//     if f < N-2: B[f+1] = (A[f] + A[f+1] + A[f+2]) / 3
+//     if f >= 1:  A[f]   = (B[f-1] + B[f] + B[f+1]) / 3
+std::unique_ptr<builder::StructuredSDFGBuilder> build_fused_jacobi_1d() {
+    auto builder = std::make_unique<builder::StructuredSDFGBuilder>("jacobi_1d", FunctionType_CPU);
+    types::Scalar idx(types::PrimitiveType::Int64);
+    types::Scalar elem(types::PrimitiveType::Double);
+    types::Array arr(elem, symbolic::symbol("N"));
+    builder->add_container("T", idx, true);
+    builder->add_container("N", idx, true);
+    builder->add_container("t", idx);
+    builder->add_container("f", idx);
+    builder->add_container("A", arr, true);
+    builder->add_container("B", arr, true);
+    for (auto name : {"s1", "s2", "s3", "s4"}) {
+        builder->add_container(name, elem);
+    }
+    auto t = symbolic::symbol("t");
+    auto f = symbolic::symbol("f");
+    auto N = symbolic::symbol("N");
+    auto& loop_t = builder->add_for(
+        builder->subject().root(),
+        t,
+        symbolic::Lt(t, symbolic::symbol("T")),
+        symbolic::zero(),
+        symbolic::add(t, symbolic::one())
+    );
+    auto& loop_f = builder->add_for(
+        loop_t.root(),
+        f,
+        symbolic::Lt(f, symbolic::sub(N, symbolic::one())),
+        symbolic::zero(),
+        symbolic::add(f, symbolic::one())
+    );
+    auto stencil = [&](structured_control_flow::Sequence& seq,
+                       const std::string& in,
+                       const std::string& out,
+                       const symbolic::Expression& base,
+                       const symbolic::Expression& out_idx,
+                       const std::string& tmp_a,
+                       const std::string& tmp_b) {
+        auto& b1 = builder->add_block(seq);
+        auto& in1 = builder->add_access(b1, in);
+        auto& t1 = builder->add_tasklet(b1, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
+        builder->add_computational_memlet(b1, in1, t1, "_in1", {base}, arr);
+        builder->add_computational_memlet(b1, in1, t1, "_in2", {symbolic::add(base, symbolic::one())}, arr);
+        builder->add_computational_memlet(b1, t1, "_out", builder->add_access(b1, tmp_a), {});
+        auto& b2 = builder->add_block(seq);
+        auto& t2 = builder->add_tasklet(b2, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
+        builder->add_computational_memlet(b2, builder->add_access(b2, tmp_a), t2, "_in1", {});
+        builder->add_computational_memlet(
+            b2, builder->add_access(b2, in), t2, "_in2", {symbolic::add(base, symbolic::integer(2))}, arr
+        );
+        builder->add_computational_memlet(b2, t2, "_out", builder->add_access(b2, tmp_b), {});
+        auto& b3 = builder->add_block(seq);
+        auto& t3 = builder->add_tasklet(b3, data_flow::TaskletCode::fp_mul, "_out", {"_in1", "_in2"});
+        builder->add_computational_memlet(b3, builder->add_constant(b3, "0.333", elem), t3, "_in1", {});
+        builder->add_computational_memlet(b3, builder->add_access(b3, tmp_b), t3, "_in2", {});
+        builder->add_computational_memlet(b3, t3, "_out", builder->add_access(b3, out), {out_idx}, arr);
+    };
+    auto& guards = builder->add_if_else(loop_f.root());
+    auto& k1 = builder->add_case(guards, symbolic::Lt(f, symbolic::sub(N, symbolic::integer(2))));
+    stencil(k1, "A", "B", f, symbolic::add(f, symbolic::one()), "s1", "s2");
+    auto& guards2 = builder->add_if_else(loop_f.root());
+    auto& k2 = builder->add_case(guards2, symbolic::Ge(f, symbolic::one()));
+    stencil(k2, "B", "A", symbolic::sub(f, symbolic::one()), f, "s3", "s4");
     return builder;
 }
 
@@ -122,6 +194,70 @@ TEST(ParallelogramTilingTest, Wavefront_Skew2_InnerParallel) {
     classification.run(*builder, am);
     expect_loop(loop_at(root, {0}), "j", 1, false);
     expect_loop(loop_at(root, {0, 0}), "i", 1, true);
+}
+
+// Parallelogram tiles of 32x32 with a tile-level wavefront:
+//   strip i (32) -> skew(i, j, 1) within the band -> interchange(i, j) -> tile j (32)
+//   gives  for ib step 32: for jb step 32: for j: for i
+// The band-relative skew yields tile distances (0,1), (1,0), (1,-1), so the wavefront is
+// w = 2*ib/32 + jb/32, i.e. skew(ib, jb, 2) followed by interchange(ib, jb).
+TEST(ParallelogramTilingTest, TileWavefront_GaussSeidel) {
+    auto builder = build_gauss_seidel();
+    analysis::AnalysisManager am(builder->subject());
+    auto& root = builder->subject().root();
+
+    ASSERT_NO_FATAL_FAILURE(apply(*builder, am, transformations::LoopTiling(loop_at(root, {0}), 32)));
+    ASSERT_NO_FATAL_FAILURE(
+        apply(*builder, am, transformations::LoopSkewing(loop_at(root, {0, 0}), loop_at(root, {0, 0, 0}), 1))
+    );
+    ASSERT_NO_FATAL_FAILURE(
+        apply(*builder, am, transformations::LoopInterchange(loop_at(root, {0, 0}), loop_at(root, {0, 0, 0})))
+    );
+    ASSERT_NO_FATAL_FAILURE(apply(*builder, am, transformations::LoopTiling(loop_at(root, {0, 0}), 32)));
+    ASSERT_NO_FATAL_FAILURE(
+        apply(*builder, am, transformations::LoopSkewing(loop_at(root, {0}), loop_at(root, {0, 0}), 2))
+    );
+    ASSERT_NO_FATAL_FAILURE(
+        apply(*builder, am, transformations::LoopInterchange(loop_at(root, {0}), loop_at(root, {0, 0})))
+    );
+
+    parallelization::ForClassificationPass classification;
+    classification.run(*builder, am);
+    expect_loop(loop_at(root, {0}), "j_tile0", 32, false);
+    expect_loop(loop_at(root, {0, 0}), "i_tile0", 32, true);
+    expect_loop(loop_at(root, {0, 0, 0}), "j", 1, false);
+    expect_loop(loop_at(root, {0, 0, 0, 0}), "i", 1, false);
+}
+
+// Jacobi-1D with 32x16 parallelogram tiles and a tile-level wavefront:
+//   strip t (16) -> skew(t, f, 2) within the band -> interchange(t, f) -> tile f (32)
+//   -> skew(tb, fb, 4) -> interchange(tb, fb)
+// Tile distances are (0,1), (1,0), (1,-1) as for Gauss-Seidel; a band spans 4*16 = 64 = 2 tiles.
+TEST(ParallelogramTilingTest, TileWavefront_Jacobi1D) {
+    auto builder = build_fused_jacobi_1d();
+    analysis::AnalysisManager am(builder->subject());
+    auto& root = builder->subject().root();
+
+    ASSERT_NO_FATAL_FAILURE(apply(*builder, am, transformations::LoopTiling(loop_at(root, {0}), 16)));
+    ASSERT_NO_FATAL_FAILURE(
+        apply(*builder, am, transformations::LoopSkewing(loop_at(root, {0, 0}), loop_at(root, {0, 0, 0}), 2))
+    );
+    ASSERT_NO_FATAL_FAILURE(
+        apply(*builder, am, transformations::LoopInterchange(loop_at(root, {0, 0}), loop_at(root, {0, 0, 0})))
+    );
+    ASSERT_NO_FATAL_FAILURE(apply(*builder, am, transformations::LoopTiling(loop_at(root, {0, 0}), 32)));
+    ASSERT_NO_FATAL_FAILURE(
+        apply(*builder, am, transformations::LoopSkewing(loop_at(root, {0}), loop_at(root, {0, 0}), 4))
+    );
+    ASSERT_NO_FATAL_FAILURE(
+        apply(*builder, am, transformations::LoopInterchange(loop_at(root, {0}), loop_at(root, {0, 0})))
+    );
+
+    // ForClassificationPass is not run: its dependence analysis does not finish on these bounds yet.
+    expect_loop(loop_at(root, {0}), "f_tile0", 32, false);
+    expect_loop(loop_at(root, {0, 0}), "t_tile0", 16, false);
+    expect_loop(loop_at(root, {0, 0, 0}), "f", 1, false);
+    expect_loop(loop_at(root, {0, 0, 0, 0}), "t", 1, false);
 }
 
 } // namespace parallelogram_tiling_test

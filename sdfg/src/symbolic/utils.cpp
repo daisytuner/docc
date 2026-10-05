@@ -125,6 +125,44 @@ private:
 
 static ISLSymbolicPrinter isl_printer;
 
+// Integer residue of a strided loop's lower bound: `c + step * k` (k integer-valued) yields `c`, else null.
+static Expression stride_residue(const Expression& lb, const Expression& step) {
+    if (lb.is_null() || !SymEngine::is_a<SymEngine::Integer>(*step)) {
+        return SymEngine::null;
+    }
+    if (SymEngine::is_a<SymEngine::Integer>(*lb)) {
+        return lb;
+    }
+    auto& step_int = SymEngine::down_cast<const SymEngine::Integer&>(*step);
+    auto multiple_of_step = [&](const Expression& term) {
+        if (!SymEngine::is_a<SymEngine::Mul>(*term)) {
+            return false;
+        }
+        auto coef = SymEngine::down_cast<const SymEngine::Mul&>(*term).get_coef();
+        return SymEngine::is_a<SymEngine::Integer>(*coef) &&
+               SymEngine::mp_divisible_p(
+                   SymEngine::down_cast<const SymEngine::Integer&>(*coef).as_integer_class(),
+                   step_int.as_integer_class()
+               );
+    };
+    auto expanded = symbolic::expand(lb);
+    if (multiple_of_step(expanded)) {
+        return symbolic::zero();
+    }
+    if (!SymEngine::is_a<SymEngine::Add>(*expanded)) {
+        return SymEngine::null;
+    }
+    Expression residue = symbolic::zero();
+    for (auto& term : expanded->get_args()) {
+        if (SymEngine::is_a<SymEngine::Integer>(*term)) {
+            residue = symbolic::add(residue, term);
+        } else if (!multiple_of_step(term)) {
+            return SymEngine::null;
+        }
+    }
+    return residue;
+}
+
 std::string expression_to_map_str(const MultiExpression& expr, const Assumptions& assums) {
     // Get all symbols
     symbolic::SymbolSet syms;
@@ -226,11 +264,8 @@ std::string expression_to_map_str(const MultiExpression& expr, const Assumptions
         if (symbolic::eq(arg1, symbolic::one())) {
             continue;
         }
-        auto lb = assums.at(sym).tight_lower_bound();
+        auto lb = stride_residue(assums.at(sym).tight_lower_bound(), arg1);
         if (lb == SymEngine::null) {
-            continue;
-        }
-        if (!SymEngine::is_a<SymEngine::Integer>(*lb)) {
             continue;
         }
 
@@ -452,8 +487,8 @@ std::tuple<std::string, std::string, std::string> expressions_to_intersection_ma
         if (symbolic::eq(arg1, symbolic::one())) {
             continue;
         }
-        auto lb = assums1.at(sym).tight_lower_bound();
-        if (!SymEngine::is_a<SymEngine::Integer>(*lb)) {
+        auto lb = stride_residue(assums1.at(sym).tight_lower_bound(), arg1);
+        if (lb.is_null()) {
             continue;
         }
 
@@ -509,8 +544,8 @@ std::tuple<std::string, std::string, std::string> expressions_to_intersection_ma
         if (symbolic::eq(arg1, symbolic::one())) {
             continue;
         }
-        auto lb = assums2.at(sym).tight_lower_bound();
-        if (!SymEngine::is_a<SymEngine::Integer>(*lb)) {
+        auto lb = stride_residue(assums2.at(sym).tight_lower_bound(), arg1);
+        if (lb.is_null()) {
             continue;
         }
 
@@ -767,8 +802,8 @@ isl_map* build_access_map(
             symbolic::eq(arg1, symbolic::one())) {
             continue;
         }
-        auto lb = assums.at(sym).tight_lower_bound();
-        if (lb.is_null() || !SymEngine::is_a<SymEngine::Integer>(*lb)) {
+        auto lb = stride_residue(assums.at(sym).tight_lower_bound(), arg1);
+        if (lb.is_null()) {
             continue;
         }
         isl_aff* offset = isl_aff_sub(
