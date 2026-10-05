@@ -142,11 +142,12 @@ void CUDAOffloadScheduler::pre_schedule(
     }
 }
 
-void CUDAOffloadScheduler::post_schedule(
+bool CUDAOffloadScheduler::post_schedule(
     builder::StructuredSDFGBuilder& builder,
     analysis::AnalysisManager& analysis_manager,
     std::vector<structured_control_flow::StructuredLoop*>& scheduled_loops
 ) {
+    bool changed = false;
     std::vector<structured_control_flow::StructuredLoop*> gpu_loops;
     for (auto* loop : scheduled_loops) {
         if (auto* sloop = dyn_cast<structured_control_flow::StructuredLoop*>(loop)) {
@@ -156,13 +157,14 @@ void CUDAOffloadScheduler::post_schedule(
 
     if (!gpu_loops.empty()) {
         GPUNestedOffloadPass nested_offload_pass(gpu_loops, GPUTarget::CUDA);
-        nested_offload_pass.run(builder, analysis_manager);
+        changed |= nested_offload_pass.run(builder, analysis_manager);
         analysis_manager.invalidate_all();
     }
 
     cuda::CudaLibraryNodeTransferExtractionPass transfer_extraction_pass;
-    transfer_extraction_pass.run(builder, analysis_manager);
+    changed |= transfer_extraction_pass.run(builder, analysis_manager);
     analysis_manager.invalidate_all();
+    return changed;
 }
 
 std::unordered_set<ScheduleTypeCategory> CUDAOffloadScheduler::compatible_types() {

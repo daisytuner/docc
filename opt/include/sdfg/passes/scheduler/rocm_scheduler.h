@@ -44,7 +44,7 @@ public:
         std::vector<structured_control_flow::StructuredLoop*>& applicable_loops
     ) override;
 
-    void post_schedule(
+    bool post_schedule(
         builder::StructuredSDFGBuilder& builder,
         analysis::AnalysisManager& analysis_manager,
         std::vector<structured_control_flow::StructuredLoop*>& scheduled_loops
