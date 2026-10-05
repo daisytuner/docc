@@ -5,6 +5,7 @@
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <unordered_map>
 
 #include "sdfg/exceptions.h"
 #include "sdfg/symbolic/symbolic.h"
@@ -164,6 +165,7 @@ class Element {
 protected:
     size_t element_id_;
     DebugInfo debug_info_;
+    std::unordered_map<std::string, std::string> metadata_;
 
 public:
     Element(size_t element_id, const DebugInfo& debug_info);
@@ -175,6 +177,16 @@ public:
     const DebugInfo& debug_info() const;
 
     void set_debug_info(const DebugInfo& debug_info);
+
+    void add_metadata(const std::string& key, const std::string& value);
+
+    void remove_metadata(const std::string& key);
+
+    const std::string& metadata(const std::string& key) const;
+
+    const std::string* metadata_if_exists(const std::string& key) const;
+
+    const std::unordered_map<std::string, std::string>& metadata() const;
 
     /**
      * Returns the type of the element.

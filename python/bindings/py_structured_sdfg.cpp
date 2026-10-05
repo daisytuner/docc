@@ -605,6 +605,11 @@ std::string PyStructuredSDFG::compile(
         bool sampling = options_.get(sdfg::codegen::INSTRUMENTATION_ADAPTIVE_SAMPLING, false);
         instrumentation_plan = sdfg::codegen::InstrumentationPlan::outermost_loops_plan(*sdfg_, true, sampling);
         sdfg::auto_util::add_offloading_instrumentations(*instrumentation_plan, *sdfg_);
+    } else if (instrumentation_mode == "ols_tuned") {
+        bool sampling = options_.get(sdfg::codegen::INSTRUMENTATION_ADAPTIVE_SAMPLING, false);
+        instrumentation_plan =
+            sdfg::codegen::InstrumentationPlan::provenance_grouped_outermost_loops_plan(*sdfg_, true, sampling);
+        sdfg::auto_util::add_offloading_instrumentations(*instrumentation_plan, *sdfg_);
     } else {
         throw std::runtime_error("Unsupported instrumentation plan: " + instrumentation_mode);
     }

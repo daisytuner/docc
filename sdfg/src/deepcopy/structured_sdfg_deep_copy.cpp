@@ -178,6 +178,11 @@ std::unordered_map<const structured_control_flow::ControlFlowNode*, const struct
 StructuredSDFGDeepCopy::copy() {
     this->node_mapping.clear();
     this->insert(this->root_, this->source_);
+    for (const auto& [source, target] : this->node_mapping) {
+        for (const auto& [key, value] : source->metadata()) {
+            const_cast<structured_control_flow::ControlFlowNode*>(target)->add_metadata(key, value);
+        }
+    }
     return this->node_mapping;
 };
 
@@ -186,6 +191,11 @@ StructuredSDFGDeepCopy::insert() {
     if (auto seq_source = dyn_cast<structured_control_flow::Sequence*>(&this->source_)) {
         this->node_mapping.clear();
         this->append(this->root_, *seq_source);
+        for (const auto& [source, target] : this->node_mapping) {
+            for (const auto& [key, value] : source->metadata()) {
+                const_cast<structured_control_flow::ControlFlowNode*>(target)->add_metadata(key, value);
+            }
+        }
         return this->node_mapping;
     } else {
         throw std::runtime_error("Source node must be a sequence");

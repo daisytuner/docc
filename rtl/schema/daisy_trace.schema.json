@@ -226,6 +226,74 @@
                 "element_id": {
                     "type": "integer"
                 },
+                "source_loop_id": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description":
+                        "Original loop ID shared by tuned loops in a provenance-grouped instrumentation region."
+                },
+                "member_loops": {
+                    "type": "array",
+                    "description":
+                        "All optimized loop members enclosed by this provenance-grouped instrumentation span.",
+                    "items": {
+                        "type": "object",
+                        "required": [
+                            "element_id",
+                            "filename",
+                            "function",
+                            "start_line",
+                            "start_column",
+                            "end_line",
+                            "end_column"
+                        ],
+                        "properties": {
+                            "element_id": {
+                                "type": "integer",
+                                "minimum": 1
+                            },
+                            "filename": {
+                                "type": "string"
+                            },
+                            "function": {
+                                "type": "string"
+                            },
+                            "start_line": {
+                                "type": "integer",
+                                "minimum": 0
+                            },
+                            "start_column": {
+                                "type": "integer",
+                                "minimum": 0
+                            },
+                            "end_line": {
+                                "type": "integer",
+                                "minimum": 0
+                            },
+                            "end_column": {
+                                "type": "integer",
+                                "minimum": 0
+                            }
+                        }
+                    }
+                },
+                "rpc_optimization": {
+                    "type": "object",
+                    "description":
+                        "Predicted performance metrics for this tuned loop; values are predictions, not runtime-measured results.",
+                    "properties": {
+                        "expected_performance": {
+                            "type": "object",
+                            "description":
+                                "Open-ended map of backend-predicted performance metrics.",
+                            "additionalProperties": true
+                        },
+                        "vector_distance": {
+                            "type": "number",
+                            "minimum": 0
+                        }
+                    }
+                },
                 "element_type": {
                     "type": "string"
                 },

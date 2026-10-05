@@ -80,6 +80,8 @@ public:
         PrettyPrinter& main_stream, PrettyPrinter& globals_stream, CodeSnippetFactory& library_snippet_factory
     ) = 0;
 
+    InstrumentationInfo instrumentation_info_for_group() const;
+
     virtual void
     dispatch(PrettyPrinter& main_stream, PrettyPrinter& globals_stream, CodeSnippetFactory& library_snippet_factory);
 };
