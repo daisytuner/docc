@@ -682,7 +682,7 @@ class GraphParserBase:
                 "No result type information in metadata",
             )
         val: Any = node.meta["val"]
-        if not isinstance(val, tuple):
+        if not isinstance(val, (tuple, list)):
             return (self.get_node_sdfg_tensor(node),)
         sdfg_tensors: list[Tensor | None] = []
         for elem in val:
