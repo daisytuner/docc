@@ -11,7 +11,7 @@
 
 namespace sdfg::gpu::rocm {
 
-// Transformation wrapper around the ROCm MMA (rocwmma) library-node expander.
+// Transformation wrapper around the ROCm/CUDA MMA library-node expander.
 // Given a MatMul library node and a target arch, it expands the node into the
 // arch-specific MMA implementation, mirroring the C++ ``expand_single_node``.
 class GpuMmaTransform : public transformations::Transformation {

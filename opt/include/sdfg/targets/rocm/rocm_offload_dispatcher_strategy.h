@@ -39,7 +39,7 @@ public:
 
     void emit_target_header_declarations(codegen::PrettyPrinter& kernel_header_stream) override;
 
-    ROCMOffloadDispatcherStrategy(StructuredSDFG& sdfg);
+    ROCMOffloadDispatcherStrategy(StructuredSDFG& sdfg, const StructuredLoop& loop);
 
     void dispatch_kernel_launch_error_check(
         codegen::PrettyPrinter& stream, const codegen::LanguageExtension& language_extension

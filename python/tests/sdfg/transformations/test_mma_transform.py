@@ -1,4 +1,4 @@
-"""ROCm MMA (rocwmma) expansion tests for the ``RocmMmaTransform`` transformation.
+"""ROCm MMA (rocwmma) expansion tests for the ``GpuMmaTransform`` transformation.
 
 These mirror the C++ ``ROCMMMATest`` unit tests (``opt/tests/rocm/rocm_mma_test.cpp``)
 but drive the *builder* API from Python:
@@ -8,7 +8,7 @@ but drive the *builder* API from Python:
   holds a single ``MatMulNode`` over the per-block tile.  The tile layouts follow
   the row-major layout of the full ``M x K`` / ``K x N`` / ``M x N`` matrices, with
   the tile offset selected by the map induction variables.
-* ``_apply`` builds the ``RocmMmaTransform`` transformation for a target ``RocmArch``
+* ``_apply`` builds the ``GpuMmaTransform`` transformation for a target ``RocmArch``
   and reports whether it applies.
 
 The expander only accepts tiles whose ``M``/``N``/``K`` extents are whole multiples
@@ -35,7 +35,7 @@ from docc.sdfg import (
     Pointer,
     PrimitiveType,
     RocmArch,
-    RocmMmaTransform,
+    GpuMmaTransform,
     Scalar,
     ScheduleType,
     StorageType,
@@ -111,13 +111,6 @@ def _build_offloaded_mma(M, N, K, tile_m, tile_n):
     return builder, node
 
 
-def _apply(builder, node, arch_name):
-    """Build ``RocmMmaTransform`` for ``arch_name`` and return (transform, analysis_manager)."""
-    am = AnalysisManager(builder)
-    xform = RocmMmaTransform(node, RocmArch.get_from_name(arch_name))
-    return xform, am
-
-
 ARCHES = ["gfx1201", "gfx90a"]
 
 # (m_blocks, n_blocks) shapes the 16-wide MMA supports: 1x1, 2x2, 4x4.
@@ -145,7 +138,10 @@ UNSUPPORTED = [
 )
 def test_mma_expand_applies(arch, M, N, K, tile_m, tile_n):
     builder, node = _build_offloaded_mma(M, N, K, tile_m, tile_n)
-    xform, am = _apply(builder, node, arch)
+    am1 = AnalysisManager(builder)
+    xform1 = GpuMmaTransform(node, RocmArch.get_from_name(arch))
+    result = xform1, am1
+    xform, am = result
 
     assert xform.can_be_applied(
         builder, am
@@ -165,7 +161,10 @@ def test_mma_expand_applies(arch, M, N, K, tile_m, tile_n):
 )
 def test_mma_expand_declines(arch, M, N, K, tile_m, tile_n):
     builder, node = _build_offloaded_mma(M, N, K, tile_m, tile_n)
-    xform, am = _apply(builder, node, arch)
+    am1 = AnalysisManager(builder)
+    xform1 = GpuMmaTransform(node, RocmArch.get_from_name(arch))
+    result = xform1, am1
+    xform, am = result
 
     assert not xform.can_be_applied(
         builder, am
@@ -209,7 +208,7 @@ def _build_executable_mma(M, N, K, tile_m, tile_n):
         str(tile_m),
         ScheduleType.rocm_offload(TargetLevel.Y_GRID, _ceil_div(M, tile_m)),
     )
-    builder.begin_map(
+    grid_n_loop = builder.begin_map(
         "block_col",
         "0",
         str(N),
@@ -224,7 +223,7 @@ def _build_executable_mma(M, N, K, tile_m, tile_n):
     off("dA", "dA", DataTransferDirection.NONE, BufferLifecycle.FREE, 0)
     off("dB", "dB", DataTransferDirection.NONE, BufferLifecycle.FREE, 0)
 
-    return builder, node
+    return builder, node, grid_n_loop
 
 
 EXEC_CASES = [
@@ -245,15 +244,20 @@ def test_mma_expand_executes(arch, M, N, K, tile_m, tile_n):
     if RocmArch.current_name() != arch:
         pytest.skip(f"DOCC_ROCM_ARCH ({RocmArch.current_name()}) != {arch}")
 
-    builder, node = _build_executable_mma(M, N, K, tile_m, tile_n)
-    xform, am = _apply(builder, node, arch)
+    output_dir = (
+        PYTEST_OUTPUT_DIR / f"mma_{arch}_{M}x{N}x{K}_{tile_m}x{tile_n}_executes"
+    )
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    builder, node, _ = _build_executable_mma(M, N, K, tile_m, tile_n)
+    builder.dump(str(output_dir), "init", True, True)
+
+    am = AnalysisManager(builder)
+    xform = GpuMmaTransform(node, RocmArch.get_from_name(arch))
     assert xform.can_be_applied(builder, am)
     xform.apply(builder, am)
     assert xform.expanded
     sdfg = builder.move()
-
-    output_dir = PYTEST_OUTPUT_DIR / f"mma_{arch}_{M}x{N}x{K}_{tile_m}x{tile_n}"
-    output_dir.mkdir(parents=True, exist_ok=True)
 
     sdfg.dump(str(output_dir), "expanded", True, True)
     sdfg.validate()
@@ -270,3 +274,10 @@ def test_mma_expand_executes(arch, M, N, K, tile_m, tile_n):
 
     ref = A.astype(np.float32) @ B.astype(np.float32)
     np.testing.assert_allclose(C.astype(np.float32), ref, rtol=5e-2, atol=5e-2)
+
+
+def _apply_transform(builder, am, transform):
+    assert transform.can_be_applied(
+        builder, am
+    ), f"Transform {transform} should be applicable"
+    transform.apply(builder, am)

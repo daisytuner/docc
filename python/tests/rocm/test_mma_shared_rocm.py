@@ -36,7 +36,7 @@ from docc.sdfg import (
     Pointer,
     PrimitiveType,
     RocmArch,
-    RocmMmaTransform,
+    GpuMmaTransform,
     Scalar,
     ScheduleType,
     StorageType,

@@ -585,11 +585,11 @@ void register_transformations(py::module& m) {
         });
 
     // RocmMmaExpand transformation: expand a MatMul node into an arch-specific MMA impl.
-    py::class_<sdfg::gpu::rocm::GpuMmaTransform, Transformation>(m, "RocmMmaTransform")
+    py::class_<sdfg::gpu::rocm::GpuMmaTransform, Transformation>(m, "GpuMmaTransform")
         .def(
-            py::init([](sdfg::data_flow::LibraryNode& node, const sdfg::gpu::rocm::RocmArch& arch) {
+            py::init([](sdfg::data_flow::LibraryNode& node, const sdfg::gpu::GpuArch* arch) {
                 auto& matmul_node = sdfg::dyn_cast<sdfg::math::tensor::MatMulNode>(node);
-                return new sdfg::gpu::rocm::GpuMmaTransform(matmul_node, &arch);
+                return new sdfg::gpu::rocm::GpuMmaTransform(matmul_node, arch);
             }),
             py::arg("node"),
             py::arg("arch"),
@@ -606,7 +606,7 @@ void register_transformations(py::module& m) {
             "Whether the node was expanded (valid after apply())"
         )
         .def("__repr__", [](const sdfg::gpu::rocm::GpuMmaTransform&) {
-            return std::string("<RocmMmaTransform name='RocmMmaTransform'>");
+            return std::string("<GpuMmaTransform name='GpuMmaTransform'>");
         });
 
     py::class_<sdfg::gpu::GpuMmaEinsumTransform, Transformation>(m, "GpuMmaEinsumTransform")

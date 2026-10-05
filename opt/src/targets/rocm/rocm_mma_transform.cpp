@@ -8,24 +8,27 @@ GpuMmaTransform::GpuMmaTransform(sdfg::math::tensor::MatMulNode& node, const Gpu
 }
 
 std::string GpuMmaTransform::name() const {
-    return "RocmMmaTransform";
+    return "GpuMmaTransform";
 }
 
 bool GpuMmaTransform::can_be_applied(sdfg::builder::StructuredSDFGBuilder&, sdfg::analysis::AnalysisManager&) {
     // Search the parents up until we find a map with the ROCm offloaded schedule type.
     auto& dataflow = node_.get_parent();
     ControlFlowNode* scope = static_cast<structured_control_flow::Block*>(dataflow.get_parent());
-    bool in_rocm_map = false;
+    bool in_gpu_arch_map = false;
     while (scope != nullptr) {
         if (auto* map = dyn_cast<structured_control_flow::Map*>(scope)) {
-            if (map->schedule_type().value() == ::sdfg::rocm::ScheduleType_ROCM_Offload::value()) {
-                in_rocm_map = true;
+            if (auto* arch = GpuArch::get_from_schedule_type(map->schedule_type())) {
+                in_gpu_arch_map = true;
+                if (!this->arch_) {
+                    this->arch_ = arch;
+                }
                 break;
             }
         }
         scope = scope->get_parent();
     }
-    if (!in_rocm_map) {
+    if (!in_gpu_arch_map) {
         return false;
     }
     GpuMmaExpander expander(arch_);
@@ -51,10 +54,16 @@ void GpuMmaTransform::to_json(nlohmann::json& j) const {
 }
 
 GpuMmaTransform GpuMmaTransform::from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& desc) {
-    auto arch_name = desc.at("arch").get<std::string>();
-    const sdfg::gpu::rocm::RocmArch* arch = sdfg::gpu::rocm::rocm_arch_parse(arch_name);
-    if (!arch) {
-        throw transformations::InvalidTransformationDescriptionException("Unsupported GPU architecture: " + arch_name);
+    const GpuArch* arch;
+    auto it = desc.find("arch");
+    if (it != desc.end()) {
+        std::string arch_name = it->get<std::string>();
+        arch = GpuArch::parse_from_name(arch_name);
+        if (!arch) {
+            throw transformations::InvalidTransformationDescriptionException("Unsupported GPU architecture: " + arch_name);
+        }
+    } else {
+        arch = nullptr;
     }
     auto node_id = desc.at("matmul_node").get<size_t>();
     auto* elem = builder.find_element_by_id(node_id);

@@ -111,7 +111,7 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
     auto mma_impl_type = mma_arch->get_mma_impl_type();
 
     auto& m_dim = layout_a.get_dim(0);
-    auto& k_dim = layout_b.get_dim(1);
+    auto& k_dim = layout_b.get_dim(0);
 
     auto& builder = standalone.builder();
     auto thread_x = symbolic::symbol(builder.find_new_name("wave_x"));
@@ -191,23 +191,27 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
         ScheduleType_GPU_Offload::create(arch, TargetLevel::Y_BLOCK, symbolic::integer(mma_tiling.macro_blocks_m))
     );
 
+    // K-tile loop variable; A and B advance along K with it.
+    auto k_tile = symbolic::symbol(builder.find_new_name("tile_k"));
+    builder.add_container(k_tile->get_name(), types::Scalar(types::get_primitive_type_to_hold_upper_bound(k_dim)));
+
     auto lda = layout_a.get_stride(a_col_major ? 1 : 0);
     auto a_offset = SymEngine::add({
         layout_a.offset(),
         SymEngine::mul({brow_in_tile, symbolic::integer(mma_tiling.mma_block_size.m), layout_a.get_stride(0)}),
-        SymEngine::mul({bcol_in_tile, symbolic::integer(mma_tiling.mma_block_size.n), layout_a.get_stride(1)}),
+        SymEngine::mul({k_tile, layout_a.get_stride(1)}),
     });
     auto ldb = layout_b.get_stride(b_col_major ? 1 : 0);
     auto b_offset = SymEngine::add(
         {layout_b.offset(),
-         SymEngine::mul({brow_in_tile, symbolic::integer(mma_tiling.mma_block_size.n), layout_b.get_stride(0)}),
-         SymEngine::mul({bcol_in_tile, symbolic::integer(mma_tiling.mma_block_size.k), layout_b.get_stride(1)})}
+         SymEngine::mul({k_tile, layout_b.get_stride(0)}),
+         SymEngine::mul({bcol_in_tile, symbolic::integer(mma_tiling.mma_block_size.n), layout_b.get_stride(1)})}
     );
     auto ldc = layout_y.get_stride(y_col_major ? 1 : 0);
     auto y_offset = SymEngine::add(
         {layout_y.offset(),
-         SymEngine::mul({bcol_in_tile, symbolic::integer(mma_tiling.mma_block_size.m), layout_y.get_stride(0)}),
-         SymEngine::mul({brow_in_tile, symbolic::integer(mma_tiling.mma_block_size.n), layout_y.get_stride(1)})}
+         SymEngine::mul({brow_in_tile, symbolic::integer(mma_tiling.mma_block_size.m), layout_y.get_stride(0)}),
+         SymEngine::mul({bcol_in_tile, symbolic::integer(mma_tiling.mma_block_size.n), layout_y.get_stride(1)})}
     );
 
     auto& per_wavefront_block = builder.add_block(row_map.root());
@@ -220,8 +224,6 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
         );
     }
 
-    auto k_tile = symbolic::symbol(builder.find_new_name("tile_k"));
-    builder.add_container(k_tile->get_name(), types::Scalar(types::get_primitive_type_to_hold_upper_bound(k_dim)));
     auto& k_sweep = builder.add_for(
         row_map.root(),
         k_tile,

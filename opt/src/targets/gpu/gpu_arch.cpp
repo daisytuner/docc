@@ -39,6 +39,16 @@ const GpuArch* GpuArch::get_from_schedule_type(const structured_control_flow::Sc
     return nullptr;
 }
 
+const GpuArch* GpuArch::parse_from_name(const std::string& raw_name) {
+    if (auto* carch = cuda::cuda_arch_parse(raw_name)) {
+        return carch;
+    } else if (auto* rarch = rocm::rocm_arch_parse(raw_name)) {
+        return rarch;
+    } else {
+        return nullptr;
+    }
+}
+
 namespace util {
 
 /// Runs a command and captures its standard output. Returns std::nullopt if the

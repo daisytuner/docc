@@ -28,6 +28,8 @@ public:
     virtual structured_control_flow::ScheduleType create_schedule_type() const = 0;
 
     static const GpuArch* get_from_schedule_type(const structured_control_flow::ScheduleType& schedule);
+
+    static const GpuArch* parse_from_name(const std::string& raw_name);
 };
 
 namespace util {

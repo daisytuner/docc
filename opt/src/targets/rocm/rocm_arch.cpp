@@ -299,7 +299,7 @@ GpuMmaTiling RocmMmaSupport::get_mma_tiling(const symbolic::MultiExpression& res
 void RocmMmaSupport::set_mma_fragment_storage_type(
     types::StorageType& storage_type, const MmaBlockSize& size, MmaFragmentType type, MmaFragmentLayout layout
 ) const {
-    storage_type.value() = MMA_STORAGE_TYPE;
+    storage_type.value(MMA_STORAGE_TYPE);
     storage_type.args(
         {symbolic::integer(size.m),
          symbolic::integer(size.n),
@@ -384,6 +384,7 @@ void RocmMmaSupport::emit_block_frag_type(
         os << ", rocwmma::fragment_scheduler::coop_row_major_2d<" << coop_dims->first << ", " << coop_dims->second
            << ">";
     }
+    os << ">";
 }
 
 std::optional<data_flow::ImplementationType> RocmMmaSupport::

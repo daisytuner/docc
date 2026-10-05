@@ -13,8 +13,14 @@ class ROCMLanguageExtension : public sdfg::codegen::LanguageExtension {
     const gpu::rocm::RocmArch* arch_;
 
 public:
+    ROCMLanguageExtension(
+        sdfg::Function& function, const gpu::rocm::RocmArch* arch, const std::string& external_prefix = ""
+    )
+        : LanguageExtension(function, external_prefix), arch_(arch) {
+    }
+
     ROCMLanguageExtension(sdfg::Function& function, const std::string& external_prefix = "")
-        : LanguageExtension(function, external_prefix) {
+        : ROCMLanguageExtension(function, nullptr, external_prefix) {
     }
 
     const std::string language() const override {
