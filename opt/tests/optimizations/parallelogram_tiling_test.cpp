@@ -197,8 +197,8 @@ TEST(ParallelogramTilingTest, Wavefront_Skew2_InnerParallel) {
 }
 
 // Parallelogram tiles of 32x32 with a tile-level wavefront:
-//   strip i (32) -> skew(i, j, 1) within the band -> interchange(i, j) -> tile j (32)
-//   gives  for ib step 32: for jb step 32: for j: for i
+//   strip i (32) -> skew(i, j, 1) within the band -> interchange(i, j) -> tile j (32) -> interchange(j, i)
+//   gives  for ib step 32: for jb step 32: for i: for j   (stride-1 sweeps inside each tile)
 // The band-relative skew yields tile distances (0,1), (1,0), (1,-1), so the wavefront is
 // w = 2*ib/32 + jb/32, i.e. skew(ib, jb, 2) followed by interchange(ib, jb).
 TEST(ParallelogramTilingTest, TileWavefront_GaussSeidel) {
@@ -215,6 +215,9 @@ TEST(ParallelogramTilingTest, TileWavefront_GaussSeidel) {
     );
     ASSERT_NO_FATAL_FAILURE(apply(*builder, am, transformations::LoopTiling(loop_at(root, {0, 0}), 32)));
     ASSERT_NO_FATAL_FAILURE(
+        apply(*builder, am, transformations::LoopInterchange(loop_at(root, {0, 0, 0}), loop_at(root, {0, 0, 0, 0})))
+    );
+    ASSERT_NO_FATAL_FAILURE(
         apply(*builder, am, transformations::LoopSkewing(loop_at(root, {0}), loop_at(root, {0, 0}), 2))
     );
     ASSERT_NO_FATAL_FAILURE(
@@ -225,12 +228,12 @@ TEST(ParallelogramTilingTest, TileWavefront_GaussSeidel) {
     classification.run(*builder, am);
     expect_loop(loop_at(root, {0}), "j_tile0", 32, false);
     expect_loop(loop_at(root, {0, 0}), "i_tile0", 32, true);
-    expect_loop(loop_at(root, {0, 0, 0}), "j", 1, false);
-    expect_loop(loop_at(root, {0, 0, 0, 0}), "i", 1, false);
+    expect_loop(loop_at(root, {0, 0, 0}), "i", 1, false);
+    expect_loop(loop_at(root, {0, 0, 0, 0}), "j", 1, false);
 }
 
 // Jacobi-1D with 32x16 parallelogram tiles and a tile-level wavefront:
-//   strip t (16) -> skew(t, f, 2) within the band -> interchange(t, f) -> tile f (32)
+//   strip t (16) -> skew(t, f, 2) within the band -> interchange(t, f) -> tile f (32) -> interchange(f, t)
 //   -> skew(tb, fb, 4) -> interchange(tb, fb)
 // Tile distances are (0,1), (1,0), (1,-1) as for Gauss-Seidel; a band spans 4*16 = 64 = 2 tiles.
 TEST(ParallelogramTilingTest, TileWavefront_Jacobi1D) {
@@ -247,6 +250,9 @@ TEST(ParallelogramTilingTest, TileWavefront_Jacobi1D) {
     );
     ASSERT_NO_FATAL_FAILURE(apply(*builder, am, transformations::LoopTiling(loop_at(root, {0, 0}), 32)));
     ASSERT_NO_FATAL_FAILURE(
+        apply(*builder, am, transformations::LoopInterchange(loop_at(root, {0, 0, 0}), loop_at(root, {0, 0, 0, 0})))
+    );
+    ASSERT_NO_FATAL_FAILURE(
         apply(*builder, am, transformations::LoopSkewing(loop_at(root, {0}), loop_at(root, {0, 0}), 4))
     );
     ASSERT_NO_FATAL_FAILURE(
@@ -256,8 +262,8 @@ TEST(ParallelogramTilingTest, TileWavefront_Jacobi1D) {
     // AutoParallelization is not run: its dependence analysis does not finish on these bounds yet.
     expect_loop(loop_at(root, {0}), "f_tile0", 32, false);
     expect_loop(loop_at(root, {0, 0}), "t_tile0", 16, false);
-    expect_loop(loop_at(root, {0, 0, 0}), "f", 1, false);
-    expect_loop(loop_at(root, {0, 0, 0, 0}), "t", 1, false);
+    expect_loop(loop_at(root, {0, 0, 0}), "t", 1, false);
+    expect_loop(loop_at(root, {0, 0, 0, 0}), "f", 1, false);
 }
 
 } // namespace parallelogram_tiling_test

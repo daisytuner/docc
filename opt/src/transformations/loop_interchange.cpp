@@ -5,8 +5,10 @@
 #include <isl/options.h>
 #include <isl/set.h>
 
+#include <functional>
 #include <optional>
 
+#include "sdfg/analysis/assumptions_analysis.h"
 #include "sdfg/exceptions.h"
 #include "sdfg/parallelization/analysis/loop_carried_dependency_analysis.h"
 #include "sdfg/structured_control_flow/for.h"
@@ -87,11 +89,30 @@ extract_strict_upper_bound(const symbolic::Condition& condition, const symbolic:
     return SymEngine::null;
 }
 
-/// `coefficient * sym + constant` with a non-negative integer coefficient.
+/// `floor((coefficient * sym + constant) / divisor)` with a non-negative integer coefficient and positive divisor.
 struct AffinePiece {
     int64_t coefficient;
     symbolic::Expression constant;
+    int64_t divisor = 1;
 };
+
+// Proves `expr >= 0` within the loop nest; empty when no assumptions are available.
+using NonNegProof = std::function<bool(const symbolic::Expression&)>;
+
+// Marks `idiv(x, q)` known to equal floor(x / q) in its context; only lives inside piece collection.
+static symbolic::Expression floor_piece(const symbolic::Expression& numerator, const symbolic::Expression& divisor) {
+    return SymEngine::function_symbol("__floor_piece", {numerator, divisor});
+}
+
+static bool is_floor_piece(const symbolic::Expression& expr) {
+    return SymEngine::is_a<SymEngine::FunctionSymbol>(*expr) &&
+           SymEngine::down_cast<const SymEngine::FunctionSymbol&>(*expr).get_name() == "__floor_piece";
+}
+
+static bool positive_integer_divisor(const symbolic::Expression& expr) {
+    return SymEngine::is_a<SymEngine::Integer>(*expr) &&
+           SymEngine::down_cast<const SymEngine::Integer&>(*expr).is_positive();
+}
 
 static bool contains_min_max(const symbolic::Expression& expr) {
     if (SymEngine::is_a<SymEngine::Min>(*expr) || SymEngine::is_a<SymEngine::Max>(*expr)) {
@@ -106,21 +127,58 @@ static bool contains_min_max(const symbolic::Expression& expr) {
 }
 
 // Flattens `expr` into affine pieces it is the min (or max) of, distributing sums and positive scalings.
-static bool collect_pieces(const symbolic::Expression& expr, bool is_min, std::vector<symbolic::Expression>& out) {
+static bool collect_pieces(
+    const symbolic::Expression& expr, bool is_min, const NonNegProof& nonneg, std::vector<symbolic::Expression>& out
+) {
     constexpr size_t max_pieces = 16;
     if ((is_min && SymEngine::is_a<SymEngine::Min>(*expr)) || (!is_min && SymEngine::is_a<SymEngine::Max>(*expr))) {
         for (auto& arg : expr->get_args()) {
-            if (!collect_pieces(arg, is_min, out) || out.size() > max_pieces) {
+            if (!collect_pieces(arg, is_min, nonneg, out) || out.size() > max_pieces) {
                 return false;
             }
         }
         return true;
     }
+    if (SymEngine::is_a<SymEngine::FunctionSymbol>(*expr) &&
+        SymEngine::down_cast<const SymEngine::FunctionSymbol&>(*expr).get_name() == "idiv" &&
+        positive_integer_divisor(expr->get_args()[1])) {
+        auto numerator = expr->get_args()[0];
+        auto divisor = expr->get_args()[1];
+        // max(0, trunc(x/q)) == max(0, floor(x/q)), so the zero sibling makes truncation exact.
+        if (!is_min && SymEngine::is_a<SymEngine::Max>(*numerator)) {
+            auto args = numerator->get_args();
+            bool has_zero = std::any_of(args.begin(), args.end(), [](auto& a) {
+                return symbolic::eq(a, symbolic::zero());
+            });
+            if (has_zero) {
+                for (auto& arg : args) {
+                    if (symbolic::eq(arg, symbolic::zero())) {
+                        out.push_back(symbolic::zero());
+                        continue;
+                    }
+                    std::vector<symbolic::Expression> numerators;
+                    if (!collect_pieces(arg, is_min, nonneg, numerators) ||
+                        out.size() + numerators.size() > max_pieces) {
+                        return false;
+                    }
+                    for (auto& piece : numerators) {
+                        out.push_back(floor_piece(piece, divisor));
+                    }
+                }
+                return true;
+            }
+        }
+        if (nonneg && !contains_min_max(numerator) && nonneg(numerator)) {
+            out.push_back(floor_piece(numerator, divisor));
+            return true;
+        }
+        return false;
+    }
     if (SymEngine::is_a<SymEngine::Add>(*expr)) {
         std::vector<symbolic::Expression> sums = {symbolic::zero()};
         for (auto& term : expr->get_args()) {
             std::vector<symbolic::Expression> term_pieces;
-            if (!collect_pieces(term, is_min, term_pieces) || sums.size() * term_pieces.size() > max_pieces) {
+            if (!collect_pieces(term, is_min, nonneg, term_pieces) || sums.size() * term_pieces.size() > max_pieces) {
                 return false;
             }
             std::vector<symbolic::Expression> next;
@@ -141,7 +199,7 @@ static bool collect_pieces(const symbolic::Expression& expr, bool is_min, std::v
         if (SymEngine::is_a<SymEngine::Integer>(*factor) &&
             SymEngine::down_cast<const SymEngine::Integer&>(*factor).is_positive() && !symbolic::eq(rest, expr)) {
             std::vector<symbolic::Expression> rest_pieces;
-            if (!collect_pieces(rest, is_min, rest_pieces)) {
+            if (!collect_pieces(rest, is_min, nonneg, rest_pieces)) {
                 return false;
             }
             for (auto& piece : rest_pieces) {
@@ -157,7 +215,7 @@ static bool collect_pieces(const symbolic::Expression& expr, bool is_min, std::v
     return true;
 }
 
-static std::optional<AffinePiece> affine_piece(const symbolic::Expression& expr, const symbolic::Symbol& sym) {
+static std::optional<AffinePiece> linear_piece(const symbolic::Expression& expr, const symbolic::Symbol& sym) {
     symbolic::SymbolVec syms = {sym};
     auto poly = symbolic::polynomial(expr, syms);
     if (poly == SymEngine::null) {
@@ -172,16 +230,51 @@ static std::optional<AffinePiece> affine_piece(const symbolic::Expression& expr,
         return std::nullopt;
     }
     int64_t value = SymEngine::down_cast<const SymEngine::Integer&>(*coeff).as_int();
-    if (value < 0) {
-        return std::nullopt;
-    }
     return AffinePiece{value, coeffs[symbolic::symbol("__daisy_constant__")]};
 }
 
+// `r + floor(p / q)` with r, p affine in sym becomes floor((p + q*r) / q).
+static std::optional<AffinePiece> affine_piece(const symbolic::Expression& expr, const symbolic::Symbol& sym) {
+    symbolic::Expression floor_term = SymEngine::null;
+    std::vector<symbolic::Expression> rest;
+    auto terms = SymEngine::is_a<SymEngine::Add>(*expr) ? expr->get_args() : SymEngine::vec_basic{expr};
+    for (auto& term : terms) {
+        if (is_floor_piece(term)) {
+            if (!floor_term.is_null()) {
+                return std::nullopt;
+            }
+            floor_term = term;
+        } else {
+            rest.push_back(term);
+        }
+    }
+    auto linear = linear_piece(rest.empty() ? symbolic::Expression(symbolic::zero()) : SymEngine::add(rest), sym);
+    if (!linear) {
+        return std::nullopt;
+    }
+    AffinePiece piece = *linear;
+    if (!floor_term.is_null()) {
+        auto numerator = linear_piece(floor_term->get_args()[0], sym);
+        if (!numerator) {
+            return std::nullopt;
+        }
+        int64_t q = SymEngine::down_cast<const SymEngine::Integer&>(*floor_term->get_args()[1]).as_int();
+        piece = AffinePiece{
+            numerator->coefficient + q * piece.coefficient,
+            symbolic::add(numerator->constant, symbolic::mul(symbolic::integer(q), piece.constant)),
+            q
+        };
+    }
+    if (piece.coefficient < 0 || symbolic::uses(piece.constant, "__floor_piece")) {
+        return std::nullopt;
+    }
+    return piece;
+}
+
 static std::optional<std::vector<AffinePiece>>
-affine_pieces(const symbolic::Expression& expr, bool is_min, const symbolic::Symbol& sym) {
+affine_pieces(const symbolic::Expression& expr, bool is_min, const symbolic::Symbol& sym, const NonNegProof& nonneg) {
     std::vector<symbolic::Expression> pieces;
-    if (!collect_pieces(expr, is_min, pieces)) {
+    if (!collect_pieces(expr, is_min, nonneg, pieces)) {
         return std::nullopt;
     }
     std::vector<AffinePiece> result;
@@ -208,10 +301,13 @@ static std::optional<int64_t> positive_stride(const structured_control_flow::Str
 }
 
 /// Fourier-Motzkin projection of the 2-D nest
-///   for o = o_init; o < o_bound; o += S_o:  for j = max_l(c_l*o + d_l); j < min_k(c_k*o + e_k); j += S_j
-/// with all c >= 0. Returns the new outer (j) and inner (o) headers, or nullopt if unsupported.
+///   for o = o_init; o < o_bound; o += S_o:  for j = max_l(v_l(o)); j < min_k(v_k(o)); j += S_j
+/// with pieces v(o) = floor((a*o + b) / q), a >= 0, q >= 1. Returns the new outer (j) and inner (o)
+/// headers, or nullopt if unsupported.
 static std::optional<LoopSwap> dependent_interchange(
-    structured_control_flow::StructuredLoop& outer_loop, structured_control_flow::StructuredLoop& inner_loop
+    structured_control_flow::StructuredLoop& outer_loop,
+    structured_control_flow::StructuredLoop& inner_loop,
+    const NonNegProof& nonneg
 ) {
     auto o = outer_loop.indvar();
     auto j = inner_loop.indvar();
@@ -223,14 +319,14 @@ static std::optional<LoopSwap> dependent_interchange(
         symbolic::uses(o_bound, j->get_name())) {
         return std::nullopt;
     }
-    auto lowers = affine_pieces(inner_loop.init(), /*is_min=*/false, o);
-    auto uppers = affine_pieces(j_bound, /*is_min=*/true, o);
+    auto lowers = affine_pieces(inner_loop.init(), /*is_min=*/false, o, nonneg);
+    auto uppers = affine_pieces(j_bound, /*is_min=*/true, o, nonneg);
     if (!lowers || !uppers) {
         return std::nullopt;
     }
     // j keeps its stride, so every outer iteration must start j on the same lattice.
-    if (*inner_stride > 1 &&
-        (lowers->size() != 1 || (lowers->at(0).coefficient * *outer_stride) % *inner_stride != 0)) {
+    if (*inner_stride > 1 && (lowers->size() != 1 || lowers->at(0).divisor != 1 ||
+                              (lowers->at(0).coefficient * *outer_stride) % *inner_stride != 0)) {
         return std::nullopt;
     }
 
@@ -242,40 +338,58 @@ static std::optional<LoopSwap> dependent_interchange(
     };
     // All pieces are non-decreasing in o, so the j range is spanned by the first and last o.
     result.new_outer.init = symbolic::subs(inner_loop.init(), o, outer_loop.init());
-    result.new_outer.condition = symbolic::Lt(j, symbolic::subs(j_bound, o, symbolic::sub(o_bound, symbolic::one())));
+    result.new_outer.condition = symbolic::
+        Lt(j,
+           symbolic::simplify(symbolic::expand(symbolic::subs(j_bound, o, symbolic::sub(o_bound, symbolic::one())))));
 
-    // j < c*o + e  <=>  o >= floor((j - e) / c) + 1;  j >= c*o + d  <=>  o < floor((j - d) / c) + 1
-    auto solve = [&](const AffinePiece& piece) {
-        auto numerator = symbolic::sub(j, piece.constant);
-        auto quotient = piece.coefficient == 1 ? numerator
-                                               : symbolic::floor_div(numerator, symbolic::integer(piece.coefficient));
-        return symbolic::add(quotient, symbolic::one());
+    // Bounds on o are expressed relative to o_init, which keeps every numerator non-negative and
+    // turns floor division into plain C division. For a piece v(o) = floor((a*o + b) / q):
+    //   j <  v(o)  <=>  o >= o_init + idiv(max(0, q*(j+1) - b - a*o_init + a - 1), a)   (with o >= o_init)
+    //   j >= v(o)  <=>  o <  o_init + idiv(q*j + q - 1 - b - a*o_init, a) + 1           (j >= J_0 >= v(o_init))
+    auto o_init = outer_loop.init();
+    auto quotient = [](const symbolic::Expression& numerator, int64_t coefficient) {
+        auto simplified = symbolic::simplify(symbolic::expand(numerator));
+        return coefficient == 1 ? simplified : symbolic::div(simplified, symbolic::integer(coefficient));
     };
-    symbolic::Expression o_lower = SymEngine::null;
+    symbolic::Expression lower_offset = SymEngine::null;
     for (auto& piece : *uppers) {
         if (piece.coefficient > 0) {
-            o_lower = o_lower.is_null() ? solve(piece) : symbolic::max(o_lower, solve(piece));
+            auto a = symbolic::integer(piece.coefficient);
+            auto q = symbolic::integer(piece.divisor);
+            auto numerator = symbolic::
+                add(symbolic::
+                        sub(symbolic::sub(symbolic::mul(q, symbolic::add(j, symbolic::one())), piece.constant),
+                            symbolic::mul(a, o_init)),
+                    symbolic::integer(piece.coefficient - 1));
+            numerator = symbolic::max(symbolic::zero(), symbolic::simplify(symbolic::expand(numerator)));
+            auto offset = quotient(numerator, piece.coefficient);
+            lower_offset = lower_offset.is_null() ? offset : symbolic::max(lower_offset, offset);
         }
+    }
+    if (lower_offset.is_null()) {
+        lower_offset = symbolic::zero();
     }
     symbolic::Expression o_upper = o_bound;
     for (auto& piece : *lowers) {
         if (piece.coefficient > 0) {
-            o_upper = symbolic::min(o_upper, solve(piece));
+            auto a = symbolic::integer(piece.coefficient);
+            auto q = symbolic::integer(piece.divisor);
+            auto numerator = symbolic::sub(
+                symbolic::sub(symbolic::add(symbolic::mul(q, j), symbolic::integer(piece.divisor - 1)), piece.constant),
+                symbolic::mul(a, o_init)
+            );
+            auto bound = symbolic::add(symbolic::add(o_init, quotient(numerator, piece.coefficient)), symbolic::one());
+            o_upper = symbolic::min(o_upper, symbolic::simplify(symbolic::expand(bound)));
         }
     }
-    if (o_lower.is_null()) {
-        result.new_inner.init = outer_loop.init();
-    } else if (*outer_stride == 1) {
-        result.new_inner.init = symbolic::max(outer_loop.init(), o_lower);
-    } else {
-        // Round up onto the outer lattice o_init + S_o * k.
-        auto offset = symbolic::max(symbolic::zero(), symbolic::sub(o_lower, outer_loop.init()));
-        result.new_inner.init = symbolic::add(
-            outer_loop.init(),
-            symbolic::mul(symbolic::integer(*outer_stride), symbolic::ceil_div(offset, symbolic::integer(*outer_stride)))
-        );
+    if (*outer_stride > 1) {
+        // Round up onto the outer lattice o_init + S_o * k; the offset is non-negative.
+        auto stride = symbolic::integer(*outer_stride);
+        lower_offset = symbolic::
+            mul(stride, symbolic::div(symbolic::add(lower_offset, symbolic::integer(*outer_stride - 1)), stride));
     }
-    result.new_inner.condition = symbolic::Lt(o, o_upper);
+    result.new_inner.init = symbolic::simplify(symbolic::add(o_init, lower_offset));
+    result.new_inner.condition = symbolic::Lt(o, symbolic::simplify(o_upper));
     return result;
 }
 
@@ -286,12 +400,26 @@ LoopInterchange::LoopInterchange(
 
       };
 
+// Non-negativity under the assumptions of the inner loop body, where both indvars are bounded.
+static NonNegProof
+nonneg_proof(analysis::AnalysisManager* analysis_manager, structured_control_flow::StructuredLoop& inner_loop) {
+    if (analysis_manager == nullptr) {
+        return {};
+    }
+    auto& assumptions_analysis = analysis_manager->get<analysis::AssumptionsAnalysis>();
+    const auto& assumptions = assumptions_analysis.get(inner_loop.root(), true);
+    const auto& parameters = assumptions_analysis.parameters();
+    return [&assumptions, &parameters](const symbolic::Expression& expr) {
+        return symbolic::is_nonneg(expr, parameters, assumptions, true);
+    };
+}
+
 std::string LoopInterchange::name() const {
     return "LoopInterchange";
 };
 
 // Build the loop headers shared by footprint preview and apply without mutating the graph.
-LoopSwap LoopInterchange::proposal() const {
+LoopSwap LoopInterchange::proposal(analysis::AnalysisManager* analysis_manager) const {
     LoopSwap result{
         outer_loop_,
         inner_loop_,
@@ -304,7 +432,7 @@ LoopSwap LoopInterchange::proposal() const {
         return result;
     }
 
-    auto projected = dependent_interchange(outer_loop_, inner_loop_);
+    auto projected = dependent_interchange(outer_loop_, inner_loop_, nonneg_proof(analysis_manager, inner_loop_));
     if (!projected) {
         throw InvalidSDFGException("LoopInterchange: unsupported dependent-bound proposal");
     }
@@ -333,7 +461,7 @@ bool LoopInterchange::can_be_applied(builder::StructuredSDFGBuilder& builder, an
             dyn_cast<structured_control_flow::Map*>(&inner_loop_)) {
             return false;
         }
-        if (!dependent_interchange(outer_loop_, inner_loop_)) {
+        if (!dependent_interchange(outer_loop_, inner_loop_, nonneg_proof(&analysis_manager, inner_loop_))) {
             return false;
         }
     }
@@ -430,7 +558,7 @@ bool LoopInterchange::reduction_buffers_supported(analysis::AnalysisManager& ana
         return true;
     }
     try {
-        return buffers.supports_interchange(proposal());
+        return buffers.supports_interchange(proposal(&analysis_manager));
     } catch (const InvalidSDFGException&) {
         return false;
     }
@@ -454,7 +582,7 @@ void LoopInterchange::apply(builder::StructuredSDFGBuilder& builder, analysis::A
     auto* inner_reduce = dyn_cast<structured_control_flow::Reduce*>(&inner_loop_);
     auto* outer_reduce = dyn_cast<structured_control_flow::Reduce*>(&outer_loop_);
 
-    const auto geometry = proposal();
+    const auto geometry = proposal(&analysis_manager);
 
     bool dependent = !inner_map && !outer_map &&
                      (symbolic::uses(inner_loop_.init(), outer_loop_.indvar()->get_name()) ||

@@ -63,9 +63,10 @@ public:
      * Includes bound projection and inversion for dependent loops. Shared by
      * the reduction-footprint preview and apply(); does not check dependence legality.
      *
+     * @param analysis_manager Optional; enables floor-division bounds whose numerator is provably non-negative
      * @return Original loop IDs and the proposed outer and inner headers
      */
-    LoopSwap proposal() const;
+    LoopSwap proposal(analysis::AnalysisManager* analysis_manager = nullptr) const;
 
     /**
      * @brief Check if this transformation can be applied
