@@ -33,8 +33,9 @@ bool LoopSchedulingPass::run_pass_target(
         info.loop_info = loop_analysis.loop_info(loop);
         scheduling_info_map[loop] = info;
     }
+    std::vector<structured_control_flow::StructuredLoop*> no_loops;
     if (queue.empty()) {
-        return false;
+        return scheduler.post_schedule(builder, analysis_manager, no_loops);
     }
 
     // Filter by compatible types
@@ -119,7 +120,7 @@ bool LoopSchedulingPass::run_pass_target(
         }
     }
     if (applicable_loops.empty()) {
-        return false;
+        return scheduler.post_schedule(builder, analysis_manager, no_loops);
     }
 
     // ===== Phase 2: Pre-schedule (collapse + cleanup) =====
@@ -135,7 +136,7 @@ bool LoopSchedulingPass::run_pass_target(
     }
 
     if (schedulable_loops.empty()) {
-        return false;
+        return scheduler.post_schedule(builder, analysis_manager, no_loops);
     }
 
     // Phase 3b: Apply transforms
