@@ -95,8 +95,16 @@ def import_cupy_for_target(target):
 
 
 def idiv(a, b):
-    """Integer division (floor division for positive numbers)."""
-    return int(a) // int(b)
+    """Integer division truncating toward zero, matching the C `/` emitted for `idiv`."""
+    a, b = int(a), int(b)
+    q = abs(a) // abs(b)
+    return q if (a < 0) == (b < 0) else -q
+
+
+def imod(a, b):
+    """Remainder with the sign of the dividend, matching the C `%` emitted for `imod`."""
+    a, b = int(a), int(b)
+    return a - b * idiv(a, b)
 
 
 def _is_device_array(arg):
@@ -133,7 +141,7 @@ def _device_array_ptr(arg):
 
 
 # Evaluation context for shape expressions
-_EVAL_GLOBALS = {"idiv": idiv}
+_EVAL_GLOBALS = {"idiv": idiv, "imod": imod}
 
 # Pre-compiled regex for _convert_to_python_syntax
 _FUNC_CALL_PATTERN = re.compile(r"([a-zA-Z_][a-zA-Z0-9_]*)\(([^()]+)\)")
@@ -141,7 +149,7 @@ _PLACEHOLDER_PATTERN = re.compile(
     r"@@@FUNC@@@([a-zA-Z_][a-zA-Z0-9_]*)@@@(.+?)@@@END@@@"
 )
 _KNOWN_FUNCTIONS = frozenset(
-    {"int", "float", "abs", "min", "max", "sum", "len", "idiv"}
+    {"int", "float", "abs", "min", "max", "sum", "len", "idiv", "imod"}
 )
 
 # Argument type constants for fast dispatch

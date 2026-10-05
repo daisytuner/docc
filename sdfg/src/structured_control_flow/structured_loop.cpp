@@ -99,6 +99,7 @@ void StructuredLoop::replace(const symbolic::Expression old_expression, const sy
     this->init_ = symbolic::subs(this->init_, old_expression, new_expression);
     this->update_ = symbolic::subs(this->update_, old_expression, new_expression);
     this->condition_ = symbolic::subs(this->condition_, old_expression, new_expression);
+    this->reset_cache();
 
     this->root_->replace(old_expression, new_expression);
 }
@@ -112,11 +113,25 @@ void StructuredLoop::replace(const symbolic::ExpressionMapping& replacements) {
     this->init_ = SymEngine::subs(this->init_, replacements);
     this->update_ = SymEngine::subs(this->update_, replacements);
     this->condition_ = symbolic::subs(this->condition_, replacements);
+    this->reset_cache();
 
     this->root_->replace(replacements);
 }
 
+void StructuredLoop::reset_cache() {
+    stride_cache_.reset();
+    canonical_bound_cache_.reset();
+    num_iterations_cache_.reset();
+}
+
 symbolic::Integer StructuredLoop::stride() const {
+    if (!stride_cache_) {
+        stride_cache_ = compute_stride();
+    }
+    return *stride_cache_;
+}
+
+symbolic::Integer StructuredLoop::compute_stride() const {
     auto expr = this->update();
     auto indvar = this->indvar();
 
@@ -174,6 +189,13 @@ bool StructuredLoop::is_monotonic() const {
 }
 
 symbolic::Expression StructuredLoop::canonical_bound() const {
+    if (!canonical_bound_cache_) {
+        canonical_bound_cache_ = compute_canonical_bound();
+    }
+    return *canonical_bound_cache_;
+}
+
+symbolic::Expression StructuredLoop::compute_canonical_bound() const {
     auto stride = this->stride();
     if (stride.is_null()) {
         return SymEngine::null;
@@ -386,6 +408,13 @@ symbolic::Expression StructuredLoop::canonical_bound_lower() const {
 }
 
 symbolic::Expression StructuredLoop::num_iterations() const {
+    if (!num_iterations_cache_) {
+        num_iterations_cache_ = compute_num_iterations();
+    }
+    return *num_iterations_cache_;
+}
+
+symbolic::Expression StructuredLoop::compute_num_iterations() const {
     auto stride = this->stride();
     if (stride.is_null()) {
         return SymEngine::null;
@@ -407,8 +436,8 @@ symbolic::Expression StructuredLoop::num_iterations() const {
         divisor = symbolic::integer(-stride_int);
     }
 
-    auto num_iters = symbolic::divide_ceil(numerator, divisor);
-    num_iters = symbolic::simplify(symbolic::max(symbolic::zero(), num_iters));
+    auto num_iters = symbolic::ceil_count(numerator, divisor);
+    num_iters = symbolic::simplify(num_iters);
     return num_iters;
 }
 
@@ -446,8 +475,8 @@ symbolic::Expression StructuredLoop::num_iterations_approx() const {
     }
     numerator = symbolic::simplify(symbolic::expand(symbolic::overapproximate(numerator)));
 
-    auto num_iters = symbolic::divide_ceil(numerator, divisor);
-    num_iters = symbolic::simplify(symbolic::max(symbolic::zero(), num_iters));
+    auto num_iters = symbolic::ceil_count(numerator, divisor);
+    num_iters = symbolic::simplify(num_iters);
     return num_iters;
 }
 

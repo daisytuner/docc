@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <optional>
+#include <unordered_map>
 
 #include "sdfg/symbolic/assumptions.h"
 #include "sdfg/symbolic/extreme_values.h"
@@ -216,13 +217,13 @@ std::optional<sdfg::symbolic::DelinearizeResult> delinearize_affine(
     // empty parameters, which loses that cancellation, so route these through
     // the assumptions-based overload with the real parameter set.
     auto stride_ge_one = [&](const sym::Expression& e) {
-        return sym::is_ge(e, sym::one(), params_set, assums, /*tight=*/false);
+        return bounds.is_nonneg(sym::sub(e, sym::one()), params_set);
     };
     auto index_nonneg = [&](const sym::Expression& e) {
-        return sym::is_nonneg(e, params_set, assums, /*tight=*/false);
+        return bounds.is_nonneg(e, params_set);
     };
     auto index_negative = [&](const sym::Expression& e) {
-        return sym::is_negative(e, params_set, assums, /*tight=*/false);
+        return bounds.is_positive(sym::mul(sym::integer(-1), e), params_set);
     };
 
     // 1. Decompose into (stride, index) groups plus a scalar offset. This
@@ -391,7 +392,8 @@ std::optional<sdfg::symbolic::DelinearizeResult> delinearize_affine(
             continue; // not a clean ratio (shouldn't happen after step 5)
         }
         int guard = 0;
-        while (index_negative(groups[t].index) && guard++ < 64) {
+        // A failed negativity proof exhausts the whole search; a nonneg proof is usually cheap.
+        while (!index_nonneg(groups[t].index) && index_negative(groups[t].index) && guard++ < 64) {
             groups[t].index = sym::simplify(sym::expand(sym::add(groups[t].index, d)));
             groups[t - 1].index = sym::simplify(sym::expand(sym::sub(groups[t - 1].index, sym::one())));
         }
@@ -439,7 +441,20 @@ std::optional<sdfg::symbolic::DelinearizeResult> delinearize_affine(
 
 } // namespace
 
+static DelinearizeResult delinearize_impl(const Expression& expr, AssumptionsBounds& bounds);
+
 DelinearizeResult delinearize(const Expression& expr, AssumptionsBounds& bounds) {
+    auto& memo = bounds.delinearize_memo();
+    auto it = memo.find(expr);
+    if (it != memo.end()) {
+        return *it->second;
+    }
+    auto result = std::make_shared<const DelinearizeResult>(delinearize_impl(expr, bounds));
+    memo.emplace(expr, result);
+    return *result;
+}
+
+static DelinearizeResult delinearize_impl(const Expression& expr, AssumptionsBounds& bounds) {
     auto dim = expr;
     const Assumptions& assums = bounds.assums();
 

@@ -125,6 +125,9 @@ public:
 
     void rename_container(const std::string& old_name, const std::string& new_name) const override;
 
+    /// Applies several renames with a single tree traversal; old names must be distinct and not renamed targets.
+    void rename_containers(const std::vector<std::pair<std::string, std::string>>& renames) const;
+
     Element* find_element_by_id(const size_t& element_id) const;
 
     /**
@@ -479,6 +482,7 @@ public:
 
         auto& dataflow = block.dataflow();
         auto vertex = boost::add_vertex(dataflow.graph_);
+        dataflow.invalidate_topological_order();
         auto node =
             std::unique_ptr<T>(new T(this->new_element_id(), debug_info, vertex, dataflow, std::move(arguments)...));
         auto res = dataflow.nodes_.insert({vertex, std::move(node)});
@@ -489,6 +493,7 @@ public:
     data_flow::DataFlowNode& copy_node(structured_control_flow::Block& block, const data_flow::DataFlowNode& node) {
         auto& dataflow = block.dataflow();
         auto vertex = boost::add_vertex(dataflow.graph_);
+        dataflow.invalidate_topological_order();
         auto node_clone = node.clone(this->new_element_id(), vertex, dataflow);
         auto res = dataflow.nodes_.insert({vertex, std::move(node_clone)});
         return *res.first->second;

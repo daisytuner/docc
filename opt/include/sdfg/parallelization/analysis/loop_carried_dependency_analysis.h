@@ -1,5 +1,7 @@
 #pragma once
 
+#include <memory>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -59,61 +61,58 @@ struct LoopCarriedDependencyPair {
  *                                       cont(W) = cont(R), Δ ≠ ∅ }
  *            ∪ { (W₁,W₂, WAW, Δ_L(W₁,W₂)) : W₁,W₂ ∈ esc(L),
  *                                           cont(W₁) = cont(W₂), Δ ≠ ∅ }
+ *
+ * Results are computed lazily on the first query for a loop and cached until the analysis is
+ * invalidated. The data dependency analysis runs once per outermost loop nest and serves all
+ * loops in it; dependence distances and reductions are computed per queried loop.
  */
 class LoopCarriedDependencyAnalysis : public analysis::Analysis {
     friend class analysis::AnalysisManager;
 
 private:
-    structured_control_flow::Sequence& node_;
+    struct LoopResult {
+        // False for loops that cannot be analyzed (non-monotonic, no boundary information).
+        bool available = false;
+        std::unordered_map<std::string, LoopCarriedDependencyInfo> dependencies;
+        std::vector<LoopCarriedDependencyPair> pairs;
+        // Recognized reductions: loop-carried read-write dependencies realized by a single
+        // associative/commutative combine on a loop-invariant accumulator location.
+        std::vector<structured_control_flow::ReductionInfo> reductions;
+    };
 
-    std::unordered_map<
-        structured_control_flow::StructuredLoop*,
-        std::unordered_map<std::string, LoopCarriedDependencyInfo>>
-        dependencies_;
+    analysis::AnalysisManager* analysis_manager_ = nullptr;
 
-    std::unordered_map<structured_control_flow::StructuredLoop*, std::vector<LoopCarriedDependencyPair>> pairs_;
+    std::unordered_map<const structured_control_flow::StructuredLoop*, LoopResult> results_;
 
-    // Recognized reductions per loop. A loop-carried read-write dependency whose
-    // writer and reader are connected through a single associative/commutative
-    // combine operator acting on a loop-invariant accumulator location is a
-    // *reduction* dependency: it is loop-carried (so the loop is not a plain
-    // Map) yet reorderable (so it can be lowered to a parallel reduction).
-    std::unordered_map<structured_control_flow::StructuredLoop*, std::vector<structured_control_flow::ReductionInfo>>
-        reductions_;
+    // Detailed data dependency analyses, keyed by the outermost loop of a nest. Constructed
+    // manually: the manager-cached DDA runs in a cheaper, conservative mode.
+    std::unordered_map<const structured_control_flow::StructuredLoop*, std::unique_ptr<analysis::DataDependencyAnalysis>>
+        nest_ddas_;
 
-    void detect_reductions(structured_control_flow::StructuredLoop& loop);
-
-    // Owned, detailed `DataDependencyAnalysis` instance constructed manually
-    // (not through the shared `AnalysisManager` cache). LCDA needs the
-    // precise symbolic-subset boundary information; the manager-cached DDA
-    // runs in conservative mode for performance.
-    std::unique_ptr<analysis::DataDependencyAnalysis> detailed_dda_;
-    analysis::DataDependencyAnalysis& detailed_dda();
-
-    // Owned, branch-condition-aware `AssumptionsAnalysis` instance constructed
-    // manually for the same reason: the cheaper, manager-cached AA does not
-    // refine assumptions across IfElse branches (needed for halo-style
-    // coupled constraints).
+    // Branch-condition-aware assumptions (the manager-cached AA skips IfElse refinement, which
+    // the ISL formulation needs to prove halo-style patterns non-loop-carried).
     std::unique_ptr<analysis::AssumptionsAnalysis> detailed_assumptions_;
 
-    void analyze_loop(analysis::AnalysisManager& analysis_manager, structured_control_flow::StructuredLoop& loop);
+    const LoopResult& result(structured_control_flow::StructuredLoop& loop);
+    void compute(structured_control_flow::StructuredLoop& loop, LoopResult& result);
+    void detect_reductions(structured_control_flow::StructuredLoop& loop, LoopResult& result);
+    analysis::DataDependencyAnalysis& nest_dda(structured_control_flow::StructuredLoop& loop);
+    analysis::AssumptionsAnalysis& detailed_assumptions();
 
 public:
     LoopCarriedDependencyAnalysis(StructuredSDFG& sdfg);
-
-    LoopCarriedDependencyAnalysis(StructuredSDFG& sdfg, structured_control_flow::Sequence& node);
 
     std::string name() const override {
         return "LoopCarriedDependencyAnalysis";
     }
 
+    /// Only records the analysis manager; results are computed on demand per loop.
     void run(analysis::AnalysisManager& analysis_manager) override;
 
     /**
-     * @brief Whether this analysis has results for the given loop (i.e. the loop
-     * was visited and analyzed). Loops outside the analysis scope return false.
+     * @brief Whether the loop can be analyzed (monotonic, with boundary information).
      */
-    bool available(structured_control_flow::StructuredLoop& loop) const;
+    bool available(structured_control_flow::StructuredLoop& loop);
 
     /**
      * @brief Per-container summary of loop-carried dependencies for a loop.
@@ -122,12 +121,12 @@ public:
      * each container that participates in any loop-carried dependency.
      */
     const std::unordered_map<std::string, LoopCarriedDependencyInfo>&
-    dependencies(structured_control_flow::StructuredLoop& loop) const;
+    dependencies(structured_control_flow::StructuredLoop& loop);
 
     /**
      * @brief Per-pair list of loop-carried dependencies for a loop.
      */
-    const std::vector<LoopCarriedDependencyPair>& pairs(structured_control_flow::StructuredLoop& loop) const;
+    const std::vector<LoopCarriedDependencyPair>& pairs(structured_control_flow::StructuredLoop& loop);
 
     /**
      * @brief Filter `pairs(loop)` to those whose writer lies in `subtree_a` and
@@ -139,25 +138,24 @@ public:
     std::vector<const LoopCarriedDependencyPair*> pairs_between(
         structured_control_flow::StructuredLoop& loop,
         const structured_control_flow::ControlFlowNode& subtree_a,
-        const structured_control_flow::ControlFlowNode& subtree_b,
-        analysis::AnalysisManager& analysis_manager
-    ) const;
+        const structured_control_flow::ControlFlowNode& subtree_b
+    );
 
     /**
      * @brief True if any loop-carried dependency exists for the loop.
      */
-    bool has_loop_carried(structured_control_flow::StructuredLoop& loop) const;
+    bool has_loop_carried(structured_control_flow::StructuredLoop& loop);
 
     /**
      * @brief True if any loop-carried RAW dependency exists for the loop.
      */
-    bool has_loop_carried_raw(structured_control_flow::StructuredLoop& loop) const;
+    bool has_loop_carried_raw(structured_control_flow::StructuredLoop& loop);
 
     /**
      * True if RAW or undefined loop-carried dependency exists. Either is a hazard for example for For2Map /
      * parallization
      */
-    bool has_loop_carried_hazard(structured_control_flow::StructuredLoop& loop) const;
+    bool has_loop_carried_hazard(structured_control_flow::StructuredLoop& loop);
 
     /**
      * @brief Recognized reductions carried by the loop.
@@ -166,15 +164,14 @@ public:
      * container it combines into. A container appears here iff it has a
      * loop-carried read-write dependency that is realized by a single combine
      * operator (`acc = acc OP x`) over a loop-invariant accumulator location.
-     * Empty for loops with no recognized reduction (or not analyzed).
+     * Empty for loops with no recognized reduction.
      */
-    const std::vector<structured_control_flow::ReductionInfo>&
-    reductions(structured_control_flow::StructuredLoop& loop) const;
+    const std::vector<structured_control_flow::ReductionInfo>& reductions(structured_control_flow::StructuredLoop& loop);
 
     /**
      * @brief True if the loop carries at least one recognized reduction.
      */
-    bool has_reductions(structured_control_flow::StructuredLoop& loop) const;
+    bool has_reductions(structured_control_flow::StructuredLoop& loop);
 
     /**
      * @brief True if every loop-carried hazard (RAW or undefined) of the loop is
@@ -184,7 +181,7 @@ public:
      * reduction loop rather than a fully independent (Map) loop: the only
      * cross-iteration dependencies are reorderable accumulations.
      */
-    bool is_reduction_only(structured_control_flow::StructuredLoop& loop) const;
+    bool is_reduction_only(structured_control_flow::StructuredLoop& loop);
 };
 
 } // namespace parallelization

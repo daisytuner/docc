@@ -9,8 +9,10 @@
 #pragma once
 
 #include <map>
+#include <optional>
 #include <set>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <string>
@@ -28,19 +30,16 @@ namespace analysis {
 
 typedef math::tensor::TensorLayout MemoryLayout;
 
-struct MemoryAccess {
-    std::string container; // Container name
-    data_flow::Subset subset; // Symbolic indices after delinearization
-    MemoryLayout layout; // Inferred memory layout
-    bool first_dim_bounded; // True if first dimension is bounded (Tensor/Array), false for unbounded pointers
-};
-
 struct MemoryTile {
     std::string container; // Container name
     data_flow::Subset min_subset; // Minimum accessed indices in this tile
     data_flow::Subset max_subset; // Maximum accessed indices in this tile
     MemoryLayout layout; // Inferred tile layout at this loop level
     bool first_dim_bounded; // True if first dimension is bounded (Tensor/Array), false for unbounded pointers
+
+    /// A trivial (point) tile: a single index per dimension (min == max), as
+    /// opposed to a bounded range.
+    bool is_point() const;
 
     /// Per-dimension bounding box extents: max[d] - min[d] + 1.
     /// Returns `SymEngine::null` in slot `d` if that extent would depend on an
@@ -80,7 +79,8 @@ struct MemoryTileGroup {
  */
 class MemoryLayoutAnalysis : public Analysis {
 private:
-    std::unordered_map<const data_flow::Memlet*, MemoryAccess> accesses_;
+    std::unordered_map<const data_flow::Memlet*, MemoryTile> accesses_;
+    std::vector<const data_flow::Memlet*> access_order_;
     std::map<std::pair<const structured_control_flow::ControlFlowNode*, std::string>, MemoryTile> tiles_;
     std::map<std::pair<const structured_control_flow::ControlFlowNode*, std::string>, std::vector<MemoryTileGroup>>
         tile_groups_;
@@ -92,14 +92,18 @@ private:
     // its own instance rebuilt on every `run()`.
     std::unique_ptr<AssumptionsAnalysis> detailed_assumptions_;
 
+    // Per-run bounds/proof caches, shared by all blocks with the same assumption set.
+    std::unordered_map<const symbolic::Assumptions*, std::unique_ptr<symbolic::AssumptionsBounds>> bounds_cache_;
+
     void traverse(structured_control_flow::ControlFlowNode& node, analysis::AnalysisManager& analysis_manager);
 
     void process_block(structured_control_flow::Block& block, analysis::AnalysisManager& analysis_manager);
 
+    void record_access(const data_flow::Memlet& memlet, MemoryTile access);
+
     void merge_scope_layouts(
         structured_control_flow::ControlFlowNode& scope,
-        const std::vector<const data_flow::Memlet*>& memlets_before,
-        const std::set<std::pair<const structured_control_flow::ControlFlowNode*, std::string>>& tiles_before,
+        size_t first_new_access,
         analysis::AnalysisManager& analysis_manager
     );
 
@@ -129,7 +133,7 @@ public:
      * @param memlet The memlet to query
      * @return A pointer to the inferred memory layout information if inference was successful, nullptr otherwise
      */
-    const MemoryAccess* access(const data_flow::Memlet& memlet) const;
+    const MemoryTile* access(const data_flow::Memlet& memlet) const;
 
     /**
      * @brief Get the inferred memory layout for a container at a specific scope

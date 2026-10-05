@@ -62,7 +62,7 @@ jobs:
         run: |
           cd build/
 
-          ctest --label-exclude "sdfgrpc|sdfgrpc_daisytuner_rpc" --parallel
+          ctest --label-exclude "sdfgrpc|sdfgrpc_daisytuner_rpc|capture_io" --parallel
 
       - name: Python Unit Tests
         env:

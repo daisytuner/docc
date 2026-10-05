@@ -1,8 +1,10 @@
 #pragma once
 
+#include <memory>
 #include <nlohmann/json.hpp>
 #include <optional>
 
+#include "sdfg/data_flow/library_nodes/math/tensor/tensor_layout.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "symengine/subs.h"
 
@@ -46,6 +48,15 @@ public:
      * [9] would be every element being accessed. Bounds should never be violated regardless. We may in the future
      */
     virtual bool every_element_accessed() const = 0;
+
+    /**
+     * The structured affine layout (shape/strides/offset, in elements) backing this
+     * pattern, or nullptr when the pattern carries no explicit layout (a flat convex
+     * span or no access). Only TensorLayoutPattern provides one.
+     */
+    virtual const math::tensor::TensorLayout* layout() const {
+        return nullptr;
+    }
 
     MemoryAccessPatternType ref() const;
 
@@ -118,6 +129,48 @@ public:
     MemoryAccessPatternType clone() const override;
 };
 
+/**
+ * A structured access described by a full affine tensor layout (shape, strides and
+ * offset in elements). Unlike ConvexAccessPattern, which only bounds a flat convex
+ * span, this preserves the operand's real multi-dimensional shape so a consumer can
+ * reconstruct exactly which elements are touched (e.g. a padded GEMM/MatMul operand).
+ */
+class TensorLayoutPattern : public MemoryAccessPattern {
+private:
+    math::tensor::TensorLayout layout_;
+    bool not_sparse_ = false;
+
+public:
+    TensorLayoutPattern(math::tensor::TensorLayout layout, bool not_sparse = false)
+        : layout_(std::move(layout)), not_sparse_(not_sparse) {
+    }
+
+    bool empty() const override {
+        return symbolic::null_safe_eq(layout_.total_elements(), symbolic::zero());
+    }
+
+    bool every_element_accessed() const override {
+        return not_sparse_;
+    }
+
+    const math::tensor::TensorLayout* layout() const override {
+        return &layout_;
+    }
+
+    void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override {
+        layout_.replace_symbols(old_expression, new_expression);
+    }
+    void replace(const symbolic::ExpressionMapping& replacements) override {
+        layout_.replace_symbols(replacements);
+    }
+
+    MemoryAccessPatternType clone() const override;
+
+    void serialize_to_json(nlohmann::json& entry) override;
+
+    static MemoryAccessPatternType create(math::tensor::TensorLayout layout, bool not_sparse = false);
+};
+
 class PointerAccessMeta {
 protected:
     PointerAccessMeta() = default;
@@ -147,7 +200,8 @@ public:
     /**
      * Describes which elements are accessed (for example a function may only access the range of [ptr, ptr+8] bytes and
      * not touch or care about what comes after) Pointer access metadata only applies to the elements that are part of
-     * the pattern.
+     * the pattern. A structured operand carries its real shape/strides through a
+     * TensorLayoutPattern; a flat convex span through a ConvexAccessPattern.
      */
     virtual MemoryAccessPatternType access_read_pattern() const = 0;
     virtual MemoryAccessPatternType access_write_pattern() const = 0;
@@ -161,9 +215,17 @@ public:
 
     virtual void serialize_to_json(nlohmann::json& entry) = 0;
 
-    static PointerAccessType create_read_only(const symbolic::Expression& size, bool no_capture);
+    static PointerAccessType create_read_only(
+        const symbolic::Expression& size,
+        bool no_capture,
+        std::optional<math::tensor::TensorLayout> layout = std::nullopt
+    );
     static PointerAccessType create_invalidate();
-    static PointerAccessType create_full_write_only(const symbolic::Expression& size, bool no_capture);
+    static PointerAccessType create_full_write_only(
+        const symbolic::Expression& size,
+        bool no_capture,
+        std::optional<math::tensor::TensorLayout> layout = std::nullopt
+    );
     static PointerAccessType
     create_generic(MemoryAccessPatternType read_pattern, MemoryAccessPatternType write_pattern, bool no_capture);
 };
@@ -175,11 +237,11 @@ public:
  */
 class PointerReadOnly : public PointerAccessMeta {
 private:
-    symbolic::Expression size_; // simplified until we have more than convex pattern
+    MemoryAccessPatternType read_pattern_;
     bool no_capture_;
 
 public:
-    PointerReadOnly(symbolic::Expression size, bool no_capture = false);
+    PointerReadOnly(MemoryAccessPatternType read_pattern, bool no_capture = false);
 
     /**
      * Despite this being a leak of the pointer,
@@ -221,11 +283,11 @@ public:
  */
 class PointerFullWriteOnly : public PointerAccessMeta {
 private:
-    symbolic::Expression size_; // simplified until we have more than convex pattern
+    MemoryAccessPatternType write_pattern_;
     bool no_capture_;
 
 public:
-    PointerFullWriteOnly(symbolic::Expression size, bool no_capture = false);
+    PointerFullWriteOnly(MemoryAccessPatternType write_pattern, bool no_capture = false);
 
     /**
      * Describes which elements are overwritten. If the underlying memory-area is larger,
@@ -277,7 +339,6 @@ public:
      * No pattern means could be all the memory-area pointed to
      */
     MemoryAccessPatternType access_read_pattern() const override;
-
     MemoryAccessPatternType access_write_pattern() const override;
 
     bool no_capture() const override {
@@ -353,6 +414,7 @@ public:
     static PointerAccessType deserialize_generic(nlohmann::json::const_reference entry);
 
     static MemoryAccessPatternType deserialize_convex_pattern(nlohmann::json::const_reference entry);
+    static MemoryAccessPatternType deserialize_tensor_layout_pattern(nlohmann::json::const_reference entry);
     static MemoryAccessPatternType deserialize_access_pattern(nlohmann::json::const_reference entry);
 
     static nlohmann::json serialize(const std::vector<PointerAccessType>& vector);

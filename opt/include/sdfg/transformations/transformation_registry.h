@@ -13,6 +13,7 @@
 
 #include <sdfg/einsum/einsum.h>
 #include <sdfg/tiles/transformations/local_storage.h>
+#include <sdfg/tiles/transformations/software_pipelining.h>
 #include <sdfg/tiles/transformations/tile_fusion.h>
 #include <sdfg/transformations/loop_distribute.h>
 #include <sdfg/transformations/loop_interchange.h>
@@ -33,6 +34,7 @@
 #include <sdfg/transformations/offloading/rocm_parallelize_nested_map.h>
 #include <sdfg/transformations/offloading/rocm_transform.h>
 #include <sdfg/transformations/omp_transform.h>
+#include <sdfg/transformations/stream_k.h>
 #include <sdfg/transformations/unroll_transform.h>
 #include <sdfg/transformations/vectorize_transform.h>
 
@@ -115,6 +117,8 @@ dispatch_transformation(const std::string& transformation_name, const nlohmann::
         return detail::invoke_for<transformations::LoopInterchange>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "LocalStorage") {
         return detail::invoke_for<transformations::LocalStorage>(std::forward<Visitor>(visitor));
+    } else if (transformation_name == "SoftwarePipelining") {
+        return detail::invoke_for<transformations::SoftwarePipelining>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "TileFusion") {
         return detail::invoke_for<transformations::TileFusion>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "LoopSkewing") {
@@ -127,6 +131,8 @@ dispatch_transformation(const std::string& transformation_name, const nlohmann::
         return detail::invoke_for<transformations::OMPTransform>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "LoopPeeling") {
         return detail::invoke_for<transformations::LoopPeeling>(std::forward<Visitor>(visitor));
+    } else if (transformation_name == "StreamK") {
+        return detail::invoke_for<transformations::StreamK>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "VectorizeTransform") {
         return detail::invoke_for<transformations::VectorizeTransform>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "UnrollTransform") {

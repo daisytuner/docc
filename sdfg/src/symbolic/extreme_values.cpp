@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cstdlib>
 #include <limits>
+#include <optional>
+#include <unordered_map>
 #include <vector>
 
 #include "sdfg/symbolic/polynomials.h"
@@ -57,6 +59,47 @@ bool is_type_lower_sentinel(const Expression& e) {
     return matches_any(e, kMinima);
 }
 
+// Upper/lower residues of solving constraint `c <= 0` for `sym` (null if not invertible).
+struct ConstraintProjection {
+    Expression upper;
+    Expression lower;
+};
+
+struct ProjectionKeyHash {
+    size_t operator()(const std::pair<Expression, Expression>& k) const noexcept {
+        size_t h = k.first->hash();
+        h ^= k.second->hash() + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
+        return h;
+    }
+};
+
+struct ProjectionKeyEq {
+    bool operator()(const std::pair<Expression, Expression>& a, const std::pair<Expression, Expression>& b) const noexcept {
+        return SymEngine::eq(*a.first, *b.first) && SymEngine::eq(*a.second, *b.second);
+    }
+};
+
+// Pure function of (c, sym); memoized because prove_ge_zero builds many short-lived BoundAnalysis instances.
+const ConstraintProjection& project_constraint(const Expression& c, const Symbol& sym) {
+    static constexpr size_t kMaxEntries = 1 << 16;
+    thread_local std::
+        unordered_map<std::pair<Expression, Expression>, ConstraintProjection, ProjectionKeyHash, ProjectionKeyEq>
+            memo;
+    auto key = std::make_pair(c, Expression(sym));
+    auto it = memo.find(key);
+    if (it != memo.end()) {
+        return it->second;
+    }
+    if (memo.size() >= kMaxEntries) {
+        memo.clear();
+    }
+    ConstraintProjection proj;
+    proj.upper = symbolic::solve_affine_bound(c, sym, symbolic::zero(), /*is_lower_bound=*/false);
+    auto neg_c = symbolic::expand(symbolic::mul(symbolic::integer(-1), c));
+    proj.lower = symbolic::solve_affine_bound(neg_c, sym, symbolic::zero(), /*is_lower_bound=*/true);
+    return memo.emplace(std::move(key), std::move(proj)).first->second;
+}
+
 } // namespace
 
 // ============================================================================
@@ -64,9 +107,14 @@ bool is_type_lower_sentinel(const Expression& e) {
 // ============================================================================
 
 BoundAnalysis::BoundAnalysis(
-    const SymbolSet& parameters, const Assumptions& assumptions, bool use_tight_assumptions, int64_t budget
+    const SymbolSet& parameters,
+    const Assumptions& assumptions,
+    bool use_tight_assumptions,
+    int64_t budget,
+    bool project_constraints
 )
-    : parameters_(parameters), assumptions_(assumptions), use_tight_(use_tight_assumptions), budget_(budget) {
+    : parameters_(parameters), assumptions_(assumptions), use_tight_(use_tight_assumptions), budget_(budget),
+      project_constraints_(project_constraints) {
 }
 
 Interval BoundAnalysis::bound(const Expression& expr) {
@@ -94,6 +142,8 @@ Expression BoundAnalysis::upper_bound(const Expression& expr) {
 namespace {
 thread_local int64_t g_bound_work = 0;
 thread_local int g_bound_depth = 0;
+// Bumped whenever the budget cuts a visit short; results computed meanwhile are not cached.
+thread_local uint64_t g_budget_hits = 0;
 
 // Resets the work counter on the outermost top-level query only.
 struct BoundWorkGuard {
@@ -110,11 +160,13 @@ struct BoundWorkGuard {
 
 Interval BoundAnalysis::visit(const Expression& expr, size_t depth) {
     if (depth > MAX_DEPTH) {
+        ++limit_hits_;
         return Interval::failure();
     }
     // Work budget across the whole top-level proof; per-instance limit, shared
     // transient counter (thread_local) so nested descent accumulates correctly.
     if (g_bound_depth > 0 && ++g_bound_work > budget_) {
+        ++g_budget_hits;
         return Interval::failure();
     }
 
@@ -134,9 +186,12 @@ Interval BoundAnalysis::visit(const Expression& expr, size_t depth) {
     }
 
     size_t cycle_hits_before = cycle_hits_;
+    size_t limit_hits_before = limit_hits_;
+    uint64_t budget_hits_before = g_budget_hits;
     Interval result = visit_uncached(expr, depth);
 
-    if (result.has_lower() && result.has_upper() && cycle_hits_ == cycle_hits_before) {
+    // Untainted results (incl. failures) depend only on `expr` under this instance's fixed inputs.
+    if (cycle_hits_ == cycle_hits_before && limit_hits_ == limit_hits_before && g_budget_hits == budget_hits_before) {
         cache_.emplace(expr, result);
     }
     return result;
@@ -298,19 +353,19 @@ Interval BoundAnalysis::visit_symbol(const SymEngine::RCP<const SymEngine::Symbo
     // Sign handling: `solve_affine_bound` only inverts positive
     // coefficients. For negative coefficients, negate the constraint and
     // flip the inequality direction.
-    for (const auto& c : assum.constraints()) {
+    static const ExpressionSet kNoConstraints;
+    for (const auto& c : project_constraints_ ? assum.constraints() : kNoConstraints) {
+        // Copy: the memo may be cleared by nested visits.
+        const ConstraintProjection proj = project_constraint(c, sym);
         // Upper-bound projection (positive coeff): solve `c <= 0` for sym
-        if (auto u_residue = symbolic::solve_affine_bound(c, sym, symbolic::zero(), /*is_lower_bound=*/false);
-            !u_residue.is_null()) {
+        if (const auto& u_residue = proj.upper; !u_residue.is_null()) {
             auto u_iv = visit(u_residue, depth + 1);
             if (!u_iv.upper.is_null()) {
                 ub = ub.is_null() ? u_iv.upper : symbolic::min(ub, u_iv.upper);
             }
         }
         // Lower-bound projection (negative coeff): solve `-c >= 0` for sym
-        auto neg_c = symbolic::expand(symbolic::mul(symbolic::integer(-1), c));
-        if (auto l_residue = symbolic::solve_affine_bound(neg_c, sym, symbolic::zero(), /*is_lower_bound=*/true);
-            !l_residue.is_null()) {
+        if (const auto& l_residue = proj.lower; !l_residue.is_null()) {
             auto l_iv = visit(l_residue, depth + 1);
             if (!l_iv.lower.is_null()) {
                 lb = lb.is_null() ? l_iv.lower : symbolic::max(lb, l_iv.lower);
@@ -358,79 +413,59 @@ Interval BoundAnalysis::visit_function(const SymEngine::RCP<const SymEngine::Fun
         return {lb, ub};
     }
 
-    // idiv(numerator, denominator) — only for constant positive denominator
+    // idiv(numerator, denominator) — C truncating division by a non-zero constant
     if (func_id == "idiv") {
         auto numerator = func->get_args()[0];
         auto denominator = func->get_args()[1];
-        if (!SymEngine::is_a<const SymEngine::Integer>(*denominator)) {
+        if (!SymEngine::is_a<const SymEngine::Integer>(*denominator) || symbolic::eq(denominator, symbolic::zero())) {
             return Interval::failure();
         }
-        // Denominator must be strictly positive
-        if (symbolic::is_true(symbolic::Le(denominator, symbolic::zero()))) {
-            return Interval::failure();
-        }
-        // Monotonic increasing in the numerator for a positive denominator, so pass
-        // each numerator bound through independently: a one-sided numerator bound
-        // (e.g. a lower bound of 0 with no upper bound) still yields a one-sided
-        // result rather than failing outright.
+        // Truncation is monotone in the numerator: increasing for a positive and decreasing for a negative
+        // denominator, so each numerator bound maps through independently (one-sided bounds stay one-sided).
         auto num_iv = visit(numerator, depth + 1);
         Expression lb = num_iv.has_lower() ? symbolic::div(num_iv.lower, denominator) : Expression(SymEngine::null);
         Expression ub = num_iv.has_upper() ? symbolic::div(num_iv.upper, denominator) : Expression(SymEngine::null);
+        if (SymEngine::down_cast<const SymEngine::Integer&>(*denominator).is_negative()) {
+            std::swap(lb, ub);
+        }
         if (lb.is_null() && ub.is_null()) {
             return Interval::failure();
         }
         return {lb, ub};
     }
 
-    // imod(lhs, rhs) — only for constant integer rhs
+    // imod(lhs, rhs) — C remainder by a non-zero constant: sign of lhs, magnitude below |rhs|
     if (func_id == "imod") {
         auto lhs = func->get_args()[0];
         auto rhs = func->get_args()[1];
-        if (!SymEngine::is_a<const SymEngine::Integer>(*rhs)) {
+        if (!SymEngine::is_a<const SymEngine::Integer>(*rhs) || symbolic::eq(rhs, symbolic::zero())) {
             return Interval::failure();
         }
+        auto zero = symbolic::zero();
+        auto max_magnitude =
+            symbolic::integer(std::abs(SymEngine::down_cast<const SymEngine::Integer&>(*rhs).as_int()) - 1);
 
         auto lhs_iv = visit(lhs, depth + 1);
-        auto zero = symbolic::zero();
-        auto pos_bound = symbolic::sub(rhs, symbolic::one());
 
-        // A non-negative dividend modulo a positive divisor is always [0, rhs-1],
-        // regardless of whether the dividend has a (finite) upper bound. This is the
-        // common case for offset decodes like imod(idiv(iter, ...), n).
-        bool rhs_positive = symbolic::is_true(symbolic::Gt(rhs, zero));
-        bool lhs_non_negative = lhs_iv.has_lower() && symbolic::is_true(symbolic::Ge(lhs_iv.lower, zero));
-        if (rhs_positive && lhs_non_negative && !lhs_iv.has_upper()) {
-            return {zero, pos_bound};
-        }
-
-        if (!lhs_iv.has_lower() || !lhs_iv.has_upper()) {
-            return Interval::failure();
-        }
-        auto lhs_lb = lhs_iv.lower;
-        auto lhs_ub = lhs_iv.upper;
-
-        bool can_be_negative = symbolic::is_true(symbolic::Lt(lhs_lb, symbolic::zero())) ||
-                               symbolic::is_true(symbolic::Lt(rhs, symbolic::zero()));
-        bool all_negative = symbolic::is_true(symbolic::Lt(lhs_ub, symbolic::zero())) ||
-                            symbolic::is_true(symbolic::Lt(rhs, symbolic::zero()));
-        auto neg_bound = symbolic::sub(symbolic::one(), symbolic::simplify(symbolic::abs(rhs)));
-
-        auto width = symbolic::sub(lhs_ub, lhs_lb);
-        if (symbolic::is_true(symbolic::Lt(width, rhs))) {
-            // Range doesn't span full modulus cycle
-            bool wraps = symbolic::is_true(symbolic::Lt(symbolic::mod(lhs_ub, rhs), symbolic::mod(lhs_lb, rhs)));
-            if (wraps) {
-                Expression lb = can_be_negative ? Expression(neg_bound) : Expression(zero);
-                Expression ub = all_negative ? Expression(zero) : Expression(pos_bound);
-                return {lb, ub};
+        // Exact for literal bounds with a common quotient: the remainder is then lhs - rhs*q, increasing in lhs.
+        if (lhs_iv.has_lower() && lhs_iv.has_upper() && SymEngine::is_a<SymEngine::Integer>(*lhs_iv.lower) &&
+            SymEngine::is_a<SymEngine::Integer>(*lhs_iv.upper)) {
+            auto q_lower = symbolic::div(lhs_iv.lower, rhs);
+            auto q_upper = symbolic::div(lhs_iv.upper, rhs);
+            if (SymEngine::is_a<SymEngine::Integer>(*q_lower) && symbolic::eq(q_lower, q_upper)) {
+                return {symbolic::mod(lhs_iv.lower, rhs), symbolic::mod(lhs_iv.upper, rhs)};
             }
-            return {symbolic::simplify(symbolic::mod(lhs_lb, rhs)), symbolic::simplify(symbolic::mod(lhs_ub, rhs))};
         }
 
-        // Range spans full cycle
-        Expression lb = can_be_negative ? Expression(neg_bound) : Expression(zero);
-        Expression ub = all_negative ? Expression(zero) : Expression(pos_bound);
-        return {lb, ub};
+        bool non_negative = lhs_iv.has_lower() && symbolic::is_true(symbolic::Ge(lhs_iv.lower, zero));
+        bool non_positive = lhs_iv.has_upper() && symbolic::is_true(symbolic::Le(lhs_iv.upper, zero));
+        if (non_negative) {
+            return {zero, max_magnitude};
+        }
+        if (non_positive) {
+            return {symbolic::mul(symbolic::integer(-1), max_magnitude), zero};
+        }
+        return {symbolic::mul(symbolic::integer(-1), max_magnitude), max_magnitude};
     }
 
     return Interval::failure();
@@ -634,9 +669,13 @@ Interval BoundAnalysis::visit_add(const SymEngine::RCP<const SymEngine::Add>& ad
                     SymEngine::eq(*dict.begin()->second, *SymEngine::one)) {
                     const auto& base = dict.begin()->first;
                     if (SymEngine::is_a<SymEngine::Min>(*base) || SymEngine::is_a<SymEngine::Max>(*base)) {
+                        auto c = SymEngine::rcp_static_cast<const SymEngine::Integer>(mul->get_coef());
+                        if (!mp_fits_slong_p(c->as_integer_class())) {
+                            return false;
+                        }
                         ext = base;
                         ext_is_min = SymEngine::is_a<SymEngine::Min>(*base);
-                        ext_coeff = SymEngine::rcp_static_cast<const SymEngine::Integer>(mul->get_coef())->as_int();
+                        ext_coeff = c->as_int();
                         return true;
                     }
                 }
@@ -766,7 +805,7 @@ Interval BoundAnalysis::visit_add(const SymEngine::RCP<const SymEngine::Add>& ad
                 // helper looks for a non-negative integer combination of
                 // constraints whose generator coefficients match the sum's,
                 // yielding a tighter bound on the whole expression.
-                if (gens.size() >= 2) {
+                if (gens.size() >= 2 && project_constraints_) {
                     auto coupled = visit_add_coupled_constraints(coeffs, gens, depth);
                     if (coupled.has_upper()) {
                         result.upper = result.has_upper() ? symbolic::min(result.upper, coupled.upper) : coupled.upper;
@@ -1327,28 +1366,30 @@ SymEngine::RCP<const SymEngine::Basic> find_first_max(const Expression& expr) {
 
 constexpr int kProofDepthLimit = 4;
 
+const SymbolSet kNoParameters;
+
+// Sub-goal results within one top-level proof: INT_MAX = proven, otherwise the largest depth that failed.
+using ProofMemo = std::unordered_map<Expression, int, SymEngine::RCPBasicHash, SymEngine::RCPBasicKeyEq>;
+
+// One top-level proof shares its BoundAnalysis instances so sub-proofs reuse cached intervals.
+struct ProofCtx {
+    const SymbolSet& parameters;
+    const Assumptions& assumptions;
+    bool tight;
+    BoundAnalysis& ba; // built with `parameters`
+    BoundAnalysis* ba_no_params; // built with empty parameters; null iff `parameters` is empty
+    ProofMemo& memo;
+    ProofMemo* memo_no_params;
+};
+
 // Forward decl: shared core that proves `diff >= 0` (when strict=false)
 // or `diff > 0` (when strict=true).
-bool prove_ge_zero(
-    const Expression& diff,
-    const SymbolSet& parameters,
-    const Assumptions& assumptions,
-    bool tight,
-    bool strict,
-    int depth
-);
+bool prove_ge_zero(const Expression& diff, const ProofCtx& ctx, bool strict, int depth);
 
 // Substitute the first Max subexpression with one of its args at a time, and
 // recurse: any successful branch proves the predicate for the original expr
 // because the substitution yields a sound LOWER bound on the residue.
-bool descend_max(
-    const Expression& diff,
-    const SymbolSet& parameters,
-    const Assumptions& assumptions,
-    bool tight,
-    bool strict,
-    int depth
-) {
+bool descend_max(const Expression& diff, const ProofCtx& ctx, bool strict, int depth) {
     auto max_node = find_first_max(diff);
     if (max_node.is_null()) {
         return false;
@@ -1356,7 +1397,7 @@ bool descend_max(
     auto max_op = SymEngine::rcp_static_cast<const SymEngine::Max>(max_node);
     for (auto& arg : max_op->get_args()) {
         Expression replaced = symbolic::simplify(symbolic::expand(symbolic::subs(diff, max_node, arg)));
-        if (prove_ge_zero(replaced, parameters, assumptions, tight, strict, depth - 1)) {
+        if (prove_ge_zero(replaced, ctx, strict, depth - 1)) {
             return true;
         }
     }
@@ -1372,9 +1413,7 @@ bool descend_max(
 // itself, or an Add containing the Min as a direct addend (so the implicit
 // coefficient is +1). Anything else is rejected to avoid unsound descent
 // through negations or non-positive multipliers.
-bool descend_min_and(
-    const Expression& e, const SymbolSet& parameters, const Assumptions& assumptions, bool tight, bool strict, int depth
-) {
+bool descend_min_and(const Expression& e, const ProofCtx& ctx, bool strict, int depth) {
     auto min_node = find_first_min(e);
     if (min_node.is_null()) {
         return false;
@@ -1399,11 +1438,48 @@ bool descend_min_and(
     auto min_op = SymEngine::rcp_static_cast<const SymEngine::Min>(min_node);
     for (auto& arg : min_op->get_args()) {
         Expression replaced = symbolic::simplify(symbolic::expand(symbolic::subs(e, min_node, arg)));
-        if (!prove_ge_zero(replaced, parameters, assumptions, tight, strict, depth - 1)) {
+        if (!prove_ge_zero(replaced, ctx, strict, depth - 1)) {
             return false;
         }
     }
     return true;
+}
+
+// OR-style descent for a `k*min(...)` addend with k < 0: `k*min(a_1..a_n) >= k*a_i` for every i,
+// so substituting any single argument yields a sound lower bound.
+bool descend_neg_min(const Expression& e, const ProofCtx& ctx, bool strict, int depth) {
+    SymEngine::vec_basic terms;
+    if (SymEngine::is_a<SymEngine::Add>(*e)) {
+        terms = e->get_args();
+    } else {
+        terms.push_back(e);
+    }
+    for (size_t t = 0; t < terms.size(); ++t) {
+        if (!SymEngine::is_a<SymEngine::Mul>(*terms[t])) {
+            continue;
+        }
+        auto mul = SymEngine::rcp_static_cast<const SymEngine::Mul>(terms[t]);
+        if (mul->get_dict().size() != 1 || !mul->get_coef()->is_negative()) {
+            continue;
+        }
+        const auto& [base, exp] = *mul->get_dict().begin();
+        if (!SymEngine::is_a<SymEngine::Min>(*base) || !symbolic::eq(exp, symbolic::one())) {
+            continue;
+        }
+        Expression rest = symbolic::zero();
+        for (size_t o = 0; o < terms.size(); ++o) {
+            if (o != t) {
+                rest = symbolic::add(rest, terms[o]);
+            }
+        }
+        for (const auto& arg : base->get_args()) {
+            auto replaced = symbolic::expand(symbolic::add(rest, symbolic::mul(mul->get_coef(), arg)));
+            if (prove_ge_zero(replaced, ctx, strict, depth - 1)) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 // Substitute a symbol with its SYMBOLIC bound to recover coupling that
@@ -1423,15 +1499,9 @@ bool descend_min_and(
 // so `prove_ge_zero` runs a reducing-only pass *before* the interval descent to
 // keep the shared work budget from being drained on the coupled goal before the
 // cancellation shortcut is ever reached.
-bool descend_symbol_bounds(
-    const Expression& diff,
-    const SymbolSet& parameters,
-    const Assumptions& assumptions,
-    bool tight,
-    bool strict,
-    int depth,
-    bool only_reducing
-) {
+bool descend_symbol_bounds(const Expression& diff, const ProofCtx& ctx, bool strict, int depth, bool only_reducing) {
+    const SymbolSet& parameters = ctx.parameters;
+    const Assumptions& assumptions = ctx.assumptions;
     auto e = symbolic::expand(diff);
     auto zero = symbolic::zero();
     auto one = symbolic::integer(1);
@@ -1493,23 +1563,30 @@ bool descend_symbol_bounds(
     });
 
     for (auto& replaced : candidates) {
-        if (prove_ge_zero(replaced, parameters, assumptions, tight, strict, depth - 1)) {
+        if (prove_ge_zero(replaced, ctx, strict, depth - 1)) {
             return true;
         }
     }
     return false;
 }
 
-bool prove_ge_zero(
-    const Expression& diff,
-    const SymbolSet& parameters,
-    const Assumptions& assumptions,
-    bool tight,
-    bool strict,
-    int depth
-) {
-    BoundWorkGuard guard;
+bool prove_ge_zero_uncached(const Expression& e, const ProofCtx& ctx, bool strict, int depth);
+
+// Descents commute (max/min/idiv/symbol substitutions), so identical sub-goals recur along many paths.
+bool prove_ge_zero(const Expression& diff, const ProofCtx& ctx, bool strict, int depth) {
     auto e = symbolic::expand(diff);
+    auto it = ctx.memo.find(e);
+    if (it != ctx.memo.end() && (it->second == std::numeric_limits<int>::max() || it->second >= depth)) {
+        return it->second == std::numeric_limits<int>::max();
+    }
+    bool result = prove_ge_zero_uncached(e, ctx, strict, depth);
+    int& slot = ctx.memo[e];
+    slot = result ? std::numeric_limits<int>::max() : std::max(slot, depth);
+    return result;
+}
+
+bool prove_ge_zero_uncached(const Expression& e, const ProofCtx& ctx, bool strict, int depth) {
+    BoundWorkGuard guard;
 
     // Constant integer fast path.
     if (SymEngine::is_a<SymEngine::Integer>(*e)) {
@@ -1534,14 +1611,13 @@ bool prove_ge_zero(
     // and inexpensive. Running it here keeps the shared work budget from being
     // exhausted by `try_lb`'s min/max fan-out on the coupled goal before the
     // cancellation is ever tried.
-    if (depth > 0 && descend_symbol_bounds(e, parameters, assumptions, tight, strict, depth, /*only_reducing=*/true)) {
+    if (depth > 0 && descend_symbol_bounds(e, ctx, strict, depth, /*only_reducing=*/true)) {
         return true;
     }
 
     // Interval check via BoundAnalysis with the supplied parameter set.
-    auto try_lb = [&](const SymbolSet& params) -> bool {
-        BoundAnalysis analysis(params, assumptions, tight);
-        auto lb = analysis.lower_bound(e);
+    auto try_lb = [&](const ProofCtx& params) -> bool {
+        auto lb = params.ba.lower_bound(e);
         if (lb.is_null() || SymEngine::is_a<SymEngine::Infty>(*lb)) {
             return false;
         }
@@ -1566,27 +1642,32 @@ bool prove_ge_zero(
         // Max-descent on the computed lower bound: tight bounds frequently
         // take the shape `c + max(0, X)`. Substituting Max with one arg yields
         // a (sound) lower bound on `lb`, which transitively bounds `e`.
-        if (depth > 0 && descend_max(lb_s, params, assumptions, tight, strict, depth - 1)) {
+        if (depth > 0 && descend_max(lb_s, params, strict, depth - 1)) {
             return true;
         }
         // Min-descent (AND): `BoundAnalysis` may emit shapes like
         // `N + min(0, 1 - N)` whose value depends on the Min branches.
         // For each Min arg, substitute and require ALL branches to be
         // provable (sound when Min sits in monotone-nondecreasing position).
-        if (depth > 0 && descend_min_and(lb_s, params, assumptions, tight, strict, depth - 1)) {
+        if (depth > 0 && descend_min_and(lb_s, params, strict, depth - 1)) {
             return true;
         }
         return false;
     };
     // First with the caller's parameters (preserves chain-resolution shapes
     // like `upper(i) = N - 1` when N is a parameter).
-    if (try_lb(parameters)) {
+    if (try_lb(ctx)) {
         return true;
     }
     // Fallback with empty parameters: lets BoundAnalysis substitute
     // assumption-derived bounds on parameters themselves (e.g. `N >= 1`).
-    if (!parameters.empty() && try_lb({})) {
-        return true;
+    if (ctx.ba_no_params) {
+        ProofCtx no_params{
+            kNoParameters, ctx.assumptions, ctx.tight, *ctx.ba_no_params, nullptr, *ctx.memo_no_params, nullptr
+        };
+        if (try_lb(no_params)) {
+            return true;
+        }
     }
 
     if (depth <= 0) {
@@ -1594,7 +1675,7 @@ bool prove_ge_zero(
     }
 
     // Max descent on the original expression.
-    if (descend_max(e, parameters, assumptions, tight, strict, depth)) {
+    if (descend_max(e, ctx, strict, depth)) {
         return true;
     }
 
@@ -1602,28 +1683,97 @@ bool prove_ge_zero(
     // `a - c >= 0` AND `b - c >= 0`. The interval path handles most mins, but a
     // Stream-K store bound `min(N-1, min(3+_j1, 63+base)) - _j1 - d` needs the
     // branches split so the per-branch symbolic substitution below can fire.
-    if (descend_min_and(e, parameters, assumptions, tight, strict, depth)) {
+    if (descend_min_and(e, ctx, strict, depth)) {
+        return true;
+    }
+
+    if (descend_neg_min(e, ctx, strict, depth)) {
         return true;
     }
 
     // Symbolic-bound substitution: recover coupling lost by per-symbol interval
     // bounding (e.g. `_j1 - base` when `_j1 in [base, base+K]` and `base` is a
     // non-polynomial function of another generator).
-    if (descend_symbol_bounds(e, parameters, assumptions, tight, strict, depth, /*only_reducing=*/false)) {
+    if (descend_symbol_bounds(e, ctx, strict, depth, /*only_reducing=*/false)) {
         return true;
     }
 
     return false;
 }
 
+bool prove_ge_zero_top(
+    const Expression& expr, const SymbolSet& parameters, const Assumptions& assumptions, bool tight, bool strict
+) {
+    // Cheap pass without coupled-constraint projection: most goals (`i >= 0`, `N >= 1`) follow from
+    // per-symbol bound chains, while projection fans out exponentially over deep tile nests.
+    for (bool project : {false, true}) {
+        BoundAnalysis ba(parameters, assumptions, tight, DEFAULT_BOUND_BUDGET, project);
+        std::optional<BoundAnalysis> ba_no_params;
+        if (!parameters.empty()) {
+            ba_no_params.emplace(kNoParameters, assumptions, tight, DEFAULT_BOUND_BUDGET, project);
+        }
+        ProofMemo memo;
+        ProofMemo memo_no_params;
+        ProofCtx ctx{
+            parameters,
+            assumptions,
+            tight,
+            ba,
+            ba_no_params ? &*ba_no_params : nullptr,
+            memo,
+            ba_no_params ? &memo_no_params : nullptr
+        };
+        if (prove_ge_zero(expr, ctx, strict, project ? kProofDepthLimit : 0)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 } // namespace
 
 bool is_nonneg(const Expression& expr, const SymbolSet& parameters, const Assumptions& assumptions, bool tight) {
-    return prove_ge_zero(expr, parameters, assumptions, tight, /*strict=*/false, kProofDepthLimit);
+    return prove_ge_zero_top(expr, parameters, assumptions, tight, /*strict=*/false);
 }
 
 bool is_positive(const Expression& expr, const SymbolSet& parameters, const Assumptions& assumptions, bool tight) {
-    return prove_ge_zero(expr, parameters, assumptions, tight, /*strict=*/true, kProofDepthLimit);
+    return prove_ge_zero_top(expr, parameters, assumptions, tight, /*strict=*/true);
+}
+
+namespace {
+
+bool memoized_proof(
+    std::unordered_map<
+        std::string,
+        std::unordered_map<Expression, bool, SymEngine::RCPBasicHash, SymEngine::RCPBasicKeyEq>>& memo,
+    const Expression& expr,
+    const SymbolSet& parameters,
+    const Assumptions& assums,
+    bool strict
+) {
+    std::string key = strict ? "s" : "n";
+    for (const auto& p : parameters) {
+        key += '|';
+        key += p->get_name();
+    }
+    auto& by_expr = memo[key];
+    auto it = by_expr.find(expr);
+    if (it != by_expr.end()) {
+        return it->second;
+    }
+    bool result = prove_ge_zero_top(expr, parameters, assums, /*tight=*/false, strict);
+    by_expr.emplace(expr, result);
+    return result;
+}
+
+} // namespace
+
+bool AssumptionsBounds::is_nonneg(const Expression& expr, const SymbolSet& parameters) {
+    return memoized_proof(proof_memo_, expr, parameters, assums_, /*strict=*/false);
+}
+
+bool AssumptionsBounds::is_positive(const Expression& expr, const SymbolSet& parameters) {
+    return memoized_proof(proof_memo_, expr, parameters, assums_, /*strict=*/true);
 }
 
 bool is_nonpos(const Expression& expr, const SymbolSet& parameters, const Assumptions& assumptions, bool tight) {

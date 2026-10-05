@@ -1,0 +1,53 @@
+{
+  "id": "docc",
+  "title": "docc",
+  "tagline": "The Daisytuner Optimizing Compiler Collection",
+  "repo": "daisytuner/docc",
+  "visibility": "public",
+  "url": "https://docs.daisytuner.com/docc",
+  "docsDir": "docs",
+  "versionFile": "VERSION",
+  "startDoc": "intro",
+  "license": "Code and documentation are published under the BSD 3-Clause license.",
+  "include": [
+    {
+      "src": "python/README.md",
+      "dest": "getting-started-python/build-from-source.md",
+      "title": "Build from Source & Usage",
+      "description": "How to build docc for Python from source and use the @native decorator",
+      "sidebarPosition": 2
+    },
+    {
+      "src": "tutorial/printf_target/target_tutorial.md",
+      "dest": "structured-sdfgs/custom-offload-targets.md",
+      "title": "Adding Custom Offload Targets",
+      "description": "How to implement a custom offload target, using a Printf debug target as example",
+      "sidebarPosition": 2
+    }
+  ],
+  "doxygen": {
+    "inputs": [
+      "sdfg/include",
+      "opt/include",
+      "llvm/include",
+      "mlir/include",
+      "c-compile/include",
+      "rpc/include",
+      "rtl/include",
+      "arg-capture-io/include",
+      "targets/et/include"
+    ]
+  },
+  "landing": [
+    {
+      "title": "C/C++",
+      "description": "Use docc as a drop-in replacement for clang and gcc, and offload to GPUs with one flag.",
+      "doc": "getting-started-docc/install"
+    },
+    {
+      "title": "Python & PyTorch",
+      "description": "Compile NumPy functions with @native, or use docc as a torch.compile backend.",
+      "doc": "getting-started-python/install"
+    }
+  ]
+}

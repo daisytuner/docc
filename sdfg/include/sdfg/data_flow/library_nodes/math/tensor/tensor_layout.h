@@ -55,6 +55,8 @@ public:
 
     symbolic::Expression total_elements() const;
 
+    symbolic::Expression memory_span() const;
+
     symbolic::MultiExpression linear_strides() const;
 
     symbolic::Expression resolve_element(const symbolic::MultiExpression& indices, bool require_to_element = true) const;

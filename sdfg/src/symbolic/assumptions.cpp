@@ -6,120 +6,115 @@
 namespace sdfg {
 namespace symbolic {
 
-Assumption::Assumption()
-    : symbol_(symbolic::symbol("")), lower_bounds_(), upper_bounds_(), tight_lower_bound_(SymEngine::null),
-      tight_upper_bound_(SymEngine::null), constraints_(), constant_(false), map_(SymEngine::null) {
+Assumption::Assumption() : symbol_(symbolic::symbol("")), data_(std::make_shared<Data>()) {};
 
-      };
+Assumption::Assumption(const Symbol symbol) : symbol_(symbol), data_(std::make_shared<Data>()) {};
 
-Assumption::Assumption(const Symbol symbol)
-    : symbol_(symbol), lower_bounds_(), upper_bounds_(), tight_lower_bound_(SymEngine::null),
-      tight_upper_bound_(SymEngine::null), constraints_(), constant_(false), map_(SymEngine::null) {
-
-      };
-
-Assumption::Assumption(const Assumption& a)
-    : symbol_(a.symbol_), lower_bounds_(a.lower_bounds_), upper_bounds_(a.upper_bounds_),
-      tight_lower_bound_(a.tight_lower_bound_), tight_upper_bound_(a.tight_upper_bound_), constraints_(a.constraints_),
-      constant_(a.constant_), map_(a.map_) {
-
-      };
+Assumption::Assumption(const Assumption& a) : symbol_(a.symbol_), data_(a.data_) {};
 
 Assumption& Assumption::operator=(const Assumption& a) {
     this->symbol_ = a.symbol_;
-    this->lower_bounds_ = a.lower_bounds_;
-    this->upper_bounds_ = a.upper_bounds_;
-    this->tight_lower_bound_ = a.tight_lower_bound_;
-    this->tight_upper_bound_ = a.tight_upper_bound_;
-    this->constraints_ = a.constraints_;
-    this->constant_ = a.constant_;
-    this->map_ = a.map_;
+    this->data_ = a.data_;
     return *this;
 };
+
+Assumption::Data& Assumption::mut() {
+    if (data_.use_count() > 1) {
+        data_ = std::make_shared<Data>(*data_);
+    }
+    return *data_;
+}
 
 const Symbol Assumption::symbol() const {
     return this->symbol_;
 };
 
 const ExpressionSet& Assumption::lower_bounds() const {
-    return this->lower_bounds_;
+    return data_->lower_bounds;
 }
 
 void Assumption::add_lower_bound(const Expression lb) {
-    this->lower_bounds_.insert(lb);
+    if (!data_->lower_bounds.contains(lb)) {
+        mut().lower_bounds.insert(lb);
+    }
 }
 
 bool Assumption::contains_lower_bound(const Expression lb) {
-    return this->lower_bounds_.contains(lb);
+    return data_->lower_bounds.contains(lb);
 }
 
 bool Assumption::remove_lower_bound(const Expression lb) {
-    return this->lower_bounds_.erase(lb) > 0;
+    return data_->lower_bounds.contains(lb) && mut().lower_bounds.erase(lb) > 0;
 }
 
-
 const ExpressionSet& Assumption::upper_bounds() const {
-    return this->upper_bounds_;
+    return data_->upper_bounds;
 }
 
 void Assumption::add_upper_bound(const Expression ub) {
-    this->upper_bounds_.insert(ub);
+    if (!data_->upper_bounds.contains(ub)) {
+        mut().upper_bounds.insert(ub);
+    }
 }
 
 bool Assumption::contains_upper_bound(const Expression ub) {
-    return this->upper_bounds_.contains(ub);
+    return data_->upper_bounds.contains(ub);
 }
 
 bool Assumption::remove_upper_bound(const Expression ub) {
-    return this->upper_bounds_.erase(ub) > 0;
+    return data_->upper_bounds.contains(ub) && mut().upper_bounds.erase(ub) > 0;
 }
 
 const Expression Assumption::tight_lower_bound() const {
-    return this->tight_lower_bound_;
+    return data_->tight_lower_bound;
 }
 
 void Assumption::tight_lower_bound(const Expression tight_lb) {
-    this->tight_lower_bound_ = tight_lb;
+    mut().tight_lower_bound = tight_lb;
 }
 
 const Expression Assumption::tight_upper_bound() const {
-    return this->tight_upper_bound_;
+    return data_->tight_upper_bound;
 }
 
 void Assumption::tight_upper_bound(const Expression tight_ub) {
-    this->tight_upper_bound_ = tight_ub;
+    mut().tight_upper_bound = tight_ub;
 }
 
 const ExpressionSet& Assumption::constraints() const {
-    return this->constraints_;
+    return data_->constraints;
 }
 
 void Assumption::add_constraint(const Expression c) {
-    this->constraints_.insert(c);
+    if (!data_->constraints.contains(c)) {
+        mut().constraints.insert(c);
+    }
 }
 
 bool Assumption::contains_constraint(const Expression c) {
-    return this->constraints_.contains(c);
+    return data_->constraints.contains(c);
 }
 
 bool Assumption::remove_constraint(const Expression c) {
-    return this->constraints_.erase(c) > 0;
+    return data_->constraints.contains(c) && mut().constraints.erase(c) > 0;
 }
 
 bool Assumption::constant() const {
-    return constant_;
+    return data_->constant;
 };
 
 void Assumption::constant(bool constant) {
-    constant_ = constant;
+    if (data_->constant != constant) {
+        mut().constant = constant;
+    }
 };
 
 const Expression Assumption::map() const {
-    return map_;
+    return data_->map;
 };
 
 void Assumption::map(const Expression map) {
-    map_ = map;
+    mut().map = map;
 };
 
 Assumption Assumption::create(const Symbol symbol, const types::IType& type) {
@@ -199,19 +194,18 @@ Assumption Assumption::create(const Symbol symbol, const types::IType& type) {
 }
 
 Assumption::ReplaceResult Assumption::replace(const symbolic::ExpressionMapping& replacements) {
-    bool replaced_some = true;
-
-    replaced_some |= substitute(lower_bounds_, replacements);
-    replaced_some |= substitute(upper_bounds_, replacements);
-    if (!tight_lower_bound_.is_null()) {
-        tight_lower_bound_ = tight_lower_bound_->subs(replacements);
+    auto& d = mut();
+    substitute(d.lower_bounds, replacements);
+    substitute(d.upper_bounds, replacements);
+    if (!d.tight_lower_bound.is_null()) {
+        d.tight_lower_bound = d.tight_lower_bound->subs(replacements);
     }
-    if (!tight_lower_bound_.is_null()) {
-        tight_upper_bound_ = tight_upper_bound_->subs(replacements);
+    if (!d.tight_upper_bound.is_null()) {
+        d.tight_upper_bound = d.tight_upper_bound->subs(replacements);
     }
-    replaced_some |= substitute(constraints_, replacements);
-    if (!map_.is_null()) {
-        map_ = map_->subs(replacements);
+    substitute(d.constraints, replacements);
+    if (!d.map.is_null()) {
+        d.map = d.map->subs(replacements);
     }
     // update constant?
 

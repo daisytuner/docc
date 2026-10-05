@@ -44,7 +44,6 @@
 #include <sdfg/passes/symbolic/symbol_evolution.h>
 #include <sdfg/passes/symbolic/symbol_promotion.h>
 #include <sdfg/passes/symbolic/symbol_propagation.h>
-#include <sdfg/passes/symbolic/type_minimization.h>
 #include <sdfg/passes/targets/device_residency.h>
 #include <sdfg/serializer/json_serializer.h>
 
@@ -348,10 +347,6 @@ void PyStructuredSDFG::simplify(const docc::target::TargetOptions& options) {
     sdfg::passes::PointerEvolution pointer_evolution_pass;
     pointer_evolution_pass.run(builder_opt, analysis_manager);
     loop_normalization_pass.run(builder_opt, analysis_manager);
-
-    sdfg::passes::TypeMinimizationPass type_minimization_pass;
-    type_minimization_pass.run(builder_opt, analysis_manager);
-    type_minimization_pass.run(builder_opt, analysis_manager);
 
     // Dead code elimination
     symbol_propagation_pass.run(builder_opt, analysis_manager);

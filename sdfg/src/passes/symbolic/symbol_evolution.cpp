@@ -1,6 +1,5 @@
 #include "sdfg/passes/symbolic/symbol_evolution.h"
 
-#include "sdfg/analysis/dominance_analysis.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/symbolic/polynomials.h"
 #include "sdfg/symbolic/symbolic.h"
@@ -291,10 +290,8 @@ bool collect_candidate_cheap(
 }
 
 // Expensive checks: dominance and "no read of `sym` after the body update".
-bool passes_expensive_checks(
-    analysis::UsersView& body_users, analysis::DominanceAnalysis& dominance, const Candidate& cand
-) {
-    if (!dominance.dominates(*cand.init_use, *cand.update_use)) {
+bool passes_expensive_checks(analysis::UsersView& body_users, analysis::Users& users, const Candidate& cand) {
+    if (!users.dominates(*cand.init_use, *cand.update_use)) {
         return false;
     }
 
@@ -399,7 +396,6 @@ bool SymbolEvolution::eliminate_symbols(
     auto stride = loop.stride();
 
     auto& users = analysis_manager.get<analysis::Users>();
-    auto& dominance = analysis_manager.get<analysis::DominanceAnalysis>();
     analysis::UsersView body_users(users, loop.root());
 
     // Build the candidate name set first (one cheap scan).
@@ -433,7 +429,7 @@ bool SymbolEvolution::eliminate_symbols(
         }
 
         // Only now pay for dominance + use-after-update.
-        if (!passes_expensive_checks(body_users, dominance, cand)) {
+        if (!passes_expensive_checks(body_users, users, cand)) {
             continue;
         }
 

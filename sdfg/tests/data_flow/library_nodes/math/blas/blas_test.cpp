@@ -38,8 +38,8 @@ TEST(BlasTest, DotNode) {
         block, DebugInfo(), math::blas::ImplementationType_BLAS, math::blas::BLAS_Precision::d, n, stride_a, stride_b
     ));
 
-    builder.add_computational_memlet(block, a_node, dot_node, "__x", {symbolic::zero()}, array_desc, block.debug_info());
-    builder.add_computational_memlet(block, b_node, dot_node, "__y", {symbolic::zero()}, array_desc, block.debug_info());
+    builder.add_computational_memlet(block, a_node, dot_node, "__x", {}, array_desc, block.debug_info());
+    builder.add_computational_memlet(block, b_node, dot_node, "__y", {}, array_desc, block.debug_info());
     builder.add_computational_memlet(block, dot_node, "__out", c_node, {}, desc, block.debug_info());
 
     EXPECT_EQ(block.dataflow().nodes().size(), 4);
@@ -95,9 +95,9 @@ TEST(BlasTest, GemmNode) {
     auto& alpha_node = builder.add_constant(block, "2.0", desc);
     auto& beta_node = builder.add_constant(block, "3.0", desc);
 
-    builder.add_computational_memlet(block, input_a_node, gemm_node, "__A", {symbolic::integer(0)}, arr_a_type);
-    builder.add_computational_memlet(block, input_b_node, gemm_node, "__B", {symbolic::integer(0)}, arr_b_type);
-    builder.add_computational_memlet(block, dummy_input_node, gemm_node, "__C", {symbolic::integer(0)}, arr_res_type);
+    builder.add_computational_memlet(block, input_a_node, gemm_node, "__A", {}, arr_a_type);
+    builder.add_computational_memlet(block, input_b_node, gemm_node, "__B", {}, arr_b_type);
+    builder.add_computational_memlet(block, dummy_input_node, gemm_node, "__C", {}, arr_res_type);
     builder.add_computational_memlet(block, alpha_node, gemm_node, "__alpha", {}, desc);
     builder.add_computational_memlet(block, beta_node, gemm_node, "__beta", {}, desc);
 
@@ -226,9 +226,9 @@ TEST(BlasTest, GemmNode_AlphaOneBetaZero) {
     auto& alpha_node = builder.add_constant(block, "1.0", desc);
     auto& beta_node = builder.add_constant(block, "0.0", desc);
 
-    builder.add_computational_memlet(block, input_a_node, gemm_node, "__A", {symbolic::integer(0)}, arr_a_type);
-    builder.add_computational_memlet(block, input_b_node, gemm_node, "__B", {symbolic::integer(0)}, arr_b_type);
-    builder.add_computational_memlet(block, dummy_input_node, gemm_node, "__C", {symbolic::integer(0)}, arr_res_type);
+    builder.add_computational_memlet(block, input_a_node, gemm_node, "__A", {}, arr_a_type);
+    builder.add_computational_memlet(block, input_b_node, gemm_node, "__B", {}, arr_b_type);
+    builder.add_computational_memlet(block, dummy_input_node, gemm_node, "__C", {}, arr_res_type);
     builder.add_computational_memlet(block, alpha_node, gemm_node, "__alpha", {}, desc);
     builder.add_computational_memlet(block, beta_node, gemm_node, "__beta", {}, desc);
 
@@ -324,9 +324,9 @@ TEST(BlasTest, GemmNode_TN) {
     auto& alpha_node = builder.add_constant(block, "1.0", desc);
     auto& beta_node = builder.add_constant(block, "0.0", desc);
 
-    builder.add_computational_memlet(block, input_a_node, gemm_node, "__A", {symbolic::integer(0)}, arr_a_type);
-    builder.add_computational_memlet(block, input_b_node, gemm_node, "__B", {symbolic::integer(0)}, arr_b_type);
-    builder.add_computational_memlet(block, dummy_input_node, gemm_node, "__C", {symbolic::integer(0)}, arr_res_type);
+    builder.add_computational_memlet(block, input_a_node, gemm_node, "__A", {}, arr_a_type);
+    builder.add_computational_memlet(block, input_b_node, gemm_node, "__B", {}, arr_b_type);
+    builder.add_computational_memlet(block, dummy_input_node, gemm_node, "__C", {}, arr_res_type);
     builder.add_computational_memlet(block, alpha_node, gemm_node, "__alpha", {}, desc);
     builder.add_computational_memlet(block, beta_node, gemm_node, "__beta", {}, desc);
 
@@ -383,9 +383,9 @@ TEST(BlasTest, GemmNode_NT) {
     auto& alpha_node = builder.add_constant(block, "1.0", desc);
     auto& beta_node = builder.add_constant(block, "0.0", desc);
 
-    builder.add_computational_memlet(block, input_a_node, gemm_node, "__A", {symbolic::integer(0)}, arr_a_type);
-    builder.add_computational_memlet(block, input_b_node, gemm_node, "__B", {symbolic::integer(0)}, arr_b_type);
-    builder.add_computational_memlet(block, dummy_input_node, gemm_node, "__C", {symbolic::integer(0)}, arr_res_type);
+    builder.add_computational_memlet(block, input_a_node, gemm_node, "__A", {}, arr_a_type);
+    builder.add_computational_memlet(block, input_b_node, gemm_node, "__B", {}, arr_b_type);
+    builder.add_computational_memlet(block, dummy_input_node, gemm_node, "__C", {}, arr_res_type);
     builder.add_computational_memlet(block, alpha_node, gemm_node, "__alpha", {}, desc);
     builder.add_computational_memlet(block, beta_node, gemm_node, "__beta", {}, desc);
 
@@ -442,9 +442,9 @@ TEST(BlasTest, GemmNode_TT) {
     auto& alpha_node = builder.add_constant(block, "1.0", desc);
     auto& beta_node = builder.add_constant(block, "0.0", desc);
 
-    builder.add_computational_memlet(block, input_a_node, gemm_node, "__A", {symbolic::integer(0)}, arr_a_type);
-    builder.add_computational_memlet(block, input_b_node, gemm_node, "__B", {symbolic::integer(0)}, arr_b_type);
-    builder.add_computational_memlet(block, dummy_input_node, gemm_node, "__C", {symbolic::integer(0)}, arr_res_type);
+    builder.add_computational_memlet(block, input_a_node, gemm_node, "__A", {}, arr_a_type);
+    builder.add_computational_memlet(block, input_b_node, gemm_node, "__B", {}, arr_b_type);
+    builder.add_computational_memlet(block, dummy_input_node, gemm_node, "__C", {}, arr_res_type);
     builder.add_computational_memlet(block, alpha_node, gemm_node, "__alpha", {}, desc);
     builder.add_computational_memlet(block, beta_node, gemm_node, "__beta", {}, desc);
 
@@ -509,9 +509,9 @@ TEST(BlasTest, BatchedGemmNode) {
     auto& alpha_node = builder.add_constant(block, "2.0", desc);
     auto& beta_node = builder.add_constant(block, "3.0", desc);
 
-    builder.add_computational_memlet(block, input_a_node, gemm_node, "__A", {symbolic::integer(0)}, arr_a_type);
-    builder.add_computational_memlet(block, input_b_node, gemm_node, "__B", {symbolic::integer(0)}, arr_b_type);
-    builder.add_computational_memlet(block, dummy_input_node, gemm_node, "__C", {symbolic::integer(0)}, arr_res_type);
+    builder.add_computational_memlet(block, input_a_node, gemm_node, "__A", {}, arr_a_type);
+    builder.add_computational_memlet(block, input_b_node, gemm_node, "__B", {}, arr_b_type);
+    builder.add_computational_memlet(block, dummy_input_node, gemm_node, "__C", {}, arr_res_type);
     builder.add_computational_memlet(block, alpha_node, gemm_node, "__alpha", {}, desc);
     builder.add_computational_memlet(block, beta_node, gemm_node, "__beta", {}, desc);
 
@@ -607,9 +607,9 @@ TEST(BlasTest, BatchedGemmNode_AlphaOneBetaZero) {
     auto& alpha_node = builder.add_constant(block, "1.0", desc);
     auto& beta_node = builder.add_constant(block, "0.0", desc);
 
-    builder.add_computational_memlet(block, input_a_node, gemm_node, "__A", {symbolic::integer(0)}, arr_a_type);
-    builder.add_computational_memlet(block, input_b_node, gemm_node, "__B", {symbolic::integer(0)}, arr_b_type);
-    builder.add_computational_memlet(block, dummy_input_node, gemm_node, "__C", {symbolic::integer(0)}, arr_res_type);
+    builder.add_computational_memlet(block, input_a_node, gemm_node, "__A", {}, arr_a_type);
+    builder.add_computational_memlet(block, input_b_node, gemm_node, "__B", {}, arr_b_type);
+    builder.add_computational_memlet(block, dummy_input_node, gemm_node, "__C", {}, arr_res_type);
     builder.add_computational_memlet(block, alpha_node, gemm_node, "__alpha", {}, desc);
     builder.add_computational_memlet(block, beta_node, gemm_node, "__beta", {}, desc);
 
@@ -721,9 +721,9 @@ TEST_P(GemmNodeIndvarTypeTest, ExpandedIndvarTypesMatchDimensionMagnitude) {
     auto& alpha_node = builder.add_constant(block, "2.0", desc);
     auto& beta_node = builder.add_constant(block, "3.0", desc);
 
-    builder.add_computational_memlet(block, input_a_node, gemm_node, "__A", {symbolic::integer(0)}, arr_a_type);
-    builder.add_computational_memlet(block, input_b_node, gemm_node, "__B", {symbolic::integer(0)}, arr_b_type);
-    builder.add_computational_memlet(block, dummy_input_node, gemm_node, "__C", {symbolic::integer(0)}, arr_res_type);
+    builder.add_computational_memlet(block, input_a_node, gemm_node, "__A", {}, arr_a_type);
+    builder.add_computational_memlet(block, input_b_node, gemm_node, "__B", {}, arr_b_type);
+    builder.add_computational_memlet(block, dummy_input_node, gemm_node, "__C", {}, arr_res_type);
     builder.add_computational_memlet(block, alpha_node, gemm_node, "__alpha", {}, desc);
     builder.add_computational_memlet(block, beta_node, gemm_node, "__beta", {}, desc);
 
@@ -797,5 +797,77 @@ INSTANTIATE_TEST_SUITE_P(
         return info.param.label;
     }
 );
+
+// The GEMM node reports the affine layout of each matrix operand it consumes,
+// so a later MemoryLayoutAnalysis / LocalStorage can localize it.
+TEST(BlasTest, GemmNode_ConsumedLayout) {
+    builder::StructuredSDFGBuilder builder("gemm_consumed_layout", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    auto& block = builder.add_block(sdfg.root());
+
+    const int m = 4, n = 6, k = 8, lda = 16; // lda padded beyond k
+
+    // Row-major, no transpose: A is m x k with a padded leading dimension.
+    auto& gemm = static_cast<math::blas::GEMMNode&>(builder.add_library_node<math::blas::GEMMNode>(
+        block,
+        DebugInfo(),
+        data_flow::ImplementationType_NONE,
+        math::blas::BLAS_Precision::s,
+        math::blas::BLAS_Layout::RowMajor,
+        math::blas::BLAS_Transpose::No,
+        math::blas::BLAS_Transpose::No,
+        symbolic::integer(m),
+        symbolic::integer(n),
+        symbolic::integer(k),
+        symbolic::integer(lda),
+        symbolic::integer(n),
+        symbolic::integer(n)
+    ));
+
+    auto a = gemm.pointer_access_type(math::blas::GEMMNode::A_INPUT_IDX);
+    ASSERT_NE(a, nullptr);
+    EXPECT_TRUE(a->may_contain_reads());
+    auto a_read = a->access_read_pattern();
+    ASSERT_NE(a_read, nullptr);
+    ASSERT_NE(a_read->layout(), nullptr);
+    EXPECT_TRUE(symbolic::eq(a_read->layout()->get_dim(0), symbolic::integer(m)));
+    EXPECT_TRUE(symbolic::eq(a_read->layout()->get_dim(1), symbolic::integer(k)));
+    EXPECT_TRUE(symbolic::eq(a_read->layout()->get_stride(0), symbolic::integer(lda)));
+    EXPECT_TRUE(symbolic::eq(a_read->layout()->get_stride(1), symbolic::integer(1)));
+
+    // C (m x n, ldc == n) is written densely.
+    auto c = gemm.pointer_access_type(math::blas::GEMMNode::C_INPUT_IDX);
+    ASSERT_NE(c, nullptr);
+    EXPECT_TRUE(c->may_contain_writes());
+    auto c_write = c->access_write_pattern();
+    ASSERT_NE(c_write, nullptr);
+    EXPECT_TRUE(c_write->every_element_accessed());
+    ASSERT_NE(c_write->layout(), nullptr);
+    EXPECT_TRUE(symbolic::eq(c_write->layout()->get_dim(0), symbolic::integer(m)));
+    EXPECT_TRUE(symbolic::eq(c_write->layout()->get_dim(1), symbolic::integer(n)));
+
+    // Transposing A under row-major flips the unit-stride axis to the leading dim.
+    auto& gemm_ta = static_cast<math::blas::GEMMNode&>(builder.add_library_node<math::blas::GEMMNode>(
+        block,
+        DebugInfo(),
+        data_flow::ImplementationType_NONE,
+        math::blas::BLAS_Precision::s,
+        math::blas::BLAS_Layout::RowMajor,
+        math::blas::BLAS_Transpose::Trans,
+        math::blas::BLAS_Transpose::No,
+        symbolic::integer(m),
+        symbolic::integer(n),
+        symbolic::integer(k),
+        symbolic::integer(lda),
+        symbolic::integer(n),
+        symbolic::integer(n)
+    ));
+    auto a_t = gemm_ta.pointer_access_type(math::blas::GEMMNode::A_INPUT_IDX);
+    auto a_t_read = a_t->access_read_pattern();
+    ASSERT_NE(a_t_read, nullptr);
+    ASSERT_NE(a_t_read->layout(), nullptr);
+    EXPECT_TRUE(symbolic::eq(a_t_read->layout()->get_stride(0), symbolic::integer(1)));
+    EXPECT_TRUE(symbolic::eq(a_t_read->layout()->get_stride(1), symbolic::integer(lda)));
+}
 
 } // namespace

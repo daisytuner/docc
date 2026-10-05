@@ -1,16 +1,50 @@
 #include "sdfg/symbolic/polynomials.h"
 
+#include <unordered_map>
+#include <vector>
+
 #include <symengine/polys/basic_conversions.h>
 
 namespace sdfg {
 namespace symbolic {
 
-Polynomial polynomial(const Expression expr, SymbolVec& symbols) {
-    try {
-        ExpressionSet gens;
-        for (auto& symbol : symbols) {
-            gens.insert(symbol);
+namespace {
+
+bool same(const Expression& a, const Expression& b) {
+    return a.get() == b.get() || SymEngine::eq(*a, *b);
+}
+
+struct PolyKey {
+    Expression expr;
+    std::vector<Expression> gens; // sorted (from ExpressionSet)
+};
+
+struct PolyKeyHash {
+    size_t operator()(const PolyKey& k) const noexcept {
+        size_t h = k.expr->hash();
+        for (const auto& g : k.gens) {
+            h ^= g->hash() + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
         }
+        return h;
+    }
+};
+
+struct PolyKeyEq {
+    bool operator()(const PolyKey& a, const PolyKey& b) const noexcept {
+        if (a.gens.size() != b.gens.size()) {
+            return false;
+        }
+        for (size_t i = 0; i < a.gens.size(); ++i) {
+            if (!same(a.gens[i], b.gens[i])) {
+                return false;
+            }
+        }
+        return same(a.expr, b.expr);
+    }
+};
+
+Polynomial polynomial_uncached(const Expression& expr, ExpressionSet gens) {
+    try {
         auto poly = SymEngine::from_basic<SymEngine::MExprPoly>(expr, gens);
 
         // SymEngine's MExprPoly conversion treats any sub-expression it does
@@ -42,6 +76,26 @@ Polynomial polynomial(const Expression expr, SymbolVec& symbols) {
     } catch (SymEngine::SymEngineException& e) {
         return SymEngine::null;
     }
+}
+
+} // namespace
+
+// Pure in (expr, gens) and hot across many short-lived BoundAnalysis instances; memoized per thread.
+Polynomial polynomial(const Expression expr, SymbolVec& symbols) {
+    ExpressionSet gens(symbols.begin(), symbols.end());
+    static constexpr size_t kMaxEntries = 1 << 15;
+    thread_local std::unordered_map<PolyKey, Polynomial, PolyKeyHash, PolyKeyEq> memo;
+    PolyKey key{expr, std::vector<Expression>(gens.begin(), gens.end())};
+    auto it = memo.find(key);
+    if (it != memo.end()) {
+        return it->second;
+    }
+    if (memo.size() >= kMaxEntries) {
+        memo.clear();
+    }
+    auto poly = polynomial_uncached(expr, gens);
+    memo.emplace(std::move(key), poly);
+    return poly;
 };
 
 AffineCoeffs affine_coefficients(Polynomial poly) {

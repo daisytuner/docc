@@ -42,16 +42,6 @@ def test_control_flow_analysis():
     assert str(control_flow_analysis) == "<ControlFlowAnalysis>"
 
 
-def test_dominance_analysis():
-    builder = StructuredSDFGBuilder("sdfg")
-    sdfg = builder.move()
-
-    analysis = AnalysisManager(sdfg)
-    dominance_analysis = analysis.dominance_analysis()
-
-    assert str(dominance_analysis) == "<DominanceAnalysis>"
-
-
 def test_loop_analysis():
     builder = StructuredSDFGBuilder("sdfg")
     sdfg = builder.move()

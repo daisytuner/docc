@@ -1,6 +1,5 @@
 #include "sdfg/passes/dataflow/byte_reference_elimination.h"
 
-#include "sdfg/analysis/dominance_analysis.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/types/utils.h"
 
@@ -22,7 +21,6 @@ bool ByteReferenceElimination::
 
     auto& sdfg = builder.subject();
     auto& users_analysis = analysis_manager.get<analysis::Users>();
-    auto& dominance_analysis = analysis_manager.get<analysis::DominanceAnalysis>();
 
     std::unordered_set<data_flow::AccessNode*> replaced_nodes;
     for (auto& name : sdfg.containers()) {
@@ -104,7 +102,7 @@ bool ByteReferenceElimination::
                 continue;
             }
 
-            if (!dominance_analysis.dominates(*move, *use)) {
+            if (!users_analysis.dominates(*move, *use)) {
                 continue;
             }
 

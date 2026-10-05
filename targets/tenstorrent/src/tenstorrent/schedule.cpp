@@ -12,8 +12,9 @@
 
 bool docc_debug_tt = true;
 
-#define DOCC_DEBUG(X) \
-    if (docc_debug_tt) X
+#define DOCC_DEBUG(X)  \
+    if (docc_debug_tt) \
+    X
 
 namespace sdfg {
 namespace tenstorrent {
@@ -918,7 +919,7 @@ void TenstorrentMapDispatcher::dispatch_node(
     }
 
     // in case
-    //    symbolic::Expression num_cb_tiles = symbolic::divide_ceil(workUnits, tile_size_entries);
+    //    symbolic::Expression num_cb_tiles = symbolic::ceil_count(workUnits, tile_size_entries);
     //    SymEngine::set_basic num_cb_tiles_params = SymEngine::free_symbols(*num_cb_tiles);
     //    if (!num_cb_tiles_params.empty()) { // add inputs that are needed to compute the size of the buffer to
     //                                        // kernel arguments
@@ -955,9 +956,10 @@ void TenstorrentMapDispatcher::dispatch_node(
 
     auto [units_done_var, units_on_core_var] = codegen.get_default_distribution_vars();
 
-    std::unordered_map<std::string, std::string> core_args{// late arg-matching for the following set-args loop
-                                                           {TT_FIRST_UNIT, units_done_var},
-                                                           {TT_WORK_UNITS, units_on_core_var}
+    std::unordered_map<std::string, std::string> core_args{
+        // late arg-matching for the following set-args loop
+        {TT_FIRST_UNIT, units_done_var},
+        {TT_WORK_UNITS, units_on_core_var}
     };
 
     codegen.emit_per_core_config([&]() {

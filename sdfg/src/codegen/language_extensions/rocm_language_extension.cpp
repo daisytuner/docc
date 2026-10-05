@@ -190,7 +190,7 @@ std::string ROCMLanguageExtension::expression(const symbolic::Expression expr) {
 std::string ROCMLanguageExtension::access_node(const data_flow::AccessNode& node) {
     if (dynamic_cast<const data_flow::ConstantNode*>(&node)) {
         std::string name = node.data();
-        if (symbolic::is_nullptr(symbolic::symbol(name))) {
+        if (symbolic::is_nullptr(name)) {
             return "nullptr";
         }
         return name;

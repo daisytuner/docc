@@ -3,7 +3,6 @@
 #include <unordered_map>
 
 #include "sdfg/analysis/analysis.h"
-#include "sdfg/analysis/users.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/structured_sdfg.h"
 #include "sdfg/symbolic/assumptions.h"
@@ -19,18 +18,18 @@ public:
     }
 
 private:
-    // Data structures to hold assumptions
-    std::unordered_map<structured_control_flow::ControlFlowNode*, symbolic::Assumptions> assumptions_;
-    std::unordered_map<structured_control_flow::ControlFlowNode*, symbolic::Assumptions> assumptions_with_trivial_;
+    using Node = structured_control_flow::ControlFlowNode;
 
-    // Data structures for sparse storage (nodes without own assumptions reference outer assumptions)
-    std::unordered_map<structured_control_flow::ControlFlowNode*, const symbolic::Assumptions*> ref_assumptions_;
-    std::unordered_map<structured_control_flow::ControlFlowNode*, const symbolic::Assumptions*>
-        ref_assumptions_with_trivial_;
+    std::unordered_map<Node*, symbolic::Assumptions> own_assumptions_;
+    std::unordered_map<Node*, Node*> parent_scope_;
+    std::unordered_map<Node*, Node*> scope_of_;
+
+    std::unordered_map<Node*, symbolic::Assumptions> assumptions_;
+    std::unordered_map<Node*, symbolic::Assumptions> assumptions_with_trivial_;
+    std::unordered_map<Node*, symbolic::SymbolSet> constant_symbols_;
+    std::unordered_map<Node*, symbolic::SymbolSet> constant_symbols_with_trivial_;
 
     symbolic::SymbolSet parameters_;
-
-    analysis::Users* users_analysis_;
 
     // When false (default), IfElse branch conditions are not refined into
     // per-branch assumption bounds / coupled constraints. The branch bodies
@@ -42,48 +41,29 @@ private:
     // flag set to true rather than going through `AnalysisManager`.
     bool with_branch_conditions_ = false;
 
-    void traverse(
-        structured_control_flow::ControlFlowNode& current,
-        const symbolic::Assumptions& outer_assumptions,
-        const symbolic::Assumptions& outer_assumptions_with_trivial
-    );
+    void traverse(Node& current, Node& scope);
 
-    void traverse_structured_loop(
-        structured_control_flow::StructuredLoop* loop,
-        const symbolic::Assumptions& outer_assumptions,
-        const symbolic::Assumptions& outer_assumptions_with_trivial
-    );
+    void traverse_structured_loop(structured_control_flow::StructuredLoop* loop, Node& scope);
 
-    void propagate(
-        structured_control_flow::ControlFlowNode& node,
-        const symbolic::Assumptions& node_assumptions,
-        const symbolic::Assumptions& outer_assumptions,
-        const symbolic::Assumptions& outer_assumptions_with_trivial
-    );
+    void add_scope(Node& node, symbolic::Assumptions own, Node& parent);
 
-    void propagate_ref(
-        structured_control_flow::ControlFlowNode& node,
-        const symbolic::Assumptions& outer_assumptions,
-        const symbolic::Assumptions& outer_assumptions_with_trivial
-    );
+    const symbolic::Assumptions& materialize(Node& scope, bool include_trivial_bounds);
+
+    const symbolic::SymbolSet& materialize_constants(Node& scope, bool include_trivial_bounds);
 
     void determine_parameters(analysis::AnalysisManager& analysis_manager);
 
 public:
     AssumptionsAnalysis(StructuredSDFG& sdfg);
-
-    // Opt-in constructor used by analyses that require branch-refined
-    // assumption propagation (see `with_branch_conditions_`). Not invoked
-    // by `AnalysisManager`, which always calls the single-arg constructor.
     AssumptionsAnalysis(StructuredSDFG& sdfg, bool with_branch_conditions);
 
-    // Public so analyses that own a manually-constructed instance (DDA in
-    // detailed mode, LCDA, MLA) can drive `run()` themselves. The shared
-    // `AnalysisManager` cache uses the friend declaration on the base
-    // `Analysis` class as before.
     void run(analysis::AnalysisManager& analysis_manager) override;
 
     const symbolic::Assumptions& get(structured_control_flow::ControlFlowNode& node, bool include_trivial_bounds = false);
+
+    /// Symbols whose assumption at `node` is `constant()`; equals filtering `get(node, ...)`, without the scan.
+    const symbolic::SymbolSet&
+    constant_symbols(structured_control_flow::ControlFlowNode& node, bool include_trivial_bounds = false);
 
     const symbolic::SymbolSet& parameters();
 
@@ -91,13 +71,6 @@ public:
 
     bool is_parameter(const std::string& container);
 
-    // Returns the symbols that `cond` constrains via single-variable clauses
-    // (i.e. per-symbol bounds like `1 <= i <= 8`), as opposed to multi-variable
-    // coupled constraints (like `i + j <= 15`). Purely structural: it inspects
-    // the CNF of `cond` and reports any symbol that is the sole variable of a
-    // single-literal clause. Used by MemoryLayoutAnalysis to decide which
-    // enclosing loop indvars to unfold at a guarded scope; the caller is
-    // responsible for intersecting the result with the actual enclosing indvars.
     static symbolic::SymbolSet per_symbol_refined_symbols(const symbolic::Condition& cond);
 };
 

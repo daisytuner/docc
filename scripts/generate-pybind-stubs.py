@@ -9,7 +9,6 @@ UNRESOLVED_NAMES = [
     ("PyArgumentsAnalysis", "ArgumentsAnalysis"),
     ("PyAssumptionsAnalysis", "AssumptionsAnalysis"),
     ("PyControlFlowAnalysis", "ControlFlowAnalysis"),
-    ("PyDominanceAnalysis", "DominanceAnalysis"),
     ("PyEscapeAnalysis", "EscapeAnalysis"),
     ("PyLoopAnalysis", "LoopAnalysis"),
     ("PyTypeAnalysis", "TypeAnalysis"),

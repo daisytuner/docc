@@ -56,6 +56,13 @@ int IfElse::index(const Sequence& child) const {
 }
 
 bool IfElse::is_complete() const {
+    if (!is_complete_) {
+        is_complete_ = compute_is_complete();
+    }
+    return *is_complete_;
+}
+
+bool IfElse::compute_is_complete() const {
     auto condition = symbolic::__false__();
     for (auto& entry : this->conditions_) {
         condition = symbolic::Or(condition, entry);
@@ -74,6 +81,7 @@ bool IfElse::is_complete() const {
 };
 
 void IfElse::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
+    is_complete_.reset();
     for (size_t i = 0; i < this->cases_.size(); ++i) {
         this->cases_.at(i)->replace(old_expression, new_expression);
         this->conditions_.at(i) = symbolic::subs(this->conditions_.at(i), old_expression, new_expression);
@@ -81,6 +89,7 @@ void IfElse::replace(const symbolic::Expression old_expression, const symbolic::
 }
 
 void IfElse::replace(const symbolic::ExpressionMapping& replacements) {
+    is_complete_.reset();
     for (size_t i = 0; i < this->cases_.size(); ++i) {
         this->cases_.at(i)->replace(replacements);
         this->conditions_.at(i) = symbolic::subs(this->conditions_.at(i), replacements);

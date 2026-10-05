@@ -7,6 +7,8 @@
 
 #include "sdfg/analysis/assumptions_analysis.h"
 #include "sdfg/data_flow/access_node.h"
+#include "sdfg/data_flow/library_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/tensor_layout.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/if_else.h"
 #include "sdfg/structured_control_flow/sequence.h"
@@ -15,6 +17,7 @@
 #include "sdfg/symbolic/delinearization.h"
 #include "sdfg/symbolic/extreme_values.h"
 #include "sdfg/symbolic/polynomials.h"
+#include "sdfg/types/tensor.h"
 
 namespace sdfg {
 namespace analysis {
@@ -52,6 +55,56 @@ bool depends_on_unbounded(const symbolic::Expression& e) {
 bool layout_has_unbounded_first_dim(const MemoryLayout& layout) {
     const auto& shape = layout.shape();
     return !shape.empty() && is_unbounded_dim(shape[0]);
+}
+
+std::optional<MemoryTile> try_library_node_access(const data_flow::Memlet& memlet) {
+    // A consumed operand is a bare base pointer: an empty-subset input memlet
+    // (AccessNode -> LibraryNode) whose connector selects the operand.
+    if (!memlet.subset().empty()) {
+        return std::nullopt;
+    }
+    const auto* access = dynamic_cast<const data_flow::AccessNode*>(&memlet.src());
+    const auto* lib = dynamic_cast<const data_flow::LibraryNode*>(&memlet.dst());
+    if (access == nullptr || lib == nullptr) {
+        return std::nullopt;
+    }
+
+    std::optional<MemoryLayout> layout;
+    auto meta = lib->pointer_access_type(memlet);
+    if (meta) {
+        // The consumed region is whichever direction the operand accesses; a
+        // structured operand reports it through a TensorLayoutPattern.
+        auto read = meta->access_read_pattern();
+        auto write = meta->access_write_pattern();
+        const auto* reported = (read && read->layout())     ? read->layout()
+                               : (write && write->layout()) ? write->layout()
+                                                            : nullptr;
+        if (reported) {
+            layout = *reported;
+        }
+    }
+    if (!layout) {
+        // Dense fallback: a Tensor-typed operand carries its own affine layout.
+        if (const auto* tensor = dynamic_cast<const types::Tensor*>(&memlet.base_type())) {
+            layout = MemoryLayout(tensor->shape(), tensor->strides(), tensor->offset());
+        }
+    }
+    if (!layout || layout->shape().empty()) {
+        return std::nullopt;
+    }
+
+    const size_t dims = layout->shape().size();
+    data_flow::Subset min_subset;
+    data_flow::Subset max_subset;
+    min_subset.reserve(dims);
+    max_subset.reserve(dims);
+    for (size_t d = 0; d < dims; ++d) {
+        min_subset.push_back(symbolic::integer(0));
+        max_subset.push_back(symbolic::sub(layout->shape()[d], symbolic::integer(1)));
+    }
+
+    MemoryTile info{access->data(), min_subset, max_subset, *layout, !layout_has_unbounded_first_dim(*layout)};
+    return info;
 }
 
 // Collect immediate child scopes (Sequence/IfElse/While/StructuredLoop) of a given
@@ -108,6 +161,7 @@ MemoryLayoutAnalysis::MemoryLayoutAnalysis(StructuredSDFG& sdfg, const Options& 
 
 void MemoryLayoutAnalysis::run(analysis::AnalysisManager& analysis_manager) {
     accesses_.clear();
+    access_order_.clear();
     tiles_.clear();
     tile_groups_.clear();
 
@@ -120,20 +174,12 @@ void MemoryLayoutAnalysis::run(analysis::AnalysisManager& analysis_manager) {
     detailed_assumptions_->run(analysis_manager);
 
     traverse(sdfg_.root(), analysis_manager);
+    bounds_cache_.clear();
 }
 
 void MemoryLayoutAnalysis::
     traverse(structured_control_flow::ControlFlowNode& node, analysis::AnalysisManager& analysis_manager) {
-    // Snapshot current memlets and tile keys before recursing into the scope's children
-    std::vector<const data_flow::Memlet*> memlets_before;
-    memlets_before.reserve(accesses_.size());
-    for (const auto& entry : accesses_) {
-        memlets_before.push_back(entry.first);
-    }
-    std::set<std::pair<const structured_control_flow::ControlFlowNode*, std::string>> tiles_before;
-    for (const auto& entry : tiles_) {
-        tiles_before.insert(entry.first);
-    }
+    const size_t first_new_access = access_order_.size();
 
     if (auto block = dyn_cast<structured_control_flow::Block*>(&node)) {
         process_block(*block, analysis_manager);
@@ -155,7 +201,13 @@ void MemoryLayoutAnalysis::
     }
 
     // Merge tiles for containers accessed within this scope
-    merge_scope_layouts(node, memlets_before, tiles_before, analysis_manager);
+    merge_scope_layouts(node, first_new_access, analysis_manager);
+}
+
+void MemoryLayoutAnalysis::record_access(const data_flow::Memlet& memlet, MemoryTile access) {
+    if (accesses_.emplace(&memlet, std::move(access)).second) {
+        access_order_.push_back(&memlet);
+    }
 }
 
 void MemoryLayoutAnalysis::
@@ -164,9 +216,19 @@ void MemoryLayoutAnalysis::
     // Use trivial bounds (type-derived, e.g. unsigned >= 0) so delinearization
     // can soundly discharge non-negativity proof obligations on parameters.
     auto& assumptions = assumptions_analysis.get(block, /*include_trivial_bounds=*/true);
+    auto& bounds_slot = bounds_cache_[&assumptions];
+    if (!bounds_slot) {
+        bounds_slot = std::make_unique<symbolic::AssumptionsBounds>(assumptions);
+    }
+    auto& bounds = *bounds_slot;
 
     auto& dfg = block.dataflow();
     for (auto& memlet : dfg.edges()) {
+        if (auto lib_access = try_library_node_access(memlet)) {
+            record_access(memlet, std::move(*lib_access));
+            continue;
+        }
+
         const auto& subset = memlet.subset();
         if (subset.empty()) {
             continue;
@@ -192,8 +254,8 @@ void MemoryLayoutAnalysis::
                 auto& tensor_type = dynamic_cast<const types::Tensor&>(memlet.base_type());
 
                 MemoryLayout layout(tensor_type.shape(), tensor_type.strides(), tensor_type.offset());
-                MemoryAccess layout_info{container_name, subset, layout, true};
-                this->accesses_.emplace(&memlet, layout_info);
+                MemoryTile layout_info{container_name, subset, subset, layout, true};
+                record_access(memlet, layout_info);
                 continue;
             }
             case types::TypeID::Array: {
@@ -209,8 +271,8 @@ void MemoryLayoutAnalysis::
                 }
 
                 MemoryLayout layout(shape);
-                MemoryAccess layout_info{container_name, subset, layout, true};
-                this->accesses_.emplace(&memlet, layout_info);
+                MemoryTile layout_info{container_name, subset, subset, layout, true};
+                record_access(memlet, layout_info);
                 continue;
             }
             case types::TypeID::Pointer: {
@@ -244,8 +306,8 @@ void MemoryLayoutAnalysis::
                     }
 
                     MemoryLayout layout(shape);
-                    MemoryAccess layout_info{container_name, subset, layout, false};
-                    this->accesses_.emplace(&memlet, layout_info);
+                    MemoryTile layout_info{container_name, subset, subset, layout, false};
+                    record_access(memlet, layout_info);
                     continue;
                 }
 
@@ -258,7 +320,7 @@ void MemoryLayoutAnalysis::
                 }
                 auto& linearized_expr = subset.at(0);
 
-                auto result = symbolic::delinearize(linearized_expr, assumptions);
+                auto result = symbolic::delinearize(linearized_expr, bounds);
                 if (!result.success) {
                     continue; // Delinearization failed, skip
                 }
@@ -275,8 +337,8 @@ void MemoryLayoutAnalysis::
                 // Store symbolic indices and dimensions with unbounded first dimension
                 // The merge phase will attempt to bound the first dimension using loop assumptions
                 MemoryLayout layout(shape);
-                MemoryAccess layout_info{container_name, result.indices, layout, false};
-                this->accesses_.emplace(&memlet, layout_info);
+                MemoryTile layout_info{container_name, result.indices, result.indices, layout, false};
+                record_access(memlet, layout_info);
                 continue;
             }
             default:
@@ -285,7 +347,7 @@ void MemoryLayoutAnalysis::
     }
 }
 
-const MemoryAccess* MemoryLayoutAnalysis::access(const data_flow::Memlet& memlet) const {
+const MemoryTile* MemoryLayoutAnalysis::access(const data_flow::Memlet& memlet) const {
     auto layout_it = accesses_.find(&memlet);
     if (layout_it == accesses_.end()) {
         return nullptr;
@@ -295,20 +357,17 @@ const MemoryAccess* MemoryLayoutAnalysis::access(const data_flow::Memlet& memlet
 
 void MemoryLayoutAnalysis::merge_scope_layouts(
     structured_control_flow::ControlFlowNode& scope,
-    const std::vector<const data_flow::Memlet*>& memlets_before,
-    const std::set<std::pair<const structured_control_flow::ControlFlowNode*, std::string>>& tiles_before,
+    size_t first_new_access,
     analysis::AnalysisManager& analysis_manager
 ) {
-    // Convert memlets_before to a set for O(1) lookup
-    std::unordered_set<const data_flow::Memlet*> before_set(memlets_before.begin(), memlets_before.end());
-
-    // Group all new accesses by container
+    // Group the accesses recorded while traversing this scope by container
     std::unordered_map<std::string, std::vector<const data_flow::Memlet*>> all_container_groups;
-    for (auto& [memlet_ptr, acc] : accesses_) {
-        if (before_set.find(memlet_ptr) != before_set.end()) {
-            continue;
-        }
-        all_container_groups[acc.container].push_back(memlet_ptr);
+    for (size_t k = first_new_access; k < access_order_.size(); ++k) {
+        const auto* memlet_ptr = access_order_[k];
+        all_container_groups[accesses_.at(memlet_ptr).container].push_back(memlet_ptr);
+    }
+    if (all_container_groups.empty()) {
+        return;
     }
 
     // Sort memlets within each container group by element_id for deterministic processing order
@@ -418,12 +477,9 @@ void MemoryLayoutAnalysis::merge_scope_layouts(
         }
     }
     symbolic::SymbolSet parameters = assumptions_analysis.parameters();
-    for (auto& entry : assumptions) {
-        if (excluded_indvars.contains(entry.first)) {
-            continue; // unfolded via AA bounds, not treated as opaque
-        }
-        if (entry.second.constant()) {
-            parameters.insert(entry.first);
+    for (const auto& sym : assumptions_analysis.constant_symbols(assumption_node, /*include_trivial_bounds=*/true)) {
+        if (!excluded_indvars.contains(sym)) {
+            parameters.insert(sym); // excluded indvars are unfolded via AA bounds, not treated as opaque
         }
     }
 
@@ -641,6 +697,13 @@ void MemoryLayoutAnalysis::merge_scope_layouts(
             max_indices.resize(ndims);
 
             bool consistent = true;
+            bool group_has_range = false;
+            for (const auto* memlet_ptr : memlets) {
+                if (!accesses_.at(memlet_ptr).is_point()) {
+                    group_has_range = true;
+                    break;
+                }
+            }
             for (const auto* memlet_ptr : memlets) {
                 auto& acc = accesses_.at(memlet_ptr);
                 auto& shape = acc.layout.shape();
@@ -660,18 +723,20 @@ void MemoryLayoutAnalysis::merge_scope_layouts(
                     break;
                 }
 
-                // Collect indices for each dimension. In the raw-access path,
-                // min and max indices are identical (both are `acc.subset[d]`),
-                // so we only populate `min_indices[d]` and leave `max_indices[d]`
-                // empty. The shared bound-resolution loop below detects this
-                // alias case and fuses the two passes into one walk, halving
-                // the soundness-check and outer-loop overhead.
-                if (acc.subset.size() != ndims) {
+                // A point access populates only min_indices and lets the bound
+                // loop fuse the min/max passes; a range access contributes distinct
+                // min/max and forces its fused peers to spell out their max too.
+                if (acc.min_subset.size() != ndims) {
                     consistent = false;
                     break;
                 }
                 for (size_t d = 0; d < ndims; ++d) {
-                    min_indices[d].push_back(acc.subset[d]);
+                    min_indices[d].push_back(acc.min_subset[d]);
+                    if (!acc.is_point()) {
+                        max_indices[d].push_back(acc.max_subset[d]);
+                    } else if (group_has_range) {
+                        max_indices[d].push_back(acc.min_subset[d]);
+                    }
                 }
             }
 
@@ -813,7 +878,7 @@ void MemoryLayoutAnalysis::compute_tile_groups(
 
     for (const auto* memlet_ptr : memlets) {
         auto& acc = accesses_.at(memlet_ptr);
-        if (acc.subset.size() != ndims) {
+        if (acc.min_subset.size() != ndims) {
             continue;
         }
 
@@ -821,7 +886,9 @@ void MemoryLayoutAnalysis::compute_tile_groups(
         data_flow::Subset base;
         bool base_ok = true;
         for (size_t d = 0; d < ndims; ++d) {
-            auto lb = bound_lb(acc.subset[d]);
+            // A range access (library operand) knows its base directly; an
+            // ordinary point resolves its single index through BoundAnalysis.
+            auto lb = acc.is_point() ? bound_lb(acc.min_subset[d]) : acc.min_subset[d];
             if (lb.is_null()) {
                 base_ok = false;
                 break;
@@ -896,8 +963,8 @@ void MemoryLayoutAnalysis::compute_tile_groups(
         for (const auto* memlet_ptr : group.group_memlets) {
             auto& acc = accesses_.at(memlet_ptr);
             for (size_t d = 0; d < ndims; ++d) {
-                min_indices[d].push_back(acc.subset[d]);
-                max_indices[d].push_back(acc.subset[d]);
+                min_indices[d].push_back(acc.min_subset[d]);
+                max_indices[d].push_back(acc.max_subset[d]);
             }
         }
 
@@ -993,6 +1060,18 @@ const MemoryTileGroup* MemoryLayoutAnalysis::
         }
     }
     return nullptr;
+}
+
+bool MemoryTile::is_point() const {
+    if (min_subset.size() != max_subset.size()) {
+        return false;
+    }
+    for (size_t d = 0; d < min_subset.size(); ++d) {
+        if (!symbolic::eq(min_subset[d], max_subset[d])) {
+            return false;
+        }
+    }
+    return true;
 }
 
 symbolic::MultiExpression MemoryTile::extents() const {

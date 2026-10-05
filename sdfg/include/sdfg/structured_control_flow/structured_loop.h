@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include "sdfg/structured_control_flow/control_flow_node.h"
 #include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/symbolic/symbolic.h"
@@ -160,6 +162,19 @@ protected:
     std::unique_ptr<Sequence> root_;
 
     ScheduleType schedule_type_;
+
+    // Memoized header analyses; every writer of indvar/init/update/condition must reset them.
+    mutable std::optional<symbolic::Integer> stride_cache_;
+    mutable std::optional<symbolic::Expression> canonical_bound_cache_;
+    mutable std::optional<symbolic::Expression> num_iterations_cache_;
+
+    void reset_cache();
+
+    symbolic::Integer compute_stride() const;
+
+    symbolic::Expression compute_canonical_bound() const;
+
+    symbolic::Expression compute_num_iterations() const;
 
     StructuredLoop(
         size_t element_id,

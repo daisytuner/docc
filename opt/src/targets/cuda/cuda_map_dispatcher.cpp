@@ -46,7 +46,7 @@ void CUDAMapDispatcher::dispatch_node(
     codegen::CodeSnippetFactory& library_snippet_factory
 ) {
     // Mark written locals as private
-    analysis::AnalysisManager analysis_manager(sdfg_);
+    auto& analysis_manager = analysis_manager_;
     auto& users = analysis_manager.get<analysis::Users>();
     analysis::UsersView body_users(users, node_.root());
     analysis::ArgumentsAnalysis& arguments_analysis = analysis_manager.get<analysis::ArgumentsAnalysis>();
@@ -127,12 +127,9 @@ void CUDAMapDispatcher::dispatch_node(
     }
 
     // Block sizes
-    symbolic::Expression num_blocks_x =
-        symbolic::max(symbolic::divide_ceil(num_iters_x, block_size_x), symbolic::one());
-    symbolic::Expression num_blocks_y =
-        symbolic::max(symbolic::divide_ceil(num_iters_y, block_size_y), symbolic::one());
-    symbolic::Expression num_blocks_z =
-        symbolic::max(symbolic::divide_ceil(num_iters_z, block_size_z), symbolic::one());
+    symbolic::Expression num_blocks_x = symbolic::max(symbolic::ceil_count(num_iters_x, block_size_x), symbolic::one());
+    symbolic::Expression num_blocks_y = symbolic::max(symbolic::ceil_count(num_iters_y, block_size_y), symbolic::one());
+    symbolic::Expression num_blocks_z = symbolic::max(symbolic::ceil_count(num_iters_z, block_size_z), symbolic::one());
 
     std::string kernel_name = "kernel_" + sdfg_.name() + "_" + std::to_string(node_.element_id());
 

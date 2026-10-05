@@ -181,6 +181,9 @@ Symbol __nullptr__();
  */
 bool is_nullptr(const Symbol symbol);
 
+/// Same as `is_nullptr(symbol(name))` without constructing a symbol.
+bool is_nullptr(const std::string& name);
+
 /**
  * @brief Checks if a symbol represents a pointer
  * @param symbol The symbol to check
@@ -197,24 +200,6 @@ bool is_pointer(const Symbol symbol);
  * blockDim_{x,y,z}, and gridDim_{x,y,z}.
  */
 bool is_nv(const Symbol symbol);
-
-/**
- * @brief Ceiling division of two expressions
- * @param dividend The dividend expression
- * @param divisor The divisor expression
- * @return An Expression representing ceil(dividend / divisor)
- *
- * This function computes the ceiling of the division of two symbolic expressions.
- * If both expressions are constant, it performs integer arithmetic to compute the result.
- * Otherwise, it constructs a symbolic expression representing the ceiling division.
- *
- * @code
- * auto x = symbolic::symbol("x");
- * auto y = symbolic::symbol("y");
- * auto result = symbolic::divide_ceil(x, y); // Represents ceil(x / y)
- * @endcode
- */
-Expression divide_ceil(const Expression dividend, const Expression divisor);
 
 /** @} */ // end of symbolic_creation group
 
@@ -313,12 +298,36 @@ Expression sub(const Expression lhs, const Expression rhs);
 Expression mul(const Expression lhs, const Expression rhs);
 
 /**
- * @brief Integer division of two expressions
- * @param lhs Dividend expression
- * @param rhs Divisor expression
- * @return Expression representing (lhs / rhs) with integer division semantics
+ * @brief Integer division `idiv(lhs, rhs)` with the semantics of signed C/C++ `lhs / rhs` on int64
+ *
+ * The quotient is truncated toward zero, e.g. `idiv(-7, 2) == -3`; codegen emits `/`.
+ * Integer literals are folded unless the result is undefined in C (`rhs == 0`, `INT64_MIN / -1`).
  */
 Expression div(const Expression lhs, const Expression rhs);
+
+/**
+ * @brief Exact floor division `floor(lhs / divisor)` in terms of `idiv`
+ *
+ * Integer literals fold for any non-zero divisor. Otherwise the divisor must be positive
+ * (a negative integer literal is normalized by negating both operands).
+ */
+Expression floor_div(const Expression lhs, const Expression divisor);
+
+/**
+ * @brief Exact ceiling division `ceil(dividend / divisor)` in terms of `idiv`
+ *
+ * Integer literals fold for any non-zero divisor. Otherwise the divisor must be positive
+ * (a negative integer literal is normalized by negating both operands).
+ */
+Expression ceil_div(const Expression dividend, const Expression divisor);
+
+/**
+ * @brief Number of chunks of size `chunk` (positive) covering `extent`: `max(0, ceil(extent / chunk))`
+ *
+ * For trip counts, grid sizes, page counts, etc. Cheaper than `max(0, ceil_div(...))`:
+ * `idiv(extent + chunk - 1, chunk)` is exact under the clamp.
+ */
+Expression ceil_count(const Expression extent, const Expression chunk);
 
 /**
  * @brief Minimum of two expressions
@@ -344,10 +353,10 @@ Expression max(const Expression lhs, const Expression rhs);
 Expression abs(const Expression expr);
 
 /**
- * @brief Modulo operation
- * @param lhs Dividend expression
- * @param rhs Divisor expression
- * @return Expression representing (lhs mod rhs)
+ * @brief Integer remainder `imod(lhs, rhs)` with the semantics of signed C/C++ `lhs % rhs` on int64
+ *
+ * The result has the sign of `lhs` and satisfies `lhs == rhs * idiv(lhs, rhs) + imod(lhs, rhs)`,
+ * e.g. `imod(-7, 2) == -1`; codegen emits `%`. Folding follows the same rules as `div`.
  */
 Expression mod(const Expression lhs, const Expression rhs);
 

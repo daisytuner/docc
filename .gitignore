@@ -57,7 +57,7 @@ _codeql_build_dir/
 *.elf
 
 # Documentation
-docs/
+/sdfg/docs/
 
 
 node_modules/

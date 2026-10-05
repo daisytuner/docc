@@ -57,7 +57,11 @@ Symbol __nullptr__() {
 };
 
 bool is_nullptr(const Symbol symbol) {
-    return symbol->get_name() == "__daisy_nullptr";
+    return is_nullptr(symbol->get_name());
+};
+
+bool is_nullptr(const std::string& name) {
+    return name == "__daisy_nullptr";
 };
 
 bool is_pointer(const Symbol symbol) {
@@ -75,15 +79,53 @@ bool is_nv(const Symbol symbol) {
     }
 };
 
-Expression divide_ceil(const Expression dividend, const Expression divisor) {
-    Expression result;
-    SymEngine::set_basic params = SymEngine::free_symbols(*dividend);
-    if (params.empty()) { // will simplify to a statically known result, ok to use ceiling
-        result = SymEngine::ceiling(SymEngine::div(dividend, divisor));
-    } else { // if we know it will get generated, do integer math to cause ceiling a runtime without using float
-        result = symbolic::div(SymEngine::add(dividend, SymEngine::sub(divisor, one())), divisor);
+namespace {
+
+// Both operands as int64 values, if they are integer literals that fit.
+bool int64_operands(const Expression& lhs, const Expression& rhs, int64_t& a, int64_t& b) {
+    if (!SymEngine::is_a<SymEngine::Integer>(*lhs) || !SymEngine::is_a<SymEngine::Integer>(*rhs)) {
+        return false;
     }
-    return result;
+    const auto& x = SymEngine::down_cast<const SymEngine::Integer&>(*lhs).as_integer_class();
+    const auto& y = SymEngine::down_cast<const SymEngine::Integer&>(*rhs).as_integer_class();
+    if (!mp_fits_slong_p(x) || !mp_fits_slong_p(y)) {
+        return false;
+    }
+    a = mp_get_si(x);
+    b = mp_get_si(y);
+    return true;
+}
+
+// Division by zero and INT64_MIN / -1 are undefined in C, so they are never folded.
+bool c_division_defined(int64_t a, int64_t b) {
+    return b != 0 && !(a == std::numeric_limits<int64_t>::min() && b == -1);
+}
+
+} // namespace
+
+Expression ceil_div(const Expression dividend, const Expression divisor) {
+    int64_t a, b;
+    if (int64_operands(dividend, divisor, a, b) && c_division_defined(a, b)) {
+        return integer(a / b + ((a % b != 0) && ((a < 0) == (b < 0)) ? 1 : 0));
+    }
+    if (SymEngine::is_a<SymEngine::Integer>(*divisor) &&
+        SymEngine::down_cast<const SymEngine::Integer&>(*divisor).is_negative()) {
+        return symbolic::ceil_div(symbolic::mul(integer(-1), dividend), symbolic::mul(integer(-1), divisor));
+    }
+    // ceil(a/b) = idiv(max(a,0) + b-1, b) + idiv(min(a,0), b) for b > 0: one term is zero, and C truncation
+    // rounds the negative quotient up.
+    return symbolic::
+        add(symbolic::div(symbolic::add(symbolic::max(dividend, zero()), symbolic::sub(divisor, one())), divisor),
+            symbolic::div(symbolic::min(dividend, zero()), divisor));
+}
+
+Expression ceil_count(const Expression dividend, const Expression divisor) {
+    int64_t a, b;
+    if (int64_operands(dividend, divisor, a, b) && c_division_defined(a, b)) {
+        return symbolic::max(zero(), symbolic::ceil_div(dividend, divisor));
+    }
+    // For dividend <= 0 the truncated quotient is <= 0 as well, so the clamp makes this exact.
+    return symbolic::max(zero(), symbolic::div(symbolic::add(dividend, symbolic::sub(divisor, one())), divisor));
 }
 
 /***** Logical Expressions *****/
@@ -123,28 +165,47 @@ Expression mul(const Expression lhs, const Expression rhs) {
 };
 
 Expression div(const Expression lhs, const Expression rhs) {
-    if (eq(rhs, integer(0))) {
+    auto symbolic_div = [&]() {
         return SymEngine::function_symbol("idiv", {lhs, rhs});
+    };
+    int64_t a, b;
+    if (int64_operands(lhs, rhs, a, b)) {
+        return c_division_defined(a, b) ? Expression(integer(a / b)) : symbolic_div();
     }
-
-    if (eq(rhs, integer(1))) {
+    if (eq(rhs, zero())) {
+        return symbolic_div();
+    }
+    if (eq(rhs, one())) {
         return lhs;
     }
-    if (eq(lhs, integer(0))) {
-        return integer(0);
+    if (eq(rhs, integer(-1))) {
+        return symbolic::mul(integer(-1), lhs);
     }
-    if (SymEngine::is_a<SymEngine::Integer>(*lhs) && SymEngine::is_a<SymEngine::Integer>(*rhs)) {
-        try {
-            auto a = SymEngine::rcp_static_cast<const SymEngine::Integer>(lhs)->as_int();
-            auto b = SymEngine::rcp_static_cast<const SymEngine::Integer>(rhs)->as_int();
-            return integer(a / b);
-        } catch (const SymEngine::SymEngineException&) {
-            // Integer too large for long long, keep symbolic representation
-            return SymEngine::function_symbol("idiv", {lhs, rhs});
-        }
+    if (eq(lhs, zero())) {
+        return zero();
     }
+    if (eq(lhs, rhs)) {
+        return one();
+    }
+    return symbolic_div();
+};
 
-    return SymEngine::function_symbol("idiv", {lhs, rhs});
+Expression floor_div(const Expression lhs, const Expression divisor) {
+    int64_t a, b;
+    if (int64_operands(lhs, divisor, a, b) && c_division_defined(a, b)) {
+        return integer(a / b - ((a % b != 0) && ((a < 0) != (b < 0)) ? 1 : 0));
+    }
+    if (SymEngine::is_a<SymEngine::Integer>(*divisor) &&
+        SymEngine::down_cast<const SymEngine::Integer&>(*divisor).is_negative()) {
+        return symbolic::floor_div(symbolic::mul(integer(-1), lhs), symbolic::mul(integer(-1), divisor));
+    }
+    if (eq(divisor, one())) {
+        return lhs;
+    }
+    // floor(x/b) = idiv(max(x,0), b) - idiv(b-1-min(x,0), b) for b > 0: one term is zero, both numerators are >= 0.
+    return symbolic::
+        sub(symbolic::div(symbolic::max(lhs, zero()), divisor),
+            symbolic::div(symbolic::sub(symbolic::sub(divisor, one()), symbolic::min(lhs, zero())), divisor));
 };
 
 Expression min(const Expression lhs, const Expression rhs) {
@@ -161,16 +222,17 @@ Expression abs(const Expression expr) {
 };
 
 Expression mod(const Expression lhs, const Expression rhs) {
-    if (eq(rhs, integer(1))) {
-        return integer(0);
+    int64_t a, b;
+    if (int64_operands(lhs, rhs, a, b)) {
+        return c_division_defined(a, b) ? Expression(integer(a % b)) : SymEngine::function_symbol("imod", {lhs, rhs});
     }
-
-    if (eq(lhs, rhs)) {
-        return integer(0);
+    if (eq(rhs, one()) || eq(rhs, integer(-1)) || eq(lhs, zero())) {
+        return zero();
     }
-
-    auto mod = SymEngine::function_symbol("imod", {lhs, rhs});
-    return mod;
+    if (eq(lhs, rhs) || eq(lhs, symbolic::mul(integer(-1), rhs))) {
+        return zero();
+    }
+    return SymEngine::function_symbol("imod", {lhs, rhs});
 };
 
 Expression bit_xor(const Expression lhs, const Expression rhs) {
@@ -637,6 +699,34 @@ Expression simplify_minmax(const SymEngine::vec_basic& args) {
     return SymEngine::null;
 }
 
+// SymEngine::simplify (refine without assumptions + SimplifyVisitor) is the identity on trees of
+// numbers, symbols, Add/Mul, FunctionSymbols and Min/Max with at most one numeric argument:
+// without assumptions only numbers have a known sign, and Min/Max already fold numeric args.
+bool is_plain_polynomial(const Expression& expr) {
+    if (SymEngine::is_a<SymEngine::Integer>(*expr) || SymEngine::is_a<SymEngine::Rational>(*expr) ||
+        SymEngine::is_a<SymEngine::Symbol>(*expr)) {
+        return true;
+    }
+    if (SymEngine::is_a<SymEngine::Min>(*expr) || SymEngine::is_a<SymEngine::Max>(*expr)) {
+        size_t numbers = 0;
+        for (const auto& arg : expr->get_args()) {
+            numbers += SymEngine::is_a_Number(*arg) ? 1 : 0;
+        }
+        if (numbers > 1) {
+            return false;
+        }
+    } else if (!SymEngine::is_a<SymEngine::Add>(*expr) && !SymEngine::is_a<SymEngine::Mul>(*expr) &&
+               !SymEngine::is_a<SymEngine::FunctionSymbol>(*expr)) {
+        return false;
+    }
+    for (const auto& arg : expr->get_args()) {
+        if (!is_plain_polynomial(arg)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 } // anonymous namespace
 
 Expression simplify(const Expression expr) {
@@ -720,52 +810,31 @@ Expression simplify(const Expression expr) {
     if (SymEngine::is_a<SymEngine::FunctionSymbol>(*expr)) {
         auto func_sym = SymEngine::rcp_static_cast<const SymEngine::FunctionSymbol>(expr);
         auto func_id = func_sym->get_name();
-        if (func_id == "idiv") {
+        if (func_id == "idiv" || func_id == "imod") {
+            bool is_div = func_id == "idiv";
             auto lhs = func_sym->get_args()[0];
             auto rhs = func_sym->get_args()[1];
-            if (symbolic::eq(rhs, symbolic::integer(0))) {
-                return expr;
+            auto folded = is_div ? symbolic::div(lhs, rhs) : symbolic::mod(lhs, rhs);
+            if (!symbolic::eq(folded, expr)) {
+                return folded;
             }
-            if (symbolic::is_true(symbolic::Lt(lhs, rhs))) {
-                return symbolic::zero();
+            if (symbolic::is_true(symbolic::Le(symbolic::zero(), lhs)) && symbolic::is_true(symbolic::Lt(lhs, rhs))) {
+                return is_div ? Expression(symbolic::zero()) : lhs;
             }
-
+            // (k*X) is an exact multiple of c when c divides k.
             if (SymEngine::is_a<SymEngine::Mul>(*lhs) && SymEngine::is_a<SymEngine::Integer>(*rhs)) {
                 auto lhs_mul = SymEngine::rcp_static_cast<const SymEngine::Mul>(lhs);
-                auto rhs_int = SymEngine::rcp_static_cast<const SymEngine::Integer>(rhs);
-                auto lhs_args = lhs_mul->get_args();
-
-                bool skipped = false;
-                Expression new_mul = SymEngine::integer(1);
-                for (auto& arg : lhs_args) {
-                    if (eq(arg, rhs_int) && !skipped) {
-                        skipped = true;
-                    } else {
-                        new_mul = SymEngine::mul(new_mul, arg);
+                const auto& c = SymEngine::down_cast<const SymEngine::Integer&>(*rhs).as_integer_class();
+                if (SymEngine::is_a<SymEngine::Integer>(*lhs_mul->get_coef()) && c != 0) {
+                    const auto& k =
+                        SymEngine::down_cast<const SymEngine::Integer&>(*lhs_mul->get_coef()).as_integer_class();
+                    if (k % c == 0) {
+                        if (!is_div) {
+                            return symbolic::zero();
+                        }
+                        auto rest = SymEngine::div(lhs, lhs_mul->get_coef());
+                        return SymEngine::mul(SymEngine::integer(SymEngine::integer_class(k / c)), rest);
                     }
-                }
-                if (skipped) {
-                    return new_mul;
-                }
-            } else if (SymEngine::is_a<SymEngine::Integer>(*lhs) && SymEngine::is_a<SymEngine::Integer>(*rhs)) {
-                try {
-                    auto a = SymEngine::rcp_static_cast<const SymEngine::Integer>(lhs)->as_int();
-                    auto b = SymEngine::rcp_static_cast<const SymEngine::Integer>(rhs)->as_int();
-                    return integer(a / b);
-                } catch (const SymEngine::SymEngineException&) {
-                    // Integer too large, cannot simplify - fall through
-                }
-            }
-        } else if (func_id == "imod") {
-            auto lhs = func_sym->get_args()[0];
-            auto rhs = func_sym->get_args()[1];
-            if (SymEngine::is_a<SymEngine::Integer>(*lhs) && SymEngine::is_a<SymEngine::Integer>(*rhs)) {
-                try {
-                    auto a = SymEngine::rcp_static_cast<const SymEngine::Integer>(lhs)->as_int();
-                    auto b = SymEngine::rcp_static_cast<const SymEngine::Integer>(rhs)->as_int();
-                    return integer(a % b);
-                } catch (const SymEngine::SymEngineException&) {
-                    // Integer too large, cannot simplify - fall through
                 }
             }
         } else if (func_id == "zext_i64") {
@@ -816,6 +885,10 @@ Expression simplify(const Expression expr) {
                 }
             }
         }
+    }
+
+    if (is_plain_polynomial(expr)) {
+        return expr;
     }
 
     try {
@@ -995,12 +1068,33 @@ bool uses(const Expression expr, const std::string& name) {
 };
 
 SymbolSet atoms(const Expression expr) {
+    struct Hash {
+        size_t operator()(const Expression& e) const noexcept {
+            return e->hash();
+        }
+    };
+    struct Eq {
+        bool operator()(const Expression& a, const Expression& b) const noexcept {
+            return a.get() == b.get() || SymEngine::eq(*a, *b);
+        }
+    };
+    // Pure and very hot (bounding, delinearization, MLA); memoized per thread.
+    static constexpr size_t kMaxEntries = 1 << 15;
+    thread_local std::unordered_map<Expression, SymbolSet, Hash, Eq> memo;
+    auto it = memo.find(expr);
+    if (it != memo.end()) {
+        return it->second;
+    }
+    if (memo.size() >= kMaxEntries) {
+        memo.clear();
+    }
     SymbolSet atoms;
     for (auto& atom : SymEngine::atoms<const SymEngine::Basic>(*expr)) {
         if (SymEngine::is_a<SymEngine::Symbol>(*atom)) {
             atoms.insert(SymEngine::rcp_static_cast<const SymEngine::Symbol>(atom));
         }
     }
+    memo.emplace(expr, atoms);
     return atoms;
 };
 

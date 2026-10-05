@@ -351,6 +351,7 @@ data_flow::AccessNode& SDFGBuilder::
     add_access(control_flow::State& state, const std::string& data, const DebugInfo& debug_info) {
     auto& dataflow = state.dataflow();
     auto vertex = boost::add_vertex(dataflow.graph_);
+    dataflow.invalidate_topological_order();
     auto res = dataflow.nodes_.insert(
         {vertex,
          std::unique_ptr<
@@ -365,6 +366,7 @@ data_flow::ConstantNode& SDFGBuilder::add_constant(
 ) {
     auto& dataflow = state.dataflow();
     auto vertex = boost::add_vertex(dataflow.graph_);
+    dataflow.invalidate_topological_order();
     auto res = dataflow.nodes_.insert(
         {vertex,
          std::unique_ptr<data_flow::ConstantNode>(
@@ -384,6 +386,7 @@ data_flow::Tasklet& SDFGBuilder::add_tasklet(
 ) {
     auto& dataflow = state.dataflow();
     auto vertex = boost::add_vertex(dataflow.graph_);
+    dataflow.invalidate_topological_order();
     auto res = dataflow.nodes_.insert(
         {vertex,
          std::unique_ptr<data_flow::Tasklet>(
@@ -406,6 +409,7 @@ data_flow::Memlet& SDFGBuilder::add_memlet(
 ) {
     auto& dataflow = state.dataflow();
     auto edge = boost::add_edge(src.vertex_, dst.vertex_, dataflow.graph_);
+    dataflow.invalidate_topological_order();
     auto res = dataflow.edges_.insert(
         {edge.first,
          std::unique_ptr<data_flow::Memlet>(new data_flow::Memlet(

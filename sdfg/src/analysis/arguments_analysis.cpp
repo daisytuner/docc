@@ -16,7 +16,7 @@ void ArgumentsAnalysis::find_arguments_and_locals(
     auto& users = analysis_manager.get<analysis::Users>();
     analysis::UsersView scope_users(users, node);
 
-    analysis::TypeAnalysis type_analysis(sdfg_, &node, analysis_manager);
+    auto& type_analysis = this->type_analysis(analysis_manager, node);
 
     std::unordered_map<std::string, DataRwFlags> all_containers;
     for (auto& user : scope_users.uses()) {
@@ -104,7 +104,7 @@ void ArgumentsAnalysis::collect_arg_sizes(
     auto arguments = this->arguments(analysis_manager, node);
     auto locals = this->locals(analysis_manager, node);
 
-    analysis::TypeAnalysis type_analysis(sdfg_, &node, analysis_manager);
+    auto& type_analysis = this->type_analysis(analysis_manager, node);
 
     for (auto& [argument, meta] : arguments) {
         if (!meta.is_scalar) {
@@ -199,6 +199,15 @@ ArgumentsAnalysis::ArgumentsAnalysis(StructuredSDFG& sdfg) : Analysis(sdfg) {
 }
 
 void ArgumentsAnalysis::run(analysis::AnalysisManager& analysis_manager) {
+}
+
+const TypeAnalysis& ArgumentsAnalysis::
+    type_analysis(analysis::AnalysisManager& analysis_manager, structured_control_flow::ControlFlowNode& node) {
+    auto& entry = node_type_analyses_[&node];
+    if (!entry) {
+        entry = std::make_unique<TypeAnalysis>(sdfg_, &node, analysis_manager);
+    }
+    return *entry;
 }
 
 const std::map<std::string, RegionArgument>& ArgumentsAnalysis::

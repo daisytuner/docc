@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <functional>
 #include <string>
 #include <utility>
@@ -18,6 +19,8 @@
 #include "sdfg/targets/cuda/cuda.h"
 #include "sdfg/tiles/library_nodes/pipeline_node.h"
 #include "sdfg/tiles/library_nodes/tile_copy_node.h"
+#include "sdfg/transformations/recorder.h"
+#include "sdfg/transformations/replayer.h"
 #include "sdfg/types/array.h"
 
 using namespace sdfg;
@@ -77,12 +80,13 @@ structured_control_flow::For& build(
     bool shared = true,
     long src_stride = 1,
     bool wrap = false,
-    long pad = 0
+    long pad = 0,
+    types::PrimitiveType indvar_type = types::PrimitiveType::UInt64
 ) {
     auto& root = builder.subject().root();
     types::Scalar f(types::PrimitiveType::Float);
     types::Pointer aptr(f);
-    types::Scalar u64(types::PrimitiveType::UInt64);
+    types::Scalar u64(indvar_type);
     types::Array buf_type(
         shared ? types::StorageType::NV_Shared() : types::StorageType::CPU_Stack(),
         0,
@@ -403,6 +407,97 @@ TEST(SoftwarePipeliningTest, RejectsTooFewPanels) {
     analysis::AnalysisManager am(builder.subject());
     transformations::SoftwarePipelining sp(kloop, 2);
     EXPECT_FALSE(sp.can_be_applied(builder, am));
+}
+
+TEST(SoftwarePipeliningTest, RejectsQuadWithThreePanels) {
+    builder::StructuredSDFGBuilder builder("sp", FunctionType_CPU);
+    auto& kloop = build(builder, /*K=*/3);
+    analysis::AnalysisManager am(builder.subject());
+    transformations::SoftwarePipelining quad(kloop, 4);
+    EXPECT_FALSE(quad.can_be_applied(builder, am));
+    transformations::SoftwarePipelining dbl(kloop, 2);
+    EXPECT_TRUE(dbl.can_be_applied(builder, am));
+}
+
+TEST(SoftwarePipeliningTest, StagesFourBuffersAndWaits) {
+    builder::StructuredSDFGBuilder builder("sp", FunctionType_CPU);
+    auto& kloop = build(builder, /*K=*/8);
+    auto& sdfg = builder.subject();
+    auto& map_body = static_cast<structured_control_flow::Sequence&>(*kloop.get_parent());
+    analysis::AnalysisManager am(sdfg);
+    transformations::SoftwarePipelining sp(kloop, 4);
+    ASSERT_TRUE(sp.can_be_applied(builder, am));
+    sp.apply(builder, am);
+
+    auto* outer = dynamic_cast<const types::Array*>(&sdfg.type("buf"));
+    ASSERT_NE(outer, nullptr);
+    EXPECT_TRUE(symbolic::eq(outer->num_elements(), symbolic::integer(4)));
+
+    ASSERT_EQ(map_body.size(), 2u);
+    auto* prologue = dynamic_cast<structured_control_flow::Sequence*>(&map_body.at(0));
+    ASSERT_NE(prologue, nullptr);
+    EXPECT_EQ(count_cp_async(*prologue), 3u);
+
+    size_t commits = 0;
+    std::vector<size_t> keeps;
+    std::function<void(structured_control_flow::ControlFlowNode&)> scan =
+        [&](structured_control_flow::ControlFlowNode& n) {
+            if (auto* b = dynamic_cast<structured_control_flow::Block*>(&n)) {
+                for (auto& node : b->dataflow().nodes()) {
+                    if (dynamic_cast<tiles::PipelineCommitNode*>(&node) != nullptr) {
+                        commits++;
+                    }
+                    if (auto* w = dynamic_cast<tiles::PipelineWaitNode*>(&node)) {
+                        keeps.push_back(w->keep_outstanding());
+                    }
+                }
+            } else if (auto* ie = dynamic_cast<structured_control_flow::IfElse*>(&n)) {
+                for (size_t i = 0; i < ie->size(); i++) {
+                    scan(ie->at(i).first);
+                }
+            } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&n)) {
+                for (size_t i = 0; i < seq->size(); i++) {
+                    scan(seq->at(i));
+                }
+            } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&n)) {
+                scan(loop->root());
+            }
+        };
+    scan(*prologue);
+    EXPECT_EQ(commits, 3u);
+    EXPECT_TRUE(keeps.empty());
+
+    commits = 0;
+    scan(kloop.root());
+    EXPECT_EQ(count_cp_async(kloop.root()), 1u);
+    EXPECT_EQ(commits, 1u);
+    std::sort(keeps.begin(), keeps.end());
+    EXPECT_EQ(keeps, (std::vector<size_t>{0, 3}));
+}
+
+TEST(SoftwarePipeliningTest, ReplaysFromRecordedHistory) {
+    builder::StructuredSDFGBuilder builder("sp", FunctionType_CPU);
+    auto& kloop = build(builder, /*K=*/8, true, 1, false, 0, types::PrimitiveType::Int64);
+    analysis::AnalysisManager am(builder.subject());
+    transformations::Recorder recorder;
+    recorder.apply<transformations::SoftwarePipelining>(builder, am, false, kloop, size_t{4}, false);
+    auto history = recorder.get_history();
+    ASSERT_EQ(history.size(), 1u);
+    EXPECT_EQ(history[0]["transformation_type"], "SoftwarePipelining");
+    EXPECT_EQ(history[0]["parameters"]["stages"], 4);
+    EXPECT_EQ(history[0]["parameters"]["single_operand"], false);
+
+    builder::StructuredSDFGBuilder replay_builder("sp", FunctionType_CPU);
+    auto& replay_loop = build(replay_builder, /*K=*/8, true, 1, false, 0, types::PrimitiveType::Int64);
+    auto& replay_body = static_cast<structured_control_flow::Sequence&>(*replay_loop.get_parent());
+    analysis::AnalysisManager replay_am(replay_builder.subject());
+    transformations::Replayer replayer;
+    replayer.replay(replay_builder, replay_am, history, false);
+
+    auto* staged = dynamic_cast<const types::Array*>(&replay_builder.subject().type("buf"));
+    ASSERT_NE(staged, nullptr);
+    EXPECT_TRUE(symbolic::eq(staged->num_elements(), symbolic::integer(4)));
+    EXPECT_EQ(count_cp_async(replay_body), 4u);
 }
 
 TEST(SoftwarePipeliningTest, RejectsNonShared) {

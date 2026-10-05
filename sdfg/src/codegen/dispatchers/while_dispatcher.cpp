@@ -126,7 +126,7 @@ void ReturnDispatcher::dispatch_node(
         }
         main_stream << "return " << return_str << ";" << std::endl;
     } else if (node_.is_constant()) {
-        if (symbolic::is_nullptr(symbolic::symbol(node_.data()))) {
+        if (symbolic::is_nullptr(node_.data())) {
             if (this->language_extension_.language() == "C") {
                 main_stream << "return NULL;" << std::endl;
             } else {

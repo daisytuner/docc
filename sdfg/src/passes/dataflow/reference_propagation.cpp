@@ -1,7 +1,6 @@
 #include "sdfg/passes/dataflow/reference_propagation.h"
 #include <unordered_set>
 
-#include "sdfg/analysis/dominance_analysis.h"
 #include "sdfg/analysis/reference_analysis.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/data_flow/access_node.h"
@@ -97,7 +96,6 @@ bool ReferencePropagation::run_pass(builder::StructuredSDFGBuilder& builder, ana
 
     // Replaces all views
     auto& users_analysis = analysis_manager.get<analysis::Users>();
-    auto& dominance_analysis = analysis_manager.get<analysis::DominanceAnalysis>();
     auto& reference_analysis = analysis_manager.get<analysis::ReferenceAnalysis>();
 
     std::unordered_set<data_flow::AccessNode*> replaced_nodes;
@@ -151,7 +149,7 @@ bool ReferencePropagation::run_pass(builder::StructuredSDFGBuilder& builder, ana
             }
 
             // Criterion: Must be dominated by the move
-            if (!dominance_analysis.dominates(*move, *user)) {
+            if (!users_analysis.dominates(*move, *user)) {
                 continue;
             }
 

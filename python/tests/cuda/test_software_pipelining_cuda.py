@@ -129,10 +129,10 @@ def _build(N, K, block):
 
 @pytest.mark.parametrize(
     "N,K,block,tile",
-    [(64, 24, 32, 8), (128, 32, 32, 8), (64, 12, 16, 4)],
-    ids=["64x24x32", "128x32x32", "64x12x16"],
+    [(64, 24, 32, 8), (128, 32, 32, 8), (64, 12, 16, 4), (128, 64, 32, 8)],
+    ids=["64x24x32", "128x32x32", "64x12x16", "128x64x32"],
 )
-@pytest.mark.parametrize("stages", [2, 3], ids=["stages2", "stages3"])
+@pytest.mark.parametrize("stages", [2, 3, 4], ids=["stages2", "stages3", "stages4"])
 def test_software_pipelining_cooperative(N, K, block, tile, stages, tmp_path):
     builder, inner, a = _build(N, K, block)
     am = AnalysisManager(builder)
@@ -152,6 +152,9 @@ def test_software_pipelining_cooperative(N, K, block, tile, stages, tmp_path):
 
     # Software-pipeline the (now shared-staging) panel loop.
     sp = SoftwarePipelining(panel, stages=stages)
+    if K // tile < stages:
+        assert not sp.can_be_applied(builder, am), "fewer panels than stages"
+        return
     assert sp.can_be_applied(
         builder, am
     ), "shared-staging GPU panel loop should be pipelineable"
@@ -168,6 +171,9 @@ def test_software_pipelining_cooperative(N, K, block, tile, stages, tmp_path):
     assert "__pipeline_memcpy_async" in generated, "cp.async prefetch not emitted"
     assert "__pipeline_commit" in generated, "pipeline commit not emitted"
     assert "__pipeline_wait_prior" in generated, "pipeline wait not emitted"
+    assert (
+        f"__pipeline_wait_prior({stages - 1})" in generated
+    ), "steady-state wait must keep stages-1 groups in flight"
 
     compiled = CompiledSDFG(lib_path, sdfg)
 
