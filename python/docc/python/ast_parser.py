@@ -31,6 +31,16 @@ from docc.python.functions.python import PythonHandler
 from docc.python.memory import ManagedMemoryHandler
 
 
+def _is_int_literal(value) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        int(value)
+        return True
+    except ValueError:
+        return False
+
+
 class ASTParser(ast.NodeVisitor):
     def __init__(
         self,
@@ -1132,6 +1142,11 @@ class ASTParser(ast.NodeVisitor):
             if isinstance(node.value, ast.Constant):
                 dtype = self.type_system.constant_type(node.value.value)
 
+                self.builder.add_container(target_name, dtype, False)
+                self.container_table[target_name] = dtype
+            elif rhs_tmp not in self.container_table and _is_int_literal(rhs_tmp):
+                # e.g. `N = A.shape[0]` with a shape specialized to a literal
+                dtype = self.type_system.constant_type(int(rhs_tmp))
                 self.builder.add_container(target_name, dtype, False)
                 self.container_table[target_name] = dtype
             else:
