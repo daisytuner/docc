@@ -13,7 +13,7 @@ namespace sdfg::metadata {
 inline constexpr const char* RPC_OPTIMIZATION_METADATA_KEY = "docc.rpc_optimization.v1";
 
 struct RpcOptimizationMetadata {
-    double expected_speedup;
+    std::optional<nlohmann::json> expected_performance;
     std::optional<double> vector_distance;
 };
 
@@ -23,11 +23,15 @@ inline std::optional<RpcOptimizationMetadata> rpc_optimization(const Element& el
         return std::nullopt;
     }
     const auto json = nlohmann::json::parse(*serialized);
-    if (!json.is_object() || !json.contains("expected_speedup") || !json["expected_speedup"].is_number() ||
-        !std::isfinite(json["expected_speedup"].get<double>())) {
+    if (!json.is_object() || (json.contains("expected_performance") && !json["expected_performance"].is_object()) ||
+        (!json.contains("expected_performance") && !json.contains("vector_distance"))) {
         throw std::runtime_error("Invalid RPC optimization element metadata");
     }
-    RpcOptimizationMetadata result{json["expected_speedup"].get<double>(), std::nullopt};
+    RpcOptimizationMetadata result{
+        json.contains("expected_performance") ? std::optional<nlohmann::json>(json["expected_performance"])
+                                              : std::nullopt,
+        std::nullopt
+    };
     if (json.contains("vector_distance")) {
         if (!json["vector_distance"].is_number() || !std::isfinite(json["vector_distance"].get<double>())) {
             throw std::runtime_error("Invalid RPC vector distance element metadata");
@@ -38,17 +42,22 @@ inline std::optional<RpcOptimizationMetadata> rpc_optimization(const Element& el
 }
 
 inline void set_rpc_optimization(
-    Element& element, std::optional<double> expected_speedup, std::optional<double> vector_distance = std::nullopt
+    Element& element,
+    std::optional<nlohmann::json> expected_performance,
+    std::optional<double> vector_distance = std::nullopt
 ) {
-    if (!expected_speedup.has_value()) {
+    if (!expected_performance.has_value() && !vector_distance.has_value()) {
         element.remove_metadata(RPC_OPTIMIZATION_METADATA_KEY);
         return;
     }
-    if (!std::isfinite(expected_speedup.value()) ||
+    if ((expected_performance.has_value() && !expected_performance->is_object()) ||
         (vector_distance.has_value() && !std::isfinite(vector_distance.value()))) {
-        throw std::invalid_argument("RPC optimization values must be finite");
+        throw std::invalid_argument("RPC expected performance must be an object and vector distance finite");
     }
-    nlohmann::json json = {{"expected_speedup", expected_speedup.value()}};
+    nlohmann::json json = nlohmann::json::object();
+    if (expected_performance.has_value()) {
+        json["expected_performance"] = expected_performance.value();
+    }
     if (vector_distance.has_value()) {
         json["vector_distance"] = vector_distance.value();
     }

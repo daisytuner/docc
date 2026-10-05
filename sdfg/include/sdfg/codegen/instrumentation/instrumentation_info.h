@@ -7,6 +7,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
 #include "sdfg/analysis/loop_analysis.h"
 #include "sdfg/exceptions.h"
 #include "sdfg/structured_control_flow/map.h"
@@ -42,8 +44,8 @@ private:
     analysis::LoopInfo loop_info_;
     std::unordered_map<std::string, std::string> metrics_;
     std::optional<ElementId> logical_region_id_;
-    std::optional<ElementId> original_loop_id_;
-    std::optional<double> expected_speedup_;
+    std::optional<ElementId> source_loop_id_;
+    std::optional<nlohmann::json> expected_performance_;
     std::optional<double> vector_distance_;
     std::vector<InstrumentationMemberInfo> members_;
     bool sampling_ = false;
@@ -78,13 +80,13 @@ public:
 
     void set_logical_region_id(std::optional<ElementId> logical_region_id);
 
-    std::optional<ElementId> original_loop_id() const;
+    std::optional<ElementId> source_loop_id() const;
 
-    void set_original_loop_id(std::optional<ElementId> original_loop_id);
+    void set_source_loop_id(std::optional<ElementId> source_loop_id);
 
-    std::optional<double> expected_speedup() const;
+    const std::optional<nlohmann::json>& expected_performance() const;
 
-    void set_expected_speedup(std::optional<double> expected_speedup);
+    void set_expected_performance(std::optional<nlohmann::json> expected_performance);
 
     std::optional<double> vector_distance() const;
 

@@ -41,7 +41,7 @@ TEST(StructuredSDFGDeepCopy, PreservesElementMetadataOnCopiedLoop) {
         symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
         structured_control_flow::ScheduleType_Sequential::create()
     );
-    loop.add_metadata("sdfg.original_loop_id.v1", "17");
+    loop.add_metadata("sdfg.source_loop_id.v1", "17");
     loop.add_metadata("custom", "copied");
 
     builder::StructuredSDFGBuilder target("metadata_target", FunctionType_CPU);
@@ -50,7 +50,7 @@ TEST(StructuredSDFGDeepCopy, PreservesElementMetadataOnCopiedLoop) {
     const auto* copied = mapping.at(&loop);
 
     EXPECT_NE(copied->element_id(), loop.element_id());
-    EXPECT_EQ(copied->metadata("sdfg.original_loop_id.v1"), "17");
+    EXPECT_EQ(copied->metadata("sdfg.source_loop_id.v1"), "17");
     EXPECT_EQ(copied->metadata("custom"), "copied");
 }
 

@@ -57,20 +57,20 @@ void InstrumentationInfo::set_logical_region_id(std::optional<ElementId> logical
     logical_region_id_ = logical_region_id;
 }
 
-std::optional<ElementId> InstrumentationInfo::original_loop_id() const {
-    return original_loop_id_;
+std::optional<ElementId> InstrumentationInfo::source_loop_id() const {
+    return source_loop_id_;
 }
 
-void InstrumentationInfo::set_original_loop_id(std::optional<ElementId> original_loop_id) {
-    original_loop_id_ = original_loop_id;
+void InstrumentationInfo::set_source_loop_id(std::optional<ElementId> source_loop_id) {
+    source_loop_id_ = source_loop_id;
 }
 
-std::optional<double> InstrumentationInfo::expected_speedup() const {
-    return expected_speedup_;
+const std::optional<nlohmann::json>& InstrumentationInfo::expected_performance() const {
+    return expected_performance_;
 }
 
-void InstrumentationInfo::set_expected_speedup(std::optional<double> expected_speedup) {
-    expected_speedup_ = expected_speedup;
+void InstrumentationInfo::set_expected_performance(std::optional<nlohmann::json> expected_performance) {
+    expected_performance_ = std::move(expected_performance);
 }
 
 std::optional<double> InstrumentationInfo::vector_distance() const {

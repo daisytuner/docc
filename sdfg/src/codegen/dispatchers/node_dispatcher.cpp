@@ -48,8 +48,8 @@ void NodeDispatcher::
         instrumentation_info = this->instrumentation_info();
         instrumentation_info->set_sampling(this->instrumentation_plan_.sampling());
         instrumentation_info->set_logical_region_id(this->instrumentation_plan_.logical_region_id(node_));
-        instrumentation_info->set_original_loop_id(this->instrumentation_plan_.original_loop_id(node_));
-        instrumentation_info->set_expected_speedup(this->instrumentation_plan_.expected_speedup(node_));
+        instrumentation_info->set_source_loop_id(this->instrumentation_plan_.source_loop_id(node_));
+        instrumentation_info->set_expected_performance(this->instrumentation_plan_.expected_performance(node_));
         instrumentation_info->set_vector_distance(this->instrumentation_plan_.vector_distance(node_));
         this->instrumentation_plan_
             .begin_instrumentation(node_, main_stream, language_extension_, instrumentation_info.value());

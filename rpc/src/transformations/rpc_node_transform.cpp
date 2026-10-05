@@ -3,9 +3,9 @@
 #include <curl/curl.h>
 #include <iostream>
 #include <memory>
-#include <optional>
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
+#include <optional>
 #include <string>
 #include <variant>
 #include <vector>
@@ -13,10 +13,10 @@
 #include "sdfg/analysis/loop_analysis.h"
 #include "sdfg/codegen/utils.h"
 #include "sdfg/cutouts/cutouts.h"
-#include "sdfg/optimization_report/pass_report_consumer.h"
-#include "sdfg/passes/rpc/rpc_context.h"
 #include "sdfg/metadata/loop_provenance.h"
 #include "sdfg/metadata/rpc_optimization.h"
+#include "sdfg/optimization_report/pass_report_consumer.h"
+#include "sdfg/passes/rpc/rpc_context.h"
 #include "sdfg/passes/rpc/rpc_responses.h"
 #include "sdfg/serializer/json_serializer.h"
 #include "sdfg/structured_control_flow/control_flow_node.h"
@@ -40,11 +40,16 @@ RPCNodeTransform::RPCNodeTransform(
     bool dump_steps
 )
     : node_(node), target_(target), category_(category), rpc_context_(rpc_context), dump_steps_(dump_steps),
-      enable_fusion_(enable_fusion), normalize_(normalize), schedule_loops_(schedule_loops) {}
+      enable_fusion_(enable_fusion), normalize_(normalize), schedule_loops_(schedule_loops) {
+}
 
-std::string RPCNodeTransform::name() const { return "RPCNodeTransform"; }
+std::string RPCNodeTransform::name() const {
+    return "RPCNodeTransform";
+}
 
-std::string RPCNodeTransform::get_node_id_str() const { return std::to_string(this->node_.element_id()); }
+std::string RPCNodeTransform::get_node_id_str() const {
+    return std::to_string(this->node_.element_id());
+}
 
 bool RPCNodeTransform::
     can_be_applied(sdfg::builder::StructuredSDFGBuilder& builder, sdfg::analysis::AnalysisManager& analysis_manager) {
@@ -177,9 +182,8 @@ std::variant<std::unique_ptr<passes::rpc::RpcOptResponse>, std::string> RPCNodeT
     return std::move(rpc_response);
 }
 
-std::variant<std::unique_ptr<passes::rpc::RpcOptResponse>, std::string> RPCNodeTransform::parse_rpc_response(HttpResult
-                                                                                                                 result
-) {
+std::variant<std::unique_ptr<passes::rpc::RpcOptResponse>, std::string> RPCNodeTransform::
+    parse_rpc_response(HttpResult result) {
     // Check for HTTP errors first (including authentication issues)
     if (!result.error_message.empty()) {
         std::cerr << result.error_message << std::endl;
@@ -233,7 +237,7 @@ std::variant<std::unique_ptr<passes::rpc::RpcOptResponse>, std::string> RPCNodeT
             }
             auto json_speedup = json_metadata.find("speedup");
             if (json_speedup != json_metadata.end() && !json_speedup->is_null()) {
-                meta.speedup = json_speedup->get<double>();
+                meta.expected_performance = nlohmann::json{{"speedup", json_speedup->get<double>()}};
             }
             auto json_vector_distance = json_metadata.find("vector_distance");
             if (json_vector_distance != json_metadata.end() && !json_vector_distance->is_null()) {
@@ -306,7 +310,7 @@ void RPCNodeTransform::
         builder.subject().add_metadata("transfer_tuning_session_id", session_id.value());
     }
 
-    const auto input_origin_id = metadata::original_loop_id(this->node_);
+    const auto input_origin_id = metadata::source_loop_id(this->node_);
 
     if (opt.sdfg_result.has_value()) {
         auto& sdfg_response = opt.sdfg_result->sdfg;
@@ -367,7 +371,7 @@ void RPCNodeTransform::
         std::vector<structured_control_flow::ControlFlowNode*> exact_matches;
         std::vector<structured_control_flow::ControlFlowNode*> origin_matches;
         for (auto* result_loop : result_loop_analysis.loops()) {
-            const auto result_origin_id = metadata::original_loop_id(*result_loop);
+            const auto result_origin_id = metadata::source_loop_id(*result_loop);
             if (result_loop->element_id() == result_loop_id) {
                 exact_matches.push_back(result_loop);
             } else if (result_origin_id.has_value() && result_origin_id.value() == result_loop_id) {
@@ -377,12 +381,12 @@ void RPCNodeTransform::
         auto& matches = exact_matches.empty() ? origin_matches : exact_matches;
         if (matches.size() == 1) {
             sdfg::metadata::set_rpc_optimization(
-                *matches.front(), region_result.metadata.speedup, region_result.metadata.vector_distance
+                *matches.front(), region_result.metadata.expected_performance, region_result.metadata.vector_distance
             );
         } else {
             DEBUG_PRINTLN(
-                "[RPC] Could not uniquely associate score with output loop " << result_loop_id << " (matches: "
-                                                                             << matches.size() << ")"
+                "[RPC] Could not uniquely associate score with output loop " << result_loop_id
+                                                                             << " (matches: " << matches.size() << ")"
             );
         }
     }
@@ -391,16 +395,18 @@ void RPCNodeTransform::
         auto recipe = opt.local_replay.value();
         for (const auto& region_result : opt.results) {
             DEBUG_PRINTLN(
-                "[RPC] Applied RPC optimization sequence with speedup "
-                << region_result.metadata.speedup << " and vector distance " << region_result.metadata.vector_distance
-                << " to loopnest " << element_id
+                "[RPC] Applied RPC optimization sequence with expected performance "
+                << region_result.metadata.expected_performance.value_or(nlohmann::json::object()).dump()
+                << " and vector distance " << region_result.metadata.vector_distance.value_or(NAN) << " to loopnest "
+                << element_id
             );
         }
     } else {
         for (const auto& region_result : opt.results) {
             DEBUG_PRINTLN(
-                "[RPC] Applied plain SDFG with speedup " << region_result.metadata.speedup << " and vector distance "
-                                                         << region_result.metadata.vector_distance
+                "[RPC] Applied plain SDFG with expected performance "
+                << region_result.metadata.expected_performance.value_or(nlohmann::json::object()).dump()
+                << " and vector distance " << region_result.metadata.vector_distance.value_or(NAN)
             );
         }
     }
@@ -415,9 +421,13 @@ void RPCNodeTransform::to_json(nlohmann::json& j) const {
         if (region_result.element_id.has_value()) {
             entry["element_id"] = region_result.element_id.value();
         }
-        nlohmann::json metadata = {
-            {"speedup", region_result.metadata.speedup}, {"vector_distance", region_result.metadata.vector_distance}
-        };
+        nlohmann::json metadata = nlohmann::json::object();
+        if (region_result.metadata.expected_performance.has_value()) {
+            metadata["expected_performance"] = region_result.metadata.expected_performance.value();
+        }
+        if (region_result.metadata.vector_distance.has_value()) {
+            metadata["vector_distance"] = region_result.metadata.vector_distance.value();
+        }
         if (region_result.metadata.region_id.has_value()) {
             metadata["region_id"] = region_result.metadata.region_id.value();
         }

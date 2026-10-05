@@ -57,13 +57,13 @@ typedef struct __daisy_metadata {
     const char* transfer_tuning_session_id;
 
     // Optional original loop ID shared by provenance-grouped instrumentation regions; zero when absent.
-    long long original_loop_id;
+    long long source_loop_id;
 
     // Optional JSON array containing every member loop's ID and source range; "[]" when ungrouped.
     const char* member_loops_json;
 
-    // Optional transfer-tuning prediction. Negative values mean unavailable.
-    double expected_speedup;
+    // Optional JSON object containing arbitrary expected performance metrics; null when absent.
+    const char* expected_performance_json;
     double vector_distance;
 } __daisy_metadata_t;
 

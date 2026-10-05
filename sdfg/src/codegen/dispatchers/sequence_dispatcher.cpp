@@ -32,9 +32,9 @@ void SequenceDispatcher::dispatch_node(
             );
             auto group_info = first_dispatcher->instrumentation_info_for_group();
             group_info.set_sampling(instrumentation_plan_.sampling());
-            group_info.set_logical_region_id(group->original_loop_id);
-            group_info.set_original_loop_id(group->original_loop_id);
-            group_info.set_expected_speedup(instrumentation_plan_.expected_speedup(child));
+            group_info.set_logical_region_id(group->source_loop_id);
+            group_info.set_source_loop_id(group->source_loop_id);
+            group_info.set_expected_performance(instrumentation_plan_.expected_performance(child));
             group_info.set_vector_distance(instrumentation_plan_.vector_distance(child));
             std::vector<InstrumentationMemberInfo> members;
             members.reserve(group->members.size());

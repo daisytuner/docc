@@ -168,8 +168,10 @@ TEST_F(CutoutTest, ProvenanceGroupedInstrumentationSharesLogicalOrigin) {
     ASSERT_EQ(outermost_loops.size(), 3u);
 
     for (size_t i = 1; i < outermost_loops.size(); ++i) {
-        metadata::set_original_loop_id(*outermost_loops[i], 777);
-        metadata::set_rpc_optimization(*outermost_loops[i], 1.75, 0.125);
+        metadata::set_source_loop_id(*outermost_loops[i], 777);
+        metadata::set_rpc_optimization(
+            *outermost_loops[i], nlohmann::json{{"speedup", 1.75}, {"custom_metric", "future"}}, 0.125
+        );
     }
 
     auto plan = codegen::InstrumentationPlan::provenance_grouped_outermost_loops_plan(builder_->subject(), true, true);
@@ -186,8 +188,12 @@ TEST_F(CutoutTest, ProvenanceGroupedInstrumentationSharesLogicalOrigin) {
     const std::string generated = generator.main().str();
     EXPECT_NE(generated.find("sdfg_test_origin_777"), std::string::npos);
     EXPECT_NE(generated.find("member_loops_json"), std::string::npos);
-    EXPECT_NE(generated.find("original_loop_id = 777"), std::string::npos);
-    EXPECT_NE(generated.find("expected_speedup = 1.750000"), std::string::npos);
+    EXPECT_NE(generated.find("source_loop_id = 777"), std::string::npos);
+    EXPECT_NE(generated.find("expected_performance_json = \"\";"), std::string::npos);
+    EXPECT_NE(
+        generated.find("expected_performance_json = \"{\\\"custom_metric\\\":\\\"future\\\",\\\"speedup\\\":1.75}\""),
+        std::string::npos
+    );
     EXPECT_NE(generated.find("vector_distance = 0.125000"), std::string::npos);
     EXPECT_NE(generated.find(std::to_string(outermost_loops[0]->element_id())), std::string::npos);
     EXPECT_NE(generated.find(std::to_string(outermost_loops[1]->element_id())), std::string::npos);
@@ -228,8 +234,8 @@ TEST_F(CutoutTest, ProvenanceGroupedInstrumentationFallsBackForNoncontiguousMemb
     const auto& loops = loop_analysis.outermost_loops();
     ASSERT_EQ(loops.size(), 3u);
 
-    metadata::set_original_loop_id(*loops[0], 900);
-    metadata::set_original_loop_id(*loops[2], 900);
+    metadata::set_source_loop_id(*loops[0], 900);
+    metadata::set_source_loop_id(*loops[2], 900);
 
     auto plan = codegen::InstrumentationPlan::provenance_grouped_outermost_loops_plan(builder_->subject());
     for (const auto* loop : loops) {

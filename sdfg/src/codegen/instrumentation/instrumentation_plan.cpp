@@ -157,8 +157,8 @@ void InstrumentationPlan::begin_instrumentation(
 
     // Element metadata
     stream << metadata_var << ".element_id = " << info.element_id() << ";" << std::endl;
-    stream << metadata_var << ".original_loop_id = "
-           << (info.original_loop_id().has_value() ? std::to_string(info.original_loop_id().value()) : "0") << ";"
+    stream << metadata_var << ".source_loop_id = "
+           << (info.source_loop_id().has_value() ? std::to_string(info.source_loop_id().value()) : "0") << ";"
            << std::endl;
     stream << metadata_var << ".element_type = \"" << info.element_desc() << "\";" << std::endl;
     stream << metadata_var << ".target_type = \"" << info.target_type().value() << "\";" << std::endl;
@@ -177,9 +177,11 @@ void InstrumentationPlan::begin_instrumentation(
     }
     stream << metadata_var << ".member_loops_json = \"" << escape_cpp_string(member_metadata.dump()) << "\";"
            << std::endl;
-    stream << metadata_var << ".expected_speedup = "
-           << (info.expected_speedup().has_value() ? std::to_string(info.expected_speedup().value()) : "-1.0") << ";"
-           << std::endl;
+    stream << metadata_var << ".expected_performance_json = "
+           << (info.expected_performance().has_value()
+                   ? "\"" + escape_cpp_string(info.expected_performance()->dump()) + "\""
+                   : "\"\"")
+           << ";" << std::endl;
     stream << metadata_var << ".vector_distance = "
            << (info.vector_distance().has_value() ? std::to_string(info.vector_distance().value()) : "-1.0") << ";"
            << std::endl;
@@ -302,7 +304,7 @@ std::unique_ptr<InstrumentationPlan> InstrumentationPlan::
     std::unordered_map<ElementId, std::vector<const structured_control_flow::ControlFlowNode*>> loops_by_origin;
     for (auto* loop : loop_analysis.outermost_loops()) {
         nodes.insert(loop);
-        const auto origin_id = metadata::original_loop_id(*loop);
+        const auto origin_id = metadata::source_loop_id(*loop);
         if (origin_id.has_value()) {
             logical_region_ids.emplace(loop, origin_id.value());
             loops_by_origin[origin_id.value()].push_back(loop);

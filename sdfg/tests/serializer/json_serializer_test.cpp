@@ -1970,7 +1970,7 @@ TEST(JSONSerializerTest, PerElementMetadataRoundTrips) {
         symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
         structured_control_flow::ScheduleType_Sequential::create()
     );
-    loop.add_metadata("sdfg.original_loop_id.v1", "77");
+    loop.add_metadata("sdfg.source_loop_id.v1", "77");
 
     types::Scalar scalar(types::PrimitiveType::Float);
     types::Pointer pointer(scalar);
@@ -1991,7 +1991,7 @@ TEST(JSONSerializerTest, PerElementMetadataRoundTrips) {
     auto deserialized = serializer.deserialize(serialized);
 
     auto& restored_loop = sdfg::dyn_cast<structured_control_flow::StructuredLoop&>(deserialized->root().at(0));
-    EXPECT_EQ(metadata::original_loop_id(restored_loop), std::optional<ElementId>(77));
+    EXPECT_EQ(metadata::source_loop_id(restored_loop), std::optional<ElementId>(77));
     auto& restored_block = sdfg::dyn_cast<structured_control_flow::Block&>(restored_loop.root().at(0));
     bool found_tasklet = false;
     for (const auto& node : restored_block.dataflow().nodes()) {

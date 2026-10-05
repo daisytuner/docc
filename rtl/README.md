@@ -40,7 +40,7 @@ After all regions are finished, calling `__daisy_instrumentation_finalize_all` i
 
 For the full list of API calls and metadata fields, refer to [rtl/include/daisy_rtl/daisy_rtl.h](include/daisy_rtl/daisy_rtl.h).
 
-DOCC's `-docc-instrument=ols_tuned` mode (or Python `instrumentation_mode="ols_tuned"`) emits one instrumentation span around contiguous optimized sibling loops that share an original-loop provenance ID. The trace identifies the group with `docc.original_loop_id` and lists every member's ID and source range in `docc.member_loops`; scalar element/source/loop fields remain representative metadata from the first member. Non-contiguous or return-containing groups fall back to individual loop regions. Runtime `__DAISY_INSTRUMENTATION_MODE` still independently selects per-invocation or aggregate output.
+DOCC's `-docc-instrument=ols_tuned` mode (or Python `instrumentation_mode="ols_tuned"`) emits one instrumentation span around contiguous optimized sibling loops that share an original-loop provenance ID. The trace identifies the group with `docc.source_loop_id` and lists every member's ID and source range in `docc.member_loops`; scalar element/source/loop fields remain representative metadata from the first member. Non-contiguous or return-containing groups fall back to individual loop regions. Runtime `__DAISY_INSTRUMENTATION_MODE` still independently selects per-invocation or aggregate output.
 
 Each event measures one complete span execution. This mode measures tuned execution only; compare against a separately instrumented baseline to calculate empirical speedup.
 
@@ -83,4 +83,4 @@ The default capturing behavior is defined by `__DAISY_CAPTURE_STRATEGY_DEFAULT`:
 - `once`: capture the first invocation
 - `always` capture all invocations
 
-When RPC tuning scores are available, the same `docc` object contains `rpc_optimization.expected_speedup` and, when available, `rpc_optimization.vector_distance`. `expected_speedup` is the backend's prediction, not the runtime-measured speedup.
+When RPC tuning metadata is available, `docc.rpc_optimization.expected_performance` contains an open-ended object of backend-predicted metrics (currently including `speedup`). Metric keys and JSON values may evolve independently of the RTL schema. `vector_distance` remains a sibling field in `rpc_optimization`. These values are predictions, not runtime-measured performance.

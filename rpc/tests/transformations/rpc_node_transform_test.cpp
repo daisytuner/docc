@@ -1,5 +1,5 @@
-#include <gtest/gtest.h>
 #include <cmath>
+#include <gtest/gtest.h>
 #include <memory>
 #include <sdfg/transformations/rpc_node_transform.h>
 #include <sdfg/util/utils_curl.h>
@@ -10,9 +10,9 @@
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/codegen/utils.h"
 #include "sdfg/deepcopy/structured_sdfg_deep_copy.h"
-#include "sdfg/passes/rpc/rpc_context.h"
-#include "sdfg/metadata/rpc_optimization.h"
 #include "sdfg/metadata/loop_provenance.h"
+#include "sdfg/metadata/rpc_optimization.h"
+#include "sdfg/passes/rpc/rpc_context.h"
 #include "sdfg/serializer/json_serializer.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
@@ -257,15 +257,36 @@ TEST_F(RPCNodeTransformTest, StoresProvenanceAndScoresOnTheOutputLoop) {
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
     auto* loop = loop_analysis.outermost_loops().front();
 
-    metadata::set_original_loop_id(*loop, 42);
-    metadata::set_rpc_optimization(*loop, 1.75, 0.125);
+    metadata::set_source_loop_id(*loop, 42);
+    metadata::set_rpc_optimization(*loop, nlohmann::json{{"speedup", 1.75}, {"future_metric", "value"}}, 0.125);
 
-    EXPECT_EQ(metadata::original_loop_id(*loop), std::optional<ElementId>(42));
+    EXPECT_EQ(metadata::source_loop_id(*loop), std::optional<ElementId>(42));
     const auto result = metadata::rpc_optimization(*loop);
     ASSERT_TRUE(result.has_value());
-    EXPECT_DOUBLE_EQ(result->expected_speedup, 1.75);
+    ASSERT_TRUE(result->expected_performance.has_value());
+    EXPECT_DOUBLE_EQ(result->expected_performance->at("speedup"), 1.75);
+    EXPECT_EQ(result->expected_performance->at("future_metric"), "value");
     ASSERT_TRUE(result->vector_distance.has_value());
     EXPECT_DOUBLE_EQ(result->vector_distance.value(), 0.125);
+}
+
+TEST_F(RPCNodeTransformTest, ParsesScalarSpeedupIntoExpectedPerformanceMap) {
+    analysis::AnalysisManager analysis_manager(builder_->subject());
+    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
+    auto* loop = loop_analysis.outermost_loops().front();
+    transformations::RPCNodeTransform transform(*loop, "sequential", "server", *ctx_);
+
+    HttpResult result;
+    result.body = R"({"metadata":{"region_id":"region-1","speedup":1.75,"vector_distance":0.125}})";
+
+    auto parsed = transform.parse_rpc_response(std::move(result));
+    ASSERT_TRUE(std::holds_alternative<std::unique_ptr<passes::rpc::RpcOptResponse>>(parsed));
+    const auto& response = *std::get<std::unique_ptr<passes::rpc::RpcOptResponse>>(parsed);
+    ASSERT_EQ(response.results.size(), 1);
+    ASSERT_TRUE(response.results.front().metadata.expected_performance.has_value());
+    EXPECT_EQ(response.results.front().metadata.expected_performance.value(), (nlohmann::json{{"speedup", 1.75}}));
+    ASSERT_TRUE(response.results.front().metadata.vector_distance.has_value());
+    EXPECT_DOUBLE_EQ(response.results.front().metadata.vector_distance.value(), 0.125);
 }
 
 TEST_F(RPCNodeTransformTest, HandleUnauthenticatedError) {

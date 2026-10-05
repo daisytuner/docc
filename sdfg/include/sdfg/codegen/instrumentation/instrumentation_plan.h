@@ -29,7 +29,7 @@ protected:
     std::unordered_set<const Element*> nodes_;
     std::unordered_map<const Element*, ElementId> logical_region_ids_;
     struct GroupSpan {
-        ElementId original_loop_id;
+        ElementId source_loop_id;
         const structured_control_flow::Sequence* sequence;
         std::vector<const structured_control_flow::ControlFlowNode*> members;
     };
@@ -94,13 +94,13 @@ public:
         return it == logical_region_ids_.end() ? std::nullopt : std::optional<ElementId>(it->second);
     }
 
-    std::optional<ElementId> original_loop_id(const Element& node) const {
-        return metadata::original_loop_id(node);
+    std::optional<ElementId> source_loop_id(const Element& node) const {
+        return metadata::source_loop_id(node);
     }
 
-    std::optional<double> expected_speedup(const Element& node) const {
+    std::optional<nlohmann::json> expected_performance(const Element& node) const {
         const auto result = metadata::rpc_optimization(node);
-        return result.has_value() ? std::optional<double>(result->expected_speedup) : std::nullopt;
+        return result.has_value() ? result->expected_performance : std::nullopt;
     }
 
     std::optional<double> vector_distance(const Element& node) const {

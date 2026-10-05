@@ -36,7 +36,9 @@ static inline uint64_t gettid() {
 #error "SYS_gettid unavailable on this system"
 #endif
 #if !defined(__GLIBC__) || !__GLIBC_PREREQ(2, 30)
-static inline pid_t gettid() { return syscall(SYS_gettid); }
+static inline pid_t gettid() {
+    return syscall(SYS_gettid);
+}
 #endif
 #else
 #error "Unsupported platform for gettid()"
@@ -79,7 +81,7 @@ static void flush_caches_impl() {
         return;
     }
     static const size_t n = static_cast<size_t>(env_long("DOCC_MEASURE_FLUSH_BYTES", 128L * 1024 * 1024));
-    static volatile unsigned char* buf = []() -> volatile unsigned char* {
+    static volatile unsigned char* buf = []()->volatile unsigned char* {
         static const size_t bytes = static_cast<size_t>(env_long("DOCC_MEASURE_FLUSH_BYTES", 128L * 1024 * 1024));
         auto* p = static_cast<volatile unsigned char*>(std::malloc(bytes));
         if (p) {
@@ -113,7 +115,9 @@ static long long (*_PAPI_get_real_nsec)(void) = nullptr;
 
 static void load_papi_symbols() {
     const char* papi_lib = std::getenv("DAISY_PAPI_PATH");
-    if (!papi_lib) papi_lib = "libpapi.so";
+    if (!papi_lib) {
+        papi_lib = "libpapi.so";
+    }
     void* handle = dlopen(papi_lib, RTLD_LAZY);
     if (!handle) {
         std::fprintf(stderr, "[daisy-rtl] Failed to load %s: %s\n", papi_lib, dlerror());
@@ -189,7 +193,8 @@ struct DaisyRegion {
 
 struct JsSafeDouble {
     double value;
-    explicit JsSafeDouble(double value) : value(value) {}
+    explicit JsSafeDouble(double value) : value(value) {
+    }
 };
 
 static std::ostream& operator<<(std::ostream& os, JsSafeDouble val) {
@@ -225,7 +230,9 @@ struct GpuEventApi {
             return e;
         }
         void* e = nullptr;
-        if (eventCreate_(&e) != 0) return nullptr;
+        if (eventCreate_(&e) != 0) {
+            return nullptr;
+        }
         return e;
     }
 };
@@ -260,21 +267,25 @@ private:
     GpuEventApi rocm_events_;
 
     bool ensure_cuda_events() {
-        if (cuda_events_.tried_loading) return cuda_events_.loaded;
+        if (cuda_events_.tried_loading) {
+            return cuda_events_.loaded;
+        }
         cuda_events_.tried_loading = true;
         cuda_events_.event_lib_handle = dlopen("libcudart.so", RTLD_NOW | RTLD_GLOBAL);
-        if (!cuda_events_.event_lib_handle)
+        if (!cuda_events_.event_lib_handle) {
             cuda_events_.event_lib_handle = dlopen("libcudart.so.12", RTLD_NOW | RTLD_GLOBAL);
-        if (!cuda_events_.event_lib_handle) return false;
+        }
+        if (!cuda_events_.event_lib_handle) {
+            return false;
+        }
         cuda_events_.eventCreate_ =
             reinterpret_cast<int (*)(void**)>(dlsym(cuda_events_.event_lib_handle, "cudaEventCreate"));
         cuda_events_.eventRecord_ =
             reinterpret_cast<int (*)(void*, void*)>(dlsym(cuda_events_.event_lib_handle, "cudaEventRecord"));
         cuda_events_.eventSynchronize_ =
             reinterpret_cast<int (*)(void*)>(dlsym(cuda_events_.event_lib_handle, "cudaEventSynchronize"));
-        cuda_events_.eventElapsedTime_ =
-            reinterpret_cast<int (*)(float*, void*, void*)>(dlsym(cuda_events_.event_lib_handle, "cudaEventElapsedTime")
-            );
+        cuda_events_.eventElapsedTime_ = reinterpret_cast<
+            int (*)(float*, void*, void*)>(dlsym(cuda_events_.event_lib_handle, "cudaEventElapsedTime"));
         cuda_events_.eventDestroy_ =
             reinterpret_cast<int (*)(void*)>(dlsym(cuda_events_.event_lib_handle, "cudaEventDestroy"));
         cuda_events_.errorString =
@@ -291,10 +302,14 @@ private:
     }
 
     bool ensure_rocm_events() {
-        if (rocm_events_.tried_loading) return rocm_events_.loaded;
+        if (rocm_events_.tried_loading) {
+            return rocm_events_.loaded;
+        }
         rocm_events_.tried_loading = true;
         rocm_events_.event_lib_handle = dlopen("libamdhip64.so", RTLD_NOW | RTLD_GLOBAL);
-        if (!rocm_events_.event_lib_handle) return false;
+        if (!rocm_events_.event_lib_handle) {
+            return false;
+        }
         rocm_events_.eventCreate_ =
             reinterpret_cast<int (*)(void**)>(dlsym(rocm_events_.event_lib_handle, "hipEventCreate"));
         rocm_events_.eventRecord_ =
@@ -302,8 +317,7 @@ private:
         rocm_events_.eventSynchronize_ =
             reinterpret_cast<int (*)(void*)>(dlsym(rocm_events_.event_lib_handle, "hipEventSynchronize"));
         rocm_events_.eventElapsedTime_ =
-            reinterpret_cast<int (*)(float*, void*, void*)>(dlsym(rocm_events_.event_lib_handle, "hipEventElapsedTime")
-            );
+            reinterpret_cast<int (*)(float*, void*, void*)>(dlsym(rocm_events_.event_lib_handle, "hipEventElapsedTime"));
         rocm_events_.eventDestroy_ =
             reinterpret_cast<int (*)(void*)>(dlsym(rocm_events_.event_lib_handle, "hipEventDestroy"));
         rocm_events_.errorString =
@@ -333,8 +347,12 @@ private:
             region.runtime_mean += delta1 / region.runtime_n;
             double delta2 = duration_ns - region.runtime_mean;
             region.runtime_variance += (delta1 * delta2 - region.runtime_variance) / region.runtime_n;
-            if (duration_ns < region.runtime_min) region.runtime_min = duration_ns;
-            if (duration_ns > region.runtime_max) region.runtime_max = duration_ns;
+            if (duration_ns < region.runtime_min) {
+                region.runtime_min = duration_ns;
+            }
+            if (duration_ns > region.runtime_max) {
+                region.runtime_max = duration_ns;
+            }
         }
     }
 
@@ -371,19 +389,27 @@ private:
         }
     }
 
-    void post_process_region(DaisyRegion& region) { resolve_pending_events(region); }
+    void post_process_region(DaisyRegion& region) {
+        resolve_pending_events(region);
+    }
 
-    double ns_to_us(double ns) { return ns / 1000; }
+    double ns_to_us(double ns) {
+        return ns / 1000;
+    }
 
     void split_string(const char* str, std::vector<std::string>& out) {
-        if (!str) return;
+        if (!str) {
+            return;
+        }
         std::string s(str);
         size_t start = 0, end = 0;
         while ((end = s.find(',', start)) != std::string::npos) {
             out.push_back(s.substr(start, end - start));
             start = end + 1;
         }
-        if (s.empty()) return;
+        if (s.empty()) {
+            return;
+        }
         out.push_back(s.substr(start));
     }
 
@@ -474,16 +500,25 @@ private:
 
             // Element metadata
             entry << "\"element_id\":" << md.element_id << ",";
-            if (md.original_loop_id > 0) {
-                entry << "\"original_loop_id\":" << md.original_loop_id << ",";
+            if (md.source_loop_id > 0) {
+                entry << "\"source_loop_id\":" << md.source_loop_id << ",";
             }
             if (md.member_loops_json && std::strcmp(md.member_loops_json, "[]") != 0) {
                 entry << "\"member_loops\":" << md.member_loops_json << ",";
             }
-            if (md.expected_speedup >= 0.0) {
-                entry << "\"rpc_optimization\":{\"expected_speedup\":" << md.expected_speedup;
+            if ((md.expected_performance_json && md.expected_performance_json[0] != '\0') ||
+                md.vector_distance >= 0.0) {
+                entry << "\"rpc_optimization\":{";
+                bool has_optimization_field = false;
+                if (md.expected_performance_json && md.expected_performance_json[0] != '\0') {
+                    entry << "\"expected_performance\":" << md.expected_performance_json;
+                    has_optimization_field = true;
+                }
                 if (md.vector_distance >= 0.0) {
-                    entry << ",\"vector_distance\":" << md.vector_distance;
+                    if (has_optimization_field) {
+                        entry << ",";
+                    }
+                    entry << "\"vector_distance\":" << md.vector_distance;
                 }
                 entry << "},";
             }
@@ -620,16 +655,25 @@ private:
 
             // Element metadata
             entry << "\"element_id\":" << md.element_id << ",";
-            if (md.original_loop_id > 0) {
-                entry << "\"original_loop_id\":" << md.original_loop_id << ",";
+            if (md.source_loop_id > 0) {
+                entry << "\"source_loop_id\":" << md.source_loop_id << ",";
             }
             if (md.member_loops_json && std::strcmp(md.member_loops_json, "[]") != 0) {
                 entry << "\"member_loops\":" << md.member_loops_json << ",";
             }
-            if (md.expected_speedup >= 0.0) {
-                entry << "\"rpc_optimization\":{\"expected_speedup\":" << md.expected_speedup;
+            if ((md.expected_performance_json && md.expected_performance_json[0] != '\0') ||
+                md.vector_distance >= 0.0) {
+                entry << "\"rpc_optimization\":{";
+                bool has_optimization_field = false;
+                if (md.expected_performance_json && md.expected_performance_json[0] != '\0') {
+                    entry << "\"expected_performance\":" << md.expected_performance_json;
+                    has_optimization_field = true;
+                }
                 if (md.vector_distance >= 0.0) {
-                    entry << ",\"vector_distance\":" << md.vector_distance;
+                    if (has_optimization_field) {
+                        entry << ",";
+                    }
+                    entry << "\"vector_distance\":" << md.vector_distance;
                 }
                 entry << "},";
             }
@@ -1119,8 +1163,12 @@ public:
                     region.runtime_mean += delta1 / region.runtime_n;
                     double delta2 = duration_ns - region.runtime_mean;
                     region.runtime_variance += (delta1 * delta2 - region.runtime_variance) / region.runtime_n;
-                    if (duration_ns < region.runtime_min) region.runtime_min = duration_ns;
-                    if (duration_ns > region.runtime_max) region.runtime_max = duration_ns;
+                    if (duration_ns < region.runtime_min) {
+                        region.runtime_min = duration_ns;
+                    }
+                    if (duration_ns > region.runtime_max) {
+                        region.runtime_max = duration_ns;
+                    }
                 }
             } else {
                 long long duration_ns = end_ns - region.starts.back();
@@ -1168,8 +1216,12 @@ public:
                 region.variance[i] += (delta1 * delta2 - region.variance[i]) / region.n[i];
 
                 // Min/max
-                if (counts[i] < region.min[i]) region.min[i] = counts[i];
-                if (counts[i] > region.max[i]) region.max[i] = counts[i];
+                if (counts[i] < region.min[i]) {
+                    region.min[i] = counts[i];
+                }
+                if (counts[i] > region.max[i]) {
+                    region.max[i] = counts[i];
+                }
             }
         } else if (region.event_set == __DAISY_EVENT_SET_CUDA && this->event_names_cuda.size() > 0) {
             std::vector<long long> counts(this->event_names_cuda.size(), 0);
@@ -1210,8 +1262,12 @@ public:
                 region.variance[i] += (delta1 * delta2 - region.variance[i]) / region.n[i];
 
                 // Min/max
-                if (counts[i] < region.min[i]) region.min[i] = counts[i];
-                if (counts[i] > region.max[i]) region.max[i] = counts[i];
+                if (counts[i] < region.min[i]) {
+                    region.min[i] = counts[i];
+                }
+                if (counts[i] > region.max[i]) {
+                    region.max[i] = counts[i];
+                }
             }
         }
     }
@@ -1266,8 +1322,12 @@ public:
         variance += (delta1 * delta2 - variance) / n;
 
         // Min/max
-        if (value < min) min = value;
-        if (value > max) max = value;
+        if (value < min) {
+            min = value;
+        }
+        if (value > max) {
+            max = value;
+        }
     }
 
     void finalize(size_t region_id) {
@@ -1343,9 +1403,15 @@ public:
         if (region.runtime_n <= 0) {
             return false;
         }
-        if (mean_us) *mean_us = region.runtime_mean / 1000.0;
-        if (variance_us2) *variance_us2 = region.runtime_variance / 1.0e6;
-        if (count) *count = region.runtime_n;
+        if (mean_us) {
+            *mean_us = region.runtime_mean / 1000.0;
+        }
+        if (variance_us2) {
+            *variance_us2 = region.runtime_variance / 1.0e6;
+        }
+        if (count) {
+            *count = region.runtime_n;
+        }
         return true;
     }
 
@@ -1394,7 +1460,9 @@ public:
         double need = required(region.runtime_mean, region.runtime_variance);
         for (size_t i = 0; i < region.mean.size(); ++i) {
             double r = required(region.mean[i], region.variance[i]);
-            if (r > need) need = r;
+            if (r > need) {
+                need = r;
+            }
         }
         return static_cast<double>(count) < need;
     }
@@ -1421,9 +1489,15 @@ public:
         if (!any) {
             return false;
         }
-        if (mean_us) *mean_us = sum_mean_ns / 1000.0;
-        if (variance_us2) *variance_us2 = sum_var_ns2 / 1.0e6;
-        if (count) *count = min_n;
+        if (mean_us) {
+            *mean_us = sum_mean_ns / 1000.0;
+        }
+        if (variance_us2) {
+            *variance_us2 = sum_var_ns2 / 1.0e6;
+        }
+        if (count) {
+            *count = min_n;
+        }
         return true;
     }
 
@@ -1483,9 +1557,13 @@ public:
 
     // Globally enable/disable measurement. Toggling only takes effect at region
     // boundaries (like reset_all_stats), which is where harnesses call it.
-    void set_enabled(bool on) { enabled.store(on, std::memory_order_relaxed); }
+    void set_enabled(bool on) {
+        enabled.store(on, std::memory_order_relaxed);
+    }
 
-    bool is_enabled() const { return enabled.load(std::memory_order_relaxed); }
+    bool is_enabled() const {
+        return enabled.load(std::memory_order_relaxed);
+    }
 };
 
 static DaisyInstrumentationState& get_daisy_state() {
@@ -1504,11 +1582,17 @@ size_t __daisy_instrumentation_init(__daisy_metadata* metadata, enum __daisy_eve
     return get_daisy_state().register_region(metadata, event_set);
 }
 
-void __daisy_instrumentation_enter(size_t region_id) { get_daisy_state().enter_region(region_id); }
+void __daisy_instrumentation_enter(size_t region_id) {
+    get_daisy_state().enter_region(region_id);
+}
 
-void __daisy_instrumentation_exit(size_t region_id) { get_daisy_state().exit_region(region_id); }
+void __daisy_instrumentation_exit(size_t region_id) {
+    get_daisy_state().exit_region(region_id);
+}
 
-void __daisy_instrumentation_finalize(size_t region_id) { get_daisy_state().finalize(region_id); }
+void __daisy_instrumentation_finalize(size_t region_id) {
+    get_daisy_state().finalize(region_id);
+}
 
 void __daisy_instrumentation_increment(size_t region_id, const char* name, long long value) {
     get_daisy_state().provided_metric(region_id, name, static_cast<double>(value));
@@ -1526,21 +1610,33 @@ bool __daisy_instrumentation_should_continue(size_t region_id) {
     return get_daisy_state().should_continue_sampling(region_id);
 }
 
-void __daisy_instrumentation_flush_caches(void) { flush_caches_impl(); }
+void __daisy_instrumentation_flush_caches(void) {
+    flush_caches_impl();
+}
 
 bool __daisy_instrumentation_total_stats(double* mean_us, double* variance_us2, long long* count) {
     return get_daisy_state().get_total_stats(mean_us, variance_us2, count);
 }
 
-void __daisy_instrumentation_reset_all(void) { get_daisy_state().reset_all_stats(); }
+void __daisy_instrumentation_reset_all(void) {
+    get_daisy_state().reset_all_stats();
+}
 
-void __daisy_instrumentation_start(void) { get_daisy_state().set_enabled(true); }
+void __daisy_instrumentation_start(void) {
+    get_daisy_state().set_enabled(true);
+}
 
-void __daisy_instrumentation_stop(void) { get_daisy_state().set_enabled(false); }
+void __daisy_instrumentation_stop(void) {
+    get_daisy_state().set_enabled(false);
+}
 
-bool __daisy_instrumentation_is_enabled(void) { return get_daisy_state().is_enabled(); }
+bool __daisy_instrumentation_is_enabled(void) {
+    return get_daisy_state().is_enabled();
+}
 
-void __daisy_instrumentation_finalize_all(void) { get_daisy_state().post_process_regions(); }
+void __daisy_instrumentation_finalize_all(void) {
+    get_daisy_state().post_process_regions();
+}
 
 #ifdef __cplusplus
 } // extern "C"

@@ -618,9 +618,9 @@ class TraceRegion:
         return self._docc.get("element_id")
 
     @property
-    def original_loop_id(self) -> Optional[int]:
-        """Original loop ID shared by tuned loop events from one cutout, if known."""
-        return self._docc.get("original_loop_id")
+    def source_loop_id(self) -> Optional[int]:
+        """Source loop ID shared by tuned loop events from one cutout, if known."""
+        return self._docc.get("source_loop_id")
 
     @property
     def member_loops(self) -> List[dict]:
@@ -633,10 +633,12 @@ class TraceRegion:
         return [member["element_id"] for member in self.member_loops]
 
     @property
-    def expected_speedup(self) -> Optional[float]:
-        """Transfer-tuning's predicted speedup; this is not measured runtime speedup."""
+    def expected_performance(self) -> Optional[Dict[str, Any]]:
+        """Backend-predicted performance metrics; these are not measured results."""
         rpc_optimization = self._docc.get("rpc_optimization")
-        return rpc_optimization.get("expected_speedup") if rpc_optimization else None
+        return (
+            rpc_optimization.get("expected_performance") if rpc_optimization else None
+        )
 
     @property
     def vector_distance(self) -> Optional[float]:
