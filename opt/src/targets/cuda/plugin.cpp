@@ -11,6 +11,7 @@
 #include "sdfg/targets/gpu/gpu_offload_map_dispatcher.h"
 #include "sdfg/targets/gpu/gpu_offload_reduce_dispatcher.h"
 #include "sdfg/targets/gpu/gpu_tile_target.h"
+#include "sdfg/targets/gpu/math/tensor/embedding.h"
 #include "sdfg/tiles/tile_target_registry.h"
 
 
@@ -322,6 +323,10 @@ void register_cuda_plugin(plugins::Context& context) {
                 language_extension, function, data_flow_graph, dynamic_cast<const ::sdfg::tiles::TileCopyNode&>(node)
             );
         }
+    );
+
+    gpu::tensor::register_gpu_tensor_dispatchers<CUDAOffloadDispatcherStrategy>(
+        libNodeDispatcherRegistry, ImplementationType_CUDAWithTransfers, ImplementationType_CUDAWithoutTransfers
     );
 
     context.get_scheduler_registry()

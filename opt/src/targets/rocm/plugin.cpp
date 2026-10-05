@@ -6,6 +6,7 @@
 #include "sdfg/targets/gpu/gpu_offload_map_dispatcher.h"
 #include "sdfg/targets/gpu/gpu_offload_reduce_dispatcher.h"
 #include "sdfg/targets/gpu/gpu_tile_target.h"
+#include "sdfg/targets/gpu/math/tensor/embedding.h"
 #include "sdfg/targets/rocm/rocm.h"
 #include "sdfg/targets/rocm/rocm_mma_dispatcher.h"
 #include "sdfg/targets/rocm/rocm_offload_dispatcher_strategy.h"
@@ -326,6 +327,10 @@ void register_rocm_plugin(plugins::Context& context) {
         }
     );
 
+
+    gpu::tensor::register_gpu_tensor_dispatchers<ROCMOffloadDispatcherStrategy>(
+        libNodeDispatcherRegistry, ImplementationType_ROCMWithTransfers, ImplementationType_ROCMWithoutTransfers
+    );
 
     context.get_scheduler_registry()
         .register_loop_scheduler<

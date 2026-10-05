@@ -117,6 +117,9 @@ set(SOURCE_FILES
     src/targets/gpu/gpu_reduce_dispatcher.cpp
     src/targets/gpu/gpu_reduce_layout.cpp
     src/targets/gpu/math/tensor/conv_expander.cpp
+    src/targets/gpu/math/tensor/embedding.cpp
+    src/targets/gpu/math/tensor/gpu_tensor_dispatcher.cpp
+    src/targets/gpu/math/tensor/tensor_operands.cpp
     src/targets/offloading/external_offloading_node.cpp
     src/targets/offloading/utils.cpp
     src/targets/omp/codegen/omp_map_dispatcher.cpp

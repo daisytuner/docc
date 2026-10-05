@@ -52,6 +52,17 @@ public:
 
     /// Cross-lane XOR butterfly shuffle of `value` by `lane_mask` (CUDA/HIP __shfl_xor_sync).
     virtual std::string warp_shuffle_xor(const std::string& value, const std::string& lane_mask) const = 0;
+
+    /// Host runtime API prefix ("cuda"/"hip"), shared by Malloc/Memcpy/Free/Error_t/MemcpyHostToDevice.
+    virtual std::string runtime_api_prefix() const = 0;
+    /// Host runtime include, e.g. "<cuda_runtime.h>".
+    virtual std::string runtime_header() const = 0;
+    /// Check the host runtime status held in `status_variable`.
+    virtual void dispatch_runtime_error_check(
+        codegen::PrettyPrinter& stream,
+        const codegen::LanguageExtension& language_extension,
+        const std::string& status_variable
+    ) const = 0;
 };
 
 /**

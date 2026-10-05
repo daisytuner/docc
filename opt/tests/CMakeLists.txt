@@ -76,6 +76,7 @@ set(TEST_FILES
     passes/scheduler/rocm_scheduler_test.cpp
     passes/scheduler/vectorize_scheduler_test.cpp
     targets/omp/codegen/omp_map_dispatcher_test.cpp
+    targets/gpu/embedding_dispatcher_test.cpp
     targets/omp/schedule_test.cpp
     transformations/collapse_to_depth_test.cpp
     transformations/omp_transform_test.cpp
