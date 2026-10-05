@@ -37,15 +37,15 @@ bool tile_evenly_divides(const symbolic::Integer& stride, const symbolic::Expres
 }
 
 struct TileGeometry {
-    tiles::ReductionLoopHeader outer;
-    tiles::ReductionLoopHeader inner;
+    LoopHeader outer;
+    LoopHeader inner;
     symbolic::Expression outer_count;
     symbolic::Expression inner_count;
 };
 
 TileGeometry tile_geometry(
     const symbolic::Symbol& indvar,
-    const tiles::ReductionLoopHeader& header,
+    const LoopHeader& header,
     const symbolic::Integer& stride,
     const symbolic::Expression& count,
     const symbolic::Symbol& tile_indvar,
@@ -72,7 +72,7 @@ std::vector<tiles::ReductionLoopDomain> projected_tile_domains(
     const std::vector<size_t>& tile_sizes,
     bool simplify_bounds
 ) {
-    tiles::ReductionLoopHeader header{loop.init(), loop.condition(), loop.update()};
+    LoopHeader header{loop.init(), loop.condition(), loop.update()};
     auto count = loop.num_iterations();
     auto stride = loop.stride();
     std::vector<tiles::ReductionLoopDomain> result;

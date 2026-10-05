@@ -35,7 +35,7 @@ namespace transformations {
  * Prerequisites:
  * - Two properly nested loops (outer loop contains only inner loop)
  * - Both loops can be any StructuredLoop (For or Map)
- * - Inner loop bounds must not depend on outer loop iteration variable
+ * - Inner loop update must not depend on the outer loop iteration variable
  * - Non-zero skew factor
  */
 class LoopSkewing : public Transformation {

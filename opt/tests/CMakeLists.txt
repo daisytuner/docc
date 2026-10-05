@@ -63,7 +63,7 @@ set(TEST_FILES
     transformations/offloading/gpu_offload_nested_loop_test.cpp
     transformations/offloading/cuda_offload_transform_test.cpp
     transformations/offloading/rocm_offload_transform_test.cpp
-    optimizations/diamond_tiling_test.cpp
+    optimizations/parallelogram_tiling_test.cpp
     passes/redundant_load_elimination_pass_test.cpp
     passes/offloading/cuda_library_node_transfer_extraction_pass_test.cpp
     passes/offloading/cuda_library_node_expand_tests.cpp
