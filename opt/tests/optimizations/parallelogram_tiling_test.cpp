@@ -3,7 +3,7 @@
 #include <memory>
 
 #include "sdfg/builder/structured_sdfg_builder.h"
-#include "sdfg/parallelization/passes/for_classification.h"
+#include "sdfg/parallelization/passes/auto_parallelization.h"
 #include "sdfg/structured_control_flow/for.h"
 #include "sdfg/structured_control_flow/if_else.h"
 #include "sdfg/structured_control_flow/map.h"
@@ -172,7 +172,7 @@ TEST(ParallelogramTilingTest, Wavefront_Skew1_InnerSequential) {
     );
 
     // (1, -1) skewed by 1 is (1, 0) in (i, j'), i.e. (0, 1) in (j', i): still carried by the inner i.
-    parallelization::ForClassificationPass classification;
+    parallelization::AutoParallelization classification;
     classification.run(*builder, am);
     expect_loop(loop_at(root, {0}), "j", 1, false);
     expect_loop(loop_at(root, {0, 0}), "i", 1, false);
@@ -190,7 +190,7 @@ TEST(ParallelogramTilingTest, Wavefront_Skew2_InnerParallel) {
         apply(*builder, am, transformations::LoopInterchange(loop_at(root, {0}), loop_at(root, {0, 0})))
     );
 
-    parallelization::ForClassificationPass classification;
+    parallelization::AutoParallelization classification;
     classification.run(*builder, am);
     expect_loop(loop_at(root, {0}), "j", 1, false);
     expect_loop(loop_at(root, {0, 0}), "i", 1, true);
@@ -221,7 +221,7 @@ TEST(ParallelogramTilingTest, TileWavefront_GaussSeidel) {
         apply(*builder, am, transformations::LoopInterchange(loop_at(root, {0}), loop_at(root, {0, 0})))
     );
 
-    parallelization::ForClassificationPass classification;
+    parallelization::AutoParallelization classification;
     classification.run(*builder, am);
     expect_loop(loop_at(root, {0}), "j_tile0", 32, false);
     expect_loop(loop_at(root, {0, 0}), "i_tile0", 32, true);
@@ -253,7 +253,7 @@ TEST(ParallelogramTilingTest, TileWavefront_Jacobi1D) {
         apply(*builder, am, transformations::LoopInterchange(loop_at(root, {0}), loop_at(root, {0, 0})))
     );
 
-    // ForClassificationPass is not run: its dependence analysis does not finish on these bounds yet.
+    // AutoParallelization is not run: its dependence analysis does not finish on these bounds yet.
     expect_loop(loop_at(root, {0}), "f_tile0", 32, false);
     expect_loop(loop_at(root, {0, 0}), "t_tile0", 16, false);
     expect_loop(loop_at(root, {0, 0, 0}), "f", 1, false);

@@ -12,6 +12,7 @@
 #include <nlohmann/json.hpp>
 
 #include <sdfg/einsum/einsum.h>
+#include <sdfg/parallelization/transformations/loop_parallelization.h>
 #include <sdfg/tiles/transformations/local_storage.h>
 #include <sdfg/tiles/transformations/software_pipelining.h>
 #include <sdfg/tiles/transformations/tile_fusion.h>
@@ -127,6 +128,8 @@ dispatch_transformation(const std::string& transformation_name, const nlohmann::
         return detail::invoke_for<transformations::LoopShift>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "LoopSplit") {
         return detail::invoke_for<transformations::LoopSplit>(std::forward<Visitor>(visitor));
+    } else if (transformation_name == "LoopParallelization") {
+        return detail::invoke_for<transformations::LoopParallelization>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "OMPTransform") {
         return detail::invoke_for<transformations::OMPTransform>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "LoopPeeling") {
