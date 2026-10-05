@@ -608,24 +608,6 @@ passes::LibNodeExpander::ExpandOutcome MatMulNode::expand(passes::LibNodeExpande
     }
 }
 
-data_flow::PointerAccessType MatMulNode::pointer_access_type(int input_idx) const {
-    if (input_idx == Y_INPUT_IDX) {
-        auto output_type = output_quantization();
-        return data_flow::PointerAccessMeta::create_generic(
-            data_flow::ConvexAccessPattern::create(layout_y_.max_accessed_byte_offset_from_ptr(output_type), false),
-            data_flow::ConvexAccessPattern::create(layout_y_.max_accessed_byte_offset_from_ptr(output_type), false),
-            true
-        );
-    } else if (input_idx == A_INPUT_IDX || input_idx == B_INPUT_IDX) {
-        auto input_type = input_quantization();
-        return data_flow::PointerAccessMeta::
-            create_read_only(layout_a_.max_accessed_byte_offset_from_ptr(input_type), true);
-    } else {
-        throw std::invalid_argument("MatMulNode: Invalid input index for pointer access type");
-    }
-    return TensorNode::pointer_access_type(input_idx);
-}
-
 nlohmann::json MatMulNodeSerializer::serialize(const data_flow::LibraryNode& library_node) {
     const MatMulNode& matmul_node = static_cast<const MatMulNode&>(library_node);
     nlohmann::json j;

@@ -38,7 +38,7 @@ GpuMmaFragmentEltwiseAddNode::GpuMmaFragmentEltwiseAddNode(
 
 void GpuMmaFragmentEltwiseAddNode::validate(const Function& function) const {
     auto& graph = this->get_parent();
-    if (graph.in_degree(*this) != 2) {
+    if (graph.in_degree(*this) != 3) {
         throw InvalidSDFGException("MmaFragmentLoadNode: Expected exactly 2 inputs (frag, ptr)");
     }
     if (graph.out_degree(*this) != 0) {

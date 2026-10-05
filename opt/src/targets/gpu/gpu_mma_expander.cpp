@@ -213,7 +213,7 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
     auto& per_wavefront_block = builder.add_block(row_map.root());
     {
         auto& fill_node = builder.add_library_node<
-            GpuMmaFillNode>(per_wavefront_block, org_debug_info, mma_tiling.mma_block_size, acc_type, acc_frag_name);
+            GpuMmaFillNode>(per_wavefront_block, org_debug_info, mma_tiling.mma_block_size, acc_type, impl_type);
         auto& acc_frag_ptr = builder.add_access(per_wavefront_block, acc_frag_name);
         builder.add_computational_memlet(
             per_wavefront_block, acc_frag_ptr, fill_node, fill_node.input(0), {}, types::Pointer(types::Scalar(acc_type))
@@ -410,10 +410,6 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::handle_expand(
     auto output_type = input_type;
 
     auto new_impl_type = arch_->mma_support()->get_mma_impl_type();
-
-    if (!new_impl_type.has_value()) {
-        return context.unable();
-    }
 
     auto standalone = context.replacement_requires_access_nodes({InputUse::Scalar, InputUse::Scalar, InputUse::Scalar});
 
