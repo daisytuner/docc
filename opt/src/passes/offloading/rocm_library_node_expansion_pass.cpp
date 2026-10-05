@@ -2,11 +2,13 @@
 
 #include "sdfg/data_flow/library_nodes/math/tensor/concat_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/conv_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/embedding_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/matmul_node.h"
 #include "sdfg/passes/expansion/library_node_expansion_pass.h"
 #include "sdfg/targets/gpu/math/tensor/conv_expander.h"
 #include "sdfg/targets/rocm/math/tensor/batched_matmul_expander.h"
 #include "sdfg/targets/rocm/math/tensor/concat_expander.h"
+#include "sdfg/targets/rocm/rocm.h"
 
 namespace sdfg {
 namespace passes {
@@ -39,6 +41,9 @@ bool RocmExpansion::accept(structured_control_flow::Block& node) {
             auto& concat_node = static_cast<math::tensor::ConcatNode&>(*library_node);
             sdfg::offloading::RocmConcatExpander expander(concat_node);
             made_changes |= expander.expand(builder_, analysis_manager_);
+        } else if (lib_node_code == math::tensor::LibraryNodeType_Embedding) {
+            library_node->implementation_type() = rocm::ImplementationType_ROCMWithTransfers;
+            made_changes = true;
         } else {
             continue;
         }
