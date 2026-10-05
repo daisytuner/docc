@@ -1,4 +1,4 @@
-#include "sdfg/parallelization/passes/for_classification.h"
+#include "sdfg/parallelization/passes/auto_parallelization.h"
 
 #include <gtest/gtest.h>
 
@@ -12,7 +12,7 @@
 
 using namespace sdfg;
 
-TEST(ForClassificationTest, Basic) {
+TEST(AutoParallelizationTest, Basic) {
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
 
     auto& sdfg = builder.subject();
@@ -52,7 +52,7 @@ TEST(ForClassificationTest, Basic) {
     auto sdfg_opt = builder.move();
     builder::StructuredSDFGBuilder builder_opt(sdfg_opt);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
-    parallelization::ForClassificationPass conversion_pass;
+    parallelization::AutoParallelization conversion_pass;
     EXPECT_TRUE(conversion_pass.run(builder_opt, analysis_manager));
 
     auto& sdfg_map = builder_opt.subject();
@@ -63,7 +63,7 @@ TEST(ForClassificationTest, Basic) {
     EXPECT_TRUE(symbolic::eq(map->indvar(), symbolic::symbol("i")));
 }
 
-TEST(ForClassificationTest, MultiBound) {
+TEST(AutoParallelizationTest, MultiBound) {
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
 
     auto& sdfg = builder.subject();
@@ -104,7 +104,7 @@ TEST(ForClassificationTest, MultiBound) {
     auto sdfg_opt = builder.move();
     builder::StructuredSDFGBuilder builder_opt(sdfg_opt);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
-    parallelization::ForClassificationPass conversion_pass;
+    parallelization::AutoParallelization conversion_pass;
     EXPECT_TRUE(conversion_pass.run(builder_opt, analysis_manager));
 
     auto& sdfg_map = builder_opt.subject();
@@ -115,7 +115,7 @@ TEST(ForClassificationTest, MultiBound) {
     EXPECT_TRUE(symbolic::eq(map->indvar(), symbolic::symbol("i")));
 }
 
-TEST(ForClassificationTest, NonContiguousDomain) {
+TEST(AutoParallelizationTest, NonContiguousDomain) {
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
 
     auto& sdfg = builder.subject();
@@ -155,7 +155,7 @@ TEST(ForClassificationTest, NonContiguousDomain) {
     auto sdfg_opt = builder.move();
     builder::StructuredSDFGBuilder builder_opt(sdfg_opt);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
-    parallelization::ForClassificationPass conversion_pass;
+    parallelization::AutoParallelization conversion_pass;
     EXPECT_TRUE(conversion_pass.run(builder_opt, analysis_manager));
 
     auto& sdfg_map = builder_opt.subject();
@@ -166,7 +166,7 @@ TEST(ForClassificationTest, NonContiguousDomain) {
     EXPECT_TRUE(symbolic::eq(map->indvar(), symbolic::symbol("i")));
 }
 
-TEST(ForClassificationTest, NonCanonicalBound) {
+TEST(AutoParallelizationTest, NonCanonicalBound) {
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
 
     auto& sdfg = builder.subject();
@@ -206,7 +206,7 @@ TEST(ForClassificationTest, NonCanonicalBound) {
     auto sdfg_opt = builder.move();
     builder::StructuredSDFGBuilder builder_opt(sdfg_opt);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
-    parallelization::ForClassificationPass conversion_pass;
+    parallelization::AutoParallelization conversion_pass;
     EXPECT_TRUE(conversion_pass.run(builder_opt, analysis_manager));
 
     auto& sdfg_map = builder_opt.subject();
@@ -217,7 +217,7 @@ TEST(ForClassificationTest, NonCanonicalBound) {
     EXPECT_TRUE(symbolic::eq(map->indvar(), symbolic::symbol("i")));
 }
 
-TEST(ForClassificationTest, Shift) {
+TEST(AutoParallelizationTest, Shift) {
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
 
     auto& sdfg = builder.subject();
@@ -257,7 +257,7 @@ TEST(ForClassificationTest, Shift) {
     auto sdfg_opt = builder.move();
     builder::StructuredSDFGBuilder builder_opt(sdfg_opt);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
-    parallelization::ForClassificationPass conversion_pass;
+    parallelization::AutoParallelization conversion_pass;
     EXPECT_TRUE(conversion_pass.run(builder_opt, analysis_manager));
 
     auto& sdfg_map = builder_opt.subject();
@@ -268,7 +268,7 @@ TEST(ForClassificationTest, Shift) {
     EXPECT_TRUE(symbolic::eq(map->indvar(), symbolic::symbol("i")));
 }
 
-TEST(ForClassificationTest, LastValue) {
+TEST(AutoParallelizationTest, LastValue) {
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
 
     auto& sdfg = builder.subject();
@@ -308,7 +308,7 @@ TEST(ForClassificationTest, LastValue) {
     auto sdfg_opt = builder.move();
     builder::StructuredSDFGBuilder builder_opt(sdfg_opt);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
-    parallelization::ForClassificationPass conversion_pass;
+    parallelization::AutoParallelization conversion_pass;
     EXPECT_TRUE(conversion_pass.run(builder_opt, analysis_manager));
 
     auto& sdfg_map = builder_opt.subject();
@@ -319,7 +319,7 @@ TEST(ForClassificationTest, LastValue) {
     EXPECT_TRUE(symbolic::eq(map->indvar(), symbolic::symbol("i")));
 }
 
-TEST(ForClassificationTest, Tiled) {
+TEST(AutoParallelizationTest, Tiled) {
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
 
     auto& sdfg = builder.subject();
@@ -371,7 +371,7 @@ TEST(ForClassificationTest, Tiled) {
     auto sdfg_opt = builder.move();
     builder::StructuredSDFGBuilder builder_opt(sdfg_opt);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
-    parallelization::ForClassificationPass conversion_pass;
+    parallelization::AutoParallelization conversion_pass;
     EXPECT_TRUE(conversion_pass.run(builder_opt, analysis_manager));
 
     auto& sdfg_map = builder_opt.subject();
@@ -386,7 +386,7 @@ TEST(ForClassificationTest, Tiled) {
     EXPECT_TRUE(symbolic::eq(map_inner->indvar(), symbolic::symbol("i")));
 }
 
-TEST(ForClassificationTest, NonContiguousMemory) {
+TEST(AutoParallelizationTest, NonContiguousMemory) {
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
 
     auto& sdfg = builder.subject();
@@ -438,11 +438,11 @@ TEST(ForClassificationTest, NonContiguousMemory) {
     auto sdfg_opt = builder.move();
     builder::StructuredSDFGBuilder builder_opt(sdfg_opt);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
-    parallelization::ForClassificationPass conversion_pass;
+    parallelization::AutoParallelization conversion_pass;
     EXPECT_TRUE(conversion_pass.run(builder_opt, analysis_manager));
 }
 
-TEST(ForClassificationTest, ScalarSumReduction) {
+TEST(AutoParallelizationTest, ScalarSumReduction) {
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
 
     auto& sdfg = builder.subject();
@@ -484,7 +484,7 @@ TEST(ForClassificationTest, ScalarSumReduction) {
     auto sdfg_opt = builder.move();
     builder::StructuredSDFGBuilder builder_opt(sdfg_opt);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
-    parallelization::ForClassificationPass conversion_pass;
+    parallelization::AutoParallelization conversion_pass;
     EXPECT_TRUE(conversion_pass.run(builder_opt, analysis_manager));
 
     auto& sdfg_red = builder_opt.subject();
@@ -498,7 +498,7 @@ TEST(ForClassificationTest, ScalarSumReduction) {
     EXPECT_EQ(reduce->reductions()[0].container, "sum");
 }
 
-TEST(ForClassificationTest, ScalarProductReduction) {
+TEST(AutoParallelizationTest, ScalarProductReduction) {
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
 
     auto& sdfg = builder.subject();
@@ -537,7 +537,7 @@ TEST(ForClassificationTest, ScalarProductReduction) {
     auto sdfg_opt = builder.move();
     builder::StructuredSDFGBuilder builder_opt(sdfg_opt);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
-    parallelization::ForClassificationPass conversion_pass;
+    parallelization::AutoParallelization conversion_pass;
     EXPECT_TRUE(conversion_pass.run(builder_opt, analysis_manager));
 
     auto& sdfg_red = builder_opt.subject();
@@ -549,7 +549,7 @@ TEST(ForClassificationTest, ScalarProductReduction) {
     EXPECT_EQ(reduce->reductions()[0].container, "prod");
 }
 
-TEST(ForClassificationTest, FloatMaxReductionCMath) {
+TEST(AutoParallelizationTest, FloatMaxReductionCMath) {
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
 
     auto& sdfg = builder.subject();
@@ -590,7 +590,7 @@ TEST(ForClassificationTest, FloatMaxReductionCMath) {
     auto sdfg_opt = builder.move();
     builder::StructuredSDFGBuilder builder_opt(sdfg_opt);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
-    parallelization::ForClassificationPass conversion_pass;
+    parallelization::AutoParallelization conversion_pass;
     EXPECT_TRUE(conversion_pass.run(builder_opt, analysis_manager));
 
     auto& sdfg_red = builder_opt.subject();
@@ -602,7 +602,7 @@ TEST(ForClassificationTest, FloatMaxReductionCMath) {
     EXPECT_EQ(reduce->reductions()[0].container, "m");
 }
 
-TEST(ForClassificationTest, FusedSumAndProductReduction) {
+TEST(AutoParallelizationTest, FusedSumAndProductReduction) {
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
 
     auto& sdfg = builder.subject();
@@ -655,7 +655,7 @@ TEST(ForClassificationTest, FusedSumAndProductReduction) {
     auto sdfg_opt = builder.move();
     builder::StructuredSDFGBuilder builder_opt(sdfg_opt);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
-    parallelization::ForClassificationPass conversion_pass;
+    parallelization::AutoParallelization conversion_pass;
     EXPECT_TRUE(conversion_pass.run(builder_opt, analysis_manager));
 
     auto& sdfg_red = builder_opt.subject();
@@ -674,7 +674,7 @@ TEST(ForClassificationTest, FusedSumAndProductReduction) {
     EXPECT_EQ(ops["prod"], structured_control_flow::ReductionOperation::Mul);
 }
 
-TEST(ForClassificationTest, RecurrenceIsNotReduction) {
+TEST(AutoParallelizationTest, RecurrenceIsNotReduction) {
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
 
     auto& sdfg = builder.subject();
@@ -713,7 +713,7 @@ TEST(ForClassificationTest, RecurrenceIsNotReduction) {
     auto sdfg_opt = builder.move();
     builder::StructuredSDFGBuilder builder_opt(sdfg_opt);
     analysis::AnalysisManager analysis_manager(builder_opt.subject());
-    parallelization::ForClassificationPass conversion_pass;
+    parallelization::AutoParallelization conversion_pass;
     EXPECT_FALSE(conversion_pass.run(builder_opt, analysis_manager));
 
     auto& sdfg_res = builder_opt.subject();

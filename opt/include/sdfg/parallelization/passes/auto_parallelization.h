@@ -23,11 +23,10 @@ namespace parallelization {
  *                        dependency analysis) -> `Reduce`
  *   - otherwise       -> a genuine hazard remains; the loop is left as a `For`.
  */
-class ForClassificationPass : public passes::Pass {
+class AutoParallelization : public passes::Pass {
 public:
     enum class Classification { None, Map, Reduce };
 
-private:
     Classification classify(
         builder::StructuredSDFGBuilder& builder,
         analysis::AnalysisManager& analysis_manager,
