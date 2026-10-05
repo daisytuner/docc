@@ -84,7 +84,7 @@ TEST(LoopSkewingTest, Map_2D_Basic) {
     EXPECT_EQ(&inner_loop->root().at(0), &block);
 }
 
-TEST(LoopSkewingTest, DependentLoops_ShouldFail) {
+TEST(LoopSkewingTest, DependentLoops) {
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
 
     auto& sdfg = builder.subject();
@@ -141,10 +141,15 @@ TEST(LoopSkewingTest, DependentLoops_ShouldFail) {
         block, tasklet, "_out", A_out, {symbolic::add(symbolic::symbol("j"), offset), symbolic::symbol("i")}, desc_2
     );
 
-    // Analysis - should fail because inner loop depends on outer
+    // Skewing re-indexes j' = j + i, so bounds depending on i are fine
     analysis::AnalysisManager analysis_manager(builder.subject());
     transformations::LoopSkewing transformation(loop_i, loop_j, 1);
-    EXPECT_FALSE(transformation.can_be_applied(builder, analysis_manager));
+    ASSERT_TRUE(transformation.can_be_applied(builder, analysis_manager));
+    transformation.apply(builder, analysis_manager);
+
+    EXPECT_TRUE(symbolic::eq(loop_j.init(), indvar_i));
+    auto shifted = symbolic::sub(indvar_j, indvar_i);
+    EXPECT_TRUE(symbolic::eq(loop_j.condition(), symbolic::Lt(shifted, symbolic::sub(symbolic::symbol("M"), offset))));
 }
 
 TEST(LoopSkewingTest, OuterLoopHasMultipleChildren_ShouldFail) {

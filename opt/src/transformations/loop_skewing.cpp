@@ -48,14 +48,8 @@ bool LoopSkewing::can_be_applied(builder::StructuredSDFGBuilder& builder, analys
 
     auto& outer_indvar = this->outer_loop_.indvar();
 
-    // Criterion 2: Inner loop must not depend on outer loop indvar
-    auto inner_loop_init = this->inner_loop_.init();
-    auto inner_loop_condition = this->inner_loop_.condition();
-    auto inner_loop_update = this->inner_loop_.update();
-
-    if (symbolic::uses(inner_loop_init, outer_indvar->get_name()) ||
-        symbolic::uses(inner_loop_condition, outer_indvar->get_name()) ||
-        symbolic::uses(inner_loop_update, outer_indvar->get_name())) {
+    // The update must stay independent of the outer loop; init and condition are re-indexed exactly.
+    if (symbolic::uses(this->inner_loop_.update(), outer_indvar->get_name())) {
         return false;
     }
 
