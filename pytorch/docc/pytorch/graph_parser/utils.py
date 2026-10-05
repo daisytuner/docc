@@ -1532,9 +1532,9 @@ class GraphParserModule(GraphParserBase, ABC):
                 "Expected device kwarg to be torch.device type but got: "
                 + str(type(device_arg)),
             )
-        if device_arg.type != "cpu":
+        if device_arg.type not in ("cpu", "cuda"):
             raise GraphParserError(
-                self, node, "Currently only CPU device kwarg is supported"
+                self, node, f"Unsupported device kwarg type: {device_arg.type}"
             )
         return device_arg
 

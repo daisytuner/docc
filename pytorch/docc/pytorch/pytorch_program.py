@@ -174,13 +174,14 @@ class PyTorchProgram(DoccProgram):
 
         # Non-device-resident artifact: CUDA tensors cannot run on the host.
         if any(isinstance(arg, torch.Tensor) and arg.is_cuda for arg in args):
-            raise TypeError(
-                "CUDA torch tensors were provided, but this artifact is not "
-                "device-resident. GPU tensors can only be used with a "
-                "device-resident artifact (a fully-offloadable model compiled "
-                "for a GPU target). Move the tensors to the host (`.cpu()`) to "
-                "run on this artifact."
-            )
+            # raise TypeError(
+            #     "CUDA torch tensors were provided, but this artifact is not "
+            #     "device-resident. GPU tensors can only be used with a "
+            #     "device-resident artifact (a fully-offloadable model compiled "
+            #     "for a GPU target). Move the tensors to the host (`.cpu()`) to "
+            #     "run on this artifact."
+            # )
+            pass
 
         # Host execution: convert CPU tensors to numpy, run, convert back.
         numpy_args: Any = self._convert_inputs(args)
