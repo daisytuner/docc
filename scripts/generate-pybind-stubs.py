@@ -13,6 +13,7 @@ UNRESOLVED_NAMES = [
     ("PyLoopAnalysis", "LoopAnalysis"),
     ("PyTypeAnalysis", "TypeAnalysis"),
     ("PyUsers", "Users"),
+    ("PyTileAnalysis", "TileAnalysis"),
 ]
 
 

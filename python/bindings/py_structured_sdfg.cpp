@@ -645,6 +645,8 @@ std::string PyStructuredSDFG::compile(
         .add_common_option("-fno-signed-zeros")
         .add_compile_option("-funroll-loops")
         .add_compile_option("-std=c++20")
+        // Disable warnings that are produced by if/else and extra brackets from our symbolic expressions
+        .add_compile_option("-Wno-parentheses-equality")
         .add_link_option("-shared")
         .add_link_option("-ldaisy_rtl")
         .add_link_option("-lm")
