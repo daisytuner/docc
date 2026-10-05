@@ -8,81 +8,39 @@
 #include "sdfg/exceptions.h"
 #include "sdfg/parallelization/analysis/loop_carried_dependency_analysis.h"
 #include "sdfg/structured_control_flow/for.h"
+#include "sdfg/structured_control_flow/reduce.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/symbolic/polynomials.h"
+#include "sdfg/types/scalar.h"
 
 namespace sdfg {
 namespace transformations {
 
-/// Check that a 2D delta set is lex-non-negative in the post-interchange order.
-/// `new_outer_dim` is the index (0 or 1) of the dimension that becomes the
-/// new outer loop after interchange.
-/// Returns false (unsafe) if any delta vector is lex-negative in the new order.
-static bool is_interchange_legal_2d(const std::string& deltas_str, int new_outer_dim) {
-    if (deltas_str.empty()) {
+// The projection of `deltas` onto `dim_name` is provably non-negative; false when unknown.
+static bool is_inner_distance_nonneg(const symbolic::maps::DependenceDeltas& deltas, const std::string& dim_name) {
+    if (deltas.deltas_str.empty()) {
         return false;
     }
+    auto it = std::find(deltas.dimensions.begin(), deltas.dimensions.end(), dim_name);
+    if (it == deltas.dimensions.end()) {
+        return false;
+    }
+    int dim = it - deltas.dimensions.begin();
 
     isl_ctx* ctx = isl_ctx_alloc();
     isl_options_set_on_error(ctx, ISL_ON_ERROR_CONTINUE);
-
-    isl_set* deltas = isl_set_read_from_str(ctx, deltas_str.c_str());
-    if (!deltas) {
-        isl_ctx_free(ctx);
-        return false;
+    bool legal = false;
+    isl_set* set = isl_set_read_from_str(ctx, deltas.deltas_str.c_str());
+    if (set && isl_set_dim(set, isl_dim_set) == static_cast<isl_size>(deltas.dimensions.size())) {
+        int n = isl_set_dim(set, isl_dim_set);
+        set = isl_set_project_out(set, isl_dim_set, dim + 1, n - dim - 1);
+        set = isl_set_project_out(set, isl_dim_set, 0, dim);
+        isl_set* negative = isl_set_read_from_str(ctx, "{ [x] : x < 0 }");
+        set = isl_set_intersect(set, negative);
+        legal = set && isl_set_is_empty(set) == isl_bool_true;
     }
-
-    int n_dims = isl_set_dim(deltas, isl_dim_set);
-    if (n_dims != 2) {
-        isl_set_free(deltas);
-        isl_ctx_free(ctx);
-        return false;
-    }
-
-    // Build lex-negative constraint in post-interchange order.
-    // If new_outer is dim0: lex-neg = { [x, y] : x < 0 or (x = 0 and y < 0) }
-    // If new_outer is dim1: lex-neg = { [x, y] : y < 0 or (y = 0 and x < 0) }
-    const char* lex_neg_str = (new_outer_dim == 0) ? "{ [x, y] : x < 0 or (x = 0 and y < 0) }"
-                                                   : "{ [x, y] : y < 0 or (y = 0 and x < 0) }";
-
-    isl_set* lex_neg = isl_set_read_from_str(ctx, lex_neg_str);
-    isl_set* violation = isl_set_intersect(deltas, lex_neg);
-    bool legal = isl_set_is_empty(violation);
-    isl_set_free(violation);
+    isl_set_free(set);
     isl_ctx_free(ctx);
-
-    return legal;
-}
-
-/// Check that a 1D delta set {[d]} has no negative values.
-/// After interchange the inner loop becomes the outer, so we need d >= 0.
-static bool is_interchange_legal_1d(const std::string& deltas_str) {
-    if (deltas_str.empty()) {
-        return false;
-    }
-
-    isl_ctx* ctx = isl_ctx_alloc();
-    isl_options_set_on_error(ctx, ISL_ON_ERROR_CONTINUE);
-
-    isl_set* deltas = isl_set_read_from_str(ctx, deltas_str.c_str());
-    if (!deltas) {
-        isl_ctx_free(ctx);
-        return false;
-    }
-
-    int n_dims = isl_set_dim(deltas, isl_dim_set);
-    if (n_dims != 1) {
-        isl_set_free(deltas);
-        isl_ctx_free(ctx);
-        return false;
-    }
-
-    isl_set* neg = isl_set_read_from_str(ctx, "{ [x] : x < 0 }");
-    isl_set* violation = isl_set_intersect(deltas, neg);
-    bool legal = isl_set_is_empty(violation);
-    isl_set_free(violation);
-    isl_ctx_free(ctx);
-
     return legal;
 }
 
@@ -202,8 +160,8 @@ tiles::ReductionInterchangeProposal LoopInterchange::proposal() const {
     auto lower = symbolic::sub(inner_indvar, bound_decomp.constant);
     auto upper = symbolic::sub(inner_indvar, init_decomp.constant);
     if (!symbolic::eq(coefficient, symbolic::one())) {
-        lower = symbolic::div(lower, coefficient);
-        upper = symbolic::div(upper, coefficient);
+        lower = symbolic::floor_div(lower, coefficient);
+        upper = symbolic::floor_div(upper, coefficient);
     }
     result.new_inner.init = symbolic::max(outer_loop_.init(), symbolic::add(lower, symbolic::one()));
     result.new_inner.condition =
@@ -299,162 +257,54 @@ bool LoopInterchange::can_be_applied(builder::StructuredSDFGBuilder& builder, an
     std::string outer_indvar_name = outer_loop_.indvar()->get_name();
     std::string inner_indvar_name = inner_loop_.indvar()->get_name();
 
-    // Check outer loop dependencies (2D delta sets: [d_outer, d_inner])
-    auto& outer_deps = lcd.dependencies(outer_loop_);
-    for (auto& dep : outer_deps) {
-        // Skip dependencies on loop induction variables — structurally safe
-        if (dep.first == outer_indvar_name || dep.first == inner_indvar_name) {
-            continue;
-        }
-        auto& deltas = dep.second.deltas;
-        if (deltas.empty) {
-            continue;
-        }
-        if (deltas.dimensions.empty()) {
-            // No loop dimensions — purely intra-iteration, safe for interchange
-            continue;
-        }
-        if (deltas.deltas_str.empty()) {
-            // Dependence exists but no isl info — conservative reject
-            return false;
-        }
-        if (deltas.dimensions.size() == 2) {
-            // Determine which dimension becomes the new outer (= current inner indvar)
-            int new_outer_dim = -1;
-            for (int d = 0; d < 2; d++) {
-                if (deltas.dimensions[d] == inner_indvar_name) {
-                    new_outer_dim = d;
-                    break;
-                }
-            }
-            if (new_outer_dim < 0) {
-                // Inner indvar not found in dimensions — the dependency is between
-                // nested loop iterations that don't involve the loops being interchanged.
-                // This is safe because the nested loop order is preserved after interchange.
-                continue;
-            }
-            if (!is_interchange_legal_2d(deltas.deltas_str, new_outer_dim)) {
-                return false;
-            }
-        } else if (deltas.dimensions.size() == 1) {
-            // Only outer dimension — after interchange becomes inner, always safe
-        } else {
-            // Multi-dimensional delta set (>2): check if outer/inner indvars are involved
-            bool has_outer = false, has_inner = false;
-            for (auto& dim : deltas.dimensions) {
-                if (dim == outer_indvar_name) {
-                    has_outer = true;
-                }
-                if (dim == inner_indvar_name) {
-                    has_inner = true;
-                }
-            }
-            if (!has_outer && !has_inner) {
-                // Dependency is entirely on nested loop variables — safe for interchange
-                continue;
-            }
-            if (!has_inner) {
-                // Only outer indvar involved — after interchange becomes inner, always safe
-                continue;
-            }
-            // Inner indvar is involved in multi-D delta set — use ISL to check legality
-            // Find the inner dimension index and check non-negativity
-            int inner_dim = -1;
-            for (size_t d = 0; d < deltas.dimensions.size(); d++) {
-                if (deltas.dimensions[d] == inner_indvar_name) {
-                    inner_dim = static_cast<int>(d);
-                    break;
-                }
-            }
-            // Project out all other dimensions and check 1D legality on inner_dim
-            isl_ctx* ctx = isl_ctx_alloc();
-            isl_options_set_on_error(ctx, ISL_ON_ERROR_CONTINUE);
-            isl_set* delta_set = isl_set_read_from_str(ctx, deltas.deltas_str.c_str());
-            if (delta_set) {
-                int n_dims = isl_set_dim(delta_set, isl_dim_set);
-                // Project out all dims except inner_dim
-                // First project out dims after inner_dim
-                if (inner_dim + 1 < n_dims) {
-                    delta_set = isl_set_project_out(delta_set, isl_dim_set, inner_dim + 1, n_dims - inner_dim - 1);
-                }
-                // Then project out dims before inner_dim
-                if (inner_dim > 0) {
-                    delta_set = isl_set_project_out(delta_set, isl_dim_set, 0, inner_dim);
-                }
-                // Now it's 1D — check non-negativity
-                isl_set* neg = isl_set_read_from_str(ctx, "{ [x] : x < 0 }");
-                isl_set* violation = isl_set_intersect(delta_set, neg);
-                bool legal = isl_set_is_empty(violation);
-                isl_set_free(violation);
-                isl_ctx_free(ctx);
-                if (!legal) {
-                    return false;
-                }
-            } else {
-                isl_ctx_free(ctx);
-                return false;
-            }
+    // Pairs carried by the inner loop share the outer iteration, whose relative order interchange preserves.
+    // Pairs carried by the outer loop (d_outer > 0) stay ordered iff d_inner >= 0.
+    auto& outer_pairs = lcd.pairs(outer_loop_);
+
+    std::unordered_set<std::string> flow_containers;
+    for (auto& pair : outer_pairs) {
+        if (pair.type == parallelization::LOOP_CARRIED_DEPENDENCY_READ_WRITE) {
+            flow_containers.insert(pair.writer->container());
         }
     }
+    // Scalar temporaries without carried flow that are dead after the nest can be privatized.
+    auto locals = users_analysis.locals(outer_loop_);
+    auto is_private_scalar = [&](const std::string& container) {
+        return !flow_containers.count(container) && locals.count(container) &&
+               dynamic_cast<const types::Scalar*>(&builder.subject().type(container)) != nullptr;
+    };
+    // Reductions are associative and commutative, so any iteration order is valid.
+    auto is_reduction = [&](const std::string& container) {
+        for (auto& reduction : lcd.reductions(outer_loop_)) {
+            if (reduction.container == container) {
+                return true;
+            }
+        }
+        // The outer body is exactly the inner loop, so an inner Reduce's accumulator is reduced over the whole nest.
+        if (auto* reduce = dyn_cast<structured_control_flow::Reduce*>(&inner_loop_)) {
+            for (auto& reduction : reduce->reductions()) {
+                if (reduction.container == container) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
 
-    // Check inner loop dependencies (1D delta sets: [d_inner])
-    auto& inner_deps = lcd.dependencies(inner_loop_);
-    for (auto& dep : inner_deps) {
-        if (dep.first == outer_indvar_name || dep.first == inner_indvar_name) {
+    for (auto& pair : outer_pairs) {
+        const auto& container = pair.writer->container();
+        if (container == outer_indvar_name || container == inner_indvar_name) {
             continue;
         }
-        auto& deltas = dep.second.deltas;
+        auto& deltas = pair.deltas;
         if (deltas.empty) {
             continue;
         }
-        if (deltas.dimensions.empty()) {
+        if (is_reduction(container) || is_private_scalar(container)) {
             continue;
         }
-        if (deltas.deltas_str.empty()) {
+        if (!is_inner_distance_nonneg(deltas, inner_indvar_name)) {
             return false;
-        }
-        if (deltas.dimensions.size() == 1) {
-            if (!is_interchange_legal_1d(deltas.deltas_str)) {
-                return false;
-            }
-        } else if (deltas.dimensions.size() >= 1) {
-            // Multi-dimensional delta set from nested loops inside the inner loop.
-            // Find the dimension corresponding to the inner loop indvar.
-            int inner_dim = -1;
-            for (size_t d = 0; d < deltas.dimensions.size(); d++) {
-                if (deltas.dimensions[d] == inner_indvar_name) {
-                    inner_dim = static_cast<int>(d);
-                    break;
-                }
-            }
-            if (inner_dim < 0) {
-                // Inner indvar not found in dimensions — safe (dependency is on nested loops only)
-                continue;
-            }
-            // For interchange, only the inner indvar dimension matters (it becomes outer).
-            // The other dimensions represent nested loops which stay nested.
-            // Project to 1D by checking only the inner indvar dimension.
-            // After interchange, we need: delta_inner >= 0 for lex-positive order.
-            // Since we use < constraint now, we only get forward (positive) deltas.
-            //
-            // For the case where other dimensions are all 0, this is effectively
-            // a 1D dependency. For multi-D cases where inner_dim is found,
-            // we need to verify that dimension is non-negative.
-            if (deltas.dimensions.size() >= 2 && inner_dim >= 0) {
-                // The inner dimension must not have negative deltas.
-                // With < constraint, we should only have positive deltas.
-                // Use is_interchange_legal_1d to check just the inner dimension.
-                // Since we can't easily project in ISL here, we accept if no
-                // explicit negative constraint on inner_dim is visible.
-                // The < constraint should ensure only positive deltas exist.
-                continue; // Safe with forward-only deltas
-            } else if (inner_dim < 0) {
-                // Inner indvar not found — safe, nested loop dependency
-                continue;
-            } else {
-                // Fallback for unexpected cases
-                return false;
-            }
         }
     }
 
