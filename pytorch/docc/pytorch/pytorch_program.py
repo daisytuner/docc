@@ -1,6 +1,5 @@
 import torch
 import torch.fx
-from torch.fx._symbolic_trace import _ConstantAttributeType
 import torch._dynamo
 import torch.export
 import torch.utils._pytree
@@ -127,8 +126,6 @@ class PyTorchProgram(DoccProgram):
         )
 
         self.gm: torch.fx.GraphModule = gm
-        self._graph_signature: torch.export.ExportGraphSignature | None = None
-        self._constants: dict[str, _ConstantAttributeType] | None = None
         if example_input is None:
             self.example_input: tuple[Any, ...] | None = None
         elif isinstance(example_input, tuple):
@@ -153,61 +150,6 @@ class PyTorchProgram(DoccProgram):
         self._output_perm: list[int] | None = None
         self.force_rebuild: bool = force_rebuild
 
-    def _parse_call_arguments(self, args: tuple) -> tuple:
-        if self._graph_signature is None or self._constants is None:
-            raise ValueError("Failed to fill graph signature and/or constant values")
-        result: list = []
-        arg_index: int = 0
-        for input_spec in self._graph_signature.input_specs:
-            if input_spec.kind == torch.export.graph_signature.InputKind.USER_INPUT:
-                if arg_index >= len(args):
-                    raise IndexError(
-                        "Tried to use argument "
-                        + str(arg_index)
-                        + " but got only: "
-                        + str(len(args))
-                    )
-                result.append(args[arg_index])
-                arg_index += 1
-            elif (
-                input_spec.kind
-                == torch.export.graph_signature.InputKind.CONSTANT_TENSOR
-            ):
-                if isinstance(
-                    input_spec.arg, torch.export.graph_signature.TensorArgument
-                ):
-                    if input_spec.target is None:
-                        raise ValueError(
-                            "Expected target for constant tensor input specification: "
-                            + str(input_spec)
-                        )
-                    id: str = input_spec.target
-                    if id not in self._constants:
-                        raise IndexError(
-                            "Could not find entry '"
-                            + id
-                            + "' in constants:\n"
-                            + str(self._constants)
-                        )
-                    if not isinstance(self._constants[id], torch.Tensor):
-                        raise TypeError(
-                            "Expected tensor constant to be torch.Tensor type but got: "
-                            + str(type(self._constants[id]))
-                        )
-                    result.append(self._constants[id])
-                else:
-                    raise ValueError(
-                        "Unknown/unsupported argument specification '"
-                        + str(type(input_spec.arg))
-                        + "' for input spec: "
-                        + str(input_spec)
-                    )
-            else:
-                raise ValueError(
-                    "Unknown/unsupported input specification: " + str(input_spec)
-                )
-        return tuple(result)
-
     def __call__(self, *args: Any) -> Any:
         # Detect input type (torch or numpy)
         is_torch_input: bool = any(isinstance(arg, torch.Tensor) for arg in args)
@@ -218,9 +160,6 @@ class PyTorchProgram(DoccProgram):
             self._compiled = compiled_sdfg
         else:
             compiled_sdfg: CompiledSDFG = self._compiled
-
-        # Parse call arguments from graph signature and fill-in constants
-        args = self._parse_call_arguments(args)
 
         # Device-resident artifacts consume/produce device pointers directly:
         # pass tensors straight through. CompiledSDFG runs CUDA tensors zero-copy
@@ -561,12 +500,6 @@ class PyTorchProgram(DoccProgram):
         parser.parse()
         sdfg = parser.to_sdfg()
         self.example_input: tuple[Any, ...] | None = parser.get_arguments()
-
-        # Save graph signature and constants
-        self._graph_signature: torch.export.ExportGraphSignature | None = (
-            ir.graph_signature
-        )
-        self._constants: dict[str, _ConstantAttributeType] | None = ir.constants
 
         try:
             sdfg.validate()
