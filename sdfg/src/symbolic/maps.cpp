@@ -6,6 +6,9 @@
 #include <isl/set.h>
 #include <isl/space.h>
 
+#include <iostream>
+
+#include "sdfg/helpers/helpers.h"
 #include "sdfg/symbolic/delinearization.h"
 #include "sdfg/symbolic/extreme_values.h"
 #include "sdfg/symbolic/polyhedral.h"
@@ -81,6 +84,30 @@ bool is_monotonic(const Expression expr, const Symbol sym, const Assumptions& as
     return is_monotonic_pow(expr, sym, assums);
 }
 
+// Builds the intersection maps directly; parses their string form where direct construction declines.
+void intersection_maps(
+    isl_ctx* ctx,
+    const MultiExpression& expr1,
+    const MultiExpression& expr2,
+    const Symbol indvar,
+    const Assumptions& assums1,
+    const Assumptions& assums2,
+    isl_map** map_1,
+    isl_map** map_2,
+    isl_map** map_3
+) {
+    if (expressions_to_intersection_maps(ctx, expr1, expr2, indvar, assums1, assums2, map_1, map_2, map_3)) {
+        return;
+    }
+    DEBUG_PRINTLN("Slow path: parsing ISL map strings for dependence deltas");
+    auto maps = expressions_to_intersection_map_str(expr1, expr2, indvar, assums1, assums2);
+    *map_1 = isl_map_read_from_str(ctx, std::get<0>(maps).c_str());
+    *map_2 = isl_map_read_from_str(ctx, std::get<1>(maps).c_str());
+    if (map_3) {
+        *map_3 = isl_map_read_from_str(ctx, std::get<2>(maps).c_str());
+    }
+}
+
 DependenceDeltas compute_deltas_isl(
     const MultiExpression& expr1,
     const MultiExpression& expr2,
@@ -122,14 +149,16 @@ DependenceDeltas compute_deltas_isl(
     for (size_t i = 0; i < expr1_delinearized.size(); i++) {
         auto& dim1 = expr1_delinearized[i];
         auto& dim2 = expr2_delinearized[i];
-        auto maps = expressions_to_intersection_map_str({dim1}, {dim2}, indvar, assums1, assums2);
         polyhedral::IslCtx ctx;
         if (!ctx) {
             continue;
         }
 
-        polyhedral::IslMap map_1(isl_map_read_from_str(ctx.get(), std::get<0>(maps).c_str()));
-        polyhedral::IslMap map_2(isl_map_read_from_str(ctx.get(), std::get<1>(maps).c_str()));
+        isl_map* raw_1;
+        isl_map* raw_2;
+        intersection_maps(ctx.get(), {dim1}, {dim2}, indvar, assums1, assums2, &raw_1, &raw_2, nullptr);
+        polyhedral::IslMap map_1(raw_1);
+        polyhedral::IslMap map_2(raw_2);
         if (!map_1 || !map_2) {
             continue;
         }
@@ -153,16 +182,18 @@ DependenceDeltas compute_deltas_isl(
     }
 
     // Build combined analysis on all dimensions together
-    auto maps = expressions_to_intersection_map_str(expr1_delinearized, expr2_delinearized, indvar, assums1, assums2);
-
     polyhedral::IslCtx ctx;
     if (!ctx) {
         return DependenceDeltas{false, "", {}};
     }
 
-    polyhedral::IslMap map_1(isl_map_read_from_str(ctx.get(), std::get<0>(maps).c_str()));
-    polyhedral::IslMap map_2(isl_map_read_from_str(ctx.get(), std::get<1>(maps).c_str()));
-    polyhedral::IslMap map_3(isl_map_read_from_str(ctx.get(), std::get<2>(maps).c_str()));
+    isl_map* raw_1;
+    isl_map* raw_2;
+    isl_map* raw_3;
+    intersection_maps(ctx.get(), expr1_delinearized, expr2_delinearized, indvar, assums1, assums2, &raw_1, &raw_2, &raw_3);
+    polyhedral::IslMap map_1(raw_1);
+    polyhedral::IslMap map_2(raw_2);
+    polyhedral::IslMap map_3(raw_3);
     if (!map_1 || !map_2 || !map_3) {
         // Conservative: assume dependence exists when isl can't analyze
         return DependenceDeltas{false, "", {}};

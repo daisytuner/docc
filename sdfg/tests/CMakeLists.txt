@@ -116,6 +116,7 @@ set(TEST_FILES
     symbolic/delinearization_test.cpp
     symbolic/extreme_values_test.cpp
     symbolic/integer_division_test.cpp
+    symbolic/isl_maps_test.cpp
     symbolic/maps_test.cpp
     symbolic/polyhedral_test.cpp
     symbolic/polynomials_test.cpp

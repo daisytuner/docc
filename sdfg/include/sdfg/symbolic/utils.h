@@ -58,6 +58,24 @@ std::tuple<std::string, std::string, std::string> expressions_to_intersection_ma
 );
 
 /**
+ * @brief Builds the three maps of `expressions_to_intersection_map_str` directly in `ctx`, without parsing.
+ *
+ * Same semantics as parsing the strings. Returns false (with null maps) for inputs the direct construction
+ * does not support (non-affine terms, unknown functions, name clashes); `map_3` may be null.
+ */
+bool expressions_to_intersection_maps(
+    isl_ctx* ctx,
+    const MultiExpression& expr1,
+    const MultiExpression& expr2,
+    const Symbol indvar,
+    const Assumptions& assums1,
+    const Assumptions& assums2,
+    isl_map** map_1,
+    isl_map** map_2,
+    isl_map** map_3
+);
+
+/**
  * @brief Generates constraint expressions from assumptions
  * @param syms Set of symbols to generate constraints for
  * @param assums Assumptions containing bounds information
