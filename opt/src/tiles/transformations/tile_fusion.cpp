@@ -508,7 +508,7 @@ bool TileFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysi
                     return false; // Delinearization failed
                 }
 
-                auto& delin_subset = mem_access->subset;
+                auto& delin_subset = mem_access->min_subset;
 
                 // Find which dimension contains the inner (tiled) indvar
                 for (size_t d = 0; d < delin_subset.size(); d++) {

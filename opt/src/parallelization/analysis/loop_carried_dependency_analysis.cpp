@@ -115,7 +115,7 @@ std::vector<data_flow::Subset> collect_subsets(analysis::User& user, analysis::M
     if (user.use() == analysis::Use::READ || user.use() == analysis::Use::VIEW) {
         for (auto& edge : graph.out_edges(*access_node)) {
             if (auto* acc = mla.access(edge)) {
-                result.push_back(acc->subset);
+                result.push_back(acc->min_subset);
             } else {
                 result.push_back(edge.subset());
             }
@@ -123,7 +123,7 @@ std::vector<data_flow::Subset> collect_subsets(analysis::User& user, analysis::M
     } else if (user.use() == analysis::Use::WRITE || user.use() == analysis::Use::MOVE) {
         for (auto& edge : graph.in_edges(*access_node)) {
             if (auto* acc = mla.access(edge)) {
-                result.push_back(acc->subset);
+                result.push_back(acc->min_subset);
             } else {
                 result.push_back(edge.subset());
             }
