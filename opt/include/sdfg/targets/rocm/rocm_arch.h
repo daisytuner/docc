@@ -23,8 +23,8 @@ public:
     bool valid_block_counts(uint16_t block_base, int m_blocks, int n_blocks, int k_blocks) const override;
     bool supported_types(types::PrimitiveType input_type, types::PrimitiveType output_type) const override;
 
-    std::optional<data_flow::ImplementationType> get_matmul_impl_type(const GpuArch& arch, const GpuMmaTiling& tiling)
-        const override;
+    std::optional<data_flow::ImplementationType>
+    get_matmul_impl_type(const GpuArch& arch, const GpuMmaTiling& tiling) const override;
 
     GpuMmaTiling get_mma_tiling(const symbolic::MultiExpression& res_shape) const override;
 
@@ -36,8 +36,9 @@ public:
 
     data_flow::ImplementationType get_mma_impl_type() const override;
 
-    void emit_block_frag_type(std::ostream& os, const types::StorageType& storage_type, types::PrimitiveType element_type)
-        const;
+    void emit_block_frag_type(
+        std::ostream& os, const types::StorageType& storage_type, types::PrimitiveType element_type
+    ) const;
 
     static void emit_block_frag_type(
         std::ostream& os,

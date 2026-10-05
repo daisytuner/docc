@@ -102,11 +102,18 @@ class EinsumEdgeOriginal : public EinsumEdge {
     data_flow::Memlet* edge;
 
 public:
-    EinsumEdgeOriginal(data_flow::Memlet* edge) : edge(edge) {}
+    EinsumEdgeOriginal(data_flow::Memlet* edge) : edge(edge) {
+    }
 
-    const data_flow::Subset& subset() const override { return edge->subset(); }
-    const types::IType& base_type() const override { return edge->base_type(); }
-    data_flow::Memlet* original_edge() const override { return edge; }
+    const data_flow::Subset& subset() const override {
+        return edge->subset();
+    }
+    const types::IType& base_type() const override {
+        return edge->base_type();
+    }
+    data_flow::Memlet* original_edge() const override {
+        return edge;
+    }
 };
 
 class EinsumEdgeVirtual : public EinsumEdge {
@@ -114,11 +121,18 @@ class EinsumEdgeVirtual : public EinsumEdge {
     const data_flow::Memlet* edge;
 
 public:
-    EinsumEdgeVirtual(const data_flow::Memlet* edge, const data_flow::Subset& subset) : subset_(subset), edge(edge) {}
+    EinsumEdgeVirtual(const data_flow::Memlet* edge, const data_flow::Subset& subset) : subset_(subset), edge(edge) {
+    }
 
-    const data_flow::Subset& subset() const override { return subset_; }
-    const types::IType& base_type() const override { return edge->base_type(); }
-    data_flow::Memlet* original_edge() const override { return nullptr; }
+    const data_flow::Subset& subset() const override {
+        return subset_;
+    }
+    const types::IType& base_type() const override {
+        return edge->base_type();
+    }
+    data_flow::Memlet* original_edge() const override {
+        return nullptr;
+    }
 };
 
 /**

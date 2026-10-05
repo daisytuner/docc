@@ -185,8 +185,8 @@ symbolic::Expression GpuMmaMatmulDispatcher::get_start_offset(const math::tensor
     return layout.offset();
 }
 
-void GpuMmaMatmulDispatcher::dispatch_single_mma(codegen::CodegenOutput& out, std::vector<codegen::DispatchInput>& inputs)
-    const {
+void GpuMmaMatmulDispatcher::
+    dispatch_single_mma(codegen::CodegenOutput& out, std::vector<codegen::DispatchInput>& inputs) const {
     emit_needed_declarations(out);
 
     // All three operands are fragments (declared by their containers); this is only the mma_sync.
@@ -223,8 +223,8 @@ void GpuMmaMatmulDispatcher::
     emit_store_macro(out, frag, base, layout.offset, layout.ldstride, layout.layout);
 }
 
-void GpuMmaMatmulDispatcher::dispatch_eltwise_add(codegen::CodegenOutput& out, std::vector<codegen::DispatchInput>& inputs)
-    const {
+void GpuMmaMatmulDispatcher::
+    dispatch_eltwise_add(codegen::CodegenOutput& out, std::vector<codegen::DispatchInput>& inputs) const {
     auto& node = static_cast<const GpuMmaFragmentEltwiseAddNode&>(node_);
 
     auto otype = out.language_extension.primitive_type(node.output_type());
@@ -237,10 +237,7 @@ void GpuMmaMatmulDispatcher::dispatch_eltwise_add(codegen::CodegenOutput& out, s
     const std::string& frag_c = inputs.at(GpuMmaFragmentEltwiseAddNode::FRAG_C_INPUT_IDX).expr;
 
     emit_eltwise_compute(
-        out,
-        frag_d,
-        {frag_acc, frag_c},
-        [&otype, &atype](auto& out, auto& main_elem, auto& idx, auto& args) {
+        out, frag_d, {frag_acc, frag_c}, [&otype, &atype](auto& out, auto& main_elem, auto& idx, auto& args) {
             out.stream << main_elem << " = static_cast<" << otype << ">(" << args.at(0) << " + static_cast<" << atype
                        << ">(" << args.at(1) << "));" << std::endl;
         }

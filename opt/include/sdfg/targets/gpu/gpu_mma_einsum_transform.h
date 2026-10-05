@@ -18,8 +18,8 @@ public:
 
     bool analyze(const einsum::EinsumCluster& cluster, EinsumMmaAnalysis& result) const;
 
-    einsum::ReplaceOutcome replace(einsum::EinsumReplacementContext& context, const einsum::EinsumCluster& cluster)
-        const override;
+    einsum::ReplaceOutcome
+    replace(einsum::EinsumReplacementContext& context, const einsum::EinsumCluster& cluster) const override;
 
     bool can_be_applied(const einsum::EinsumCluster& cluster) const override;
 

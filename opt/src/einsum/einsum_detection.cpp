@@ -119,8 +119,8 @@ symbolic::Expression EinsumIndexContribution::factor_expr() const {
     return symbolic::integer(this->factor);
 }
 
-symbolic::Expression EinsumIndexing::get_stride_including_subsets(int idx, const std::vector<symbolic::Expression>& shape)
-    const {
+symbolic::Expression EinsumIndexing::
+    get_stride_including_subsets(int idx, const std::vector<symbolic::Expression>& shape) const {
     auto& contrib = this->contributions.at(idx);
     auto dims = shape.size();
     symbolic::Expression stride = contrib.factor_expr();
