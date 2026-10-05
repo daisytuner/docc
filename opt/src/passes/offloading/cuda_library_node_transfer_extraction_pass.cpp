@@ -6,6 +6,7 @@
 #include "sdfg/transformations/offloading/cublas_data_transfer_extraction.h"
 #include "sdfg/transformations/offloading/cuda_softmax_data_transfer_extraction.h"
 #include "sdfg/transformations/offloading/cuda_stdlib_data_transfer_extraction.h"
+#include "sdfg/transformations/offloading/gpu_tensor_data_transfer_extraction.h"
 
 namespace sdfg {
 namespace cuda {
@@ -43,6 +44,11 @@ bool CudaLibraryNodeTransferExtractionVisitor::accept(structured_control_flow::B
                 expansion.apply(builder_, analysis_manager_);
                 return true;
             }
+        }
+        gpu::tensor::CUDATensorDataTransferExtraction tensor_extraction(*lib_node);
+        if (tensor_extraction.can_be_applied(builder_, analysis_manager_)) {
+            tensor_extraction.apply(builder_, analysis_manager_);
+            return true;
         }
     }
     return false;

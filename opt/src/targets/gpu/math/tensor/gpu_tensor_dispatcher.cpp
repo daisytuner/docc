@@ -128,29 +128,34 @@ void GPUTensorNodeDispatcher::dispatch_code_with_edges(
     stream.setIndent(stream.indent() + 4);
     stream << api << "Error_t __daisy_status;" << std::endl;
 
+    auto buffers = tensor_buffers(*operands, pointers);
     std::unordered_map<std::string, std::string> device_ptrs;
-    for (auto& operand : *operands) {
-        auto device_ptr = "__daisy_tensor_dev_" + operand.connector;
-        auto bytes = "(size_t) (" + language_extension_.expression(operand.num_bytes()) + ")";
+    for (size_t i = 0; i < buffers.size(); ++i) {
+        auto& buffer = buffers[i];
+        auto device_ptr = "__daisy_tensor_dev_" + std::to_string(i);
+        auto bytes = "(size_t) (" + language_extension_.expression(buffer.num_bytes) + ")";
         stream << "void* " << device_ptr << " = nullptr;" << std::endl;
         stream << "__daisy_status = " << api << "Malloc(&" << device_ptr << ", " << bytes << ");" << std::endl;
         strategy_->dispatch_runtime_error_check(stream, language_extension_, "__daisy_status");
-        if (operand.read) {
-            stream << "__daisy_status = " << api << "Memcpy(" << device_ptr << ", " << pointers.at(operand.connector)
-                   << ", " << bytes << ", " << api << "MemcpyHostToDevice);" << std::endl;
+        if (buffer.copy_to_device) {
+            stream << "__daisy_status = " << api << "Memcpy(" << device_ptr << ", " << buffer.host << ", " << bytes
+                   << ", " << api << "MemcpyHostToDevice);" << std::endl;
             strategy_->dispatch_runtime_error_check(stream, language_extension_, "__daisy_status");
         }
-        device_ptrs.emplace(operand.connector, device_ptr);
+        for (auto& connector : buffer.connectors) {
+            device_ptrs.emplace(connector, device_ptr);
+        }
     }
 
     dispatch_device(out, *operands, device_ptrs);
 
-    for (auto& operand : *operands) {
-        auto& device_ptr = device_ptrs.at(operand.connector);
-        if (operand.written) {
-            auto bytes = "(size_t) (" + language_extension_.expression(operand.num_bytes()) + ")";
-            stream << "__daisy_status = " << api << "Memcpy(" << pointers.at(operand.connector) << ", " << device_ptr
-                   << ", " << bytes << ", " << api << "MemcpyDeviceToHost);" << std::endl;
+    for (size_t i = 0; i < buffers.size(); ++i) {
+        auto& buffer = buffers[i];
+        auto device_ptr = "__daisy_tensor_dev_" + std::to_string(i);
+        if (buffer.copy_to_host) {
+            auto bytes = "(size_t) (" + language_extension_.expression(buffer.num_bytes) + ")";
+            stream << "__daisy_status = " << api << "Memcpy(" << buffer.host << ", " << device_ptr << ", " << bytes
+                   << ", " << api << "MemcpyDeviceToHost);" << std::endl;
             strategy_->dispatch_runtime_error_check(stream, language_extension_, "__daisy_status");
         }
         stream << "__daisy_status = " << api << "Free(" << device_ptr << ");" << std::endl;

@@ -2,6 +2,7 @@
 
 #include "sdfg/data_flow/library_nodes/math/blas/blas_node.h"
 #include "sdfg/data_flow/library_nodes/stdlib/stdlib_node.h"
+#include "sdfg/transformations/offloading/gpu_tensor_data_transfer_extraction.h"
 #include "sdfg/transformations/offloading/rocblas_data_transfer_extraction.h"
 #include "sdfg/transformations/offloading/rocm_stdlib_data_transfer_extraction.h"
 
@@ -34,6 +35,11 @@ bool RocmLibraryNodeTransferExtractionVisitor::accept(structured_control_flow::B
                 expansion.apply(builder_, analysis_manager_);
                 return true;
             }
+        }
+        gpu::tensor::ROCMTensorDataTransferExtraction tensor_extraction(*lib_node);
+        if (tensor_extraction.can_be_applied(builder_, analysis_manager_)) {
+            tensor_extraction.apply(builder_, analysis_manager_);
+            return true;
         }
     }
     return false;
