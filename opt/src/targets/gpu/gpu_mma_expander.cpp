@@ -105,7 +105,8 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
     types::PrimitiveType output_type,
     const data_flow::ImplementationType& impl_type,
     bool include_c_add,
-    const DebugInfo& org_debug_info
+    const DebugInfo& org_debug_info,
+    const std::array<int, 3>& args_order // {y, a, b}
 ) {
     auto* mma_arch = arch.mma_support();
     auto mma_impl_type = mma_arch->get_mma_impl_type();
@@ -243,7 +244,7 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
         mma_tiling.mma_block_size,
         MmaFragmentType::A,
         {.offset = a_offset, .ldstride = lda, .layout = MMA_LAYOUT_UNSPECIFIED},
-        1,
+        args_order.at(1),
         load_block
     );
     create_fragment_load(
@@ -256,7 +257,7 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
         mma_tiling.mma_block_size,
         MmaFragmentType::B,
         {.offset = b_offset, .ldstride = ldb, .layout = MMA_LAYOUT_UNSPECIFIED},
-        2,
+        args_order.at(2),
         load_block
     );
 
@@ -300,7 +301,7 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
             mma_tiling.mma_block_size,
             MmaFragmentType::C,
             {.offset = y_offset, .ldstride = ldc, .layout = y_layout},
-            0,
+            args_order.at(0),
             load_c_block
         );
 
@@ -343,7 +344,7 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
         mma_tiling.mma_block_size,
         MmaFragmentType::C,
         {.offset = y_offset, .ldstride = ldc, .layout = y_layout},
-        0,
+        args_order.at(0),
         store_block
     );
 
@@ -428,7 +429,8 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::handle_expand(
             output_type,
             new_impl_type.value(),
             true,
-            node.debug_info()
+            node.debug_info(),
+            {1, 2, 0} // {a, b, y}, but MatmulNode has y, a, b
         );
     } else {
         return context.unable();

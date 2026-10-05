@@ -113,7 +113,8 @@ einsum::ReplaceOutcome GpuMmaEinsumReplacer::
         analysis.output_type,
         impl_type.value(),
         true,
-        cluster.consumed_loops.front()->debug_info()
+        cluster.consumed_loops.front()->debug_info(),
+        {2, 0, 1} // EinsumCluster has output as last input, not as first as TensorNodes do
     );
 }
 
