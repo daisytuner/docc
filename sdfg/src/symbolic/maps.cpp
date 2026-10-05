@@ -1,5 +1,6 @@
 #include "sdfg/symbolic/maps.h"
 
+#include <isl/constraint.h>
 #include <isl/ctx.h>
 #include <isl/map.h>
 #include <isl/options.h>
@@ -125,16 +126,20 @@ DependenceDeltas compute_deltas_isl(
         return DependenceDeltas{false, "", {}};
     }
 
+    // Integer-affine 1D accesses are exact for isl as they are; delinearizing them only costs proofs.
+    bool skip_delinearize = expr1.size() == 1 && expr2.size() == 1 && is_integer_affine(expr1.at(0)) &&
+                            is_integer_affine(expr2.at(0));
+
     // Transform both expressions into two maps with separate dimensions
     auto expr1_delinearized = expr1;
-    if (expr1.size() == 1) {
+    if (expr1.size() == 1 && !skip_delinearize) {
         auto result = symbolic::delinearize(expr1.at(0), bounds1);
         if (result.success) {
             expr1_delinearized = result.indices;
         }
     }
     auto expr2_delinearized = expr2;
-    if (expr2.size() == 1) {
+    if (expr2.size() == 1 && !skip_delinearize) {
         auto result = symbolic::delinearize(expr2.at(0), bounds2);
         if (result.success) {
             expr2_delinearized = result.indices;
@@ -219,7 +224,20 @@ DependenceDeltas compute_deltas_isl(
     if (!mono) {
         return DependenceDeltas{false, "", {}};
     }
-    polyhedral::IslMap alias_pairs(isl_map_intersect(alias_unconstrained.release(), mono.release()));
+    // `indvar_1 < indvar_2` added as a constraint: isl_map_intersect normalizes both operands first.
+    int pos_in = isl_map_find_dim_by_name(alias_unconstrained.get(), isl_dim_in, (indvar->get_name() + "_1").c_str());
+    int pos_out = isl_map_find_dim_by_name(alias_unconstrained.get(), isl_dim_out, (indvar->get_name() + "_2").c_str());
+    polyhedral::IslMap alias_pairs(nullptr);
+    if (pos_in >= 0 && pos_out >= 0) {
+        isl_constraint* c =
+            isl_constraint_alloc_inequality(isl_local_space_from_space(isl_map_get_space(alias_unconstrained.get())));
+        c = isl_constraint_set_coefficient_si(c, isl_dim_out, pos_out, 1);
+        c = isl_constraint_set_coefficient_si(c, isl_dim_in, pos_in, -1);
+        c = isl_constraint_set_constant_si(c, -1);
+        alias_pairs.reset(isl_map_add_constraint(alias_unconstrained.release(), c));
+    } else {
+        alias_pairs.reset(isl_map_intersect(alias_unconstrained.release(), mono.release()));
+    }
     if (!alias_pairs) {
         return DependenceDeltas{false, "", {}};
     }

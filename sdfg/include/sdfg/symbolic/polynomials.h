@@ -87,6 +87,12 @@ Polynomial polynomial(const Expression expr, SymbolVec& symbols);
 AffineCoeffs affine_coefficients(Polynomial poly);
 
 /**
+ * @brief Whether `expr` is affine in all of its symbols with integer coefficients, e.g. `2*i - j + 3`
+ *        (but not `N*i`, `idiv(i, 2)` or `i/2`).
+ */
+bool is_integer_affine(const Expression& expr);
+
+/**
  * @brief Computes the inverse function for an affine expression
  * @param coeffs Coefficient map from affine_coefficients()
  * @param symbol The symbol to solve for

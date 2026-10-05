@@ -48,6 +48,10 @@ struct DelinearizeResult;
 // the cap bails them early with a conservative "unknown".
 inline constexpr int64_t DEFAULT_BOUND_BUDGET = 50000;
 
+// Budget for the bound queries of delinearization (`AssumptionsBounds`). A
+// failed proof only keeps an access 1-D, and failing proofs exhaust the budget on every candidate split.
+inline constexpr int64_t DELINEARIZATION_PROOF_BUDGET = 5000;
+
 // Discoverable, threadable override for the budget above; shared by any analysis
 // or pass that constructs a BoundAnalysis.
 inline constexpr OptionKey<int64_t> BOUND_BUDGET{"symbolic.bound_budget"};
@@ -355,8 +359,8 @@ bool is_eq(const Expression& a, const Expression& b, BoundAnalysis& ba);
 class AssumptionsBounds {
 public:
     explicit AssumptionsBounds(const Assumptions& assums)
-        : assums_(assums), loose_(empty_params(), assums, /*tight=*/false),
-          tight_(empty_params(), assums, /*tight=*/true) {
+        : assums_(assums), loose_(empty_params(), assums, /*tight=*/false, DELINEARIZATION_PROOF_BUDGET),
+          tight_(empty_params(), assums, /*tight=*/true, DELINEARIZATION_PROOF_BUDGET) {
     }
 
     const Assumptions& assums() const {
