@@ -273,6 +273,50 @@ class IndexParser(GraphParserModule):
 register_module("aten.index.Tensor", IndexParser())
 
 
+class IndexSelectParser(GraphParserModule):
+    def parse(
+        self,
+        node: torch.fx.Node,
+        builder: StructuredSDFGBuilder,
+        metadata: TensorMetadata,
+    ) -> None:
+        if len(node.args) != 3:
+            raise GraphParserError(
+                self, node, "Expected exactly 3 argument but got " + str(len(node.args))
+            )
+        if len(node.kwargs) != 0:
+            raise GraphParserError(
+                self, node, "Unsupported kwargs: " + str(node.kwargs)
+            )
+
+        self_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 0)
+        if not isinstance(node.args[1], int):
+            raise GraphParserError(
+                self,
+                node,
+                "Expected dim arg to be int type but got: " + str(type(node.args[1])),
+            )
+        dim: int = node.args[1]
+        indices_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 2)
+
+        result_info: TensorInfo = self.get_result_tensor_info(node, builder, metadata)
+        debug_info: DebugInfo = self.get_debug_info(node)
+
+        builder.add_index_op(
+            result_info.container(),
+            result_info.sdfg_tensor_type(),
+            self_info.container(),
+            self_info.sdfg_tensor_type(),
+            [indices_info.container()],
+            [indices_info.sdfg_tensor_type()],
+            [dim],
+            debug_info,
+        )
+
+
+register_module("aten.index_select.default", IndexSelectParser())
+
+
 class ViewCopyParser(GraphParserModule):
     def parse(
         self,
