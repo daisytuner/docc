@@ -7,6 +7,7 @@
 #include <isl/set.h>
 #include <isl/space.h>
 #include <isl/val.h>
+#include <symengine/ntheory.h>
 
 #include <algorithm>
 #include <unordered_set>
@@ -15,6 +16,7 @@
 #include "sdfg/codegen/language_extensions/c_language_extension.h"
 #include "sdfg/symbolic/assumptions.h"
 #include "sdfg/symbolic/extreme_values.h"
+#include "sdfg/symbolic/polyhedral.h"
 #include "sdfg/symbolic/polynomials.h"
 #include "sdfg/symbolic/symbolic.h"
 
@@ -608,13 +610,134 @@ isl_val* isl_val_from_integer(isl_ctx* ctx, const SymEngine::Integer& x) {
     return isl_val_read_from_str(ctx, x.__str__().c_str());
 }
 
+// Floor division by a positive literal; only produced by split_extremum for the isl conversion below.
+const char* const floordiv_name = "__isl_floordiv";
+
 // Literal divisor, as required by ISL's quotient/remainder (division by zero is undefined).
 bool is_nonzero_integer(const Expression& e) {
     return SymEngine::is_a<SymEngine::Integer>(*e) && !symbolic::eq(e, symbolic::zero());
 }
 
-// Returns null for non-affine products, rationals, powers, unknown functions or names.
-isl_pw_aff* expression_to_isl_pw_aff(const Expression& e, isl_local_space* ls, const IslNameTable& names) {
+// Whether `pa` (not consumed) is >= 0 everywhere in `context` (null: unknown).
+bool nonneg_in(isl_pw_aff* pa, isl_basic_set* context) {
+    if (!context) {
+        return false;
+    }
+    if (isl_pw_aff_isa_aff(pa) == isl_bool_true) {
+        // Basic sets skip the costly normalization isl_set_intersect does to detect equal operands.
+        isl_basic_set* neg = isl_aff_neg_basic_set(isl_pw_aff_as_aff(isl_pw_aff_copy(pa)));
+        neg = isl_basic_set_intersect(neg, isl_basic_set_copy(context));
+        bool empty = isl_basic_set_is_empty(neg) == isl_bool_true;
+        isl_basic_set_free(neg);
+        return empty;
+    }
+    isl_pw_aff* zero = isl_pw_aff_zero_on_domain(isl_local_space_from_space(isl_pw_aff_get_domain_space(pa)));
+    isl_set* neg = isl_pw_aff_lt_set(isl_pw_aff_copy(pa), zero);
+    neg = isl_set_intersect(neg, isl_set_from_basic_set(isl_basic_set_copy(context)));
+    bool empty = isl_set_is_empty(neg) == isl_bool_true;
+    isl_set_free(neg);
+    return empty;
+}
+
+// `e` as a quasi-affine isl_aff (C division only where the numerator is non-negative in `context`), or null.
+isl_aff* expression_to_isl_aff(const Expression& e, isl_local_space* ls, const IslNameTable& names, isl_basic_set* context) {
+    isl_ctx* ctx = isl_local_space_get_ctx(ls);
+    if (SymEngine::is_a<SymEngine::Integer>(*e)) {
+        return isl_aff_val_on_domain(
+            isl_local_space_copy(ls), isl_val_from_integer(ctx, SymEngine::down_cast<const SymEngine::Integer&>(*e))
+        );
+    }
+    if (SymEngine::is_a<SymEngine::Symbol>(*e)) {
+        auto it = names.find(SymEngine::down_cast<const SymEngine::Symbol&>(*e).get_name());
+        if (it == names.end()) {
+            return nullptr;
+        }
+        return isl_aff_var_on_domain(isl_local_space_copy(ls), it->second.first, it->second.second);
+    }
+    if (SymEngine::is_a<SymEngine::Add>(*e)) {
+        // Walks the dict: Add::get_args allocates a Mul per term.
+        auto& add = SymEngine::down_cast<const SymEngine::Add&>(*e);
+        if (!SymEngine::is_a<SymEngine::Integer>(*add.get_coef())) {
+            return nullptr;
+        }
+        isl_aff* acc = expression_to_isl_aff(add.get_coef(), ls, names, context);
+        for (auto& [term, coef] : add.get_dict()) {
+            isl_aff* t = SymEngine::is_a<SymEngine::Integer>(*coef) ? expression_to_isl_aff(term, ls, names, context)
+                                                                    : nullptr;
+            if (!t) {
+                isl_aff_free(acc);
+                return nullptr;
+            }
+            t = isl_aff_scale_val(t, isl_val_from_integer(ctx, SymEngine::down_cast<const SymEngine::Integer&>(*coef)));
+            acc = isl_aff_add(acc, t);
+        }
+        return acc;
+    }
+    if (SymEngine::is_a<SymEngine::Mul>(*e)) {
+        auto& mul = SymEngine::down_cast<const SymEngine::Mul&>(*e);
+        auto& dict = mul.get_dict();
+        if (!SymEngine::is_a<SymEngine::Integer>(*mul.get_coef()) || dict.size() != 1 ||
+            !symbolic::eq(dict.begin()->second, symbolic::one())) {
+            return nullptr;
+        }
+        isl_aff* base = expression_to_isl_aff(dict.begin()->first, ls, names, context);
+        if (!base) {
+            return nullptr;
+        }
+        return isl_aff_scale_val(
+            base, isl_val_from_integer(ctx, SymEngine::down_cast<const SymEngine::Integer&>(*mul.get_coef()))
+        );
+    }
+    if (!SymEngine::is_a<SymEngine::FunctionSymbol>(*e)) {
+        return nullptr;
+    }
+    auto& func = SymEngine::down_cast<const SymEngine::FunctionSymbol&>(*e);
+    auto args = func.get_args();
+    const auto& name = func.get_name();
+    bool c_division = name == "idiv" || name == "imod";
+    if ((!c_division && name != floordiv_name) || args.size() != 2 || !is_nonzero_integer(args[1])) {
+        return nullptr;
+    }
+    isl_aff* arg = expression_to_isl_aff(args[0], ls, names, context);
+    if (!arg) {
+        return nullptr;
+    }
+    const auto& b = SymEngine::down_cast<const SymEngine::Integer&>(*args[1]);
+    if (c_division) {
+        bool nonneg = false;
+        if (context) {
+            isl_basic_set* neg = isl_aff_neg_basic_set(isl_aff_copy(arg));
+            neg = isl_basic_set_intersect(neg, isl_basic_set_copy(context));
+            nonneg = isl_basic_set_is_empty(neg) == isl_bool_true;
+            isl_basic_set_free(neg);
+        }
+        if (!nonneg) {
+            isl_aff_free(arg);
+            return nullptr;
+        }
+    }
+    isl_val* magnitude = isl_val_abs(isl_val_from_integer(ctx, b));
+    if (name == "imod") {
+        return isl_aff_mod_val(arg, magnitude);
+    }
+    isl_aff* quotient = isl_aff_floor(isl_aff_scale_down_val(arg, magnitude));
+    return b.is_negative() && name == "idiv" ? isl_aff_neg(quotient) : quotient;
+}
+
+// Returns null for non-affine products, rationals, powers, unknown functions or names. `context` (optional,
+// not consumed) is a domain known to hold; C division of a numerator non-negative there is then the
+// quasi-affine floor division instead of a piecewise split on the sign of the numerator. With `piecewise`
+// set, only (quasi-)affine expressions are converted: others set it and return null without building pieces.
+isl_pw_aff* expression_to_isl_pw_aff(
+    const Expression& e,
+    isl_local_space* ls,
+    const IslNameTable& names,
+    isl_basic_set* context = nullptr,
+    bool* piecewise = nullptr
+) {
+    if (isl_aff* aff = expression_to_isl_aff(e, ls, names, context)) {
+        return isl_pw_aff_from_aff(aff);
+    }
     isl_ctx* ctx = isl_local_space_get_ctx(ls);
     if (SymEngine::is_a<SymEngine::Integer>(*e)) {
         return isl_pw_aff_from_aff(isl_aff_val_on_domain(
@@ -631,10 +754,14 @@ isl_pw_aff* expression_to_isl_pw_aff(const Expression& e, isl_local_space* ls, c
     bool is_add = SymEngine::is_a<SymEngine::Add>(*e);
     bool is_max = SymEngine::is_a<SymEngine::Max>(*e);
     bool is_min = SymEngine::is_a<SymEngine::Min>(*e);
+    if ((is_max || is_min) && piecewise) {
+        *piecewise = true;
+        return nullptr;
+    }
     if (is_add || is_max || is_min) {
         isl_pw_aff* acc = nullptr;
         for (auto& arg : e->get_args()) {
-            isl_pw_aff* term = expression_to_isl_pw_aff(arg, ls, names);
+            isl_pw_aff* term = expression_to_isl_pw_aff(arg, ls, names, context, piecewise);
             if (!term) {
                 isl_pw_aff_free(acc);
                 return nullptr;
@@ -658,7 +785,7 @@ isl_pw_aff* expression_to_isl_pw_aff(const Expression& e, isl_local_space* ls, c
             !symbolic::eq(dict.begin()->second, symbolic::one())) {
             return nullptr;
         }
-        isl_pw_aff* base = expression_to_isl_pw_aff(dict.begin()->first, ls, names);
+        isl_pw_aff* base = expression_to_isl_pw_aff(dict.begin()->first, ls, names, context, piecewise);
         if (!base) {
             return nullptr;
         }
@@ -671,7 +798,11 @@ isl_pw_aff* expression_to_isl_pw_aff(const Expression& e, isl_local_space* ls, c
         auto args = func.get_args();
         const auto& name = func.get_name();
         if (name == "iabs" && args.size() == 1) {
-            isl_pw_aff* arg = expression_to_isl_pw_aff(args[0], ls, names);
+            if (piecewise) {
+                *piecewise = true;
+                return nullptr;
+            }
+            isl_pw_aff* arg = expression_to_isl_pw_aff(args[0], ls, names, context, piecewise);
             if (!arg) {
                 return nullptr;
             }
@@ -680,7 +811,7 @@ isl_pw_aff* expression_to_isl_pw_aff(const Expression& e, isl_local_space* ls, c
             return isl_pw_aff_max(arg, neg);
         }
         if ((name == "idiv" || name == "imod") && args.size() == 2 && is_nonzero_integer(args[1])) {
-            isl_pw_aff* arg = expression_to_isl_pw_aff(args[0], ls, names);
+            isl_pw_aff* arg = expression_to_isl_pw_aff(args[0], ls, names, context, piecewise);
             if (!arg) {
                 return nullptr;
             }
@@ -688,6 +819,19 @@ isl_pw_aff* expression_to_isl_pw_aff(const Expression& e, isl_local_space* ls, c
             const auto& b = SymEngine::down_cast<const SymEngine::Integer&>(*args[1]);
             bool negative = b.is_negative();
             isl_val* magnitude = isl_val_abs(isl_val_from_integer(ctx, b));
+            if (nonneg_in(arg, context)) {
+                if (name == "imod") {
+                    return isl_pw_aff_mod_val(arg, magnitude);
+                }
+                isl_pw_aff* quotient = isl_pw_aff_floor(isl_pw_aff_scale_down_val(arg, magnitude));
+                return negative ? isl_pw_aff_neg(quotient) : quotient;
+            }
+            if (piecewise) {
+                isl_pw_aff_free(arg);
+                isl_val_free(magnitude);
+                *piecewise = true;
+                return nullptr;
+            }
             isl_pw_aff* divisor = isl_pw_aff_from_aff(isl_aff_val_on_domain(isl_local_space_copy(ls), magnitude));
             if (name == "imod") {
                 return isl_pw_aff_tdiv_r(arg, divisor);
@@ -695,8 +839,96 @@ isl_pw_aff* expression_to_isl_pw_aff(const Expression& e, isl_local_space* ls, c
             isl_pw_aff* quotient = isl_pw_aff_tdiv_q(arg, divisor);
             return negative ? isl_pw_aff_neg(quotient) : quotient;
         }
+        if (name == floordiv_name && args.size() == 2 && is_nonzero_integer(args[1])) {
+            isl_pw_aff* arg = expression_to_isl_pw_aff(args[0], ls, names, context, piecewise);
+            if (!arg) {
+                return nullptr;
+            }
+            return isl_pw_aff_floor(isl_pw_aff_scale_down_val(
+                arg, isl_val_from_integer(ctx, SymEngine::down_cast<const SymEngine::Integer&>(*args[1]))
+            ));
+        }
     }
     return nullptr;
+}
+
+// Terms whose min (is_min) or max equals `expr`, distributing over sums, integer scalings and idiv by a
+// positive constant (all monotone, negative scalings swapping min and max). `x <= min(a, b)` and
+// `max(a, b) <= x` are then plain conjunctions instead of piecewise sets whose disjuncts multiply on every
+// intersection.
+std::vector<Expression> split_extremum(const Expression& expr, bool is_min) {
+    constexpr size_t max_pieces = 16;
+    if ((is_min && SymEngine::is_a<SymEngine::Min>(*expr)) || (!is_min && SymEngine::is_a<SymEngine::Max>(*expr))) {
+        std::vector<Expression> out;
+        for (auto& arg : expr->get_args()) {
+            auto pieces = split_extremum(arg, is_min);
+            out.insert(out.end(), pieces.begin(), pieces.end());
+        }
+        return out.size() <= max_pieces ? out : std::vector<Expression>{expr};
+    }
+    if (SymEngine::is_a<SymEngine::Add>(*expr)) {
+        std::vector<Expression> sums = {symbolic::zero()};
+        for (auto& term : expr->get_args()) {
+            auto pieces = split_extremum(term, is_min);
+            if (sums.size() * pieces.size() > max_pieces) {
+                return {expr};
+            }
+            std::vector<Expression> next;
+            for (auto& sum : sums) {
+                for (auto& piece : pieces) {
+                    next.push_back(symbolic::add(sum, piece));
+                }
+            }
+            sums = std::move(next);
+        }
+        return sums;
+    }
+    if (SymEngine::is_a<SymEngine::Mul>(*expr)) {
+        auto coef = SymEngine::down_cast<const SymEngine::Mul&>(*expr).get_coef();
+        auto rest = SymEngine::div(expr, coef);
+        if (SymEngine::is_a<SymEngine::Integer>(*coef) && !symbolic::eq(rest, expr)) {
+            // A negative scaling swaps min and max.
+            bool positive = SymEngine::down_cast<const SymEngine::Integer&>(*coef).is_positive();
+            std::vector<Expression> out;
+            for (auto& piece : split_extremum(rest, positive ? is_min : !is_min)) {
+                out.push_back(symbolic::mul(coef, piece));
+            }
+            return out;
+        }
+    }
+    if (SymEngine::is_a<SymEngine::FunctionSymbol>(*expr)) {
+        auto& func = SymEngine::down_cast<const SymEngine::FunctionSymbol&>(*expr);
+        auto args = func.get_args();
+        if (func.get_name() == "idiv" && args.size() == 2 && SymEngine::is_a<SymEngine::Integer>(*args[1]) &&
+            SymEngine::down_cast<const SymEngine::Integer&>(*args[1]).is_positive()) {
+            auto pieces = split_extremum(args[0], is_min);
+            // A literal piece c >= 0 (max) or c <= 0 (min) dominates every other piece x whose C division
+            // differs from floor (max) or ceil (min) division, i.e. x < 0 (max) or x > 0 (min), so those
+            // quasi-affine forms are exact, unlike C division which splits on the sign of x.
+            bool has_bound = std::any_of(pieces.begin(), pieces.end(), [&](const Expression& p) {
+                if (!SymEngine::is_a<SymEngine::Integer>(*p)) {
+                    return false;
+                }
+                auto& c = SymEngine::down_cast<const SymEngine::Integer&>(*p);
+                return is_min ? !c.is_positive() : !c.is_negative();
+            });
+            std::vector<Expression> out;
+            for (auto& piece : pieces) {
+                if (!has_bound || SymEngine::is_a<SymEngine::Integer>(*piece)) {
+                    out.push_back(symbolic::div(piece, args[1]));
+                } else if (!is_min) {
+                    out.push_back(SymEngine::function_symbol(floordiv_name, {piece, args[1]}));
+                } else {
+                    auto neg = symbolic::mul(symbolic::integer(-1), piece);
+                    out.push_back(
+                        symbolic::mul(symbolic::integer(-1), SymEngine::function_symbol(floordiv_name, {neg, args[1]}))
+                    );
+                }
+            }
+            return out;
+        }
+    }
+    return {expr};
 }
 
 // Builds `{ [dims] -> [exprs] : constraints and strides }` like the corresponding parsed string.
@@ -706,7 +938,8 @@ isl_map* build_access_map(
     const MultiExpression& exprs,
     const ExpressionSet& constraints,
     const Assumptions& assums,
-    const std::string& suffix
+    const std::string& suffix,
+    bool* exact = nullptr
 ) {
     const size_t n_params = setup.parameters.size();
     const size_t n_dims = setup.dimensions.size();
@@ -732,15 +965,54 @@ isl_map* build_access_map(
     bool outs_affine = true;
     bool ok = true;
 
-    for (auto& e : exprs) {
-        isl_pw_aff* pa = expression_to_isl_pw_aff(e, ls, names);
-        if (!pa) {
+    // Conjuncts `lhs (<|<=|==|!=) rhs`; those not affine without context are retried against the affine domain.
+    enum class Rel { lt, le, eq, ne };
+    struct Conjunct {
+        Expression lhs, rhs;
+        Rel rel;
+    };
+    std::vector<Conjunct> deferred;
+    // Intersects an affine conjunct into bset. A non-affine one returns false unless final, then an (in)equality
+    // goes into extra_sets and an inequality is dropped.
+    auto add_conjunct = [&](const Conjunct& c, isl_basic_set* context, bool final) {
+        // Inequalities still piecewise in the full affine context (e.g. the tight `ub - imod(ub - init, step)`
+        // bounds of strided loops, redundant with `ub` and the stride) are dropped: over-approximating the
+        // domain is sound for may-dependences and avoids multiplying the disjuncts of every map.
+        bool inequality = c.rel == Rel::lt || c.rel == Rel::le;
+        bool piecewise = false;
+        bool* affine_only = (!final || inequality) ? &piecewise : nullptr;
+        isl_pw_aff* lhs = expression_to_isl_pw_aff(c.lhs, ls, names, context, affine_only);
+        isl_pw_aff* rhs = lhs ? expression_to_isl_pw_aff(c.rhs, ls, names, context, affine_only) : nullptr;
+        if (!lhs || !rhs) {
+            isl_pw_aff_free(lhs);
+            isl_pw_aff_free(rhs);
+            if (piecewise) {
+                if (final && exact) {
+                    *exact = false;
+                }
+                return final;
+            }
             ok = false;
-            break;
+            return true;
         }
-        outs_affine = outs_affine && isl_pw_aff_isa_aff(pa) == isl_bool_true;
-        outs = isl_pw_aff_list_add(outs, pa);
-    }
+        if (c.rel != Rel::ne && isl_pw_aff_isa_aff(lhs) == isl_bool_true && isl_pw_aff_isa_aff(rhs) == isl_bool_true) {
+            isl_aff* l = isl_pw_aff_as_aff(lhs);
+            isl_aff* r = isl_pw_aff_as_aff(rhs);
+            isl_basic_set* s = c.rel == Rel::eq   ? isl_aff_eq_basic_set(l, r)
+                               : c.rel == Rel::lt ? isl_aff_lt_basic_set(l, r)
+                                                  : isl_aff_le_basic_set(l, r);
+            bset = isl_basic_set_intersect(bset, s);
+            return true;
+        }
+        if (!final) {
+            isl_pw_aff_free(lhs);
+            isl_pw_aff_free(rhs);
+            return false;
+        }
+        isl_set* s = c.rel == Rel::ne ? isl_pw_aff_ne_set(lhs, rhs) : isl_pw_aff_eq_set(lhs, rhs);
+        extra_sets = extra_sets ? isl_set_intersect(extra_sets, s) : s;
+        return true;
+    };
 
     for (auto it = constraints.begin(); ok && it != constraints.end(); ++it) {
         auto& con = *it;
@@ -751,41 +1023,45 @@ isl_map* build_access_map(
         if (!is_lt && !is_le && !is_ne && !is_eq) {
             continue;
         }
+        Rel rel = is_lt ? Rel::lt : is_le ? Rel::le : is_eq ? Rel::eq : Rel::ne;
         auto args = con->get_args();
         if (SymEngine::is_a<SymEngine::Infty>(*args[0]) || SymEngine::is_a<SymEngine::Infty>(*args[1])) {
             continue;
         }
-        isl_pw_aff* lhs = expression_to_isl_pw_aff(args[0], ls, names);
-        isl_pw_aff* rhs = expression_to_isl_pw_aff(args[1], ls, names);
-        if (!lhs || !rhs) {
-            isl_pw_aff_free(lhs);
-            isl_pw_aff_free(rhs);
-            ok = false;
-            break;
+        // lhs <= rhs holds iff every max-piece of lhs is <= every min-piece of rhs.
+        std::vector<Expression> lhs_pieces = {args[0]};
+        std::vector<Expression> rhs_pieces = {args[1]};
+        if (is_lt || is_le) {
+            lhs_pieces = split_extremum(args[0], /*is_min=*/false);
+            rhs_pieces = split_extremum(args[1], /*is_min=*/true);
         }
-        isl_set* s = nullptr;
-        if (is_ne) {
-            s = isl_pw_aff_ne_set(lhs, rhs);
-        } else if (isl_pw_aff_isa_aff(lhs) == isl_bool_true && isl_pw_aff_isa_aff(rhs) == isl_bool_true) {
-            isl_aff* l = isl_pw_aff_as_aff(lhs);
-            isl_aff* r = isl_pw_aff_as_aff(rhs);
-            isl_basic_set* c = is_eq   ? isl_aff_eq_basic_set(l, r)
-                               : is_lt ? isl_aff_lt_basic_set(l, r)
-                                       : isl_aff_le_basic_set(l, r);
-            bset = isl_basic_set_intersect(bset, c);
-        } else {
-            s = is_eq ? isl_pw_aff_eq_set(lhs, rhs) : is_lt ? isl_pw_aff_lt_set(lhs, rhs) : isl_pw_aff_le_set(lhs, rhs);
-        }
-        if (s) {
-            extra_sets = extra_sets ? isl_set_intersect(extra_sets, s) : s;
+        for (auto& lhs_expr : lhs_pieces) {
+            for (auto& rhs_expr : rhs_pieces) {
+                if (!ok) {
+                    break;
+                }
+                Conjunct c{lhs_expr, rhs_expr, rel};
+                if (!add_conjunct(c, nullptr, false)) {
+                    deferred.push_back(std::move(c));
+                }
+            }
         }
     }
 
     // `exists it : dim = lb + it * step`, emitted for constant non-unit strides.
     for (size_t i = 0; ok && i < n_dims; i++) {
         auto sym = symbolic::symbol(setup.dimensions[i]);
-        auto map_func = assums.at(sym).map();
-        if (map_func.is_null() || !SymEngine::is_a<SymEngine::Add>(*map_func)) {
+        auto assum = assums.find(sym);
+        auto map_func = assum == assums.end() ? Expression(SymEngine::null) : assum->second.map();
+        if (map_func.is_null() || symbolic::eq(map_func, symbolic::add(sym, symbolic::one()))) {
+            continue;
+        }
+        // Other updates leave the stride out of the domain.
+        bool exact_before = exact && *exact;
+        if (exact) {
+            *exact = false;
+        }
+        if (!SymEngine::is_a<SymEngine::Add>(*map_func)) {
             continue;
         }
         auto args = SymEngine::rcp_static_cast<const SymEngine::Add>(map_func)->get_args();
@@ -820,6 +1096,35 @@ isl_map* build_access_map(
             isl_val_free(step);
         }
         bset = isl_basic_set_intersect(bset, isl_aff_zero_basic_set(offset));
+        if (exact) {
+            *exact = exact_before;
+        }
+    }
+
+    // Each conjunct that becomes affine strengthens the context of the remaining ones.
+    for (bool progress = true; ok && progress;) {
+        progress = false;
+        for (size_t k = 0; ok && k < deferred.size();) {
+            if (add_conjunct(deferred[k], bset, false)) {
+                deferred.erase(deferred.begin() + k);
+                progress = true;
+            } else {
+                k++;
+            }
+        }
+    }
+    for (size_t k = 0; ok && k < deferred.size(); k++) {
+        add_conjunct(deferred[k], bset, true);
+    }
+
+    for (size_t k = 0; ok && k < exprs.size(); k++) {
+        isl_pw_aff* pa = expression_to_isl_pw_aff(exprs[k], ls, names, bset);
+        if (!pa) {
+            ok = false;
+            break;
+        }
+        outs_affine = outs_affine && isl_pw_aff_isa_aff(pa) == isl_bool_true;
+        outs = isl_pw_aff_list_add(outs, pa);
     }
 
     if (ok) {
@@ -852,6 +1157,67 @@ isl_map* build_access_map(
     isl_local_space_free(ls);
     isl_space_free(domain);
     return result;
+}
+
+// Dimensions and parameters as in expression_to_map_str; `coupled` adds the constraints registered on the symbols.
+IntersectionSetup single_setup(const MultiExpression& expr, const Assumptions& assums, bool coupled) {
+    IntersectionSetup setup;
+    SymbolSet syms;
+    for (auto& e : expr) {
+        for (auto& s : symbolic::atoms(e)) {
+            syms.insert(s);
+        }
+    }
+    SymbolSet params;
+    for (auto& sym : syms) {
+        auto it = assums.find(sym);
+        if (it != assums.end() && it->second.constant() && it->second.map().is_null()) {
+            params.insert(sym);
+        } else {
+            setup.dimensions.push_back(sym->get_name());
+            setup.dimensions_syms.insert(sym);
+        }
+    }
+    SymbolSet seen;
+    setup.constraints_syms_1 = generate_constraints(syms, assums, seen);
+    if (coupled) {
+        // Close over the symbols the registered constraints mention.
+        SymbolSet done;
+        for (bool grew = true; grew;) {
+            grew = false;
+            SymbolSet pending;
+            for (auto& sym : seen) {
+                if (!done.insert(sym).second) {
+                    continue;
+                }
+                for (auto& c : assums.at(sym).constraints()) {
+                    setup.constraints_syms_1.insert(symbolic::Le(c, symbolic::zero()));
+                    for (auto& s : symbolic::atoms(c)) {
+                        if (!seen.count(s) && assums.count(s)) {
+                            pending.insert(s);
+                        }
+                    }
+                }
+            }
+            if (!pending.empty()) {
+                auto more = generate_constraints(pending, assums, seen);
+                setup.constraints_syms_1.insert(more.begin(), more.end());
+                grew = true;
+            }
+        }
+    }
+    for (auto& con : setup.constraints_syms_1) {
+        for (auto& s : symbolic::atoms(con)) {
+            if (!setup.dimensions_syms.count(s)) {
+                params.insert(s);
+            }
+        }
+    }
+    for (auto& p : params) {
+        setup.parameters.push_back(p->get_name());
+    }
+    std::sort(setup.parameters.begin(), setup.parameters.end());
+    return setup;
 }
 
 } // namespace
@@ -922,6 +1288,167 @@ bool expressions_to_intersection_maps(
         return false;
     }
     return true;
+}
+
+isl_map* expression_to_may_map(isl_ctx* ctx, const MultiExpression& expr, const Assumptions& assums) {
+    auto setup = single_setup(expr, assums, /*coupled=*/false);
+    return build_access_map(ctx, setup, expr, setup.constraints_syms_1, assums, "");
+}
+
+namespace {
+
+// Folds `e` with integer symbol values to an integer, or null.
+Expression fold_at(const Expression& e, const std::unordered_map<std::string, Expression>& values) {
+    if (SymEngine::is_a<SymEngine::Integer>(*e)) {
+        return e;
+    }
+    if (SymEngine::is_a<SymEngine::Symbol>(*e)) {
+        auto it = values.find(SymEngine::down_cast<const SymEngine::Symbol&>(*e).get_name());
+        return it == values.end() ? Expression(SymEngine::null) : it->second;
+    }
+    SymEngine::vec_basic args;
+    for (auto& arg : e->get_args()) {
+        auto folded = fold_at(arg, values);
+        if (folded.is_null()) {
+            return SymEngine::null;
+        }
+        args.push_back(folded);
+    }
+    Expression result = SymEngine::null;
+    if (SymEngine::is_a<SymEngine::Add>(*e)) {
+        result = SymEngine::add(args);
+    } else if (SymEngine::is_a<SymEngine::Mul>(*e)) {
+        result = SymEngine::mul(args);
+    } else if (SymEngine::is_a<SymEngine::Min>(*e)) {
+        result = SymEngine::min(args);
+    } else if (SymEngine::is_a<SymEngine::Max>(*e)) {
+        result = SymEngine::max(args);
+    } else if (SymEngine::is_a<SymEngine::Pow>(*e)) {
+        result = SymEngine::pow(args[0], args[1]);
+    } else if (SymEngine::is_a<SymEngine::FunctionSymbol>(*e) && args.size() == 2) {
+        // Arbitrary precision: sample points may lie near the int64 limits of the assumptions.
+        auto& name = SymEngine::down_cast<const SymEngine::FunctionSymbol&>(*e).get_name();
+        if ((name == "idiv" || name == "imod") && !symbolic::eq(args[1], symbolic::zero())) {
+            auto& a = SymEngine::down_cast<const SymEngine::Integer&>(*args[0]);
+            auto& b = SymEngine::down_cast<const SymEngine::Integer&>(*args[1]);
+            auto q = SymEngine::quotient(a, b);
+            result = name == "idiv" ? Expression(q) : symbolic::sub(args[0], symbolic::mul(args[1], q));
+        }
+    } else if (SymEngine::is_a<SymEngine::FunctionSymbol>(*e) && args.size() == 1 &&
+               SymEngine::down_cast<const SymEngine::FunctionSymbol&>(*e).get_name() == "iabs") {
+        result = SymEngine::abs(args[0]);
+    }
+    return !result.is_null() && SymEngine::is_a<SymEngine::Integer>(*result) ? result : Expression(SymEngine::null);
+}
+
+// Whether the point satisfies every constraint and stride of the setup; false if undecidable.
+bool satisfies(
+    const IntersectionSetup& setup, const Assumptions& assums, const std::unordered_map<std::string, Expression>& values
+) {
+    for (auto& con : setup.constraints_syms_1) {
+        auto args = con->get_args();
+        if (args.size() != 2) {
+            continue;
+        }
+        if (SymEngine::is_a<SymEngine::Infty>(*args[0]) || SymEngine::is_a<SymEngine::Infty>(*args[1])) {
+            continue;
+        }
+        auto lhs = fold_at(args[0], values);
+        auto rhs = fold_at(args[1], values);
+        if (lhs.is_null() || rhs.is_null()) {
+            return false;
+        }
+        bool holds;
+        if (SymEngine::is_a<SymEngine::StrictLessThan>(*con)) {
+            holds = symbolic::is_true(symbolic::Lt(lhs, rhs));
+        } else if (SymEngine::is_a<SymEngine::LessThan>(*con)) {
+            holds = symbolic::is_true(symbolic::Le(lhs, rhs));
+        } else if (SymEngine::is_a<SymEngine::Equality>(*con)) {
+            holds = symbolic::eq(lhs, rhs);
+        } else if (SymEngine::is_a<SymEngine::Unequality>(*con)) {
+            holds = !symbolic::eq(lhs, rhs);
+        } else {
+            continue;
+        }
+        if (!holds) {
+            return false;
+        }
+    }
+    for (auto& dim : setup.dimensions) {
+        auto sym = symbolic::symbol(dim);
+        auto it = assums.find(sym);
+        if (it == assums.end() || it->second.map().is_null()) {
+            continue;
+        }
+        auto step = symbolic::sub(it->second.map(), sym);
+        auto init = it->second.tight_lower_bound();
+        if (!SymEngine::is_a<SymEngine::Integer>(*step)) {
+            return false;
+        }
+        if (symbolic::eq(step, symbolic::one())) {
+            continue;
+        }
+        auto lb = init.is_null() ? init : fold_at(init, values);
+        if (lb.is_null() || !symbolic::eq(symbolic::mod(symbolic::sub(values.at(dim), lb), step), symbolic::zero())) {
+            return false;
+        }
+    }
+    return true;
+}
+
+} // namespace
+
+std::optional<bool> decide_nonneg(const Expression& expr, const Assumptions& assums, bool strict) {
+    auto setup = single_setup({expr}, assums, /*coupled=*/true);
+    polyhedral::IslCtx ctx;
+    bool exact = true;
+    isl_map* map = ctx ? build_access_map(ctx.get(), setup, {expr}, setup.constraints_syms_1, assums, "", &exact)
+                       : nullptr;
+    if (!map) {
+        return std::nullopt;
+    }
+    // Iterations whose value violates the goal.
+    isl_set* bad =
+        isl_set_upper_bound_si(isl_set_universe(isl_space_range(isl_map_get_space(map))), isl_dim_set, 0, strict ? 0 : -1);
+    isl_set* violations = isl_map_domain(isl_map_intersect_range(map, bad));
+    isl_bool empty = isl_set_is_empty(violations);
+    std::optional<bool> result;
+    if (empty == isl_bool_true) {
+        result = true;
+    } else if (empty == isl_bool_false && exact) {
+        result = false;
+    } else if (empty == isl_bool_false) {
+        // The domain over-approximates; a violation satisfying all assumptions still refutes the goal.
+        isl_point* point = isl_set_sample_point(isl_set_copy(violations));
+        std::unordered_map<std::string, Expression> values;
+        bool ok = point != nullptr;
+        for (auto [type, names] :
+             {std::make_pair(isl_dim_param, &setup.parameters), std::make_pair(isl_dim_set, &setup.dimensions)}) {
+            for (size_t i = 0; ok && i < names->size(); i++) {
+                int pos = type == isl_dim_param
+                              ? isl_set_find_dim_by_name(violations, isl_dim_param, (*names)[i].c_str())
+                              : int(i);
+                isl_val* v = pos >= 0 ? isl_point_get_coordinate_val(point, type, pos) : nullptr;
+                char* str = v && isl_val_is_int(v) ? isl_val_to_str(v) : nullptr;
+                ok = str != nullptr;
+                if (ok) {
+                    try {
+                        values.emplace((*names)[i], symbolic::integer(std::stoll(str)));
+                    } catch (const std::out_of_range&) {
+                        ok = false;
+                    }
+                }
+                free(str);
+                isl_val_free(v);
+            }
+        }
+        isl_point_free(point);
+        if (ok && satisfies(setup, assums, values)) {
+            result = false;
+        }
+    }
+    isl_set_free(violations);
+    return result;
 }
 
 ExpressionSet generate_constraints(SymbolSet& syms, const Assumptions& assums, SymbolSet& seen) {
