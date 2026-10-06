@@ -263,6 +263,22 @@ std::optional<types::PrimitiveType> MatMulNode::uniform_quantization(const data_
     }
 }
 
+types::PrimitiveType MatMulNode::input_quantization() const {
+    if (fixed_quantization_ != QUANTIZATION_MATCH_INPUTS) {
+        return fixed_quantization_;
+    } else {
+        return this->primitive_type(get_parent());
+    }
+}
+
+types::PrimitiveType MatMulNode::output_quantization() const {
+    if (fixed_quantization_ != QUANTIZATION_MATCH_INPUTS) {
+        return fixed_quantization_;
+    } else {
+        return this->primitive_type(get_parent());
+    }
+}
+
 std::string MatMulNode::toStr() const {
     std::stringstream ss;
     ss << "MatMul(";

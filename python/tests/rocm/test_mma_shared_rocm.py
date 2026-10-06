@@ -36,7 +36,7 @@ from docc.sdfg import (
     Pointer,
     PrimitiveType,
     RocmArch,
-    RocmMmaTransform,
+    GpuMmaTransform,
     Scalar,
     ScheduleType,
     StorageType,
@@ -174,7 +174,7 @@ def test_mma_from_shared_executes(arch, M, N, K, tile_m, tile_n, b_col_major):
 
     builder, node = _build_shared_staged_mma(M, N, K, tile_m, tile_n, b_col_major)
     am = AnalysisManager(builder)
-    xform = RocmMmaTransform(node, RocmArch.get_from_name(arch))
+    xform = GpuMmaTransform(node, RocmArch.get_from_name(arch))
     assert xform.can_be_applied(builder, am), "MMA over the LDS tiles should expand"
     xform.apply(builder, am)
     assert xform.expanded

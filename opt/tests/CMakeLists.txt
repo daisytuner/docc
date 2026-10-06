@@ -27,7 +27,9 @@ set(TEST_FILES
     cuda/cuda_reduce_dispatcher_test.cpp
     cuda/cuda_offload_reduce_dispatcher_test.cpp
     cuda/softmax_dispatcher_test.cpp
+    einsum/einsum_detection_test.cpp
     einsum/einsum_node_test.cpp
+    einsum/einsum_replacement_test.cpp
     einsum/passes/einsum_passes_test.cpp
     einsum/transformations/einsum2gemm_test.cpp
     einsum/transformations/einsum_extend_test.cpp
@@ -79,6 +81,8 @@ set(TEST_FILES
     passes/scheduler/omp_scheduler_test.cpp
     passes/scheduler/rocm_scheduler_test.cpp
     passes/scheduler/vectorize_scheduler_test.cpp
+    targets/cuda/cuda_language_extension_test.cpp
+    targets/cuda/cuda_lib_dispatcher_test.cpp
     targets/omp/codegen/omp_map_dispatcher_test.cpp
     targets/gpu/embedding_dispatcher_test.cpp
     targets/omp/schedule_test.cpp

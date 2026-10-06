@@ -2,8 +2,8 @@
 
 #include "sdfg/codegen/language_extensions/c_language_extension.h"
 #include "sdfg/codegen/language_extensions/cpp_language_extension.h"
-#include "sdfg/codegen/language_extensions/cuda_language_extension.h"
-#include "sdfg/codegen/language_extensions/rocm_language_extension.h"
+#include "sdfg/targets/cuda/codegen/cuda_language_extension.h"
+#include "sdfg/targets/rocm/codegen/rocm_language_extension.h"
 
 namespace sdfg {
 namespace cuda {

@@ -2,12 +2,14 @@
 
 #include <memory>
 
+#include "sdfg/data_flow/library_nodes/barrier_local_node.h"
 #include "sdfg/passes/scheduler/cuda_offload_scheduler.h"
 #include "sdfg/targets/cuda/cuda.h"
 #include "sdfg/targets/cuda/cuda_offload_dispatcher_strategy.h"
 #include "sdfg/targets/cuda/cuda_reduce_dispatcher.h"
 #include "sdfg/targets/cuda/tiles/pipeline_node.h"
 #include "sdfg/targets/cuda/tiles/tile_copy_node.h"
+#include "sdfg/targets/gpu/barrier_local_node_dispatcher.h"
 #include "sdfg/targets/gpu/gpu_offload_map_dispatcher.h"
 #include "sdfg/targets/gpu/gpu_offload_reduce_dispatcher.h"
 #include "sdfg/targets/gpu/gpu_tile_target.h"
@@ -279,6 +281,21 @@ void register_cuda_plugin(plugins::Context& context) {
            const data_flow::LibraryNode& node) {
             return std::make_unique<cuda::stdlib::MemcpyNodeDispatcher_CUDAWithoutTransfers>(
                 language_extension, function, data_flow_graph, dynamic_cast<const sdfg::stdlib::MemcpyNode&>(node)
+            );
+        }
+    );
+
+    // BarrierLocal. Its a generic impl, but it explicitly casts to rocm & cuda types. Both, cuda and rocm register this
+    // to ensure it exists. But they register the same impl.
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
+        data_flow::LibraryNodeType_BarrierLocal,
+        data_flow::ImplementationType_NONE,
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<gpu::BarrierLocalNodeDispatcher>(
+                language_extension, function, data_flow_graph, dynamic_cast<const data_flow::BarrierLocalNode&>(node)
             );
         }
     );

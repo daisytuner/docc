@@ -1,14 +1,13 @@
-#include "sdfg/codegen/language_extensions/rocm_language_extension.h"
+#include "sdfg/targets/cuda/codegen/cuda_language_extension.h"
 
 #include "sdfg/codegen/language_extensions/cpp_language_extension.h"
 #include "sdfg/codegen/utils.h"
 #include "sdfg/data_flow/library_node.h"
 #include "sdfg/data_flow/tasklet.h"
 
-namespace sdfg {
-namespace codegen {
+namespace sdfg::cuda {
 
-std::string ROCMLanguageExtension::primitive_type(const types::PrimitiveType prim_type) {
+std::string CUDALanguageExtension::primitive_type(const types::PrimitiveType prim_type) {
     switch (prim_type) {
         case types::PrimitiveType::Void:
             return "void";
@@ -53,7 +52,7 @@ std::string ROCMLanguageExtension::primitive_type(const types::PrimitiveType pri
     throw std::runtime_error("Unknown primitive type");
 };
 
-std::string ROCMLanguageExtension::
+std::string CUDALanguageExtension::
     declaration(const std::string& name, const types::IType& type, bool use_initializer, bool use_alignment) {
     std::stringstream val;
 
@@ -87,7 +86,7 @@ std::string ROCMLanguageExtension::
             val << "void*";
             val << " " << name;
         }
-    } else if (auto ref_type = dynamic_cast<const Reference*>(&type)) {
+    } else if (auto ref_type = dynamic_cast<const codegen::Reference*>(&type)) {
         val << declaration("&" + name, ref_type->reference_type());
     } else if (auto structure_type = dynamic_cast<const types::Structure*>(&type)) {
         if (structure_type->storage_type().is_nv_shared()) {
@@ -130,7 +129,7 @@ std::string ROCMLanguageExtension::
     return val.str();
 };
 
-std::string ROCMLanguageExtension::type_cast(const std::string& name, const types::IType& type) {
+std::string CUDALanguageExtension::type_cast(const std::string& name, const types::IType& type) {
     std::stringstream val;
 
     val << "reinterpret_cast";
@@ -142,7 +141,7 @@ std::string ROCMLanguageExtension::type_cast(const std::string& name, const type
     return val.str();
 };
 
-std::string ROCMLanguageExtension::subset(const types::IType& type, const data_flow::Subset& sub) {
+std::string CUDALanguageExtension::subset(const types::IType& type, const data_flow::Subset& sub) {
     if (sub.empty()) {
         return "";
     }
@@ -182,12 +181,12 @@ std::string ROCMLanguageExtension::subset(const types::IType& type, const data_f
     throw std::invalid_argument("Invalid subset type");
 };
 
-std::string ROCMLanguageExtension::expression(const symbolic::Expression expr) {
-    CPPSymbolicPrinter printer(this->function_, this->external_prefix_);
+std::string CUDALanguageExtension::expression(const symbolic::Expression expr) {
+    codegen::CPPSymbolicPrinter printer(this->function_, this->external_prefix_);
     return printer.apply(expr);
 };
 
-std::string ROCMLanguageExtension::access_node(const data_flow::AccessNode& node) {
+std::string CUDALanguageExtension::access_node(const data_flow::AccessNode& node) {
     if (dynamic_cast<const data_flow::ConstantNode*>(&node)) {
         std::string name = node.data();
         if (symbolic::is_nullptr(name)) {
@@ -203,7 +202,7 @@ std::string ROCMLanguageExtension::access_node(const data_flow::AccessNode& node
     }
 };
 
-std::string ROCMLanguageExtension::tasklet(const data_flow::Tasklet& tasklet) {
+std::string CUDALanguageExtension::tasklet(const data_flow::Tasklet& tasklet) {
     switch (tasklet.code()) {
         case data_flow::TaskletCode::assign:
             return tasklet.inputs().at(0);
@@ -326,7 +325,7 @@ std::string ROCMLanguageExtension::tasklet(const data_flow::Tasklet& tasklet) {
     throw std::invalid_argument("Invalid tasklet code");
 };
 
-std::string ROCMLanguageExtension::zero(const types::PrimitiveType prim_type) {
+std::string CUDALanguageExtension::zero(const types::PrimitiveType prim_type) {
     switch (prim_type) {
         case types::Void:
             throw InvalidSDFGException("No zero for void type possible");
@@ -369,5 +368,4 @@ std::string ROCMLanguageExtension::zero(const types::PrimitiveType prim_type) {
     }
 }
 
-} // namespace codegen
-} // namespace sdfg
+} // namespace sdfg::cuda

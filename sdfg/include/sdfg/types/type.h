@@ -77,7 +77,7 @@ private:
     symbolic::Expression allocation_size_; ///< Size to allocate
     AllocationType allocation_; ///< Allocation management type
     AllocationType deallocation_; ///< Deallocation management type
-    symbolic::Expression arg1_; ///< Additional argument (e.g., page_size for specialized hardware)
+    std::vector<symbolic::Expression> args_; ///< Additional arguments (e.g., page_size for specialized hardware)
 
 public:
     /**
@@ -125,13 +125,35 @@ public:
     }
 
     /// @brief Gets the additional argument
-    symbolic::Expression arg1() const {
-        return arg1_;
+    [[deprecated("use args")]]
+    const symbolic::Expression& arg1() const {
+        return args_.at(0);
     }
 
     /// @brief Sets the additional argument
+    [[deprecated("use args")]]
     void arg1(const symbolic::Expression& arg) {
-        arg1_ = arg;
+        if (args_.size() > 1) {
+            args_.at(0) = arg;
+        } else {
+            args_.push_back(arg);
+        }
+    }
+
+    std::vector<symbolic::Expression>& args() {
+        return args_;
+    }
+
+    const std::vector<symbolic::Expression>& args() const {
+        return args_;
+    }
+
+    void args(const std::vector<symbolic::Expression>& args) {
+        args_ = args;
+    }
+
+    void args(std::vector<symbolic::Expression>&& args) {
+        args_ = std::move(args);
     }
 
     /// @brief Gets the allocation management type
@@ -172,8 +194,14 @@ public:
         if (!symbolic::null_safe_eq(allocation_size_, other.allocation_size_)) {
             return false;
         }
-        if (!symbolic::null_safe_eq(arg1_, other.arg1_)) {
+        if (args_.size() != other.args_.size()) {
             return false;
+        } else {
+            for (size_t i = 0; i < args_.size(); ++i) {
+                if (!symbolic::null_safe_eq(args_[i], other.args_[i])) {
+                    return false;
+                }
+            }
         }
         return true;
     }

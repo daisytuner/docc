@@ -1,4 +1,4 @@
-"""ROCm MMA (rocwmma) expansion tests for the ``RocmMmaTransform`` transformation.
+"""ROCm MMA (rocwmma) expansion tests for the ``GpuMmaTransform`` transformation.
 
 These mirror the C++ ``ROCMMMATest`` unit tests (``opt/tests/rocm/rocm_mma_test.cpp``)
 but drive the *builder* API from Python:
@@ -8,7 +8,7 @@ but drive the *builder* API from Python:
   holds a single ``MatMulNode`` over the per-block tile.  The tile layouts follow
   the row-major layout of the full ``M x K`` / ``K x N`` / ``M x N`` matrices, with
   the tile offset selected by the map induction variables.
-* ``_apply`` builds the ``RocmMmaTransform`` transformation for a target ``RocmArch``
+* ``_apply`` builds the ``GpuMmaTransform`` transformation for a target ``RocmArch``
   and reports whether it applies.
 
 The expander only accepts tiles whose ``M``/``N``/``K`` extents are whole multiples
@@ -35,7 +35,7 @@ from docc.sdfg import (
     Pointer,
     PrimitiveType,
     RocmArch,
-    RocmMmaTransform,
+    GpuMmaTransform,
     Scalar,
     ScheduleType,
     StorageType,
@@ -44,6 +44,7 @@ from docc.sdfg import (
     Tensor,
 )
 from docc.compiler.compiled_sdfg import CompiledSDFG
+from typing import Optional
 
 HALF = Scalar(PrimitiveType.Half)
 HALF_BYTES = 2
@@ -73,7 +74,7 @@ def _add_tile_matmul(builder, M, N, K, tile_m, tile_n, a="A", b="B", c="C"):
     return builder.add_matmul_op(a, a_type, b, b_type, c, c_type)
 
 
-def _build_offloaded_mma(M, N, K, tile_m, tile_n):
+def _build_offloaded_mma(M, N, K, tile_m, tile_n, arch: Optional[RocmArch] = None):
     """Recreate the offloaded MatMul SDFG from the C++ ``build_offloaded_mma_structure``.
 
     Device pointers ``A``/``B``/``C`` are kernel arguments; the outer Y_GRID map
@@ -95,27 +96,20 @@ def _build_offloaded_mma(M, N, K, tile_m, tile_n):
         "0",
         str(M),
         str(tile_m),
-        ScheduleType.rocm_offload(TargetLevel.Y_GRID, _ceil_div(M, tile_m)),
+        ScheduleType.rocm_offload(TargetLevel.Y_GRID, _ceil_div(M, tile_m), arch=arch),
     )
     builder.begin_map(
         "block_col",
         "0",
         str(N),
         str(tile_n),
-        ScheduleType.rocm_offload(TargetLevel.X_GRID, _ceil_div(N, tile_n)),
+        ScheduleType.rocm_offload(TargetLevel.X_GRID, _ceil_div(N, tile_n), arch=arch),
     )
     node = _add_tile_matmul(builder, M, N, K, tile_m, tile_n)
     builder.end_map()
     builder.end_map()
 
     return builder, node
-
-
-def _apply(builder, node, arch_name):
-    """Build ``RocmMmaTransform`` for ``arch_name`` and return (transform, analysis_manager)."""
-    am = AnalysisManager(builder)
-    xform = RocmMmaTransform(node, RocmArch.get_from_name(arch_name))
-    return xform, am
 
 
 ARCHES = ["gfx1201", "gfx90a"]
@@ -137,19 +131,23 @@ UNSUPPORTED = [
 ]
 
 
-@pytest.mark.parametrize("arch", ARCHES)
+@pytest.mark.parametrize("arch_name", ARCHES)
 @pytest.mark.parametrize(
     "M,N,K,tile_m,tile_n",
     ALIGNED,
     ids=[f"{m}x{n}x{k}_{tm}x{tn}" for (m, n, k, tm, tn) in ALIGNED],
 )
-def test_mma_expand_applies(arch, M, N, K, tile_m, tile_n):
-    builder, node = _build_offloaded_mma(M, N, K, tile_m, tile_n)
-    xform, am = _apply(builder, node, arch)
+def test_mma_expand_applies(arch_name, M, N, K, tile_m, tile_n):
+    arch = RocmArch.get_from_name(arch_name)
+    builder, node = _build_offloaded_mma(M, N, K, tile_m, tile_n, arch)
+    am1 = AnalysisManager(builder)
+    xform1 = GpuMmaTransform(node, arch)
+    result = xform1, am1
+    xform, am = result
 
     assert xform.can_be_applied(
         builder, am
-    ), f"aligned {tile_m}x{tile_n} tile should expand on {arch}"
+    ), f"aligned {tile_m}x{tile_n} tile should expand on {arch_name}"
     xform.apply(builder, am)
     assert xform.expanded
 
@@ -157,19 +155,23 @@ def test_mma_expand_applies(arch, M, N, K, tile_m, tile_n):
     sdfg.validate()
 
 
-@pytest.mark.parametrize("arch", ARCHES)
+@pytest.mark.parametrize("arch_name", ARCHES)
 @pytest.mark.parametrize(
     "M,N,K,tile_m,tile_n",
     UNSUPPORTED,
     ids=[f"{m}x{n}x{k}_{tm}x{tn}" for (m, n, k, tm, tn) in UNSUPPORTED],
 )
-def test_mma_expand_declines(arch, M, N, K, tile_m, tile_n):
-    builder, node = _build_offloaded_mma(M, N, K, tile_m, tile_n)
-    xform, am = _apply(builder, node, arch)
+def test_mma_expand_declines(arch_name, M, N, K, tile_m, tile_n):
+    arch = RocmArch.get_from_name(arch_name)
+    builder, node = _build_offloaded_mma(M, N, K, tile_m, tile_n, arch)
+    am1 = AnalysisManager(builder)
+    xform1 = GpuMmaTransform(node, arch)
+    result = xform1, am1
+    xform, am = result
 
     assert not xform.can_be_applied(
         builder, am
-    ), f"unsupported {tile_m}x{tile_n}/K={K} tile must not expand on {arch}"
+    ), f"unsupported {tile_m}x{tile_n}/K={K} tile must not expand on {arch_name}"
 
 
 # ---------------------------------------------------------------------------
@@ -177,7 +179,7 @@ def test_mma_expand_declines(arch, M, N, K, tile_m, tile_n):
 # ---------------------------------------------------------------------------
 
 
-def _build_executable_mma(M, N, K, tile_m, tile_n):
+def _build_executable_mma(M, N, K, tile_m, tile_n, arch):
     """Full runnable matmul: host args, device buffers, H2D/D2H transfers, kernel."""
     builder = StructuredSDFGBuilder("test_mma_exec")
     host = Pointer(HALF)
@@ -209,7 +211,7 @@ def _build_executable_mma(M, N, K, tile_m, tile_n):
         str(tile_m),
         ScheduleType.rocm_offload(TargetLevel.Y_GRID, _ceil_div(M, tile_m)),
     )
-    builder.begin_map(
+    grid_n_loop = builder.begin_map(
         "block_col",
         "0",
         str(N),
@@ -224,7 +226,7 @@ def _build_executable_mma(M, N, K, tile_m, tile_n):
     off("dA", "dA", DataTransferDirection.NONE, BufferLifecycle.FREE, 0)
     off("dB", "dB", DataTransferDirection.NONE, BufferLifecycle.FREE, 0)
 
-    return builder, node
+    return builder, node, grid_n_loop
 
 
 EXEC_CASES = [
@@ -235,25 +237,31 @@ EXEC_CASES = [
 
 
 @pytest.mark.rocm()
-@pytest.mark.parametrize("arch", ARCHES)
+@pytest.mark.parametrize("arch_name", ARCHES)
 @pytest.mark.parametrize(
     "M,N,K,tile_m,tile_n",
     EXEC_CASES,
     ids=[f"{m}x{n}x{k}_{tm}x{tn}" for (m, n, k, tm, tn) in EXEC_CASES],
 )
-def test_mma_expand_executes(arch, M, N, K, tile_m, tile_n):
-    if RocmArch.current_name() != arch:
-        pytest.skip(f"DOCC_ROCM_ARCH ({RocmArch.current_name()}) != {arch}")
+def test_mma_expand_executes(arch_name, M, N, K, tile_m, tile_n):
+    if RocmArch.current_name() != arch_name:
+        pytest.skip(f"DOCC_ROCM_ARCH ({RocmArch.current_name()}) != {arch_name}")
+    arch = RocmArch.get_current()
 
-    builder, node = _build_executable_mma(M, N, K, tile_m, tile_n)
-    xform, am = _apply(builder, node, arch)
+    output_dir = (
+        PYTEST_OUTPUT_DIR / f"mma_{arch_name}_{M}x{N}x{K}_{tile_m}x{tile_n}_executes"
+    )
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    builder, node, _ = _build_executable_mma(M, N, K, tile_m, tile_n, arch)
+    builder.dump(str(output_dir), "init", True, True)
+
+    am = AnalysisManager(builder)
+    xform = GpuMmaTransform(node, arch)
     assert xform.can_be_applied(builder, am)
     xform.apply(builder, am)
     assert xform.expanded
     sdfg = builder.move()
-
-    output_dir = PYTEST_OUTPUT_DIR / f"mma_{arch}_{M}x{N}x{K}_{tile_m}x{tile_n}"
-    output_dir.mkdir(parents=True, exist_ok=True)
 
     sdfg.dump(str(output_dir), "expanded", True, True)
     sdfg.validate()
@@ -270,3 +278,10 @@ def test_mma_expand_executes(arch, M, N, K, tile_m, tile_n):
 
     ref = A.astype(np.float32) @ B.astype(np.float32)
     np.testing.assert_allclose(C.astype(np.float32), ref, rtol=5e-2, atol=5e-2)
+
+
+def _apply_transform(builder, am, transform):
+    assert transform.can_be_applied(
+        builder, am
+    ), f"Transform {transform} should be applicable"
+    transform.apply(builder, am)
