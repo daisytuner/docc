@@ -2635,6 +2635,84 @@ TEST(LocalStorageTest, Apply_Cooperative_Mixed) {
     EXPECT_FALSE(block_uses(*main_block, "A"));
 }
 
+// Staging a second operand before the same loop joins the first copy's barrier group:
+// [barrier, copy A, copy B, barrier, k-loop] so both loads are in flight together.
+TEST(LocalStorageTest, Apply_Cooperative_TwoOperands_ShareStagingGroup) {
+    builder::StructuredSDFGBuilder builder("ls_coop_two", FunctionType_CPU);
+    auto& seq = builder.subject().root();
+    types::Scalar loop_var(types::PrimitiveType::Int32);
+    types::Scalar elem(types::PrimitiveType::Float);
+    types::Pointer ptr(elem);
+    auto i = symbolic::symbol("i");
+    auto j = symbolic::symbol("j");
+    auto k = symbolic::symbol("k");
+    auto N = symbolic::symbol("N");
+    auto M = symbolic::symbol("M");
+    builder.add_container("N", loop_var, true);
+    builder.add_container("M", loop_var, true);
+    builder.add_container("A", ptr, true);
+    builder.add_container("B", ptr, true);
+    builder.add_container("C", ptr, true);
+    builder.add_container("i", loop_var);
+    builder.add_container("j", loop_var);
+    builder.add_container("k", loop_var);
+
+    auto sched_i = gpu::ScheduleType_GPU_Offload::create<
+        cuda::ScheduleType_CUDA_Offload>(gpu::TargetLevel::X_BLOCK, symbolic::integer(8));
+    auto sched_j = gpu::ScheduleType_GPU_Offload::create<
+        cuda::ScheduleType_CUDA_Offload>(gpu::TargetLevel::Y_BLOCK, symbolic::integer(4));
+    auto& map_i =
+        builder
+            .add_map(seq, i, symbolic::Lt(i, N), symbolic::integer(0), symbolic::add(i, symbolic::integer(1)), sched_i);
+    auto& map_j = builder.add_map(
+        map_i.root(), j, symbolic::Lt(j, M), symbolic::integer(0), symbolic::add(j, symbolic::integer(1)), sched_j
+    );
+    auto& loop_k = builder.add_for(
+        map_j.root(),
+        k,
+        symbolic::Lt(k, symbolic::integer(16)),
+        symbolic::integer(0),
+        symbolic::add(k, symbolic::integer(1))
+    );
+
+    // C[i*M + j] += A[i*16 + k] * B[k*M + j]
+    auto& block = builder.add_block(loop_k.root());
+    auto& c_in = builder.add_access(block, "C");
+    auto& a_in = builder.add_access(block, "A");
+    auto& b_in = builder.add_access(block, "B");
+    auto& c_out = builder.add_access(block, "C");
+    auto& t = builder.add_tasklet(block, data_flow::TaskletCode::fp_fma, "_out", {"_in1", "_in2", "_in3"});
+    builder
+        .add_computational_memlet(block, a_in, t, "_in1", {symbolic::add(symbolic::mul(i, symbolic::integer(16)), k)}, ptr);
+    builder.add_computational_memlet(block, b_in, t, "_in2", {symbolic::add(symbolic::mul(k, M), j)}, ptr);
+    builder.add_computational_memlet(block, c_in, t, "_in3", {symbolic::add(symbolic::mul(i, M), j)}, ptr);
+    builder.add_computational_memlet(block, t, "_out", c_out, {symbolic::add(symbolic::mul(i, M), j)}, ptr);
+
+    {
+        analysis::AnalysisManager am(builder.subject());
+        LocalStorage xa(loop_k, a_in);
+        ASSERT_TRUE(xa.can_be_applied(builder, am));
+        xa.apply(builder, am);
+    }
+    data_flow::AccessNode* b_node = nullptr;
+    for (auto* n : dyn_cast<structured_control_flow::Block*>(&loop_k.root().at(0))->dataflow().data_nodes()) {
+        if (n->data() == "B") {
+            b_node = n;
+        }
+    }
+    ASSERT_NE(b_node, nullptr);
+    analysis::AnalysisManager am(builder.subject());
+    LocalStorage xb(loop_k, *b_node);
+    ASSERT_TRUE(xb.can_be_applied(builder, am));
+    xb.apply(builder, am);
+
+    ASSERT_EQ(map_j.root().size(), 5u);
+    EXPECT_TRUE(is_tile_copy_block(map_j.root().at(1)));
+    EXPECT_TRUE(is_tile_copy_block(map_j.root().at(2)));
+    EXPECT_FALSE(is_tile_copy_block(map_j.root().at(3)));
+    EXPECT_NE(dyn_cast<structured_control_flow::For*>(&map_j.root().at(4)), nullptr);
+}
+
 /**
  * Apply_Cooperative_Mixed_Swizzle: same mixed shape, but swizzle_layout=true with a
  * power-of-two tile block (16). The buffer is the natural (unpadded) [slot][block]
