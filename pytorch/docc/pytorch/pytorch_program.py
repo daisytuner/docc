@@ -293,24 +293,6 @@ class PyTorchProgram(DoccProgram):
         ):
             shutil.rmtree(output_folder_path)
 
-        # Populate input info from example input
-        self._input_info = []
-        example_inputs = (
-            tuple(self.example_input)
-            if isinstance(self.example_input, (tuple, list))
-            else (self.example_input,)
-        )
-        for inp in example_inputs:
-            if isinstance(inp, torch.Tensor):
-                self._input_info.append(
-                    {
-                        "shape": tuple(inp.shape),
-                        "dtype": inp.dtype,
-                    }
-                )
-            else:
-                self._input_info.append({})
-
         if docc_reuse_binaries:
             lib_path = f"{output_folder_path}/lib__docc_{self.name}.so"
             if not os.path.exists(lib_path):
@@ -366,6 +348,24 @@ class PyTorchProgram(DoccProgram):
                 output_folder_path,
                 metrics=metrics,
             )
+
+        # Populate input info from example input
+        self._input_info = []
+        example_inputs = (
+            tuple(self.example_input)
+            if isinstance(self.example_input, (tuple, list))
+            else (self.example_input,)
+        )
+        for inp in example_inputs:
+            if isinstance(inp, torch.Tensor):
+                self._input_info.append(
+                    {
+                        "shape": tuple(inp.shape),
+                        "dtype": inp.dtype,
+                    }
+                )
+            else:
+                self._input_info.append({})
 
         # Build shape sources from input info
         shape_sources = []
@@ -463,6 +463,19 @@ class PyTorchProgram(DoccProgram):
         if self.example_input is None:
             raise ValueError("No example input provided for SDFG conversion.")
 
+        # Drop SymInt, SymFloat, and SymBool for now and convert them to int, float, and bool respectively
+        normalized_example_inputs: list[Any] = []
+        for example_input in self.example_input:
+            if isinstance(example_input, torch.SymInt):
+                normalized_example_inputs.append(int(example_input))
+            elif isinstance(example_input, torch.SymFloat):
+                normalized_example_inputs.append(float(example_input))
+            elif isinstance(example_input, torch.SymBool):
+                normalized_example_inputs.append(bool(example_input))
+            else:
+                normalized_example_inputs.append(example_input)
+        self.example_input: tuple[Any, ...] | None = tuple(normalized_example_inputs)
+
         # Drop dynamo's guard node so re-exporting the graph does not run its
         # guard code (which references the undefined locals dict `L`).
         _strip_guards_fn(self.gm)
@@ -503,8 +516,8 @@ class PyTorchProgram(DoccProgram):
         self._sdfg: StructuredSDFG | None = sdfg
         return sdfg
 
-    def _convert_inputs(self, args: tuple) -> tuple[np.ndarray, ...]:
-        converted: list[np.ndarray] = []
+    def _convert_inputs(self, args: tuple) -> tuple[Any, ...]:
+        converted: list[Any] = []
         for arg in args:
             if isinstance(arg, torch.Tensor):
                 # Ensure contiguous and convert to numpy
@@ -519,9 +532,16 @@ class PyTorchProgram(DoccProgram):
                     arr: np.ndarray = contiguous_arg.numpy()
                 converted.append(arr)
             elif isinstance(arg, np.ndarray):
-                converted.append(arr)
+                converted.append(arg)
+            elif isinstance(arg, np.generic):
+                converted.append(arg.item())
+            elif isinstance(arg, (int, float, bool)):
+                converted.append(arg)
             else:
-                raise ValueError("Only allow torch.Tensor and np.ndarray for now")
+                raise ValueError(
+                    "Only allow torch.Tensor, np.ndarray, and scalar values for now but got: "
+                    + str(type(arg))
+                )
         return tuple(converted)
 
     def _convert_outputs(self, result: Any, original_args: tuple) -> Any:
@@ -552,7 +572,7 @@ class PyTorchProgram(DoccProgram):
                 return t
             elif isinstance(val, torch.Tensor):
                 return val if is_cpu else val.to(device)
-            elif isinstance(val, (int, float)):
+            elif isinstance(val, (int, float, bool)):
                 return torch.tensor(val, device=device)
             elif hasattr(val, "__cuda_array_interface__"):
                 # Device-resident output (e.g. cupy array): zero-copy to torch.

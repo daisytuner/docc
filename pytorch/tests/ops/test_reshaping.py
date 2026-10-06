@@ -115,6 +115,33 @@ def test_fill_simple(target: str) -> None:
     check(FillSimpleNet(), torch.ones(2, 3), target=target)
 
 
+# --- index_select ---
+
+
+def test_index_select_simple(target: str) -> None:
+    class IndexSelectSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor, indices: torch.Tensor) -> torch.Tensor:
+            return torch.index_select(input, 0, indices)
+
+    check(
+        IndexSelectSimpleNet(),
+        *(torch.randn(3, 4), torch.tensor([0, 2])),
+        target=target,
+    )
+
+
+def test_index_select_dim(target: str) -> None:
+    class IndexSelectDimNet(nn.Module):
+        def forward(self, input: torch.Tensor, indices: torch.Tensor) -> torch.Tensor:
+            return torch.index_select(input, 1, indices)
+
+    check(
+        IndexSelectDimNet(),
+        *(torch.randn(3, 4), torch.tensor([0, 2])),
+        target=target,
+    )
+
+
 # --- permute ---
 
 
@@ -197,6 +224,113 @@ def test_slice_copy_multi(target: str) -> None:
             return torch.slice_copy(tmp, 1, 1, 3)
 
     check(SliceCopyMultiNet(), torch.arange(20).reshape(5, 4), target=target)
+
+
+# --- split ---
+
+
+def test_split_simple(target: str) -> None:
+    class SplitSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> tuple[torch.Tensor, ...]:
+            return torch.split(input, 2)
+
+    check(SplitSimpleNet(), torch.arange(10).reshape(5, 2), target=target)
+
+
+def test_split_sections(target: str) -> None:
+    class SplitSectionsNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> tuple[torch.Tensor, ...]:
+            return torch.split(input, [1, 4])
+
+    check(SplitSectionsNet(), torch.arange(10).reshape(5, 2), target=target)
+
+
+def test_split_dim(target: str) -> None:
+    class SplitDimNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> tuple[torch.Tensor, ...]:
+            return torch.split(input, 2, dim=1)
+
+    check(SplitDimNet(), torch.arange(20).reshape(5, 4), target=target)
+
+
+def test_split_neg_dim(target: str) -> None:
+    class SplitNegDimNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> tuple[torch.Tensor, ...]:
+            return torch.split(input, 2, dim=-1)
+
+    check(SplitNegDimNet(), torch.arange(20).reshape(5, 4), target=target)
+
+
+# --- split_with_sizes ---
+
+
+def test_split_with_sizes_simple(target: str) -> None:
+    class SplitWithSizesSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> tuple[torch.Tensor, ...]:
+            return torch.split_with_sizes(input, [2, 2, 1])
+
+    check(SplitWithSizesSimpleNet(), torch.arange(10).reshape(5, 2), target=target)
+
+
+def test_split_with_sizes_dim(target: str) -> None:
+    class SplitWithSizesDimNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> tuple[torch.Tensor, ...]:
+            return torch.split_with_sizes(input, [2, 2], dim=1)
+
+    check(SplitWithSizesDimNet(), torch.arange(20).reshape(5, 4), target=target)
+
+
+def test_split_with_sizes_neg_dim(target: str) -> None:
+    class SplitWithSizesNegDimNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> tuple[torch.Tensor, ...]:
+            return torch.split_with_sizes(input, [2, 2], dim=-1)
+
+    check(SplitWithSizesNegDimNet(), torch.arange(20).reshape(5, 4), target=target)
+
+
+def test_split_with_sizes_empty_size(target: str) -> None:
+    class SplitWithSizesEmptySizeNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> tuple[torch.Tensor, ...]:
+            return torch.split_with_sizes(input, [2, 0, 2, 1])
+
+    check(SplitWithSizesEmptySizeNet(), torch.arange(10).reshape(5, 2), target=target)
+
+
+# --- split_with_sizes_copy ---
+
+
+def test_split_with_sizes_copy_simple(target: str) -> None:
+    class SplitWithSizesCopySimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> tuple[torch.Tensor, ...]:
+            return torch.split_with_sizes_copy(input, [2, 2, 1])  # type: ignore
+
+    check(SplitWithSizesCopySimpleNet(), torch.arange(10).reshape(5, 2), target=target)
+
+
+def test_split_with_sizes_copy_dim(target: str) -> None:
+    class SplitWithSizesCopyDimNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> tuple[torch.Tensor, ...]:
+            return torch.split_with_sizes_copy(input, [2, 2], dim=1)  # type: ignore
+
+    check(SplitWithSizesCopyDimNet(), torch.arange(20).reshape(5, 4), target=target)
+
+
+def test_split_with_sizes_copy_neg_dim(target: str) -> None:
+    class SplitWithSizesCopyNegDimNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> tuple[torch.Tensor, ...]:
+            return torch.split_with_sizes_copy(input, [2, 2], dim=-1)  # type: ignore
+
+    check(SplitWithSizesCopyNegDimNet(), torch.arange(20).reshape(5, 4), target=target)
+
+
+def test_split_with_sizes_copy_empty_size(target: str) -> None:
+    class SplitWithSizesCopyEmptySizeNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> tuple[torch.Tensor, ...]:
+            return torch.split_with_sizes_copy(input, [2, 0, 2, 1])  # type: ignore
+
+    check(
+        SplitWithSizesCopyEmptySizeNet(), torch.arange(10).reshape(5, 2), target=target
+    )
 
 
 # --- squeeze ---

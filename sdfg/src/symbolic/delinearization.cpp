@@ -455,6 +455,7 @@ DelinearizeResult delinearize(const Expression& expr, AssumptionsBounds& bounds)
 }
 
 static DelinearizeResult delinearize_impl(const Expression& expr, AssumptionsBounds& bounds) {
+    static const SymbolSet kNoParams;
     auto dim = expr;
     const Assumptions& assums = bounds.assums();
 
@@ -696,7 +697,7 @@ static DelinearizeResult delinearize_impl(const Expression& expr, AssumptionsBou
         }
 
         // Index must be nonnegative under assumptions.
-        if (!is_nonneg(best_index, ba_loose)) {
+        if (!bounds.is_nonneg(best_index, kNoParams)) {
             break;
         }
 
@@ -719,7 +720,7 @@ static DelinearizeResult delinearize_impl(const Expression& expr, AssumptionsBou
         remaining = symbolic::simplify(remaining);
 
         // Remaining must be nonnegative.
-        if (!is_nonneg(remaining, ba_loose)) {
+        if (!bounds.is_nonneg(remaining, kNoParams)) {
             break;
         }
 
@@ -781,7 +782,7 @@ static DelinearizeResult delinearize_impl(const Expression& expr, AssumptionsBou
             // Min-aware `is_gt` API helper proves `stride > min(...)` by
             // proving `stride > a_i` for some Min arg.
             if (!stride_check_passed) {
-                if (is_gt(stride, r, ba_loose)) {
+                if (bounds.is_positive(symbolic::sub(stride, r), kNoParams)) {
                     stride_check_passed = true;
                 }
             }
@@ -836,7 +837,7 @@ static DelinearizeResult delinearize_impl(const Expression& expr, AssumptionsBou
         if (!stride_check_passed) {
             auto [q_pre, r_pre] = polynomial_div(offset, stride);
             auto access = symbolic::expand(symbolic::add(remaining, r_pre));
-            if (is_nonneg(access, ba_loose) && is_gt(stride, access, ba_loose)) {
+            if (bounds.is_nonneg(access, kNoParams) && bounds.is_positive(symbolic::sub(stride, access), kNoParams)) {
                 stride_check_passed = true;
             }
         }

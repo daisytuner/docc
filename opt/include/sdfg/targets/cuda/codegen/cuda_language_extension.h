@@ -1,17 +1,14 @@
 #pragma once
 
-#include <symengine/printers/codegen.h>
-
 #include <string>
 
 #include "sdfg/codegen/language_extension.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/types/type.h"
 
-namespace sdfg {
-namespace codegen {
+namespace sdfg::cuda {
 
-class CUDALanguageExtension : public LanguageExtension {
+class CUDALanguageExtension : public sdfg::codegen::LanguageExtension {
 public:
     CUDALanguageExtension(sdfg::Function& function, const std::string& external_prefix = "")
         : LanguageExtension(function, external_prefix) {
@@ -40,5 +37,4 @@ public:
     std::string zero(const types::PrimitiveType prim_type) override;
 };
 
-} // namespace codegen
-} // namespace sdfg
+} // namespace sdfg::cuda

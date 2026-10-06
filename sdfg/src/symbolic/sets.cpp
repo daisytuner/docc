@@ -7,6 +7,7 @@
 
 #include "sdfg/symbolic/delinearization.h"
 #include "sdfg/symbolic/polyhedral.h"
+#include "sdfg/symbolic/polynomials.h"
 #include "sdfg/symbolic/utils.h"
 
 namespace sdfg {
@@ -27,16 +28,19 @@ bool run_isl_set_query(
     const Assumptions& assums2,
     SetQuery query
 ) {
-    std::string map_1_str = expression_to_map_str(expr1_delinearized, assums1);
-    std::string map_2_str = expression_to_map_str(expr2_delinearized, assums2);
-
     polyhedral::IslCtx ctx;
     if (!ctx) {
         return false;
     }
 
-    polyhedral::IslMap map_1(isl_map_read_from_str(ctx.get(), map_1_str.c_str()));
-    polyhedral::IslMap map_2(isl_map_read_from_str(ctx.get(), map_2_str.c_str()));
+    // Disjointness is a may-query, so the direct (possibly over-approximating) construction applies.
+    polyhedral::IslMap
+        map_1(query == SetQuery::Disjoint ? expression_to_may_map(ctx.get(), expr1_delinearized, assums1) : nullptr);
+    polyhedral::IslMap map_2(map_1 ? expression_to_may_map(ctx.get(), expr2_delinearized, assums2) : nullptr);
+    if (!map_1 || !map_2) {
+        map_1.reset(isl_map_read_from_str(ctx.get(), expression_to_map_str(expr1_delinearized, assums1).c_str()));
+        map_2.reset(isl_map_read_from_str(ctx.get(), expression_to_map_str(expr2_delinearized, assums2).c_str()));
+    }
     if (!map_1 || !map_2) {
         return false;
     }
@@ -114,15 +118,18 @@ bool is_subset(
 bool is_disjoint(
     const MultiExpression& expr1, const MultiExpression& expr2, AssumptionsBounds& bounds1, AssumptionsBounds& bounds2
 ) {
+    // Integer-affine 1D accesses are exact for isl as they are; delinearizing them only costs proofs.
+    bool skip_delinearize = expr1.size() == 1 && expr2.size() == 1 && is_integer_affine(expr1.at(0)) &&
+                            is_integer_affine(expr2.at(0));
     auto expr1_delinearized = expr1;
-    if (expr1.size() == 1) {
+    if (expr1.size() == 1 && !skip_delinearize) {
         auto result = symbolic::delinearize(expr1.at(0), bounds1);
         if (result.success) {
             expr1_delinearized = result.indices;
         }
     }
     auto expr2_delinearized = expr2;
-    if (expr2.size() == 1) {
+    if (expr2.size() == 1 && !skip_delinearize) {
         auto result = symbolic::delinearize(expr2.at(0), bounds2);
         if (result.success) {
             expr2_delinearized = result.indices;

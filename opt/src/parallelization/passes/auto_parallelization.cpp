@@ -1,4 +1,4 @@
-#include "sdfg/parallelization/passes/for_classification.h"
+#include "sdfg/parallelization/passes/auto_parallelization.h"
 
 #include <set>
 #include <vector>
@@ -11,11 +11,11 @@
 namespace sdfg {
 namespace parallelization {
 
-std::string ForClassificationPass::name() {
-    return "ForClassification";
+std::string AutoParallelization::name() {
+    return "AutoParallelization";
 }
 
-ForClassificationPass::Classification ForClassificationPass::classify(
+AutoParallelization::Classification AutoParallelization::classify(
     builder::StructuredSDFGBuilder& builder,
     analysis::AnalysisManager& analysis_manager,
     structured_control_flow::For& for_stmt,
@@ -70,7 +70,7 @@ ForClassificationPass::Classification ForClassificationPass::classify(
         } else if (auto for_stmt = dynamic_cast<const structured_control_flow::Return*>(current)) {
             return Classification::None;
         } else {
-            throw InvalidSDFGException("Unknown control flow node type in ForClassification pass.");
+            throw InvalidSDFGException("Unknown control flow node type in AutoParallelization pass.");
         }
     }
 
@@ -167,7 +167,7 @@ ForClassificationPass::Classification ForClassificationPass::classify(
     return Classification::Map;
 }
 
-bool ForClassificationPass::run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+bool AutoParallelization::run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
 
     // Traverse loops in bottom-up fashion (reverse loop)

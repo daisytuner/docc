@@ -7,6 +7,7 @@
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/structured_control_flow/reduce.h"
 #include "sdfg/targets/gpu/gpu_reduce_layout.h"
+#include "sdfg/transformations/loop_header.h"
 
 namespace sdfg {
 namespace tiles {
@@ -16,21 +17,6 @@ enum class ReductionBufferStatus {
     Exact, ///< Exact layout and allocation costs, suitable for materialization.
     ConservativeBound, ///< Allocation upper bounds only; not a materializable layout.
     Unsupported ///< No supported footprint; consult the diagnostic.
-};
-
-/// Proposed loop bounds and step, retaining the loop's induction variable.
-struct ReductionLoopHeader {
-    symbolic::Expression init;
-    symbolic::Condition condition;
-    symbolic::Expression update;
-};
-
-/// Target loops and the headers after swapping directly nested loops.
-struct ReductionInterchangeProposal {
-    structured_control_flow::StructuredLoop& outer;
-    structured_control_flow::StructuredLoop& inner;
-    ReductionLoopHeader new_outer;
-    ReductionLoopHeader new_inner;
 };
 
 /// A schedule-only change; loop domains, access expressions, and nesting stay fixed.
@@ -46,7 +32,7 @@ struct ReductionLoopDomain {
     symbolic::Expression count;
     symbolic::Integer stride;
 
-    static ReductionLoopDomain from_header(const symbolic::Symbol& indvar, const ReductionLoopHeader& header);
+    static ReductionLoopDomain from_header(const symbolic::Symbol& indvar, const transformations::LoopHeader& header);
 };
 
 /**
@@ -140,7 +126,7 @@ public:
         structured_control_flow::Reduce& reduction,
         const std::string& container,
         ReductionBufferInfo footprint,
-        const ReductionInterchangeProposal& proposal
+        const transformations::LoopSwap& proposal
     ) const;
 
     /// Recompute an exact footprint from deepest-first domains without changing allocation topology.
@@ -154,7 +140,7 @@ public:
 
     /// Check interchange analytically without constructing a proposal graph.
     /// Malformed nesting throws; moving materialized reductions is unsupported.
-    bool supports_interchange(const ReductionInterchangeProposal& proposal) const;
+    bool supports_interchange(const transformations::LoopSwap& proposal) const;
 
     /// Check exactness and materialized-buffer compatibility for a proposed schedule,
     /// including sibling reductions in the enclosing nest. Uses analytical allocation

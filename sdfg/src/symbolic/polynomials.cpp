@@ -139,6 +139,27 @@ AffineCoeffs affine_coefficients(Polynomial poly) {
     return coeffs;
 }
 
+bool is_integer_affine(const Expression& expr) {
+    SymbolVec syms;
+    for (auto& s : atoms(expr)) {
+        syms.push_back(s);
+    }
+    auto poly = polynomial(expr, syms);
+    if (poly.is_null()) {
+        return false;
+    }
+    auto coeffs = affine_coefficients(poly);
+    if (coeffs.empty()) {
+        return false;
+    }
+    for (auto& [_, c] : coeffs) {
+        if (!SymEngine::is_a<SymEngine::Integer>(*c)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 Expression affine_inverse(AffineCoeffs coeffs, Symbol symbol) {
     if (!coeffs.contains(symbol) || eq(coeffs[symbol], zero())) {
         return SymEngine::null;

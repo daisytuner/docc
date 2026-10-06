@@ -1,5 +1,6 @@
 #pragma once
 
+#include <pybind11/pybind11.h>
 #include <sdfg/builder/structured_sdfg_builder.h>
 #include <sdfg/data_flow/access_node.h>
 #include <sdfg/data_flow/library_node.h>
@@ -19,6 +20,8 @@
 
 #include "py_structured_sdfg.h"
 #include "types/py_types.h"
+
+namespace py = pybind11;
 
 struct Scope {
     sdfg::structured_control_flow::Sequence* sequence;
@@ -46,6 +49,8 @@ public:
     sdfg::plugins::Context& docc_context() const;
 
     PyStructuredSDFG move();
+
+    void dump(const std::string& output_dir, const std::string& type, bool dump_json = true, bool dump_dot = true);
 
     /***** Metadata *****/
 
@@ -553,6 +558,13 @@ public:
         const std::vector<std::vector<std::string>>& in_indices,
         const std::vector<const sdfg::types::Tensor*>& input_types,
         const sdfg::types::Tensor& output_type,
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+
+    void add_load_const_op(
+        const std::string& output,
+        const sdfg::types::IType& type,
+        py::buffer buffer,
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
 

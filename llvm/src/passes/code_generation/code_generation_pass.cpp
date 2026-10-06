@@ -12,7 +12,6 @@
 #include <sdfg/codegen/code_generator.h>
 #include <sdfg/codegen/code_generators/c_code_generator.h>
 #include <sdfg/codegen/code_generators/cpp_code_generator.h>
-#include <sdfg/codegen/code_generators/cuda_code_generator.h>
 #include <sdfg/data_flow/library_nodes/call_node.h>
 #include <sdfg/data_flow/library_nodes/stdlib/stdlib.h>
 #include <sdfg/helpers/helpers.h>
@@ -54,6 +53,7 @@
 #include "sdfg/passes/offloading/reduction_shared_memory_delinearization.h"
 #include "sdfg/structured_control_flow/return.h"
 #include "sdfg/structured_sdfg.h"
+#include "sdfg/targets/cuda/cuda_arch.h"
 #include "sdfg/targets/cuda/cuda_data_offloading_node.h"
 #include "sdfg/targets/gpu/gpu_map_utils.h"
 #include "sdfg/targets/offloading/data_offloading_node.h"
@@ -135,8 +135,8 @@ void add_schedule_type_specific_linker_args(const ScheduleType& schedule_type, s
     }
 }
 
-static std::optional<util::CudaComputeCapability> cuda_select_compute_cap() {
-    auto caps = util::query_cuda_compute_capabilities();
+static std::optional<sdfg::gpu::cuda::CudaComputeCapability> cuda_select_compute_cap() {
+    auto caps = sdfg::gpu::cuda::query_cuda_compute_capabilities();
 
     if (!caps.empty()) {
         auto& first = caps.front();
@@ -396,6 +396,10 @@ bool CodeGenerationPass::generate_code(
             instrumentation_plan = sdfg::codegen::InstrumentationPlan::none(*part_sdfg);
         } else if (codegen_instrumentation_mode == "ols") {
             instrumentation_plan = sdfg::codegen::InstrumentationPlan::outermost_loops_plan(*part_sdfg);
+            sdfg::auto_util::add_offloading_instrumentations(*instrumentation_plan, *part_sdfg);
+        } else if (codegen_instrumentation_mode == "ols_tuned") {
+            instrumentation_plan =
+                sdfg::codegen::InstrumentationPlan::provenance_grouped_outermost_loops_plan(*part_sdfg);
             sdfg::auto_util::add_offloading_instrumentations(*instrumentation_plan, *part_sdfg);
         } else {
             throw std::runtime_error("Unsupported instrumentation plan: " + codegen_instrumentation_mode);

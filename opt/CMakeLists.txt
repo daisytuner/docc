@@ -26,6 +26,9 @@ configure_file(
 set(SOURCE_FILES
     src/analysis/data_transfer_elimination_analysis.cpp
     src/einsum/einsum_node.cpp
+    src/einsum/einsum_detection.cpp
+    src/einsum/einsum_replacer.cpp
+    src/einsum/replacers/einsum2matmul.cpp
     src/einsum/passes/einsum_passes.cpp
     src/einsum/transformations/einsum_extend.cpp
     src/einsum/transformations/einsum_lift.cpp
@@ -33,7 +36,8 @@ set(SOURCE_FILES
     src/einsum/transformations/einsum2dot.cpp
     src/einsum/transformations/einsum2gemm.cpp
     src/parallelization/analysis/loop_carried_dependency_analysis.cpp
-    src/parallelization/passes/for_classification.cpp
+    src/parallelization/passes/auto_parallelization.cpp
+    src/parallelization/transformations/loop_parallelization.cpp
     src/tiles/analysis/tile_analysis.cpp
     src/tiles/analysis/reduction_analysis.cpp
     src/tiles/analysis/reduction_buffer_analysis.cpp
@@ -96,6 +100,8 @@ set(SOURCE_FILES
     src/targets/cuda/blas/utils.cpp
     src/targets/cuda/tiles/pipeline_node.cpp
     src/targets/cuda/tiles/tile_copy_node.cpp
+    src/targets/cuda/codegen/cuda_language_extension.cpp
+    src/targets/cuda/cuda_arch.cpp
     src/targets/cuda/cuda_data_offloading_node.cpp
     src/targets/cuda/cuda_map_dispatcher.cpp
     src/targets/cuda/cuda_offload_dispatcher_strategy.cpp
@@ -107,10 +113,18 @@ set(SOURCE_FILES
     src/targets/cuda/plugin.cpp
     src/targets/cuda/stdlib/memcpy.cpp
     src/targets/cuda/stdlib/memset.cpp
+    src/targets/gpu/barrier_local_node_dispatcher.cpp
     src/targets/gpu/gpu_arch.cpp
+    src/targets/gpu/gpu_mma_einsum_transform.cpp
     src/targets/gpu/gpu_map_utils.cpp
     src/targets/gpu/gpu_mma_dispatcher.cpp
     src/targets/gpu/gpu_mma_expander.cpp
+    src/targets/gpu/gpu_mma_fill_node.cpp
+    src/targets/gpu/gpu_mma_fragment.cpp
+    src/targets/gpu/gpu_mma_fragment_eltwise_add_node.cpp
+    src/targets/gpu/gpu_mma_fragment_load_node.cpp
+    src/targets/gpu/gpu_mma_fragment_store_node.cpp
+    src/targets/gpu/gpu_mma_matmul_node.cpp
     src/targets/gpu/gpu_offload_base_dispatcher.cpp
     src/targets/gpu/gpu_offload_map_dispatcher.cpp
     src/targets/gpu/gpu_offload_reduce_dispatcher.cpp
@@ -126,6 +140,7 @@ set(SOURCE_FILES
     src/targets/rocm/blas/gemm_handtuned.cpp
     src/targets/rocm/blas/gemm.cpp
     src/targets/rocm/blas/utils.cpp
+    src/targets/rocm/codegen/rocm_language_extension.cpp
     src/targets/rocm/tiles/pipeline_node.cpp
     src/targets/rocm/tiles/tile_copy_node.cpp
     src/targets/rocm/math/tensor/batched_matmul_expander.cpp
@@ -135,7 +150,6 @@ set(SOURCE_FILES
     src/targets/rocm/rocm_data_offloading_node.cpp
     src/targets/rocm/rocm_map_dispatcher.cpp
     src/targets/rocm/rocm_mma_dispatcher.cpp
-    src/targets/rocm/rocm_mma_expander.cpp
     src/targets/rocm/rocm_mma_transform.cpp
     src/targets/rocm/rocm_offload_dispatcher_strategy.cpp
     src/targets/rocm/rocm_reduce_dispatcher.cpp

@@ -14,6 +14,7 @@
 #include "sdfg/data_flow/access_node.h"
 #include "sdfg/data_flow/library_nodes/atomic_op_node.h"
 #include "sdfg/data_flow/library_nodes/barrier_local_node.h"
+#include "sdfg/data_flow/library_nodes/load_const_node.h"
 #include "sdfg/data_flow/library_nodes/math/cmath/cmath_node.h"
 #include "sdfg/data_flow/library_nodes/math/math.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/arange_node.h"
@@ -86,6 +87,37 @@ PyStructuredSDFG PyStructuredSDFGBuilder::move() {
 
     auto sdfg = builder_.move();
     return PyStructuredSDFG(docc_context_, sdfg);
+}
+
+void PyStructuredSDFGBuilder::dump(const std::string& output_dir, const std::string& type, bool dump_json, bool dump_dot) {
+    std::filesystem::path build_path(output_dir);
+    if (!std::filesystem::exists(build_path)) {
+        std::filesystem::create_directories(build_path);
+    }
+
+    // Add metadata to SDFG
+    auto typeSuffix = type.empty() ? "" : ("." + type);
+    auto suffixedName = builder_.subject().name() + typeSuffix;
+
+    if (dump_json) {
+        std::filesystem::path sdfg_file = build_path / (suffixedName + ".json");
+
+        // Dump json
+        sdfg::serializer::JSONSerializer serializer;
+        nlohmann::json j = serializer.serialize(builder_.subject());
+
+        std::ofstream ofs(sdfg_file);
+        if (!ofs.is_open()) {
+            throw std::runtime_error("Failed to open file: " + sdfg_file.string());
+        }
+        ofs << j.dump(2);
+        ofs.close();
+    }
+
+    if (dump_dot) {
+        auto dot_file = build_path / (suffixedName + ".dot");
+        sdfg::visualizer::DotVisualizer::writeToFile(builder_.subject(), &dot_file);
+    }
 }
 
 void PyStructuredSDFGBuilder::add_metadata(const std::string& key, const std::string& value) {
@@ -2306,6 +2338,26 @@ void PyStructuredSDFGBuilder::add_einsum(
     // Add output access node and memlet
     auto& out_access = builder_.add_access(block, output, debug_info);
     builder_.add_computational_memlet(block, einsum_node, "__einsum_out", out_access, {}, output_type, debug_info);
+}
+
+void PyStructuredSDFGBuilder::add_load_const_op(
+    const std::string& output, const sdfg::types::IType& type, py::buffer buffer, const sdfg::DebugInfo& debug_info
+) {
+    py::buffer_info buffer_info = buffer.request();
+    if (buffer_info.itemsize != 1) {
+        throw std::runtime_error("Expected a uint8-compatible buffer");
+    }
+
+    auto* ptr = static_cast<uint8_t*>(buffer_info.ptr);
+    size_t size = static_cast<size_t>(buffer_info.size);
+    std::vector<uint8_t> data(ptr, ptr + size);
+    auto source = std::make_unique<sdfg::data_flow::InMemoryConstSource>(std::move(data));
+
+    auto& block = builder_.add_block(current_sequence(), debug_info);
+    auto& output_access = builder_.add_access(block, output, debug_info);
+    auto& libnode =
+        builder_.add_library_node<sdfg::data_flow::LoadConstNode>(block, debug_info, type.clone(), std::move(source));
+    builder_.add_computational_memlet(block, libnode, "_out", output_access, {}, type, debug_info);
 }
 
 void PyStructuredSDFGBuilder::add_relu(

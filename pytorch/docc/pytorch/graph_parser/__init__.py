@@ -3,6 +3,7 @@
 This module contains the PyTorch GraphModule Parser.
 """
 
+import numpy as np
 import torch
 import torch.export
 import torch.fx
@@ -11,6 +12,7 @@ import torch._functorch._aot_autograd.descriptors
 from torch.fx.node import Argument
 
 from typing import Any
+from typing_extensions import Buffer
 
 from docc.sdfg import (
     StructuredSDFGBuilder,
@@ -19,6 +21,12 @@ from docc.sdfg import (
     Tensor,
     Scalar,
     Pointer,
+    DebugInfo,
+    Block,
+    ConstantNode,
+    AccessNode,
+    Tasklet,
+    TaskletCode,
 )
 
 from docc.pytorch.graph_parser.utils import (
@@ -152,7 +160,7 @@ class GraphParser(GraphParserBase):
                     if self.metadata.has_container(out_name):
                         continue
 
-                    if not self.metadata.tensor(out_name).is_contiguous() or isinstance(
+                    if not self.metadata.tensor(out_name).is_tight() or isinstance(
                         sdfg_type, Scalar
                     ):
                         if not isinstance(sdfg_type, Pointer):
@@ -222,6 +230,7 @@ class GraphParser(GraphParserBase):
             raise GraphParserError(self, node, "Missing desc metadata in placeholder")
         desc: Any = node.meta["desc"]
         if isinstance(desc, torch._functorch._aot_autograd.descriptors.PlainAOTInput):
+            # Normal argument
             if desc.idx >= len(self.example_input):
                 raise GraphParserError(
                     self,
@@ -235,33 +244,97 @@ class GraphParser(GraphParserBase):
                 node, self.example_input[desc.idx]
             )
             self._arguments.append(self.example_input[desc.idx])
+
+            self.builder.add_container(node.name, sdfg_type, is_argument=True)
+            self.metadata.add_container(
+                node.name,
+                ContainerInfo(node.name, sdfg_type, ContainerMemory.IN_ARGUMENT),
+            )
+
+            # The call always provides a tensor with C-strides. If the tensor has non C-strides we
+            # enforce them here.
+            if sdfg_tensor is None:
+                contiguous_tensor: Tensor | None = None
+            else:
+                contiguous_tensor: Tensor | None = Tensor(
+                    sdfg_tensor.element_type, sdfg_tensor.shape
+                )
+            self.metadata.add_tensor(
+                node.name, TensorInfo(node.name, contiguous_tensor, node.name)
+            )
         elif isinstance(
             desc, torch._functorch._aot_autograd.descriptors.BufferAOTInput
         ):
+            # Constant argument
             sdfg_type: Type = self.get_node_sdfg_type(node)
             sdfg_tensor: Tensor | None = self.get_node_sdfg_tensor(node)
-            self._arguments.append(node.meta["val"])
+            if sdfg_tensor is None:
+                raise GraphParserError(self, node, "Could not get SDFG tensor type")
+
+            self.builder.add_container(node.name, sdfg_type)
+            self.metadata.add_container(
+                node.name,
+                ContainerInfo(node.name, sdfg_type, ContainerMemory.UNMANAGED),
+            )
+            self.metadata.add_tensor(
+                node.name, TensorInfo(node.name, sdfg_tensor, node.name)
+            )
+
+            if desc.target not in self.ep.constants:
+                raise GraphParserError(
+                    self,
+                    node,
+                    "Encountered constant argument that is not present in the constants dictionary: "
+                    + desc.target,
+                )
+            from torch.fx._symbolic_trace import _ConstantAttributeType
+
+            constant: _ConstantAttributeType = self.ep.constants[desc.target]
+            if not isinstance(constant, torch.Tensor):
+                raise GraphParserError(
+                    self,
+                    node,
+                    "Expected constant to be torch.Tensor type but got: "
+                    + str(type(constant)),
+                )
+
+            debug_info: DebugInfo = self.get_debug_info(node)
+            if constant.shape in (torch.Size([]), torch.Size([1])):
+                # A single-value constant
+                block: Block = self.builder.add_block(debug_info)
+                const_access: ConstantNode = self.builder.add_constant(
+                    block, str(constant.item()), sdfg_tensor.element_type, debug_info
+                )
+                output_access: AccessNode = self.builder.add_access(
+                    block, node.name, debug_info
+                )
+                tasklet: Tasklet = self.builder.add_tasklet(
+                    block, TaskletCode.assign, ["_in"], ["_out"], debug_info
+                )
+                self.builder.add_memlet(
+                    block, const_access, "void", tasklet, "_in", debug_info=debug_info
+                )
+                self.builder.add_memlet(
+                    block,
+                    tasklet,
+                    "_out",
+                    output_access,
+                    "void",
+                    subset="" if isinstance(sdfg_type, Scalar) else "0",
+                    debug_info=debug_info,
+                )
+            else:
+                # Multi-value constant
+                constant_arr: np.ndarray = constant.detach().cpu().contiguous().numpy()
+                constant_raw: Buffer = constant_arr.reshape(-1).view(np.uint8)  # type: ignore
+
+                self.builder.add_load_const_op(
+                    node.name, sdfg_type, constant_raw, debug_info
+                )
         else:
             raise GraphParserError(
                 self, node, "Unsupported desc metadata type: " + str(desc)
             )
-
-        self.builder.add_container(node.name, sdfg_type, is_argument=True)
-        self.metadata.add_container(
-            node.name, ContainerInfo(node.name, sdfg_type, ContainerMemory.IN_ARGUMENT)
-        )
-
-        # The call always provides a tensor with C-strides. If the tensor has non C-strides we
-        # enforce them here.
-        if sdfg_tensor is None:
-            contiguous_tensor: Tensor | None = None
-        else:
-            contiguous_tensor: Tensor | None = Tensor(
-                sdfg_tensor.element_type, sdfg_tensor.shape
-            )
-        self.metadata.add_tensor(
-            node.name, TensorInfo(node.name, contiguous_tensor, node.name)
-        )
 
     def parse_output(self, node: torch.fx.Node) -> None:
         """

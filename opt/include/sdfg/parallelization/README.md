@@ -117,9 +117,9 @@ The enum `LoopCarriedDependency` labels the result:
 
 The undefined case covers what the algebra cannot pin down: two accesses to a **scalar** (any two touch the same single cell, so a dependency certainly exists, but there is no meaningful distance vector), or **indirect** accesses like `A[B[i]]` whose index is itself data-dependent. When in doubt, the analysis reports a hazard — soundness over optimism.
 
-## From Hazard to Decision: `ForClassificationPass`
+## From Hazard to Decision: `AutoParallelization`
 
-`LoopCarriedDependencyAnalysis` describes the dependencies; `ForClassificationPass` *acts* on them.
+`LoopCarriedDependencyAnalysis` describes the dependencies; `AutoParallelization` *acts* on them.
 It examines every `For` loop against a single set of legality criteria and lowers it to one of three outcomes:
 
 | Outcome | Meaning | Condition |
@@ -168,7 +168,7 @@ It is loop-carried (so the loop is not a plain `Map`) yet *reorderable* (so it c
 
 Each recognized reduction becomes a `ReductionInfo { operation, container }`.
 `is_reduction_only` then answers the decisive question: *are all of the loop's true hazards reductions?*
-If so, `ForClassificationPass` emits a `Reduce` (carrying the operators to combine the partial results); the accumulator's cross-iteration WAW/RAW is handled by the reduction machinery rather than counted as a hazard.
+If so, `AutoParallelization` emits a `Reduce` (carrying the operators to combine the partial results); the accumulator's cross-iteration WAW/RAW is handled by the reduction machinery rather than counted as a hazard.
 
 ## The Whole Decision, at a Glance
 
@@ -186,11 +186,11 @@ flowchart TD
     P -- no --> KEEP
 ```
 
-The pipeline `data_parallelism()` wires this together: `ForClassificationPass` makes the decision, then `SymbolPropagation` and `DeadDataElimination` clean up the induction variables and temporaries the transform leaves behind.
+The pipeline `data_parallelism()` wires this together: `AutoParallelization` makes the decision, then `SymbolPropagation` and `DeadDataElimination` clean up the induction variables and temporaries the transform leaves behind.
 
 ## Summary
 
 - A **dependency** links two accesses to the same cell where at least one writes; it is **loop-carried** when the two accesses fall in *different iterations*.
 - Loop-carried dependencies come in three flavors: **RAW** (true — a value flows across iterations, a real hazard), **WAW** and **WAR** (false — mere storage reuse, removable by privatization/renaming).
 - `LoopCarriedDependencyAnalysis` computes them precisely, pairing `DataDependencyAnalysis`'s producer/consumer boundary sets and asking ISL for the **delta set** of cross-iteration distances; an empty delta set is a proof of independence.
-- `ForClassificationPass` turns the verdict into a transform: **`Map`** when nothing true is carried, **`Reduce`** when the only carried dependencies are associative/commutative **reductions**, and an untouched **`For`** when a genuine hazard survives.
+- `AutoParallelization` turns the verdict into a transform: **`Map`** when nothing true is carried, **`Reduce`** when the only carried dependencies are associative/commutative **reductions**, and an untouched **`For`** when a genuine hazard survives.

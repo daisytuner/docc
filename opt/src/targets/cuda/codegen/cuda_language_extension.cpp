@@ -1,12 +1,12 @@
-#include "sdfg/codegen/language_extensions/cuda_language_extension.h"
+#include "sdfg/targets/cuda/codegen/cuda_language_extension.h"
 
 #include "sdfg/codegen/language_extensions/cpp_language_extension.h"
 #include "sdfg/codegen/utils.h"
+#include "sdfg/data_flow/data_flow_graph.h"
 #include "sdfg/data_flow/library_node.h"
 #include "sdfg/data_flow/tasklet.h"
 
-namespace sdfg {
-namespace codegen {
+namespace sdfg::cuda {
 
 std::string CUDALanguageExtension::primitive_type(const types::PrimitiveType prim_type) {
     switch (prim_type) {
@@ -87,7 +87,7 @@ std::string CUDALanguageExtension::
             val << "void*";
             val << " " << name;
         }
-    } else if (auto ref_type = dynamic_cast<const Reference*>(&type)) {
+    } else if (auto ref_type = dynamic_cast<const codegen::Reference*>(&type)) {
         val << declaration("&" + name, ref_type->reference_type());
     } else if (auto structure_type = dynamic_cast<const types::Structure*>(&type)) {
         if (structure_type->storage_type().is_nv_shared()) {
@@ -183,7 +183,7 @@ std::string CUDALanguageExtension::subset(const types::IType& type, const data_f
 };
 
 std::string CUDALanguageExtension::expression(const symbolic::Expression expr) {
-    CPPSymbolicPrinter printer(this->function_, this->external_prefix_);
+    codegen::CPPSymbolicPrinter printer(this->function_, this->external_prefix_);
     return printer.apply(expr);
 };
 
@@ -204,6 +204,9 @@ std::string CUDALanguageExtension::access_node(const data_flow::AccessNode& node
 };
 
 std::string CUDALanguageExtension::tasklet(const data_flow::Tasklet& tasklet) {
+    auto& graph = tasklet.get_parent();
+    auto& oedge = *graph.out_edges(tasklet).begin();
+
     switch (tasklet.code()) {
         case data_flow::TaskletCode::assign:
             return tasklet.inputs().at(0);
@@ -219,8 +222,20 @@ std::string CUDALanguageExtension::tasklet(const data_flow::Tasklet& tasklet) {
             return tasklet.inputs().at(0) + " / " + tasklet.inputs().at(1);
         case data_flow::TaskletCode::fp_rem:
             return "fmod(" + tasklet.inputs().at(0) + ", " + tasklet.inputs().at(1) + ")";
-        case data_flow::TaskletCode::fp_fma:
-            return tasklet.inputs().at(0) + " * " + tasklet.inputs().at(1) + " + " + tasklet.inputs().at(2);
+        case data_flow::TaskletCode::fp_fma: {
+            auto& in = tasklet.inputs();
+            const std::string args = "(" + in.at(0) + ", " + in.at(1) + ", " + in.at(2) + ")";
+            switch (oedge.base_type().primitive_type()) {
+                case types::PrimitiveType::Double:
+                    return "fma" + args;
+                case types::PrimitiveType::Float:
+                    return "fmaf" + args;
+                case types::PrimitiveType::Half:
+                    return "__builtin_fmaf16" + args;
+                default:
+                    return in.at(0) + " * " + in.at(1) + " + " + in.at(2);
+            }
+        }
         case data_flow::TaskletCode::fp_oeq:
             return tasklet.inputs().at(0) + " == " + tasklet.inputs().at(1);
         case data_flow::TaskletCode::fp_one:
@@ -369,5 +384,4 @@ std::string CUDALanguageExtension::zero(const types::PrimitiveType prim_type) {
     }
 }
 
-} // namespace codegen
-} // namespace sdfg
+} // namespace sdfg::cuda

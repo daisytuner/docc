@@ -618,6 +618,35 @@ class TraceRegion:
         return self._docc.get("element_id")
 
     @property
+    def source_loop_id(self) -> Optional[int]:
+        """Source loop ID shared by tuned loop events from one cutout, if known."""
+        return self._docc.get("source_loop_id")
+
+    @property
+    def member_loops(self) -> List[dict]:
+        """Loop IDs and source ranges enclosed by a provenance-grouped span."""
+        return list(self._docc.get("member_loops", []))
+
+    @property
+    def member_element_ids(self) -> List[int]:
+        """SDFG element IDs for all loops enclosed by a provenance-grouped span."""
+        return [member["element_id"] for member in self.member_loops]
+
+    @property
+    def expected_performance(self) -> Optional[Dict[str, Any]]:
+        """Backend-predicted performance metrics; these are not measured results."""
+        rpc_optimization = self._docc.get("rpc_optimization")
+        return (
+            rpc_optimization.get("expected_performance") if rpc_optimization else None
+        )
+
+    @property
+    def vector_distance(self) -> Optional[float]:
+        """Embedding distance to the transfer-tuning result, if recorded."""
+        rpc_optimization = self._docc.get("rpc_optimization")
+        return rpc_optimization.get("vector_distance") if rpc_optimization else None
+
+    @property
     def element_type(self) -> Optional[str]:
         return self._docc.get("element_type")
 

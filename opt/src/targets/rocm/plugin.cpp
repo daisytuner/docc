@@ -2,7 +2,14 @@
 
 #include <memory>
 
+#include "sdfg/data_flow/library_nodes/barrier_local_node.h"
 #include "sdfg/passes/scheduler/rocm_offload_scheduler.h"
+#include "sdfg/targets/gpu/barrier_local_node_dispatcher.h"
+#include "sdfg/targets/gpu/gpu_mma_fill_node.h"
+#include "sdfg/targets/gpu/gpu_mma_fragment_eltwise_add_node.h"
+#include "sdfg/targets/gpu/gpu_mma_fragment_load_node.h"
+#include "sdfg/targets/gpu/gpu_mma_fragment_store_node.h"
+#include "sdfg/targets/gpu/gpu_mma_matmul_node.h"
 #include "sdfg/targets/gpu/gpu_offload_map_dispatcher.h"
 #include "sdfg/targets/gpu/gpu_offload_reduce_dispatcher.h"
 #include "sdfg/targets/gpu/gpu_tile_target.h"
@@ -75,7 +82,7 @@ void register_rocm_plugin(plugins::Context& context) {
                 node,
                 instrumentation_plan,
                 arg_capture_plan,
-                std::make_unique<rocm::ROCMOffloadDispatcherStrategy>(sdfg)
+                std::make_unique<rocm::ROCMOffloadDispatcherStrategy>(sdfg, node)
             );
         }
     );
@@ -95,7 +102,7 @@ void register_rocm_plugin(plugins::Context& context) {
                 node,
                 instrumentation_plan,
                 arg_capture_plan,
-                std::make_unique<rocm::ROCMOffloadDispatcherStrategy>(sdfg)
+                std::make_unique<rocm::ROCMOffloadDispatcherStrategy>(sdfg, node)
             );
         }
     );
@@ -114,6 +121,23 @@ void register_rocm_plugin(plugins::Context& context) {
 
     libNodeSerRegistry.register_library_node_serializer(rocm::LibraryNodeType_ROCM_Offloading.value(), []() {
         return std::make_unique<rocm::ROCMDataOffloadingNodeSerializer>();
+    });
+
+    // MMA library nodes
+    libNodeSerRegistry.register_library_node_serializer(gpu::LibraryNodeType_GpuMmaMatmul.value(), []() {
+        return std::make_unique<gpu::GpuMmaMatmulNodeSerializer>();
+    });
+    libNodeSerRegistry.register_library_node_serializer(gpu::LibraryNodeType_GpuMmaFill.value(), []() {
+        return std::make_unique<gpu::GpuMmaFillNodeSerializer>();
+    });
+    libNodeSerRegistry.register_library_node_serializer(gpu::LibraryNodeType_GpuMmaFragmentLoad.value(), []() {
+        return std::make_unique<gpu::GpuMmaFragmentLoadNodeSerializer>();
+    });
+    libNodeSerRegistry.register_library_node_serializer(gpu::LibraryNodeType_GpuMmaFragmentStore.value(), []() {
+        return std::make_unique<gpu::GpuMmaFragmentStoreNodeSerializer>();
+    });
+    libNodeSerRegistry.register_library_node_serializer(gpu::LibraryNodeType_GpuMmaFragmentEltwiseAdd.value(), []() {
+        return std::make_unique<gpu::GpuMmaFragmentEltwiseAddNodeSerializer>();
     });
 
 
@@ -261,30 +285,96 @@ void register_rocm_plugin(plugins::Context& context) {
         }
     );
 
+    // BarrierLocal. Its a generic impl, but it explicitly casts to rocm & cuda types. Both, cuda and rocm register this
+    // to ensure it exists. But they register the same impl.
     libNodeDispatcherRegistry.register_library_node_dispatcher(
-        math::tensor::LibraryNodeType_MatMul,
-        gpu::rocm::ImplementationType_ROCM_MMA_GFX1201,
+        data_flow::LibraryNodeType_BarrierLocal,
+        data_flow::ImplementationType_NONE,
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
            const data_flow::LibraryNode& node) {
-            return std::make_unique<gpu::rocm::RocmMmaMatmulDispatcher>(
-                language_extension, function, data_flow_graph, dynamic_cast<const math::tensor::MatMulNode&>(node)
+            return std::make_unique<gpu::BarrierLocalNodeDispatcher>(
+                language_extension, function, data_flow_graph, dynamic_cast<const data_flow::BarrierLocalNode&>(node)
             );
         }
     );
+
+    // MMA
     libNodeDispatcherRegistry.register_library_node_dispatcher(
-        math::tensor::LibraryNodeType_MatMul,
-        gpu::rocm::ImplementationType_ROCM_MMA_GFX90A,
+        gpu::LibraryNodeType_GpuMmaMatmul,
+        gpu::rocm::ImplementationType_ROCM_MMA,
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
            const data_flow::LibraryNode& node) {
-            return std::make_unique<gpu::rocm::RocmMmaMatmulDispatcher>(
-                language_extension, function, data_flow_graph, dynamic_cast<const math::tensor::MatMulNode&>(node)
-            );
+            return std::make_unique<
+                gpu::rocm::RocmMmaMatmulDispatcher>(language_extension, function, data_flow_graph, node);
         }
     );
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
+        gpu::LibraryNodeType_GpuMmaFill,
+        gpu::rocm::ImplementationType_ROCM_MMA,
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<
+                gpu::rocm::RocmMmaFillDispatcher>(language_extension, function, data_flow_graph, node);
+        }
+    );
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
+        gpu::LibraryNodeType_GpuMmaFragmentLoad,
+        gpu::rocm::ImplementationType_ROCM_MMA,
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<
+                gpu::rocm::RocmMmaFragmentLoadDispatcher>(language_extension, function, data_flow_graph, node);
+        }
+    );
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
+        gpu::LibraryNodeType_GpuMmaFragmentStore,
+        gpu::rocm::ImplementationType_ROCM_MMA,
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<
+                gpu::rocm::RocmMmaFragmentStoreDispatcher>(language_extension, function, data_flow_graph, node);
+        }
+    );
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
+        gpu::LibraryNodeType_GpuMmaFragmentEltwiseAdd,
+        gpu::rocm::ImplementationType_ROCM_MMA,
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<
+                gpu::rocm::RocmMmaEltwiseAddDispatcher>(language_extension, function, data_flow_graph, node);
+        }
+    );
+
+    // legacy standalone MMA node based on Matmul. Does not know the enough details about the underlying hardware, so we
+    // register it for specific ROCm MMA implementations as a workaround
+    for (const auto& mma_impl :
+         {gpu::rocm::ImplementationType_ROCM_MMA_GFX1201, gpu::rocm::ImplementationType_ROCM_MMA_GFX90A}) {
+        libNodeDispatcherRegistry.register_library_node_dispatcher(
+            math::tensor::LibraryNodeType_MatMul,
+            mma_impl,
+            [](codegen::LanguageExtension& language_extension,
+               const Function& function,
+               const data_flow::DataFlowGraph& data_flow_graph,
+               const data_flow::LibraryNode& node) {
+                return std::make_unique<gpu::rocm::RocmMmaBaseDispatcher>(
+                    language_extension, function, data_flow_graph, dynamic_cast<const math::tensor::MatMulNode&>(node)
+                );
+            }
+        );
+    }
+
     // Async copy / pipeline primitives (software pipelining)
     libNodeDispatcherRegistry.register_library_node_dispatcher(
         ::sdfg::tiles::LibraryNodeType_TileCopy,

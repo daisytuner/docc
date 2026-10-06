@@ -21,6 +21,8 @@
 #include <sdfg/targets/omp/schedule.h>
 #include <sdfg/targets/rocm/rocm.h>
 
+#include "sdfg/targets/rocm/rocm_arch.h"
+
 using namespace sdfg::structured_control_flow;
 
 void register_control_flow(py::module& m) {
@@ -363,9 +365,16 @@ void register_control_flow(py::module& m) {
             [](sdfg::gpu::TargetLevel target_level,
                int64_t parallel_size,
                py::object partial_storage,
-               py::object partial_container) {
-                auto schedule = sdfg::rocm::ScheduleType_ROCM_Offload::create<
-                    sdfg::rocm::ScheduleType_ROCM_Offload>(target_level, sdfg::symbolic::integer(parallel_size));
+               py::object partial_container,
+               const sdfg::gpu::GpuArch* arch) {
+                ScheduleType schedule = ScheduleType_Sequential::create();
+                if (arch) {
+                    schedule = sdfg::gpu::ScheduleType_GPU_Offload::
+                        create(*arch, target_level, sdfg::symbolic::integer(parallel_size));
+                } else {
+                    schedule = sdfg::rocm::ScheduleType_ROCM_Offload::create<
+                        sdfg::rocm::ScheduleType_ROCM_Offload>(target_level, sdfg::symbolic::integer(parallel_size));
+                }
                 if (!partial_storage.is_none()) {
                     sdfg::gpu::ScheduleType_GPU_Offload::
                         partial_storage(schedule, partial_storage.cast<sdfg::gpu::ReduceStrategy>());
@@ -379,6 +388,7 @@ void register_control_flow(py::module& m) {
             py::arg("parallel_size"),
             py::arg("partial_storage") = py::none(),
             py::arg("partial_container") = py::none(),
+            py::arg("arch") = py::none(),
             "Create a ROCm offload schedule type for the given target level and parallel size; for a "
             "reduction, partial_storage (ReduceStrategy) and partial_container (buffer name) may be set"
         )

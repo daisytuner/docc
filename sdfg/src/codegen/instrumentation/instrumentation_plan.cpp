@@ -1,17 +1,86 @@
 #include "sdfg/codegen/instrumentation/instrumentation_plan.h"
+#include <algorithm>
+#include <charconv>
 #include <iostream>
 #include <memory>
+#include <stdexcept>
 #include <string>
+#include <string_view>
+#include <unordered_map>
 #include <utility>
+
+#include <nlohmann/json.hpp>
 
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/analysis/loop_analysis.h"
 #include "sdfg/codegen/language_extension.h"
 #include "sdfg/element.h"
+#include "sdfg/metadata/loop_provenance.h"
+#include "sdfg/structured_control_flow/if_else.h"
+#include "sdfg/structured_control_flow/return.h"
+#include "sdfg/structured_control_flow/sequence.h"
+#include "sdfg/structured_control_flow/structured_loop.h"
+#include "sdfg/structured_control_flow/while.h"
 #include "sdfg/symbolic/symbolic.h"
 
 namespace sdfg {
 namespace codegen {
+
+namespace {
+
+std::string escape_cpp_string(std::string_view value) {
+    std::string escaped;
+    escaped.reserve(value.size());
+    for (char character : value) {
+        switch (character) {
+            case '\\':
+                escaped += "\\\\";
+                break;
+            case '"':
+                escaped += "\\\"";
+                break;
+            case '\n':
+                escaped += "\\n";
+                break;
+            case '\r':
+                escaped += "\\r";
+                break;
+            case '\t':
+                escaped += "\\t";
+                break;
+            default:
+                escaped += character;
+                break;
+        }
+    }
+    return escaped;
+}
+
+bool contains_function_return(const structured_control_flow::ControlFlowNode& node) {
+    if (dyn_cast<const structured_control_flow::Return*>(&node) != nullptr) {
+        return true;
+    }
+    if (const auto* sequence = dyn_cast<const structured_control_flow::Sequence*>(&node)) {
+        for (size_t i = 0; i < sequence->size(); ++i) {
+            if (contains_function_return(sequence->at(i))) {
+                return true;
+            }
+        }
+    } else if (const auto* if_else = dyn_cast<const structured_control_flow::IfElse*>(&node)) {
+        for (size_t i = 0; i < if_else->size(); ++i) {
+            if (contains_function_return(if_else->at(i).first)) {
+                return true;
+            }
+        }
+    } else if (const auto* loop = dyn_cast<const structured_control_flow::StructuredLoop*>(&node)) {
+        return contains_function_return(loop->root());
+    } else if (const auto* loop = dyn_cast<const structured_control_flow::While*>(&node)) {
+        return contains_function_return(loop->root());
+    }
+    return false;
+}
+
+} // namespace
 
 bool InstrumentationPlan::should_instrument(const Element& node) const {
     return this->nodes_.count(&node);
@@ -58,8 +127,10 @@ void InstrumentationPlan::begin_instrumentation(
         transfer_tuning_session_id = "";
     }
 
-
-    std::string region_uuid = sdfg_name + "_" + std::to_string(node.element_id());
+    const auto logical_region_id = info.logical_region_id();
+    std::string region_uuid = logical_region_id.has_value()
+                                  ? sdfg_name + "_origin_" + std::to_string(logical_region_id.value())
+                                  : sdfg_name + "_" + std::to_string(node.element_id());
 
     // Create region id variable
     std::string region_id_var = sdfg_name + "_" + std::to_string(node.element_id()) + "_id";
@@ -86,8 +157,34 @@ void InstrumentationPlan::begin_instrumentation(
 
     // Element metadata
     stream << metadata_var << ".element_id = " << info.element_id() << ";" << std::endl;
+    stream << metadata_var << ".source_loop_id = "
+           << (info.source_loop_id().has_value() ? std::to_string(info.source_loop_id().value()) : "0") << ";"
+           << std::endl;
     stream << metadata_var << ".element_type = \"" << info.element_desc() << "\";" << std::endl;
     stream << metadata_var << ".target_type = \"" << info.target_type().value() << "\";" << std::endl;
+
+    nlohmann::json member_metadata = nlohmann::json::array();
+    for (const auto& member : info.members()) {
+        member_metadata.push_back(
+            {{"element_id", member.element_id},
+             {"filename", member.filename},
+             {"function", member.function},
+             {"start_line", member.start_line},
+             {"start_column", member.start_column},
+             {"end_line", member.end_line},
+             {"end_column", member.end_column}}
+        );
+    }
+    stream << metadata_var << ".member_loops_json = \"" << escape_cpp_string(member_metadata.dump()) << "\";"
+           << std::endl;
+    stream << metadata_var << ".expected_performance_json = "
+           << (info.expected_performance().has_value()
+                   ? "\"" + escape_cpp_string(info.expected_performance()->dump()) + "\""
+                   : "\"\"")
+           << ";" << std::endl;
+    stream << metadata_var << ".vector_distance = "
+           << (info.vector_distance().has_value() ? std::to_string(info.vector_distance().value()) : "-1.0") << ";"
+           << std::endl;
 
     // Loop info metadata
     stream << metadata_var << ".loopnest_index = " << info.loop_info().loopnest_index << ";" << std::endl;
@@ -195,6 +292,72 @@ std::unique_ptr<InstrumentationPlan> InstrumentationPlan::
 
     DEBUG_PRINTLN("Created instrumentation plan for " << nodes.size() << " nodes.");
     return std::make_unique<InstrumentationPlan>(sdfg, nodes, emit_finalize_all, sampling);
+}
+
+std::unique_ptr<InstrumentationPlan> InstrumentationPlan::
+    provenance_grouped_outermost_loops_plan(StructuredSDFG& sdfg, bool emit_finalize_all, bool sampling) {
+    analysis::AnalysisManager analysis_manager(sdfg);
+    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
+
+    std::unordered_set<const Element*> nodes;
+    std::unordered_map<const Element*, ElementId> logical_region_ids;
+    std::unordered_map<ElementId, std::vector<const structured_control_flow::ControlFlowNode*>> loops_by_origin;
+    for (auto* loop : loop_analysis.outermost_loops()) {
+        nodes.insert(loop);
+        const auto origin_id = metadata::source_loop_id(*loop);
+        if (origin_id.has_value()) {
+            logical_region_ids.emplace(loop, origin_id.value());
+            loops_by_origin[origin_id.value()].push_back(loop);
+        }
+    }
+
+    auto plan = std::make_unique<InstrumentationPlan>(sdfg, nodes, emit_finalize_all, sampling);
+    for (auto& [origin_id, members] : loops_by_origin) {
+        if (members.size() == 1) {
+            logical_region_ids.emplace(members.front(), origin_id);
+            continue;
+        }
+
+        auto* parent_sequence = dyn_cast<const structured_control_flow::Sequence*>(members.front()->get_parent());
+        bool eligible = parent_sequence != nullptr;
+        for (auto* member : members) {
+            eligible = eligible &&
+                       dyn_cast<const structured_control_flow::Sequence*>(member->get_parent()) == parent_sequence &&
+                       !contains_function_return(*member);
+        }
+        if (!eligible) {
+            continue;
+        }
+
+        std::sort(members.begin(), members.end(), [&](const auto* left, const auto* right) {
+            return parent_sequence->index(*left) < parent_sequence->index(*right);
+        });
+        const int first_index = parent_sequence->index(*members.front());
+        for (size_t i = 0; i < members.size(); ++i) {
+            if (parent_sequence->index(*members[i]) != first_index + static_cast<int>(i)) {
+                eligible = false;
+                break;
+            }
+        }
+        if (!eligible) {
+            continue;
+        }
+
+        const size_t span_index = plan->group_spans_.size();
+        plan->group_spans_.push_back({origin_id, parent_sequence, members});
+        plan->group_start_by_node_.emplace(members.front(), span_index);
+        for (auto* member : members) {
+            plan->grouped_members_.insert(member);
+            logical_region_ids.emplace(member, origin_id);
+        }
+    }
+    plan->logical_region_ids_ = std::move(logical_region_ids);
+
+    DEBUG_PRINTLN(
+        "Created provenance-grouped OLS instrumentation plan for " << nodes.size() << " nodes and "
+                                                                   << plan->group_spans_.size() << " spans."
+    );
+    return plan;
 }
 
 } // namespace codegen

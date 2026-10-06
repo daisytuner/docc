@@ -1,4 +1,4 @@
-#include "sdfg/targets/rocm/rocm_mma_expander.h"
+#include "sdfg/targets/gpu/gpu_mma_expander.h"
 
 #include <gtest/gtest.h>
 #include <sdfg/serializer/json_serializer.h>
@@ -82,7 +82,14 @@ TestCodegenOut test_codegen(sdfg::StructuredSDFG& sdfg, const std::string& group
 namespace sdfg::rocm {
 
 static std::tuple<Block&, math::tensor::MatMulNode&> build_offloaded_mma_structure(
-    builder::StructuredSDFGBuilder& builder, int M, int N, int K, int tile_m, int tile_n, int tile_k
+    builder::StructuredSDFGBuilder& builder,
+    int M,
+    int N,
+    int K,
+    int tile_m,
+    int tile_n,
+    int tile_k,
+    const gpu::GpuArch& arch
 ) {
     auto& sdfg = builder.subject();
     auto& root = sdfg.root();
@@ -110,7 +117,8 @@ static std::tuple<Block&, math::tensor::MatMulNode&> build_offloaded_mma_structu
         symbolic::Lt(row, symbolic::integer(M)),
         symbolic::integer(0),
         symbolic::add(row, symbolic::integer(tile_m)),
-        gpu::ScheduleType_GPU_Offload::create<ScheduleType_ROCM_Offload>(
+        gpu::ScheduleType_GPU_Offload::create(
+            arch,
             gpu::TargetLevel::Y_GRID,
             SymEngine::rcp_dynamic_cast<
                 const SymEngine::Integer>(symbolic::ceil_div(symbolic::integer(M), symbolic::integer(tile_m)))
@@ -124,7 +132,8 @@ static std::tuple<Block&, math::tensor::MatMulNode&> build_offloaded_mma_structu
         symbolic::Lt(col, symbolic::integer(N)),
         symbolic::integer(0),
         symbolic::add(col, symbolic::integer(tile_n)),
-        gpu::ScheduleType_GPU_Offload::create<ScheduleType_ROCM_Offload>(
+        gpu::ScheduleType_GPU_Offload::create(
+            arch,
             gpu::TargetLevel::X_GRID,
             SymEngine::rcp_dynamic_cast<
                 const SymEngine::Integer>(symbolic::ceil_div(symbolic::integer(N), symbolic::integer(tile_n)))
@@ -176,15 +185,16 @@ TEST(ROCMMMATest, 1K_1K_1K_16x16_gfx1201) {
     constexpr int K = 1024; // contraction dimension
     constexpr int TILE = 16; // MMA-friendly tile width for the outer maps
 
+    auto& arch = gpu::rocm::ROCM_ARCH_GFX1201;
+
     sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
-    auto [block, matmul_node] = build_offloaded_mma_structure(builder, M, N, K, TILE, TILE, 16);
+    auto [block, matmul_node] = build_offloaded_mma_structure(builder, M, N, K, TILE, TILE, 16, arch);
 
     dump_sdfg(builder.subject(), "0.init");
 
     EXPECT_NO_THROW(builder.subject().validate());
 
-    passes::expansion::
-        expand_single_node(builder, block, matmul_node, gpu::rocm::RocmMmaExpander(gpu::rocm::ROCM_ARCH_GFX1201));
+    passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch));
 
     dump_sdfg(builder.subject(), "1.expanded");
 
@@ -199,15 +209,16 @@ TEST(ROCMMMATest, 1K_1K_1K_32x32_gfx1201) {
     constexpr int K = 1024; // contraction dimension
     constexpr int TILE = 32; // MMA-friendly tile width for the outer maps
 
+    auto& arch = gpu::rocm::ROCM_ARCH_GFX1201;
+
     sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
-    auto [block, matmul_node] = build_offloaded_mma_structure(builder, M, N, K, TILE, TILE, 16);
+    auto [block, matmul_node] = build_offloaded_mma_structure(builder, M, N, K, TILE, TILE, 16, arch);
 
     dump_sdfg(builder.subject(), "0.init");
 
     EXPECT_NO_THROW(builder.subject().validate());
 
-    passes::expansion::
-        expand_single_node(builder, block, matmul_node, gpu::rocm::RocmMmaExpander(gpu::rocm::ROCM_ARCH_GFX1201));
+    passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch));
 
     dump_sdfg(builder.subject(), "1.expanded");
 
@@ -222,15 +233,16 @@ TEST(ROCMMMATest, 1K_1K_1K_64x64_gfx1201) {
     constexpr int K = 1024; // contraction dimension
     constexpr int TILE = 64; // MMA-friendly tile width for the outer maps
 
+    auto& arch = gpu::rocm::ROCM_ARCH_GFX1201;
+
     sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
-    auto [block, matmul_node] = build_offloaded_mma_structure(builder, M, N, K, TILE, TILE, 16);
+    auto [block, matmul_node] = build_offloaded_mma_structure(builder, M, N, K, TILE, TILE, 16, arch);
 
     dump_sdfg(builder.subject(), "0.init");
 
     EXPECT_NO_THROW(builder.subject().validate());
 
-    passes::expansion::
-        expand_single_node(builder, block, matmul_node, gpu::rocm::RocmMmaExpander(gpu::rocm::ROCM_ARCH_GFX1201));
+    passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch));
 
     dump_sdfg(builder.subject(), "1.expanded");
 
@@ -245,15 +257,16 @@ TEST(ROCMMMATest, 1K_1K_1K_64x64_gfx90a) {
     constexpr int K = 1024; // contraction dimension
     constexpr int TILE = 64; // MMA-friendly tile width for the outer maps
 
+    auto& arch = gpu::rocm::ROCM_ARCH_GFX1201;
+
     sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
-    auto [block, matmul_node] = build_offloaded_mma_structure(builder, M, N, K, TILE, TILE, 16);
+    auto [block, matmul_node] = build_offloaded_mma_structure(builder, M, N, K, TILE, TILE, 16, arch);
 
     dump_sdfg(builder.subject(), "0.init");
 
     EXPECT_NO_THROW(builder.subject().validate());
 
-    passes::expansion::
-        expand_single_node(builder, block, matmul_node, gpu::rocm::RocmMmaExpander(gpu::rocm::ROCM_ARCH_GFX90A));
+    passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch));
 
     dump_sdfg(builder.subject(), "1.expanded");
 

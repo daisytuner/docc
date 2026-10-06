@@ -8,6 +8,7 @@ from torch.fx.node import Argument
 from docc.sdfg import StructuredSDFGBuilder, DebugInfo, Tensor
 
 from docc.pytorch.graph_parser.utils import (
+    TensorName,
     TensorInfo,
     TensorMetadata,
     GraphParserError,
@@ -272,6 +273,50 @@ class IndexParser(GraphParserModule):
 register_module("aten.index.Tensor", IndexParser())
 
 
+class IndexSelectParser(GraphParserModule):
+    def parse(
+        self,
+        node: torch.fx.Node,
+        builder: StructuredSDFGBuilder,
+        metadata: TensorMetadata,
+    ) -> None:
+        if len(node.args) != 3:
+            raise GraphParserError(
+                self, node, "Expected exactly 3 argument but got " + str(len(node.args))
+            )
+        if len(node.kwargs) != 0:
+            raise GraphParserError(
+                self, node, "Unsupported kwargs: " + str(node.kwargs)
+            )
+
+        self_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 0)
+        if not isinstance(node.args[1], int):
+            raise GraphParserError(
+                self,
+                node,
+                "Expected dim arg to be int type but got: " + str(type(node.args[1])),
+            )
+        dim: int = node.args[1]
+        indices_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 2)
+
+        result_info: TensorInfo = self.get_result_tensor_info(node, builder, metadata)
+        debug_info: DebugInfo = self.get_debug_info(node)
+
+        builder.add_index_op(
+            result_info.container(),
+            result_info.sdfg_tensor_type(),
+            self_info.container(),
+            self_info.sdfg_tensor_type(),
+            [indices_info.container()],
+            [indices_info.sdfg_tensor_type()],
+            [dim],
+            debug_info,
+        )
+
+
+register_module("aten.index_select.default", IndexSelectParser())
+
+
 class ViewCopyParser(GraphParserModule):
     def parse(
         self,
@@ -307,3 +352,57 @@ class ViewCopyParser(GraphParserModule):
 
 
 register_module("aten.view_copy.default", ViewCopyParser())
+
+
+class SplitWithSizesParser(GraphParserModule):
+    def parse(
+        self,
+        node: torch.fx.Node,
+        builder: StructuredSDFGBuilder,
+        metadata: TensorMetadata,
+    ) -> None:
+        if len(node.args) < 2 or len(node.args) > 3:
+            raise GraphParserError(
+                self,
+                node,
+                "Expected between 2 and 3 arguments but got: " + str(len(node.args)),
+            )
+        if len(node.kwargs) != 0:
+            raise GraphParserError(
+                self, node, "Unsupported kwargs: " + str(node.kwargs)
+            )
+
+        self_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 0)
+        split_sizes: list[str] = self.get_arg_multi_expr(node, 1)
+        if len(node.args) == 3:
+            dim_arg: Argument = node.args[2]
+            if not isinstance(dim_arg, int):
+                raise GraphParserError(
+                    self,
+                    node,
+                    "Expected dim arg to be int type but got: " + str(type(dim_arg)),
+                )
+        num_results: int = len(split_sizes)
+
+        result_tensors: tuple[Tensor | None, ...] = self.get_node_sdfg_tensors(node)
+        assert len(result_tensors) == num_results
+        if not metadata.is_tensor_tuple(node.name):
+            raise GraphParserError(
+                self,
+                node,
+                "Expected metadata to contain information about tensor tuple: "
+                + node.name,
+            )
+        tensor_tuple: list[TensorName] = metadata.tensor_tuple(node.name)
+        assert len(tensor_tuple) == num_results
+        for i in range(num_results):
+            if metadata.has_tensor(tensor_tuple[i]):
+                info: TensorInfo = metadata.tensor(tensor_tuple[i])
+            else:
+                sdfg_tensor: Tensor | None = result_tensors[i]
+                info: TensorInfo = TensorInfo(tensor_tuple[i], sdfg_tensor)
+                metadata.add_tensor(tensor_tuple[i], info)
+            self.create_view(node, builder, metadata, info, self_info)
+
+
+register_module("aten.split_with_sizes.default", SplitWithSizesParser())

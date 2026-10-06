@@ -417,20 +417,6 @@ void register_default_dispatchers() {
         }
     );
 
-    // BarrierLocal
-    LibraryNodeDispatcherRegistry::instance().register_library_node_dispatcher(
-        data_flow::LibraryNodeType_BarrierLocal,
-        data_flow::ImplementationType_NONE,
-        [](LanguageExtension& language_extension,
-           const Function& function,
-           const data_flow::DataFlowGraph& data_flow_graph,
-           const data_flow::LibraryNode& node) {
-            return std::make_unique<data_flow::BarrierLocalNodeDispatcher>(
-                language_extension, function, data_flow_graph, dynamic_cast<const data_flow::BarrierLocalNode&>(node)
-            );
-        }
-    );
-
 
     auto& libNodeRegistry = LibraryNodeDispatcherRegistry::instance();
     libNodeRegistry.register_library_node_dispatcher(

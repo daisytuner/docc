@@ -98,16 +98,20 @@ public:
     /**
      * @brief Post-scheduling phase: additional transforms on the scheduled loops.
      *
-     * Called after apply_schedule on all loops. GPU schedulers use this for
-     * loop reordering, nested parallelization, and tiling.
+     * Called once per target after apply_schedule, even if no loops were scheduled
+     * (scheduled_loops may be empty). GPU schedulers use this for loop reordering,
+     * nested parallelization, and library node transfer extraction.
      *
      * Default implementation is a no-op.
+     *
+     * @return true if the SDFG was modified
      */
-    virtual void post_schedule(
+    virtual bool post_schedule(
         builder::StructuredSDFGBuilder& builder,
         analysis::AnalysisManager& analysis_manager,
         std::vector<structured_control_flow::StructuredLoop*>& scheduled_loops
     ) {
+        return false;
     }
 
     virtual void set_report(PassReportConsumer* report) {

@@ -19,6 +19,8 @@
 
 #include <isl/map.h>
 
+#include <optional>
+
 #include "sdfg/symbolic/assumptions.h"
 #include "sdfg/symbolic/symbolic.h"
 
@@ -60,8 +62,10 @@ std::tuple<std::string, std::string, std::string> expressions_to_intersection_ma
 /**
  * @brief Builds the three maps of `expressions_to_intersection_map_str` directly in `ctx`, without parsing.
  *
- * Same semantics as parsing the strings. Returns false (with null maps) for inputs the direct construction
- * does not support (non-affine terms, unknown functions, name clashes); `map_3` may be null.
+ * The domains may over-approximate the parsed ones: inequalities that stay piecewise (e.g. C division by a
+ * numerator of unknown sign) are dropped, so the maps are only valid for may-queries (dependences,
+ * disjointness). Returns false (with null maps) for inputs the direct construction does not support
+ * (non-affine terms, unknown functions, name clashes); `map_3` may be null.
  */
 bool expressions_to_intersection_maps(
     isl_ctx* ctx,
@@ -74,6 +78,18 @@ bool expressions_to_intersection_maps(
     isl_map** map_2,
     isl_map** map_3
 );
+
+/**
+ * @brief Builds the map of `expression_to_map_str` directly in `ctx`, possibly over-approximating its domain
+ *        like `expressions_to_intersection_maps` (may-queries only). Returns null if unsupported.
+ */
+isl_map* expression_to_may_map(isl_ctx* ctx, const MultiExpression& expr, const Assumptions& assums);
+
+/**
+ * @brief Decides `expr >= 0` (`> 0` if strict) under the bounds and constraints of `assums` with isl.
+ *        Returns nullopt if `expr` is not quasi-affine or a violation may stem from an over-approximation.
+ */
+std::optional<bool> decide_nonneg(const Expression& expr, const Assumptions& assums, bool strict);
 
 /**
  * @brief Generates constraint expressions from assumptions

@@ -14,6 +14,7 @@
 #include "sdfg/types/pointer.h"
 #include "sdfg/types/scalar.h"
 #include "sdfg/types/type.h"
+#include "sdfg_debug_dump.h"
 
 using namespace sdfg;
 
@@ -266,10 +267,13 @@ TEST(EinsumDetectionPassTest, Means) {
     builder.add_computational_memlet(block_div, m_tmp, tasklet_div2, "_in2", {});
     builder.add_computational_memlet(block_div, tasklet_div2, "_out", y_div2, {i});
 
+    dump_sdfg(sdfg, "0.init");
     // Run pass
     analysis::AnalysisManager analysis_manager(sdfg);
     einsum::EinsumDetectionPass einsum_detection_pass;
     ASSERT_TRUE(einsum_detection_pass.run(builder, analysis_manager));
+
+    dump_sdfg(sdfg, "0.means");
 
     // Check
     EXPECT_EQ(root.size(), 1);
@@ -471,6 +475,7 @@ TEST(EinsumDetectionPassTest, Mean) {
     analysis::AnalysisManager analysis_manager(sdfg);
     einsum::EinsumDetectionPass einsum_detection_pass;
     ASSERT_TRUE(einsum_detection_pass.run(builder, analysis_manager));
+    dump_sdfg(sdfg, "0.mean");
 
     // Check
     EXPECT_EQ(root.size(), 3);

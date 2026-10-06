@@ -9,6 +9,7 @@
 
 #include "sdfg/symbolic/polynomials.h"
 #include "sdfg/symbolic/symbolic.h"
+#include "sdfg/symbolic/utils.h"
 #include "symengine/basic.h"
 #include "symengine/constants.h"
 #include "symengine/functions.h"
@@ -1702,15 +1703,20 @@ bool prove_ge_zero_uncached(const Expression& e, const ProofCtx& ctx, bool stric
 }
 
 bool prove_ge_zero_top(
-    const Expression& expr, const SymbolSet& parameters, const Assumptions& assumptions, bool tight, bool strict
+    const Expression& expr,
+    const SymbolSet& parameters,
+    const Assumptions& assumptions,
+    bool tight,
+    bool strict,
+    int64_t budget = DEFAULT_BOUND_BUDGET
 ) {
     // Cheap pass without coupled-constraint projection: most goals (`i >= 0`, `N >= 1`) follow from
     // per-symbol bound chains, while projection fans out exponentially over deep tile nests.
     for (bool project : {false, true}) {
-        BoundAnalysis ba(parameters, assumptions, tight, DEFAULT_BOUND_BUDGET, project);
+        BoundAnalysis ba(parameters, assumptions, tight, budget, project);
         std::optional<BoundAnalysis> ba_no_params;
         if (!parameters.empty()) {
-            ba_no_params.emplace(kNoParameters, assumptions, tight, DEFAULT_BOUND_BUDGET, project);
+            ba_no_params.emplace(kNoParameters, assumptions, tight, budget, project);
         }
         ProofMemo memo;
         ProofMemo memo_no_params;
@@ -1761,7 +1767,11 @@ bool memoized_proof(
     if (it != by_expr.end()) {
         return it->second;
     }
-    bool result = prove_ge_zero_top(expr, parameters, assums, /*tight=*/false, strict);
+    // Exact for quasi-affine goals and cheap, unlike a failing bound proof which exhausts its budget.
+    auto decided = decide_nonneg(expr, assums, strict);
+    bool result =
+        decided ? *decided
+                : prove_ge_zero_top(expr, parameters, assums, /*tight=*/false, strict, DELINEARIZATION_PROOF_BUDGET);
     by_expr.emplace(expr, result);
     return result;
 }

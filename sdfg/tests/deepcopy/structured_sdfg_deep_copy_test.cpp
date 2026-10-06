@@ -31,6 +31,29 @@ TEST(StructuredSDFGDeepCopy, Block) {
     EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&inserted_root->at(0)));
 }
 
+TEST(StructuredSDFGDeepCopy, PreservesElementMetadataOnCopiedLoop) {
+    builder::StructuredSDFGBuilder source("metadata_source", FunctionType_CPU);
+    auto& loop = source.add_map(
+        source.subject().root(),
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::symbol("i"), symbolic::integer(10)),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+    loop.add_metadata("sdfg.source_loop_id.v1", "17");
+    loop.add_metadata("custom", "copied");
+
+    builder::StructuredSDFGBuilder target("metadata_target", FunctionType_CPU);
+    deepcopy::StructuredSDFGDeepCopy deep_copy(target, target.subject().root(), source.subject().root());
+    const auto mapping = deep_copy.copy();
+    const auto* copied = mapping.at(&loop);
+
+    EXPECT_NE(copied->element_id(), loop.element_id());
+    EXPECT_EQ(copied->metadata("sdfg.source_loop_id.v1"), "17");
+    EXPECT_EQ(copied->metadata("custom"), "copied");
+}
+
 TEST(StructuredSDFGDeepCopy, BlockCopyIdsAreStableAcrossClones) {
     builder::StructuredSDFGBuilder source("copy_ids", FunctionType_CPU);
     types::Scalar scalar(types::PrimitiveType::Float);
@@ -40,7 +63,9 @@ TEST(StructuredSDFGDeepCopy, BlockCopyIdsAreStableAcrossClones) {
     auto& input = source.add_access(block, "input");
     auto& output = source.add_access(block, "output");
     auto& tasklet = source.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
-    source.add_computational_memlet(block, input, tasklet, "_in", {}, scalar);
+    auto& input_edge = source.add_computational_memlet(block, input, tasklet, "_in", {}, scalar);
+    tasklet.add_metadata("test.node", "copy-tasklet");
+    input_edge.add_metadata("test.edge", "copy-edge");
     source.add_computational_memlet(block, tasklet, "_out", output, {}, scalar);
     serializer::JSONSerializer serializer;
     auto snapshot = [&serializer](const structured_control_flow::Block& copied) {
