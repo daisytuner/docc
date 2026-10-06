@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 
+import pytest
+
 from tests import check
 
 # --- tensor ---
@@ -111,6 +113,34 @@ def test_arange_symbolic(target: str) -> None:
             return torch.arange(3, x.shape[0], 2)
 
     check(ArangeSymbolicNet(), torch.ones(5), target=target)
+
+
+# --- empty ---
+
+
+def test_empty_simple(target: str) -> None:
+    class EmptySimpleNet(nn.Module):
+        def forward(self) -> torch.Tensor:
+            return torch.empty((2, 3)).fill_(0.0)
+
+    check(EmptySimpleNet(), *(), target=target)
+
+
+def test_empty_dtype(target: str) -> None:
+    class EmptyDtypeNet(nn.Module):
+        def forward(self) -> torch.Tensor:
+            return torch.empty((2, 3), dtype=torch.int64).fill_(0)
+
+    check(EmptyDtypeNet(), *(), target=target)
+
+
+@pytest.mark.supported_targets("cuda", "rocm")
+def test_empty_gpu(target: str) -> None:
+    class EmptyGPUNet(nn.Module):
+        def forward(self) -> torch.Tensor:
+            return torch.empty((2, 3)).fill_(0.0)
+
+    check(EmptyGPUNet(), *(), target=target)
 
 
 # --- full ---
