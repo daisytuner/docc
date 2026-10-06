@@ -48,15 +48,26 @@ def test_tensor_empty(target: str) -> None:
     check(TensorEmptyNet(), *(), target=target)
 
 
+@pytest.mark.supported_targets("cuda", "rocm")
+def test_tensor_gpu(target: str) -> None:
+    class TensorSimpleNet(nn.Module):
+        def forward(self) -> torch.Tensor:
+            return torch.tensor(
+                [[0.1, 1.2], [2.2, 3.1], [4.9, 5.2]], device=torch.device("cuda")
+            )
+
+    check(TensorSimpleNet(), *(), target=target)
+
+
 # --- arange ---
 
 
-def test_arange_default(target: str) -> None:
-    class ArangeDefaultNet(nn.Module):
+def test_arange_simple(target: str) -> None:
+    class ArangeSimpleNet(nn.Module):
         def forward(self) -> torch.Tensor:
             return torch.arange(5)
 
-    check(ArangeDefaultNet(), *(), target=target)
+    check(ArangeSimpleNet(), *(), target=target)
 
 
 def test_arange_start(target: str) -> None:
@@ -115,6 +126,15 @@ def test_arange_symbolic(target: str) -> None:
     check(ArangeSymbolicNet(), torch.ones(5), target=target)
 
 
+@pytest.mark.supported_targets("cuda", "rocm")
+def test_arange_gpu(target: str) -> None:
+    class ArangeGPUNet(nn.Module):
+        def forward(self) -> torch.Tensor:
+            return torch.arange(5, device=torch.device("cuda"))
+
+    check(ArangeGPUNet(), *(), target=target)
+
+
 # --- empty ---
 
 
@@ -138,7 +158,7 @@ def test_empty_dtype(target: str) -> None:
 def test_empty_gpu(target: str) -> None:
     class EmptyGPUNet(nn.Module):
         def forward(self) -> torch.Tensor:
-            return torch.empty((2, 3)).fill_(0.0)
+            return torch.empty((2, 3), device=torch.device("cuda")).fill_(0.0)
 
     check(EmptyGPUNet(), *(), target=target)
 
@@ -170,6 +190,15 @@ def test_full_bools(target: str) -> None:
     check(FullBoolsNet(), *(), target=target)
 
 
+@pytest.mark.supported_targets("cuda", "rocm")
+def test_full_gpu(target: str) -> None:
+    class FullGPUNet(nn.Module):
+        def forward(self) -> torch.Tensor:
+            return torch.full((2, 3), 3.141592, device=torch.device("cuda"))
+
+    check(FullGPUNet(), *(), target=target)
+
+
 # --- full_like ---
 
 
@@ -199,15 +228,24 @@ def test_full_like_dtype_change(target: str) -> None:
     )
 
 
+@pytest.mark.supported_targets("cuda", "rocm")
+def test_full_like_gpu(target: str) -> None:
+    class FullLikeGPUNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.full_like(input, 3.141592, device=torch.device("cuda"))
+
+    check(FullLikeGPUNet(), torch.ones(2, 3), target=target)
+
+
 # --- scalar_tensor ---
 
 
-def test_scalar_tensor(target: str) -> None:
-    class ScalarTensorNet(nn.Module):
+def test_scalar_tensor_simple(target: str) -> None:
+    class ScalarTensorSimpleNet(nn.Module):
         def forward(self) -> torch.Tensor:
             return torch.scalar_tensor(3.141592)
 
-    check(ScalarTensorNet(), target=target)
+    check(ScalarTensorSimpleNet(), target=target)
 
 
 def test_scalar_tensor_dtype(target: str) -> None:
@@ -248,3 +286,12 @@ def test_scalar_tensor_pin_memory(target: str) -> None:
             return torch.scalar_tensor(3.141592, pin_memory=False)
 
     check(ScalarTensorPinMemoryNet(), target=target)
+
+
+@pytest.mark.supported_targets("cuda", "rocm")
+def test_scalar_tensor_gpu(target: str) -> None:
+    class ScalarTensorGPUNet(nn.Module):
+        def forward(self) -> torch.Tensor:
+            return torch.scalar_tensor(3.141592, device=torch.device("cuda"))
+
+    check(ScalarTensorGPUNet(), target=target)
