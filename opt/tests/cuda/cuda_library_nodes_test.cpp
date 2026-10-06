@@ -524,7 +524,7 @@ TEST(CUDAD2HTransferTest, DispatcherTest) {
     // Check if the generated code contains the expected function call
     std::string expected_code = R"({
     cudaError_t err;
-    err = cudaMemcpy(((float *) A_host), ((float *) A_device), N, cudaMemcpyDeviceToHost);
+    err = cudaMemcpy(A_host, A_device, N, cudaMemcpyDeviceToHost);
 )"
                                 "}\n";
     std::string generated_code = pretty_printer.str();
@@ -570,7 +570,7 @@ TEST(CUDAH2DTransferTest, DispatcherTest) {
     // Check if the generated code contains the expected function call
     std::string expected_code = R"({
     cudaError_t err;
-    err = cudaMemcpy(((float *) A_device), ((float *) A_host), N, cudaMemcpyHostToDevice);
+    err = cudaMemcpy(A_device, A_host, N, cudaMemcpyHostToDevice);
 )"
                                 "}\n";
     std::string generated_code = pretty_printer.str();
@@ -659,7 +659,7 @@ TEST(CUDAFreeTest, DispatcherTest) {
     // Check if the generated code contains the expected function call
     std::string expected_code = R"({
     cudaError_t err;
-    err = cudaFree(((float *) A_device));
+    err = cudaFree(A_device);
 )"
                                 "}\n";
     std::string generated_code = pretty_printer.str();

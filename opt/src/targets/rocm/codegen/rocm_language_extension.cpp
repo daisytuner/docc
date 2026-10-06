@@ -1,14 +1,14 @@
-#include "sdfg/codegen/language_extensions/cuda_language_extension.h"
+#include "sdfg/targets/rocm/codegen/rocm_language_extension.h"
 
 #include "sdfg/codegen/language_extensions/cpp_language_extension.h"
 #include "sdfg/codegen/utils.h"
 #include "sdfg/data_flow/library_node.h"
 #include "sdfg/data_flow/tasklet.h"
+#include "sdfg/targets/rocm/rocm_arch.h"
 
-namespace sdfg {
-namespace codegen {
+namespace sdfg::rocm {
 
-std::string CUDALanguageExtension::primitive_type(const types::PrimitiveType prim_type) {
+std::string ROCMLanguageExtension::primitive_type(const types::PrimitiveType prim_type) {
     switch (prim_type) {
         case types::PrimitiveType::Void:
             return "void";
@@ -53,7 +53,7 @@ std::string CUDALanguageExtension::primitive_type(const types::PrimitiveType pri
     throw std::runtime_error("Unknown primitive type");
 };
 
-std::string CUDALanguageExtension::
+std::string ROCMLanguageExtension::
     declaration(const std::string& name, const types::IType& type, bool use_initializer, bool use_alignment) {
     std::stringstream val;
 
@@ -67,27 +67,39 @@ std::string CUDALanguageExtension::
         val << " ";
         val << name;
     } else if (auto array_type = dynamic_cast<const types::Array*>(&type)) {
-        if (array_type->storage_type().is_nv_shared()) {
-            val << "__shared__ ";
-        }
-        auto& element_type = array_type->element_type();
-        val << declaration(name + "[" + this->expression(array_type->num_elements()) + "]", element_type);
-    } else if (auto pointer_type = dynamic_cast<const types::Pointer*>(&type)) {
-        if (pointer_type->has_pointee_type()) {
-            const types::IType& pointee = pointer_type->pointee_type();
-
-            const bool pointee_is_function_or_array = dynamic_cast<const types::Function*>(&pointee) ||
-                                                      dynamic_cast<const types::Array*>(&pointee);
-
-            // Parenthesise *only* when it is needed to bind tighter than [] or ()
-            std::string decorated = pointee_is_function_or_array ? "(*" + name + ")" : "*" + name;
-
-            val << declaration(decorated, pointee);
-        } else {
-            val << "void*";
+        if (gpu::rocm::RocmMmaSupport::is_mma_type(array_type->storage_type())) {
+            arch_->mma_support()
+                ->emit_block_frag_type(val, array_type->storage_type(), array_type->element_type().primitive_type());
             val << " " << name;
+        } else {
+            if (array_type->storage_type().is_nv_shared()) {
+                val << "__shared__ ";
+            }
+            auto& element_type = array_type->element_type();
+            val << declaration(name + "[" + this->expression(array_type->num_elements()) + "]", element_type);
         }
-    } else if (auto ref_type = dynamic_cast<const Reference*>(&type)) {
+    } else if (auto pointer_type = dynamic_cast<const types::Pointer*>(&type)) {
+        if (gpu::rocm::RocmMmaSupport::is_mma_type(pointer_type->storage_type())) {
+            arch_->mma_support()
+                ->emit_block_frag_type(val, pointer_type->storage_type(), pointer_type->pointee_type().primitive_type());
+            val << " " << name;
+        } else {
+            if (pointer_type->has_pointee_type()) {
+                const types::IType& pointee = pointer_type->pointee_type();
+
+                const bool pointee_is_function_or_array = dynamic_cast<const types::Function*>(&pointee) ||
+                                                          dynamic_cast<const types::Array*>(&pointee);
+
+                // Parenthesise *only* when it is needed to bind tighter than [] or ()
+                std::string decorated = pointee_is_function_or_array ? "(*" + name + ")" : "*" + name;
+
+                val << declaration(decorated, pointee);
+            } else {
+                val << "void*";
+                val << " " << name;
+            }
+        }
+    } else if (auto ref_type = dynamic_cast<const codegen::Reference*>(&type)) {
         val << declaration("&" + name, ref_type->reference_type());
     } else if (auto structure_type = dynamic_cast<const types::Structure*>(&type)) {
         if (structure_type->storage_type().is_nv_shared()) {
@@ -130,7 +142,7 @@ std::string CUDALanguageExtension::
     return val.str();
 };
 
-std::string CUDALanguageExtension::type_cast(const std::string& name, const types::IType& type) {
+std::string ROCMLanguageExtension::type_cast(const std::string& name, const types::IType& type) {
     std::stringstream val;
 
     val << "reinterpret_cast";
@@ -142,7 +154,7 @@ std::string CUDALanguageExtension::type_cast(const std::string& name, const type
     return val.str();
 };
 
-std::string CUDALanguageExtension::subset(const types::IType& type, const data_flow::Subset& sub) {
+std::string ROCMLanguageExtension::subset(const types::IType& type, const data_flow::Subset& sub) {
     if (sub.empty()) {
         return "";
     }
@@ -182,12 +194,12 @@ std::string CUDALanguageExtension::subset(const types::IType& type, const data_f
     throw std::invalid_argument("Invalid subset type");
 };
 
-std::string CUDALanguageExtension::expression(const symbolic::Expression expr) {
-    CPPSymbolicPrinter printer(this->function_, this->external_prefix_);
+std::string ROCMLanguageExtension::expression(const symbolic::Expression expr) {
+    codegen::CPPSymbolicPrinter printer(this->function_, this->external_prefix_);
     return printer.apply(expr);
 };
 
-std::string CUDALanguageExtension::access_node(const data_flow::AccessNode& node) {
+std::string ROCMLanguageExtension::access_node(const data_flow::AccessNode& node) {
     if (dynamic_cast<const data_flow::ConstantNode*>(&node)) {
         std::string name = node.data();
         if (symbolic::is_nullptr(name)) {
@@ -203,7 +215,7 @@ std::string CUDALanguageExtension::access_node(const data_flow::AccessNode& node
     }
 };
 
-std::string CUDALanguageExtension::tasklet(const data_flow::Tasklet& tasklet) {
+std::string ROCMLanguageExtension::tasklet(const data_flow::Tasklet& tasklet) {
     switch (tasklet.code()) {
         case data_flow::TaskletCode::assign:
             return tasklet.inputs().at(0);
@@ -326,7 +338,7 @@ std::string CUDALanguageExtension::tasklet(const data_flow::Tasklet& tasklet) {
     throw std::invalid_argument("Invalid tasklet code");
 };
 
-std::string CUDALanguageExtension::zero(const types::PrimitiveType prim_type) {
+std::string ROCMLanguageExtension::zero(const types::PrimitiveType prim_type) {
     switch (prim_type) {
         case types::Void:
             throw InvalidSDFGException("No zero for void type possible");
@@ -369,5 +381,4 @@ std::string CUDALanguageExtension::zero(const types::PrimitiveType prim_type) {
     }
 }
 
-} // namespace codegen
-} // namespace sdfg
+} // namespace sdfg::rocm

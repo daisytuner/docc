@@ -94,9 +94,9 @@ template<typename GPUType>
 int64_t gpu_warp_size();
 
 template<>
-int64_t gpu_warp_size<cuda::ScheduleType_CUDA_Offload>();
+int64_t gpu_warp_size<sdfg::cuda::ScheduleType_CUDA_Offload>();
 template<>
-int64_t gpu_warp_size<rocm::ScheduleType_ROCM_Offload>();
+int64_t gpu_warp_size<sdfg::rocm::ScheduleType_ROCM_Offload>();
 
 // Runtime variant dispatching on an offload schedule's target (defaults to the
 // CUDA warp size for any non-ROCm schedule).
@@ -215,29 +215,29 @@ size_t perfectly_nested_depth(structured_control_flow::StructuredLoop* loop);
 
 // Extern template declarations to prevent implicit instantiation
 extern template symbolic::Expression find_nested_gpu_blocksize<
-    cuda::ScheduleType_CUDA>(structured_control_flow::Map&, analysis::AnalysisManager&, GPUDimension);
+    sdfg::cuda::ScheduleType_CUDA>(structured_control_flow::Map&, analysis::AnalysisManager&, GPUDimension);
 extern template symbolic::Expression find_nested_gpu_blocksize<
-    rocm::ScheduleType_ROCM>(structured_control_flow::Map&, analysis::AnalysisManager&, GPUDimension);
+    sdfg::rocm::ScheduleType_ROCM>(structured_control_flow::Map&, analysis::AnalysisManager&, GPUDimension);
 
 extern template symbolic::Expression find_nested_gpu_iterations<
-    cuda::ScheduleType_CUDA>(structured_control_flow::Map&, analysis::AnalysisManager&, GPUDimension);
+    sdfg::cuda::ScheduleType_CUDA>(structured_control_flow::Map&, analysis::AnalysisManager&, GPUDimension);
 extern template symbolic::Expression find_nested_gpu_iterations<
-    rocm::ScheduleType_ROCM>(structured_control_flow::Map&, analysis::AnalysisManager&, GPUDimension);
+    sdfg::rocm::ScheduleType_ROCM>(structured_control_flow::Map&, analysis::AnalysisManager&, GPUDimension);
 
 extern template bool is_outermost_gpu_map<
-    cuda::ScheduleType_CUDA>(structured_control_flow::Map&, analysis::AnalysisManager&);
+    sdfg::cuda::ScheduleType_CUDA>(structured_control_flow::Map&, analysis::AnalysisManager&);
 extern template bool is_outermost_gpu_map<
-    rocm::ScheduleType_ROCM>(structured_control_flow::Map&, analysis::AnalysisManager&);
+    sdfg::rocm::ScheduleType_ROCM>(structured_control_flow::Map&, analysis::AnalysisManager&);
 
 extern template symbolic::SymbolSet get_gpu_indvars<
-    cuda::ScheduleType_CUDA>(structured_control_flow::Map&, analysis::AnalysisManager&, GPUDimension);
+    sdfg::cuda::ScheduleType_CUDA>(structured_control_flow::Map&, analysis::AnalysisManager&, GPUDimension);
 extern template symbolic::SymbolSet get_gpu_indvars<
-    rocm::ScheduleType_ROCM>(structured_control_flow::Map&, analysis::AnalysisManager&, GPUDimension);
+    sdfg::rocm::ScheduleType_ROCM>(structured_control_flow::Map&, analysis::AnalysisManager&, GPUDimension);
 
 extern template std::vector<structured_control_flow::Map*> get_gpu_maps<
-    cuda::ScheduleType_CUDA>(structured_control_flow::Map&, analysis::AnalysisManager&, GPUDimension);
+    sdfg::cuda::ScheduleType_CUDA>(structured_control_flow::Map&, analysis::AnalysisManager&, GPUDimension);
 extern template std::vector<structured_control_flow::Map*> get_gpu_maps<
-    rocm::ScheduleType_ROCM>(structured_control_flow::Map&, analysis::AnalysisManager&, GPUDimension);
+    sdfg::rocm::ScheduleType_ROCM>(structured_control_flow::Map&, analysis::AnalysisManager&, GPUDimension);
 
 } // namespace gpu
 } // namespace sdfg

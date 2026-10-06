@@ -3,8 +3,8 @@
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/codegen/language_extensions/c_language_extension.h"
-#include "sdfg/codegen/language_extensions/cuda_language_extension.h"
 #include "sdfg/serializer/json_serializer.h"
+#include "sdfg/targets/cuda/codegen/cuda_language_extension.h"
 #include "sdfg/targets/cuda/tiles/tile_copy_node.h"
 #include "sdfg/tiles/layout.h"
 #include "sdfg/tiles/library_nodes/tile_copy_node.h"
@@ -344,7 +344,7 @@ TEST(TileCopyNodeTest, CudaCooperativeDispatcherEmitsThreadStridedLoop) {
     builder.add_computational_memlet(block, buf, node, "_dst", {}, ptr);
     builder.add_computational_memlet(block, g, node, "_src", {}, ptr);
 
-    codegen::CUDALanguageExtension le(builder.subject());
+    cuda::CUDALanguageExtension le(builder.subject());
     cuda::tiles::TileCopyNodeDispatcher dispatcher(le, builder.subject(), block.dataflow(), node);
     codegen::PrettyPrinter stream, globals;
     codegen::CodeSnippetFactory snippets;
@@ -388,7 +388,7 @@ TEST(TileCopyNodeTest, CudaCooperativeDispatcherEmitsFixedCountLoopWhenThreadsKn
     builder.add_computational_memlet(block, buf, node, "_dst", {}, ptr);
     builder.add_computational_memlet(block, g, node, "_src", {}, ptr);
 
-    codegen::CUDALanguageExtension le(builder.subject());
+    cuda::CUDALanguageExtension le(builder.subject());
     cuda::tiles::TileCopyNodeDispatcher dispatcher(le, builder.subject(), block.dataflow(), node);
     codegen::PrettyPrinter stream, globals;
     codegen::CodeSnippetFactory snippets;
@@ -422,7 +422,7 @@ TEST(TileCopyNodeTest, CudaVectorAtomEmitsWidenedTransfer) {
     builder.add_computational_memlet(block, buf, node, "_dst", {}, ptr);
     builder.add_computational_memlet(block, g, node, "_src", {}, ptr);
 
-    codegen::CUDALanguageExtension le(builder.subject());
+    cuda::CUDALanguageExtension le(builder.subject());
     cuda::tiles::TileCopyNodeDispatcher dispatcher(le, builder.subject(), block.dataflow(), node);
     codegen::PrettyPrinter stream, globals;
     codegen::CodeSnippetFactory snippets;

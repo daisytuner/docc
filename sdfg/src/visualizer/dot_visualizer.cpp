@@ -283,6 +283,22 @@ void DotVisualizer::visualizeContinue(const StructuredSDFG& sdfg, const structur
     register_chain_elem(continue_node, id, "");
 }
 
+codegen::PrettyPrinter& operator<<(codegen::PrettyPrinter& os, const structured_control_flow::ScheduleType& schedule_type) {
+    os << schedule_type.value();
+    if (schedule_type.category() == structured_control_flow::ScheduleTypeCategory::Offloader) {
+        auto tlvl = schedule_type.properties().find("target_level");
+        if (tlvl != schedule_type.properties().end()) {
+            os << ": " << tlvl->second;
+        }
+        auto psize = schedule_type.properties().find("parallel_size");
+        if (psize != schedule_type.properties().end()) {
+            os << "(" << psize->second << ")";
+        }
+    }
+
+    return os;
+}
+
 void DotVisualizer::visualizeMap(const StructuredSDFG& sdfg, const structured_control_flow::Map& map_node) {
     auto id = escapeDotId(map_node.element_id(), "map_");
     this->stream_ << "subgraph cluster_" << id << " {" << std::endl;
@@ -291,7 +307,8 @@ void DotVisualizer::visualizeMap(const StructuredSDFG& sdfg, const structured_co
     if (show_block_ids) {
         this->stream_ << "#" << map_node.element_id() << " ";
     }
-    this->stream_ << "map [" << map_node.schedule_type().value() << "]: ";
+
+    this->stream_ << "map [" << map_node.schedule_type() << "]: ";
     this->visualizeForBounds(map_node.indvar(), map_node.init(), map_node.condition(), map_node.update());
 
     this->stream_ << "\";" << std::endl << id << " [shape=point,style=invis,label=\"\"];" << std::endl;
@@ -311,7 +328,7 @@ void DotVisualizer::visualizeReduce(const StructuredSDFG& sdfg, const structured
     if (show_block_ids) {
         this->stream_ << "#" << reduce_node.element_id() << " ";
     }
-    this->stream_ << "reduce [" << reduce_node.schedule_type().value() << "]";
+    this->stream_ << "reduce [" << reduce_node.schedule_type() << "]";
     bool comma_sep = false;
     this->stream_ << " {";
     for (auto& reduction : reduce_node.reductions()) {
