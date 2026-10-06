@@ -193,9 +193,9 @@ passes::LibNodeExpander::ExpandOutcome EmbeddingNode::
 
 std::unique_ptr<data_flow::DataFlowNode> EmbeddingNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
-    return std::unique_ptr<data_flow::DataFlowNode>(
-        new EmbeddingNode(element_id, this->debug_info(), vertex, parent, weight_shape_, index_shape_)
-    );
+    return std::unique_ptr<data_flow::DataFlowNode>(new EmbeddingNode(
+        element_id, this->debug_info(), vertex, parent, weight_shape_, index_shape_, this->implementation_type()
+    ));
 }
 
 data_flow::PointerAccessType EmbeddingNode::pointer_access_type(int input_idx) const {

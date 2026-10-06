@@ -9,6 +9,7 @@
 
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/deepcopy/structured_sdfg_deep_copy.h"
 #include "sdfg/element.h"
 #include "sdfg/function.h"
 #include "sdfg/passes/expansion/library_node_expansion_pass.h"
@@ -154,6 +155,33 @@ TEST(EmbeddingNodeTest, serialization) {
 
     std::unique_ptr<StructuredSDFG> new_sdfg;
     ASSERT_NO_THROW(new_sdfg = serializer.deserialize(j));
+}
+
+TEST(EmbeddingNodeTest, deep_copy_keeps_implementation_type) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+
+    auto& embedding_node =
+        build_embedding(builder, {symbolic::integer(10), symbolic::integer(4)}, {symbolic::integer(3)});
+    data_flow::ImplementationType impl_type("CUDAWithTransfers");
+    embedding_node.set_implementation_type(impl_type);
+    ASSERT_NO_THROW(sdfg.validate());
+
+    builder::StructuredSDFGBuilder new_builder("sdfg_2", FunctionType_CPU);
+    for (auto& container : sdfg.containers()) {
+        new_builder.add_container(container, sdfg.type(container), sdfg.is_argument(container));
+    }
+    deepcopy::StructuredSDFGDeepCopy deep_copy(new_builder, new_builder.subject().root(), sdfg.root());
+    deep_copy.copy();
+    ASSERT_NO_THROW(new_builder.subject().validate());
+
+    auto& new_seq = dynamic_cast<structured_control_flow::Sequence&>(new_builder.subject().root().at(0));
+    auto& new_block = dynamic_cast<structured_control_flow::Block&>(new_seq.at(0));
+    auto library_nodes = new_block.dataflow().library_nodes();
+    ASSERT_EQ(library_nodes.size(), 1);
+    auto* copied = dynamic_cast<math::tensor::EmbeddingNode*>(*library_nodes.begin());
+    ASSERT_NE(copied, nullptr);
+    EXPECT_EQ(copied->implementation_type().value(), impl_type.value());
 }
 
 TEST(EmbeddingNodeTest, validate_rejects_non_2d_weight) {

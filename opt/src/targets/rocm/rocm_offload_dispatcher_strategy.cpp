@@ -15,6 +15,9 @@ namespace rocm {
 ROCMOffloadDispatcherStrategy::ROCMOffloadDispatcherStrategy(StructuredSDFG& sdfg, const StructuredLoop& loop)
     : kernel_language_extension_(sdfg, gpu::rocm::rocm_arch_from_schedule_type(loop.schedule_type())) {};
 
+ROCMOffloadDispatcherStrategy::ROCMOffloadDispatcherStrategy(StructuredSDFG& sdfg)
+    : kernel_language_extension_(sdfg, nullptr) {};
+
 codegen::LanguageExtension& ROCMOffloadDispatcherStrategy::create_kernel_language_extension() {
     return kernel_language_extension_;
 }
@@ -90,6 +93,22 @@ std::string ROCMOffloadDispatcherStrategy::warp_shuffle_xor(const std::string& v
     // bits for wave64 (CDNA/GCN).
     const std::string mask = rocm_wavefront_size() > 32 ? "0xffffffffffffffffULL" : "0x00000000ffffffffULL";
     return "__shfl_xor_sync(" + mask + ", " + value + ", " + lane_mask + ")";
+}
+
+std::string ROCMOffloadDispatcherStrategy::runtime_api_prefix() const {
+    return "hip";
+}
+
+std::string ROCMOffloadDispatcherStrategy::runtime_header() const {
+    return "<hip/hip_runtime.h>";
+}
+
+void ROCMOffloadDispatcherStrategy::dispatch_runtime_error_check(
+    codegen::PrettyPrinter& stream,
+    const codegen::LanguageExtension& language_extension,
+    const std::string& status_variable
+) const {
+    rocm_error_checking(stream, language_extension, status_variable);
 }
 
 codegen::TargetType ROCMOffloadDispatcherStrategy::get_instrumentation_kernel_target_type() const {
