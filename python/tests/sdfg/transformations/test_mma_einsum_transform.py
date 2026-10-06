@@ -21,15 +21,20 @@ PYTEST_OUTPUT_DIR = Path(__file__).resolve().parents[3] / "pytestOutput"
 
 from docc.sdfg import (
     AnalysisManager,
+    Block,
     BufferLifecycle,
     DataTransferDirection,
     GpuMmaEinsumTransform,
+    IfElse,
+    LocalStorage,
     Pointer,
     PrimitiveType,
     RocmArch,
     Scalar,
     ScheduleType,
+    Sequence,
     StorageType,
+    StructuredLoop,
     StructuredSDFGBuilder,
     TargetLevel,
     TaskletCode,
@@ -42,6 +47,62 @@ HALF_BYTES = 2
 
 def _ceil_div(a, b):
     return -(-a // b)
+
+
+# --- Bare-binding equivalents of the gym loop/access helpers (see agent_rocm.py) ---
+
+
+def _find_access_in_sequence(seq, container, want_read=True):
+    """Recursively find an AccessNode for ``container`` in a body sequence."""
+    for i in range(len(seq)):
+        child = seq[i]
+        if isinstance(child, Block):
+            primary = child.dataflow.reads if want_read else child.dataflow.writes
+            fallback = child.dataflow.writes if want_read else child.dataflow.reads
+            for node in list(primary) + list(fallback):
+                if node.data == container:
+                    return node
+        elif isinstance(child, StructuredLoop):
+            found = _find_access_in_sequence(child.body, container, want_read)
+            if found is not None:
+                return found
+        elif isinstance(child, Sequence):
+            found = _find_access_in_sequence(child, container, want_read)
+            if found is not None:
+                return found
+        elif isinstance(child, IfElse):
+            for case_idx in range(child.size):
+                found = _find_access_in_sequence(
+                    child.case(case_idx), container, want_read
+                )
+                if found is not None:
+                    return found
+    return None
+
+
+def _access_in_loop(loop, container, want_read=True):
+    node = _find_access_in_sequence(loop.body, container, want_read)
+    if node is None:
+        raise ValueError(f"No access to {container!r} found in loop {loop.indvar!r}")
+    return node
+
+
+def _localize_operands(builder, a_name, b_name):
+    """Stage the A and B global tiles into LDS on the MMA K-sweep loop.
+
+    Mirrors ``agent_rocm.py`` Step 5: after ``GpuMmaEinsumTransform`` the K loop is
+    renamed ``tile_k0``; LocalStorage on it localizes each read operand.
+    """
+    for container in (a_name, b_name):
+        am = AnalysisManager(builder)
+        k_loop = am.loop_analysis().find_loop_by_indvar("tile_k0")
+        assert k_loop is not None, "expander must create the 'tile_k0' K-sweep loop"
+        access = _access_in_loop(k_loop, container, want_read=True)
+        ls = LocalStorage(k_loop, access, swizzle_layout=False, lane_contiguous=False)
+        assert ls.can_be_applied(
+            builder, am
+        ), f"LocalStorage should apply for {container}"
+        ls.apply(builder, am)
 
 
 def _add_einsum_mma_nest(builder, M, N, K, tile_m, tile_n, a, b, c):
@@ -219,6 +280,79 @@ def test_mma_einsum_expand_executes(arch_name, M, N, K, tile_m, tile_n):
     assert xform.matched
     sdfg = builder.move()
 
+    sdfg.dump(str(output_dir), "expanded", True, True)
+    sdfg.validate()
+
+    lib_path = sdfg._compile(str(output_dir), "rocm")
+    compiled = CompiledSDFG(lib_path, sdfg)
+
+    rng = np.random.default_rng(0)
+    A = (rng.standard_normal((M, K)) * 0.1).astype(np.float16)
+    B = (rng.standard_normal((K, N)) * 0.1).astype(np.float16)
+    C = np.zeros((M, N), dtype=np.float16)
+
+    compiled(A.reshape(-1), B.reshape(-1), C.reshape(-1))
+
+    ref = A.astype(np.float32) @ B.astype(np.float32)
+    np.testing.assert_allclose(C.astype(np.float32), ref, rtol=5e-2, atol=5e-2)
+
+
+# ---------------------------------------------------------------------------
+# LocalStorage: stage A/B into LDS after the MMA einsum expansion (agent_rocm Step 5).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("arch_name", ARCHES)
+@pytest.mark.parametrize(
+    "M,N,K,tile_m,tile_n",
+    ALIGNED,
+    ids=[f"{m}x{n}x{k}_{tm}x{tn}" for (m, n, k, tm, tn) in ALIGNED],
+)
+def test_mma_einsum_local_storage_applies(arch_name, M, N, K, tile_m, tile_n):
+    arch = RocmArch.get_from_name(arch_name)
+    builder, loop_i1 = _build_offloaded_einsum_mma(M, N, K, tile_m, tile_n)
+
+    am = AnalysisManager(builder)
+    xform = GpuMmaEinsumTransform(loop_i1, arch)
+    assert xform.can_be_applied(builder, am)
+    xform.apply(builder, am)
+    assert xform.matched
+
+    _localize_operands(builder, "A", "B")
+
+    sdfg = builder.move()
+    sdfg.validate()
+
+
+@pytest.mark.rocm()
+@pytest.mark.parametrize("arch_name", ARCHES)
+@pytest.mark.parametrize(
+    "M,N,K,tile_m,tile_n",
+    EXEC_CASES,
+    ids=[f"{m}x{n}x{k}_{tm}x{tn}" for (m, n, k, tm, tn) in EXEC_CASES],
+)
+def test_mma_einsum_local_storage_executes(arch_name, M, N, K, tile_m, tile_n):
+    if RocmArch.current_name() != arch_name:
+        pytest.skip(f"DOCC_ROCM_ARCH ({RocmArch.current_name()}) != {arch_name}")
+    arch = RocmArch.get_current()
+
+    output_dir = (
+        PYTEST_OUTPUT_DIR
+        / f"mma_einsum_ls_{arch_name}_{M}x{N}x{K}_{tile_m}x{tile_n}_executes"
+    )
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    builder, loop_i1 = _build_executable_einsum_mma(M, N, K, tile_m, tile_n)
+
+    am = AnalysisManager(builder)
+    xform = GpuMmaEinsumTransform(loop_i1, arch)
+    assert xform.can_be_applied(builder, am)
+    xform.apply(builder, am)
+    assert xform.matched
+
+    _localize_operands(builder, "dA", "dB")
+
+    sdfg = builder.move()
     sdfg.dump(str(output_dir), "expanded", True, True)
     sdfg.validate()
 

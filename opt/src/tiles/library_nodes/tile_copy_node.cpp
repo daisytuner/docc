@@ -123,6 +123,16 @@ void TileCopyNode::replace(const symbolic::ExpressionMapping& replacements) {
     guard_.replace_symbols(replacements);
 }
 
+std::string TileCopyNode::toStr() const {
+    std::stringstream ss;
+    ss << "tile_copy(";
+    ss << "dir: " << (direction_ == CopyDirection::In ? "in" : "out") << ", ";
+    ss << "cothr: " << coop_threads_->__str__() << ", ";
+    ss << "dst: " << plan_.dst;
+    ss << ")";
+    return ss.str();
+}
+
 data_flow::PointerAccessType TileCopyNode::pointer_access_type(int input_idx) const {
     auto size = symbolic::integer(static_cast<long long>(bytes_));
     if (input_idx == 0) { // _dst

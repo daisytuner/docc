@@ -23,6 +23,35 @@ void GpuMmaFromMemoryLayout::replace(const symbolic::ExpressionMapping& replacem
     ldstride = symbolic::subs(ldstride, replacements);
 }
 
+std::optional<math::tensor::TensorLayout> GpuMmaFromMemoryLayout::
+    to_tensor_layout(const MmaBlockSize& block_size, MmaFragmentType frag) const {
+    std::vector<symbolic::Expression> shape = block_size.get_shape(frag);
+    std::vector<symbolic::Expression> strides;
+    switch (layout) {
+        case MmaFragmentLayout::MMA_LAYOUT_ROW_MAJOR:
+            strides = {ldstride, symbolic::integer(1)};
+            break;
+        case MmaFragmentLayout::MMA_LAYOUT_COL_MAJOR:
+            strides = {symbolic::integer(1), ldstride};
+            break;
+        default:
+            return std::nullopt;
+    }
+
+    return math::tensor::TensorLayout(shape, strides, offset);
+}
+
+std::optional<GpuMmaFromMemoryLayout> GpuMmaFromMemoryLayout::from_tensor_layout(const math::tensor::TensorLayout& layout) {
+    auto type = layout.is_2d_col_or_row_major();
+    if (type == math::tensor::TensorLayout::LAYOUT_ROW_MAJOR) {
+        return {{.offset = layout.offset(), .ldstride = layout.get_stride(0), .layout = MMA_LAYOUT_ROW_MAJOR}};
+    } else if (type == math::tensor::TensorLayout::LAYOUT_COL_MAJOR) {
+        return {{.offset = layout.offset(), .ldstride = layout.get_stride(1), .layout = MMA_LAYOUT_ROW_MAJOR}};
+    }
+
+    return std::nullopt;
+}
+
 std::string MmaBlockSize::dim_str(MmaFragmentType for_type) const {
     switch (for_type) {
         case MmaFragmentType::A:
@@ -31,6 +60,19 @@ std::string MmaBlockSize::dim_str(MmaFragmentType for_type) const {
             return std::to_string(k) + "x" + std::to_string(n);
         case MmaFragmentType::C:
             return std::to_string(m) + "x" + std::to_string(n);
+        default:
+            throw std::invalid_argument("Invalid MMA fragment type");
+    }
+}
+
+symbolic::MultiExpression MmaBlockSize::get_shape(MmaFragmentType frag) const {
+    switch (frag) {
+        case MmaFragmentType::A:
+            return {symbolic::integer(m), symbolic::integer(k)};
+        case MmaFragmentType::B:
+            return {symbolic::integer(k), symbolic::integer(n)};
+        case MmaFragmentType::C:
+            return {symbolic::integer(m), symbolic::integer(n)};
         default:
             throw std::invalid_argument("Invalid MMA fragment type");
     }

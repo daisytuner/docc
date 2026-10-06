@@ -115,6 +115,8 @@ public:
 
     void replace(const symbolic::ExpressionMapping& replacements) override;
 
+    std::string toStr() const override;
+
     /// {"_dst", "_src"}: writes _dst, reads _src, captures neither. Lets escape
     /// analysis treat a container staged through this copy as an ordinary copy so a
     /// later transformation (e.g. a register-accumulator LocalStorage) still applies.

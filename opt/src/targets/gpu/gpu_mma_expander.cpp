@@ -134,22 +134,20 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
     types::Pointer a_frag_type{types::Scalar(input_type)};
     auto a_frag_name = builder.find_new_name("mma_a");
     auto a_col_major = layout_a.is_2d_col_or_row_major() == math::tensor::TensorLayout::LAYOUT_COL_MAJOR;
+    MmaFragmentLayout a_frag_layout = a_col_major ? MmaFragmentLayout::MMA_LAYOUT_COL_MAJOR
+                                                  : MmaFragmentLayout::MMA_LAYOUT_ROW_MAJOR;
     mma_arch->set_mma_fragment_storage_type(
-        a_frag_type.storage_type(),
-        mma_tiling.mma_block_size,
-        MmaFragmentType::A,
-        a_col_major ? MmaFragmentLayout::MMA_LAYOUT_COL_MAJOR : MmaFragmentLayout::MMA_LAYOUT_ROW_MAJOR
+        a_frag_type.storage_type(), mma_tiling.mma_block_size, MmaFragmentType::A, a_frag_layout
     );
     builder.add_container(a_frag_name, a_frag_type);
 
     types::Pointer b_frag_type{types::Scalar(input_type)};
     auto b_frag_name = builder.find_new_name("mma_b");
     auto b_col_major = layout_b.is_2d_col_or_row_major() == math::tensor::TensorLayout::LAYOUT_COL_MAJOR;
+    MmaFragmentLayout b_frag_layout = b_col_major ? MmaFragmentLayout::MMA_LAYOUT_COL_MAJOR
+                                                  : MmaFragmentLayout::MMA_LAYOUT_ROW_MAJOR;
     mma_arch->set_mma_fragment_storage_type(
-        b_frag_type.storage_type(),
-        mma_tiling.mma_block_size,
-        MmaFragmentType::B,
-        b_col_major ? MmaFragmentLayout::MMA_LAYOUT_COL_MAJOR : MmaFragmentLayout::MMA_LAYOUT_ROW_MAJOR
+        b_frag_type.storage_type(), mma_tiling.mma_block_size, MmaFragmentType::B, b_frag_layout
     );
     builder.add_container(b_frag_name, b_frag_type);
     auto y_col_major = layout_y.is_2d_col_or_row_major() == math::tensor::TensorLayout::LAYOUT_COL_MAJOR;
@@ -243,7 +241,7 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
         a_frag_name,
         mma_tiling.mma_block_size,
         MmaFragmentType::A,
-        {.offset = a_offset, .ldstride = lda, .layout = MMA_LAYOUT_UNSPECIFIED},
+        {.offset = a_offset, .ldstride = lda, .layout = a_frag_layout},
         args_order.at(1),
         load_block
     );
@@ -256,7 +254,7 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
         b_frag_name,
         mma_tiling.mma_block_size,
         MmaFragmentType::B,
-        {.offset = b_offset, .ldstride = ldb, .layout = MMA_LAYOUT_UNSPECIFIED},
+        {.offset = b_offset, .ldstride = ldb, .layout = b_frag_layout},
         args_order.at(2),
         load_block
     );

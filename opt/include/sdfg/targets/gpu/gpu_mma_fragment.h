@@ -21,6 +21,8 @@ struct MmaBlockSize {
     std::string toStr() const;
 
     std::string dim_str(MmaFragmentType for_type) const;
+
+    symbolic::MultiExpression get_shape(MmaFragmentType frag) const;
 };
 
 std::ostream& operator<<(std::ostream& os, const MmaBlockSize& block_size);
@@ -98,6 +100,11 @@ struct GpuMmaFromMemoryLayout {
     void collect_symbols(symbolic::SymbolSet& syms) const;
     void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression);
     void replace(const symbolic::ExpressionMapping& replacements);
+
+    [[nodiscard]] std::optional<math::tensor::TensorLayout>
+    to_tensor_layout(const MmaBlockSize& block_size, MmaFragmentType frag) const;
+
+    static std::optional<GpuMmaFromMemoryLayout> from_tensor_layout(const math::tensor::TensorLayout& layout);
 };
 
 std::ostream& operator<<(std::ostream& os, const GpuMmaFromMemoryLayout& layout);
