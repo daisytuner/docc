@@ -15,6 +15,9 @@ namespace rocm {
 ROCMOffloadDispatcherStrategy::ROCMOffloadDispatcherStrategy(StructuredSDFG& sdfg, const StructuredLoop& loop)
     : kernel_language_extension_(sdfg, gpu::rocm::rocm_arch_from_schedule_type(loop.schedule_type())) {};
 
+ROCMOffloadDispatcherStrategy::ROCMOffloadDispatcherStrategy(StructuredSDFG& sdfg)
+    : kernel_language_extension_(sdfg, nullptr) {};
+
 codegen::LanguageExtension& ROCMOffloadDispatcherStrategy::create_kernel_language_extension() {
     return kernel_language_extension_;
 }

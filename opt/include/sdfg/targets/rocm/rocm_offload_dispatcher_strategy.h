@@ -41,6 +41,9 @@ public:
 
     ROCMOffloadDispatcherStrategy(StructuredSDFG& sdfg, const StructuredLoop& loop);
 
+    /// For library node dispatchers without a scheduled loop: no architecture-specific kernel features.
+    explicit ROCMOffloadDispatcherStrategy(StructuredSDFG& sdfg);
+
     void dispatch_kernel_launch_error_check(
         codegen::PrettyPrinter& stream, const codegen::LanguageExtension& language_extension
     );
