@@ -88,10 +88,7 @@ einsum::ReplaceOutcome GpuMmaEinsumReplacer::
     }
 
     auto mma_tiling = mma_arch->get_mma_tiling({analysis.m, analysis.n, analysis.k});
-    auto impl_type = mma_arch->get_matmul_impl_type(*arch_, mma_tiling);
-    if (!impl_type) {
-        return context.unable();
-    }
+    auto impl_type = mma_arch->get_mma_impl_type();
 
     // --- Replacement ---
 
