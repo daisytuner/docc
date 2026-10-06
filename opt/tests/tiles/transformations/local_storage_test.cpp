@@ -2635,7 +2635,84 @@ TEST(LocalStorageTest, Apply_Cooperative_Mixed) {
     EXPECT_FALSE(block_uses(*main_block, "A"));
 }
 
-// Staging a second operand before the same loop joins the first copy's barrier group:
+// Staging at a block-scheduled loop (split-K over Z): the copy runs before that loop, so its
+// threads share the whole footprint and must split the copy with the cooperative axis.
+TEST(LocalStorageTest, Apply_Cooperative_StagedGroupLoopJoinsCopy) {
+    builder::StructuredSDFGBuilder builder("ls_coop_staged_z", FunctionType_CPU);
+    auto& seq = builder.subject().root();
+    types::Scalar loop_var(types::PrimitiveType::Int32);
+    types::Scalar elem(types::PrimitiveType::Float);
+    types::Pointer ptr(elem);
+    auto i = symbolic::symbol("i");
+    auto j = symbolic::symbol("j");
+    auto k = symbolic::symbol("k");
+    auto N = symbolic::symbol("N");
+    auto M = symbolic::symbol("M");
+    builder.add_container("N", loop_var, true);
+    builder.add_container("M", loop_var, true);
+    builder.add_container("A", ptr, true);
+    builder.add_container("C", ptr, true);
+    builder.add_container("i", loop_var);
+    builder.add_container("j", loop_var);
+    builder.add_container("k", loop_var);
+
+    auto sched_i = gpu::ScheduleType_GPU_Offload::create<
+        cuda::ScheduleType_CUDA_Offload>(gpu::TargetLevel::X_BLOCK, symbolic::integer(8));
+    auto sched_j = gpu::ScheduleType_GPU_Offload::create<
+        cuda::ScheduleType_CUDA_Offload>(gpu::TargetLevel::Y_BLOCK, symbolic::integer(4));
+    auto sched_k = gpu::ScheduleType_GPU_Offload::create<
+        cuda::ScheduleType_CUDA_Offload>(gpu::TargetLevel::Z_BLOCK, symbolic::integer(2));
+    auto& map_i =
+        builder
+            .add_map(seq, i, symbolic::Lt(i, N), symbolic::integer(0), symbolic::add(i, symbolic::integer(1)), sched_i);
+    auto& map_j = builder.add_map(
+        map_i.root(), j, symbolic::Lt(j, M), symbolic::integer(0), symbolic::add(j, symbolic::integer(1)), sched_j
+    );
+    auto& map_k = builder.add_map(
+        map_j.root(),
+        k,
+        symbolic::Lt(k, symbolic::integer(16)),
+        symbolic::integer(0),
+        symbolic::add(k, symbolic::integer(1)),
+        sched_k
+    );
+
+    // C[(i*M + j)*16 + k] = A[i*16 + k] — A per-thread in i, cooperative in j, k is the staged axis.
+    auto& block = builder.add_block(map_k.root());
+    auto& a_in = builder.add_access(block, "A");
+    auto& c_out = builder.add_access(block, "C");
+    auto& t = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder
+        .add_computational_memlet(block, a_in, t, "_in", {symbolic::add(symbolic::mul(i, symbolic::integer(16)), k)}, ptr);
+    builder.add_computational_memlet(
+        block,
+        t,
+        "_out",
+        c_out,
+        {symbolic::add(symbolic::mul(symbolic::add(symbolic::mul(i, M), j), symbolic::integer(16)), k)},
+        ptr
+    );
+
+    analysis::AnalysisManager am(builder.subject());
+    LocalStorage xform(map_k, a_in);
+    ASSERT_TRUE(xform.can_be_applied(builder, am));
+    xform.apply(builder, am);
+
+    tiles::TileCopyNode* copy = nullptr;
+    for (size_t c = 0; c < map_j.root().size() && !copy; ++c) {
+        if (auto* b = dyn_cast<structured_control_flow::Block*>(&map_j.root().at(c))) {
+            for (auto& n : b->dataflow().nodes()) {
+                if (auto* tc = dynamic_cast<tiles::TileCopyNode*>(&n)) {
+                    copy = tc;
+                }
+            }
+        }
+    }
+    ASSERT_NE(copy, nullptr);
+    EXPECT_EQ(copy->coop_axes(), (std::vector<int>{1, 2}));
+    ASSERT_FALSE(copy->coop_threads().is_null());
+    EXPECT_TRUE(symbolic::eq(copy->coop_threads(), symbolic::integer(8)));
+}
 // [barrier, copy A, copy B, barrier, k-loop] so both loads are in flight together.
 TEST(LocalStorageTest, Apply_Cooperative_TwoOperands_ShareStagingGroup) {
     builder::StructuredSDFGBuilder builder("ls_coop_two", FunctionType_CPU);

@@ -14,6 +14,7 @@
 #include "sdfg/targets/cuda/cuda.h"
 #include "sdfg/targets/cuda/cuda_data_offloading_node.h"
 #include "sdfg/targets/cuda/cuda_offload_dispatcher_strategy.h"
+#include "sdfg/targets/gpu/gpu_offload_map_dispatcher.h"
 #include "sdfg/targets/gpu/gpu_offload_reduce_dispatcher.h"
 #include "sdfg/targets/gpu/gpu_offload_schedule_type.h"
 #include "sdfg/targets/gpu/gpu_reduce_layout.h"
@@ -430,6 +431,208 @@ TEST(CUDAOffloadReduceDispatcherTest, PlacedPartialContainerWrongStorageThrows) 
     codegen::PrettyPrinter main_stream, globals_stream;
     codegen::CodeSnippetFactory library_snippet_factory;
     EXPECT_THROW(dispatcher.dispatch_node(main_stream, globals_stream, library_snippet_factory), InvalidSDFGException);
+}
+
+// Y_GRID map b -> X_BLOCK reduce i -> sequential s: acc[out(b, s)] += A[256*b + 4*i + s].
+// The 4 outputs per thread make the accumulator multi-output. @p scratch adds a 256-float shared
+// buffer S inside the panel: 1 = staged before the reduce, 2 = also read after it.
+static std::string
+dispatch_multi_output_reduce(bool disjoint, bool panel = false, bool touch_acc_in_panel = false, int scratch = 0) {
+    builder::StructuredSDFGBuilder builder("red_multi", FunctionType_CPU);
+    auto& root = builder.subject().root();
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Pointer pointer_type(types::StorageType::NV_Generic(), 0, "", base_desc);
+    types::Scalar int_desc(types::PrimitiveType::Int32);
+    for (auto name : {"b", "i", "s", "p"}) {
+        builder.add_container(name, int_desc);
+    }
+    builder.add_container("A", pointer_type);
+    builder.add_container("acc", pointer_type);
+    auto b = symbolic::symbol("b");
+    auto i = symbolic::symbol("i");
+    auto s = symbolic::symbol("s");
+    auto p = symbolic::symbol("p");
+
+    auto& grid = builder.add_map(
+        root,
+        b,
+        symbolic::Lt(b, symbolic::integer(4)),
+        symbolic::zero(),
+        symbolic::add(b, symbolic::one()),
+        gpu::ScheduleType_GPU_Offload::create<ScheduleType_CUDA_Offload>(gpu::TargetLevel::Y_GRID, symbolic::integer(4))
+    );
+    auto* reduce_parent = &grid.root();
+    if (panel) {
+        auto& loop_p = builder.add_for(
+            grid.root(), p, symbolic::Lt(p, symbolic::integer(4)), symbolic::zero(), symbolic::add(p, symbolic::one())
+        );
+        reduce_parent = &loop_p.root();
+        if (touch_acc_in_panel) {
+            auto& peek = builder.add_block(*reduce_parent);
+            auto& acc_read = builder.add_access(peek, "acc");
+            auto& a_write = builder.add_access(peek, "A");
+            auto& copy = builder.add_tasklet(peek, data_flow::TaskletCode::assign, "_out", {"_in"});
+            builder.add_computational_memlet(peek, acc_read, copy, "_in", {symbolic::zero()}, pointer_type);
+            builder.add_computational_memlet(peek, copy, "_out", a_write, {symbolic::zero()}, pointer_type);
+        }
+    }
+    types::Array scratch_type(types::StorageType::NV_Shared(), 0, "", base_desc, symbolic::integer(256));
+    auto add_scratch_copy = [&](bool to_scratch) {
+        auto& copy_block = builder.add_block(*reduce_parent);
+        auto& src = builder.add_access(copy_block, to_scratch ? "A" : "S");
+        auto& dst = builder.add_access(copy_block, to_scratch ? "S" : "A");
+        auto& copy = builder.add_tasklet(copy_block, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(
+            copy_block,
+            src,
+            copy,
+            "_in",
+            {symbolic::zero()},
+            to_scratch ? (const types::IType&) pointer_type : scratch_type
+        );
+        builder.add_computational_memlet(
+            copy_block,
+            copy,
+            "_out",
+            dst,
+            {symbolic::one()},
+            to_scratch ? (const types::IType&) scratch_type : pointer_type
+        );
+    };
+    if (scratch > 0) {
+        builder.add_container("S", scratch_type);
+        add_scratch_copy(true);
+    }
+    auto& reduce = builder.add_reduce(
+        *reduce_parent,
+        i,
+        symbolic::Lt(i, symbolic::integer(64)),
+        symbolic::zero(),
+        symbolic::add(i, symbolic::one()),
+        {structured_control_flow::ReductionInfo{structured_control_flow::ReductionOperation::Add, "acc"}},
+        gpu::ScheduleType_GPU_Offload::create<ScheduleType_CUDA_Offload>(gpu::TargetLevel::X_BLOCK, symbolic::integer(32))
+    );
+    auto& loop_s = builder.add_for(
+        reduce.root(), s, symbolic::Lt(s, symbolic::integer(4)), symbolic::zero(), symbolic::add(s, symbolic::one())
+    );
+    symbolic::Expression out = disjoint ? symbolic::add(symbolic::mul(symbolic::integer(4), b), s)
+                                        : symbolic::Expression(s);
+    auto& block = builder.add_block(loop_s.root());
+    auto& a_access = builder.add_access(block, "A");
+    auto& acc_in = builder.add_access(block, "acc");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::fp_add, "_out", {"_in0", "_in1"});
+    auto& acc_out = builder.add_access(block, "acc");
+    auto a_index =
+        symbolic::add(symbolic::mul(symbolic::integer(256), b), symbolic::add(symbolic::mul(symbolic::integer(4), i), s));
+    if (panel) {
+        a_index = symbolic::add(a_index, symbolic::mul(symbolic::integer(1024), p));
+    }
+    builder.add_computational_memlet(block, acc_in, tasklet, "_in0", {out}, pointer_type);
+    builder.add_computational_memlet(block, a_access, tasklet, "_in1", {a_index}, pointer_type);
+    builder.add_computational_memlet(block, tasklet, "_out", acc_out, {out}, pointer_type);
+    if (scratch > 1) {
+        add_scratch_copy(false);
+    }
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    passes::ReductionSharedMemoryDelinearization reduction_buffers;
+    reduction_buffers.run(builder, analysis_manager);
+
+    codegen::CLanguageExtension language_extension(builder.subject());
+    auto instrumentation = codegen::InstrumentationPlan::none(builder.subject());
+    auto arg_capture = codegen::ArgCapturePlan::none(builder.subject());
+    gpu::GPUOffloadMapDispatcher dispatcher(
+        language_extension,
+        builder.subject(),
+        analysis_manager,
+        grid,
+        *instrumentation,
+        *arg_capture,
+        std::make_unique<CUDAOffloadDispatcherStrategy>(builder.subject())
+    );
+    codegen::PrettyPrinter main_stream, globals_stream;
+    codegen::CodeSnippetFactory library_snippet_factory;
+    dispatcher.dispatch_node(main_stream, globals_stream, library_snippet_factory);
+    for (auto& [key, snippet] : library_snippet_factory.snippets()) {
+        if (snippet.extension() == "cu") {
+            return snippet.stream().str();
+        }
+    }
+    return "";
+}
+
+static size_t count_of(const std::string& haystack, const std::string& needle) {
+    size_t n = 0;
+    for (size_t p = haystack.find(needle); p != std::string::npos; p = haystack.find(needle, p + 1)) {
+        n++;
+    }
+    return n;
+}
+
+// The tree emits one leading and one per-step barrier (inside its loop), none per slot.
+TEST(CUDAOffloadReduceDispatcherTest, MultiOutputTreeBarriersIndependentOfSlots) {
+    auto kernel = dispatch_multi_output_reduce(/*disjoint=*/true);
+    ASSERT_FALSE(kernel.empty());
+    EXPECT_EQ(count_of(kernel, "__syncthreads();"), 2u) << kernel;
+    EXPECT_NE(kernel.find("for (int __daisy_reduce_slot_acc"), std::string::npos) << kernel;
+}
+
+// Each grid block commits its own 4 outputs (stride 4 per block): no atomic needed.
+TEST(CUDAOffloadReduceDispatcherTest, MultiOutputDisjointAcrossGridCommitsPlainly) {
+    auto kernel = dispatch_multi_output_reduce(/*disjoint=*/true);
+    EXPECT_EQ(kernel.find("atomicAdd"), std::string::npos) << kernel;
+    EXPECT_EQ(kernel.find("__daisy_reduce_combine_"), std::string::npos) << kernel;
+}
+
+// Every grid block hits the same 4 outputs: the commit must stay atomic.
+TEST(CUDAOffloadReduceDispatcherTest, MultiOutputCollidingAcrossGridStaysAtomic) {
+    auto kernel = dispatch_multi_output_reduce(/*disjoint=*/false);
+    EXPECT_NE(kernel.find("atomicAdd"), std::string::npos) << kernel;
+}
+
+// Under a sequential panel loop that only the reduce accumulates in, the register partial
+// lives at kernel scope: reset on the first panel, combined once after the last.
+TEST(CUDAOffloadReduceDispatcherTest, PanelLoopHoistsPartialAndCombine) {
+    auto kernel = dispatch_multi_output_reduce(/*disjoint=*/true, /*panel=*/true);
+    ASSERT_FALSE(kernel.empty());
+    const auto panel_loop = kernel.find("for(p = 0");
+    ASSERT_NE(panel_loop, std::string::npos) << kernel;
+    const auto decl = kernel.find("float __daisy_reduce_reg_acc");
+    ASSERT_NE(decl, std::string::npos) << kernel;
+    EXPECT_LT(decl, panel_loop) << kernel;
+    EXPECT_NE(kernel.find("if (((0 == p))) for (int __daisy_reduce_slot_acc"), std::string::npos) << kernel;
+    EXPECT_NE(kernel.find("if ((4 <= 1 + p)) {"), std::string::npos) << kernel;
+}
+
+// Another access to the accumulator inside the panel loop pins the partial per panel.
+TEST(CUDAOffloadReduceDispatcherTest, PanelLoopTouchingAccumulatorDoesNotHoist) {
+    auto kernel = dispatch_multi_output_reduce(/*disjoint=*/true, /*panel=*/true, /*touch_acc_in_panel=*/true);
+    ASSERT_FALSE(kernel.empty());
+    EXPECT_EQ(kernel.find("0 == p"), std::string::npos) << kernel;
+    EXPECT_GT(kernel.find("float __daisy_reduce_reg_acc"), kernel.find("for(p = 0")) << kernel;
+}
+
+// A shared buffer staged in the panel loop and dead after the reduce hosts the hoisted
+// partials instead of a fresh allocation, fenced by a barrier on each side.
+TEST(CUDAOffloadReduceDispatcherTest, PanelLoopPartialsAliasDeadStagingBuffer) {
+    auto kernel = dispatch_multi_output_reduce(/*disjoint=*/true, /*panel=*/true, false, /*scratch=*/1);
+    ASSERT_FALSE(kernel.empty());
+    EXPECT_EQ(kernel.find("__shared__ float __daisy_reduce_smem_acc"), std::string::npos) << kernel;
+    EXPECT_NE(kernel.find("= reinterpret_cast<float*>(S);"), std::string::npos) << kernel;
+    size_t barriers = 0;
+    for (size_t q = kernel.find("__syncthreads();"); q != std::string::npos;
+         q = kernel.find("__syncthreads();", q + 1)) {
+        barriers++;
+    }
+    EXPECT_EQ(barriers, 4u) << kernel;
+}
+
+// A read of the buffer after the reduce keeps it live: the partials get their own buffer.
+TEST(CUDAOffloadReduceDispatcherTest, PanelLoopPartialsSkipBufferLiveAfterReduce) {
+    auto kernel = dispatch_multi_output_reduce(/*disjoint=*/true, /*panel=*/true, false, /*scratch=*/2);
+    ASSERT_FALSE(kernel.empty());
+    EXPECT_NE(kernel.find("__shared__ float __daisy_reduce_smem_acc"), std::string::npos) << kernel;
+    EXPECT_EQ(kernel.find("reinterpret_cast<float*>(S)"), std::string::npos) << kernel;
 }
 
 } // namespace sdfg::cuda

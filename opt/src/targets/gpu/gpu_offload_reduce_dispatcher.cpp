@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <sdfg/analysis/analysis.h>
+#include <sdfg/analysis/assumptions_analysis.h>
 #include <sdfg/analysis/loop_analysis.h>
 #include <sdfg/analysis/users.h>
 #include <sdfg/builder/structured_sdfg_builder.h>
@@ -154,7 +155,118 @@ bool has_native_atomic_add(types::PrimitiveType prim) {
     return false;
 }
 
+bool is_offloaded(const structured_control_flow::StructuredLoop& loop) {
+    return loop.schedule_type().category() == structured_control_flow::ScheduleTypeCategory::Offloader;
+}
+
 } // namespace
+
+std::vector<structured_control_flow::StructuredLoop*> reduction_hoist_chain(
+    StructuredSDFG& sdfg, structured_control_flow::Reduce& reduce, analysis::AnalysisManager& analysis_manager
+) {
+    std::vector<structured_control_flow::StructuredLoop*> chain;
+    const auto& schedule = reduce.schedule_type();
+    if (!is_offloaded(reduce) || !is_block_level(ScheduleType_GPU_Offload::target_level(schedule)) ||
+        ScheduleType_GPU_Offload::partial_storage(schedule) != ReduceStrategy::Shared) {
+        return chain;
+    }
+    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
+    for (auto* loop : loop_analysis.descendants(&reduce)) {
+        auto* nested = dynamic_cast<structured_control_flow::StructuredLoop*>(loop);
+        if (nested && is_offloaded(*nested)) {
+            return chain;
+        }
+    }
+    // Hoist-loop bounds must be block-uniform: the guarded combine contains barriers.
+    symbolic::SymbolSet thread_indvars;
+    for (auto* loop : loop_analysis.ancestors(&reduce)) {
+        auto* enclosing = dynamic_cast<structured_control_flow::StructuredLoop*>(loop);
+        if (!enclosing || !is_offloaded(*enclosing)) {
+            continue;
+        }
+        if (dynamic_cast<structured_control_flow::Reduce*>(enclosing)) {
+            return chain;
+        }
+        if (!is_grid_level(ScheduleType_GPU_Offload::target_level(enclosing->schedule_type()))) {
+            thread_indvars.insert(enclosing->indvar());
+        }
+    }
+    auto& buffers = analysis_manager.get<tiles::ReductionBufferAnalysis>();
+    for (const auto& r : reduce.reductions()) {
+        if (sdfg.type(r.container).type_id() == types::TypeID::Scalar) {
+            return chain;
+        }
+        auto info = buffers.buffer(reduce, r.container);
+        if (info.private_buffer.empty() || !info.private_bytes || *info.private_bytes == 0) {
+            return chain;
+        }
+    }
+
+    auto& users = analysis_manager.get<analysis::Users>();
+    analysis::UsersView reduce_view(users, reduce);
+    auto& assumptions = analysis_manager.get<analysis::AssumptionsAnalysis>();
+    for (auto* node = reduce.get_parent(); node != nullptr; node = node->get_parent()) {
+        if (dynamic_cast<structured_control_flow::Sequence*>(node)) {
+            continue;
+        }
+        auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(node);
+        if (!loop || is_offloaded(*loop) || dynamic_cast<structured_control_flow::Map*>(loop)) {
+            break;
+        }
+        bool uniform = true;
+        for (const auto& bound : {loop->init(), symbolic::Expression(loop->condition()), loop->update()}) {
+            for (const auto& atom : symbolic::atoms(bound)) {
+                uniform &= thread_indvars.count(atom) == 0;
+            }
+        }
+        if (!uniform) {
+            break;
+        }
+        // Every iteration must reach the reduce, so its first/last iterations exist.
+        auto trip = loop->num_iterations();
+        if (!trip.is_null() && !SymEngine::is_a<SymEngine::Integer>(*trip)) {
+            trip = symbolic::minimum(trip, assumptions.parameters(), assumptions.get(loop->root(), true), false);
+        }
+        if (trip.is_null() || !SymEngine::is_a<SymEngine::Integer>(*trip) ||
+            SymEngine::rcp_static_cast<const SymEngine::Integer>(trip)->as_int() < 1) {
+            break;
+        }
+        // The accumulator must be touched only by the reduce within the hoisted region.
+        analysis::UsersView view(users, loop->root());
+        bool private_to_reduce = true;
+        for (const auto& r : reduce.reductions()) {
+            for (auto* user : view.uses(r.container)) {
+                private_to_reduce &= reduce_view.contains(*user);
+            }
+        }
+        if (!private_to_reduce) {
+            break;
+        }
+        chain.push_back(loop);
+    }
+    return chain;
+}
+
+bool is_hoisted_register_partial(
+    StructuredSDFG& sdfg,
+    structured_control_flow::StructuredLoop& kernel,
+    const std::string& container,
+    analysis::AnalysisManager& analysis_manager
+) {
+    auto& buffers = analysis_manager.get<tiles::ReductionBufferAnalysis>();
+    for (auto* loop : analysis_manager.get<analysis::LoopAnalysis>().descendants(&kernel)) {
+        auto* reduce = dynamic_cast<structured_control_flow::Reduce*>(loop);
+        if (!reduce || !is_offloaded(*reduce)) {
+            continue;
+        }
+        for (const auto& r : reduce->reductions()) {
+            if (buffers.buffer(*reduce, r.container).private_buffer == container) {
+                return !reduction_hoist_chain(sdfg, *reduce, analysis_manager).empty();
+            }
+        }
+    }
+    return false;
+}
 
 GPUOffloadReduceDispatcher::GPUOffloadReduceDispatcher(
     codegen::LanguageExtension& language_extension,
@@ -259,6 +371,24 @@ void GPUOffloadReduceDispatcher::dispatch_kernel_body(
 
     // Declare this level's reduction partials (registers for WARP/GRID, shared memory for
     // BLOCK) and initialize them to each operator's identity element.
+    hoist_chain_.clear();
+    smem_alias_.clear();
+    if (!is_outermost_map(analysis_manager_)) {
+        hoist_chain_ = reduction_hoist_chain(sdfg_, node_, analysis_manager_);
+    }
+    if (!hoist_chain_.empty()) {
+        std::set<std::string> taken;
+        for (const auto& r : node_.reductions()) {
+            if (!uses_register_partial(target_level, r.container)) {
+                continue;
+            }
+            auto alias = dead_shared_alias(reduction_buffers_.at(r.container), taken);
+            if (!alias.empty()) {
+                taken.insert(alias);
+                smem_alias_.emplace(r.container, alias);
+            }
+        }
+    }
     this->dispatch_reduction_declarations(
         kernel_language_extension, kernel_source_stream, kernel_snippet_factory, target_level
     );
@@ -351,10 +481,100 @@ void GPUOffloadReduceDispatcher::dispatch_kernel_body(
     kernel_source_stream << "}" << std::endl;
 
     // Publish per-thread register partials to their shared slots once, before the combine.
+    const bool hoisted = !hoist_chain_.empty();
+    if (hoisted) {
+        kernel_source_stream << "if (" << hoist_condition(kernel_language_extension, false) << ") {" << std::endl;
+        kernel_source_stream.changeIndent(+4);
+    }
+    // An aliased buffer may still be read by other threads' last iteration, and is restaged
+    // on re-entry: fence the partials' lifetime on both sides.
+    if (!smem_alias_.empty()) {
+        kernel_source_stream << "__syncthreads();" << std::endl;
+    }
     this->dispatch_reduction_publish(kernel_language_extension, kernel_source_stream, target_level);
 
     // Combine the per-thread / per-warp partials for this level into the accumulator.
     this->dispatch_reduction_combine(kernel_language_extension, kernel_source_stream, kernel_snippet_factory, target_level);
+    if (!smem_alias_.empty()) {
+        kernel_source_stream << "__syncthreads();" << std::endl;
+    }
+    if (hoisted) {
+        kernel_source_stream.changeIndent(-4);
+        kernel_source_stream << "}" << std::endl;
+    }
+}
+
+std::string GPUOffloadReduceDispatcher::hoist_condition(codegen::LanguageExtension& language_extension, bool first) {
+    std::vector<std::string> conditions;
+    for (auto* loop : hoist_chain_) {
+        auto condition = first ? symbolic::Eq(loop->indvar(), loop->init())
+                               : symbolic::Not(symbolic::subs(loop->condition(), loop->indvar(), loop->update()));
+        conditions.push_back("(" + language_extension.expression(condition) + ")");
+    }
+    return helpers::join(conditions, " && ");
+}
+
+std::string GPUOffloadReduceDispatcher::
+    dead_shared_alias(const tiles::ReductionBufferInfo& buffer, const std::set<std::string>& taken) {
+    if (hoist_chain_.empty() || !buffer.shared_bytes || *buffer.shared_bytes == 0 || !buffer.primitive ||
+        !buffer.element_bytes) {
+        return "";
+    }
+    auto* outer = hoist_chain_.back();
+    auto& users = analysis_manager_.get<analysis::Users>();
+    auto& partials = analysis_manager_.get<tiles::ReductionBufferAnalysis>();
+    analysis::UsersView in_hoist(users, outer->root());
+    auto used_after_reduce = [&](const std::string& name) {
+        structured_control_flow::ControlFlowNode* child = &node_;
+        for (auto* parent = node_.get_parent(); parent != nullptr && child != outer;
+             child = parent, parent = parent->get_parent()) {
+            auto* seq = dynamic_cast<structured_control_flow::Sequence*>(parent);
+            if (!seq) {
+                continue;
+            }
+            for (size_t i = seq->index(*child) + 1; i < seq->size(); ++i) {
+                if (!analysis::UsersView(users, seq->at(i)).uses(name).empty()) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+
+    std::string best;
+    int64_t best_bytes = 0;
+    for (const auto& name : sdfg_.containers()) {
+        const types::IType* type = &sdfg_.type(name);
+        if (taken.contains(name) || !type->storage_type().is_nv_shared() || partials.is_partial_buffer(name)) {
+            continue;
+        }
+        int64_t elements = 1;
+        bool constant = true;
+        while (auto* array = dynamic_cast<const types::Array*>(type)) {
+            auto n = array->num_elements();
+            if (!SymEngine::is_a<SymEngine::Integer>(*n)) {
+                constant = false;
+                break;
+            }
+            elements *= SymEngine::rcp_static_cast<const SymEngine::Integer>(n)->as_int();
+            type = &array->element_type();
+        }
+        if (!constant || type->type_id() != types::TypeID::Scalar || type->primitive_type() != *buffer.primitive) {
+            continue;
+        }
+        const int64_t bytes = elements * static_cast<int64_t>(*buffer.element_bytes);
+        if (bytes < static_cast<int64_t>(*buffer.shared_bytes) || (!best.empty() && bytes >= best_bytes)) {
+            continue;
+        }
+        auto uses = in_hoist.uses(name);
+        if (uses.empty() || uses.size() != users.uses(name).size() || uses.front()->use() != analysis::Use::WRITE ||
+            used_after_reduce(name)) {
+            continue;
+        }
+        best = name;
+        best_bytes = bytes;
+    }
+    return best;
 }
 
 bool GPUOffloadReduceDispatcher::has_nested_warp_reduction(const std::string& container) {
@@ -472,6 +692,64 @@ bool GPUOffloadReduceDispatcher::block_result_collides_across_grid(const symboli
         }
     }
     return false;
+}
+
+bool GPUOffloadReduceDispatcher::block_outputs_disjoint(const gpu::ReductionLayout& layout) {
+    auto& loop_analysis = analysis_manager_.get<analysis::LoopAnalysis>();
+    // A nested offload map would commit from inside the body; keep the atomic there.
+    for (auto* loop : loop_analysis.descendants(&node_)) {
+        auto* map = dynamic_cast<structured_control_flow::Map*>(loop);
+        if (map && map->schedule_type().category() == structured_control_flow::ScheduleTypeCategory::Offloader) {
+            return false;
+        }
+    }
+
+    // Each enclosing offload loop contributes one mixed-radix axis: its iterations run on
+    // distinct concurrent writers, stepping the output base by a constant. Substituting
+    // innermost-first exposes outer indices that enter through an inner loop's init.
+    auto& aa = analysis_manager_.get<analysis::AssumptionsAnalysis>();
+    const auto& params = aa.parameters();
+    auto base = layout.base;
+    auto axes = layout.dimensions;
+    int fresh = 0;
+    for (auto* node : structured_control_flow::ControlFlowNode::parent_chain(node_)) {
+        auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(node);
+        if (!loop || loop->schedule_type().category() != structured_control_flow::ScheduleTypeCategory::Offloader) {
+            continue;
+        }
+        if (dynamic_cast<structured_control_flow::Reduce*>(loop)) {
+            return false;
+        }
+        auto k = symbolic::symbol("__daisy_disjoint_k" + std::to_string(fresh++));
+        base = symbolic::
+            expand(symbolic::subs(base, loop->indvar(), symbolic::add(loop->init(), symbolic::mul(loop->stride(), k))));
+        auto trip = loop->num_iterations();
+        if (!trip.is_null() && !SymEngine::is_a<SymEngine::Integer>(*trip)) {
+            trip = symbolic::maximum(trip, params, aa.get(loop->root(), true), false);
+        }
+        if (trip.is_null() || !SymEngine::is_a<SymEngine::Integer>(*trip)) {
+            return false;
+        }
+        const int64_t count = SymEngine::rcp_static_cast<const SymEngine::Integer>(trip)->as_int();
+        if (count <= 1) {
+            continue;
+        }
+        auto step = symbolic::expand(symbolic::sub(symbolic::subs(base, k, symbolic::add(k, symbolic::one())), base));
+        if (!SymEngine::is_a<SymEngine::Integer>(*step)) {
+            return false;
+        }
+        const int64_t s = std::abs(SymEngine::rcp_static_cast<const SymEngine::Integer>(step)->as_int());
+        if (s == 0) {
+            return false;
+        }
+        axes.push_back({s, count});
+    }
+    try {
+        gpu::ReductionLayout disjoint(layout.base, axes);
+    } catch (const InvalidSDFGException&) {
+        return false;
+    }
+    return true;
 }
 
 std::string GPUOffloadReduceDispatcher::
@@ -693,15 +971,25 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_declarations(
         auto identity = identity_literal(entry.operation, *buffer.primitive);
         auto slot = "__daisy_reduce_slot_" + entry.container;
         if (*buffer.private_bytes) {
-            stream << ctype << " " << buffer.private_buffer << "[" << buffer.layout->extent << "];" << std::endl;
+            // A hoisted partial is declared at kernel scope and reset only on the first iteration.
+            if (hoist_chain_.empty()) {
+                stream << ctype << " " << buffer.private_buffer << "[" << buffer.layout->extent << "];" << std::endl;
+            } else {
+                stream << "if (" << hoist_condition(language_extension, true) << ") ";
+            }
             stream << "for (int " << slot << " = 0; " << slot << " < " << buffer.layout->extent << "; ++" << slot
                    << ") " << buffer.private_buffer << "[" << slot << "] = " << identity << ";" << std::endl;
         }
         if (!*buffer.shared_bytes) {
             continue;
         }
-        stream << "__shared__ " << ctype << " " << buffer.shared_buffer << "["
-               << *buffer.shared_bytes / *buffer.element_bytes << "];" << std::endl;
+        if (auto alias = smem_alias_.find(entry.container); alias != smem_alias_.end()) {
+            stream << ctype << "* " << buffer.shared_buffer << " = reinterpret_cast<" << ctype << "*>(" << alias->second
+                   << ");" << std::endl;
+        } else {
+            stream << "__shared__ " << ctype << " " << buffer.shared_buffer << "["
+                   << *buffer.shared_bytes / *buffer.element_bytes << "];" << std::endl;
+        }
         if (!*buffer.private_bytes) {
             declared_shared = true;
             stream << "for (int " << slot << " = 0; " << slot << " < " << buffer.layout->extent << "; ++" << slot
@@ -785,15 +1073,31 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
         }
         std::string shared_index = lin_tid;
         std::string shared_stride = "1";
+        // A shared tree iterates the slots inside each step so its barriers run once per
+        // tree level; the other strategies have no barriers and loop over slots outside.
+        const bool slots_outside = multi_output && strategy != ReduceStrategy::Shared;
+        const std::string slot = "__daisy_reduce_slot_" + r.container;
+        auto open_slots = [&]() {
+            if (multi_output) {
+                stream << "for (int " << slot << " = 0; " << slot << " < " << layout.extent << "; ++" << slot << ") {"
+                       << std::endl;
+                stream.changeIndent(+4);
+            }
+        };
+        auto close_slots = [&]() {
+            if (multi_output) {
+                stream.changeIndent(-4);
+                stream << "}" << std::endl;
+            }
+        };
         if (multi_output) {
-            std::string slot = "__daisy_reduce_slot_" + r.container;
-            stream << "for (int " << slot << " = 0; " << slot << " < " << layout.extent << "; ++" << slot << ") {"
-                   << std::endl;
-            stream.changeIndent(+4);
             reg_name += "[" + slot + "]";
             index = layout.unpack(symbolic::symbol(slot));
             shared_stride = std::to_string(layout.extent);
             shared_index = "(" + lin_tid + ") * " + shared_stride + " + " + slot;
+        }
+        if (slots_outside) {
+            open_slots();
         }
         std::string target = reduction_target(language_extension, r.container, index);
 
@@ -893,7 +1197,9 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
                 stream << "int " << hvar << " = (" << mvar << " + 1) / 2;" << std::endl;
                 stream << "if (" << a_idx << " < " << mvar << " - " << hvar << ") {" << std::endl;
                 stream.setIndent(stream.indent() + 4);
+                open_slots();
                 stream << a << " = " << combine_expr(op, a, b) << ";" << std::endl;
+                close_slots();
                 stream.setIndent(stream.indent() - 4);
                 stream << "}" << std::endl;
                 stream << "__syncthreads();" << std::endl;
@@ -944,9 +1250,11 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
                 std::string block_src = smem_name + "[" + shared_index + "]";
                 std::string leader = block_reduce_leader_condition(language_extension, r.container);
                 bool enclosed_by_reduction = has_enclosing_grid_reduction(r.container);
-                bool collides = !enclosed_by_reduction && (multi_output || block_result_collides_across_grid(index));
+                bool collides = !enclosed_by_reduction && (multi_output ? !block_outputs_disjoint(layout)
+                                                                        : block_result_collides_across_grid(index));
                 stream << "if (" << leader << ") {" << std::endl;
                 stream.setIndent(stream.indent() + 4);
+                open_slots();
                 if (collides) {
                     if (r.operation == ReductionOperation::Add && has_native_atomic_add(prim)) {
                         stream << "atomicAdd(&" << target << ", " << block_src << ");" << std::endl;
@@ -967,6 +1275,7 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
                     // sole writer of this non-colliding slot, so no atomic is required.
                     stream << target << " = " << combine_expr(r.operation, target, block_src) << ";" << std::endl;
                 }
+                close_slots();
                 stream.setIndent(stream.indent() - 4);
                 stream << "}" << std::endl;
             }
@@ -1033,9 +1342,8 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
                 stream << "}" << std::endl;
             }
         }
-        if (multi_output) {
-            stream.changeIndent(-4);
-            stream << "}" << std::endl;
+        if (slots_outside) {
+            close_slots();
         }
     }
 }

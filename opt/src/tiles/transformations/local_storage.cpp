@@ -773,6 +773,20 @@ void LocalStorage::apply_prepared(builder::StructuredSDFGBuilder& builder, analy
                 slot_inits,
                 slot_strides
             );
+            // The copy runs before the staged loop: when that loop is itself a group axis, its
+            // threads share the whole footprint and split the copy instead of repeating it.
+            if (auto staged = tiles::AxisSchedule::classify(loop_.schedule_type());
+                staged && staged->has_scratchpad() && staged->level() == tiles::Level::Group) {
+                if (!copy.coop_axes.empty()) {
+                    copy.coop_axes.push_back(static_cast<int>(staged->spatial_axis()));
+                    std::sort(copy.coop_axes.begin(), copy.coop_axes.end());
+                }
+                if (!copy.coop_threads.is_null()) {
+                    auto ps = staged->parallel_size();
+                    copy.coop_threads = symbolic::eq(ps, symbolic::integer(0)) ? symbolic::Expression()
+                                                                               : symbolic::mul(copy.coop_threads, ps);
+                }
+            }
             const bool needs_leading = !slot_indices.empty();
             if (auto* group_end = staging_group_trailing_barrier(*parent, loop_, needs_leading)) {
                 // Join the preceding staging group: its barriers already fence this copy,

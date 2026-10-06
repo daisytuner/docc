@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <set>
 
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/codegen/dispatchers/node_dispatcher.h"
@@ -16,11 +17,30 @@
 namespace sdfg {
 namespace gpu {
 
+/// Sequential loops (innermost first) across which a block-level register-partial reduce
+/// keeps its partials live: it initializes them on their first and combines on their last
+/// iteration instead of once per iteration. Empty when hoisting is not legal.
+std::vector<structured_control_flow::StructuredLoop*> reduction_hoist_chain(
+    StructuredSDFG& sdfg, structured_control_flow::Reduce& reduce, analysis::AnalysisManager& analysis_manager
+);
+
+/// Whether @p container is the register partial of a hoisted reduce below @p kernel, which
+/// the kernel must then declare at its scope so the partial survives the hoist loops.
+bool is_hoisted_register_partial(
+    StructuredSDFG& sdfg,
+    structured_control_flow::StructuredLoop& kernel,
+    const std::string& container,
+    analysis::AnalysisManager& analysis_manager
+);
+
 class GPUOffloadReduceDispatcher : public GPUOffloadBaseDispatcher {
 protected:
     structured_control_flow::Reduce& node_;
 
     std::map<std::string, tiles::ReductionBufferInfo> reduction_buffers_;
+    std::vector<structured_control_flow::StructuredLoop*> hoist_chain_;
+    // Container -> dead shared buffer its hoisted partials are placed in instead of fresh shared.
+    std::map<std::string, std::string> smem_alias_;
 
     void dispatch_kernel_body(
         codegen::NestedCodeSnippetFactory& kernel_snippet_factory,
@@ -61,6 +81,9 @@ protected:
     // appear in the accumulator index, so multiple grid blocks / coverage-loop iterations
     // target the same global slot and must combine atomically rather than overwrite.
     bool block_result_collides_across_grid(const symbolic::Expression& index);
+    /// Whether every concurrent writer (enclosing offload iteration) commits a disjoint
+    /// set of the layout's outputs, so the leader may combine without atomics.
+    bool block_outputs_disjoint(const gpu::ReductionLayout& layout);
 
     // Predicate (as a C expression) selecting the single thread that commits the folded
     // result of @p container to global memory: the leader across every reduced block axis,
@@ -130,6 +153,14 @@ protected:
     // FMA chain is not serialized through shared memory; the existing shared tree/shuffle
     // combine is unchanged.
     bool uses_register_partial(TargetLevel target_level, const std::string& container);
+
+    // C predicate for the first (@p first) or last iteration of every hoist-chain loop.
+    std::string hoist_condition(codegen::LanguageExtension& language_extension, bool first);
+
+    // Smallest shared buffer of the partials' element type that fits them and is dead at the
+    // hoisted combine: used only within the hoist loops, written before read there, and not
+    // after the reduce. Empty when none qualifies or the reduce is not hoisted.
+    std::string dead_shared_alias(const tiles::ReductionBufferInfo& buffer, const std::set<std::string>& taken);
 
     // Publish each register partial to its shared slot once, after the coverage loop and
     // before the combine (a single st.shared per thread instead of one per element).
