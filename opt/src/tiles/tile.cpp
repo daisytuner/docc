@@ -73,30 +73,40 @@ std::vector<TileAxis> TileAxis::enclosing(
     // An axis is cooperative when its indvar addresses no tile base (all
     // iterations share the same tile); otherwise it is per-iteration private. The
     // offset holds a library operand's grid/block indvars (its per-dim bases are
-    // zero), so it participates in the test like any base.
-    auto is_cooperative = [&](const symbolic::Symbol& indvar) {
-        if (!offset.is_null() && symbolic::uses(offset, indvar)) {
-            return false;
+    // zero), so it participates in the test like any base. Addressing is closed
+    // transitively over loop bounds: an outer indvar that only enters through the
+    // init/condition of an inner addressing loop (e.g. a split-K chunk feeding the
+    // panel loop's range) still selects a distinct tile.
+    symbolic::SymbolSet addressing;
+    if (!offset.is_null()) {
+        addressing = symbolic::atoms(offset);
+    }
+    for (const auto& base : bases) {
+        for (const auto& s : symbolic::atoms(base)) {
+            addressing.insert(s);
         }
-        for (const auto& base : bases) {
-            if (symbolic::uses(base, indvar)) {
-                return false;
-            }
-        }
-        return true;
-    };
+    }
     std::vector<TileAxis> axes;
     for (auto* node : structured_control_flow::ControlFlowNode::parent_chain(loop)) {
         auto* sloop = dynamic_cast<structured_control_flow::StructuredLoop*>(node);
         if (sloop == nullptr) {
             continue;
         }
+        symbolic::Symbol indvar = sloop->indvar();
+        const bool addresses = addressing.count(indvar) > 0;
+        if (addresses) {
+            for (const auto& s : symbolic::atoms(sloop->init())) {
+                addressing.insert(s);
+            }
+            for (const auto& s : symbolic::atoms(sloop->condition())) {
+                addressing.insert(s);
+            }
+        }
         auto facts = AxisSchedule::classify(sloop->schedule_type());
         if (!facts) {
             continue; // sequential loop — does not shape storage
         }
-        symbolic::Symbol indvar = sloop->indvar();
-        Role role = is_cooperative(indvar) ? Role::Cooperative : Role::Private;
+        Role role = addresses ? Role::Private : Role::Cooperative;
         symbolic::Integer stride = symbolic::integer(1);
         if (auto s = sloop->stride(); !s.is_null()) {
             stride = s;
