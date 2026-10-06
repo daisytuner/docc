@@ -2,6 +2,7 @@
 
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/tiles/analysis/reduction_buffer_analysis.h"
+#include "sdfg/transformations/loop_header.h"
 #include "sdfg/transformations/transformation.h"
 
 namespace sdfg {
@@ -18,10 +19,10 @@ namespace transformations {
  * Supports two cases:
  * - Independent bounds: inner loop bounds do not reference the outer induction
  *   variable. The loop headers are simply swapped.
- * - Dependent bounds (Fourier-Motzkin): inner loop bounds are unit-affine in
- *   the outer induction variable. The new outer range is obtained by projecting
- *   the inner bounds over the outer range, and the new inner range is obtained
- *   by inverting the affine relationship, yielding min/max expressions.
+ * - Dependent bounds (Fourier-Motzkin): inner loop bounds are min/max of affine
+ *   terms in the outer induction variable with non-negative coefficients. The new
+ *   outer range is spanned by the first and last outer iteration; the new inner
+ *   range inverts each affine term, rounded onto the outer loop's stride lattice.
  *
  * @note The outer loop must have exactly one child (the inner loop)
  * @note For-For interchange is checked via dependence analysis (delta sets must remain lex-non-negative)
@@ -64,7 +65,7 @@ public:
      *
      * @return Original loop IDs and the proposed outer and inner headers
      */
-    tiles::ReductionInterchangeProposal proposal() const;
+    LoopSwap proposal() const;
 
     /**
      * @brief Check if this transformation can be applied

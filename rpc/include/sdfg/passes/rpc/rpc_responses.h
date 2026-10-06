@@ -9,8 +9,8 @@ namespace sdfg::passes::rpc {
 
 struct RpcOptimizationMetadata {
     std::optional<std::string> region_id;
-    double speedup = NAN;
-    double vector_distance = NAN;
+    std::optional<nlohmann::json> expected_performance;
+    std::optional<double> vector_distance;
 };
 
 /**

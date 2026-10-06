@@ -19,7 +19,7 @@
 #include <sdfg/codegen/instrumentation/instrumentation_plan.h>
 #include <sdfg/codegen/loop_report.h>
 #include <sdfg/einsum/einsum.h>
-#include <sdfg/parallelization/passes/for_classification.h>
+#include <sdfg/parallelization/passes/auto_parallelization.h>
 #include <sdfg/passes/dataflow/dead_data_elimination.h>
 #include <sdfg/passes/dataflow/local_buffer_reuse.h>
 #include <sdfg/passes/dataflow/tensor_to_pointer_conversion.h>
@@ -355,7 +355,7 @@ void PyStructuredSDFG::simplify(const docc::target::TargetOptions& options) {
     ce.run(builder_opt, analysis_manager);
 
     // Convert for loops into maps and reductions
-    sdfg::parallelization::ForClassificationPass map_conversion_pass;
+    sdfg::parallelization::AutoParallelization map_conversion_pass;
     map_conversion_pass.run(builder_opt, analysis_manager);
 
     // Move code out of maps where possible
@@ -605,6 +605,11 @@ std::string PyStructuredSDFG::compile(
         bool sampling = options_.get(sdfg::codegen::INSTRUMENTATION_ADAPTIVE_SAMPLING, false);
         instrumentation_plan = sdfg::codegen::InstrumentationPlan::outermost_loops_plan(*sdfg_, true, sampling);
         sdfg::auto_util::add_offloading_instrumentations(*instrumentation_plan, *sdfg_);
+    } else if (instrumentation_mode == "ols_tuned") {
+        bool sampling = options_.get(sdfg::codegen::INSTRUMENTATION_ADAPTIVE_SAMPLING, false);
+        instrumentation_plan =
+            sdfg::codegen::InstrumentationPlan::provenance_grouped_outermost_loops_plan(*sdfg_, true, sampling);
+        sdfg::auto_util::add_offloading_instrumentations(*instrumentation_plan, *sdfg_);
     } else {
         throw std::runtime_error("Unsupported instrumentation plan: " + instrumentation_mode);
     }
@@ -645,6 +650,8 @@ std::string PyStructuredSDFG::compile(
         .add_common_option("-fno-signed-zeros")
         .add_compile_option("-funroll-loops")
         .add_compile_option("-std=c++20")
+        // Disable warnings that are produced by if/else and extra brackets from our symbolic expressions
+        .add_compile_option("-Wno-parentheses-equality")
         .add_link_option("-shared")
         .add_link_option("-ldaisy_rtl")
         .add_link_option("-lm")

@@ -125,13 +125,69 @@ def test_per_invocation_trace():
     assert region.metric("perf::CYCLES") == 1000
     assert region.runtime_mean_us == 250
     assert region.counter_stats == {}
+    assert region.source_loop_id is None
+
+
+def test_provenance_loop_id_is_validated_and_exposed():
+    trace_data = _per_invocation_trace()
+    trace_data["traceEvents"][0]["args"]["docc"]["source_loop_id"] = 42
+    trace_data["traceEvents"][0]["args"]["docc"]["rpc_optimization"] = {
+        "expected_performance": {
+            "speedup": 1.75,
+            "custom_metric": {"unit": "x", "ok": True},
+        },
+        "vector_distance": 0.125,
+    }
+    trace_data["traceEvents"][0]["args"]["docc"]["member_loops"] = [
+        {
+            "element_id": 10,
+            "filename": "kernel.c",
+            "function": "main",
+            "start_line": 1,
+            "start_column": 1,
+            "end_line": 4,
+            "end_column": 2,
+        },
+        {
+            "element_id": 11,
+            "filename": "kernel.c",
+            "function": "main",
+            "start_line": 5,
+            "start_column": 1,
+            "end_line": 8,
+            "end_column": 2,
+        },
+    ]
+
+    trace = Trace.from_dict(trace_data)
+    assert trace[0].source_loop_id == 42
+    assert trace[0].expected_performance == {
+        "speedup": 1.75,
+        "custom_metric": {"unit": "x", "ok": True},
+    }
+    assert trace[0].vector_distance == 0.125
+    assert trace[0].member_element_ids == [10, 11]
+
+
+def test_rpc_scores_are_optional_for_legacy_traces():
+    trace = Trace.from_dict(_per_invocation_trace())
+
+    assert trace[0].expected_performance is None
+    assert trace[0].vector_distance is None
 
 
 def test_aggregated_trace():
-    trace = Trace.from_dict(_aggregated_trace())
+    trace_data = _aggregated_trace()
+    trace_data["traceEvents"][0]["args"]["docc"]["rpc_optimization"] = {
+        "expected_performance": {"speedup": 2.25},
+        "vector_distance": 0.2,
+    }
+    trace = Trace.from_dict(trace_data)
     assert trace.is_aggregated
 
     region = trace[0]
+    assert region.expected_performance == {"speedup": 2.25}
+    assert region.vector_distance == 0.2
     assert region.runtime is not None
     assert region.runtime_mean_us == 250.0
     assert region.counter_stats["perf::CYCLES"].mean == 1000.0

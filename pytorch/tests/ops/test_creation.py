@@ -3,6 +3,49 @@ import torch.nn as nn
 
 from tests import check
 
+# --- tensor ---
+
+
+def test_tensor_simple(target: str) -> None:
+    class TensorSimpleNet(nn.Module):
+        def forward(self) -> torch.Tensor:
+            return torch.tensor([[0.1, 1.2], [2.2, 3.1], [4.9, 5.2]])
+
+    check(TensorSimpleNet(), *(), target=target)
+
+
+def test_tensor_type_inference(target: str) -> None:
+    class TensorTypeInferenceNet(nn.Module):
+        def forward(self) -> torch.Tensor:
+            return torch.tensor([0, 1])
+
+    check(TensorTypeInferenceNet(), *(), target=target)
+
+
+def test_tensor_dtype(target: str) -> None:
+    class TensorDtypeNet(nn.Module):
+        def forward(self) -> torch.Tensor:
+            return torch.tensor([[0.11111, 0.222222, 0.3333333]], dtype=torch.float64)
+
+    check(TensorDtypeNet(), *(), target=target)
+
+
+def test_tensor_zero_dim(target: str) -> None:
+    class TensorZeroDimNet(nn.Module):
+        def forward(self) -> torch.Tensor:
+            return torch.tensor(3.14159)
+
+    check(TensorZeroDimNet(), *(), target=target)
+
+
+def test_tensor_empty(target: str) -> None:
+    class TensorEmptyNet(nn.Module):
+        def forward(self) -> torch.Tensor:
+            return torch.tensor([])
+
+    check(TensorEmptyNet(), *(), target=target)
+
+
 # --- arange ---
 
 

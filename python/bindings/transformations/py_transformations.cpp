@@ -4,6 +4,7 @@
 #include <sstream>
 
 #include <sdfg/data_flow/access_node.h>
+#include <sdfg/parallelization/transformations/loop_parallelization.h>
 #include <sdfg/symbolic/symbolic.h>
 #include <sdfg/targets/cuda/cuda.h>
 #include <sdfg/targets/rocm/rocm.h>
@@ -480,6 +481,22 @@ void register_transformations(py::module& m) {
         .def("__repr__", [](const UnrollTransform& t) {
             std::ostringstream oss;
             oss << "<UnrollTransform name='" << t.name() << "'>";
+            return oss.str();
+        });
+
+    // LoopParallelization transformation
+    py::class_<LoopParallelization, Transformation>(m, "LoopParallelization")
+        .def(
+            py::init<For&>(),
+            py::arg("loop"),
+            "Create a For-to-Map transformation.\n\n"
+            "Converts a For loop with independent iterations into a sequential Map.\n\n"
+            "Args:\n"
+            "    loop: The For loop to convert"
+        )
+        .def("__repr__", [](const LoopParallelization& t) {
+            std::ostringstream oss;
+            oss << "<LoopParallelization name='" << t.name() << "'>";
             return oss.str();
         });
 

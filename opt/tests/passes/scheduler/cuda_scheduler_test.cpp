@@ -352,7 +352,7 @@ TEST(CUDASchedulerTest, PostScheduleRunsTransferExtractionWithoutGpuMaps) {
     passes::scheduler::CUDAScheduler scheduler;
     std::vector<structured_control_flow::StructuredLoop*> scheduled_loops;
 
-    scheduler.post_schedule(builder, analysis_manager, scheduled_loops);
+    EXPECT_TRUE(scheduler.post_schedule(builder, analysis_manager, scheduled_loops));
 
     EXPECT_EQ(softmax_node.implementation_type().value(), cuda::ImplementationType_CUDAWithoutTransfers.value());
 }

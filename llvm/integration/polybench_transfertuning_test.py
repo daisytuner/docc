@@ -361,6 +361,7 @@ def test_gesummv(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
             "-docc-transfer-tune",
             "-docc-tune=sequential",
             "-docc-save-temps",
+            "-docc-instrument=ols_tuned",
         ],
     )
     return runner.run(timeout=600)

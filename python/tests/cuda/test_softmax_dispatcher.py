@@ -86,11 +86,14 @@ def compile_and_run_softmax(shape, axes, output_root: Path):
     json_str = sdfg.to_json()
     assert "ml::Softmax" in json_str, (
         "SoftmaxNode was expanded away during the CUDA pipeline; "
-        "it should be preserved with CUDAWithTransfers implementation type"
+        "it should be preserved for the CUDA softmax dispatcher"
     )
     assert (
-        "CUDAWithTransfers" in json_str
-    ), "SoftmaxNode does not have CUDAWithTransfers implementation type after schedule"
+        "CUDAWithoutTransfers" in json_str
+    ), "SoftmaxNode transfers were not extracted during schedule"
+    assert (
+        "CUDAWithTransfers" not in json_str
+    ), "SoftmaxNode still has CUDAWithTransfers implementation type after schedule"
 
     shape_str = "x".join(str(s) for s in shape)
     output_dir = output_root / f"softmax_test_{shape_str}_axis{axes[0]}"

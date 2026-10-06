@@ -1032,6 +1032,14 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("debug_info") = sdfg::DebugInfo()
         )
         .def(
+            "add_load_const_op",
+            &PyStructuredSDFGBuilder::add_load_const_op,
+            py::arg("output"),
+            py::arg("type"),
+            py::arg("buffer"),
+            py::arg("debug_info") = sdfg::DebugInfo()
+        )
+        .def(
             "add_block",
             &PyStructuredSDFGBuilder::add_block,
             py::arg("debug_info") = sdfg::DebugInfo(),

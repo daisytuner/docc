@@ -14,6 +14,7 @@
 #include "sdfg/data_flow/access_node.h"
 #include "sdfg/data_flow/library_nodes/atomic_op_node.h"
 #include "sdfg/data_flow/library_nodes/barrier_local_node.h"
+#include "sdfg/data_flow/library_nodes/load_const_node.h"
 #include "sdfg/data_flow/library_nodes/math/cmath/cmath_node.h"
 #include "sdfg/data_flow/library_nodes/math/math.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/arange_node.h"
@@ -2306,6 +2307,26 @@ void PyStructuredSDFGBuilder::add_einsum(
     // Add output access node and memlet
     auto& out_access = builder_.add_access(block, output, debug_info);
     builder_.add_computational_memlet(block, einsum_node, "__einsum_out", out_access, {}, output_type, debug_info);
+}
+
+void PyStructuredSDFGBuilder::add_load_const_op(
+    const std::string& output, const sdfg::types::IType& type, py::buffer buffer, const sdfg::DebugInfo& debug_info
+) {
+    py::buffer_info buffer_info = buffer.request();
+    if (buffer_info.itemsize != 1) {
+        throw std::runtime_error("Expected a uint8-compatible buffer");
+    }
+
+    auto* ptr = static_cast<uint8_t*>(buffer_info.ptr);
+    size_t size = static_cast<size_t>(buffer_info.size);
+    std::vector<uint8_t> data(ptr, ptr + size);
+    auto source = std::make_unique<sdfg::data_flow::InMemoryConstSource>(std::move(data));
+
+    auto& block = builder_.add_block(current_sequence(), debug_info);
+    auto& output_access = builder_.add_access(block, output, debug_info);
+    auto& libnode =
+        builder_.add_library_node<sdfg::data_flow::LoadConstNode>(block, debug_info, type.clone(), std::move(source));
+    builder_.add_computational_memlet(block, libnode, "_out", output_access, {}, type, debug_info);
 }
 
 void PyStructuredSDFGBuilder::add_relu(

@@ -49,5 +49,45 @@ void InstrumentationInfo::set_sampling(bool sampling) {
     sampling_ = sampling;
 }
 
+std::optional<ElementId> InstrumentationInfo::logical_region_id() const {
+    return logical_region_id_;
+}
+
+void InstrumentationInfo::set_logical_region_id(std::optional<ElementId> logical_region_id) {
+    logical_region_id_ = logical_region_id;
+}
+
+std::optional<ElementId> InstrumentationInfo::source_loop_id() const {
+    return source_loop_id_;
+}
+
+void InstrumentationInfo::set_source_loop_id(std::optional<ElementId> source_loop_id) {
+    source_loop_id_ = source_loop_id;
+}
+
+const std::optional<nlohmann::json>& InstrumentationInfo::expected_performance() const {
+    return expected_performance_;
+}
+
+void InstrumentationInfo::set_expected_performance(std::optional<nlohmann::json> expected_performance) {
+    expected_performance_ = std::move(expected_performance);
+}
+
+std::optional<double> InstrumentationInfo::vector_distance() const {
+    return vector_distance_;
+}
+
+void InstrumentationInfo::set_vector_distance(std::optional<double> vector_distance) {
+    vector_distance_ = vector_distance;
+}
+
+const std::vector<InstrumentationMemberInfo>& InstrumentationInfo::members() const {
+    return members_;
+}
+
+void InstrumentationInfo::set_members(std::vector<InstrumentationMemberInfo> members) {
+    members_ = std::move(members);
+}
+
 } // namespace codegen
 } // namespace sdfg
