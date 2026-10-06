@@ -160,7 +160,7 @@ class GraphParser(GraphParserBase):
                     if self.metadata.has_container(out_name):
                         continue
 
-                    if not self.metadata.tensor(out_name).is_contiguous() or isinstance(
+                    if not self.metadata.tensor(out_name).is_tight() or isinstance(
                         sdfg_type, Scalar
                     ):
                         if not isinstance(sdfg_type, Pointer):
