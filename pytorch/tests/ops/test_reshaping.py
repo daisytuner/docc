@@ -115,6 +115,33 @@ def test_fill_simple(target: str) -> None:
     check(FillSimpleNet(), torch.ones(2, 3), target=target)
 
 
+# --- index_select ---
+
+
+def test_index_select_simple(target: str) -> None:
+    class IndexSelectSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor, indices: torch.Tensor) -> torch.Tensor:
+            return torch.index_select(input, 0, indices)
+
+    check(
+        IndexSelectSimpleNet(),
+        *(torch.randn(3, 4), torch.tensor([0, 2])),
+        target=target,
+    )
+
+
+def test_index_select_dim(target: str) -> None:
+    class IndexSelectDimNet(nn.Module):
+        def forward(self, input: torch.Tensor, indices: torch.Tensor) -> torch.Tensor:
+            return torch.index_select(input, 1, indices)
+
+    check(
+        IndexSelectDimNet(),
+        *(torch.randn(3, 4), torch.tensor([0, 2])),
+        target=target,
+    )
+
+
 # --- permute ---
 
 
