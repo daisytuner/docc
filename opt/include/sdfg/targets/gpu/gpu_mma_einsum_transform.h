@@ -1,7 +1,6 @@
 #pragma once
 
 #include "sdfg/einsum/einsum_node.h"
-#include "sdfg/einsum/einsum_state.h"
 #include "sdfg/einsum/replacers/einsum2matmul.h"
 #include "sdfg/targets/gpu/gpu_arch.h"
 #include "sdfg/transformations/transformation.h"

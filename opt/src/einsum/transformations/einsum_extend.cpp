@@ -144,7 +144,13 @@ void EinsumExtend::apply(builder::StructuredSDFGBuilder& builder, analysis::Anal
         auto& conn = this->einsum_node_.inputs().back();
 
         // Find corresponding in edge
-        data_flow::Memlet* iedge = dfg.in_edge_for_connector(this->einsum_node_, conn);
+        data_flow::Memlet* iedge = nullptr;
+        for (auto& in_edge : dfg.in_edges(this->einsum_node_)) {
+            if (in_edge.dst_conn() == conn) {
+                iedge = &in_edge;
+                break;
+            }
+        }
         assert(iedge);
 
         // Mapping and marking for removal
