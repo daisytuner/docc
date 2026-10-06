@@ -328,7 +328,7 @@ void register_rocm_plugin(plugins::Context& context) {
     );
 
 
-    gpu::tensor::register_gpu_tensor_dispatchers<ROCMOffloadDispatcherStrategy>(
+    gpu::tensor::register_gpu_embedding_dispatchers<ROCMOffloadDispatcherStrategy>(
         libNodeDispatcherRegistry, ImplementationType_ROCMWithTransfers, ImplementationType_ROCMWithoutTransfers
     );
 

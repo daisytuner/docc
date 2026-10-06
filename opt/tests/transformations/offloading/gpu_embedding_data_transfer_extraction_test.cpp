@@ -1,4 +1,4 @@
-#include "sdfg/transformations/offloading/gpu_tensor_data_transfer_extraction.h"
+#include "sdfg/transformations/offloading/gpu_embedding_data_transfer_extraction.h"
 
 #include <gtest/gtest.h>
 
@@ -15,7 +15,6 @@
 #include "sdfg/passes/offloading/rocm_library_node_transfer_extraction_pass.h"
 #include "sdfg/targets/cuda/cuda.h"
 #include "sdfg/targets/cuda/plugin.h"
-#include "sdfg/targets/gpu/math/tensor/tensor_operands.h"
 #include "sdfg/targets/rocm/plugin.h"
 #include "sdfg/targets/rocm/rocm.h"
 
@@ -24,7 +23,7 @@ using namespace sdfg;
 namespace {
 
 struct CUDABackend {
-    using Extraction = gpu::tensor::CUDATensorDataTransferExtraction;
+    using Extraction = gpu::tensor::CUDAEmbeddingDataTransferExtraction;
     using Pass = cuda::CudaLibraryNodeTransferExtractionPass;
     static void register_plugin(plugins::Context& context) {
         cuda::register_cuda_plugin(context);
@@ -46,7 +45,7 @@ struct CUDABackend {
 };
 
 struct ROCMBackend {
-    using Extraction = gpu::tensor::ROCMTensorDataTransferExtraction;
+    using Extraction = gpu::tensor::ROCMEmbeddingDataTransferExtraction;
     using Pass = rocm::RocmLibraryNodeTransferExtractionPass;
     static void register_plugin(plugins::Context& context) {
         rocm::register_rocm_plugin(context);
@@ -71,12 +70,11 @@ struct Transfer {
     offloading::DataTransferDirection direction;
     offloading::BufferLifecycle lifecycle;
     std::string host;
-    std::string device;
     symbolic::Expression size;
 };
 
 template<typename Backend>
-class GPUTensorDataTransferExtractionTest : public ::testing::Test {
+class GPUEmbeddingDataTransferExtractionTest : public ::testing::Test {
 protected:
     std::unique_ptr<builder::StructuredSDFGBuilder> builder_;
     math::tensor::EmbeddingNode* node_ = nullptr;
@@ -140,15 +138,9 @@ protected:
                 if (offload == nullptr) {
                     continue;
                 }
-                Transfer transfer{offload->transfer_direction(), offload->buffer_lifecycle(), "", "", offload->size()};
+                Transfer transfer{offload->transfer_direction(), offload->buffer_lifecycle(), "", offload->size()};
                 if (auto* edge = dfg.in_edge_for_connector(*offload, "_hst")) {
                     transfer.host = static_cast<const data_flow::AccessNode&>(edge->src()).data();
-                }
-                if (auto* edge = dfg.in_edge_for_connector(*offload, "_dev")) {
-                    transfer.device = static_cast<const data_flow::AccessNode&>(edge->src()).data();
-                }
-                for (auto& edge : dfg.out_edges(*offload)) {
-                    transfer.device = static_cast<const data_flow::AccessNode&>(edge.dst()).data();
                 }
                 result.push_back(transfer);
             }
@@ -188,33 +180,11 @@ protected:
 
 using Backends = ::testing::Types<CUDABackend, ROCMBackend>;
 
-size_t count(const std::string& haystack, const std::string& needle) {
-    size_t n = 0;
-    for (auto pos = haystack.find(needle); pos != std::string::npos; pos = haystack.find(needle, pos + 1)) {
-        ++n;
-    }
-    return n;
-}
-
 } // namespace
 
-TYPED_TEST_SUITE(GPUTensorDataTransferExtractionTest, Backends);
+TYPED_TEST_SUITE(GPUEmbeddingDataTransferExtractionTest, Backends);
 
-TYPED_TEST(GPUTensorDataTransferExtractionTest, TransferDirectionsFollowPointerAccessTypes) {
-    auto operands = gpu::tensor::tensor_operands(*this->node_, this->node_->get_parent());
-    ASSERT_TRUE(operands.has_value());
-
-    auto& y = gpu::tensor::find_operand(*operands, "Y");
-    EXPECT_FALSE(y.copy_to_device);
-    EXPECT_TRUE(y.copy_to_host);
-    for (auto* connector : {"W", "I"}) {
-        auto& input = gpu::tensor::find_operand(*operands, connector);
-        EXPECT_TRUE(input.copy_to_device) << connector;
-        EXPECT_FALSE(input.copy_to_host) << connector;
-    }
-}
-
-TYPED_TEST(GPUTensorDataTransferExtractionTest, ExtractsEmbeddingTransfers) {
+TYPED_TEST(GPUEmbeddingDataTransferExtractionTest, ExtractsEmbeddingTransfers) {
     this->node_->set_implementation_type(TypeParam::with_transfers());
 
     EXPECT_TRUE(this->run_pass());
@@ -262,50 +232,15 @@ TYPED_TEST(GPUTensorDataTransferExtractionTest, ExtractsEmbeddingTransfers) {
     EXPECT_EQ(copies["Y"], std::make_pair(0, 1));
 }
 
-TYPED_TEST(GPUTensorDataTransferExtractionTest, AliasedOperandsShareOneDeviceBuffer) {
+TYPED_TEST(GPUEmbeddingDataTransferExtractionTest, SkipsAliasedContainers) {
     this->build("W");
     this->node_->set_implementation_type(TypeParam::with_transfers());
 
-    EXPECT_TRUE(this->run_pass());
-    EXPECT_NO_THROW(this->builder_->subject().validate());
-
-    auto device = this->connected_container("W");
-    EXPECT_EQ(this->connected_container("Y"), device);
-
-    int w_allocs = 0;
-    int w_copy_in = 0;
-    int w_copy_out = 0;
-    for (auto& transfer : this->transfers()) {
-        if (transfer.device != device) {
-            continue;
-        }
-        w_allocs += transfer.lifecycle == offloading::BufferLifecycle::ALLOC;
-        w_copy_in += transfer.direction == offloading::DataTransferDirection::H2D;
-        w_copy_out += transfer.direction == offloading::DataTransferDirection::D2H;
-        if (transfer.lifecycle == offloading::BufferLifecycle::ALLOC) {
-            // The weight table (100x33) is larger than the gathered rows (2x17x33).
-            EXPECT_TRUE(symbolic::eq(transfer.size, symbolic::integer(100 * 33 * 4)));
-        }
-    }
-    EXPECT_EQ(w_allocs, 1);
-    // W is read, so the shared buffer is copied in; Y is written, so it is copied back.
-    EXPECT_EQ(w_copy_in, 1);
-    EXPECT_EQ(w_copy_out, 1);
+    EXPECT_FALSE(this->run_pass());
+    EXPECT_EQ(this->node_->implementation_type().value(), TypeParam::with_transfers().value());
 }
 
-TYPED_TEST(GPUTensorDataTransferExtractionTest, AliasedOperandsShareOneBufferWithTransfers) {
-    this->build("W");
-    this->node_->set_implementation_type(TypeParam::with_transfers());
-    auto code = this->dispatch_code();
-    std::string api = TypeParam::api;
-
-    EXPECT_EQ(count(code, api + "Malloc("), 2);
-    EXPECT_EQ(count(code, api + "MemcpyHostToDevice"), 2);
-    EXPECT_EQ(count(code, api + "MemcpyDeviceToHost"), 1);
-    EXPECT_EQ(count(code, api + "Free("), 2);
-}
-
-TYPED_TEST(GPUTensorDataTransferExtractionTest, ExtractedNodeDispatchesWithoutTransfers) {
+TYPED_TEST(GPUEmbeddingDataTransferExtractionTest, ExtractedNodeDispatchesWithoutTransfers) {
     this->node_->set_implementation_type(TypeParam::with_transfers());
     ASSERT_TRUE(this->run_pass());
 
@@ -314,7 +249,7 @@ TYPED_TEST(GPUTensorDataTransferExtractionTest, ExtractedNodeDispatchesWithoutTr
     EXPECT_NE(code.find(this->connected_container("Y")), std::string::npos);
 }
 
-TYPED_TEST(GPUTensorDataTransferExtractionTest, SkipsOtherImplementationTypes) {
+TYPED_TEST(GPUEmbeddingDataTransferExtractionTest, SkipsOtherImplementationTypes) {
     for (auto& impl_type : {data_flow::ImplementationType_NONE, TypeParam::other_with_transfers()}) {
         this->node_->set_implementation_type(impl_type);
         EXPECT_FALSE(this->run_pass()) << impl_type.value();
@@ -323,7 +258,7 @@ TYPED_TEST(GPUTensorDataTransferExtractionTest, SkipsOtherImplementationTypes) {
     }
 }
 
-TYPED_TEST(GPUTensorDataTransferExtractionTest, SkipsNonIsolatedNode) {
+TYPED_TEST(GPUEmbeddingDataTransferExtractionTest, SkipsNonIsolatedNode) {
     this->node_->set_implementation_type(TypeParam::with_transfers());
 
     auto& builder = *this->builder_;

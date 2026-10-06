@@ -1,8 +1,9 @@
 #include "sdfg/passes/offloading/rocm_library_node_transfer_extraction_pass.h"
 
 #include "sdfg/data_flow/library_nodes/math/blas/blas_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/embedding_node.h"
 #include "sdfg/data_flow/library_nodes/stdlib/stdlib_node.h"
-#include "sdfg/transformations/offloading/gpu_tensor_data_transfer_extraction.h"
+#include "sdfg/transformations/offloading/gpu_embedding_data_transfer_extraction.h"
 #include "sdfg/transformations/offloading/rocblas_data_transfer_extraction.h"
 #include "sdfg/transformations/offloading/rocm_stdlib_data_transfer_extraction.h"
 
@@ -36,10 +37,12 @@ bool RocmLibraryNodeTransferExtractionVisitor::accept(structured_control_flow::B
                 return true;
             }
         }
-        gpu::tensor::ROCMTensorDataTransferExtraction tensor_extraction(*lib_node);
-        if (tensor_extraction.can_be_applied(builder_, analysis_manager_)) {
-            tensor_extraction.apply(builder_, analysis_manager_);
-            return true;
+        if (auto* embedding_node = dynamic_cast<math::tensor::EmbeddingNode*>(lib_node)) {
+            gpu::tensor::ROCMEmbeddingDataTransferExtraction expansion(*embedding_node);
+            if (expansion.can_be_applied(builder_, analysis_manager_)) {
+                expansion.apply(builder_, analysis_manager_);
+                return true;
+            }
         }
     }
     return false;

@@ -5,7 +5,7 @@
 
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
-#include "sdfg/data_flow/library_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/embedding_node.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/targets/offloading/data_offloading_node.h"
 #include "sdfg/transformations/transformation.h"
@@ -14,17 +14,16 @@
 namespace sdfg::gpu::tensor {
 
 /**
- * @brief Moves the transfers of a `WithTransfers` GPU tensor library node into explicit offloading blocks.
+ * @brief Moves the transfers of a `WithTransfers` embedding node into explicit offloading blocks.
  *
- * Each host container bound to the node (see @ref tensor_buffers) gets one device
- * container, allocated before and freed after the node. Contents are copied in or
- * out as the node's pointer access types require. The node is rewired to the
- * device containers and switched to the `WithoutTransfers` implementation, so
- * later passes can minimize the transfers.
+ * `W` and `I` are copied to device containers, the fully overwritten `Y` is only
+ * allocated and copied back. The node is rewired to the device containers and
+ * switched to the `WithoutTransfers` implementation, so later passes can minimize
+ * the transfers.
  */
-class GPUTensorDataTransferExtraction : public transformations::Transformation {
+class GPUEmbeddingDataTransferExtraction : public transformations::Transformation {
 protected:
-    data_flow::LibraryNode& lib_node_;
+    math::tensor::EmbeddingNode& embedding_node_;
 
     virtual const data_flow::ImplementationType& with_transfers() const = 0;
     virtual const data_flow::ImplementationType& without_transfers() const = 0;
@@ -42,8 +41,12 @@ protected:
         const symbolic::Expression& size
     ) = 0;
 
+    std::string create_device_container(
+        builder::StructuredSDFGBuilder& builder, const std::string& host_container, const symbolic::Expression& size
+    );
+
 public:
-    explicit GPUTensorDataTransferExtraction(data_flow::LibraryNode& lib_node);
+    explicit GPUEmbeddingDataTransferExtraction(math::tensor::EmbeddingNode& embedding_node);
 
     bool can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
 
@@ -52,7 +55,7 @@ public:
     void to_json(nlohmann::json& j) const override;
 };
 
-class CUDATensorDataTransferExtraction : public GPUTensorDataTransferExtraction {
+class CUDAEmbeddingDataTransferExtraction : public GPUEmbeddingDataTransferExtraction {
 protected:
     const data_flow::ImplementationType& with_transfers() const override;
     const data_flow::ImplementationType& without_transfers() const override;
@@ -71,12 +74,12 @@ protected:
     ) override;
 
 public:
-    using GPUTensorDataTransferExtraction::GPUTensorDataTransferExtraction;
+    using GPUEmbeddingDataTransferExtraction::GPUEmbeddingDataTransferExtraction;
 
     std::string name() const override;
 };
 
-class ROCMTensorDataTransferExtraction : public GPUTensorDataTransferExtraction {
+class ROCMEmbeddingDataTransferExtraction : public GPUEmbeddingDataTransferExtraction {
 protected:
     const data_flow::ImplementationType& with_transfers() const override;
     const data_flow::ImplementationType& without_transfers() const override;
@@ -95,7 +98,7 @@ protected:
     ) override;
 
 public:
-    using GPUTensorDataTransferExtraction::GPUTensorDataTransferExtraction;
+    using GPUEmbeddingDataTransferExtraction::GPUEmbeddingDataTransferExtraction;
 
     std::string name() const override;
 };

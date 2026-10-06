@@ -119,8 +119,6 @@ set(SOURCE_FILES
     src/targets/gpu/gpu_reduce_layout.cpp
     src/targets/gpu/math/tensor/conv_expander.cpp
     src/targets/gpu/math/tensor/embedding.cpp
-    src/targets/gpu/math/tensor/gpu_tensor_dispatcher.cpp
-    src/targets/gpu/math/tensor/tensor_operands.cpp
     src/targets/offloading/external_offloading_node.cpp
     src/targets/offloading/utils.cpp
     src/targets/omp/codegen/omp_map_dispatcher.cpp
@@ -166,7 +164,7 @@ set(SOURCE_FILES
     src/transformations/offloading/cuda_offload_transform.cpp
     src/transformations/offloading/cuda_parallelize_nested_map.cpp
     src/transformations/offloading/cuda_softmax_data_transfer_extraction.cpp
-    src/transformations/offloading/gpu_tensor_data_transfer_extraction.cpp
+    src/transformations/offloading/gpu_embedding_data_transfer_extraction.cpp
     src/transformations/offloading/cuda_stdlib_data_transfer_extraction.cpp
     src/transformations/offloading/cuda_transform.cpp
     src/transformations/offloading/gpu_condition_propagation.cpp

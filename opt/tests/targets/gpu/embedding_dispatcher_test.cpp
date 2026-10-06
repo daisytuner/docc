@@ -9,7 +9,7 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/embedding_node.h"
 #include "sdfg/targets/cuda/cuda.h"
 #include "sdfg/targets/cuda/plugin.h"
-#include "sdfg/targets/gpu/math/tensor/tensor_operands.h"
+#include "sdfg/targets/gpu/math/tensor/embedding.h"
 #include "sdfg/targets/rocm/plugin.h"
 #include "sdfg/targets/rocm/rocm.h"
 
@@ -249,12 +249,11 @@ TYPED_TEST(GPUEmbeddingDispatcherTest, SymbolicShapes) {
     );
     auto generated = this->dispatch(node, TypeParam::with_transfers());
 
-    auto operands = gpu::tensor::tensor_operands(node, node.get_parent());
-    ASSERT_TRUE(operands.has_value());
+    auto n_times_d = symbolic::mul(symbolic::symbol("N"), symbolic::symbol("D"));
     EXPECT_TRUE(
         symbolic::
-            eq(gpu::tensor::find_operand(*operands, "Y").num_elements,
-               symbolic::mul(symbolic::symbol("N"), symbolic::symbol("D")))
+            eq(gpu::tensor::embedding_bytes(node, node.get_parent(), "Y"),
+               symbolic::mul(n_times_d, symbolic::integer(4)))
     );
     EXPECT_NE(generated.code.find("(long long) (D)"), std::string::npos);
 }

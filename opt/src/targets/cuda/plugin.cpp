@@ -325,7 +325,7 @@ void register_cuda_plugin(plugins::Context& context) {
         }
     );
 
-    gpu::tensor::register_gpu_tensor_dispatchers<CUDAOffloadDispatcherStrategy>(
+    gpu::tensor::register_gpu_embedding_dispatchers<CUDAOffloadDispatcherStrategy>(
         libNodeDispatcherRegistry, ImplementationType_CUDAWithTransfers, ImplementationType_CUDAWithoutTransfers
     );
 
