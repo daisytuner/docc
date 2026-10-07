@@ -75,29 +75,6 @@ data_flow::PointerAccessType GpuMmaFragmentLoadNode::pointer_access_type(int inp
     return LibraryNode::pointer_access_type(input_idx);
 }
 
-bool GpuMmaFragmentLoadNode::
-    relocalize_operand_internal(int input_idx, const math::tensor::TensorLayout& packed, bool check_only) {
-    if (input_idx == PTR_INPUT_IDX) {
-        auto type = packed.is_2d_col_or_row_major();
-        if (type == math::tensor::TensorLayout::LAYOUT_ROW_MAJOR) {
-            if (!check_only) {
-                layout_ = GpuMmaFromMemoryLayout{
-                    .offset = packed.offset(), .ldstride = packed.get_stride(1), .layout = MMA_LAYOUT_ROW_MAJOR
-                };
-            }
-            return true;
-        } else if (type == math::tensor::TensorLayout::LAYOUT_COL_MAJOR) {
-            if (!check_only) {
-                layout_ = GpuMmaFromMemoryLayout{
-                    .offset = packed.offset(), .ldstride = packed.get_stride(0), .layout = MMA_LAYOUT_ROW_MAJOR
-                };
-            }
-            return true;
-        }
-    }
-    return false;
-}
-
 bool GpuMmaFragmentLoadNode::can_relocalize_operand(int input_idx, const math::tensor::TensorLayout& packed) const {
     if (input_idx == PTR_INPUT_IDX) {
         if (!symbolic::vectors_of_expressions_match(packed.shape(), block_size_.get_shape(fragment_type_))) {

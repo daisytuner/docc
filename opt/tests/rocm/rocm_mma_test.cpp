@@ -377,7 +377,98 @@ const tiles::TileCopyNode* find_copy_from(structured_control_flow::ControlFlowNo
     return found;
 }
 
+void localize(builder::StructuredSDFGBuilder& builder, const std::string& loop_prefix) {
+    for (const std::string container : {"A", "B"}) {
+        analysis::AnalysisManager am(builder.subject());
+        auto* loop = find_loop(am, loop_prefix);
+        ASSERT_NE(loop, nullptr);
+        auto* access = find_access(*loop, container);
+        ASSERT_NE(access, nullptr) << container;
+        transformations::LocalStorage ls(*loop, *access);
+        ASSERT_TRUE(ls.can_be_applied(builder, am)) << container;
+        ls.apply(builder, am);
+    }
+}
+
+/// The fragment load reading the local buffer staged from @p container.
+const gpu::GpuMmaFragmentLoadNode*
+find_local_load(structured_control_flow::ControlFlowNode& root, const std::string& container) {
+    const gpu::GpuMmaFragmentLoadNode* found = nullptr;
+    const std::string prefix = "__daisy_local_storage_" + container;
+    visitor::for_each_block(root, [&](structured_control_flow::Block& b) {
+        for (auto* lib : b.dataflow().library_nodes()) {
+            auto* load = dynamic_cast<gpu::GpuMmaFragmentLoadNode*>(lib);
+            if (!load) {
+                continue;
+            }
+            for (auto& e : b.dataflow().in_edges(*load)) {
+                auto* a = dynamic_cast<const data_flow::AccessNode*>(&e.src());
+                if (e.dst_conn() == "ptr" && a && a->data().rfind(prefix, 0) == 0) {
+                    found = load;
+                }
+            }
+        }
+    });
+    return found;
+}
+
 } // namespace
+
+TEST(ROCMMMATest, FragmentLayoutFromTensorLayoutKeepsMajorness) {
+    auto s16 = symbolic::integer(16);
+    math::tensor::TensorLayout row({s16, s16}, {symbolic::integer(40), symbolic::one()}, symbolic::symbol("o"));
+    auto r = gpu::GpuMmaFromMemoryLayout::from_tensor_layout(row);
+    ASSERT_TRUE(r.has_value());
+    EXPECT_EQ(r->layout, gpu::MMA_LAYOUT_ROW_MAJOR);
+    EXPECT_TRUE(symbolic::eq(r->ldstride, symbolic::integer(40)));
+    EXPECT_TRUE(symbolic::eq(r->offset, symbolic::symbol("o")));
+
+    math::tensor::TensorLayout col({s16, s16}, {symbolic::one(), symbolic::integer(24)}, symbolic::zero());
+    auto c = gpu::GpuMmaFromMemoryLayout::from_tensor_layout(col);
+    ASSERT_TRUE(c.has_value());
+    EXPECT_EQ(c->layout, gpu::MMA_LAYOUT_COL_MAJOR);
+    EXPECT_TRUE(symbolic::eq(c->ldstride, symbolic::integer(24)));
+
+    // Round trip through the fragment's own tensor layout.
+    auto back = c->to_tensor_layout(gpu::rocm::ROCM_ARCH_GFX90A.mma_support()->mma_block_size, gpu::MmaFragmentType::B);
+    ASSERT_TRUE(back.has_value());
+    EXPECT_EQ(back->is_2d_col_or_row_major(), math::tensor::TensorLayout::LAYOUT_COL_MAJOR);
+}
+
+TEST(ROCMMMATest, FragmentLoadRelocalizesToBufferView) {
+    auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
+    auto* mma = arch.mma_support();
+    builder::StructuredSDFGBuilder builder("reloc", FunctionType_CPU);
+    auto& block = builder.add_block(builder.subject().root());
+    gpu::GpuMmaFromMemoryLayout global{
+        .offset = symbolic::symbol("g"), .ldstride = symbolic::integer(1024), .layout = gpu::MMA_LAYOUT_ROW_MAJOR
+    };
+    auto& load = static_cast<gpu::GpuMmaFragmentLoadNode&>(builder.add_library_node<gpu::GpuMmaFragmentLoadNode>(
+        block,
+        DebugInfo(),
+        mma->mma_block_size,
+        gpu::MmaFragmentType::A,
+        global,
+        types::PrimitiveType::Half,
+        mma->get_mma_impl_type()
+    ));
+    auto s16 = symbolic::integer(16);
+    auto view_offset =
+        symbolic::add(symbolic::mul(symbolic::integer(1024), symbolic::symbol("w")), symbolic::symbol("kk"));
+
+    // A 16x16 sub-window of a [16][64] slot: ld = 64, offset = slot + window origin.
+    math::tensor::TensorLayout view({s16, s16}, {symbolic::integer(64), symbolic::one()}, view_offset);
+    ASSERT_TRUE(load.can_relocalize_operand(gpu::GpuMmaFragmentLoadNode::PTR_INPUT_IDX, view));
+    ASSERT_TRUE(load.relocalize_operand(gpu::GpuMmaFragmentLoadNode::PTR_INPUT_IDX, view));
+    EXPECT_TRUE(symbolic::eq(load.layout().offset, view_offset));
+    EXPECT_TRUE(symbolic::eq(load.layout().ldstride, symbolic::integer(64)));
+    EXPECT_EQ(load.layout().layout, gpu::MMA_LAYOUT_ROW_MAJOR);
+
+    // A view of a different shape than the fragment is rejected.
+    math::tensor::TensorLayout
+        wide({s16, symbolic::integer(64)}, {symbolic::integer(64), symbolic::one()}, symbolic::zero());
+    EXPECT_FALSE(load.can_relocalize_operand(gpu::GpuMmaFragmentLoadNode::PTR_INPUT_IDX, wide));
+}
 
 // Step 3: per-wave slots, and the lanes of each wave share the copy.
 TEST(ROCMMMATest, LocalStorageOnWaveMapSharesCopyAcrossLanes_gfx90a) {
@@ -386,16 +477,7 @@ TEST(ROCMMMATest, LocalStorageOnWaveMapSharesCopyAcrossLanes_gfx90a) {
     auto [block, matmul_node] = build_offloaded_mma_structure(builder, 1024, 1024, 1024, 32, 32, 16, arch);
     passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch));
 
-    for (const std::string container : {"A", "B"}) {
-        analysis::AnalysisManager am(builder.subject());
-        auto* dummy = find_loop(am, "dummy");
-        ASSERT_NE(dummy, nullptr);
-        auto* access = find_access(*dummy, container);
-        ASSERT_NE(access, nullptr) << container;
-        transformations::LocalStorage ls(*dummy, *access);
-        ASSERT_TRUE(ls.can_be_applied(builder, am)) << container;
-        ls.apply(builder, am);
-    }
+    localize(builder, "dummy");
     EXPECT_NO_THROW(builder.subject().validate());
 
     // A: slot per wave_row (x), cooperative over wave_col (y) + the 64 lanes.
@@ -428,6 +510,74 @@ TEST(ROCMMMATest, LocalStorageOnWaveMapSharesCopyAcrossLanes_gfx90a) {
         kernels += snippet.content;
     }
     EXPECT_NE(kernels.find("threadIdx.x % 64 + threadIdx.y * (64)"), std::string::npos) << kernels;
+}
+
+// Step 4: each fragment reads its own wave's slot of the MultiDim [2][16][16] buffer.
+TEST(ROCMMMATest, LocalStorageFragmentsReadOwnSlot_gfx90a) {
+    auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
+    sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+    auto [block, matmul_node] = build_offloaded_mma_structure(builder, 1024, 1024, 1024, 32, 32, 16, arch);
+    passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch));
+    localize(builder, "dummy");
+
+    analysis::AnalysisManager am(builder.subject());
+    auto wave_row = symbolic::mod(find_loop(am, "wave_row")->indvar(), symbolic::integer(2));
+    auto wave_col = symbolic::mod(find_loop(am, "wave_col")->indvar(), symbolic::integer(2));
+
+    auto* a = find_local_load(builder.subject().root(), "A");
+    ASSERT_NE(a, nullptr);
+    EXPECT_TRUE(symbolic::eq(a->layout().offset, symbolic::mul(symbolic::integer(256), wave_row)))
+        << a->layout().offset->__str__();
+    EXPECT_TRUE(symbolic::eq(a->layout().ldstride, symbolic::integer(16)));
+
+    auto* b = find_local_load(builder.subject().root(), "B");
+    ASSERT_NE(b, nullptr);
+    EXPECT_TRUE(symbolic::eq(b->layout().offset, symbolic::mul(symbolic::integer(256), wave_col)))
+        << b->layout().offset->__str__();
+    EXPECT_TRUE(symbolic::eq(b->layout().ldstride, symbolic::integer(16)));
+
+    // Library-node operands keep a dense MultiDim buffer (no flat padded slot block).
+    for (const auto& name : builder.subject().containers()) {
+        if (name.rfind("__daisy_local_storage_", 0) == 0) {
+            auto& slots = static_cast<const types::Array&>(builder.subject().type(name));
+            EXPECT_TRUE(symbolic::eq(slots.num_elements(), symbolic::integer(2))) << name;
+            auto& rows = static_cast<const types::Array&>(slots.element_type());
+            EXPECT_TRUE(symbolic::eq(rows.num_elements(), symbolic::integer(16))) << name;
+        }
+    }
+}
+
+// Step 4: staging the whole K panel at tile_k gives each fragment a sub-window view.
+TEST(ROCMMMATest, LocalStorageFragmentsReadSubWindow_gfx90a) {
+    auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
+    sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+    auto [block, matmul_node] = build_offloaded_mma_structure(builder, 1024, 1024, 64, 32, 32, 16, arch);
+    passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch));
+    localize(builder, "tile_k");
+    EXPECT_NO_THROW(builder.subject().validate());
+
+    analysis::AnalysisManager am(builder.subject());
+    auto wave_row = symbolic::mod(find_loop(am, "wave_row")->indvar(), symbolic::integer(2));
+    auto wave_col = symbolic::mod(find_loop(am, "wave_col")->indvar(), symbolic::integer(2));
+    auto tile_k = find_loop(am, "tile_k")->indvar();
+
+    // A slot = [16][64] panel; the fragment window starts at column tile_k.
+    auto* a = find_local_load(builder.subject().root(), "A");
+    ASSERT_NE(a, nullptr);
+    EXPECT_TRUE(symbolic::eq(a->layout().offset, symbolic::add(symbolic::mul(symbolic::integer(1024), wave_row), tile_k)))
+        << a->layout().offset->__str__();
+    EXPECT_TRUE(symbolic::eq(a->layout().ldstride, symbolic::integer(64)));
+
+    // B slot = [64][16] panel; the fragment window starts at row tile_k.
+    auto* b = find_local_load(builder.subject().root(), "B");
+    ASSERT_NE(b, nullptr);
+    EXPECT_TRUE(
+        symbolic::eq(
+            b->layout().offset,
+            symbolic::add(symbolic::mul(symbolic::integer(1024), wave_col), symbolic::mul(symbolic::integer(16), tile_k))
+        )
+    ) << b->layout().offset->__str__();
+    EXPECT_TRUE(symbolic::eq(b->layout().ldstride, symbolic::integer(16)));
 }
 
 } // namespace sdfg::rocm

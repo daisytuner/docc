@@ -44,13 +44,13 @@ bool is_col_major_operand(const std::vector<symbolic::Expression>& strides) {
            !symbolic::eq(strides[1], symbolic::one());
 }
 
-math::tensor::TensorLayout
-packed_operand_layout(const std::vector<symbolic::Expression>& dims, const std::vector<symbolic::Expression>& strides) {
-    if (is_col_major_operand(strides)) {
-        symbolic::MultiExpression col_major = {symbolic::one(), dims[0]};
-        return math::tensor::TensorLayout(dims, col_major, symbolic::integer(0));
+bool has_library_operand(const std::unordered_set<const data_flow::Memlet*>& memlets) {
+    for (const auto* m : memlets) {
+        if (dynamic_cast<const data_flow::LibraryNode*>(&m->dst())) {
+            return true;
+        }
     }
-    return math::tensor::TensorLayout(dims, math::tensor::TensorLayout::linear_strides(dims), symbolic::integer(0));
+    return false;
 }
 
 // Assumptions for discharging a copy's boundary guard: the enclosing scope's
@@ -497,10 +497,14 @@ bool LocalStorage::prepare(builder::StructuredSDFGBuilder& builder, analysis::An
     tile_info_.offset = t.layout.offset();
     group_memlets_.insert(group->memlets.begin(), group->memlets.end());
 
-    // A library-node operand can only be localized if the node can repoint it at a
-    // dense packed buffer (e.g. MatMul, or GEMM with a clean row/column-major tile).
+    // A library-node operand can only be localized if the node can repoint it at its
+    // view of the packed buffer (checked against the slot-free dense placement).
     {
-        math::tensor::TensorLayout packed = packed_operand_layout(tile_info_.dimensions, tile_info_.strides);
+        tiles::PackedBuffer dense{{}, tile_info_.varying_sizes()};
+        if (is_col_major_operand(tile_info_.strides)) {
+            dense.kind = tiles::BufferKind::Transposed;
+        }
+        auto& mla = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
         for (const auto* m : group_memlets_) {
             const auto* lib = dynamic_cast<const data_flow::LibraryNode*>(&m->dst());
             if (lib == nullptr) {
@@ -508,7 +512,12 @@ bool LocalStorage::prepare(builder::StructuredSDFGBuilder& builder, analysis::An
             }
             const auto& inputs = lib->inputs();
             auto it = std::find(inputs.begin(), inputs.end(), m->dst_conn());
-            if (it == inputs.end() || !lib->can_relocalize_operand(static_cast<int>(it - inputs.begin()), packed)) {
+            const auto* acc = mla.access(*m);
+            if (it == inputs.end() || acc == nullptr) {
+                return false;
+            }
+            auto view = operand_view(*acc, dense, {});
+            if (!view || !lib->can_relocalize_operand(static_cast<int>(it - inputs.begin()), *view)) {
                 return false;
             }
         }
@@ -656,7 +665,7 @@ void LocalStorage::apply_prepared(builder::StructuredSDFGBuilder& builder, analy
         // Cooperative (no-slot) tile stored column-major, so consumers read it
         // transposed. A pure affine relabelling — no padding, no per-thread slot.
         buffer.kind = tiles::BufferKind::Transposed;
-    } else if (storage_type_.is_nv_shared() && !slot_sizes.empty()) {
+    } else if (storage_type_.is_nv_shared() && !slot_sizes.empty() && !has_library_operand(group_memlets_)) {
         buffer.kind = tiles::BufferKind::Padded;
         if (swizzle_layout_) {
             auto total = buffer.tile_total_size();
@@ -1255,17 +1264,16 @@ void LocalStorage::rewrite_body(
                 }
                 // A library-node operand is a bare base pointer addressed via the
                 // node's own layout, not a per-element subset. Repoint it at the
-                // packed local buffer and let the node rewrite its operand layout to
-                // the buffer's dense packing.
+                // local buffer and hand the node its view of that buffer.
                 if (auto* lib = dynamic_cast<data_flow::LibraryNode*>(&memlet.dst())) {
                     const auto& inputs = lib->inputs();
                     auto it = std::find(inputs.begin(), inputs.end(), memlet.dst_conn());
-                    if (it == inputs.end()) {
+                    const auto* acc = mla.access(memlet);
+                    if (it == inputs.end() || acc == nullptr) {
                         return;
                     }
-                    math::tensor::TensorLayout packed =
-                        packed_operand_layout(tile_info_.dimensions, tile_info_.strides);
-                    if (!lib->relocalize_operand(static_cast<int>(it - inputs.begin()), packed)) {
+                    auto view = operand_view(*acc, buffer, slot_indices);
+                    if (!view || !lib->relocalize_operand(static_cast<int>(it - inputs.begin()), *view)) {
                         return;
                     }
                     types::Pointer pointer_type(types::Scalar(buffer_type.primitive_type()));
@@ -1293,6 +1301,56 @@ void LocalStorage::rewrite_body(
             }
         }
     });
+}
+
+std::optional<math::tensor::TensorLayout> LocalStorage::operand_view(
+    const analysis::MemoryTile& access,
+    const tiles::PackedBuffer& buffer,
+    const std::vector<symbolic::Expression>& slot_indices
+) const {
+    const size_t dims = tile_info_.dimensions.size();
+    const auto& op = access.layout;
+    if (access.min_subset.size() != dims || op.shape().size() != dims) {
+        return std::nullopt;
+    }
+    // The operand must address the container with the tile's own delinearization.
+    if (!symbolic::eq(op.offset(), tile_info_.offset)) {
+        return std::nullopt;
+    }
+    for (size_t d = 0; d < dims; ++d) {
+        if (!symbolic::eq(op.strides()[d], tile_info_.strides[d])) {
+            return std::nullopt;
+        }
+    }
+    auto composed = buffer.layout();
+    if (!composed.is_plain()) {
+        return std::nullopt; // an XOR swizzle is not expressible as an affine operand layout
+    }
+    const auto& buf = composed.layout;
+
+    std::vector<symbolic::Expression> coords = slot_indices;
+    auto local = tile_info_.local_index(access.min_subset);
+    coords.insert(coords.end(), local.begin(), local.end());
+    auto offset = symbolic::expand(buf.resolve_element(coords, /*require_to_element=*/false));
+
+    // Varying dims take the buffer's tile strides; an extent-1 dim gets the dense stride
+    // it would have as a size-1 dim, so 2D operands keep their row/column-major shape.
+    auto vdims = tile_info_.varying_dims();
+    symbolic::MultiExpression strides(dims);
+    symbolic::Expression running = symbolic::one();
+    for (int d = static_cast<int>(dims) - 1; d >= 0; --d) {
+        auto v = std::find(vdims.begin(), vdims.end(), static_cast<size_t>(d));
+        if (v == vdims.end()) {
+            if (!symbolic::eq(op.shape()[d], symbolic::one())) {
+                return std::nullopt;
+            }
+            strides[d] = running;
+            continue;
+        }
+        strides[d] = buf.strides()[slot_indices.size() + (v - vdims.begin())];
+        running = symbolic::mul(strides[d], tile_info_.dimensions[d]);
+    }
+    return math::tensor::TensorLayout(op.shape(), strides, offset);
 }
 
 
