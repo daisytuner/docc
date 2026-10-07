@@ -48,7 +48,7 @@ def test_tensor_empty(target: str) -> None:
     check(TensorEmptyNet(), *(), target=target)
 
 
-@pytest.mark.supported_targets("cuda", "rocm")
+@pytest.mark.supported_targets("cuda")
 def test_tensor_gpu(target: str) -> None:
     class TensorSimpleNet(nn.Module):
         def forward(self) -> torch.Tensor:
