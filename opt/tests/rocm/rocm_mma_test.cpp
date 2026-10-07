@@ -21,6 +21,7 @@
 #include "sdfg/targets/rocm/rocm_arch.h"
 #include "sdfg/tiles/library_nodes/tile_copy_node.h"
 #include "sdfg/tiles/transformations/local_storage.h"
+#include "sdfg/tiles/transformations/software_pipelining.h"
 #include "sdfg/transformations/loop_tiling.h"
 #include "sdfg/types/array.h"
 #include "sdfg/types/tensor.h"
@@ -634,6 +635,56 @@ TEST(ROCMMMATest, LocalStorageFragmentsReadSubWindow_gfx90a) {
         )
     ) << b->layout().offset->__str__();
     EXPECT_TRUE(symbolic::eq(b->layout().ldstride, symbolic::integer(24)));
+}
+
+// Double-buffered panels: fragments select the stage by an offset bias (not a memlet
+// subscript), and per-thread-slot copies stay synchronous (no CDNA global_load_lds).
+TEST(ROCMMMATest, SoftwarePipeliningBiasesFragmentStage_gfx90a) {
+    auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
+    sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+    auto [block, matmul_node] = build_offloaded_mma_structure(builder, 1024, 1024, 1024, 32, 32, 16, arch);
+    passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch));
+    strip_mine_k(builder, 2);
+    localize(builder, "tile_k0");
+
+    auto offset_before = find_local_load(builder.subject().root(), "A")->layout().offset;
+    symbolic::Expression a_stage_stride = symbolic::one();
+    for (const auto& name : builder.subject().containers()) {
+        if (name.rfind("__daisy_local_storage_A", 0) == 0) {
+            const types::IType* t = &builder.subject().type(name);
+            while (auto* arr = dynamic_cast<const types::Array*>(t)) {
+                a_stage_stride = symbolic::mul(a_stage_stride, arr->num_elements());
+                t = &arr->element_type();
+            }
+        }
+    }
+
+    {
+        analysis::AnalysisManager am(builder.subject());
+        transformations::SoftwarePipelining sp(*find_loop(am, "tile_k0_tile0"), 2);
+        ASSERT_TRUE(sp.can_be_applied(builder, am));
+        sp.apply(builder, am);
+    }
+    EXPECT_NO_THROW(builder.subject().validate());
+
+    analysis::AnalysisManager am(builder.subject());
+    auto panel = find_loop(am, "tile_k0_tile0");
+    auto stage = symbolic::mod(symbolic::div(panel->indvar(), symbolic::integer(2)), symbolic::integer(2));
+    auto* a = find_local_load(builder.subject().root(), "A");
+    ASSERT_NE(a, nullptr);
+    EXPECT_TRUE(
+        symbolic::
+            eq(symbolic::expand(symbolic::sub(a->layout().offset, offset_before)),
+               symbolic::expand(symbolic::mul(stage, a_stage_stride)))
+    ) << a->layout().offset->__str__();
+
+    auto out = test::utils::test_codegen(builder.subject(), "pipelined", true);
+    std::string kernels;
+    for (auto& [name, snippet] : out.snippets) {
+        kernels += snippet.content;
+    }
+    EXPECT_EQ(kernels.find("global_load_lds"), std::string::npos) << kernels;
+    EXPECT_NE(kernels.find("load_matrix_sync(mma_a0, (reinterpret_cast"), std::string::npos) << kernels;
 }
 
 } // namespace sdfg::rocm

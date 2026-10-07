@@ -1,5 +1,6 @@
 #include "sdfg/tiles/transformations/software_pipelining.h"
 
+#include <algorithm>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -7,7 +8,9 @@
 #include <vector>
 
 #include "sdfg/data_flow/access_node.h"
+#include "sdfg/data_flow/library_node.h"
 #include "sdfg/data_flow/library_nodes/barrier_local_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/tensor_layout.h"
 #include "sdfg/data_flow/memlet.h"
 #include "sdfg/data_flow/tasklet.h"
 #include "sdfg/deepcopy/structured_sdfg_deep_copy.h"
@@ -189,6 +192,56 @@ std::unique_ptr<types::IType> prepend_stage_dim(const types::IType& buf, size_t 
         types::Array>(buf.storage_type(), buf.alignment(), buf.initializer(), *inner, symbolic::integer(stages));
 }
 
+// The layout through which library node @p lib addresses its operand on memlet @p m, or nullptr.
+std::optional<math::tensor::TensorLayout>
+library_operand_layout(const data_flow::LibraryNode& lib, const data_flow::Memlet& m) {
+    auto meta = lib.pointer_access_type(m);
+    if (!meta) {
+        return std::nullopt;
+    }
+    auto read = meta->access_read_pattern();
+    auto write = meta->access_write_pattern();
+    if (read && read->layout()) {
+        return *read->layout();
+    }
+    if (write && write->layout()) {
+        return *write->layout();
+    }
+    return std::nullopt;
+}
+
+int library_input_index(const data_flow::LibraryNode& lib, const data_flow::Memlet& m) {
+    const auto& inputs = lib.inputs();
+    auto it = std::find(inputs.begin(), inputs.end(), m.dst_conn());
+    return it == inputs.end() ? -1 : static_cast<int>(it - inputs.begin());
+}
+
+// Library-node consumers address a staged buffer through their own operand layout
+// (a bare-pointer memlet), so stage selection must be expressible as an offset bias.
+bool library_consumers_relocalizable(structured_control_flow::ControlFlowNode& root, const Function& sdfg) {
+    bool ok = true;
+    visitor::for_each_block(root, [&](structured_control_flow::Block& b) {
+        auto& dfg = b.dataflow();
+        for (auto* acc : dfg.data_nodes()) {
+            if (!is_shared_container(sdfg, acc->data())) {
+                continue;
+            }
+            for (auto& m : dfg.out_edges(*acc)) {
+                auto* lib = dynamic_cast<const data_flow::LibraryNode*>(&m.dst());
+                if (lib == nullptr || dynamic_cast<const tiles::TileCopyNode*>(lib) != nullptr) {
+                    continue;
+                }
+                auto layout = library_operand_layout(*lib, m);
+                int idx = library_input_index(*lib, m);
+                if (!layout || idx < 0 || !lib->can_relocalize_operand(idx, *layout)) {
+                    ok = false;
+                }
+            }
+        }
+    });
+    return ok;
+}
+
 } // namespace
 
 SoftwarePipelining::SoftwarePipelining(structured_control_flow::StructuredLoop& loop, size_t stages, bool single_operand)
@@ -247,6 +300,9 @@ bool SoftwarePipelining::
     if (!subtree_writes_shared(sdfg, loop_.root())) {
         return false;
     }
+    if (!library_consumers_relocalizable(loop_.root(), sdfg)) {
+        return false;
+    }
 
     return true;
 }
@@ -295,6 +351,7 @@ void SoftwarePipelining::apply(builder::StructuredSDFGBuilder& builder, analysis
         // offset by stage_idx * per-stage buffer stride (padding included) instead of
         // reindexing that memlet.
         const auto stage_stride = buffer_element_count(sdfg.type(name));
+        const auto stage_bias = symbolic::mul(stage_idx, stage_stride);
         std::vector<tiles::TileCopyNode*> nodes_to_bias;
         visitor::for_each_block(loop_.root(), [&](structured_control_flow::Block& b) {
             auto& dfg = b.dataflow();
@@ -311,6 +368,20 @@ void SoftwarePipelining::apply(builder::StructuredSDFGBuilder& builder, analysis
                 for (auto& m : dfg.out_edges(*acc)) {
                     if (auto* tc = dynamic_cast<tiles::TileCopyNode*>(&m.dst())) {
                         nodes_to_bias.push_back(tc); // node writes via plan, not this memlet
+                    } else if (auto* lib = dynamic_cast<data_flow::LibraryNode*>(&m.dst())) {
+                        auto layout = library_operand_layout(*lib, m);
+                        int idx = library_input_index(*lib, m);
+                        if (!layout || idx < 0 ||
+                            !lib->relocalize_operand(
+                                idx,
+                                math::tensor::TensorLayout(
+                                    layout->shape(), layout->strides(), symbolic::add(layout->offset(), stage_bias)
+                                )
+                            )) {
+                            throw InvalidTransformationException(
+                                "SoftwarePipelining: library node cannot address the staged buffer"
+                            );
+                        }
                     } else {
                         reindex(m);
                     }
@@ -322,7 +393,7 @@ void SoftwarePipelining::apply(builder::StructuredSDFGBuilder& builder, analysis
         });
         for (auto* tc : nodes_to_bias) {
             auto plan = tc->plan();
-            auto biased = symbolic::add(plan.dst.offset(), symbolic::mul(stage_idx, stage_stride));
+            auto biased = symbolic::add(plan.dst.offset(), stage_bias);
             plan.dst = tiles::Layout(plan.dst.shape(), plan.dst.strides(), biased);
             tc->set_plan(plan);
         }
