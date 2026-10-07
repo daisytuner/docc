@@ -180,6 +180,22 @@ TEST(BufferLayoutTest, MultiDim_MultiSlot) {
     expect_consistent({2, 5}, {4}, tiles::BufferKind::MultiDim);
 }
 
+// MultiDim row pad: each innermost row is widened, the logical tile is unchanged.
+TEST(BufferLayoutTest, MultiDim_RowPad) {
+    tiles::PackedBuffer pb{ints({2}), ints({3, 4}), tiles::BufferKind::MultiDim};
+    pb.row_pad = 2;
+    auto axes = pb.axes();
+    ASSERT_EQ(axes.size(), 3u);
+    EXPECT_EQ(eval(axes[2]), 6);
+    EXPECT_EQ(eval(pb.total_size()), 2 * 3 * 6);
+    EXPECT_EQ(eval(pb.tile_total_size()), 3 * 4);
+    auto layout = pb.layout().layout;
+    EXPECT_EQ(eval(layout.strides()[0]), 18); // slot = 3 rows of 6
+    EXPECT_EQ(eval(layout.strides()[1]), 6); // padded row
+    EXPECT_EQ(eval(layout.strides()[2]), 1);
+    EXPECT_EQ(eval(layout.shape()[2]), 4); // logical row length
+}
+
 // Linearized: fully flat, consistent offset/addressing.
 TEST(BufferLayoutTest, Linearized_Consistent) {
     expect_consistent({2}, {3, 4}, tiles::BufferKind::Linearized);

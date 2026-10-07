@@ -681,6 +681,15 @@ void LocalStorage::apply_prepared(builder::StructuredSDFGBuilder& builder, analy
         // reads it with the same orientation and only a tighter leading dimension.
         buffer.kind = tiles::BufferKind::Transposed;
     }
+    // Library operands (MMA fragments) read rows strided by the leading dimension; a
+    // 16-byte row pad keeps those rows off the same banks and the rows 16-byte aligned.
+    if (buffer.kind == tiles::BufferKind::MultiDim && storage_type_.is_nv_shared() &&
+        has_library_operand(group_memlets_)) {
+        const size_t elem_bytes = types::bit_width(scalar_type.primitive_type()) / 8;
+        if (elem_bytes > 0 && 16 % elem_bytes == 0) {
+            buffer.row_pad = 16 / elem_bytes;
+        }
+    }
     // Cooperative-store conflict avoidance: pad the inner stride to the coop axis's
     // per-warp thread count (mod 32). Compute it from the block dims + the coop
     // copy's axis (A tiles are coop over X, B over Y -> different spans, so a single
