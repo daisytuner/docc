@@ -15,7 +15,16 @@
 
 namespace sdfg::gpu {
 
-GpuMmaEinsumReplacer::GpuMmaEinsumReplacer(const GpuArch* arch) : arch_(arch) {
+GpuMmaEinsumReplacer::GpuMmaEinsumReplacer(const GpuArch* arch, int wave_tile_m, int wave_tile_n)
+    : arch_(arch), wave_tile_m_(wave_tile_m), wave_tile_n_(wave_tile_n) {
+}
+
+bool GpuMmaEinsumReplacer::wave_tile_divides(const MatMulAnalysis& analysis) const {
+    if (wave_tile_m_ < 1 || wave_tile_n_ < 1) {
+        return false;
+    }
+    auto tiling = arch_->mma_support()->get_mma_tiling({analysis.m, analysis.n, analysis.k});
+    return tiling.macro_blocks_m % wave_tile_m_ == 0 && tiling.macro_blocks_n % wave_tile_n_ == 0;
 }
 
 bool GpuMmaEinsumReplacer::matches_possible_mma_pattern(const MatMulAnalysis& analysis) const {
@@ -68,7 +77,7 @@ bool GpuMmaEinsumReplacer::matches_possible_mma_pattern(const MatMulAnalysis& an
 
 bool GpuMmaEinsumReplacer::analyze(const einsum::EinsumCluster& cluster, EinsumMmaAnalysis& result) const {
     if (Einsum2MatMul::analyze(cluster, result)) {
-        return matches_possible_mma_pattern(result);
+        return matches_possible_mma_pattern(result) && wave_tile_divides(result);
     } else {
         return false;
     }
@@ -88,6 +97,8 @@ einsum::ReplaceOutcome GpuMmaEinsumReplacer::
     }
 
     auto mma_tiling = mma_arch->get_mma_tiling({analysis.m, analysis.n, analysis.k});
+    mma_tiling.wave_tile_blocks_m = wave_tile_m_;
+    mma_tiling.wave_tile_blocks_n = wave_tile_n_;
     auto impl_type = mma_arch->get_mma_impl_type();
 
     // --- Replacement ---
@@ -143,7 +154,7 @@ bool GpuMmaEinsumTransform::run_internal(
 
     std::vector<einsum::EinsumNode*> mapped_einsums;
     for (auto& einsum_node : detector.einsums()) {
-        GpuMmaEinsumReplacer repl(arch_);
+        GpuMmaEinsumReplacer repl(arch_, wave_tile_m_, wave_tile_n_);
         // einsum::Einsum2MatMul repl;
         if (verify_only) {
             matched_ |= repl.can_be_applied(*einsum_node);
@@ -158,8 +169,10 @@ bool GpuMmaEinsumTransform::run_internal(
     return matched_;
 }
 
-GpuMmaEinsumTransform::GpuMmaEinsumTransform(StructuredLoop& outermoost_mma_loop, const gpu::GpuArch* arch)
-    : outermost_mma_loop_(outermoost_mma_loop), arch_(arch) {
+GpuMmaEinsumTransform::GpuMmaEinsumTransform(
+    StructuredLoop& outermoost_mma_loop, const gpu::GpuArch* arch, int wave_tile_m, int wave_tile_n
+)
+    : outermost_mma_loop_(outermoost_mma_loop), arch_(arch), wave_tile_m_(wave_tile_m), wave_tile_n_(wave_tile_n) {
 }
 
 bool GpuMmaEinsumTransform::try_apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
@@ -184,6 +197,8 @@ void GpuMmaEinsumTransform::to_json(nlohmann::json& j) const {
     if (arch_) {
         j["parameters"]["arch"] = arch_->unique_id();
     }
+    j["parameters"]["wave_tile_m"] = wave_tile_m_;
+    j["parameters"]["wave_tile_n"] = wave_tile_n_;
     j["subgraph"] = nlohmann::json::object();
 }
 
