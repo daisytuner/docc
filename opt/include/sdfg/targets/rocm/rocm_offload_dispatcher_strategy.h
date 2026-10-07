@@ -60,14 +60,6 @@ public:
 
     std::string warp_shuffle_xor(const std::string& value, const std::string& lane_mask) const override;
 
-    std::string runtime_api_prefix() const override;
-    std::string runtime_header() const override;
-    void dispatch_runtime_error_check(
-        codegen::PrettyPrinter& stream,
-        const codegen::LanguageExtension& language_extension,
-        const std::string& status_variable
-    ) const override;
-
     codegen::TargetType get_instrumentation_kernel_target_type() const override;
 };
 

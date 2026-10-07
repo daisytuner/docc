@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+import ml_dtypes
 import numpy as np
 import pytest
 from numpy.lib.stride_tricks import sliding_window_view
@@ -39,15 +40,31 @@ from docc.sdfg import (
 )
 from docc.compiler.compiled_sdfg import CompiledSDFG
 
-from _gpu_offload_layer_impl import _PRIMITIVE, Operand, _assert_output
-
-PRIMITIVE = {**_PRIMITIVE, np.dtype(np.bool_): PrimitiveType.Bool}
+PRIMITIVE = {
+    np.dtype(np.bool_): PrimitiveType.Bool,
+    np.dtype(np.float16): PrimitiveType.Half,
+    np.dtype(ml_dtypes.bfloat16): PrimitiveType.BFloat,
+    np.dtype(np.float32): PrimitiveType.Float,
+    np.dtype(np.float64): PrimitiveType.Double,
+    np.dtype(np.int32): PrimitiveType.Int32,
+    np.dtype(np.int64): PrimitiveType.Int64,
+}
 
 GPU_SCHEDULES = {"CUDA_Offload", "ROCM_Offload", "CUDA", "ROCM"}
 GPU_IMPL_PREFIX = {"cuda": "CUDA", "rocm": "ROCM"}
 CASE_TIMEOUT_S = 600
 
 f32, f64, i32, i64, b8 = np.float32, np.float64, np.int32, np.int64, np.bool_
+
+
+@dataclass(frozen=True)
+class Operand:
+    """One pointer argument of the node, declared in call order."""
+
+    name: str
+    dtype: type
+    shape: tuple
+    is_output: bool = False
 
 
 @dataclass(frozen=True)
@@ -87,6 +104,17 @@ def _random(rng, shape, dtype, positive=False):
     if positive:
         return rng.uniform(0.5, 2.0, size=shape).astype(dtype)
     return rng.standard_normal(shape).astype(dtype)
+
+
+def _assert_output(actual, expected, rtol, atol):
+    expected = np.ascontiguousarray(expected, dtype=actual.dtype)
+    if rtol == 0.0 and atol == 0.0:
+        bits = f"u{actual.dtype.itemsize}"
+        np.testing.assert_array_equal(actual.view(bits), expected.view(bits))
+    else:
+        np.testing.assert_allclose(
+            actual.astype(np.float64), expected.astype(np.float64), rtol=rtol, atol=atol
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -645,6 +673,53 @@ EMBEDDING = NodeSpec(
         (
             "2d_f64_i32_idx",
             dict(vocab=20, dim=7, index_shape=(3, 5), dtype=f64, index_dtype=i32),
+        ),
+        (
+            "1d_v1000_d128",
+            dict(vocab=1000, dim=128, index_shape=(256,), dtype=f32, index_dtype=i64),
+        ),
+        (
+            "2d_v512_d64",
+            dict(vocab=512, dim=64, index_shape=(8, 32), dtype=f32, index_dtype=i64),
+        ),
+        (
+            "3d_ragged_v100_d33",
+            dict(vocab=100, dim=33, index_shape=(2, 3, 17), dtype=f32, index_dtype=i64),
+        ),
+        # tiny vocabulary forces many repeated rows to be gathered concurrently
+        (
+            "repeated_v3_d256",
+            dict(vocab=3, dim=256, index_shape=(500,), dtype=f32, index_dtype=i64),
+        ),
+        (
+            "dim1_v64",
+            dict(vocab=64, dim=1, index_shape=(1000,), dtype=f32, index_dtype=i64),
+        ),
+        (
+            "single_index",
+            dict(vocab=7, dim=16, index_shape=(1,), dtype=f32, index_dtype=i64),
+        ),
+        (
+            "f16_v50_d24",
+            dict(
+                vocab=50, dim=24, index_shape=(64,), dtype=np.float16, index_dtype=i64
+            ),
+        ),
+        (
+            "bf16_v50_d24",
+            dict(
+                vocab=50,
+                dim=24,
+                index_shape=(64,),
+                dtype=ml_dtypes.bfloat16,
+                index_dtype=i64,
+            ),
+        ),
+        (
+            "f16_i32_ragged",
+            dict(
+                vocab=33, dim=7, index_shape=(3, 5), dtype=np.float16, index_dtype=i32
+            ),
         ),
     ),
     rtol=0.0,
