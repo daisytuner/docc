@@ -566,14 +566,15 @@ TEST(ROCMMMATest, LocalStorageFragmentsReadOwnSlotWindow_gfx90a) {
         mul(symbolic::integer(16),
             symbolic::sub(find_loop(am, "tile_k0")->indvar(), find_loop(am, "tile_k0_tile0")->indvar()));
 
+    // Rows are padded by 8 halves (16 B): A slot [16][32+8], B slot [32][16+8].
     auto* a = find_local_load(builder.subject().root(), "A");
     ASSERT_NE(a, nullptr);
     EXPECT_TRUE(
         symbolic::
             eq(a->layout().offset,
-               symbolic::expand(symbolic::add(symbolic::mul(symbolic::integer(512), wave_row), k_in_panel)))
+               symbolic::expand(symbolic::add(symbolic::mul(symbolic::integer(640), wave_row), k_in_panel)))
     ) << a->layout().offset->__str__();
-    EXPECT_TRUE(symbolic::eq(a->layout().ldstride, symbolic::integer(32)));
+    EXPECT_TRUE(symbolic::eq(a->layout().ldstride, symbolic::integer(40)));
 
     auto* b = find_local_load(builder.subject().root(), "B");
     ASSERT_NE(b, nullptr);
@@ -582,11 +583,11 @@ TEST(ROCMMMATest, LocalStorageFragmentsReadOwnSlotWindow_gfx90a) {
             eq(b->layout().offset,
                symbolic::expand(
                    symbolic::
-                       add(symbolic::mul(symbolic::integer(512), wave_col),
-                           symbolic::mul(symbolic::integer(16), k_in_panel))
+                       add(symbolic::mul(symbolic::integer(768), wave_col),
+                           symbolic::mul(symbolic::integer(24), k_in_panel))
                ))
     ) << b->layout().offset->__str__();
-    EXPECT_TRUE(symbolic::eq(b->layout().ldstride, symbolic::integer(16)));
+    EXPECT_TRUE(symbolic::eq(b->layout().ldstride, symbolic::integer(24)));
 
     // Library-node operands keep a dense MultiDim buffer (no flat padded slot block).
     for (const auto& name : builder.subject().containers()) {
@@ -612,27 +613,27 @@ TEST(ROCMMMATest, LocalStorageFragmentsReadSubWindow_gfx90a) {
     auto wave_col = symbolic::mod(find_loop(am, "wave_col0")->indvar(), symbolic::integer(2));
     auto tile_k = find_loop(am, "tile_k0")->indvar();
 
-    // A slot = [16][64] panel; the fragment window starts at column 16*tile_k.
+    // A slot = [16][64+8] panel; the fragment window starts at column 16*tile_k.
     auto* a = find_local_load(builder.subject().root(), "A");
     ASSERT_NE(a, nullptr);
     EXPECT_TRUE(
         symbolic::eq(
             a->layout().offset,
-            symbolic::add(symbolic::mul(symbolic::integer(1024), wave_row), symbolic::mul(symbolic::integer(16), tile_k))
+            symbolic::add(symbolic::mul(symbolic::integer(1152), wave_row), symbolic::mul(symbolic::integer(16), tile_k))
         )
     ) << a->layout().offset->__str__();
-    EXPECT_TRUE(symbolic::eq(a->layout().ldstride, symbolic::integer(64)));
+    EXPECT_TRUE(symbolic::eq(a->layout().ldstride, symbolic::integer(72)));
 
-    // B slot = [64][16] panel; the fragment window starts at row 16*tile_k.
+    // B slot = [64][16+8] panel; the fragment window starts at row 16*tile_k.
     auto* b = find_local_load(builder.subject().root(), "B");
     ASSERT_NE(b, nullptr);
     EXPECT_TRUE(
         symbolic::eq(
             b->layout().offset,
-            symbolic::add(symbolic::mul(symbolic::integer(1024), wave_col), symbolic::mul(symbolic::integer(256), tile_k))
+            symbolic::add(symbolic::mul(symbolic::integer(1536), wave_col), symbolic::mul(symbolic::integer(384), tile_k))
         )
     ) << b->layout().offset->__str__();
-    EXPECT_TRUE(symbolic::eq(b->layout().ldstride, symbolic::integer(16)));
+    EXPECT_TRUE(symbolic::eq(b->layout().ldstride, symbolic::integer(24)));
 }
 
 } // namespace sdfg::rocm
