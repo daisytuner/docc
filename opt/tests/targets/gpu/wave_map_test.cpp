@@ -10,6 +10,7 @@
 #include "sdfg/targets/gpu/gpu_offload_map_dispatcher.h"
 #include "sdfg/targets/gpu/gpu_offload_schedule_type.h"
 #include "sdfg/targets/rocm/rocm.h"
+#include "sdfg/targets/rocm/rocm_arch.h"
 #include "sdfg/targets/rocm/rocm_offload_dispatcher_strategy.h"
 #include "sdfg/tiles/tile.h"
 
@@ -154,6 +155,16 @@ TEST(WaveMapTest, ValidateRejectsNonWarpLanes) {
     WaveKernel k(32);
     analysis::AnalysisManager am(k.builder.subject());
     EXPECT_THROW(validate_wave_maps(*k.grid, am, 64), InvalidSDFGException);
+}
+
+TEST(WaveMapTest, ValidateUsesScheduleArchWarpSize) {
+    WaveKernel k(1);
+    auto sched = ScheduleType_GPU_Offload::create(rocm::ROCM_ARCH_GFX1201, TargetLevel::X_BLOCK, symbolic::integer(2));
+    ScheduleType_GPU_Offload::lanes(sched, symbolic::integer(32));
+    k.builder.update_schedule_type(*k.wave, sched);
+    analysis::AnalysisManager am(k.builder.subject());
+    // gfx1201 is wave32 regardless of the host's wavefront size.
+    EXPECT_NO_THROW(validate_wave_maps(*k.grid, am, 64));
 }
 
 TEST(WaveMapTest, ValidateRejectsLanesOffXBlock) {

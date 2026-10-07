@@ -5,6 +5,7 @@
 #include <strstream>
 
 #include "sdfg/analysis/analysis.h"
+#include "sdfg/analysis/loop_analysis.h"
 #include "sdfg/codegen/code_generators/cpp_code_generator.h"
 #include "sdfg/codegen/language_extensions/c_language_extension.h"
 #include "sdfg/codegen/utils.h"
@@ -13,10 +14,13 @@
 #include "sdfg/passes/expansion/library_node_expansion_pass.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/symbolic/symbolic.h"
+#include "sdfg/targets/gpu/gpu_mma_fragment_load_node.h"
+#include "sdfg/targets/gpu/gpu_offload_schedule_type.h"
 #include "sdfg/targets/gpu/gpu_types.h"
 #include "sdfg/targets/rocm/rocm.h"
 #include "sdfg/targets/rocm/rocm_arch.h"
 #include "sdfg/types/tensor.h"
+#include "sdfg/visitor/for_each.h"
 #include "sdfg_debug_dump.h"
 
 namespace test::utils {
@@ -275,5 +279,56 @@ TEST(ROCMMMATest, 1K_1K_1K_64x64_gfx90a) {
     test::utils::test_codegen(builder.subject(), "result", true);
 }
 
+TEST(ROCMMMATest, ExpansionEmitsWaveMap_gfx90a) {
+    constexpr int TILE = 32; // 2x2 waves of 16x16 MMA blocks
+
+    auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
+
+    sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+    auto [block, matmul_node] = build_offloaded_mma_structure(builder, 1024, 1024, 1024, TILE, TILE, 16, arch);
+    passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch));
+    EXPECT_NO_THROW(builder.subject().validate());
+
+    analysis::AnalysisManager am(builder.subject());
+    structured_control_flow::StructuredLoop* x_block = nullptr;
+    structured_control_flow::StructuredLoop* y_block = nullptr;
+    for (auto* loop : am.get<analysis::LoopAnalysis>().loops()) {
+        auto* sl = dynamic_cast<structured_control_flow::StructuredLoop*>(loop);
+        if (!sl || sl->schedule_type().category() != structured_control_flow::ScheduleTypeCategory::Offloader) {
+            continue;
+        }
+        auto level = gpu::ScheduleType_GPU_Offload::target_level(sl->schedule_type());
+        if (level == gpu::TargetLevel::X_BLOCK) {
+            x_block = sl;
+        } else if (level == gpu::TargetLevel::Y_BLOCK) {
+            y_block = sl;
+        }
+    }
+    ASSERT_NE(x_block, nullptr);
+    ASSERT_NE(y_block, nullptr);
+    EXPECT_EQ(x_block->indvar()->get_name().rfind("wave_row", 0), 0u);
+    EXPECT_EQ(gpu::ScheduleType_GPU_Offload::parallel_size(x_block->schedule_type())->as_int(), 2);
+    EXPECT_EQ(gpu::ScheduleType_GPU_Offload::lanes(x_block->schedule_type())->as_int(), 64);
+    EXPECT_EQ(gpu::ScheduleType_GPU_Offload::parallel_size(y_block->schedule_type())->as_int(), 2);
+
+    // Fragment addresses use the wave index directly: no thread-index division.
+    size_t loads = 0;
+    visitor::for_each_block(builder.subject().root(), [&](structured_control_flow::Block& b) {
+        for (auto* lib : b.dataflow().library_nodes()) {
+            if (auto* load = dynamic_cast<gpu::GpuMmaFragmentLoadNode*>(lib)) {
+                ++loads;
+                auto s = load->toStr();
+                EXPECT_EQ(s.find("idiv"), std::string::npos) << s;
+                if (load->fragment_type() == gpu::MmaFragmentType::A) {
+                    EXPECT_NE(s.find(x_block->indvar()->get_name()), std::string::npos) << s;
+                }
+            }
+        }
+    });
+    EXPECT_EQ(loads, 3u); // A, B, C
+
+    auto out = test::utils::test_codegen(builder.subject(), "wave_map", true);
+    EXPECT_NE(out.main_function.find("dim3((int)(128), (int)(2), (int)(1))"), std::string::npos) << out.main_function;
+}
 
 } // namespace sdfg::rocm

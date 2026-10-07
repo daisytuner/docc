@@ -115,11 +115,9 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
     auto& k_dim = layout_b.get_dim(0);
 
     auto& builder = standalone.builder();
-    auto thread_x = symbolic::symbol(builder.find_new_name("wave_x"));
-    auto threads_x_count = symbolic::integer(mma_tiling.macro_blocks_m * mma_tiling.threads_per_mma_block_m);
-    builder.add_container(
-        thread_x->get_name(), types::Scalar(types::get_primitive_type_to_hold_upper_bound(threads_x_count))
-    );
+    auto wave_row = symbolic::symbol(builder.find_new_name("wave_row"));
+    auto waves_m = symbolic::integer(mma_tiling.macro_blocks_m);
+    builder.add_container(wave_row->get_name(), types::Scalar(types::get_primitive_type_to_hold_upper_bound(waves_m)));
 
     auto acc_frag_name = builder.find_new_name("mma_acc");
     types::Pointer acc_frag_type{types::Scalar(acc_type)};
@@ -152,43 +150,32 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
     builder.add_container(b_frag_name, b_frag_type);
     auto y_col_major = layout_y.is_2d_col_or_row_major() == math::tensor::TensorLayout::LAYOUT_COL_MAJOR;
 
-    auto threads_y_count = symbolic::integer(mma_tiling.macro_blocks_n);
+    auto waves_n = symbolic::integer(mma_tiling.macro_blocks_n);
+    // Each wave_row iteration is one whole wave: the MMA nodes below are wave-collective.
+    auto wave_row_sched = ScheduleType_GPU_Offload::create(arch, TargetLevel::X_BLOCK, waves_m);
+    ScheduleType_GPU_Offload::lanes(wave_row_sched, symbolic::integer(mma_tiling.threads_per_mma_block_m));
     auto& col_map = standalone.replace_with_structured_loop(
         AccessNodeExpand::LoopType::Map,
-        thread_x,
-        symbolic::Lt(thread_x, threads_x_count),
+        wave_row,
+        symbolic::Lt(wave_row, waves_m),
         symbolic::zero(),
-        symbolic::add(thread_x, symbolic::integer(1)),
-        ScheduleType_GPU_Offload::create(arch, TargetLevel::X_BLOCK, threads_x_count)
+        symbolic::add(wave_row, symbolic::integer(1)),
+        wave_row_sched
     );
 
-    symbolic::Expression brow_in_tile;
-    if (mma_tiling.macro_blocks_m > 1) {
-        // auto wave_row_name = builder.find_new_name("wave_row");
-        // auto brow_in_tile_sym = symbolic::symbol(wave_row_name);
-        // bounding ignores Assignments, so use the full expression instead
-        brow_in_tile = symbolic::div(thread_x, symbolic::integer(mma_tiling.threads_per_mma_block_m));
-        // builder.add_container(wave_row_name, types::Scalar(types::get_primitive_type_to_hold_upper_bound(m_dim)));
-        // builder.add_assignments(
-        // col_map.root(),
-        // {{brow_in_tile_sym, symbolic::div(thread_x, symbolic::integer(mma_tiling.threads_per_mma_block_m))}}
-        // );
-    } else {
-        brow_in_tile = symbolic::zero();
-    }
+    symbolic::Expression brow_in_tile = wave_row;
 
     auto bcol_in_tile = symbolic::symbol(builder.find_new_name("wave_col"));
-    builder.add_container(
-        bcol_in_tile->get_name(), types::Scalar(types::get_primitive_type_to_hold_upper_bound(threads_y_count))
-    );
+    builder
+        .add_container(bcol_in_tile->get_name(), types::Scalar(types::get_primitive_type_to_hold_upper_bound(waves_n)));
 
     auto& row_map = builder.add_map(
         col_map.root(),
         bcol_in_tile,
-        symbolic::Lt(bcol_in_tile, threads_y_count),
+        symbolic::Lt(bcol_in_tile, waves_n),
         symbolic::zero(),
         symbolic::add(bcol_in_tile, symbolic::integer(1)),
-        ScheduleType_GPU_Offload::create(arch, TargetLevel::Y_BLOCK, symbolic::integer(mma_tiling.macro_blocks_m))
+        ScheduleType_GPU_Offload::create(arch, TargetLevel::Y_BLOCK, waves_n)
     );
 
     // K-tile loop variable; A and B advance along K with it.

@@ -11,6 +11,7 @@
 #include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/cuda/cuda.h"
+#include "sdfg/targets/gpu/gpu_arch.h"
 #include "sdfg/targets/gpu/gpu_offload_schedule_type.h"
 #include "sdfg/targets/rocm/rocm.h"
 
@@ -632,9 +633,15 @@ void validate_wave_maps(
         if (ScheduleType_GPU_Offload::target_level(sched) != TargetLevel::X_BLOCK) {
             throw InvalidSDFGException("lanes > 1 is only supported on X_BLOCK maps");
         }
-        if (lanes != warp_size) {
+        int64_t expected = warp_size;
+        if (sched.properties().count(GpuArch::ARCH_PROPERTY)) {
+            if (const auto* arch = GpuArch::get_from_schedule_type(sched)) {
+                expected = arch->per_cu_threads();
+            }
+        }
+        if (lanes != expected) {
             throw InvalidSDFGException(
-                "lanes must be 1 or the warp size (" + std::to_string(warp_size) + "), got " + std::to_string(lanes)
+                "lanes must be 1 or the warp size (" + std::to_string(expected) + "), got " + std::to_string(lanes)
             );
         }
         if (!dyn_cast<structured_control_flow::Map*>(struc_loop)) {

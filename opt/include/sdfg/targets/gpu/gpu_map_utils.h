@@ -205,7 +205,7 @@ void get_nested_level_maps(
 bool nested_warp_dim(structured_control_flow::StructuredLoop& loop, analysis::AnalysisManager& analysis_manager);
 
 // Throws unless every lanes > 1 offload loop in @p node's subtree is an X_BLOCK Map with
-// lanes == @p warp_size and no nested WARP level loop.
+// lanes == the warp size of its ARCH (or @p warp_size without one) and no nested WARP loop.
 void validate_wave_maps(
     structured_control_flow::StructuredLoop& node, analysis::AnalysisManager& analysis_manager, int64_t warp_size
 );
