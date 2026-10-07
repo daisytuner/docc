@@ -1,3 +1,8 @@
+---
+name: dependency-review
+description: Determine how a change affects dependencies, consumers, APIs, contracts, and deprecated functionality across the organization. Use when a change modifies public or internal APIs, shared libraries, schemas, events, configuration, removes or renames functionality, or deprecates features.
+---
+
 # Dependency / Deprecation Analysis
 
 ## Purpose

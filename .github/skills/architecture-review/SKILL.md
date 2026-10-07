@@ -1,3 +1,8 @@
+---
+name: architecture-review
+description: Analyze a proposed or existing code change from an architectural perspective, explaining what is changing, why, which components are involved, how they interact, and how the change fits the existing system architecture. Use when reviewing changes that affect system design or component structure.
+---
+
 # Architecture Review / Analysis
 
 ## Purpose
