@@ -552,7 +552,7 @@ symbolic::Expression GPUOffloadReduceDispatcher::reduce_block_dim(TargetLevel bl
             return;
         }
         if (gpu::ScheduleType_GPU_Offload::target_level(loop->schedule_type()) == block_level) {
-            dim = gpu::ScheduleType_GPU_Offload::parallel_size(loop->schedule_type());
+            dim = gpu::ScheduleType_GPU_Offload::threads(loop->schedule_type());
         }
     };
 

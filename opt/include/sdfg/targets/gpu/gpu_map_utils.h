@@ -185,8 +185,8 @@ symbolic::SymbolSet target_level_indvars(
 );
 
 // Per-level launch schedule for @p node's subtree: for each occupied target level,
-// the offloaded schedule with the largest parallel_size, so a single launch
-// dimension covers every sibling at that level.
+// the offloaded schedule with the largest thread count (parallel_size * lanes), so a
+// single launch dimension covers every sibling at that level.
 void get_nested_schedule_types(
     structured_control_flow::StructuredLoop& node,
     analysis::AnalysisManager& analysis_manager,
@@ -203,6 +203,12 @@ void get_nested_level_maps(
 );
 
 bool nested_warp_dim(structured_control_flow::StructuredLoop& loop, analysis::AnalysisManager& analysis_manager);
+
+// Throws unless every lanes > 1 offload loop in @p node's subtree is an X_BLOCK Map with
+// lanes == @p warp_size and no nested WARP level loop.
+void validate_wave_maps(
+    structured_control_flow::StructuredLoop& node, analysis::AnalysisManager& analysis_manager, int64_t warp_size
+);
 
 structured_control_flow::StructuredLoop* find_x_block_owning_warp_level(
     structured_control_flow::StructuredLoop& node, analysis::AnalysisManager& analysis_manager

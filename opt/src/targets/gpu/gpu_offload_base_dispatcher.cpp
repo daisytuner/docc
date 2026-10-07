@@ -163,6 +163,7 @@ void GPUOffloadBaseDispatcher::dispatch_node(
 
         std::unordered_map<TargetLevel, ScheduleType> nested_schedule_types;
         get_nested_schedule_types(node_, analysis_manager, nested_schedule_types);
+        validate_wave_maps(node_, analysis_manager, strategy_->get_warp_size());
 
         symbolic::Expression block_size_x = symbolic::one();
         symbolic::Expression block_size_y = symbolic::one();
@@ -172,7 +173,7 @@ void GPUOffloadBaseDispatcher::dispatch_node(
         symbolic::Expression grid_size_z = symbolic::one();
 
         if (nested_schedule_types.find(TargetLevel::X_BLOCK) != nested_schedule_types.end()) {
-            block_size_x = gpu::ScheduleType_GPU_Offload::parallel_size(nested_schedule_types.at(TargetLevel::X_BLOCK));
+            block_size_x = gpu::ScheduleType_GPU_Offload::threads(nested_schedule_types.at(TargetLevel::X_BLOCK));
         }
         if (nested_schedule_types.find(TargetLevel::Y_BLOCK) != nested_schedule_types.end()) {
             block_size_y = gpu::ScheduleType_GPU_Offload::parallel_size(nested_schedule_types.at(TargetLevel::Y_BLOCK));

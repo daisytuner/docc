@@ -572,14 +572,13 @@ void get_nested_schedule_types(
             if (struc_loop->schedule_type().category() == structured_control_flow::ScheduleTypeCategory::Offloader) {
                 auto level = ScheduleType_GPU_Offload::target_level(struc_loop->schedule_type());
                 auto it = output.find(level);
-                // Sibling offloaders can share a level with different parallel_size; keep the
+                // Sibling offloaders can share a level with different thread counts; keep the
                 // largest so the launch dimension covers every sibling.
-                if (it == output.end() ||
-                    symbolic::is_true(
-                        symbolic::
-                            Gt(ScheduleType_GPU_Offload::parallel_size(struc_loop->schedule_type()),
-                               ScheduleType_GPU_Offload::parallel_size(it->second))
-                    )) {
+                if (it == output.end() || symbolic::is_true(
+                                              symbolic::
+                                                  Gt(ScheduleType_GPU_Offload::threads(struc_loop->schedule_type()),
+                                                     ScheduleType_GPU_Offload::threads(it->second))
+                                          )) {
                     output.insert_or_assign(level, struc_loop->schedule_type());
                 }
             }
@@ -609,6 +608,40 @@ void get_nested_level_maps(
                     output.insert_or_assign(level, struc_loop);
                 }
             }
+        }
+    }
+}
+
+void validate_wave_maps(
+    structured_control_flow::StructuredLoop& node, analysis::AnalysisManager& analysis_manager, int64_t warp_size
+) {
+    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
+    auto loops = loop_analysis.descendants(&node);
+    loops.insert(&node);
+    for (auto* loop : loops) {
+        auto* struc_loop = dyn_cast<structured_control_flow::StructuredLoop*>(loop);
+        if (!struc_loop ||
+            struc_loop->schedule_type().category() != structured_control_flow::ScheduleTypeCategory::Offloader) {
+            continue;
+        }
+        const auto& sched = struc_loop->schedule_type();
+        auto lanes = ScheduleType_GPU_Offload::lanes(sched)->as_int();
+        if (lanes == 1) {
+            continue;
+        }
+        if (ScheduleType_GPU_Offload::target_level(sched) != TargetLevel::X_BLOCK) {
+            throw InvalidSDFGException("lanes > 1 is only supported on X_BLOCK maps");
+        }
+        if (lanes != warp_size) {
+            throw InvalidSDFGException(
+                "lanes must be 1 or the warp size (" + std::to_string(warp_size) + "), got " + std::to_string(lanes)
+            );
+        }
+        if (!dyn_cast<structured_control_flow::Map*>(struc_loop)) {
+            throw InvalidSDFGException("lanes > 1 is only supported on maps");
+        }
+        if (nested_warp_dim(*struc_loop, analysis_manager)) {
+            throw InvalidSDFGException("a WARP level loop cannot be nested in a wave-granular (lanes > 1) map");
         }
     }
 }
