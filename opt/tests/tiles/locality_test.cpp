@@ -379,6 +379,50 @@ TEST(LocalityTest, Enclosing_LibraryOperandOffset_ClassifiesPerAxis) {
     EXPECT_TRUE(blind[1].cooperative());
 }
 
+// Split-K: a Z_BLOCK group axis g selects its K chunk only through the panel loop's
+// range (init = g), never in the base itself. It must still classify as private.
+TEST(LocalityTest, Enclosing_AxisThroughInnerLoopBound_IsPrivate) {
+    builder::StructuredSDFGBuilder builder("enclosing_split_k", FunctionType_CPU);
+    auto& seq = builder.subject().root();
+    types::Scalar loop_var(types::PrimitiveType::Int32);
+    auto g = symbolic::symbol("g");
+    auto p = symbolic::symbol("p");
+    auto k = symbolic::symbol("k");
+    builder.add_container("g", loop_var);
+    builder.add_container("p", loop_var);
+    builder.add_container("k", loop_var);
+
+    auto z_block = gpu::ScheduleType_GPU_Offload::create<
+        cuda::ScheduleType_CUDA_Offload>(gpu::TargetLevel::Z_BLOCK, symbolic::integer(2));
+    auto& map_g = builder.add_map(
+        seq,
+        g,
+        symbolic::Lt(g, symbolic::integer(1024)),
+        symbolic::integer(0),
+        symbolic::add(g, symbolic::integer(512)),
+        z_block
+    );
+    auto& loop_p = builder.add_for(
+        map_g.root(),
+        p,
+        symbolic::Lt(p, symbolic::add(g, symbolic::integer(512))),
+        g,
+        symbolic::add(p, symbolic::integer(32))
+    );
+    auto& loop_k = builder.add_for(
+        loop_p.root(),
+        k,
+        symbolic::Lt(k, symbolic::integer(32)),
+        symbolic::integer(0),
+        symbolic::add(k, symbolic::integer(1))
+    );
+
+    auto axes = tiles::TileAxis::enclosing(loop_k, {p});
+    ASSERT_EQ(axes.size(), 1u);
+    EXPECT_TRUE(symbolic::eq(axes[0].indvar(), g));
+    EXPECT_FALSE(axes[0].cooperative());
+}
+
 // A GPU-scheduled Reduce enclosing the loop is a cooperative block level too, so
 // analyze classifies a read tile inside a block reduction as shared (previously it
 // saw only Maps and mis-derived a private per-thread buffer).

@@ -301,13 +301,27 @@ void emit_cooperative_copy_loop(
     // memory-level parallelism (esp. where cp.async degrades to a synchronous copy).
     // Otherwise fall back to a runtime thread-strided loop.
     const bool unrolled = !node.coop_threads().is_null();
+    // An exact split (size divisible by threads*factor) needs no bounds guard; dropping
+    // it keeps the loads unconditional so the backend can batch them before one wait.
+    bool exact = false;
+    if (unrolled) {
+        auto total = plan.src.total_elements();
+        auto threads = node.coop_threads();
+        if (SymEngine::is_a<SymEngine::Integer>(*total) && SymEngine::is_a<SymEngine::Integer>(*threads)) {
+            const long long t = SymEngine::rcp_static_cast<const SymEngine::Integer>(total)->as_int();
+            const long long ct = SymEngine::rcp_static_cast<const SymEngine::Integer>(threads)->as_int();
+            exact = ct > 0 && t % (ct * static_cast<long long>(factor)) == 0;
+        }
+    }
     if (unrolled) {
         const std::string ct = language_extension.expression(node.coop_threads());
         const std::string f = std::to_string(factor);
         stream << "for (int __tc_i = 0; __tc_i < ((" << size << ") + (" << ct << ") * " << f << " - 1) / ((" << ct
                << ") * " << f << "); __tc_i++) {" << std::endl;
         stream << "int __tc_c = " << f << " * (__tc_i * (" << ct << ") + __tc_tid);" << std::endl;
-        stream << "if (__tc_c < " << size << ") {" << std::endl;
+        if (!exact) {
+            stream << "if (__tc_c < " << size << ") {" << std::endl;
+        }
     } else {
         stream << "int __tc_n = " << n << ";" << std::endl;
         const std::string step = factor > 1 ? " * " + std::to_string(factor) : "";
@@ -340,7 +354,7 @@ void emit_cooperative_copy_loop(
         stmt = "if (" + language_extension.expression(node.guard().predicate(coords)) + ") { " + stmt + " }";
     }
     stream << stmt << std::endl;
-    if (unrolled) {
+    if (unrolled && !exact) {
         stream << "}" << std::endl; // close the `__tc_c < size` bounds guard
     }
     stream << "}" << std::endl;

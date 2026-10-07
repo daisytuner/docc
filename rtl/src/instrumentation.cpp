@@ -397,6 +397,10 @@ private:
         return ns / 1000;
     }
 
+    double ns2_to_us2(double ns) {
+        return ns / 1e6;
+    }
+
     void split_string(const char* str, std::vector<std::string>& out) {
         if (!str) {
             return;
@@ -731,7 +735,7 @@ private:
         // Runtime stats
         entry << "\"runtime\":{";
         entry << "\"mean\":" << ns_to_us(region.runtime_mean) << ",";
-        entry << "\"variance\":" << ns_to_us(region.runtime_variance) << ",";
+        entry << "\"variance\":" << ns2_to_us2(region.runtime_variance) << ","; // Unit is ns^2
         entry << "\"count\":" << region.runtime_n << ",";
         entry << "\"min\":" << ns_to_us(region.runtime_min) << ",";
         entry << "\"max\":" << ns_to_us(region.runtime_max);

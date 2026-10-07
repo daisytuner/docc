@@ -8,10 +8,15 @@ import numpy as np
 from pathlib import Path
 import base64
 
+
 @pytest.fixture(autouse=True)
 def clean_daisy_env():
     """Fixture to clean up __DAISY_INSTRUMENTATION_* environment variables before and after each test."""
-    old_env = {key: value for key, value in os.environ.items() if key.startswith("__DAISY_INSTRUMENTATION_")}
+    old_env = {
+        key: value
+        for key, value in os.environ.items()
+        if key.startswith("__DAISY_INSTRUMENTATION_")
+    }
     for key in list(old_env):
         os.environ.pop(key, None)
     yield
@@ -19,6 +24,7 @@ def clean_daisy_env():
         if key.startswith("__DAISY_INSTRUMENTATION_"):
             os.environ.pop(key, None)
     os.environ.update(old_env)
+
 
 @pytest.mark.parametrize("target", ["cuda", "rocm"])
 def test_reduce_half(target, tmp_path):
@@ -265,16 +271,28 @@ def test_instrumentation_aggregate(event):
     for event_name in event_names:
         assert event_name in event["args"]["metrics"]
         assert event["args"]["metrics"][event_name]["mean"] > 0
-        assert event["args"]["metrics"][event_name]["min"] > 0
-        assert event["args"]["metrics"][event_name]["max"] > 0
+        event_min = event["args"]["metrics"][event_name]["min"]
+        event_max = event["args"]["metrics"][event_name]["max"]
+        assert event_min > 0
+        assert event_max > 0
         assert event["args"]["metrics"][event_name]["count"] == 10
         assert event["args"]["metrics"][event_name]["variance"] >= 0
+        # a bounded sample's variance cannot exceed a quarter of its squared range
+        assert (
+            event["args"]["metrics"][event_name]["variance"]
+            <= ((event_max - event_min) / 2) ** 2
+        )
 
     assert "runtime" in event["args"]["metrics"]
     assert event["args"]["metrics"]["runtime"]["mean"] > 0
-    assert event["args"]["metrics"]["runtime"]["min"] > 0
-    assert event["args"]["metrics"]["runtime"]["max"] > 0
+    rt_min = event["args"]["metrics"]["runtime"]["min"]
+    rt_max = event["args"]["metrics"]["runtime"]["max"]
+    assert rt_min > 0
+    assert rt_max > 0
     assert event["args"]["metrics"]["runtime"]["variance"] >= 0
+    assert (
+        event["args"]["metrics"]["runtime"]["variance"] <= ((rt_max - rt_min) / 2) ** 2
+    )
     assert event["args"]["metrics"]["runtime"]["count"] == 10
 
     assert np.allclose(

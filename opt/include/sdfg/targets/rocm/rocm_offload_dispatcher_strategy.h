@@ -41,6 +41,9 @@ public:
 
     ROCMOffloadDispatcherStrategy(StructuredSDFG& sdfg, const StructuredLoop& loop);
 
+    /// For library node dispatchers without a scheduled loop: no architecture-specific kernel features.
+    explicit ROCMOffloadDispatcherStrategy(StructuredSDFG& sdfg);
+
     void dispatch_kernel_launch_error_check(
         codegen::PrettyPrinter& stream, const codegen::LanguageExtension& language_extension
     );
@@ -56,6 +59,14 @@ public:
     std::string kernel_header_file_extension() const override;
 
     std::string warp_shuffle_xor(const std::string& value, const std::string& lane_mask) const override;
+
+    std::string runtime_api_prefix() const override;
+    std::string runtime_header() const override;
+    void dispatch_runtime_error_check(
+        codegen::PrettyPrinter& stream,
+        const codegen::LanguageExtension& language_extension,
+        const std::string& status_variable
+    ) const override;
 
     codegen::TargetType get_instrumentation_kernel_target_type() const override;
 };
