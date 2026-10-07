@@ -113,13 +113,16 @@ def _localize_operands(builder, a_name, b_name, k_panel_blocks=2):
         ls.apply(builder, am)
 
 
-def _add_einsum_mma_nest(builder, M, N, K, tile_m, tile_n, a, b, c):
+def _add_einsum_mma_nest(
+    builder, M, N, K, tile_m, tile_n, a, b, c, swap_operands=False
+):
     """Build the raw matmul loop nest ``c[i,j] += a[i,k] * b[k,j]`` (row-major).
 
     Grid maps tile the ``M x N`` output by ``tile_m x tile_n``; the two inner
     sequential loops walk one tile and the sequential ``Reduce`` accumulates over
     ``K``. Returns the ``_i1`` tile loop -- the outermost loop of the MMA block
-    that ``GpuMmaEinsumTransform`` is applied to.
+    that ``GpuMmaEinsumTransform`` is applied to. ``swap_operands`` writes the
+    product as ``b * a`` so B is the einsum's first input.
     """
     dev = Pointer(HALF, StorageType.AMD_Generic())
 
@@ -152,8 +155,12 @@ def _add_einsum_mma_nest(builder, M, N, K, tile_m, tile_n, a, b, c):
     fma = builder.add_tasklet(
         blk, TaskletCode.fp_fma, ["_in1", "_in2", "_in3"], ["_out"]
     )
-    builder.add_memlet(blk, a_in, "", fma, "_in1", f"{K}*_i1 + _k0", dev)
-    builder.add_memlet(blk, b_in, "", fma, "_in2", f"_j1 + {N}*_k0", dev)
+    builder.add_memlet(
+        blk, a_in, "", fma, "_in2" if swap_operands else "_in1", f"{K}*_i1 + _k0", dev
+    )
+    builder.add_memlet(
+        blk, b_in, "", fma, "_in1" if swap_operands else "_in2", f"_j1 + {N}*_k0", dev
+    )
     builder.add_memlet(blk, c_in, "", fma, "_in3", f"{N}*_i1 + _j1", dev)
     builder.add_memlet(blk, fma, "_out", c_out, "", f"{N}*_i1 + _j1", dev)
 
@@ -219,7 +226,7 @@ def test_mma_einsum_expand_applies(arch_name, M, N, K, tile_m, tile_n):
 # ---------------------------------------------------------------------------
 
 
-def _build_executable_einsum_mma(M, N, K, tile_m, tile_n):
+def _build_executable_einsum_mma(M, N, K, tile_m, tile_n, swap_operands=False):
     """Full runnable matmul: host args, device buffers, H2D/D2H transfers, kernel."""
     builder = StructuredSDFGBuilder("test_mma_einsum_exec")
     host = Pointer(HALF)
@@ -244,7 +251,9 @@ def _build_executable_einsum_mma(M, N, K, tile_m, tile_n):
     off("B", "dB", DataTransferDirection.H2D, BufferLifecycle.ALLOC, K * N)
     off("C", "dC", DataTransferDirection.H2D, BufferLifecycle.ALLOC, M * N)
 
-    loop_i1 = _add_einsum_mma_nest(builder, M, N, K, tile_m, tile_n, "dA", "dB", "dC")
+    loop_i1 = _add_einsum_mma_nest(
+        builder, M, N, K, tile_m, tile_n, "dA", "dB", "dC", swap_operands
+    )
 
     off("C", "dC", DataTransferDirection.D2H, BufferLifecycle.FREE, M * N)
     off("dA", "dA", DataTransferDirection.NONE, BufferLifecycle.FREE, 0)
@@ -260,25 +269,34 @@ EXEC_CASES = [
 ]
 
 
+def _assert_matmul_close(C, ref):
+    # Relative L2: fp16 output rounding is ~5e-4; a wrong or transposed product is O(1).
+    rel = np.linalg.norm(C.astype(np.float32) - ref) / np.linalg.norm(ref)
+    assert rel < 1e-2, f"relative L2 error {rel}"
+
+
 @pytest.mark.rocm()
+@pytest.mark.parametrize("swap_operands", [False, True], ids=["ab", "ba"])
 @pytest.mark.parametrize("arch_name", ARCHES)
 @pytest.mark.parametrize(
     "M,N,K,tile_m,tile_n",
     EXEC_CASES,
     ids=[f"{m}x{n}x{k}_{tm}x{tn}" for (m, n, k, tm, tn) in EXEC_CASES],
 )
-def test_mma_einsum_expand_executes(arch_name, M, N, K, tile_m, tile_n):
+def test_mma_einsum_expand_executes(arch_name, M, N, K, tile_m, tile_n, swap_operands):
     if RocmArch.current_name() != arch_name:
         pytest.skip(f"DOCC_ROCM_ARCH ({RocmArch.current_name()}) != {arch_name}")
     arch = RocmArch.get_current()
 
     output_dir = (
         PYTEST_OUTPUT_DIR
-        / f"mma_einsum_{arch_name}_{M}x{N}x{K}_{tile_m}x{tile_n}_executes"
+        / f"mma_einsum_{arch_name}_{M}x{N}x{K}_{tile_m}x{tile_n}_{swap_operands}_executes"
     )
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    builder, loop_i1 = _build_executable_einsum_mma(M, N, K, tile_m, tile_n)
+    builder, loop_i1 = _build_executable_einsum_mma(
+        M, N, K, tile_m, tile_n, swap_operands
+    )
     builder.dump(output_dir, "init", True, True)
 
     am = AnalysisManager(builder)
@@ -302,7 +320,7 @@ def test_mma_einsum_expand_executes(arch_name, M, N, K, tile_m, tile_n):
     compiled(A.reshape(-1), B.reshape(-1), C.reshape(-1))
 
     ref = A.astype(np.float32) @ B.astype(np.float32)
-    np.testing.assert_allclose(C.astype(np.float32), ref, rtol=5e-2, atol=5e-2)
+    _assert_matmul_close(C, ref)
 
 
 # ---------------------------------------------------------------------------
@@ -377,4 +395,4 @@ def test_mma_einsum_local_storage_executes(arch_name, M, N, K, tile_m, tile_n):
     compiled(A.reshape(-1), B.reshape(-1), C.reshape(-1))
 
     ref = A.astype(np.float32) @ B.astype(np.float32)
-    np.testing.assert_allclose(C.astype(np.float32), ref, rtol=5e-2, atol=5e-2)
+    _assert_matmul_close(C, ref)

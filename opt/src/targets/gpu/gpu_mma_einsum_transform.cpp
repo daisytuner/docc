@@ -106,12 +106,13 @@ einsum::ReplaceOutcome GpuMmaEinsumReplacer::
         analysis.layout_b.value(),
         analysis.layout_y.value(),
         analysis.input_type,
-        analysis.output_type,
+        GpuMmaExpander::accumulator_type(*mma_arch, analysis.input_type, analysis.output_type),
         analysis.output_type,
         impl_type.value(),
         true,
         cluster.consumed_loops.front()->debug_info(),
-        {2, 0, 1} // EinsumCluster has output as last input, not as first as TensorNodes do
+        // {y, a, b}: the cluster lists the output after its inputs, and A/B in no particular order.
+        {static_cast<int>(cluster.inputs.size()), analysis.a_idx, analysis.b_idx}
     );
 }
 
