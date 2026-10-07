@@ -95,8 +95,8 @@ def _localize_operands(builder, a_name, b_name):
     """
     for container in (a_name, b_name):
         am = AnalysisManager(builder)
-        k_loop = am.loop_analysis().find_loop_by_indvar("tile_k0")
-        assert k_loop is not None, "expander must create the 'tile_k0' K-sweep loop"
+        k_loop = am.loop_analysis().find_loop_by_indvar("dummy0")
+        assert k_loop is not None, "expander must create the 'dummy0' loop"
         access = _access_in_loop(k_loop, container, want_read=True)
         ls = LocalStorage(k_loop, access, swizzle_layout=False, lane_contiguous=False)
         assert ls.can_be_applied(
@@ -271,7 +271,7 @@ def test_mma_einsum_expand_executes(arch_name, M, N, K, tile_m, tile_n):
     output_dir.mkdir(parents=True, exist_ok=True)
 
     builder, loop_i1 = _build_executable_einsum_mma(M, N, K, tile_m, tile_n)
-    builder.dump(str(output_dir), "init", True, True)
+    builder.dump(output_dir, "init", True, True)
 
     am = AnalysisManager(builder)
     xform = GpuMmaEinsumTransform(loop_i1, arch)
@@ -280,7 +280,7 @@ def test_mma_einsum_expand_executes(arch_name, M, N, K, tile_m, tile_n):
     assert xform.matched
     sdfg = builder.move()
 
-    sdfg.dump(str(output_dir), "expanded", True, True)
+    sdfg.dump(output_dir, "expanded", True, True)
     sdfg.validate()
 
     lib_path = sdfg._compile(str(output_dir), "rocm")
@@ -350,10 +350,12 @@ def test_mma_einsum_local_storage_executes(arch_name, M, N, K, tile_m, tile_n):
     xform.apply(builder, am)
     assert xform.matched
 
+    builder.dump(output_dir, "expanded", True, True)
+
     _localize_operands(builder, "dA", "dB")
 
+    builder.dump(output_dir, "localized", True, True)
     sdfg = builder.move()
-    sdfg.dump(str(output_dir), "expanded", True, True)
     sdfg.validate()
 
     lib_path = sdfg._compile(str(output_dir), "rocm")

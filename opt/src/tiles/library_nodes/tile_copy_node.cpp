@@ -123,11 +123,21 @@ void TileCopyNode::replace(const symbolic::ExpressionMapping& replacements) {
     guard_.replace_symbols(replacements);
 }
 
+static std::ostream& operator<<(std::ostream& os, const symbolic::Expression& expr) {
+    if (expr.is_null()) {
+        os << "null";
+    } else {
+        os << expr->__str__();
+    }
+    return os;
+}
+
 std::string TileCopyNode::toStr() const {
     std::stringstream ss;
     ss << "tile_copy(";
     ss << "dir: " << (direction_ == CopyDirection::In ? "in" : "out") << ", ";
-    ss << "cothr: " << coop_threads_->__str__() << ", ";
+    ss << "cothr: " << coop_threads_ << ", ";
+    ss << "src: " << plan_.src << ", ";
     ss << "dst: " << plan_.dst;
     ss << ")";
     return ss.str();

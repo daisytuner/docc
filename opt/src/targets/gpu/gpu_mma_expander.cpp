@@ -231,7 +231,16 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
         symbolic::add(k_tile, symbolic::integer(mma_tiling.mma_block_size.k))
     );
 
-    auto& load_block = builder.add_block(k_sweep.root());
+    auto dummy_indvar = symbolic::symbol(builder.find_new_name("dummy"));
+    builder.add_container(dummy_indvar->get_name(), types::Scalar(types::PrimitiveType::Int32));
+    auto& dummy_load_map = builder.add_for(
+        k_sweep.root(),
+        dummy_indvar,
+        symbolic::Lt(dummy_indvar, symbolic::integer(1)),
+        symbolic::zero(),
+        symbolic::add(dummy_indvar, symbolic::integer(1))
+    );
+    auto& load_block = builder.add_block(dummy_load_map.root());
     create_fragment_load(
         standalone,
         input_type,
@@ -428,7 +437,7 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::handle_expand(
             new_impl_type.value(),
             true,
             node.debug_info(),
-            {1, 2, 0} // {a, b, y}, but MatmulNode has y, a, b
+            {0, 1, 2} // {y, a, b}: MatMulNode access nodes are already ordered Y, A, B
         );
     } else {
         return context.unable();

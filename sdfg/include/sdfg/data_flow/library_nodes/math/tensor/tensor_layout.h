@@ -1,6 +1,7 @@
 #pragma once
 #include <memory>
 #include <nlohmann/json_fwd.hpp>
+#include <optional>
 
 #include "sdfg/data_flow/memlet.h"
 #include "sdfg/symbolic/symbolic.h"
@@ -64,6 +65,15 @@ public:
     /// the indices must match the shape size
     /// @return the offset from the pointer to the element in elements
     symbolic::Expression resolve_element(const symbolic::MultiExpression& indices, bool require_to_element = true) const;
+
+    /// Partition the layout's ``offset()`` into one coordinate offset per dimension.
+    ///
+    /// Attempts to express ``offset()`` as ``sum_d strides[d] * dim_offset[d]`` and returns the
+    /// per-dimension ``dim_offset`` (same size as ``shape``). Only possible when every stride is an
+    /// integer immediate and every summand of the offset is ``imm * x`` with ``imm`` divisible by
+    /// some stride (the largest such stride is used); returns nullopt otherwise. Resolving
+    /// coordinates with these offsets added to them yields the same element address as this layout.
+    std::optional<symbolic::MultiExpression> partition_offset_into_dimensions() const;
 
     /// For memory access ranges, this should return the maximum offset from the pointer that is possible, in elements.
     /// This is used to determine the size of a pointer access
