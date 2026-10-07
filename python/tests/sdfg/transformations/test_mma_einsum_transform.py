@@ -396,3 +396,60 @@ def test_mma_einsum_local_storage_executes(arch_name, M, N, K, tile_m, tile_n):
 
     ref = A.astype(np.float32) @ B.astype(np.float32)
     _assert_matmul_close(C, ref)
+
+
+# ---------------------------------------------------------------------------
+# Register blocking: each wave owns wave_tile_m x wave_tile_n MMA blocks.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("wave_tile", [(3, 1), (1, 3), (0, 1)])
+def test_mma_einsum_wave_tile_must_divide(wave_tile):
+    builder, loop_i1 = _build_offloaded_einsum_mma(1024, 1024, 1024, 64, 64)
+    am = AnalysisManager(builder)
+    xform = GpuMmaEinsumTransform(loop_i1, RocmArch.get_from_name("gfx90a"), *wave_tile)
+    assert not xform.can_be_applied(builder, am)
+
+
+WAVE_TILES = [(1, 1), (2, 2), (1, 4), (4, 1), (4, 4)]
+
+
+@pytest.mark.rocm()
+@pytest.mark.parametrize("localize", [False, True], ids=["global", "lds"])
+@pytest.mark.parametrize(
+    "wave_tile", WAVE_TILES, ids=[f"wt{m}x{n}" for (m, n) in WAVE_TILES]
+)
+def test_mma_einsum_wave_tile_executes(wave_tile, localize):
+    arch_name = RocmArch.current_name()
+    if arch_name not in ARCHES:
+        pytest.skip(f"unsupported DOCC_ROCM_ARCH {arch_name}")
+    M, N, K, tile = 128, 128, 64, 64
+    output_dir = (
+        PYTEST_OUTPUT_DIR
+        / f"mma_einsum_wt_{arch_name}_wt{wave_tile[0]}x{wave_tile[1]}_{localize}"
+    )
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    builder, loop_i1 = _build_executable_einsum_mma(M, N, K, tile, tile)
+    am = AnalysisManager(builder)
+    xform = GpuMmaEinsumTransform(loop_i1, RocmArch.get_current(), *wave_tile)
+    assert xform.can_be_applied(builder, am)
+    xform.apply(builder, am)
+    assert xform.matched
+    if localize:
+        _localize_operands(builder, "dA", "dB")
+
+    sdfg = builder.move()
+    sdfg.validate()
+    lib_path = sdfg._compile(str(output_dir), "rocm")
+
+    generated = "\n".join(p.read_text() for p in output_dir.rglob("*rocm.cpp"))
+    assert generated.count("mma_sync(") == wave_tile[0] * wave_tile[1]
+
+    rng = np.random.default_rng(0)
+    A = (rng.standard_normal((M, K)) * 0.1).astype(np.float16)
+    B = (rng.standard_normal((K, N)) * 0.1).astype(np.float16)
+    C = np.zeros((M, N), dtype=np.float16)
+    CompiledSDFG(lib_path, sdfg)(A.reshape(-1), B.reshape(-1), C.reshape(-1))
+
+    _assert_matmul_close(C, A.astype(np.float32) @ B.astype(np.float32))
