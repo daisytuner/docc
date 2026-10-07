@@ -34,7 +34,7 @@ ElementWiseDataflowTensorNode::ElementOutput EluNode::expand_operation_dataflow(
 
     types::Scalar scalar_type(input0.required_type);
 
-    // elu(x) = max(x, 0) + alpha * (exp(min(x, 0)) - 1)
+    // elu(x) = max(x, 0) + alpha * expm1(min(x, 0))
 
     // x
     auto& assign_op = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
@@ -60,31 +60,24 @@ ElementWiseDataflowTensorNode::ElementOutput EluNode::expand_operation_dataflow(
     auto& output_node_min = create_tmp_access_node(builder, block, "tmp_elu_min_", scalar_type);
     builder.add_computational_memlet(block, min_op, "_out", output_node_min, {}, scalar_type);
 
-    // exp(min(x, 0))
-    auto& exp_op = builder.add_library_node<
-        math::cmath::CMathNode>(block, debug_info_, cmath::CMathFunction::exp, input0.required_type);
-    builder.add_computational_memlet(block, output_node_min, exp_op, "_in1", {}, scalar_type);
-    auto& output_node_exp = create_tmp_access_node(builder, block, "tmp_elu_exp_", scalar_type);
-    builder.add_computational_memlet(block, exp_op, "_out", output_node_exp, {}, scalar_type);
+    // expm1(min(x, 0)), avoids cancellation of exp(x) - 1 for small |x|
+    auto& expm1_op = builder.add_library_node<
+        math::cmath::CMathNode>(block, debug_info_, cmath::CMathFunction::expm1, input0.required_type);
+    builder.add_computational_memlet(block, output_node_min, expm1_op, "_in1", {}, scalar_type);
+    auto& output_node_expm1 = create_tmp_access_node(builder, block, "tmp_elu_expm1_", scalar_type);
+    builder.add_computational_memlet(block, expm1_op, "_out", output_node_expm1, {}, scalar_type);
 
-    // exp(min(x, 0)) - 1
-    auto& one_node = builder.add_constant(block, "1.0", scalar_type);
-    auto& sub_op = builder.add_tasklet(block, data_flow::TaskletCode::fp_sub, "_out", {"_in1", "_in2"});
-    builder.add_computational_memlet(block, output_node_exp, sub_op, "_in1", {}, scalar_type);
-    builder.add_computational_memlet(block, one_node, sub_op, "_in2", {}, scalar_type);
-    auto& output_node_sub = create_tmp_access_node(builder, block, "tmp_elu_sub_", scalar_type);
-    builder.add_computational_memlet(block, sub_op, "_out", output_node_sub, {}, scalar_type);
-
-    // alpha * (exp(min(x, 0)) - 1) + max(x, 0)
+    // alpha * expm1(min(x, 0)) + max(x, 0)
     auto& last_op = builder.add_tasklet(block, data_flow::TaskletCode::fp_fma, "_out", {"_in1", "_in2", "_in3"});
     if (has_alpha_input) {
         auto& alpha_input = needed_inputs.at(1);
         alpha_input.consumer = &last_op;
         alpha_input.input_conn_index = 0;
     } else {
+        auto& one_node = builder.add_constant(block, "1.0", scalar_type);
         builder.add_computational_memlet(block, one_node, last_op, "_in1", {}, scalar_type);
     }
-    builder.add_computational_memlet(block, output_node_sub, last_op, "_in2", {}, scalar_type);
+    builder.add_computational_memlet(block, output_node_expm1, last_op, "_in2", {}, scalar_type);
     builder.add_computational_memlet(block, output_node_max, last_op, "_in3", {}, scalar_type);
 
     return {.producer = &last_op, .output_conn_index = 0, .type = input0.required_type};
