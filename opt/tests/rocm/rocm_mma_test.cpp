@@ -19,6 +19,9 @@
 #include "sdfg/targets/gpu/gpu_types.h"
 #include "sdfg/targets/rocm/rocm.h"
 #include "sdfg/targets/rocm/rocm_arch.h"
+#include "sdfg/tiles/library_nodes/tile_copy_node.h"
+#include "sdfg/tiles/transformations/local_storage.h"
+#include "sdfg/types/array.h"
 #include "sdfg/types/tensor.h"
 #include "sdfg/visitor/for_each.h"
 #include "sdfg_debug_dump.h"
@@ -329,6 +332,102 @@ TEST(ROCMMMATest, ExpansionEmitsWaveMap_gfx90a) {
 
     auto out = test::utils::test_codegen(builder.subject(), "wave_map", true);
     EXPECT_NE(out.main_function.find("dim3((int)(128), (int)(2), (int)(1))"), std::string::npos) << out.main_function;
+}
+
+namespace {
+
+structured_control_flow::StructuredLoop* find_loop(analysis::AnalysisManager& am, const std::string& prefix) {
+    for (auto* loop : am.get<analysis::LoopAnalysis>().loops()) {
+        auto* sl = dynamic_cast<structured_control_flow::StructuredLoop*>(loop);
+        if (sl && sl->indvar()->get_name().rfind(prefix, 0) == 0) {
+            return sl;
+        }
+    }
+    return nullptr;
+}
+
+const data_flow::AccessNode* find_access(structured_control_flow::StructuredLoop& loop, const std::string& container) {
+    const data_flow::AccessNode* found = nullptr;
+    visitor::for_each_block(loop.root(), [&](structured_control_flow::Block& b) {
+        for (auto* a : b.dataflow().data_nodes()) {
+            if (a->data() == container) {
+                found = a;
+            }
+        }
+    });
+    return found;
+}
+
+const tiles::TileCopyNode* find_copy_from(structured_control_flow::ControlFlowNode& root, const std::string& src) {
+    const tiles::TileCopyNode* found = nullptr;
+    visitor::for_each_block(root, [&](structured_control_flow::Block& b) {
+        for (auto* lib : b.dataflow().library_nodes()) {
+            auto* copy = dynamic_cast<tiles::TileCopyNode*>(lib);
+            if (!copy) {
+                continue;
+            }
+            for (auto& e : b.dataflow().in_edges(*copy)) {
+                auto* a = dynamic_cast<const data_flow::AccessNode*>(&e.src());
+                if (e.dst_conn() == "_src" && a && a->data() == src) {
+                    found = copy;
+                }
+            }
+        }
+    });
+    return found;
+}
+
+} // namespace
+
+// Step 3: per-wave slots, and the lanes of each wave share the copy.
+TEST(ROCMMMATest, LocalStorageOnWaveMapSharesCopyAcrossLanes_gfx90a) {
+    auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
+    sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+    auto [block, matmul_node] = build_offloaded_mma_structure(builder, 1024, 1024, 1024, 32, 32, 16, arch);
+    passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch));
+
+    for (const std::string container : {"A", "B"}) {
+        analysis::AnalysisManager am(builder.subject());
+        auto* dummy = find_loop(am, "dummy");
+        ASSERT_NE(dummy, nullptr);
+        auto* access = find_access(*dummy, container);
+        ASSERT_NE(access, nullptr) << container;
+        transformations::LocalStorage ls(*dummy, *access);
+        ASSERT_TRUE(ls.can_be_applied(builder, am)) << container;
+        ls.apply(builder, am);
+    }
+    EXPECT_NO_THROW(builder.subject().validate());
+
+    // A: slot per wave_row (x), cooperative over wave_col (y) + the 64 lanes.
+    auto* copy_a = find_copy_from(builder.subject().root(), "A");
+    ASSERT_NE(copy_a, nullptr);
+    EXPECT_EQ(copy_a->coop_axes(), std::vector<int>{1});
+    EXPECT_EQ(copy_a->coop_lanes(), 64u);
+    EXPECT_TRUE(symbolic::eq(copy_a->coop_threads(), symbolic::integer(128))) << copy_a->coop_threads()->__str__();
+    EXPECT_NE(copy_a->plan().dst.offset()->__str__().find("wave_row"), std::string::npos);
+
+    // B: slot per wave_col (y), cooperative over the whole wave_row axis (2 waves x 64 lanes).
+    auto* copy_b = find_copy_from(builder.subject().root(), "B");
+    ASSERT_NE(copy_b, nullptr);
+    EXPECT_EQ(copy_b->coop_axes(), std::vector<int>{0});
+    EXPECT_EQ(copy_b->coop_lanes(), 1u);
+    EXPECT_TRUE(symbolic::eq(copy_b->coop_threads(), symbolic::integer(128))) << copy_b->coop_threads()->__str__();
+    EXPECT_NE(copy_b->plan().dst.offset()->__str__().find("wave_col"), std::string::npos);
+
+    // Two slots per operand (one per wave), not one per thread.
+    for (const auto& name : builder.subject().containers()) {
+        if (name.rfind("__daisy_local_storage_", 0) == 0) {
+            auto& type = static_cast<const types::Array&>(builder.subject().type(name));
+            EXPECT_TRUE(symbolic::eq(type.num_elements(), symbolic::integer(2))) << name;
+        }
+    }
+
+    auto out = test::utils::test_codegen(builder.subject(), "wave_map_ls", true);
+    std::string kernels;
+    for (auto& [name, snippet] : out.snippets) {
+        kernels += snippet.content;
+    }
+    EXPECT_NE(kernels.find("threadIdx.x % 64 + threadIdx.y * (64)"), std::string::npos) << kernels;
 }
 
 } // namespace sdfg::rocm

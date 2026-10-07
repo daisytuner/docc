@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <set>
+
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/codegen/language_extensions/c_language_extension.h"
@@ -471,4 +473,86 @@ TEST(TileCopyNodeTest, CudaVectorAtomEmitsWidenedTransfer) {
     EXPECT_NE(code.find("__tc_c = __tc_tid * 4"), std::string::npos) << code;
     EXPECT_NE(code.find("__tc_c += __tc_n * 4"), std::string::npos) << code;
     EXPECT_NE(code.find("reinterpret_cast<int4*>"), std::string::npos) << code;
+}
+
+namespace {
+tiles::TileCopyNode& add_lane_copy(
+    builder::StructuredSDFGBuilder& builder,
+    structured_control_flow::Block& block,
+    std::vector<int> coop_axes,
+    size_t coop_lanes,
+    symbolic::Expression coop_threads = {}
+) {
+    tiles::TiledCopy plan;
+    plan.src = tiles::Layout({symbolic::integer(256)}, {symbolic::integer(1)}, symbolic::integer(0));
+    plan.dst = tiles::Layout({symbolic::integer(256)}, {symbolic::integer(1)}, symbolic::integer(0));
+    plan.atom = tiles::CopyAtom::ScalarSync;
+    return static_cast<tiles::TileCopyNode&>(builder.add_library_node<tiles::TileCopyNode>(
+        block,
+        DebugInfo(),
+        data_flow::ImplementationType_NONE,
+        plan,
+        tiles::CopyDirection::In,
+        2,
+        tiles::TileGuard{},
+        std::move(coop_axes),
+        coop_threads,
+        coop_lanes
+    ));
+}
+} // namespace
+
+TEST(TileCopyNodeTest, CoopLanesDefaultOneAndRoundTrip) {
+    auto builder = make_builder();
+    auto& block = builder.add_block(builder.subject().root());
+    auto& plain = add_lane_copy(builder, block, {1}, 1);
+    EXPECT_EQ(plain.coop_lanes(), 1u);
+    auto& lanes = add_lane_copy(builder, block, {1}, 64, symbolic::integer(128));
+    EXPECT_EQ(lanes.coop_lanes(), 64u);
+
+    auto cloned = lanes.clone(lanes.element_id(), lanes.vertex(), lanes.get_parent());
+    EXPECT_EQ(dynamic_cast<tiles::TileCopyNode*>(cloned.get())->coop_lanes(), 64u);
+
+    serializer::JSONSerializer serializer;
+    auto j = serializer.serialize(builder.subject());
+    auto restored = serializer.deserialize(j);
+    auto& rblock = static_cast<structured_control_flow::Block&>(restored->root().at(0));
+    std::multiset<size_t> seen;
+    for (auto& n_ : rblock.dataflow().nodes()) {
+        if (auto* c = dynamic_cast<tiles::TileCopyNode*>(&n_)) {
+            seen.insert(c->coop_lanes());
+        }
+    }
+    EXPECT_EQ(seen, (std::multiset<size_t>{1, 64}));
+}
+
+TEST(TileCopyNodeTest, CoopLanesRejectCooperativeX) {
+    auto builder = make_builder();
+    auto& block = builder.add_block(builder.subject().root());
+    EXPECT_THROW(add_lane_copy(builder, block, {0, 1}, 64), InvalidSDFGException);
+}
+
+// A wave-granular slot axis on x: the lanes (threadIdx.x % 64) join the y-cooperative split.
+TEST(TileCopyNodeTest, CudaCooperativeDispatcherSplitsOverLanes) {
+    auto builder = make_builder();
+    types::Scalar elem(types::PrimitiveType::Half);
+    types::Pointer ptr(elem);
+    builder.add_container("g", ptr);
+    builder.add_container("buf", types::Array(elem, symbolic::integer(256)));
+    auto& block = builder.add_block(builder.subject().root());
+    auto& g = builder.add_access(block, "g");
+    auto& buf = builder.add_access(block, "buf");
+    auto& node = add_lane_copy(builder, block, {1}, 64, symbolic::integer(128));
+    builder.add_computational_memlet(block, buf, node, "_dst", {}, ptr);
+    builder.add_computational_memlet(block, g, node, "_src", {}, ptr);
+
+    cuda::CUDALanguageExtension le(builder.subject());
+    cuda::tiles::TileCopyNodeDispatcher dispatcher(le, builder.subject(), block.dataflow(), node);
+    codegen::PrettyPrinter stream, globals;
+    codegen::CodeSnippetFactory snippets;
+    dispatcher.dispatch(stream, globals, snippets);
+
+    const std::string code = stream.str();
+    EXPECT_NE(code.find("int __tc_tid = threadIdx.x % 64 + threadIdx.y * (64);"), std::string::npos) << code;
+    EXPECT_NE(code.find("__tc_i < ((256) + (128) * 1 - 1) / ((128) * 1)"), std::string::npos) << code;
 }

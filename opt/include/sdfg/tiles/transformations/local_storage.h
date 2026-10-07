@@ -157,6 +157,7 @@ private:
         std::vector<int> coop_axes;
         tiles::TileGuard guard;
         symbolic::Expression coop_threads; ///< symbolic cooperating thread count (null = unknown)
+        size_t coop_lanes = 1; ///< lanes of a wave-granular slot axis that join the copy
     };
 
     /// Build the complete movement plan for the staged tile from its geometry.

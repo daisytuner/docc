@@ -683,8 +683,7 @@ void LocalStorage::apply_prepared(builder::StructuredSDFGBuilder& builder, analy
                     if (d.schedule().level() == tiles::Level::Group && d.schedule().spatial_axis() == axis &&
                         SymEngine::is_a<SymEngine::Integer>(*d.schedule().parallel_size())) {
                         return static_cast<
-                            size_t>(SymEngine::rcp_static_cast<const SymEngine::Integer>(d.schedule().parallel_size())
-                                        ->as_int());
+                            size_t>(d.schedule().parallel_size()->as_int() * d.schedule().lanes()->as_int());
                     }
                 }
                 return 1;
@@ -1124,6 +1123,12 @@ LocalStorage::BuiltCopy LocalStorage::build_tiled_copy(
             }
         }
         std::sort(out.coop_axes.begin(), out.coop_axes.end());
+        // A wave-granular slot axis selects the slot per wave, so its lanes share the copy.
+        for (const auto& d : plan_.private_axes()) {
+            if (d.schedule().level() == tiles::Level::Group) {
+                out.coop_lanes = std::max<size_t>(out.coop_lanes, d.schedule().lanes()->as_int());
+            }
+        }
         out.guard = tile_boundary_guard(analysis_manager, guard_scope, vsizes);
     } else {
         // Dense whole-block (MultiDim or Transposed, no slots): the buffer's affine
@@ -1141,7 +1146,7 @@ LocalStorage::BuiltCopy LocalStorage::build_tiled_copy(
     // trip count the backend can unroll; a non-constant (0) parallel_size leaves it
     // null (runtime loop).
     {
-        symbolic::Expression threads = symbolic::integer(1);
+        symbolic::Expression threads = symbolic::integer(static_cast<int64_t>(out.coop_lanes));
         bool known = true;
         auto mul_axis = [&](const tiles::TileAxis& d) {
             if (d.schedule().level() != tiles::Level::Group) {
@@ -1151,13 +1156,13 @@ LocalStorage::BuiltCopy LocalStorage::build_tiled_copy(
             if (symbolic::eq(ps, symbolic::integer(0))) {
                 known = false;
             } else {
-                threads = symbolic::mul(threads, ps);
+                threads = symbolic::mul(threads, symbolic::mul(ps, d.schedule().lanes()));
             }
         };
         for (const auto& d : plan_.cooperative_axes()) {
             mul_axis(d);
         }
-        if (out.coop_axes.empty()) {
+        if (out.coop_axes.empty() && out.coop_lanes == 1) {
             for (const auto& d : plan_.private_axes()) {
                 mul_axis(d);
             }
@@ -1205,7 +1210,16 @@ void LocalStorage::emit_copy_node(
     auto& src_acc = builder.add_access(copy_block, copy_in ? container_ : local_name_);
     const size_t bytes = types::bit_width(pointer_type.primitive_type()) / 8;
     auto& node = builder.add_library_node<tiles::TileCopyNode>(
-        copy_block, loop_.debug_info(), impl, copy.plan, direction, bytes, copy.guard, copy.coop_axes, copy.coop_threads
+        copy_block,
+        loop_.debug_info(),
+        impl,
+        copy.plan,
+        direction,
+        bytes,
+        copy.guard,
+        copy.coop_axes,
+        copy.coop_threads,
+        copy.coop_lanes
     );
     builder.add_computational_memlet(copy_block, dst_acc, node, "_dst", {}, pointer_type);
     builder.add_computational_memlet(copy_block, src_acc, node, "_src", {}, pointer_type);
