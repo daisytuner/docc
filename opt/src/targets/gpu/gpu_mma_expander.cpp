@@ -178,20 +178,26 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
         ScheduleType_GPU_Offload::create(arch, TargetLevel::Y_BLOCK, waves_n)
     );
 
-    // K-tile loop variable; A and B advance along K with it.
+    // K-block loop (unit stride, so LoopTiling can strip-mine it into staged K-panels).
     auto k_tile = symbolic::symbol(builder.find_new_name("tile_k"));
-    builder.add_container(k_tile->get_name(), types::Scalar(types::get_primitive_type_to_hold_upper_bound(k_dim)));
+    auto k_blocks = GpuMmaSupport::get_integer_block_count(k_dim, mma_tiling.mma_block_size.k);
+    if (!k_blocks) {
+        throw std::runtime_error("MMA expansion: K is not a multiple of the MMA block size");
+    }
+    auto k_count = symbolic::integer(k_blocks);
+    builder.add_container(k_tile->get_name(), types::Scalar(types::get_primitive_type_to_hold_upper_bound(k_count)));
+    auto k_elem = symbolic::mul(k_tile, symbolic::integer(mma_tiling.mma_block_size.k));
 
     auto lda = layout_a.get_stride(a_col_major ? 1 : 0);
     auto a_offset = SymEngine::add({
         layout_a.offset(),
         SymEngine::mul({brow_in_tile, symbolic::integer(mma_tiling.mma_block_size.m), layout_a.get_stride(0)}),
-        SymEngine::mul({k_tile, layout_a.get_stride(1)}),
+        SymEngine::mul({k_elem, layout_a.get_stride(1)}),
     });
     auto ldb = layout_b.get_stride(b_col_major ? 1 : 0);
     auto b_offset = SymEngine::add(
         {layout_b.offset(),
-         SymEngine::mul({k_tile, layout_b.get_stride(0)}),
+         SymEngine::mul({k_elem, layout_b.get_stride(0)}),
          SymEngine::mul({bcol_in_tile, symbolic::integer(mma_tiling.mma_block_size.n), layout_b.get_stride(1)})}
     );
     auto ldc = layout_y.get_stride(y_col_major ? 1 : 0);
@@ -214,21 +220,12 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
     auto& k_sweep = builder.add_for(
         row_map.root(),
         k_tile,
-        symbolic::Lt(k_tile, k_dim),
+        symbolic::Lt(k_tile, k_count),
         symbolic::zero(),
-        symbolic::add(k_tile, symbolic::integer(mma_tiling.mma_block_size.k))
+        symbolic::add(k_tile, symbolic::integer(1))
     );
 
-    auto dummy_indvar = symbolic::symbol(builder.find_new_name("dummy"));
-    builder.add_container(dummy_indvar->get_name(), types::Scalar(types::PrimitiveType::Int32));
-    auto& dummy_load_map = builder.add_for(
-        k_sweep.root(),
-        dummy_indvar,
-        symbolic::Lt(dummy_indvar, symbolic::integer(1)),
-        symbolic::zero(),
-        symbolic::add(dummy_indvar, symbolic::integer(1))
-    );
-    auto& load_block = builder.add_block(dummy_load_map.root());
+    auto& load_block = builder.add_block(k_sweep.root());
     create_fragment_load(
         standalone,
         input_type,

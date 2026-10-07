@@ -21,6 +21,7 @@
 #include "sdfg/targets/rocm/rocm_arch.h"
 #include "sdfg/tiles/library_nodes/tile_copy_node.h"
 #include "sdfg/tiles/transformations/local_storage.h"
+#include "sdfg/transformations/loop_tiling.h"
 #include "sdfg/types/array.h"
 #include "sdfg/types/tensor.h"
 #include "sdfg/visitor/for_each.h"
@@ -314,6 +315,18 @@ TEST(ROCMMMATest, ExpansionEmitsWaveMap_gfx90a) {
     EXPECT_EQ(gpu::ScheduleType_GPU_Offload::lanes(x_block->schedule_type())->as_int(), 64);
     EXPECT_EQ(gpu::ScheduleType_GPU_Offload::parallel_size(y_block->schedule_type())->as_int(), 2);
 
+    // One unit-stride K-block loop (1024/16 blocks) directly holding loads and MMA; no helper loop.
+    std::vector<structured_control_flow::StructuredLoop*> sequential;
+    for (auto* loop : am.get<analysis::LoopAnalysis>().loops()) {
+        auto* sl = dynamic_cast<structured_control_flow::StructuredLoop*>(loop);
+        if (sl && sl->schedule_type().category() != structured_control_flow::ScheduleTypeCategory::Offloader) {
+            sequential.push_back(sl);
+        }
+    }
+    ASSERT_EQ(sequential.size(), 1u);
+    EXPECT_TRUE(symbolic::eq(sequential.front()->stride(), symbolic::one()));
+    EXPECT_TRUE(symbolic::eq(sequential.front()->num_iterations(), symbolic::integer(64)));
+
     // Fragment addresses use the wave index directly: no thread-index division.
     size_t loads = 0;
     visitor::for_each_block(builder.subject().root(), [&](structured_control_flow::Block& b) {
@@ -336,14 +349,25 @@ TEST(ROCMMMATest, ExpansionEmitsWaveMap_gfx90a) {
 
 namespace {
 
-structured_control_flow::StructuredLoop* find_loop(analysis::AnalysisManager& am, const std::string& prefix) {
+structured_control_flow::StructuredLoop* find_loop(analysis::AnalysisManager& am, const std::string& indvar) {
     for (auto* loop : am.get<analysis::LoopAnalysis>().loops()) {
         auto* sl = dynamic_cast<structured_control_flow::StructuredLoop*>(loop);
-        if (sl && sl->indvar()->get_name().rfind(prefix, 0) == 0) {
+        if (sl && sl->indvar()->get_name() == indvar) {
             return sl;
         }
     }
     return nullptr;
+}
+
+/// Strip-mine the MMA K-block loop `tile_k0` into K-panels of @p blocks MMA blocks:
+/// `tile_k0_tile0` walks the panels, `tile_k0` (inner) the blocks of one panel.
+void strip_mine_k(builder::StructuredSDFGBuilder& builder, size_t blocks) {
+    analysis::AnalysisManager am(builder.subject());
+    auto* k = find_loop(am, "tile_k0");
+    ASSERT_NE(k, nullptr);
+    transformations::LoopTiling tiling(*k, blocks, /*simplify_bounds=*/true);
+    ASSERT_TRUE(tiling.can_be_applied(builder, am));
+    tiling.apply(builder, am);
 }
 
 const data_flow::AccessNode* find_access(structured_control_flow::StructuredLoop& loop, const std::string& container) {
@@ -377,10 +401,10 @@ const tiles::TileCopyNode* find_copy_from(structured_control_flow::ControlFlowNo
     return found;
 }
 
-void localize(builder::StructuredSDFGBuilder& builder, const std::string& loop_prefix) {
+void localize(builder::StructuredSDFGBuilder& builder, const std::string& loop_indvar) {
     for (const std::string container : {"A", "B"}) {
         analysis::AnalysisManager am(builder.subject());
-        auto* loop = find_loop(am, loop_prefix);
+        auto* loop = find_loop(am, loop_indvar);
         ASSERT_NE(loop, nullptr);
         auto* access = find_access(*loop, container);
         ASSERT_NE(access, nullptr) << container;
@@ -477,7 +501,8 @@ TEST(ROCMMMATest, LocalStorageOnWaveMapSharesCopyAcrossLanes_gfx90a) {
     auto [block, matmul_node] = build_offloaded_mma_structure(builder, 1024, 1024, 1024, 32, 32, 16, arch);
     passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch));
 
-    localize(builder, "dummy");
+    strip_mine_k(builder, 2);
+    localize(builder, "tile_k0");
     EXPECT_NO_THROW(builder.subject().validate());
 
     // A: slot per wave_row (x), cooperative over wave_col (y) + the 64 lanes.
@@ -512,28 +537,45 @@ TEST(ROCMMMATest, LocalStorageOnWaveMapSharesCopyAcrossLanes_gfx90a) {
     EXPECT_NE(kernels.find("threadIdx.x % 64 + threadIdx.y * (64)"), std::string::npos) << kernels;
 }
 
-// Step 4: each fragment reads its own wave's slot of the MultiDim [2][16][16] buffer.
-TEST(ROCMMMATest, LocalStorageFragmentsReadOwnSlot_gfx90a) {
+// Steps 4+5: K strip-mined into 32-wide panels (2 MMA blocks); each fragment reads a
+// 16x16 window of its own wave's slot of the MultiDim [2][16][32] / [2][32][16] buffers.
+TEST(ROCMMMATest, LocalStorageFragmentsReadOwnSlotWindow_gfx90a) {
     auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
     sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
     auto [block, matmul_node] = build_offloaded_mma_structure(builder, 1024, 1024, 1024, 32, 32, 16, arch);
     passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch));
-    localize(builder, "dummy");
+    strip_mine_k(builder, 2);
+    localize(builder, "tile_k0");
+    EXPECT_NO_THROW(builder.subject().validate());
 
     analysis::AnalysisManager am(builder.subject());
-    auto wave_row = symbolic::mod(find_loop(am, "wave_row")->indvar(), symbolic::integer(2));
-    auto wave_col = symbolic::mod(find_loop(am, "wave_col")->indvar(), symbolic::integer(2));
+    auto wave_row = symbolic::mod(find_loop(am, "wave_row0")->indvar(), symbolic::integer(2));
+    auto wave_col = symbolic::mod(find_loop(am, "wave_col0")->indvar(), symbolic::integer(2));
+    // Element column of the fragment within the panel: 16 * (block - panel start).
+    auto k_in_panel = symbolic::
+        mul(symbolic::integer(16),
+            symbolic::sub(find_loop(am, "tile_k0")->indvar(), find_loop(am, "tile_k0_tile0")->indvar()));
 
     auto* a = find_local_load(builder.subject().root(), "A");
     ASSERT_NE(a, nullptr);
-    EXPECT_TRUE(symbolic::eq(a->layout().offset, symbolic::mul(symbolic::integer(256), wave_row)))
-        << a->layout().offset->__str__();
-    EXPECT_TRUE(symbolic::eq(a->layout().ldstride, symbolic::integer(16)));
+    EXPECT_TRUE(
+        symbolic::
+            eq(a->layout().offset,
+               symbolic::expand(symbolic::add(symbolic::mul(symbolic::integer(512), wave_row), k_in_panel)))
+    ) << a->layout().offset->__str__();
+    EXPECT_TRUE(symbolic::eq(a->layout().ldstride, symbolic::integer(32)));
 
     auto* b = find_local_load(builder.subject().root(), "B");
     ASSERT_NE(b, nullptr);
-    EXPECT_TRUE(symbolic::eq(b->layout().offset, symbolic::mul(symbolic::integer(256), wave_col)))
-        << b->layout().offset->__str__();
+    EXPECT_TRUE(
+        symbolic::
+            eq(b->layout().offset,
+               symbolic::expand(
+                   symbolic::
+                       add(symbolic::mul(symbolic::integer(512), wave_col),
+                           symbolic::mul(symbolic::integer(16), k_in_panel))
+               ))
+    ) << b->layout().offset->__str__();
     EXPECT_TRUE(symbolic::eq(b->layout().ldstride, symbolic::integer(16)));
 
     // Library-node operands keep a dense MultiDim buffer (no flat padded slot block).
@@ -541,40 +583,43 @@ TEST(ROCMMMATest, LocalStorageFragmentsReadOwnSlot_gfx90a) {
         if (name.rfind("__daisy_local_storage_", 0) == 0) {
             auto& slots = static_cast<const types::Array&>(builder.subject().type(name));
             EXPECT_TRUE(symbolic::eq(slots.num_elements(), symbolic::integer(2))) << name;
-            auto& rows = static_cast<const types::Array&>(slots.element_type());
-            EXPECT_TRUE(symbolic::eq(rows.num_elements(), symbolic::integer(16))) << name;
+            EXPECT_NE(dynamic_cast<const types::Array*>(&slots.element_type()), nullptr) << name;
         }
     }
 }
 
-// Step 4: staging the whole K panel at tile_k gives each fragment a sub-window view.
+// Staging around the whole K-block loop: the slot holds the full K panel.
 TEST(ROCMMMATest, LocalStorageFragmentsReadSubWindow_gfx90a) {
     auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
     sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
     auto [block, matmul_node] = build_offloaded_mma_structure(builder, 1024, 1024, 64, 32, 32, 16, arch);
     passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch));
-    localize(builder, "tile_k");
+    localize(builder, "tile_k0");
     EXPECT_NO_THROW(builder.subject().validate());
 
     analysis::AnalysisManager am(builder.subject());
-    auto wave_row = symbolic::mod(find_loop(am, "wave_row")->indvar(), symbolic::integer(2));
-    auto wave_col = symbolic::mod(find_loop(am, "wave_col")->indvar(), symbolic::integer(2));
-    auto tile_k = find_loop(am, "tile_k")->indvar();
+    auto wave_row = symbolic::mod(find_loop(am, "wave_row0")->indvar(), symbolic::integer(2));
+    auto wave_col = symbolic::mod(find_loop(am, "wave_col0")->indvar(), symbolic::integer(2));
+    auto tile_k = find_loop(am, "tile_k0")->indvar();
 
-    // A slot = [16][64] panel; the fragment window starts at column tile_k.
+    // A slot = [16][64] panel; the fragment window starts at column 16*tile_k.
     auto* a = find_local_load(builder.subject().root(), "A");
     ASSERT_NE(a, nullptr);
-    EXPECT_TRUE(symbolic::eq(a->layout().offset, symbolic::add(symbolic::mul(symbolic::integer(1024), wave_row), tile_k)))
-        << a->layout().offset->__str__();
+    EXPECT_TRUE(
+        symbolic::eq(
+            a->layout().offset,
+            symbolic::add(symbolic::mul(symbolic::integer(1024), wave_row), symbolic::mul(symbolic::integer(16), tile_k))
+        )
+    ) << a->layout().offset->__str__();
     EXPECT_TRUE(symbolic::eq(a->layout().ldstride, symbolic::integer(64)));
 
-    // B slot = [64][16] panel; the fragment window starts at row tile_k.
+    // B slot = [64][16] panel; the fragment window starts at row 16*tile_k.
     auto* b = find_local_load(builder.subject().root(), "B");
     ASSERT_NE(b, nullptr);
     EXPECT_TRUE(
         symbolic::eq(
             b->layout().offset,
-            symbolic::add(symbolic::mul(symbolic::integer(1024), wave_col), symbolic::mul(symbolic::integer(16), tile_k))
+            symbolic::add(symbolic::mul(symbolic::integer(1024), wave_col), symbolic::mul(symbolic::integer(256), tile_k))
         )
     ) << b->layout().offset->__str__();
     EXPECT_TRUE(symbolic::eq(b->layout().ldstride, symbolic::integer(16)));
