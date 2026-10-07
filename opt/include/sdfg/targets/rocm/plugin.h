@@ -15,7 +15,6 @@
 #include "sdfg/targets/rocm/blas/batched_gemm.h"
 #include "sdfg/targets/rocm/blas/dot.h"
 #include "sdfg/targets/rocm/blas/gemm.h"
-#include "sdfg/targets/rocm/blas/gemm_handtuned.h"
 #include "sdfg/targets/rocm/rocm.h"
 #include "sdfg/targets/rocm/rocm_data_offloading_node.h"
 #include "sdfg/targets/rocm/rocm_map_dispatcher.h"
