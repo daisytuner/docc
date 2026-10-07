@@ -25,8 +25,8 @@ HardSigmoidNode::HardSigmoidNode(
           parent,
           LibraryNodeType_HardSigmoid,
           shape,
-          "X",
-          {"Y", "alpha", "beta"},
+          "Y",
+          {"X", "alpha", "beta"},
           quantization,
           impl_type
       ) {
@@ -44,8 +44,6 @@ ElementWiseDataflowTensorNode::ElementOutput HardSigmoidNode::expand_operation_d
 
     types::Scalar scalar_type(input0.required_type);
 
-    throw std::runtime_error("Hardsigmoid: untested expand");
-
     // alpha * x + beta
     auto& first_op = builder.add_tasklet(block, data_flow::TaskletCode::fp_fma, "_out", {"_in1", "_in2", "_in3"});
     input_alpha.consumer = &first_op;
@@ -57,7 +55,7 @@ ElementWiseDataflowTensorNode::ElementOutput HardSigmoidNode::expand_operation_d
     auto& output_node_fma = create_tmp_access_node(builder, block, "tmp_hs_fma_", scalar_type);
     builder.add_computational_memlet(block, first_op, "_out", output_node_fma, {}, scalar_type);
     // min(1, x)
-    auto& one_node = builder.add_constant(block, "1.0f", scalar_type);
+    auto& one_node = builder.add_constant(block, "1.0", scalar_type);
     auto& min_op = builder.add_library_node<
         math::cmath::CMathNode>(block, debug_info_, cmath::CMathFunction::fmin, input0.required_type);
     builder.add_computational_memlet(block, output_node_fma, min_op, "_in1", {}, scalar_type);
@@ -66,7 +64,7 @@ ElementWiseDataflowTensorNode::ElementOutput HardSigmoidNode::expand_operation_d
     builder.add_computational_memlet(block, min_op, "_out", output_node_min, {}, scalar_type);
 
     // max(0, x)
-    auto& zero_node = builder.add_constant(block, "0.0f", scalar_type);
+    auto& zero_node = builder.add_constant(block, "0.0", scalar_type);
     auto& last_op = builder.add_library_node<
         math::cmath::CMathNode>(block, debug_info_, cmath::CMathFunction::fmax, input0.required_type);
     builder.add_computational_memlet(block, output_node_min, last_op, "_in1", {}, scalar_type);
