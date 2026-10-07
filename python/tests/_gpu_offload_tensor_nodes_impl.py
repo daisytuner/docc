@@ -998,8 +998,11 @@ LAYERNORM = NodeSpec(
     "layernorm",
     _layernorm_operands,
     _layernorm_add,
-    lambda p, rng: {"X": _random(rng, p["x"], p["dtype"])}
-    | {n: _random(rng, p["norm"], p["dtype"]) for n in ("Gamma", "Beta")},
+    lambda p, rng: {
+        op.name: _random(rng, op.shape, op.dtype)
+        for op in _layernorm_operands(p)
+        if op.name in ("X", "Gamma", "Beta")
+    },
     _layernorm_reference,
     (
         ("plain_f32", dict(x=(4, 8), norm=(8,), variant="plain", dtype=f32)),
@@ -1081,8 +1084,6 @@ BROKEN_ON_CPU = {
     },
     "hard_sigmoid-2d_f32": "node invalid: input Y is not scalar",
     "hard_sigmoid-3d_f64": "node invalid: input Y is not scalar",
-    "layernorm-plain_f32": "wrong result without bias",
-    "layernorm-affine_f32": "wrong result without bias",
 }
 
 
