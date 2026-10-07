@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <functional>
 #include <map>
 #include <optional>
 #include <set>
@@ -33,13 +34,26 @@ typedef math::tensor::TensorLayout MemoryLayout;
 struct MemoryTile {
     std::string container; // Container name
     data_flow::Subset min_subset; // Minimum accessed indices in this tile
-    data_flow::Subset max_subset; // Maximum accessed indices in this tile
+    data_flow::Subset max_subset; // Maximum accessed indices (empty for point tiles: max == min)
     MemoryLayout layout; // Inferred tile layout at this loop level
     bool first_dim_bounded; // True if first dimension is bounded (Tensor/Array), false for unbounded pointers
 
+    // A pre-ranged access already spans its full accessed region in [min_subset,
+    // max_subset] (e.g. a library-node operand whose offset was partitioned into
+    // per-dimension bases). During merge its min gets only a lower bound and its
+    // max only an upper bound. A point access (false) samples a single index that
+    // must be swept over its own symbols' ranges, so both bounds apply to it.
+    bool pre_ranged = false;
+
     /// A trivial (point) tile: a single index per dimension (min == max), as
-    /// opposed to a bounded range.
+    /// opposed to a bounded range. Point tiles leave `max_subset` empty.
     bool is_point() const;
+
+    /// The upper index per dimension: `max_subset`, or `min_subset` for point
+    /// tiles (which omit `max_subset` since it would equal `min_subset`).
+    const data_flow::Subset& upper_subset() const {
+        return max_subset.empty() ? min_subset : max_subset;
+    }
 
     /// Per-dimension bounding box extents: max[d] - min[d] + 1.
     /// Returns `SymEngine::null` in slot `d` if that extent would depend on an
@@ -114,7 +128,8 @@ private:
         const MemoryLayout& reference_layout,
         size_t ndims,
         symbolic::BoundAnalysis& ba_tight,
-        symbolic::BoundAnalysis& ba_loose
+        symbolic::BoundAnalysis& ba_loose,
+        const std::function<bool(const symbolic::Expression&)>& bounds_are_sound
     );
 
 protected:

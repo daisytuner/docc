@@ -5,6 +5,8 @@
 #include <set>
 #include <unordered_set>
 
+#include <symengine/integer.h>
+
 #include "sdfg/analysis/assumptions_analysis.h"
 #include "sdfg/data_flow/access_node.h"
 #include "sdfg/data_flow/library_node.h"
@@ -57,7 +59,105 @@ bool layout_has_unbounded_first_dim(const MemoryLayout& layout) {
     return !shape.empty() && is_unbounded_dim(shape[0]);
 }
 
-std::optional<MemoryTile> try_library_node_access(const data_flow::Memlet& memlet) {
+// Combine a set of accesses into a single [min_subset, max_subset] bounding box.
+// A point access (pre_ranged == false) samples one index per dimension and is
+// swept with BOTH its lower and upper bound; a pre-ranged access already brackets
+// its region, so its min contributes only a lower bound and its max only an upper
+// bound. Returns nullopt if any contributing index is unsound or unbounded, or if
+// a dimension receives no contribution. This is the single source of truth shared
+// by the whole-scope `tile` (all accesses) and each `tile_group` (a subset).
+std::optional<std::pair<data_flow::Subset, data_flow::Subset>> bound_accesses(
+    const std::vector<const MemoryTile*>& accesses,
+    size_t ndims,
+    symbolic::BoundAnalysis& ba_tight,
+    symbolic::BoundAnalysis& ba_loose,
+    const std::function<bool(const symbolic::Expression&)>& bounds_are_sound
+) {
+    auto bound_lb = [&](const symbolic::Expression& e) -> symbolic::Expression {
+        auto r = ba_tight.lower_bound(e);
+        if (r.is_null()) {
+            r = ba_loose.lower_bound(e);
+        }
+        return r;
+    };
+    auto bound_ub = [&](const symbolic::Expression& e) -> symbolic::Expression {
+        auto r = ba_tight.upper_bound(e);
+        if (r.is_null()) {
+            r = ba_loose.upper_bound(e);
+        }
+        return r;
+    };
+
+    // point_indices  : sampled indices, swept with both lower and upper bounds.
+    // pre_min_indices: lower edge of a pre-ranged access, lower bound only.
+    // pre_max_indices: upper edge of a pre-ranged access, upper bound only.
+    std::vector<std::vector<symbolic::Expression>> point_indices(ndims);
+    std::vector<std::vector<symbolic::Expression>> pre_min_indices(ndims);
+    std::vector<std::vector<symbolic::Expression>> pre_max_indices(ndims);
+    for (const auto* acc : accesses) {
+        if (acc->min_subset.size() != ndims) {
+            continue;
+        }
+        const auto& maxs = acc->upper_subset();
+        for (size_t d = 0; d < ndims; ++d) {
+            if (acc->pre_ranged) {
+                pre_min_indices[d].push_back(acc->min_subset[d]);
+                pre_max_indices[d].push_back(maxs[d]);
+            } else {
+                point_indices[d].push_back(acc->min_subset[d]);
+            }
+        }
+    }
+
+    data_flow::Subset min_subset;
+    data_flow::Subset max_subset;
+    for (size_t d = 0; d < ndims; ++d) {
+        symbolic::Expression dim_min = SymEngine::null;
+        symbolic::Expression dim_max = SymEngine::null;
+
+        for (const auto& idx : point_indices[d]) {
+            if (!bounds_are_sound(idx)) {
+                return std::nullopt;
+            }
+            auto lb = bound_lb(idx);
+            auto ub = bound_ub(idx);
+            if (lb.is_null() || ub.is_null()) {
+                return std::nullopt;
+            }
+            dim_min = dim_min.is_null() ? lb : symbolic::min(dim_min, lb);
+            dim_max = dim_max.is_null() ? ub : symbolic::max(dim_max, ub);
+        }
+        for (const auto& idx : pre_min_indices[d]) {
+            if (!bounds_are_sound(idx)) {
+                return std::nullopt;
+            }
+            auto lb = bound_lb(idx);
+            if (lb.is_null()) {
+                return std::nullopt;
+            }
+            dim_min = dim_min.is_null() ? lb : symbolic::min(dim_min, lb);
+        }
+        for (const auto& idx : pre_max_indices[d]) {
+            if (!bounds_are_sound(idx)) {
+                return std::nullopt;
+            }
+            auto ub = bound_ub(idx);
+            if (ub.is_null()) {
+                return std::nullopt;
+            }
+            dim_max = dim_max.is_null() ? ub : symbolic::max(dim_max, ub);
+        }
+
+        if (dim_min.is_null() || dim_max.is_null()) {
+            return std::nullopt;
+        }
+        min_subset.push_back(symbolic::simplify(dim_min));
+        max_subset.push_back(symbolic::simplify(dim_max));
+    }
+    return std::make_pair(std::move(min_subset), std::move(max_subset));
+}
+
+std::optional<MemoryTile> try_library_node_access(const data_flow::Memlet& memlet, symbolic::AssumptionsBounds& bounds) {
     // A consumed operand is a bare base pointer: an empty-subset input memlet
     // (AccessNode -> LibraryNode) whose connector selects the operand.
     if (!memlet.subset().empty()) {
@@ -94,16 +194,47 @@ std::optional<MemoryTile> try_library_node_access(const data_flow::Memlet& memle
     }
 
     const size_t dims = layout->shape().size();
+
     data_flow::Subset min_subset;
     data_flow::Subset max_subset;
     min_subset.reserve(dims);
     max_subset.reserve(dims);
-    for (size_t d = 0; d < dims; ++d) {
-        min_subset.push_back(symbolic::integer(0));
-        max_subset.push_back(symbolic::sub(layout->shape()[d], symbolic::integer(1)));
+
+    // Fold a non-trivial offset into per-dimension bases so the whole-operand
+    // tile carries a loop-dependent range that merge can bound one-sidedly. Only
+    // sound when every stride is a positive immediate: that guarantees
+    // min_subset <= max_subset for any symbolic base and a monotone
+    // coordinate -> address mapping.
+    bool positive_immediate_strides = true;
+    for (const auto& st : layout->strides()) {
+        if (!SymEngine::is_a<SymEngine::Integer>(*st) ||
+            SymEngine::rcp_static_cast<const SymEngine::Integer>(st)->as_int() <= 0) {
+            positive_immediate_strides = false;
+            break;
+        }
+    }
+
+    std::optional<symbolic::MultiExpression> bases;
+    if (positive_immediate_strides) {
+        bases = layout->partition_offset_into_dimensions();
+    }
+
+    if (bases) {
+        for (size_t d = 0; d < dims; ++d) {
+            min_subset.push_back((*bases)[d]);
+            max_subset.push_back(symbolic::add((*bases)[d], symbolic::sub(layout->shape()[d], symbolic::integer(1))));
+        }
+        // The offset is now carried entirely by the per-dimension bases.
+        layout = MemoryLayout(layout->shape(), layout->strides(), symbolic::integer(0));
+    } else {
+        for (size_t d = 0; d < dims; ++d) {
+            min_subset.push_back(symbolic::integer(0));
+            max_subset.push_back(symbolic::sub(layout->shape()[d], symbolic::integer(1)));
+        }
     }
 
     MemoryTile info{access->data(), min_subset, max_subset, *layout, !layout_has_unbounded_first_dim(*layout)};
+    info.pre_ranged = true;
     return info;
 }
 
@@ -224,7 +355,7 @@ void MemoryLayoutAnalysis::
 
     auto& dfg = block.dataflow();
     for (auto& memlet : dfg.edges()) {
-        if (auto lib_access = try_library_node_access(memlet)) {
+        if (auto lib_access = try_library_node_access(memlet, bounds)) {
             record_access(memlet, std::move(*lib_access));
             continue;
         }
@@ -254,7 +385,7 @@ void MemoryLayoutAnalysis::
                 auto& tensor_type = dynamic_cast<const types::Tensor&>(memlet.base_type());
 
                 MemoryLayout layout(tensor_type.shape(), tensor_type.strides(), tensor_type.offset());
-                MemoryTile layout_info{container_name, subset, subset, layout, true};
+                MemoryTile layout_info{container_name, subset, {}, layout, true};
                 record_access(memlet, layout_info);
                 continue;
             }
@@ -271,7 +402,7 @@ void MemoryLayoutAnalysis::
                 }
 
                 MemoryLayout layout(shape);
-                MemoryTile layout_info{container_name, subset, subset, layout, true};
+                MemoryTile layout_info{container_name, subset, {}, layout, true};
                 record_access(memlet, layout_info);
                 continue;
             }
@@ -306,7 +437,7 @@ void MemoryLayoutAnalysis::
                     }
 
                     MemoryLayout layout(shape);
-                    MemoryTile layout_info{container_name, subset, subset, layout, false};
+                    MemoryTile layout_info{container_name, subset, {}, layout, false};
                     record_access(memlet, layout_info);
                     continue;
                 }
@@ -337,7 +468,7 @@ void MemoryLayoutAnalysis::
                 // Store symbolic indices and dimensions with unbounded first dimension
                 // The merge phase will attempt to bound the first dimension using loop assumptions
                 MemoryLayout layout(shape);
-                MemoryTile layout_info{container_name, result.indices, result.indices, layout, false};
+                MemoryTile layout_info{container_name, result.indices, {}, layout, false};
                 record_access(memlet, layout_info);
                 continue;
             }
@@ -523,13 +654,6 @@ void MemoryLayoutAnalysis::merge_scope_layouts(
         }
         return r;
     };
-    auto bound_ub = [&](const symbolic::Expression& e) -> symbolic::Expression {
-        auto r = ba_tight.upper_bound(e);
-        if (r.is_null()) {
-            r = ba_loose.upper_bound(e);
-        }
-        return r;
-    };
 
     // Find direct child scopes that may carry tiles for this scope
     std::set<const structured_control_flow::ControlFlowNode*> direct_child_scopes;
@@ -550,27 +674,17 @@ void MemoryLayoutAnalysis::merge_scope_layouts(
 
         size_t ndims = 0;
         MemoryLayout reference_layout({symbolic::one()});
-        // Separate min/max index lists to avoid unnecessary symbolic min/max
-        std::vector<std::vector<symbolic::Expression>> min_indices;
-        std::vector<std::vector<symbolic::Expression>> max_indices;
+        // Accesses feeding this scope's whole-container tile. Point accesses are
+        // swept with both bounds, pre-ranged ones (library operands and every
+        // propagated child tile) one-sidedly; bound_accesses applies both rules.
+        std::vector<const MemoryTile*> tile_accesses;
 
         if (!inner_tiles.empty()) {
-            // Use inner tile min/max as representative values
-            // Inner tiles have already resolved inner loop variables to their bounds
+            // Inner tiles have already resolved inner loop variables to their bounds;
+            // each is a resolved range (pre_ranged) bounded one-sidedly here.
             ndims = inner_tiles[0]->min_subset.size();
             reference_layout = inner_tiles[0]->layout;
-            min_indices.resize(ndims);
-            max_indices.resize(ndims);
-
-            for (const auto* tile : inner_tiles) {
-                if (tile->min_subset.size() != ndims) {
-                    continue;
-                }
-                for (size_t d = 0; d < ndims; ++d) {
-                    min_indices[d].push_back(tile->min_subset[d]);
-                    max_indices[d].push_back(tile->max_subset[d]);
-                }
-            }
+            tile_accesses = inner_tiles;
 
             // Propagate tile groups from child scopes upward using the same
             // base-partitioning logic: group inner groups by their min_subset
@@ -640,34 +754,12 @@ void MemoryLayoutAnalysis::merge_scope_layouts(
                 // For each partition, merge constituent tile bounds and collect memlets
                 std::vector<MemoryTileGroup> result_groups;
                 for (auto& op : outer_partitions) {
-                    data_flow::Subset grp_min, grp_max;
-                    bool grp_bounded = true;
-
-                    for (size_t d = 0; d < ndims; ++d) {
-                        symbolic::Expression d_min = SymEngine::null;
-                        symbolic::Expression d_max = SymEngine::null;
-                        for (const auto* c : op.constituents) {
-                            auto lb = bound_lb(c->tile.min_subset[d]);
-                            if (lb.is_null()) {
-                                grp_bounded = false;
-                                break;
-                            }
-                            d_min = d_min.is_null() ? lb : symbolic::min(d_min, lb);
-
-                            auto ub = bound_ub(c->tile.max_subset[d]);
-                            if (ub.is_null()) {
-                                grp_bounded = false;
-                                break;
-                            }
-                            d_max = d_max.is_null() ? ub : symbolic::max(d_max, ub);
-                        }
-                        if (!grp_bounded) {
-                            break;
-                        }
-                        grp_min.push_back(symbolic::simplify(d_min));
-                        grp_max.push_back(symbolic::simplify(d_max));
+                    std::vector<const MemoryTile*> constituent_tiles;
+                    for (const auto* c : op.constituents) {
+                        constituent_tiles.push_back(&c->tile);
                     }
-                    if (!grp_bounded) {
+                    auto gb = bound_accesses(constituent_tiles, ndims, ba_tight, ba_loose, bounds_are_sound);
+                    if (!gb) {
                         continue;
                     }
 
@@ -678,8 +770,13 @@ void MemoryLayoutAnalysis::merge_scope_layouts(
                     }
 
                     MemoryTile grp_tile{
-                        container, grp_min, grp_max, reference_layout, !layout_has_unbounded_first_dim(reference_layout)
+                        container,
+                        gb->first,
+                        gb->second,
+                        reference_layout,
+                        !layout_has_unbounded_first_dim(reference_layout)
                     };
+                    grp_tile.pre_ranged = true;
                     result_groups.push_back({grp_tile, std::move(grp_memlets)});
                 }
 
@@ -693,51 +790,50 @@ void MemoryLayoutAnalysis::merge_scope_layouts(
             auto& reference_shape = first_access.layout.shape();
             ndims = reference_shape.size();
             reference_layout = first_access.layout;
-            min_indices.resize(ndims);
-            max_indices.resize(ndims);
 
             bool consistent = true;
-            bool group_has_range = false;
-            for (const auto* memlet_ptr : memlets) {
-                if (!accesses_.at(memlet_ptr).is_point()) {
-                    group_has_range = true;
-                    break;
-                }
-            }
             for (const auto* memlet_ptr : memlets) {
                 auto& acc = accesses_.at(memlet_ptr);
-                auto& shape = acc.layout.shape();
 
-                if (shape.size() != ndims) {
+                if (acc.min_subset.size() != ndims) {
                     consistent = false;
                     break;
                 }
-                // Check inner dimensions match (all except first which may be unbounded)
-                for (size_t d = 1; d < ndims; ++d) {
-                    if (!symbolic::eq(shape[d], reference_shape[d])) {
+
+                if (acc.pre_ranged) {
+                    // Pre-ranged tiles may span different shapes per access; what
+                    // must agree is the addressing stride, not the extent.
+                    auto& strides = acc.layout.strides();
+                    if (strides.size() != ndims) {
                         consistent = false;
                         break;
+                    }
+                    for (size_t d = 0; d < ndims; ++d) {
+                        if (!symbolic::eq(strides[d], reference_layout.strides()[d])) {
+                            consistent = false;
+                            break;
+                        }
+                    }
+                } else {
+                    // Point accesses must share the reference shape on all inner
+                    // dimensions (the first may be the unbounded sentinel).
+                    auto& shape = acc.layout.shape();
+                    if (shape.size() != ndims) {
+                        consistent = false;
+                        break;
+                    }
+                    for (size_t d = 1; d < ndims; ++d) {
+                        if (!symbolic::eq(shape[d], reference_shape[d])) {
+                            consistent = false;
+                            break;
+                        }
                     }
                 }
                 if (!consistent) {
                     break;
                 }
 
-                // A point access populates only min_indices and lets the bound
-                // loop fuse the min/max passes; a range access contributes distinct
-                // min/max and forces its fused peers to spell out their max too.
-                if (acc.min_subset.size() != ndims) {
-                    consistent = false;
-                    break;
-                }
-                for (size_t d = 0; d < ndims; ++d) {
-                    min_indices[d].push_back(acc.min_subset[d]);
-                    if (!acc.is_point()) {
-                        max_indices[d].push_back(acc.max_subset[d]);
-                    } else if (group_has_range) {
-                        max_indices[d].push_back(acc.min_subset[d]);
-                    }
-                }
+                tile_accesses.push_back(&acc);
             }
 
             if (!consistent) {
@@ -745,87 +841,25 @@ void MemoryLayoutAnalysis::merge_scope_layouts(
             }
 
             // Compute tile groups for raw memlets
-            compute_tile_groups(scope, container, memlets, reference_layout, ndims, ba_tight, ba_loose);
+            compute_tile_groups(scope, container, memlets, reference_layout, ndims, ba_tight, ba_loose, bounds_are_sound);
         }
 
         if (ndims == 0) {
             continue;
         }
 
-        // Bound each candidate index individually via the reused BoundAnalysis
-        // (memoized across all per-dim queries below) and combine the per-index
-        // bounds into the dim's min/max via symbolic::min / symbolic::max.
-        //
-        // In the raw-access path, `max_indices[d]` is left empty as a signal
-        // that it would otherwise alias `min_indices[d]`. When detected, we
-        // fuse the two passes into a single walk so the soundness check and
-        // outer-loop bookkeeping run once per index instead of twice.
-        data_flow::Subset min_subset;
-        data_flow::Subset max_subset;
-        bool all_bounded = true;
-
-        for (size_t d = 0; d < ndims; ++d) {
-            symbolic::Expression dim_min = SymEngine::null;
-            symbolic::Expression dim_max = SymEngine::null;
-            const bool fused = max_indices[d].empty();
-
-            for (const auto& idx : min_indices[d]) {
-                if (!bounds_are_sound(idx)) {
-                    all_bounded = false;
-                    break;
-                }
-                auto lb = bound_lb(idx);
-                if (lb.is_null()) {
-                    all_bounded = false;
-                    break;
-                }
-                dim_min = dim_min.is_null() ? lb : symbolic::min(dim_min, lb);
-
-                if (fused) {
-                    // Soundness already checked above for the same idx.
-                    auto ub = bound_ub(idx);
-                    if (ub.is_null()) {
-                        all_bounded = false;
-                        break;
-                    }
-                    dim_max = dim_max.is_null() ? ub : symbolic::max(dim_max, ub);
-                }
-            }
-            if (!all_bounded) {
-                break;
-            }
-
-            if (!fused) {
-                for (const auto& idx : max_indices[d]) {
-                    if (!bounds_are_sound(idx)) {
-                        all_bounded = false;
-                        break;
-                    }
-                    auto ub = bound_ub(idx);
-                    if (ub.is_null()) {
-                        all_bounded = false;
-                        break;
-                    }
-                    dim_max = dim_max.is_null() ? ub : symbolic::max(dim_max, ub);
-                }
-                if (!all_bounded) {
-                    break;
-                }
-            }
-
-            min_subset.push_back(symbolic::simplify(dim_min));
-            max_subset.push_back(symbolic::simplify(dim_max));
-        }
-
-        if (!all_bounded) {
+        auto merged = bound_accesses(tile_accesses, ndims, ba_tight, ba_loose, bounds_are_sound);
+        if (!merged) {
             continue;
         }
 
         // Store this scope's tile with the original memory layout. `first_dim_bounded`
         // mirrors the underlying layout: false whenever shape[0] is the unbounded sentinel.
+        // A stored tile is itself a resolved range, so parents treat it as pre-ranged.
         MemoryTile merged_tile{
-            container, min_subset, max_subset, reference_layout, !layout_has_unbounded_first_dim(reference_layout)
+            container, merged->first, merged->second, reference_layout, !layout_has_unbounded_first_dim(reference_layout)
         };
+        merged_tile.pre_ranged = true;
         tiles_.insert({{&scope, container}, merged_tile});
     }
 }
@@ -847,22 +881,16 @@ void MemoryLayoutAnalysis::compute_tile_groups(
     const MemoryLayout& reference_layout,
     size_t ndims,
     symbolic::BoundAnalysis& ba_tight,
-    symbolic::BoundAnalysis& ba_loose
+    symbolic::BoundAnalysis& ba_loose,
+    const std::function<bool(const symbolic::Expression&)>& bounds_are_sound
 ) {
-    // Bound helpers reusing the caller's BoundAnalysis instances. These share
+    // Bound helper reusing the caller's BoundAnalysis instances. These share
     // their memoization cache with merge_scope_layouts for the same scope, so
     // expressions bounded there hit instantly when re-encountered here.
     auto bound_lb = [&](const symbolic::Expression& e) -> symbolic::Expression {
         auto r = ba_tight.lower_bound(e);
         if (r.is_null()) {
             r = ba_loose.lower_bound(e);
-        }
-        return r;
-    };
-    auto bound_ub = [&](const symbolic::Expression& e) -> symbolic::Expression {
-        auto r = ba_tight.upper_bound(e);
-        if (r.is_null()) {
-            r = ba_loose.upper_bound(e);
         }
         return r;
     };
@@ -954,71 +982,23 @@ void MemoryLayoutAnalysis::compute_tile_groups(
         }
     }
 
-    // Compute tile for each merged group
+    // Compute tile for each merged group via the shared bounding helper, so a
+    // group's bounds match the whole-scope tile computed from the same accesses.
     std::vector<MemoryTileGroup> result_groups;
     for (auto& group : merged_groups) {
-        std::vector<std::vector<symbolic::Expression>> min_indices(ndims);
-        std::vector<std::vector<symbolic::Expression>> max_indices(ndims);
-
+        std::vector<const MemoryTile*> group_accesses;
         for (const auto* memlet_ptr : group.group_memlets) {
-            auto& acc = accesses_.at(memlet_ptr);
-            for (size_t d = 0; d < ndims; ++d) {
-                min_indices[d].push_back(acc.min_subset[d]);
-                max_indices[d].push_back(acc.max_subset[d]);
-            }
+            group_accesses.push_back(&accesses_.at(memlet_ptr));
         }
-
-        data_flow::Subset min_subset;
-        data_flow::Subset max_subset;
-        bool all_bounded = true;
-
-        for (size_t d = 0; d < ndims; ++d) {
-            symbolic::Expression dim_min = SymEngine::null;
-            symbolic::Expression dim_max = SymEngine::null;
-
-            for (const auto& idx : min_indices[d]) {
-                auto lb = bound_lb(idx);
-                if (lb.is_null()) {
-                    all_bounded = false;
-                    break;
-                }
-                if (dim_min.is_null()) {
-                    dim_min = lb;
-                } else {
-                    dim_min = symbolic::min(dim_min, lb);
-                }
-            }
-            if (!all_bounded) {
-                break;
-            }
-
-            for (const auto& idx : max_indices[d]) {
-                auto ub = bound_ub(idx);
-                if (ub.is_null()) {
-                    all_bounded = false;
-                    break;
-                }
-                if (dim_max.is_null()) {
-                    dim_max = ub;
-                } else {
-                    dim_max = symbolic::max(dim_max, ub);
-                }
-            }
-            if (!all_bounded) {
-                break;
-            }
-
-            min_subset.push_back(symbolic::simplify(dim_min));
-            max_subset.push_back(symbolic::simplify(dim_max));
-        }
-
-        if (!all_bounded) {
+        auto gb = bound_accesses(group_accesses, ndims, ba_tight, ba_loose, bounds_are_sound);
+        if (!gb) {
             continue;
         }
 
         MemoryTile tile{
-            container, min_subset, max_subset, reference_layout, !layout_has_unbounded_first_dim(reference_layout)
+            container, gb->first, gb->second, reference_layout, !layout_has_unbounded_first_dim(reference_layout)
         };
+        tile.pre_ranged = true;
         result_groups.push_back({tile, group.group_memlets});
     }
 
@@ -1063,6 +1043,9 @@ const MemoryTileGroup* MemoryLayoutAnalysis::
 }
 
 bool MemoryTile::is_point() const {
+    if (max_subset.empty()) {
+        return true; // point tiles omit max_subset (max == min)
+    }
     if (min_subset.size() != max_subset.size()) {
         return false;
     }
@@ -1075,10 +1058,11 @@ bool MemoryTile::is_point() const {
 }
 
 symbolic::MultiExpression MemoryTile::extents() const {
+    const auto& max = upper_subset();
     symbolic::MultiExpression result;
     for (size_t d = 0; d < min_subset.size(); ++d) {
-        auto ext = symbolic::
-            simplify(symbolic::expand(symbolic::add(symbolic::sub(max_subset[d], min_subset[d]), symbolic::one())));
+        auto ext =
+            symbolic::simplify(symbolic::expand(symbolic::add(symbolic::sub(max[d], min_subset[d]), symbolic::one())));
         // Defensive: subset values are always proven-bounded, so this should never trigger
         // for row-major layouts. Guards future custom layouts whose subsets could pick up
         // the unbounded sentinel.
@@ -1092,12 +1076,12 @@ symbolic::MultiExpression MemoryTile::extents() const {
 }
 
 symbolic::MultiExpression MemoryTile::extents_approx() const {
+    const auto& max = upper_subset();
     symbolic::MultiExpression result;
     for (size_t d = 0; d < min_subset.size(); ++d) {
         auto ext = symbolic::simplify(
-            symbolic::expand(
-                symbolic::overapproximate(symbolic::add(symbolic::sub(max_subset[d], min_subset[d]), symbolic::one()))
-            )
+            symbolic::
+                expand(symbolic::overapproximate(symbolic::add(symbolic::sub(max[d], min_subset[d]), symbolic::one())))
         );
         if (depends_on_unbounded(ext)) {
             result.push_back(SymEngine::null);
@@ -1110,11 +1094,12 @@ symbolic::MultiExpression MemoryTile::extents_approx() const {
 
 std::pair<symbolic::Expression, symbolic::Expression> MemoryTile::contiguous_range() const {
     auto& strides = layout.strides();
+    const auto& max = upper_subset();
     auto first = layout.offset();
     auto last = layout.offset();
     for (size_t d = 0; d < min_subset.size(); ++d) {
         first = symbolic::add(first, symbolic::mul(strides[d], min_subset[d]));
-        last = symbolic::add(last, symbolic::mul(strides[d], max_subset[d]));
+        last = symbolic::add(last, symbolic::mul(strides[d], max[d]));
     }
     first = symbolic::simplify(symbolic::expand(first));
     last = symbolic::simplify(symbolic::expand(last));

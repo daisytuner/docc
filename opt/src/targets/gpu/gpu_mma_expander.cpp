@@ -164,14 +164,15 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
 
     symbolic::Expression brow_in_tile;
     if (mma_tiling.macro_blocks_m > 1) {
-        auto wave_row_name = builder.find_new_name("wave_row");
-        auto brow_in_tile_sym = symbolic::symbol(wave_row_name);
-        brow_in_tile = brow_in_tile_sym;
-        builder.add_container(wave_row_name, types::Scalar(types::get_primitive_type_to_hold_upper_bound(m_dim)));
-        builder.add_assignments(
-            col_map.root(),
-            {{brow_in_tile_sym, symbolic::div(thread_x, symbolic::integer(mma_tiling.threads_per_mma_block_m))}}
-        );
+        // auto wave_row_name = builder.find_new_name("wave_row");
+        // auto brow_in_tile_sym = symbolic::symbol(wave_row_name);
+        // bounding ignores Assignments, so use the full expression instead
+        brow_in_tile = symbolic::div(thread_x, symbolic::integer(mma_tiling.threads_per_mma_block_m));
+        // builder.add_container(wave_row_name, types::Scalar(types::get_primitive_type_to_hold_upper_bound(m_dim)));
+        // builder.add_assignments(
+        // col_map.root(),
+        // {{brow_in_tile_sym, symbolic::div(thread_x, symbolic::integer(mma_tiling.threads_per_mma_block_m))}}
+        // );
     } else {
         brow_in_tile = symbolic::zero();
     }
