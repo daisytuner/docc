@@ -345,6 +345,16 @@ TEST(ROCMMMATest, ExpansionEmitsWaveMap_gfx90a) {
 
     auto out = test::utils::test_codegen(builder.subject(), "wave_map", true);
     EXPECT_NE(out.main_function.find("dim3((int)(128), (int)(2), (int)(1))"), std::string::npos) << out.main_function;
+
+    // fp16 inputs accumulate in fp32 (native MFMA accumulator); C/D fragments stay fp16.
+    std::string kernels;
+    for (auto& [name, snippet] : out.snippets) {
+        kernels += snippet.content;
+    }
+    EXPECT_NE(kernels.find("rocwmma::accumulator, 16, 16, 16, rocwmma::float32_t> mma_acc"), std::string::npos)
+        << kernels;
+    EXPECT_NE(kernels.find("rocwmma::accumulator, 16, 16, 16, rocwmma::float16_t> mma_c"), std::string::npos)
+        << kernels;
 }
 
 namespace {

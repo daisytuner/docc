@@ -393,6 +393,15 @@ void GpuMmaExpander::create_fragment_mma(
     );
 }
 
+types::PrimitiveType GpuMmaExpander::
+    accumulator_type(const GpuMmaSupport& mma, types::PrimitiveType input_type, types::PrimitiveType output_type) {
+    const bool low_precision = input_type == types::PrimitiveType::Half || input_type == types::PrimitiveType::BFloat;
+    if (low_precision && mma.supported_types(input_type, types::PrimitiveType::Float)) {
+        return types::PrimitiveType::Float;
+    }
+    return output_type;
+}
+
 passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::handle_expand(
     LibNodeExpander::ExpandContext& context, structured_control_flow::Block& block, math::tensor::MatMulNode& node
 ) const {
@@ -417,7 +426,7 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::handle_expand(
             node.layout_b(),
             result_layout,
             input_type,
-            output_type,
+            accumulator_type(*arch_->mma_support(), input_type, output_type),
             output_type,
             new_impl_type.value(),
             true,
