@@ -1,3 +1,4 @@
+import pytest
 import torch
 import torch.nn as nn
 
@@ -28,3 +29,43 @@ def test_linear_bias(target: str) -> None:
             return self.linear(input)
 
     check(LinearBiasNet(), torch.randn(128, 20), target=target)
+
+
+@pytest.mark.skip(
+    reason="Standard CBLAS does not support half-precision (cblas_hgemm)"
+)
+def test_linear_fp16(target: str) -> None:
+    class LinearFP16Net(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.linear = nn.Linear(20, 30, bias=False, dtype=torch.float16)
+
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return self.linear(input)
+
+    check(
+        LinearFP16Net(),
+        torch.randn(128, 20, dtype=torch.float16),
+        rtol=1e-2,
+        atol=1e-2,
+        target=target,
+    )
+
+
+@pytest.mark.skip(reason="Standard CBLAS does not support bfloat16")
+def test_linear_bf16(target: str) -> None:
+    class LinearBF16Net(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.linear = nn.Linear(20, 30, bias=False, dtype=torch.bfloat16)
+
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return self.linear(input)
+
+    check(
+        LinearBF16Net(),
+        torch.randn(128, 20, dtype=torch.bfloat16),
+        rtol=1e-2,
+        atol=1e-2,
+        target=target,
+    )
