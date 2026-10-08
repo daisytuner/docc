@@ -1150,17 +1150,6 @@ NODES = (
     + (MATMUL, CONV, POOLING, BATCHNORM, LAYERNORM, UPSAMPLE)
 )
 
-# Cases that already fail on the CPU target, keyed by test id.
-BROKEN_ON_CPU = {
-    **{
-        f"{name}-{case}": "untested expand"
-        for name in ("elu", "erf", "leaky_relu")
-        for case in ("2d_f32", "3d_f64")
-    },
-    "hard_sigmoid-2d_f32": "node invalid: input Y is not scalar",
-    "hard_sigmoid-3d_f64": "node invalid: input Y is not scalar",
-}
-
 
 # ---------------------------------------------------------------------------
 # Harness
@@ -1292,11 +1281,6 @@ def register(namespace, backend):
                 spec,
                 case_id,
                 id=f"{spec.name}-{case_id}",
-                marks=(
-                    [pytest.mark.skip(reason=BROKEN_ON_CPU[f"{spec.name}-{case_id}"])]
-                    if f"{spec.name}-{case_id}" in BROKEN_ON_CPU
-                    else []
-                ),
             )
             for spec in NODES
             for case_id, _ in spec.cases
