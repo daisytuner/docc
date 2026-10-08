@@ -625,3 +625,107 @@ TEST(ArgumentsAnalysisTest, Block_Arguments_ReferencePointer) {
     EXPECT_TRUE(locals.contains("t1"));
     EXPECT_TRUE(locals.contains("i"));
 }
+
+namespace {
+
+types::Pointer float_pointer(const symbolic::Expression& allocation_size) {
+    types::StorageType
+        storage("CPU_Heap", allocation_size, types::StorageType::Unmanaged, types::StorageType::Unmanaged);
+    return types::Pointer(storage, 0, "", types::Scalar(types::PrimitiveType::Float));
+}
+
+// Y[i] = W[I[i]] for i < 3
+structured_control_flow::Map& build_gather(builder::StructuredSDFGBuilder& builder, const symbolic::Expression& w_size) {
+    types::Scalar index_type(types::PrimitiveType::Int64);
+    builder.add_container("W", float_pointer(w_size), true);
+    builder.add_container("I", types::Pointer(index_type), true);
+    builder.add_container("Y", float_pointer(SymEngine::null), true);
+    builder.add_container("i", index_type);
+    builder.add_container("_idx", index_type);
+
+    auto i = symbolic::symbol("i");
+    auto& loop = builder.add_map(
+        builder.subject().root(),
+        i,
+        symbolic::Lt(i, symbolic::integer(3)),
+        symbolic::integer(0),
+        symbolic::add(i, symbolic::integer(1)),
+        ScheduleType_Sequential::create()
+    );
+
+    auto& load = builder.add_block(loop.root());
+    auto& index_in = builder.add_access(load, "I");
+    auto& index_out = builder.add_access(load, "_idx");
+    auto& load_tasklet = builder.add_tasklet(load, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(load, index_in, load_tasklet, "_in", {i});
+    builder.add_computational_memlet(load, load_tasklet, "_out", index_out, {});
+
+    auto& gather = builder.add_block(loop.root());
+    auto& weight = builder.add_access(gather, "W");
+    auto& result = builder.add_access(gather, "Y");
+    auto& gather_tasklet = builder.add_tasklet(gather, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(gather, weight, gather_tasklet, "_in", {symbolic::symbol("_idx")});
+    builder.add_computational_memlet(gather, gather_tasklet, "_out", result, {i});
+
+    return loop;
+}
+
+} // namespace
+
+TEST(ArgumentsAnalysisTest, Map_Gather_UnknownSize) {
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto& loop = build_gather(builder, SymEngine::null);
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    auto& analysis = analysis_manager.get<analysis::ArgumentsAnalysis>();
+
+    EXPECT_FALSE(analysis.argument_size_known(analysis_manager, loop, false));
+}
+
+TEST(ArgumentsAnalysisTest, Map_Gather_AllocationSizeFallback) {
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    builder.add_container("N", types::Scalar(types::PrimitiveType::Int64), true);
+    auto w_size = symbolic::mul(symbolic::symbol("N"), symbolic::integer(4));
+    auto& loop = build_gather(builder, w_size);
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    auto& analysis = analysis_manager.get<analysis::ArgumentsAnalysis>();
+
+    EXPECT_TRUE(analysis.argument_size_known(analysis_manager, loop, false));
+    auto& sizes = analysis.argument_sizes(analysis_manager, loop, false);
+    EXPECT_TRUE(symbolic::eq(sizes.at("W"), w_size));
+    EXPECT_TRUE(symbolic::eq(sizes.at("I"), symbolic::integer(24)));
+    EXPECT_TRUE(symbolic::eq(sizes.at("Y"), symbolic::integer(12)));
+    auto& element_sizes = analysis.argument_element_sizes(analysis_manager, loop, false);
+    EXPECT_TRUE(symbolic::eq(element_sizes.at("W"), symbolic::integer(4)));
+}
+
+TEST(ArgumentsAnalysisTest, Map_Affine_TilePrecedesAllocationSize) {
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    builder.add_container("W", float_pointer(symbolic::integer(400)), true);
+    builder.add_container("Y", float_pointer(SymEngine::null), true);
+    builder.add_container("i", types::Scalar(types::PrimitiveType::Int64));
+
+    auto i = symbolic::symbol("i");
+    auto& loop = builder.add_map(
+        builder.subject().root(),
+        i,
+        symbolic::Lt(i, symbolic::integer(10)),
+        symbolic::integer(0),
+        symbolic::add(i, symbolic::integer(1)),
+        ScheduleType_Sequential::create()
+    );
+    auto& block = builder.add_block(loop.root());
+    auto& access_in = builder.add_access(block, "W");
+    auto& access_out = builder.add_access(block, "Y");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(block, access_in, tasklet, "_in", {i});
+    builder.add_computational_memlet(block, tasklet, "_out", access_out, {i});
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    auto& analysis = analysis_manager.get<analysis::ArgumentsAnalysis>();
+
+    EXPECT_TRUE(analysis.argument_size_known(analysis_manager, loop, false));
+    auto& sizes = analysis.argument_sizes(analysis_manager, loop, false);
+    EXPECT_TRUE(symbolic::eq(sizes.at("W"), symbolic::integer(40)));
+}

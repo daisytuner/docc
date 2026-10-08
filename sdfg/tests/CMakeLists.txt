@@ -90,6 +90,7 @@ set(TEST_FILES
     passes/debug_info_propagation_test.cpp
     passes/expansion/expansion_pass_test.cpp
     passes/memory/allocation_management_test.cpp
+    passes/memory/tensor_allocation_size_inference_test.cpp
     passes/pipeline_test.cpp
     passes/structured_control_flow/block_fusion_test.cpp
     passes/structured_control_flow/common_assignment_elimination_test.cpp
