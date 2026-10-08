@@ -105,7 +105,7 @@ symbolic::SymbolSet TileCopyNode::symbols() const {
 
 std::unique_ptr<data_flow::DataFlowNode> TileCopyNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
-    return std::unique_ptr<TileCopyNode>(new TileCopyNode(
+    auto copy = std::unique_ptr<TileCopyNode>(new TileCopyNode(
         element_id,
         this->debug_info_,
         vertex,
@@ -119,6 +119,8 @@ std::unique_ptr<data_flow::DataFlowNode> TileCopyNode::
         coop_threads_,
         coop_lanes_
     ));
+    copy->phase_ = phase_;
+    return copy;
 }
 
 void TileCopyNode::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
@@ -146,6 +148,9 @@ std::string TileCopyNode::toStr() const {
     std::stringstream ss;
     ss << "tile_copy(";
     ss << "dir: " << (direction_ == CopyDirection::In ? "in" : "out") << ", ";
+    if (phase_ != CopyPhase::Full) {
+        ss << "phase: " << (phase_ == CopyPhase::LoadRegs ? "load_regs" : "store_regs") << ", ";
+    }
     ss << "cothr: " << coop_threads_ << ", ";
     ss << "src: " << plan_.src << ", ";
     ss << "dst: " << plan_.dst;
@@ -199,6 +204,9 @@ nlohmann::json TileCopyNodeSerializer::serialize(const sdfg::data_flow::LibraryN
     if (node.coop_lanes() > 1) {
         j["coop_lanes"] = node.coop_lanes();
     }
+    if (node.phase() != CopyPhase::Full) {
+        j["phase"] = node.phase() == CopyPhase::LoadRegs ? "load_regs" : "store_regs";
+    }
     return j;
 }
 
@@ -236,7 +244,7 @@ data_flow::LibraryNode& TileCopyNodeSerializer::deserialize(
         coop_threads = symbolic::parse(j.at("coop_threads").get<std::string>());
     }
     size_t coop_lanes = j.contains("coop_lanes") ? j.at("coop_lanes").get<size_t>() : 1;
-    return builder.add_library_node<TileCopyNode>(
+    auto& node = static_cast<TileCopyNode&>(builder.add_library_node<TileCopyNode>(
         parent,
         DebugInfo(),
         j.at("implementation_type").get<std::string>(),
@@ -247,7 +255,11 @@ data_flow::LibraryNode& TileCopyNodeSerializer::deserialize(
         coop_axes,
         coop_threads,
         coop_lanes
-    );
+    ));
+    if (j.contains("phase")) {
+        node.set_phase(j.at("phase").get<std::string>() == "load_regs" ? CopyPhase::LoadRegs : CopyPhase::StoreRegs);
+    }
+    return node;
 }
 
 // ---- Reference dispatcher ------------------------------------------------
@@ -288,6 +300,24 @@ std::string emit_tile_copy_stmt(
 
 namespace {
 
+// The register array of a staged phase, addressed as 32-bit words.
+std::string register_words(
+    codegen::LanguageExtension& language_extension,
+    const TileCopyNode& node,
+    const std::string& dst_expr,
+    const std::string& src_expr
+) {
+    types::Pointer word_ptr{types::Scalar(types::PrimitiveType::UInt32)};
+    return language_extension.type_cast(node.phase() == CopyPhase::LoadRegs ? dst_expr : src_expr, word_ptr);
+}
+
+void require_constant_steps(const TileCopyNode& node) {
+    const auto& ct = node.coop_threads();
+    if (ct.is_null() || !SymEngine::is_a<SymEngine::Integer>(*ct)) {
+        throw InvalidSDFGException("TileCopyNode: a register-staged phase needs a constant thread count");
+    }
+}
+
 // TransposeSync body: the 2-D tile [R][C] (source unit-stride along C, buffer along R) is
 // split into 4x4 blocks; each lane loads four 8-byte source rows, transposes them in
 // registers and stores four 8-byte buffer rows. When the block grid allows, 16-lane groups
@@ -312,8 +342,17 @@ void emit_transpose_copy_blocks(
 
     const auto& ct = node.coop_threads();
     const bool known = !ct.is_null() && SymEngine::is_a<SymEngine::Integer>(*ct);
+    const auto phase = node.phase();
+    if (phase != CopyPhase::Full) {
+        require_constant_steps(node);
+    }
+    const std::string regs = phase == CopyPhase::Full ? ""
+                                                      : register_words(language_extension, node, dst_expr, src_expr);
     if (known) {
         const long long t = SymEngine::rcp_static_cast<const SymEngine::Integer>(ct)->as_int();
+        if (phase != CopyPhase::Full) {
+            stream << "#pragma unroll" << std::endl;
+        }
         stream << "for (int __tc_i = 0; __tc_i < " << (blocks + t - 1) / t << "; __tc_i++) {" << std::endl;
         stream << "int __tc_b = __tc_i * " << t << " + __tc_tid;" << std::endl;
         if (blocks % t != 0) {
@@ -333,20 +372,29 @@ void emit_transpose_copy_blocks(
 
     auto r4 = symbolic::mul(symbolic::integer(4), symbolic::symbol("__tc_r4"));
     auto c4 = symbolic::mul(symbolic::integer(4), symbolic::symbol("__tc_c4"));
-    stream << "unsigned __tc_x[4][2];" << std::endl;
-    for (int q = 0; q < 4; ++q) {
+    // Word w of source row q: a local in a full copy, the register array in a staged phase.
+    auto x = [&](int q, int w) {
+        if (phase == CopyPhase::Full) {
+            return "__tc_x[" + std::to_string(q) + "][" + std::to_string(w) + "]";
+        }
+        return "(" + regs + ")[8 * __tc_i + " + std::to_string(2 * q + w) + "]";
+    };
+    if (phase == CopyPhase::Full) {
+        stream << "unsigned __tc_x[4][2];" << std::endl;
+    }
+    for (int q = 0; q < 4 && phase != CopyPhase::StoreRegs; ++q) {
         auto off = plan.src.resolve_element({symbolic::add(r4, symbolic::integer(q)), c4}, false);
         stream << "{ const uint2 __tc_v = *reinterpret_cast<const uint2*>(&(" << scast << ")["
-               << language_extension.expression(off) << "]); __tc_x[" << q << "][0] = __tc_v.x; __tc_x[" << q
-               << "][1] = __tc_v.y; }" << std::endl;
+               << language_extension.expression(off) << "]); " << x(q, 0) << " = __tc_v.x; " << x(q, 1)
+               << " = __tc_v.y; }" << std::endl;
     }
     // Buffer row c = source column c of the block: even columns are the low halves of a
     // source word, odd columns the high halves.
-    for (int c = 0; c < 4; ++c) {
+    for (int c = 0; c < 4 && phase != CopyPhase::LoadRegs; ++c) {
         const int w = c / 2;
         auto pick = [&](int lo_row, int hi_row) {
-            const std::string lo = "__tc_x[" + std::to_string(lo_row) + "][" + std::to_string(w) + "]";
-            const std::string hi = "__tc_x[" + std::to_string(hi_row) + "][" + std::to_string(w) + "]";
+            const std::string lo = x(lo_row, w);
+            const std::string hi = x(hi_row, w);
             return c % 2 == 0 ? "((" + lo + " & 0xffffu) | (" + hi + " << 16))"
                               : "((" + lo + " >> 16) | (" + hi + " & 0xffff0000u))";
         };
@@ -439,6 +487,9 @@ void emit_cooperative_copy_loop(
     if (unrolled) {
         const std::string ct = language_extension.expression(node.coop_threads());
         const std::string f = std::to_string(factor);
+        if (node.phase() != CopyPhase::Full) {
+            stream << "#pragma unroll" << std::endl;
+        }
         stream << "for (int __tc_i = 0; __tc_i < ((" << size << ") + (" << ct << ") * " << f << " - 1) / ((" << ct
                << ") * " << f << "); __tc_i++) {" << std::endl;
         stream << "int __tc_c = " << f << " * (__tc_i * (" << ct << ") + __tc_tid);" << std::endl;
@@ -462,7 +513,46 @@ void emit_cooperative_copy_loop(
     const std::string soff = language_extension.expression(copy_in ? global_off : buffer_off);
 
     std::string stmt;
-    if (node.atom() == CopyAtom::CpAsync && async_stmt) {
+    if (node.phase() != CopyPhase::Full) {
+        // Staged phase: one register word per scalar step, bytes/4 words per vector step.
+        require_constant_steps(node);
+        const std::string regs = register_words(language_extension, node, dst_expr, src_expr);
+        const bool vec = node.atom() == CopyAtom::VectorSync && node.bytes() >= 4;
+        const size_t words = vec ? node.bytes() / 4 : 1;
+        auto reg = [&](size_t k) {
+            return "(" + regs + ")[" + std::to_string(words) + " * __tc_i + " + std::to_string(k) + "]";
+        };
+        const char* lane = !vec && elem_bytes == 2   ? "unsigned short"
+                           : !vec && elem_bytes == 1 ? "unsigned char"
+                                                     : "unsigned";
+        const char* wide_t = words == 4 ? "uint4" : "uint2";
+        const char* fields[4] = {"x", "y", "z", "w"};
+        if (node.phase() == CopyPhase::LoadRegs) {
+            const std::string src_addr = "&(" + scast + ")[" + soff + "]";
+            if (words > 1) {
+                stmt = std::string("{ const ") + wide_t + " __tc_v = *reinterpret_cast<const " + wide_t + "*>(" +
+                       src_addr + ");";
+                for (size_t k = 0; k < words; ++k) {
+                    stmt += " " + reg(k) + " = __tc_v." + fields[k] + ";";
+                }
+                stmt += " }";
+            } else {
+                stmt = reg(0) + " = *reinterpret_cast<const " + lane + "*>(" + src_addr + ");";
+            }
+        } else {
+            const std::string dst_addr = "&(" + dcast + ")[" + doff + "]";
+            if (words > 1) {
+                stmt = std::string("*reinterpret_cast<") + wide_t + "*>(" + dst_addr + ") = make_" + wide_t + "(";
+                for (size_t k = 0; k < words; ++k) {
+                    stmt += (k ? ", " : "") + reg(k);
+                }
+                stmt += ");";
+            } else {
+                stmt = std::string("*reinterpret_cast<") + lane + "*>(" + dst_addr + ") = static_cast<" + lane + ">(" +
+                       reg(0) + ");";
+            }
+        }
+    } else if (node.atom() == CopyAtom::CpAsync && async_stmt) {
         const std::string dst_addr = "&(" + dcast + ")[" + doff + "]";
         const std::string src_addr = "&(" + scast + ")[" + soff + "]";
         stmt = async_stmt(dst_addr, src_addr, node.bytes());

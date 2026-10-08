@@ -45,6 +45,7 @@ class TileCopyNode : public data_flow::LibraryNode {
     /// Fastest x-threads (`threadIdx.x % coop_lanes`) that also cooperate in per-thread-slot
     /// mode: the lanes of a wave-granular slot axis, whose slot depends on the wave only.
     size_t coop_lanes_ = 1;
+    CopyPhase phase_ = CopyPhase::Full;
 
 public:
     TileCopyNode(
@@ -109,6 +110,18 @@ public:
 
     size_t coop_lanes() const {
         return coop_lanes_;
+    }
+
+    CopyPhase phase() const {
+        return phase_;
+    }
+    void set_phase(CopyPhase phase) {
+        phase_ = phase;
+    }
+    /// The input (0 = `_dst`, 1 = `_src`) whose pointer carries the tile element type —
+    /// the non-register side of a staged phase.
+    int element_input() const {
+        return phase_ == CopyPhase::LoadRegs ? 1 : 0;
     }
 
 

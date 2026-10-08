@@ -59,7 +59,7 @@ void TileCopyNodeDispatcher::dispatch_code_with_edges(
     // Connector order {"_dst", "_src"} — both are the bare base pointers.
     const std::string& dst = inputs.at(0).expr;
     const std::string& src = inputs.at(1).expr;
-    const auto pt = inputs.at(0).edge.base_type().primitive_type();
+    const auto pt = inputs.at(node.element_input()).edge.base_type().primitive_type();
     const bool lds_dma = lds_dma_compatible(node, types::bit_width(pt) / 8);
 
     // CpAsync on CDNA is a per-word direct global->LDS load (tracked by vmcnt, drained
