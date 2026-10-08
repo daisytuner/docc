@@ -25,6 +25,9 @@ enum class CopyAtom {
     ScalarSync, ///< one element per lane, synchronous store
     VectorSync, ///< a contiguous 4/8/16-byte vector per lane, synchronous
     CpAsync, ///< a contiguous 4/8/16-byte async global->shared cp.async
+    /// 2-D 16-bit copy into a buffer stored transposed: each lane moves a 4x4 block
+    /// (four 8-byte source rows, register transpose, four 8-byte buffer rows).
+    TransposeSync,
 };
 
 /// Row-major delinearization of a flat index into per-dim coordinates (dim 0

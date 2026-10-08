@@ -27,11 +27,18 @@ symbolic::Expression rowmajor(const symbolic::MultiExpression& sizes, const symb
     return linear;
 }
 
-// The tile block as allocated: the innermost row widened by @p row_pad.
-symbolic::MultiExpression padded_tile(const symbolic::MultiExpression& tile_sizes, size_t row_pad) {
+// The tile block as allocated, per tile dim: the stored innermost row widened by @p row_pad
+// (the last tile dim, or dim 0 for the column-major Transposed placement).
+symbolic::MultiExpression padded_tile(const symbolic::MultiExpression& tile_sizes, BufferKind kind, size_t row_pad) {
     symbolic::MultiExpression out = tile_sizes;
-    if (row_pad > 0 && !out.empty()) {
-        out.back() = symbolic::add(out.back(), symbolic::integer(static_cast<int64_t>(row_pad)));
+    if (row_pad == 0 || out.empty()) {
+        return out;
+    }
+    const auto pad = symbolic::integer(static_cast<int64_t>(row_pad));
+    if (kind == BufferKind::MultiDim) {
+        out.back() = symbolic::add(out.back(), pad);
+    } else if (kind == BufferKind::Transposed) {
+        out.front() = symbolic::add(out.front(), pad);
     }
     return out;
 }
@@ -45,7 +52,7 @@ ComposedLayout buffer_layout(
     const symbolic::Expression& inner_stride,
     size_t row_pad
 ) {
-    const auto stored = padded_tile(tile_sizes, kind == BufferKind::MultiDim ? row_pad : 0);
+    const auto stored = padded_tile(tile_sizes, kind, row_pad);
     symbolic::Expression tile_total = product_of(tile_sizes, 0, tile_sizes.size());
     // Padded widens the per-slot block; every other kind packs the natural block.
     symbolic::Expression per_slot_block = (kind == BufferKind::Padded) ? inner_stride
@@ -62,7 +69,7 @@ ComposedLayout buffer_layout(
     for (size_t j = 0; j < tile_sizes.size(); ++j) {
         shape.push_back(tile_sizes[j]);
         stride.push_back(
-            kind == BufferKind::Transposed ? product_of(tile_sizes, 0, j) : product_of(stored, j + 1, stored.size())
+            kind == BufferKind::Transposed ? product_of(stored, 0, j) : product_of(stored, j + 1, stored.size())
         );
     }
     Layout base(shape, stride, symbolic::integer(0));
@@ -85,7 +92,7 @@ ComposedLayout buffer_layout(
 }
 
 symbolic::Expression PackedBuffer::total_size() const {
-    const auto stored = padded_tile(tile_sizes, kind == BufferKind::MultiDim ? row_pad : 0);
+    const auto stored = padded_tile(tile_sizes, kind, row_pad);
     return symbolic::mul(product_of(slot_sizes, 0, slot_sizes.size()), product_of(stored, 0, stored.size()));
 }
 
@@ -120,13 +127,15 @@ symbolic::MultiExpression PackedBuffer::axes() const {
     symbolic::Expression tile_total = product_of(tile_sizes, 0, tile_sizes.size());
     switch (kind) {
         case BufferKind::MultiDim: {
-            const auto stored = padded_tile(tile_sizes, row_pad);
+            const auto stored = padded_tile(tile_sizes, kind, row_pad);
             out.insert(out.end(), stored.begin(), stored.end());
             break;
         }
-        case BufferKind::Transposed:
-            out.insert(out.end(), tile_sizes.rbegin(), tile_sizes.rend());
+        case BufferKind::Transposed: {
+            const auto stored = padded_tile(tile_sizes, kind, row_pad);
+            out.insert(out.end(), stored.rbegin(), stored.rend());
             break;
+        }
         case BufferKind::Padded:
             out.push_back(inner_stride()); // one flat, padded per-slot block
             break;

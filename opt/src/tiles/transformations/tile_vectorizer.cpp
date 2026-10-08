@@ -97,6 +97,32 @@ bool widen_tile_copy_node(tiles::TileCopyNode& node) {
     return false;
 }
 
+// A 2-D 16-bit copy-in whose source is unit-stride along dim 1 and whose buffer is
+// unit-stride along dim 0 (a transposed placement) moves 4x4 blocks with a register
+// transpose. Needs 4-multiple extents and 4-element-aligned rows on both sides.
+bool transpose_tile_copy_node(tiles::TileCopyNode& node) {
+    const auto& plan = node.plan();
+    if (node.atom() != tiles::CopyAtom::ScalarSync || node.direction() != tiles::CopyDirection::In ||
+        node.bytes() != 2 || plan.src.dims() != 2 || !plan.dst_swizzle.is_identity() || !node.guard().trivial()) {
+        return false;
+    }
+    if (!symbolic::eq(plan.src.strides()[1], symbolic::integer(1)) ||
+        !symbolic::eq(plan.dst.strides()[0], symbolic::integer(1))) {
+        return false;
+    }
+    auto multiple_of_4 = [](const symbolic::Expression& e) {
+        auto* i = dynamic_cast<const SymEngine::Integer*>(e.get());
+        return i != nullptr && i->as_int() % 4 == 0;
+    };
+    if (!multiple_of_4(plan.src.shape()[0]) || !multiple_of_4(plan.src.shape()[1]) ||
+        !multiple_of_4(plan.src.strides()[0]) || !multiple_of_4(plan.dst.strides()[1])) {
+        return false;
+    }
+    node.set_atom(tiles::CopyAtom::TransposeSync);
+    node.set_bytes(8);
+    return true;
+}
+
 // Does @p block hold a single scalar `assign` copy (one in, one out, both access
 // nodes)? That is the shape LocalStorage emits before any widening.
 // The nearest enclosing sequential (non-Map) loop — the pipeline panel loop.
@@ -213,7 +239,9 @@ void TileVectorizer::apply(builder::StructuredSDFGBuilder& builder, analysis::An
     collect(loop_.root());
 
     for (auto* tc : tile_copies) {
-        widen_tile_copy_node(*tc);
+        if (!widen_tile_copy_node(*tc)) {
+            transpose_tile_copy_node(*tc);
+        }
     }
 
     // Recompute each pipeline wait's loads_per_group from the (now widened) cp.async

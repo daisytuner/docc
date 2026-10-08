@@ -28,7 +28,8 @@ enum class BufferKind {
 /// Build the packed buffer as a @ref ComposedLayout over `[slot ++ tile]`;
 /// `apply_coords(slot ++ tile)` is the scalar offset. @p inner_stride applies
 /// only to @ref BufferKind::Padded (others use the natural `product(tile_sizes)`);
-/// @p row_pad widens the innermost tile row of a @ref BufferKind::MultiDim buffer.
+/// @p row_pad widens the stored innermost row of a @ref BufferKind::MultiDim or
+/// @ref BufferKind::Transposed buffer.
 ComposedLayout buffer_layout(
     const symbolic::MultiExpression& slot_sizes,
     const symbolic::MultiExpression& tile_sizes,
@@ -48,8 +49,8 @@ struct PackedBuffer {
     /// Padded inner stride congruent to it mod 32 so a warp's stores are
     /// bank-conflict-free. 0 falls back to the next coprime-with-32 (odd) stride.
     size_t coop_warp_span = 0;
-    /// Unused elements appended to each innermost row (MultiDim only): spreads the
-    /// rows of a strided (e.g. MMA fragment) read across shared-memory banks.
+    /// Unused elements appended to each stored innermost row (MultiDim / Transposed):
+    /// spreads the rows of a strided (e.g. MMA fragment) read across shared-memory banks.
     size_t row_pad = 0;
 
     /// Total scalar slots = product(slot_sizes) * product(tile_sizes).
