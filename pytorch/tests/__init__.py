@@ -85,6 +85,13 @@ def check(
     remote_tuning: bool = False,
 ) -> None:
     model_ref = copy.deepcopy(model)
+    if hasattr(model, "is_docc") != hasattr(model_ref, "is_docc"):
+        raise AttributeError(
+            "Either both models are required to have attr 'is_docc' or neither"
+        )
+    if hasattr(model, "is_docc"):
+        setattr(model, "is_docc", True)
+        setattr(model_ref, "is_docc", False)
     program = torch.compile(
         model,
         backend="docc",

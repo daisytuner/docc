@@ -213,6 +213,21 @@ def test_to_simple(target: str) -> None:
     check(ToSimpleNet(), torch.randn(2, 2), target=target)
 
 
+@pytest.mark.supported_targets("cuda", "rocm")
+def test_to_gpu(target: str) -> None:
+    class ToGPUNet(nn.Module):
+        is_docc = None
+
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return input.to(
+                device=(
+                    torch.device("cuda") if self.is_docc else torch.get_default_device()
+                )
+            )
+
+    check(ToGPUNet(), torch.randn(2, 2), target=target)
+
+
 # --- view ---
 
 
