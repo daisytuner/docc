@@ -687,4 +687,27 @@ TEST(ROCMMMATest, SoftwarePipeliningBiasesFragmentStage_gfx90a) {
     EXPECT_NE(kernels.find("load_matrix_sync(mma_a0, (reinterpret_cast"), std::string::npos) << kernels;
 }
 
+// A/B fragments declared with the memory layout must use the layout-less overload (the runtime-layout one
+// round-trips through a temporary); accumulators have no layout and must keep it.
+TEST(ROCMMMATest, FragmentLoadOverload_gfx90a) {
+    auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
+    sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+    auto [block, matmul_node] = build_offloaded_mma_structure(builder, 1024, 1024, 1024, 32, 32, 16, arch);
+    passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch));
+
+    auto out = test::utils::test_codegen(builder.subject(), "overload", true);
+    std::string kernels;
+    for (auto& [name, snippet] : out.snippets) {
+        kernels += snippet.content;
+    }
+    auto load_line = [&](const std::string& frag) {
+        auto pos = kernels.find("load_matrix_sync(" + frag + ",");
+        EXPECT_NE(pos, std::string::npos) << frag << "\n" << kernels;
+        return pos == std::string::npos ? std::string() : kernels.substr(pos, kernels.find('\n', pos) - pos);
+    };
+    EXPECT_EQ(load_line("mma_a0").find("rocwmma::mem_"), std::string::npos) << kernels;
+    EXPECT_EQ(load_line("mma_b0").find("rocwmma::mem_"), std::string::npos) << kernels;
+    EXPECT_NE(load_line("mma_c0").find("rocwmma::mem_row_major"), std::string::npos) << kernels;
+}
+
 } // namespace sdfg::rocm
