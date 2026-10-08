@@ -909,4 +909,28 @@ TEST(ROCMMMATest, RawMfma32x32x8_gfx90a) {
     EXPECT_GE(vector_reads, 2u) << kernels;
 }
 
+TEST(ROCMMMATest, RawMfma32x32x8_128x96Tile_LaunchBounds) {
+    auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
+    auto* mfma = arch.mma_support_for("32x32x8");
+    ASSERT_NE(mfma, nullptr);
+    EXPECT_TRUE(mfma->valid_block_counts(32, 4, 3, 1));
+    EXPECT_FALSE(mfma->valid_block_counts(32, 8, 8, 1));
+    auto tiling = mfma->get_mma_tiling({symbolic::integer(128), symbolic::integer(96), symbolic::integer(1024)});
+    EXPECT_EQ(tiling.macro_blocks_m, 4);
+    EXPECT_EQ(tiling.macro_blocks_n, 3);
+
+    sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+    auto [block, matmul_node] = build_offloaded_mma_structure(builder, 1024, 1152, 1024, 128, 96, 16, arch);
+    passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch, mfma));
+    EXPECT_NO_THROW(builder.subject().validate());
+
+    auto out = test::utils::test_codegen(builder.subject(), "mfma32_128x96", true);
+    std::string kernels;
+    for (auto& [name, snippet] : out.snippets) {
+        kernels += snippet.content;
+    }
+    // 4 x 3 waves of 64 lanes.
+    EXPECT_NE(kernels.find("__global__ void __launch_bounds__(768) kernel_"), std::string::npos) << kernels;
+}
+
 } // namespace sdfg::rocm

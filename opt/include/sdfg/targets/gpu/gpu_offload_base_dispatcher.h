@@ -80,6 +80,8 @@ class GPUOffloadBaseDispatcher : public codegen::NodeDispatcher {
 protected:
     structured_control_flow::StructuredLoop& node_;
     std::unique_ptr<GPUOffloadDispatcherStrategy> strategy_;
+    // Threads per block when statically known (0 otherwise); emitted as __launch_bounds__.
+    long launch_bounds_ = 0;
 
     GPUOffloadBaseDispatcher(
         codegen::LanguageExtension& language_extension,

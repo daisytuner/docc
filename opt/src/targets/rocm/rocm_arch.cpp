@@ -220,29 +220,8 @@ bool RocmMmaSupport::valid_block_counts(uint16_t block_base, int m_blocks, int n
     // M: a rows
     // N: b cols
     // K: a cols = b rows, irrelevant to valid, as long as multiple of block size
-
-    if (block_base == 16) {
-        if (m_blocks == 1 && n_blocks == 1) {
-            return true;
-        } else if (m_blocks <= 2 && n_blocks <= 2) {
-            return true;
-        } else if (m_blocks == 4 && n_blocks == 4) {
-            return true;
-        } else if (m_blocks == 8 && n_blocks == 4) { // this is limited by shared memory size, but this is the
-                                                     // perf-recommend form for RDNA3
-            return true;
-        }
-    } else if (block_base == 32) {
-        if (m_blocks == 1 && n_blocks == 1) {
-            return true;
-        } else if (m_blocks <= 2 && n_blocks <= 2) {
-            return true;
-        } else if (m_blocks == 4 && n_blocks == 4) { // this is limited by shared memory size, but this is the
-                                                     // perf-recommended form for CDA
-            return true;
-        }
-    }
-    return false;
+    // Upper bound matches the largest previously supported tile (8x4); threads/block is checked with the wave tile.
+    return (block_base == 16 || block_base == 32) && m_blocks >= 1 && n_blocks >= 1 && m_blocks * n_blocks <= 32;
 }
 
 bool RocmMmaSupport::supported_types(types::PrimitiveType input_type, types::PrimitiveType output_type) const {
@@ -268,30 +247,13 @@ GpuMmaTiling RocmMmaSupport::get_mma_tiling(const symbolic::MultiExpression& res
     if (!mma_blocks_m || !mma_blocks_n || !mma_blocks_k) {
         throw std::runtime_error("Result shape is not compatible with MMA block sizes.");
     }
-    if (mma_blocks_m == 1 && mma_blocks_n == 1) {
-        tiling.wave_tile_blocks_m = 1;
-        tiling.wave_tile_blocks_n = 1;
-        tiling.macro_blocks_m = 1;
-        tiling.macro_blocks_n = 1;
-    } else if (mma_blocks_m <= 2 && mma_blocks_n <= 2) {
-        tiling.wave_tile_blocks_m = 1;
-        tiling.wave_tile_blocks_n = 1;
-        tiling.macro_blocks_m = mma_blocks_m;
-        tiling.macro_blocks_n = mma_blocks_n;
-    } else if (mma_blocks_n <= 4 && (mma_blocks_m == 4 || mma_blocks_m == 8)) {
-        tiling.wave_tile_blocks_m = 1;
-        tiling.wave_tile_blocks_n = 1;
-        tiling.macro_blocks_m = mma_blocks_m;
-        tiling.macro_blocks_n = mma_blocks_n;
-        // tiling.mma_block_m *= 2;
-        // tiling.mma_block_n += 2;
-        // tiling.wave_tile_blocks_m = mma_blocks_m / 2;
-        // tiling.wave_tile_blocks_n = mma_blocks_n / 2;
-        // tiling.macro_blocks_m = 2;
-        // tiling.macro_blocks_n = 2;
-    } else {
+    if (!valid_block_counts(tiling.mma_block_size.m, mma_blocks_m, mma_blocks_n, mma_blocks_k)) {
         throw std::runtime_error("Unsupported MMA block configuration for this GPU target.");
     }
+    tiling.wave_tile_blocks_m = 1;
+    tiling.wave_tile_blocks_n = 1;
+    tiling.macro_blocks_m = mma_blocks_m;
+    tiling.macro_blocks_n = mma_blocks_n;
 
     return tiling;
 }
