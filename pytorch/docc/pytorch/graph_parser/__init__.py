@@ -156,8 +156,12 @@ class GraphParser(GraphParserBase):
 
                     sdfg_type: Type = self.get_node_sdfg_type(output_node)
                     out_name: str = output_node.name
+                    # FX names like "sin" would shadow C math functions in generated code.
+                    out_container: str = f"__daisy__{out_name}"
 
-                    if self.metadata.has_container(out_name):
+                    if self.metadata.has_container(
+                        out_name
+                    ) or self.metadata.has_container(out_container):
                         continue
 
                     if not self.metadata.tensor(out_name).is_tight() or isinstance(
@@ -190,15 +194,15 @@ class GraphParser(GraphParserBase):
                         self.result_copy[out_name] = new_out_name
                     else:
                         self.builder.add_container(
-                            out_name, sdfg_type, is_argument=True
+                            out_container, sdfg_type, is_argument=True
                         )
                         self.metadata.add_container(
-                            out_name,
+                            out_container,
                             ContainerInfo(
-                                out_name, sdfg_type, ContainerMemory.OUT_ARGUMENT
+                                out_container, sdfg_type, ContainerMemory.OUT_ARGUMENT
                             ),
                         )
-                        self.metadata.tensor(out_name).set_container(out_name)
+                        self.metadata.tensor(out_name).set_container(out_container)
 
         for node in nodes:
             if node.op == "placeholder":
@@ -361,10 +365,13 @@ class GraphParser(GraphParserBase):
         for non_user_output in non_user_outputs:
             del outputs[non_user_output]
 
-        self.builder.add_metadata("output_args", ",".join(outputs))
-        for output in outputs:
+        output_containers: list[str] = [
+            self.metadata.tensor(output).container() for output in outputs
+        ]
+        self.builder.add_metadata("output_args", ",".join(output_containers))
+        for output, output_container in zip(outputs, output_containers):
             self.builder.add_metadata(
-                f"{output}_shape",
+                f"{output_container}_shape",
                 self.metadata.tensor(output).shape_str(),
             )
 
