@@ -1254,7 +1254,9 @@ def _child(queue, spec_name, case_id, target, output_dir, check_offload):
 
 
 def run_case_isolated(spec, case_id, target, output_dir: Path, check_offload=True):
-    ctx = multiprocessing.get_context("fork")
+    # Forking a process whose GPU runtime another test already initialised crashes the child.
+    ctx = multiprocessing.get_context("forkserver")
+    ctx.set_forkserver_preload([__name__])
     queue = ctx.Queue()
     proc = ctx.Process(
         target=_child,
