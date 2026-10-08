@@ -43,6 +43,9 @@ void GEMMNodeDispatcher_ROCMBLASWithTransfers::dispatch_code(
 
     std::string type, type2;
     switch (gemm_node.precision()) {
+        case sdfg::math::blas::BLAS_Precision::h:
+            type = "_Float16";
+            break;
         case sdfg::math::blas::BLAS_Precision::s:
             type = "float";
             break;
@@ -145,6 +148,9 @@ void generate_kernel_gemm(
 ) {
     std::string type;
     switch (gemm_node.precision()) {
+        case sdfg::math::blas::BLAS_Precision::h:
+            type = "H";
+            break;
         case sdfg::math::blas::BLAS_Precision::s:
             type = "S";
             break;
@@ -183,13 +189,33 @@ void generate_kernel_gemm(
 
     std::string prefix = gemm_node.implementation_type() == rocm::ImplementationType_ROCMWithTransfers ? "d" : "__";
 
+    // hipblasHgemm expects hipblasHalf operands. The SDFG types the operands as _Float16, which is
+    // bit-identical to hipblasHalf but a distinct C++ type, so bind correctly-typed locals once.
+    std::string alpha_arg = "&__alpha";
+    std::string beta_arg = "&__beta";
+    std::string a_arg = prefix + first_mat;
+    std::string b_arg = prefix + second_mat;
+    std::string c_arg = prefix + "C";
+    if (gemm_node.precision() == sdfg::math::blas::BLAS_Precision::h) {
+        stream << "const hipblasHalf* alpha_h = reinterpret_cast<const hipblasHalf*>(&__alpha);" << std::endl;
+        stream << "const hipblasHalf* beta_h = reinterpret_cast<const hipblasHalf*>(&__beta);" << std::endl;
+        stream << "const hipblasHalf* A_h = reinterpret_cast<const hipblasHalf*>(" << a_arg << ");" << std::endl;
+        stream << "const hipblasHalf* B_h = reinterpret_cast<const hipblasHalf*>(" << b_arg << ");" << std::endl;
+        stream << "hipblasHalf* C_h = reinterpret_cast<hipblasHalf*>(" << c_arg << ");" << std::endl;
+        alpha_arg = "alpha_h";
+        beta_arg = "beta_h";
+        a_arg = "A_h";
+        b_arg = "B_h";
+        c_arg = "C_h";
+    }
+
     stream << "hipblasStatus_t err;" << std::endl;
     stream << "err = hipblas" << type << "gemm(handle, " << trans_first_str << ", " << trans_second_str << ", "
            << language_extension.expression(first_dim) << ", " << language_extension.expression(second_dim) << ", "
-           << language_extension.expression(gemm_node.k()) << ", "
-           << "&__alpha, " << prefix << first_mat << ", " << language_extension.expression(ld_first) << ", " << prefix
-           << second_mat << ", " << language_extension.expression(ld_second) << ", "
-           << "&__beta, " << prefix << "C, " << language_extension.expression(ldc) << ");" << std::endl;
+           << language_extension.expression(gemm_node.k()) << ", " << alpha_arg << ", " << a_arg << ", "
+           << language_extension.expression(ld_first) << ", " << b_arg << ", "
+           << language_extension.expression(ld_second) << ", " << beta_arg << ", " << c_arg << ", "
+           << language_extension.expression(ldc) << ");" << std::endl;
     rocmblas_error_checking(stream, language_extension, "err");
     check_rocm_kernel_launch_errors(stream, language_extension);
 }
