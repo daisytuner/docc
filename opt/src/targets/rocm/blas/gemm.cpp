@@ -38,7 +38,6 @@ void GEMMNodeDispatcher_ROCMBLASWithTransfers::dispatch_code(
 ) {
     auto& gemm_node = static_cast<const math::blas::GEMMNode&>(this->node_);
 
-    library_snippet_factory.add_global("#include <hip/hip_runtime.h>");
     library_snippet_factory.add_global("#include <hipblas/hipblas.h>");
 
     std::string type, type2;
