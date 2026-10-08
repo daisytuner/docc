@@ -398,7 +398,46 @@ TEST(TileCopyNodeTest, CudaCooperativeDispatcherEmitsFixedCountLoopWhenThreadsKn
     EXPECT_NE(code.find("for (int __tc_i = 0; __tc_i < ((64) + (32) * 1 - 1) / ((32) * 1); __tc_i++)"), std::string::npos)
         << code;
     EXPECT_NE(code.find("__tc_c = 1 * (__tc_i * (32) + __tc_tid)"), std::string::npos) << code;
-    EXPECT_NE(code.find("if (__tc_c < 64)"), std::string::npos) << code;
+    // 64 elems split exactly over 32 threads: no bounds guard, so loads stay unconditional.
+    EXPECT_EQ(code.find("if (__tc_c <"), std::string::npos) << code;
+}
+
+TEST(TileCopyNodeTest, CudaCooperativeDispatcherKeepsGuardWhenSplitIsRagged) {
+    auto builder = make_builder();
+    types::Scalar elem(types::PrimitiveType::Float);
+    types::Pointer ptr(elem);
+    types::Array buf_type(elem, symbolic::integer(48));
+    builder.add_container("g", ptr);
+    builder.add_container("buf", buf_type);
+
+    auto& block = builder.add_block(builder.subject().root());
+    auto& g = builder.add_access(block, "g");
+    auto& buf = builder.add_access(block, "buf");
+    tiles::TiledCopy plan;
+    plan.src = tiles::Layout({symbolic::integer(48)}, {symbolic::integer(1)}, symbolic::integer(0));
+    plan.dst = tiles::Layout({symbolic::integer(48)}, {symbolic::integer(1)}, symbolic::integer(0));
+    plan.atom = tiles::CopyAtom::ScalarSync;
+    auto& node = static_cast<tiles::TileCopyNode&>(builder.add_library_node<tiles::TileCopyNode>(
+        block,
+        DebugInfo(),
+        data_flow::ImplementationType_NONE,
+        plan,
+        tiles::CopyDirection::In,
+        4,
+        tiles::TileGuard{},
+        std::vector<int>{},
+        symbolic::integer(32)
+    ));
+    builder.add_computational_memlet(block, buf, node, "_dst", {}, ptr);
+    builder.add_computational_memlet(block, g, node, "_src", {}, ptr);
+
+    cuda::CUDALanguageExtension le(builder.subject());
+    cuda::tiles::TileCopyNodeDispatcher dispatcher(le, builder.subject(), block.dataflow(), node);
+    codegen::PrettyPrinter stream, globals;
+    codegen::CodeSnippetFactory snippets;
+    dispatcher.dispatch(stream, globals, snippets);
+
+    EXPECT_NE(stream.str().find("if (__tc_c < 48)"), std::string::npos) << stream.str();
 }
 
 TEST(TileCopyNodeTest, CudaVectorAtomEmitsWidenedTransfer) {

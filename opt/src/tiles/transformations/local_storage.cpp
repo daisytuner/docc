@@ -205,6 +205,51 @@ const tiles::TileTarget* enclosing_tile_target(structured_control_flow::Structur
     return nullptr;
 }
 
+bool is_barrier_block(const structured_control_flow::ControlFlowNode& node) {
+    auto* block = dynamic_cast<const structured_control_flow::Block*>(&node);
+    if (!block || block->dataflow().nodes().size() != 1) {
+        return false;
+    }
+    auto libs = block->dataflow().library_nodes();
+    return libs.size() == 1 && dynamic_cast<const data_flow::BarrierLocalNode*>(*libs.begin()) != nullptr;
+}
+
+bool is_copy_in_block(const structured_control_flow::ControlFlowNode& node) {
+    auto* block = dynamic_cast<const structured_control_flow::Block*>(&node);
+    if (!block) {
+        return false;
+    }
+    auto libs = block->dataflow().library_nodes();
+    if (libs.size() != 1) {
+        return false;
+    }
+    auto* copy = dynamic_cast<const tiles::TileCopyNode*>(*libs.begin());
+    return copy && copy->direction() == tiles::CopyDirection::In;
+}
+
+/// The trailing barrier of a staging group `[barrier?] copy-in+ barrier` directly before
+/// @p anchor, or nullptr. Each copy-in writes its own fresh buffer and only reads global
+/// memory, so another copy-in can join the group without a fence between them.
+structured_control_flow::ControlFlowNode* staging_group_trailing_barrier(
+    structured_control_flow::Sequence& parent, structured_control_flow::ControlFlowNode& anchor, bool needs_leading
+) {
+    const int pos = parent.index(anchor);
+    if (pos < 2 || !is_barrier_block(parent.at(pos - 1))) {
+        return nullptr;
+    }
+    int first = pos - 2;
+    if (!is_copy_in_block(parent.at(first))) {
+        return nullptr;
+    }
+    while (first > 0 && is_copy_in_block(parent.at(first - 1))) {
+        --first;
+    }
+    if (needs_leading && (first == 0 || !is_barrier_block(parent.at(first - 1)))) {
+        return nullptr;
+    }
+    return &parent.at(pos - 1);
+}
+
 } // namespace
 
 std::vector<size_t> LocalStorage::TileInfo::varying_dims() const {
@@ -728,18 +773,36 @@ void LocalStorage::apply_prepared(builder::StructuredSDFGBuilder& builder, analy
                 slot_inits,
                 slot_strides
             );
-            emit_copy_node(
-                builder,
-                *parent,
-                loop_,
-                /*after=*/false,
-                copy,
-                impl,
-                pointer_type,
-                tiles::CopyDirection::In,
-                /*leading_barrier=*/!slot_indices.empty(),
-                /*trailing_barrier=*/true
-            );
+            const bool needs_leading = !slot_indices.empty();
+            if (auto* group_end = staging_group_trailing_barrier(*parent, loop_, needs_leading)) {
+                // Join the preceding staging group: its barriers already fence this copy,
+                // so all its loads can be in flight together.
+                emit_copy_node(
+                    builder,
+                    *parent,
+                    *group_end,
+                    /*after=*/false,
+                    copy,
+                    impl,
+                    pointer_type,
+                    tiles::CopyDirection::In,
+                    /*leading_barrier=*/false,
+                    /*trailing_barrier=*/false
+                );
+            } else {
+                emit_copy_node(
+                    builder,
+                    *parent,
+                    loop_,
+                    /*after=*/false,
+                    copy,
+                    impl,
+                    pointer_type,
+                    tiles::CopyDirection::In,
+                    /*leading_barrier=*/needs_leading,
+                    /*trailing_barrier=*/true
+                );
+            }
         }
     } else {
         if (needs_copy_in()) {

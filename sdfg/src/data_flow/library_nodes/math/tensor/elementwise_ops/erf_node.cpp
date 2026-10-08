@@ -31,8 +31,6 @@ ElementWiseDataflowTensorNode::ElementOutput ErfNode::expand_operation_dataflow(
 ) {
     auto& input = needed_inputs.at(0);
 
-    throw std::runtime_error("Erf: untested expand");
-
     auto& libnode =
         builder.add_library_node<cmath::CMathNode>(block, debug_info_, cmath::CMathFunction::erf, input.required_type);
     input.consumer = &libnode;

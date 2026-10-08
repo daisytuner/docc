@@ -24,7 +24,7 @@ public:
     );
 
     int tensor_input_count() const override {
-        return 1;
+        return 2;
     }
 
     ElementOutput expand_operation_dataflow(
