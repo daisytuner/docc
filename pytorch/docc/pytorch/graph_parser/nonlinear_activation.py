@@ -115,21 +115,12 @@ class LeakyReLUParser(GraphParserModule):
                 node,
                 "Expected one or two arguments but got " + str(len(node.args)),
             )
-        unsupported_kwargs: set[str] = set(node.kwargs) - {"negative_slope"}
-        if len(unsupported_kwargs) != 0:
+        if len(node.kwargs) != 0:
             raise GraphParserError(
-                self, node, "Unsupported kwargs: " + str(unsupported_kwargs)
+                self, node, "Unsupported kwargs: " + str(node.kwargs)
             )
 
-        negative_slope: Argument = 0.01
-        if len(node.args) == 2:
-            if "negative_slope" in node.kwargs:
-                raise GraphParserError(
-                    self, node, "negative_slope given as argument and as kwarg"
-                )
-            negative_slope: Argument = node.args[1]
-        elif "negative_slope" in node.kwargs:
-            negative_slope: Argument = node.kwargs["negative_slope"]
+        negative_slope: Argument = node.args[1] if len(node.args) == 2 else 0.01
         if isinstance(negative_slope, bool) or not isinstance(
             negative_slope, (int, float)
         ):
