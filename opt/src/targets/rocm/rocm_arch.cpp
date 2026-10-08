@@ -313,6 +313,53 @@ bool RocmMmaSupport::is_mma_type(const types::StorageType& storage) {
     return storage.value() == MMA_STORAGE_TYPE;
 }
 
+bool RocmMfma32Support::supported_types(types::PrimitiveType input_type, types::PrimitiveType output_type) const {
+    return input_type == types::PrimitiveType::Half &&
+           (output_type == types::PrimitiveType::Float || output_type == types::PrimitiveType::Half);
+}
+
+void RocmMfma32Support::set_mma_fragment_storage_type(
+    types::StorageType& storage_type, const MmaBlockSize& size, MmaFragmentType type, MmaFragmentLayout layout
+) const {
+    RocmMmaSupport::set_mma_fragment_storage_type(storage_type, size, type, layout);
+    storage_type.value(MMA_STORAGE_TYPE);
+}
+
+bool RocmMfma32Support::is_mma_type(const types::StorageType& storage) {
+    return storage.value() == MMA_STORAGE_TYPE;
+}
+
+data_flow::ImplementationType RocmMfma32Support::get_mma_impl_type() const {
+    return ImplementationType_ROCM_MFMA;
+}
+
+void RocmMfma32Support::
+    emit_fragment_type(std::ostream& os, const types::StorageType& storage_type, types::PrimitiveType element_type) {
+    MmaBlockSize size{
+        get_storage_type_arg_as_int(storage_type, 0),
+        get_storage_type_arg_as_int(storage_type, 1),
+        get_storage_type_arg_as_int(storage_type, 2)
+    };
+    auto type = static_cast<MmaFragmentType>(get_storage_type_arg_as_int(storage_type, 3));
+    auto shape = size.get_shape(type);
+    const auto elems =
+        SymEngine::rcp_static_cast<const SymEngine::Integer>(symbolic::mul(shape.at(0), shape.at(1)))->as_int() / 64;
+    switch (element_type) {
+        case types::PrimitiveType::Half:
+            os << "_Float16";
+            break;
+        case types::PrimitiveType::Float:
+            os << "float";
+            break;
+        default:
+            throw std::invalid_argument(
+                "invalid scalar type: " + std::string(types::primitive_type_to_string(element_type)) +
+                " on mfma fragment declaration"
+            );
+    }
+    os << " __attribute__((ext_vector_type(" << elems << ")))";
+}
+
 data_flow::ImplementationType RocmMmaSupport::get_mma_impl_type() const {
     return ImplementationType_ROCM_MMA;
 }

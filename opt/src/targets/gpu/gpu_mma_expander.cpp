@@ -106,9 +106,10 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
     const data_flow::ImplementationType& impl_type,
     bool include_c_add,
     const DebugInfo& org_debug_info,
-    const std::array<int, 3>& args_order // {y, a, b}
+    const std::array<int, 3>& args_order, // {y, a, b}
+    const GpuMmaSupport* mma
 ) {
-    auto* mma_arch = arch.mma_support();
+    auto* mma_arch = mma ? mma : arch.mma_support();
     auto mma_impl_type = mma_arch->get_mma_impl_type();
 
     auto& m_dim = layout_a.get_dim(0);
@@ -461,7 +462,7 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::handle_expand(
     auto input_type = node.uniform_quantization(node.get_parent()).value();
     auto output_type = input_type;
 
-    auto new_impl_type = arch_->mma_support()->get_mma_impl_type();
+    auto new_impl_type = mma()->get_mma_impl_type();
 
     auto standalone = context.replacement_requires_access_nodes({InputUse::Scalar, InputUse::Scalar, InputUse::Scalar});
 
@@ -474,12 +475,13 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::handle_expand(
             node.layout_b(),
             result_layout,
             input_type,
-            accumulator_type(*arch_->mma_support(), input_type, output_type),
+            accumulator_type(*mma(), input_type, output_type),
             output_type,
             new_impl_type.value(),
             true,
             node.debug_info(),
-            {0, 1, 2} // {y, a, b}: MatMulNode access nodes are already ordered Y, A, B
+            {0, 1, 2}, // {y, a, b}: MatMulNode access nodes are already ordered Y, A, B
+            mma()
         );
     } else {
         return context.unable();
@@ -534,12 +536,12 @@ void GpuMmaExpander::create_eltwise_add_block(
 }
 
 bool GpuMmaExpander::matches_possible_mma_pattern(const math::tensor::MatMulNode& node) const {
-    auto* mma_arch = arch_->mma_support();
+    auto* mma_arch = mma();
     if (!mma_arch) {
         return false;
     }
     GpuMmaTiling dummy_tiling;
-    if (!mma_arch->get_matmul_impl_type(*arch_, dummy_tiling).has_value()) {
+    if (!mma_ && !mma_arch->get_matmul_impl_type(*arch_, dummy_tiling).has_value()) {
         return false;
     }
 
@@ -591,7 +593,7 @@ bool GpuMmaExpander::matches_possible_mma_pattern(const math::tensor::MatMulNode
 }
 
 GpuMmaTiling GpuMmaExpander::get_mma_tiling(const symbolic::MultiExpression& res_shape) const {
-    auto* mma_arch = arch_->mma_support();
+    auto* mma_arch = mma();
     if (!mma_arch) {
         throw std::runtime_error("No MMA architecture available for this GPU target.");
     }

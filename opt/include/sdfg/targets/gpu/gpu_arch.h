@@ -25,6 +25,11 @@ public:
 
     virtual const GpuMmaSupport* mma_support() const = 0;
 
+    /// The MMA atom for @p shape (e.g. "32x32x8"); empty selects the default atom, nullptr if unsupported.
+    virtual const GpuMmaSupport* mma_support_for(const std::string& shape) const {
+        return shape.empty() ? mma_support() : nullptr;
+    }
+
     virtual structured_control_flow::ScheduleType create_schedule_type() const = 0;
 
     static const GpuArch* get_from_schedule_type(const structured_control_flow::ScheduleType& schedule);

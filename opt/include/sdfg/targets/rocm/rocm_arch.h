@@ -17,6 +17,11 @@ struct RocmMmaSupport : public GpuMmaSupport {
         : GpuMmaSupport(base_size, base_size, base_size, threads), f32_support(f32_support) {
     }
 
+protected:
+    RocmMmaSupport(uint16_t m, uint16_t n, uint16_t k, bool f32_support, uint16_t threads)
+        : GpuMmaSupport(m, n, k, threads), f32_support(f32_support) {
+    }
+
 public:
     static constexpr const char* MMA_STORAGE_TYPE = "ROCM_MMA";
 
@@ -50,16 +55,45 @@ public:
     );
 };
 
+/// The raw `v_mfma_f32_32x32x8f16` atom (CDNA). rocWMMA caps its MFMA at 16x16 on gfx9, so these
+/// fragments are plain register vectors and dedicated dispatchers emit the lane layouts.
+struct RocmMfma32Support : public RocmMmaSupport {
+    static constexpr const char* MMA_STORAGE_TYPE = "ROCM_MFMA";
+
+    explicit RocmMfma32Support(uint16_t threads) : RocmMmaSupport(32, 32, 8, false, threads) {
+    }
+
+    bool supported_types(types::PrimitiveType input_type, types::PrimitiveType output_type) const override;
+
+    std::optional<data_flow::ImplementationType>
+    get_matmul_impl_type(const GpuArch& arch, const GpuMmaTiling& tiling) const override {
+        return std::nullopt;
+    }
+
+    void set_mma_fragment_storage_type(
+        types::StorageType& storage_type, const MmaBlockSize& size, MmaFragmentType type, MmaFragmentLayout layout
+    ) const override;
+
+    static bool is_mma_type(const types::StorageType& storage);
+
+    data_flow::ImplementationType get_mma_impl_type() const override;
+
+    /// Per-lane register vector of a fragment: shape / 64 elements of @p element_type.
+    static void
+    emit_fragment_type(std::ostream& os, const types::StorageType& storage_type, types::PrimitiveType element_type);
+};
+
 
 class RocmArch : public GpuArch {
     int per_cu_threads_;
     std::string rocm_name_;
     RocmMmaSupport mma_support_;
+    RocmMfma32Support mfma32_support_;
 
 public:
     RocmArch(const std::string& name, int per_cu_threads, bool mma_base_support, bool mma_f32_support)
         : GpuArch(), rocm_name_(name), per_cu_threads_(per_cu_threads),
-          mma_support_(mma_base_support ? 16 : 0, mma_f32_support, per_cu_threads) {
+          mma_support_(mma_base_support ? 16 : 0, mma_f32_support, per_cu_threads), mfma32_support_(per_cu_threads) {
     }
 
     std::string unique_id() const override;
@@ -75,6 +109,14 @@ public:
         } else {
             return nullptr;
         }
+    }
+
+    /// "32x32x8" selects the raw MFMA atom on wave64 (CDNA) targets with matrix cores.
+    const GpuMmaSupport* mma_support_for(const std::string& shape) const override {
+        if (shape == "32x32x8") {
+            return per_cu_threads_ == 64 && mma_support() ? &mfma32_support_ : nullptr;
+        }
+        return GpuArch::mma_support_for(shape);
     }
 
     structured_control_flow::ScheduleType create_schedule_type() const override;
