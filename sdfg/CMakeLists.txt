@@ -95,7 +95,6 @@ set(SOURCE_FILES
     src/data_flow/library_nodes/math/tensor/elementwise_ops/fill_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/gelu_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/hard_sigmoid_node.cpp
-    src/data_flow/library_nodes/math/tensor/elementwise_ops/leaky_relu_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/logical_not_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/maximum_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/minimum_node.cpp
@@ -112,6 +111,7 @@ set(SOURCE_FILES
     src/data_flow/library_nodes/math/tensor/embedding_renorm_node.cpp
     src/data_flow/library_nodes/math/tensor/index_node.cpp
     src/data_flow/library_nodes/math/tensor/layernorm_node.cpp
+    src/data_flow/library_nodes/math/tensor/leaky_relu_node.cpp
     src/data_flow/library_nodes/math/tensor/matmul_node.cpp
     src/data_flow/library_nodes/math/tensor/pooling_node.cpp
     src/data_flow/library_nodes/math/tensor/reduce_node.cpp

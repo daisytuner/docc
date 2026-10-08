@@ -45,6 +45,78 @@ def test_gelu_tanh_approx(target: str) -> None:
     check(GELUSimpleNet(), torch.randn(2), target=target)
 
 
+# --- LeakyReLU ---
+
+
+class LeakyReLUNet(nn.Module):
+    def __init__(self, negative_slope: float = 0.01) -> None:
+        super().__init__()
+        self.leaky_relu: nn.LeakyReLU = nn.LeakyReLU(negative_slope)
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        return self.leaky_relu(input)
+
+
+def _leaky_relu_special_values() -> torch.Tensor:
+    return torch.tensor(
+        [torch.nan, torch.inf, -torch.inf, 0.0, -0.0, 1.0, -1.0, 1e-30, -1e-30]
+    )
+
+
+def test_leaky_relu_simple(target: str) -> None:
+    check(LeakyReLUNet(), torch.randn(8), target=target)
+
+
+def test_leaky_relu_negative_slope(target: str) -> None:
+    check(LeakyReLUNet(0.2), torch.randn(8), target=target)
+
+
+def test_leaky_relu_negative_slope_negative(target: str) -> None:
+    check(LeakyReLUNet(-0.5), torch.randn(8), target=target)
+
+
+def test_leaky_relu_negative_slope_int(target: str) -> None:
+    class LeakyReLUIntSlopeNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return nn.functional.leaky_relu(input, 2)
+
+    check(LeakyReLUIntSlopeNet(), torch.randn(8), target=target)
+
+
+def test_leaky_relu_negative_slope_inf(target: str) -> None:
+    check(
+        LeakyReLUNet(float("inf")),
+        _leaky_relu_special_values(),
+        target=target,
+        equal_nan=True,
+    )
+
+
+def test_leaky_relu_special_values(target: str) -> None:
+    check(LeakyReLUNet(), _leaky_relu_special_values(), target=target, equal_nan=True)
+
+
+def test_leaky_relu_inplace(target: str) -> None:
+    class LeakyReLUInplaceNet(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.leaky_relu: nn.LeakyReLU = nn.LeakyReLU(inplace=True)
+
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            # check() feeds the same input to the reference and the compiled model.
+            return self.leaky_relu(input.clone())
+
+    check(LeakyReLUInplaceNet(), torch.randn(8), target=target)
+
+
+def test_leaky_relu_multidim(target: str) -> None:
+    check(LeakyReLUNet(), torch.randn(2, 3, 4, 5), target=target)
+
+
+def test_leaky_relu_float64(target: str) -> None:
+    check(LeakyReLUNet(), torch.randn(3, 5, dtype=torch.float64), target=target)
+
+
 # --- Softmax ---
 
 
