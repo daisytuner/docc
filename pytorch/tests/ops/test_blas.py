@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-
+import pytest
 from tests import check
 
 # --- addmm ---
@@ -272,6 +272,25 @@ def test_addmm_broadcast_alpha_beta(target: str) -> None:
         target=target
     )
 
+@pytest.mark.supported_targets("rocm", "cuda")
+def test_addmm_broadcast_half(target: str) -> None:
+    class AddMMBroadcastHalfNet(nn.Module):
+        def forward(
+            self, input: torch.Tensor, mat1: torch.Tensor, mat2: torch.Tensor
+        ) -> torch.Tensor:
+            return torch.addmm(input, mat1, mat2)
+    check(
+        AddMMBroadcastHalfNet(),
+        *(
+            torch.randn(30, dtype=torch.float16),
+            torch.randn(128, 20, dtype=torch.float16),
+            torch.randn(20, 30, dtype=torch.float16),
+        ),
+        rtol=1e-2,
+        atol=1e-2,
+        target=target,
+    )
+
 
 # --- bmm ---
 
@@ -295,3 +314,16 @@ def test_mm_simple(target: str) -> None:
             return torch.mm(input, mat2)
 
     check(MMSimpleNet(), *(torch.randn(2, 3), torch.randn(3, 3)), target=target)
+
+@pytest.mark.supported_targets("rocm", "cuda")
+def test_mm_half(target: str) -> None:
+    class MMHalfNet(nn.Module):
+        def forward(self, input: torch.Tensor, mat2: torch.Tensor) -> torch.Tensor:
+            return torch.mm(input, mat2)
+    check(
+        MMHalfNet(),
+        *(torch.randn(32, 20, dtype=torch.float16), torch.randn(20, 16, dtype=torch.float16)),
+        rtol=1e-2,
+        atol=1e-2,
+        target=target,
+    )
