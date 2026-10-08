@@ -282,7 +282,6 @@ def test_indexing_multi_dim(target: str) -> None:
     check(IndexingMultiDimNet(), torch.randn(5, 4), target=target)
 
 
-@pytest.mark.skip(reason="Needs fixes for constants")
 def test_indexing_tuple(target: str) -> None:
     class IndexingTupleNet(nn.Module):
         def forward(self, input: torch.Tensor) -> torch.Tensor:
@@ -291,7 +290,6 @@ def test_indexing_tuple(target: str) -> None:
     check(IndexingTupleNet(), torch.randn(5, 4), target=target)
 
 
-@pytest.mark.skip(reason="Needs fixes for constants")
 def test_indexing_list(target: str) -> None:
     class IndexingListNet(nn.Module):
         def forward(self, input: torch.Tensor) -> torch.Tensor:
@@ -448,7 +446,6 @@ def test_indexing_Ellipsis(target: str) -> None:
     check(IndexingEllipsisNet(), torch.randn(5, 4), target=target)
 
 
-@pytest.mark.skip(reason="Needs support for aten.empty.memory_format")
 def test_indexing_True(target: str) -> None:
     class IndexingTrueNet(nn.Module):
         def forward(self, input: torch.Tensor) -> torch.Tensor:
@@ -457,7 +454,7 @@ def test_indexing_True(target: str) -> None:
     check(IndexingTrueNet(), torch.randn(5, 4), target=target)
 
 
-@pytest.mark.skip(reason="Output order wrong")
+@pytest.mark.skip(reason="In AND out arguments unsupported")
 def test_indexing_bool_mask(target: str) -> None:
     class IndexingBoolMaskNet(nn.Module):
         def forward(self, input: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:

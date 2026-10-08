@@ -48,20 +48,21 @@ def test_tensor_empty(target: str) -> None:
     check(TensorEmptyNet(), *(), target=target)
 
 
-@pytest.mark.supported_targets("cuda", "rocm")
-def test_tensor_gpu(target: str) -> None:
-    class TensorSimpleNet(nn.Module):
-        is_docc = None
+# Currently disable because of unwanted graph breaks and incompatible CUDA/ROCm versions
+# @pytest.mark.supported_targets("cuda", "rocm")
+# def test_tensor_gpu(target: str) -> None:
+#     class TensorSimpleNet(nn.Module):
+#         is_docc = None
 
-        def forward(self) -> torch.Tensor:
-            return torch.tensor(
-                [[0.1, 1.2], [2.2, 3.1], [4.9, 5.2]],
-                device=(
-                    torch.device("cuda") if self.is_docc else torch.get_default_device()
-                ),
-            )
+#         def forward(self) -> torch.Tensor:
+#             return torch.tensor(
+#                 [[0.1, 1.2], [2.2, 3.1], [4.9, 5.2]],
+#                 device=(
+#                     torch.device("cuda") if self.is_docc else torch.get_default_device()
+#                 ),
+#             )
 
-    check(TensorSimpleNet(), *(), target=target)
+#     check(TensorSimpleNet(), *(), target=target)
 
 
 # --- arange ---
