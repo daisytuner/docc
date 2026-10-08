@@ -522,12 +522,13 @@ void register_transformations(py::module& m) {
     // LocalStorage transformation (schedule-derived local buffer; direction derived)
     py::class_<LocalStorage, Transformation>(m, "LocalStorage")
         .def(
-            py::init<StructuredLoop&, const sdfg::data_flow::AccessNode&, bool, bool, bool>(),
+            py::init<StructuredLoop&, const sdfg::data_flow::AccessNode&, bool, bool, bool, size_t>(),
             py::arg("loop"),
             py::arg("access_node"),
             py::arg("swizzle_layout") = false,
             py::arg("lane_contiguous") = false,
             py::arg("transpose_layout") = false,
+            py::arg("row_pad_bytes") = 0,
             "Create a local-storage transformation.\n\n"
             "The copy direction (in/out) and the storage space are both derived\n"
             "from the dataflow and the enclosing parallel schedule.\n\n"
@@ -543,7 +544,10 @@ void register_transformations(py::module& m) {
             "        by the CDNA async global->LDS DMA (global_load_lds).\n"
             "    transpose_layout: Store a cooperative (no-slot) NV_Shared tile\n"
             "        column-major (its tile axes reversed), so consumers read it\n"
-            "        transposed. A pure affine relabelling of storage."
+            "        transposed. A pure affine relabelling of storage.\n"
+            "    row_pad_bytes: Row pad of a library-operand NV_Shared tile in bytes;\n"
+            "        the per-lane fragment read width (8 for CDNA 32x32x8 MFMA). 0 keeps\n"
+            "        the default (16 B row-major, 8 B transposed)."
         )
         .def_property_readonly(
             "local_container", &LocalStorage::local_container, "Name of the created local buffer (valid after apply())"
