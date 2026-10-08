@@ -603,18 +603,6 @@ public:
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
 
-    void add_hard_sigmoid(
-        const std::string& X,
-        const sdfg::types::Tensor& X_type,
-        const std::string& Alpha,
-        const sdfg::types::Scalar& Alpha_type,
-        const std::string& Beta,
-        const sdfg::types::Scalar& Beta_type,
-        const std::string& Y,
-        const sdfg::types::Tensor& Y_type,
-        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
-    );
-
     void add_leaky_relu(
         const std::string& X,
         const sdfg::types::Tensor& X_type,

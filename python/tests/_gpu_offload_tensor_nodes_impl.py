@@ -253,21 +253,6 @@ UNARY = (
         atol=1e-5,
     ),
     _unary(
-        "hard_sigmoid",
-        lambda b, t, p: b.add_hard_sigmoid(
-            "X",
-            t["X"],
-            "0.2",
-            _scalar(p["dtype"]),
-            "0.5",
-            _scalar(p["dtype"]),
-            "Y",
-            t["Y"],
-        ),
-        lambda x: np.clip(0.2 * x + 0.5, 0, 1),
-        FLOAT_CASES,
-    ),
-    _unary(
         "leaky_relu",
         lambda b, t, p: b.add_leaky_relu(
             "X", t["X"], "0.01", _scalar(p["dtype"]), "Y", t["Y"]

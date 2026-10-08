@@ -1686,10 +1686,6 @@ void register_default_serializers() {
             return std::make_unique<math::tensor::ErfNodeSerializer>();
         });
     LibraryNodeSerializerRegistry::instance()
-        .register_library_node_serializer(math::tensor::LibraryNodeType_HardSigmoid.value(), []() {
-            return std::make_unique<math::tensor::HardSigmoidNodeSerializer>();
-        });
-    LibraryNodeSerializerRegistry::instance()
         .register_library_node_serializer(math::tensor::LibraryNodeType_LeakyReLU.value(), []() {
             return std::make_unique<math::tensor::LeakyReLUNodeSerializer>();
         });

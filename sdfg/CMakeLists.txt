@@ -95,7 +95,6 @@ set(SOURCE_FILES
     src/data_flow/library_nodes/math/tensor/elementwise_ops/exp_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/fill_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/gelu_node.cpp
-    src/data_flow/library_nodes/math/tensor/elementwise_ops/hard_sigmoid_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/leaky_relu_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/logical_not_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/maximum_node.cpp

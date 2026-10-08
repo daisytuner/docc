@@ -743,19 +743,6 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("debug_info") = sdfg::DebugInfo()
         )
         .def(
-            "add_hard_sigmoid",
-            &PyStructuredSDFGBuilder::add_hard_sigmoid,
-            py::arg("X"),
-            py::arg("X_type"),
-            py::arg("Alpha"),
-            py::arg("Alpha_type"),
-            py::arg("Beta"),
-            py::arg("Beta_type"),
-            py::arg("Y"),
-            py::arg("Y_type"),
-            py::arg("debug_info") = sdfg::DebugInfo()
-        )
-        .def(
             "add_leaky_relu",
             &PyStructuredSDFGBuilder::add_leaky_relu,
             py::arg("X"),
