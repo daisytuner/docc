@@ -781,22 +781,17 @@ void LocalStorage::apply_prepared(builder::StructuredSDFGBuilder& builder, analy
         // reads it with the same orientation and only a tighter leading dimension.
         buffer.kind = tiles::BufferKind::Transposed;
     }
-    // Library operands (MMA fragments) read rows strided by the leading dimension; a
-    // 16-byte row pad keeps those rows off the same banks and the rows 16-byte aligned.
-    if (buffer.kind == tiles::BufferKind::MultiDim && storage_type_.is_nv_shared() &&
-        has_library_operand(group_memlets_)) {
+    // Library operands (MMA fragments) read rows strided by the leading dimension; padding
+    // each row by the per-lane read width keeps those reads conflict-free. Defaults: 16 B for
+    // row-major tiles (also keeps rows 16-byte aligned), 8 B for transposed ones (8 B lane reads
+    // and transposing 8 B stores).
+    if ((buffer.kind == tiles::BufferKind::MultiDim || buffer.kind == tiles::BufferKind::Transposed) &&
+        storage_type_.is_nv_shared() && has_library_operand(group_memlets_)) {
+        const size_t pad_bytes = row_pad_bytes_ ? row_pad_bytes_
+                                                : (buffer.kind == tiles::BufferKind::Transposed ? 8 : 16);
         const size_t elem_bytes = types::bit_width(scalar_type.primitive_type()) / 8;
-        if (elem_bytes > 0 && 16 % elem_bytes == 0) {
-            buffer.row_pad = 16 / elem_bytes;
-        }
-    }
-    // A transposed operand is read 8 B per lane along its stored rows; an 8 B pad keeps
-    // those reads and the transposing 8 B stores conflict-free.
-    if (buffer.kind == tiles::BufferKind::Transposed && storage_type_.is_nv_shared() &&
-        has_library_operand(group_memlets_)) {
-        const size_t elem_bytes = types::bit_width(scalar_type.primitive_type()) / 8;
-        if (elem_bytes > 0 && 8 % elem_bytes == 0) {
-            buffer.row_pad = 8 / elem_bytes;
+        if (elem_bytes > 0 && pad_bytes % elem_bytes == 0) {
+            buffer.row_pad = pad_bytes / elem_bytes;
         }
     }
     // Cooperative-store conflict avoidance: pad the inner stride to the coop axis's
@@ -1482,6 +1477,7 @@ void LocalStorage::to_json(nlohmann::json& j) const {
     j["parameters"]["swizzle_layout"] = swizzle_layout_;
     j["parameters"]["lane_contiguous"] = lane_contiguous_;
     j["parameters"]["transpose_layout"] = transpose_layout_;
+    j["parameters"]["row_pad_bytes"] = row_pad_bytes_;
 
     serializer::JSONSerializer ser_flat(false);
     j["subgraph"] = nlohmann::json::object();
@@ -1530,7 +1526,12 @@ LocalStorage LocalStorage::from_json(builder::StructuredSDFGBuilder& builder, co
         transpose_layout = desc["parameters"]["transpose_layout"].get<bool>();
     }
 
-    return LocalStorage(*loop, *access_node, swizzle_layout, lane_contiguous, transpose_layout);
+    size_t row_pad_bytes = 0;
+    if (desc.contains("parameters") && desc["parameters"].contains("row_pad_bytes")) {
+        row_pad_bytes = desc["parameters"]["row_pad_bytes"].get<size_t>();
+    }
+
+    return LocalStorage(*loop, *access_node, swizzle_layout, lane_contiguous, transpose_layout, row_pad_bytes);
 }
 
 } // namespace transformations

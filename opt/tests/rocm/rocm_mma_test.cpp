@@ -414,14 +414,19 @@ const tiles::TileCopyNode* find_copy_from(structured_control_flow::ControlFlowNo
     return found;
 }
 
-void localize(builder::StructuredSDFGBuilder& builder, const std::string& loop_indvar, bool transpose_b = false) {
+void localize(
+    builder::StructuredSDFGBuilder& builder,
+    const std::string& loop_indvar,
+    bool transpose_b = false,
+    size_t row_pad_bytes = 0
+) {
     for (const std::string container : {"A", "B"}) {
         analysis::AnalysisManager am(builder.subject());
         auto* loop = find_loop(am, loop_indvar);
         ASSERT_NE(loop, nullptr);
         auto* access = find_access(*loop, container);
         ASSERT_NE(access, nullptr) << container;
-        transformations::LocalStorage ls(*loop, *access, false, false, transpose_b && container == "B");
+        transformations::LocalStorage ls(*loop, *access, false, false, transpose_b && container == "B", row_pad_bytes);
         ASSERT_TRUE(ls.can_be_applied(builder, am)) << container;
         ls.apply(builder, am);
     }
@@ -884,8 +889,16 @@ TEST(ROCMMMATest, RawMfma32x32x8_gfx90a) {
     EXPECT_GT(fragments, 0u);
 
     strip_mine_k(builder, 8);
-    localize(builder, "tile_k0", /*transpose_b=*/true);
+    localize(builder, "tile_k0", /*transpose_b=*/true, /*row_pad_bytes=*/8);
     EXPECT_NO_THROW(builder.subject().validate());
+    // 8 B lane reads: 64 + 4 halves per row for both operands.
+    for (const auto& name : builder.subject().containers()) {
+        if (name.rfind("__daisy_local_storage_", 0) == 0) {
+            auto& type = static_cast<const types::Array&>(builder.subject().type(name));
+            auto& row = static_cast<const types::Array&>(type.element_type());
+            EXPECT_TRUE(symbolic::eq(row.num_elements(), symbolic::integer(68))) << name;
+        }
+    }
     auto* b = find_local_load(builder.subject().root(), "B");
     ASSERT_NE(b, nullptr);
     EXPECT_EQ(b->layout().layout, gpu::MMA_LAYOUT_COL_MAJOR);
