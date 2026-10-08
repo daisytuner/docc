@@ -2392,50 +2392,6 @@ void PyStructuredSDFGBuilder::add_gelu(
     builder_.add_computational_memlet(block, Y_access, libnode, "Y", {}, Y_type, debug_info);
 }
 
-// Wires an input that is either an existing container or a constant literal.
-static void connect_input(
-    sdfg::builder::StructuredSDFGBuilder& builder,
-    Block& block,
-    sdfg::data_flow::LibraryNode& libnode,
-    const std::string& conn,
-    const std::string& name,
-    const sdfg::types::IType& type,
-    const sdfg::types::IType& constant_type,
-    const sdfg::DebugInfo& debug_info
-) {
-    if (builder.subject().exists(name)) {
-        auto& access = builder.add_access(block, name, debug_info);
-        builder.add_computational_memlet(block, access, libnode, conn, {}, type, debug_info);
-    } else {
-        auto& constant = builder.add_constant(block, name, constant_type, debug_info);
-        builder.add_memlet(block, constant, "void", libnode, conn, {}, type, debug_info);
-    }
-}
-
-static void connect_tensor_input(
-    sdfg::builder::StructuredSDFGBuilder& builder,
-    Block& block,
-    sdfg::data_flow::LibraryNode& libnode,
-    const std::string& conn,
-    const std::string& name,
-    const sdfg::types::Tensor& type,
-    const sdfg::DebugInfo& debug_info
-) {
-    connect_input(builder, block, libnode, conn, name, type, type.element_type(), debug_info);
-}
-
-static void connect_scalar_input(
-    sdfg::builder::StructuredSDFGBuilder& builder,
-    Block& block,
-    sdfg::data_flow::LibraryNode& libnode,
-    const std::string& conn,
-    const std::string& name,
-    const sdfg::types::Scalar& type,
-    const sdfg::DebugInfo& debug_info
-) {
-    connect_input(builder, block, libnode, conn, name, type, type, debug_info);
-}
-
 void PyStructuredSDFGBuilder::add_elu(
     const std::string& X,
     const sdfg::types::Tensor& X_type,
@@ -2447,9 +2403,22 @@ void PyStructuredSDFGBuilder::add_elu(
 ) {
     auto& block = builder_.add_block(current_sequence(), {}, debug_info);
     auto& libnode = builder_.add_library_node<sdfg::math::tensor::EluNode>(block, debug_info, Y_type.shape());
-    connect_tensor_input(builder_, block, libnode, "X", X, X_type, debug_info);
-    connect_scalar_input(builder_, block, libnode, "alpha", Alpha, Alpha_type, debug_info);
-    connect_tensor_input(builder_, block, libnode, "Y", Y, Y_type, debug_info);
+
+    auto& Y_access = builder_.add_access(block, Y, debug_info);
+    builder_.add_computational_memlet(block, Y_access, libnode, "Y", {}, Y_type, debug_info);
+
+    if (builder_.subject().exists(X)) {
+        auto& X_access = builder_.add_access(block, X, debug_info);
+        builder_.add_computational_memlet(block, X_access, libnode, "X", {}, X_type, debug_info);
+    } else {
+        auto& X_access = builder_.add_constant(block, X, X_type.element_type(), debug_info);
+        builder_.add_memlet(block, X_access, "void", libnode, "X", {}, X_type, debug_info);
+    }
+
+    auto& Alpha_access =
+        (builder_.subject().exists(Alpha) ? builder_.add_access(block, Alpha, debug_info)
+                                          : builder_.add_constant(block, Alpha, Alpha_type, debug_info));
+    builder_.add_computational_memlet(block, Alpha_access, libnode, "alpha", {}, Alpha_type, debug_info);
 }
 
 void PyStructuredSDFGBuilder::add_erf(
@@ -2461,11 +2430,19 @@ void PyStructuredSDFGBuilder::add_erf(
 ) {
     auto& block = builder_.add_block(current_sequence(), {}, debug_info);
     auto& libnode = builder_.add_library_node<sdfg::math::tensor::ErfNode>(block, debug_info, Y_type.shape());
-    connect_tensor_input(builder_, block, libnode, "X", X, X_type, debug_info);
-    connect_tensor_input(builder_, block, libnode, "Y", Y, Y_type, debug_info);
+
+    auto& Y_access = builder_.add_access(block, Y, debug_info);
+    builder_.add_computational_memlet(block, Y_access, libnode, "Y", {}, Y_type, debug_info);
+
+    if (builder_.subject().exists(X)) {
+        auto& X_access = builder_.add_access(block, X, debug_info);
+        builder_.add_computational_memlet(block, X_access, libnode, "X", {}, X_type, debug_info);
+    } else {
+        auto& X_access = builder_.add_constant(block, X, X_type.element_type(), debug_info);
+        builder_.add_memlet(block, X_access, "void", libnode, "X", {}, X_type, debug_info);
+    }
 }
 
-// HardSigmoid and LeakyReLU name their result connector "X" and their data input "Y".
 void PyStructuredSDFGBuilder::add_hard_sigmoid(
     const std::string& X,
     const sdfg::types::Tensor& X_type,
@@ -2479,10 +2456,27 @@ void PyStructuredSDFGBuilder::add_hard_sigmoid(
 ) {
     auto& block = builder_.add_block(current_sequence(), {}, debug_info);
     auto& libnode = builder_.add_library_node<sdfg::math::tensor::HardSigmoidNode>(block, debug_info, Y_type.shape());
-    connect_tensor_input(builder_, block, libnode, "Y", X, X_type, debug_info);
-    connect_scalar_input(builder_, block, libnode, "alpha", Alpha, Alpha_type, debug_info);
-    connect_scalar_input(builder_, block, libnode, "beta", Beta, Beta_type, debug_info);
-    connect_tensor_input(builder_, block, libnode, "X", Y, Y_type, debug_info);
+
+    auto& Y_access = builder_.add_access(block, Y, debug_info);
+    builder_.add_computational_memlet(block, Y_access, libnode, "Y", {}, Y_type, debug_info);
+
+    if (builder_.subject().exists(X)) {
+        auto& X_access = builder_.add_access(block, X, debug_info);
+        builder_.add_computational_memlet(block, X_access, libnode, "X", {}, X_type, debug_info);
+    } else {
+        auto& X_access = builder_.add_constant(block, X, X_type.element_type(), debug_info);
+        builder_.add_memlet(block, X_access, "void", libnode, "X", {}, X_type, debug_info);
+    }
+
+    auto& Alpha_access =
+        (builder_.subject().exists(Alpha) ? builder_.add_access(block, Alpha, debug_info)
+                                          : builder_.add_constant(block, Alpha, Alpha_type, debug_info));
+    builder_.add_computational_memlet(block, Alpha_access, libnode, "alpha", {}, Alpha_type, debug_info);
+
+    auto& Beta_access =
+        (builder_.subject().exists(Beta) ? builder_.add_access(block, Beta, debug_info)
+                                         : builder_.add_constant(block, Beta, Beta_type, debug_info));
+    builder_.add_computational_memlet(block, Beta_access, libnode, "beta", {}, Beta_type, debug_info);
 }
 
 void PyStructuredSDFGBuilder::add_leaky_relu(
@@ -2496,7 +2490,20 @@ void PyStructuredSDFGBuilder::add_leaky_relu(
 ) {
     auto& block = builder_.add_block(current_sequence(), {}, debug_info);
     auto& libnode = builder_.add_library_node<sdfg::math::tensor::LeakyReLUNode>(block, debug_info, Y_type.shape());
-    connect_tensor_input(builder_, block, libnode, "Y", X, X_type, debug_info);
-    connect_scalar_input(builder_, block, libnode, "alpha", Alpha, Alpha_type, debug_info);
-    connect_tensor_input(builder_, block, libnode, "X", Y, Y_type, debug_info);
+
+    auto& Y_access = builder_.add_access(block, Y, debug_info);
+    builder_.add_computational_memlet(block, Y_access, libnode, "Y", {}, Y_type, debug_info);
+
+    if (builder_.subject().exists(X)) {
+        auto& X_access = builder_.add_access(block, X, debug_info);
+        builder_.add_computational_memlet(block, X_access, libnode, "X", {}, X_type, debug_info);
+    } else {
+        auto& X_access = builder_.add_constant(block, X, X_type.element_type(), debug_info);
+        builder_.add_memlet(block, X_access, "void", libnode, "X", {}, X_type, debug_info);
+    }
+
+    auto& Alpha_access =
+        (builder_.subject().exists(Alpha) ? builder_.add_access(block, Alpha, debug_info)
+                                          : builder_.add_constant(block, Alpha, Alpha_type, debug_info));
+    builder_.add_computational_memlet(block, Alpha_access, libnode, "alpha", {}, Alpha_type, debug_info);
 }
