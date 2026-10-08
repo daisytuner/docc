@@ -276,6 +276,29 @@ UNARY = (
         FLOAT_CASES,
     ),
     _unary(
+        "clamp",
+        lambda b, t, p: b.add_clamp(
+            "X",
+            t["X"],
+            "-1",
+            _scalar(p["dtype"]),
+            "2",
+            _scalar(p["dtype"]),
+            "Y",
+            t["Y"],
+        ),
+        lambda x: np.clip(x, -1, 2),
+        FLOAT_CASES + (INT_CASE,),
+    ),
+    _unary(
+        "clamp_min",
+        lambda b, t, p: b.add_clamp(
+            "X", t["X"], "0", _scalar(p["dtype"]), "", None, "Y", t["Y"]
+        ),
+        lambda x: np.maximum(x, 0),
+        FLOAT_CASES,
+    ),
+    _unary(
         "cmath_sin",
         lambda b, t, p: b.add_elementwise_unary_cmath_op(
             CMathFunction.sin, "X", t["X"], "Y", t["Y"]
@@ -1151,7 +1174,6 @@ NODES = (
 )
 
 DISABLED = {
-    "hard_sigmoid": "node semantics do not match PyTorch's definition",
     "leaky_relu": "node semantics do not match PyTorch's definition",
 }
 

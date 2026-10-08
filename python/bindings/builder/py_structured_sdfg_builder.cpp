@@ -2507,3 +2507,35 @@ void PyStructuredSDFGBuilder::add_leaky_relu(
                                           : builder_.add_constant(block, Alpha, Alpha_type, debug_info));
     builder_.add_computational_memlet(block, Alpha_access, libnode, "alpha", {}, Alpha_type, debug_info);
 }
+
+void PyStructuredSDFGBuilder::add_clamp(
+    const std::string& X,
+    const sdfg::types::Tensor& X_type,
+    const std::string& Min,
+    const sdfg::types::Scalar* Min_type,
+    const std::string& Max,
+    const sdfg::types::Scalar* Max_type,
+    const std::string& Y,
+    const sdfg::types::Tensor& Y_type,
+    const sdfg::DebugInfo& debug_info
+) {
+    auto& block = builder_.add_block(current_sequence(), {}, debug_info);
+    auto& libnode = builder_.add_library_node<
+        sdfg::math::tensor::ClampNode>(block, debug_info, Y_type.shape(), Min_type != nullptr, Max_type != nullptr);
+
+    auto& Y_access = builder_.add_access(block, Y, debug_info);
+    builder_.add_computational_memlet(block, Y_access, libnode, "Y", {}, Y_type, debug_info);
+
+    auto& X_access = builder_.add_access(block, X, debug_info);
+    builder_.add_computational_memlet(block, X_access, libnode, "X", {}, X_type, debug_info);
+
+    for (auto [conn, name, type] : {std::tuple{"min", &Min, Min_type}, std::tuple{"max", &Max, Max_type}}) {
+        if (!type) {
+            continue;
+        }
+        auto& access =
+            (builder_.subject().exists(*name) ? builder_.add_access(block, *name, debug_info)
+                                              : builder_.add_constant(block, *name, *type, debug_info));
+        builder_.add_computational_memlet(block, access, libnode, conn, {}, *type, debug_info);
+    }
+}

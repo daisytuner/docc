@@ -14,6 +14,7 @@
 // Tensor
 #include "sdfg/data_flow/library_nodes/math/tensor/batchnorm_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/broadcast_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/clamp_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/concat_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/conditional_copy_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/const_padding_node.h"

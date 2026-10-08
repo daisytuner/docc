@@ -625,6 +625,19 @@ public:
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
 
+    // A bound is omitted when its type is null.
+    void add_clamp(
+        const std::string& X,
+        const sdfg::types::Tensor& X_type,
+        const std::string& Min,
+        const sdfg::types::Scalar* Min_type,
+        const std::string& Max,
+        const sdfg::types::Scalar* Max_type,
+        const std::string& Y,
+        const sdfg::types::Tensor& Y_type,
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+
     void add_conv(
         const std::string& X,
         const sdfg::types::Tensor& X_type,

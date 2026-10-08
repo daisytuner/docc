@@ -1632,6 +1632,10 @@ void register_default_serializers() {
             return std::make_unique<math::tensor::ConditionalTensorCopyNodeSerializer>();
         });
     LibraryNodeSerializerRegistry::instance()
+        .register_library_node_serializer(math::tensor::LibraryNodeType_Clamp.value(), []() {
+            return std::make_unique<math::tensor::ClampNodeSerializer>();
+        });
+    LibraryNodeSerializerRegistry::instance()
         .register_library_node_serializer(math::tensor::LibraryNodeType_ConstPadding.value(), []() {
             return std::make_unique<math::tensor::ConstPaddingNodeSerializer>();
         });
