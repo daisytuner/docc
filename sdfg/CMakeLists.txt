@@ -89,7 +89,6 @@ set(SOURCE_FILES
     src/data_flow/library_nodes/math/tensor/elementwise_ops/cast_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/cmath_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/div_node.cpp
-    src/data_flow/library_nodes/math/tensor/elementwise_ops/elu_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/erf_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/exp_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/fill_node.cpp
@@ -108,6 +107,7 @@ set(SOURCE_FILES
     src/data_flow/library_nodes/math/tensor/elementwise_ops/sub_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/tanh_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/tasklet_node.cpp
+    src/data_flow/library_nodes/math/tensor/elu_node.cpp
     src/data_flow/library_nodes/math/tensor/embedding_node.cpp
     src/data_flow/library_nodes/math/tensor/embedding_renorm_node.cpp
     src/data_flow/library_nodes/math/tensor/index_node.cpp

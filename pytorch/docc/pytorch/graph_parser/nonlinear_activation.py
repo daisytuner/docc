@@ -5,14 +5,16 @@ GraphParser modules for parsing non-linear activation functions.
 import torch.fx
 from torch.fx.node import Argument
 
-from docc.sdfg import StructuredSDFGBuilder, DebugInfo
+from docc.sdfg import StructuredSDFGBuilder, DebugInfo, Scalar
 
 from docc.pytorch.graph_parser.utils import (
     TensorInfo,
+    TensorConstant,
     TensorMetadata,
     GraphParserError,
     GraphParserModule,
     register_module,
+    primitive_type_is_floating_point,
 )
 
 
@@ -98,6 +100,87 @@ class GELUParser(GraphParserModule):
 
 
 register_module("aten.gelu.default", GELUParser())
+
+
+class EluParser(GraphParserModule):
+    PARAMS: tuple[str, ...] = ("alpha", "scale", "input_scale")
+
+    def parse(
+        self,
+        node: torch.fx.Node,
+        builder: StructuredSDFGBuilder,
+        metadata: TensorMetadata,
+    ) -> None:
+        if len(node.args) < 1 or len(node.args) > 1 + len(self.PARAMS):
+            raise GraphParserError(
+                self,
+                node,
+                "Expected one to four arguments but got " + str(len(node.args)),
+            )
+        unsupported_kwargs: set[str] = set(node.kwargs) - set(self.PARAMS)
+        if len(unsupported_kwargs) != 0:
+            raise GraphParserError(
+                self, node, "Unsupported kwargs: " + str(unsupported_kwargs)
+            )
+
+        self_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 0)
+        self_prim = self_info.element_type().primitive_type
+        if not primitive_type_is_floating_point(self_prim):
+            raise GraphParserError(
+                self, node, "Expected a floating point input but got " + str(self_prim)
+            )
+        result_info: TensorInfo = self.get_result_tensor_info(node, builder, metadata)
+        result_prim = result_info.element_type().primitive_type
+        if self_prim != result_prim:
+            raise GraphParserError(
+                self,
+                node,
+                f"Expected matching input and result types but got {self_prim} and {result_prim}",
+            )
+
+        params: list[tuple[str, Scalar]] = []
+        for i, name in enumerate(self.PARAMS):
+            value: Argument = 1
+            if i + 1 < len(node.args):
+                if name in node.kwargs:
+                    raise GraphParserError(
+                        self, node, name + " given as argument and as kwarg"
+                    )
+                value: Argument = node.args[i + 1]
+            elif name in node.kwargs:
+                value: Argument = node.kwargs[name]
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise GraphParserError(
+                    self,
+                    node,
+                    f"Expected {name} to be int or float type but got: {type(value)}",
+                )
+            constant: TensorConstant = self.convert_arg_to_tensor_constant(node, value)
+            constant_type: Scalar = self.align_constant_type(
+                node, constant, self_info.element_type()
+            )
+            params.append((constant.value(), constant_type))
+
+        (alpha, alpha_type), (scale, scale_type), (input_scale, input_scale_type) = (
+            params
+        )
+        debug_info: DebugInfo = self.get_debug_info(node)
+        builder.add_elu(
+            self_info.container(),
+            self_info.sdfg_tensor_type(),
+            alpha,
+            alpha_type,
+            scale,
+            scale_type,
+            input_scale,
+            input_scale_type,
+            result_info.container(),
+            result_info.sdfg_tensor_type(),
+            debug_info,
+        )
+
+
+register_module("aten.elu.default", EluParser())
 
 
 class SoftmaxParser(GraphParserModule):
