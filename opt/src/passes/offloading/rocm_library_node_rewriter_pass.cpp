@@ -11,7 +11,7 @@ namespace rocm {
 
 std::optional<data_flow::ImplementationType> RocmLibraryNodeRewriter::
     try_library_node_implementation(const data_flow::LibraryNode& lib_node, types::PrimitiveType data_type) {
-    if (data_type == types::PrimitiveType::Float || data_type == types::PrimitiveType::Double) {
+    if (data_type == types::PrimitiveType::Float || data_type == types::PrimitiveType::Double || data_type == types::PrimitiveType::Half) {
         if (lib_node.code() == math::blas::LibraryNodeType_GEMM.value()) {
             auto& gemm_node = static_cast<const math::blas::GEMMNode&>(lib_node);
             return try_rocm_gemm_node_implementation(gemm_node, data_type);

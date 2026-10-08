@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-
+import pytest
 from tests import check
 
 # --- Linear ---
@@ -29,12 +29,12 @@ def test_linear_bias(target: str) -> None:
 
     check(LinearBiasNet(), torch.randn(128, 20), target=target)
 
-
+@pytest.mark.supported_targets("rocm", "cuda")
 def test_linear_half(target: str) -> None:
     class LinearHalfNet(nn.Module):
         def __init__(self) -> None:
             super().__init__()
-            self.linear = nn.Linear(20, 30, bias=False)
+            self.linear = nn.Linear(20, 30, bias=False, dtype=torch.float16)
 
         def forward(self, input: torch.Tensor) -> torch.Tensor:
             return self.linear(input)
@@ -48,12 +48,12 @@ def test_linear_half(target: str) -> None:
         target=target,
     )
 
-
+@pytest.mark.supported_targets("rocm", "cuda")
 def test_linear_bias_half(target: str) -> None:
     class LinearBiasHalfNet(nn.Module):
         def __init__(self) -> None:
             super().__init__()
-            self.linear = nn.Linear(20, 30)
+            self.linear = nn.Linear(20, 30, dtype=torch.float16)
 
         def forward(self, input: torch.Tensor) -> torch.Tensor:
             return self.linear(input)
