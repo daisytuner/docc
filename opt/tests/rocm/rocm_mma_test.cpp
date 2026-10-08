@@ -19,6 +19,7 @@
 #include "sdfg/targets/gpu/gpu_types.h"
 #include "sdfg/targets/rocm/rocm.h"
 #include "sdfg/targets/rocm/rocm_arch.h"
+#include "sdfg/targets/rocm/rocm_mma_dispatcher.h"
 #include "sdfg/tiles/library_nodes/tile_copy_node.h"
 #include "sdfg/tiles/transformations/local_storage.h"
 #include "sdfg/tiles/transformations/software_pipelining.h"
@@ -856,6 +857,56 @@ TEST(ROCMMMATest, SoftwarePipeliningRegisterStaged_gfx90a) {
     EXPECT_NE(kernels.find("__daisy_stage_"), std::string::npos) << kernels;
     EXPECT_NE(kernels.find("#pragma unroll"), std::string::npos) << kernels;
     EXPECT_NE(kernels.find("make_uint4"), std::string::npos) << kernels;
+}
+
+// Raw 32x32x8 MFMA atom: only CDNA offers it; fragments are register vectors and every operand
+// read from LDS (A row-major, K-major B) is one 8-byte access per lane.
+TEST(ROCMMMATest, RawMfma32x32x8_gfx90a) {
+    EXPECT_EQ(gpu::rocm::ROCM_ARCH_GFX1201.mma_support_for("32x32x8"), nullptr);
+    auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
+    auto* mfma = arch.mma_support_for("32x32x8");
+    ASSERT_NE(mfma, nullptr);
+    EXPECT_EQ(mfma->mma_block_size.m, 32);
+    EXPECT_EQ(mfma->mma_block_size.k, 8);
+
+    sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+    auto [block, matmul_node] = build_offloaded_mma_structure(builder, 1024, 1024, 1024, 64, 64, 16, arch);
+    passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch, mfma));
+    EXPECT_NO_THROW(builder.subject().validate());
+
+    size_t fragments = 0;
+    for (const auto& name : builder.subject().containers()) {
+        if (name.rfind("mma_", 0) == 0) {
+            ++fragments;
+            EXPECT_TRUE(gpu::rocm::RocmMfma32Support::is_mma_type(builder.subject().type(name).storage_type())) << name;
+        }
+    }
+    EXPECT_GT(fragments, 0u);
+
+    strip_mine_k(builder, 8);
+    localize(builder, "tile_k0", /*transpose_b=*/true);
+    EXPECT_NO_THROW(builder.subject().validate());
+    auto* b = find_local_load(builder.subject().root(), "B");
+    ASSERT_NE(b, nullptr);
+    EXPECT_EQ(b->layout().layout, gpu::MMA_LAYOUT_COL_MAJOR);
+    EXPECT_EQ(b->implementation_type(), gpu::rocm::ImplementationType_ROCM_MFMA);
+
+    auto out = test::utils::test_codegen(builder.subject(), "mfma32", true);
+    std::string kernels;
+    for (auto& [name, snippet] : out.snippets) {
+        kernels += snippet.content;
+    }
+    EXPECT_EQ(kernels.find("rocwmma::"), std::string::npos) << kernels;
+    EXPECT_NE(kernels.find("__builtin_amdgcn_mfma_f32_32x32x8f16"), std::string::npos) << kernels;
+    EXPECT_NE(kernels.find("_Float16 __attribute__((ext_vector_type(4))) mma_a0"), std::string::npos) << kernels;
+    EXPECT_NE(kernels.find("float __attribute__((ext_vector_type(16))) mma_acc0"), std::string::npos) << kernels;
+    // A and B fragment reads from LDS: one vector access each.
+    size_t vector_reads = 0;
+    for (auto pos = kernels.find("__typeof__(mma_"); pos != std::string::npos;
+         pos = kernels.find("__typeof__(mma_", pos + 1)) {
+        ++vector_reads;
+    }
+    EXPECT_GE(vector_reads, 2u) << kernels;
 }
 
 } // namespace sdfg::rocm
