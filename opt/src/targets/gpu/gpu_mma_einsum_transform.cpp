@@ -29,7 +29,11 @@ bool GpuMmaEinsumReplacer::wave_tile_divides(const MatMulAnalysis& analysis) con
         return false;
     }
     auto tiling = mma_support()->get_mma_tiling({analysis.m, analysis.n, analysis.k});
-    return tiling.macro_blocks_m % wave_tile_m_ == 0 && tiling.macro_blocks_n % wave_tile_n_ == 0;
+    if (tiling.macro_blocks_m % wave_tile_m_ != 0 || tiling.macro_blocks_n % wave_tile_n_ != 0) {
+        return false;
+    }
+    int waves = (tiling.macro_blocks_m / wave_tile_m_) * (tiling.macro_blocks_n / wave_tile_n_);
+    return waves * mma_support()->threads_per_mma_block <= 1024;
 }
 
 bool GpuMmaEinsumReplacer::matches_possible_mma_pattern(const MatMulAnalysis& analysis) const {
