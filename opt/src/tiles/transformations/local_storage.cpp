@@ -790,6 +790,15 @@ void LocalStorage::apply_prepared(builder::StructuredSDFGBuilder& builder, analy
             buffer.row_pad = 16 / elem_bytes;
         }
     }
+    // A transposed operand is read 8 B per lane along its stored rows; an 8 B pad keeps
+    // those reads and the transposing 8 B stores conflict-free.
+    if (buffer.kind == tiles::BufferKind::Transposed && storage_type_.is_nv_shared() &&
+        has_library_operand(group_memlets_)) {
+        const size_t elem_bytes = types::bit_width(scalar_type.primitive_type()) / 8;
+        if (elem_bytes > 0 && 8 % elem_bytes == 0) {
+            buffer.row_pad = 8 / elem_bytes;
+        }
+    }
     // Cooperative-store conflict avoidance: pad the inner stride to the coop axis's
     // per-warp thread count (mod 32). Compute it from the block dims + the coop
     // copy's axis (A tiles are coop over X, B over Y -> different spans, so a single

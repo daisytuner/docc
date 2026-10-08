@@ -236,6 +236,20 @@ TEST(BufferLayoutTest, Transposed_ReversesAxes) {
     // Element (m=1, n=2) lands at physical [n=2][m=1] -> 2*3 + 1 = 7.
     EXPECT_EQ(eval(pb.layout().apply_coords({symbolic::integer(1), symbolic::integer(2)})), 7);
 }
+// A row-padded Transposed tile pads its stored innermost row (tile dim 0).
+TEST(BufferLayoutTest, Transposed_RowPadWidensDim0) {
+    tiles::PackedBuffer pb{{}, {symbolic::integer(64), symbolic::integer(32)}, tiles::BufferKind::Transposed};
+    pb.row_pad = 4;
+    auto axes = pb.axes();
+    ASSERT_EQ(axes.size(), 2u);
+    EXPECT_EQ(eval(axes[0]), 32);
+    EXPECT_EQ(eval(axes[1]), 68);
+    EXPECT_EQ(eval(pb.total_size()), 32 * 68);
+    auto layout = pb.layout().layout;
+    EXPECT_EQ(eval(layout.strides()[0]), 1);
+    EXPECT_EQ(eval(layout.strides()[1]), 68);
+    EXPECT_EQ(eval(pb.layout().apply_coords({symbolic::integer(5), symbolic::integer(2)})), 2 * 68 + 5);
+}
 
 // ---- lane-contiguity: the predicate that replaces the MultiDim-vs-flat fork ----
 // A padding/swizzle-free buffer (Linearized, or a plain MultiDim) is lane-contiguous

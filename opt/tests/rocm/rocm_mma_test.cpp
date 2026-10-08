@@ -22,6 +22,7 @@
 #include "sdfg/tiles/library_nodes/tile_copy_node.h"
 #include "sdfg/tiles/transformations/local_storage.h"
 #include "sdfg/tiles/transformations/software_pipelining.h"
+#include "sdfg/tiles/transformations/tile_vectorizer.h"
 #include "sdfg/transformations/loop_tiling.h"
 #include "sdfg/types/array.h"
 #include "sdfg/types/tensor.h"
@@ -412,14 +413,14 @@ const tiles::TileCopyNode* find_copy_from(structured_control_flow::ControlFlowNo
     return found;
 }
 
-void localize(builder::StructuredSDFGBuilder& builder, const std::string& loop_indvar) {
+void localize(builder::StructuredSDFGBuilder& builder, const std::string& loop_indvar, bool transpose_b = false) {
     for (const std::string container : {"A", "B"}) {
         analysis::AnalysisManager am(builder.subject());
         auto* loop = find_loop(am, loop_indvar);
         ASSERT_NE(loop, nullptr);
         auto* access = find_access(*loop, container);
         ASSERT_NE(access, nullptr) << container;
-        transformations::LocalStorage ls(*loop, *access);
+        transformations::LocalStorage ls(*loop, *access, false, false, transpose_b && container == "B");
         ASSERT_TRUE(ls.can_be_applied(builder, am)) << container;
         ls.apply(builder, am);
     }
@@ -702,6 +703,63 @@ TEST(ROCMMMATest, FragmentLoadOverload_gfx90a) {
     EXPECT_EQ(load_line("mma_a0").find("rocwmma::mem_"), std::string::npos) << kernels;
     EXPECT_EQ(load_line("mma_b0").find("rocwmma::mem_"), std::string::npos) << kernels;
     EXPECT_NE(load_line("mma_c0").find("rocwmma::mem_row_major"), std::string::npos) << kernels;
+}
+
+// K-major B: the transposed block tile [32 n][32+4 k] is read column-major by the fragments,
+// and TileVectorizer stages it with the 4x4 register-transposing copy.
+TEST(ROCMMMATest, LocalStorageTransposedBStagesKMajor_gfx90a) {
+    auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
+    sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+    auto [block, matmul_node] = build_offloaded_mma_structure(builder, 1024, 1024, 1024, 32, 32, 16, arch);
+    passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch));
+    strip_mine_k(builder, 2);
+    localize(builder, "tile_k0", /*transpose_b=*/true);
+    EXPECT_NO_THROW(builder.subject().validate());
+
+    for (const auto& name : builder.subject().containers()) {
+        if (name.rfind("__daisy_local_storage_B", 0) == 0) {
+            auto& type = static_cast<const types::Array&>(builder.subject().type(name));
+            EXPECT_TRUE(symbolic::eq(type.num_elements(), symbolic::integer(32))) << name;
+            auto& row = static_cast<const types::Array&>(type.element_type());
+            EXPECT_TRUE(symbolic::eq(row.num_elements(), symbolic::integer(36))) << name;
+        }
+    }
+
+    analysis::AnalysisManager am(builder.subject());
+    auto wave_col = find_loop(am, "wave_col0")->indvar();
+    auto k_in_panel = symbolic::
+        mul(symbolic::integer(16),
+            symbolic::sub(find_loop(am, "tile_k0")->indvar(), find_loop(am, "tile_k0_tile0")->indvar()));
+    auto* b = find_local_load(builder.subject().root(), "B");
+    ASSERT_NE(b, nullptr);
+    EXPECT_EQ(b->layout().layout, gpu::MMA_LAYOUT_COL_MAJOR);
+    EXPECT_TRUE(symbolic::eq(b->layout().ldstride, symbolic::integer(36)));
+    EXPECT_TRUE(
+        symbolic::
+            eq(b->layout().offset,
+               symbolic::expand(symbolic::add(symbolic::mul(symbolic::integer(576), wave_col), k_in_panel)))
+    ) << b->layout().offset->__str__();
+
+    {
+        transformations::TileVectorizer tv(*find_loop(am, "tile_k0_tile0"));
+        ASSERT_TRUE(tv.can_be_applied(builder, am));
+        tv.apply(builder, am);
+    }
+    auto* copy_b = find_copy_from(builder.subject().root(), "B");
+    ASSERT_NE(copy_b, nullptr);
+    EXPECT_EQ(copy_b->atom(), tiles::CopyAtom::TransposeSync);
+    EXPECT_EQ(copy_b->bytes(), 8u);
+    auto* copy_a = find_copy_from(builder.subject().root(), "A");
+    ASSERT_NE(copy_a, nullptr);
+    EXPECT_EQ(copy_a->atom(), tiles::CopyAtom::VectorSync);
+
+    auto out = test::utils::test_codegen(builder.subject(), "kmajor_b", true);
+    std::string kernels;
+    for (auto& [name, snippet] : out.snippets) {
+        kernels += snippet.content;
+    }
+    EXPECT_NE(kernels.find("make_uint2"), std::string::npos) << kernels;
+    EXPECT_NE(kernels.find("rocwmma::mem_col_major"), std::string::npos) << kernels;
 }
 
 } // namespace sdfg::rocm
