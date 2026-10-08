@@ -73,13 +73,17 @@ TileCopyNode::TileCopyNode(
     size_t bytes,
     TileGuard guard,
     std::vector<int> coop_axes,
-    symbolic::Expression coop_threads
+    symbolic::Expression coop_threads,
+    size_t coop_lanes
 )
     : data_flow::LibraryNode(
           element_id, debug_info, vertex, parent, LibraryNodeType_TileCopy, {}, {"_dst", "_src"}, true, implementation_type
       ),
       plan_(std::move(plan)), direction_(direction), bytes_(bytes), guard_(std::move(guard)),
-      coop_axes_(std::move(coop_axes)), coop_threads_(std::move(coop_threads)) {
+      coop_axes_(std::move(coop_axes)), coop_threads_(std::move(coop_threads)), coop_lanes_(coop_lanes) {
+    if (coop_lanes_ > 1 && std::find(coop_axes_.begin(), coop_axes_.end(), 0) != coop_axes_.end()) {
+        throw InvalidSDFGException("TileCopyNode: coop_lanes require x to be a slot (non-cooperative) axis");
+    }
 }
 
 void TileCopyNode::validate(const Function& function) const {
@@ -107,7 +111,8 @@ std::unique_ptr<data_flow::DataFlowNode> TileCopyNode::
         bytes_,
         guard_,
         coop_axes_,
-        coop_threads_
+        coop_threads_,
+        coop_lanes_
     ));
 }
 
@@ -186,6 +191,9 @@ nlohmann::json TileCopyNodeSerializer::serialize(const sdfg::data_flow::LibraryN
     if (!node.coop_threads().is_null()) {
         j["coop_threads"] = serializer::JSONSerializer::expression(node.coop_threads());
     }
+    if (node.coop_lanes() > 1) {
+        j["coop_lanes"] = node.coop_lanes();
+    }
     return j;
 }
 
@@ -222,6 +230,7 @@ data_flow::LibraryNode& TileCopyNodeSerializer::deserialize(
     if (j.contains("coop_threads")) {
         coop_threads = symbolic::parse(j.at("coop_threads").get<std::string>());
     }
+    size_t coop_lanes = j.contains("coop_lanes") ? j.at("coop_lanes").get<size_t>() : 1;
     return builder.add_library_node<TileCopyNode>(
         parent,
         DebugInfo(),
@@ -231,7 +240,8 @@ data_flow::LibraryNode& TileCopyNodeSerializer::deserialize(
         j.at("bytes").get<size_t>(),
         guard,
         coop_axes,
-        coop_threads
+        coop_threads,
+        coop_lanes
     );
 }
 
@@ -296,12 +306,18 @@ void emit_cooperative_copy_loop(
     // those axes split the tile, the slot is fixed in the plan offsets).
     const char* names[3] = {"x", "y", "z"};
     std::vector<int> axes = node.coop_axes();
-    if (axes.empty()) {
+    if (axes.empty() && node.coop_lanes() == 1) {
         axes = {0, 1, 2};
     }
     std::string tid;
     std::string n = "1";
     std::string blk_prod = "1";
+    if (node.coop_lanes() > 1) {
+        const std::string lanes = std::to_string(node.coop_lanes());
+        tid = "threadIdx.x % " + lanes;
+        blk_prod = lanes;
+        n = lanes;
+    }
     for (int a : axes) {
         std::string t = std::string("threadIdx.") + names[a];
         if (blk_prod != "1") {

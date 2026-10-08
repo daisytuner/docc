@@ -9,10 +9,16 @@ namespace sdfg {
 namespace tiles {
 
 AxisSchedule::AxisSchedule(
-    Level level, Space space, bool has_scratchpad, unsigned spatial_axis, symbolic::Integer parallel_size, bool needs_sync
+    Level level,
+    Space space,
+    bool has_scratchpad,
+    unsigned spatial_axis,
+    symbolic::Integer parallel_size,
+    bool needs_sync,
+    symbolic::Integer lanes
 )
     : level_(level), space_(space), has_scratchpad_(has_scratchpad), spatial_axis_(spatial_axis),
-      parallel_size_(std::move(parallel_size)), needs_sync_(needs_sync) {
+      parallel_size_(std::move(parallel_size)), needs_sync_(needs_sync), lanes_(std::move(lanes)) {
 }
 
 std::optional<AxisSchedule> TileTargetRegistry::classify(const structured_control_flow::ScheduleType& sched) const {

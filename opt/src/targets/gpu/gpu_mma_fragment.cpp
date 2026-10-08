@@ -46,7 +46,7 @@ std::optional<GpuMmaFromMemoryLayout> GpuMmaFromMemoryLayout::from_tensor_layout
     if (type == math::tensor::TensorLayout::LAYOUT_ROW_MAJOR) {
         return {{.offset = layout.offset(), .ldstride = layout.get_stride(0), .layout = MMA_LAYOUT_ROW_MAJOR}};
     } else if (type == math::tensor::TensorLayout::LAYOUT_COL_MAJOR) {
-        return {{.offset = layout.offset(), .ldstride = layout.get_stride(1), .layout = MMA_LAYOUT_ROW_MAJOR}};
+        return {{.offset = layout.offset(), .ldstride = layout.get_stride(1), .layout = MMA_LAYOUT_COL_MAJOR}};
     }
 
     return std::nullopt;

@@ -42,6 +42,9 @@ class TileCopyNode : public data_flow::LibraryNode {
     /// from-zero copy loop whose trip count `ceil(size/(threads*factor))` folds to a
     /// constant the backend can unroll; null falls back to a runtime thread-strided loop.
     symbolic::Expression coop_threads_;
+    /// Fastest x-threads (`threadIdx.x % coop_lanes`) that also cooperate in per-thread-slot
+    /// mode: the lanes of a wave-granular slot axis, whose slot depends on the wave only.
+    size_t coop_lanes_ = 1;
 
 public:
     TileCopyNode(
@@ -55,7 +58,8 @@ public:
         size_t bytes,
         TileGuard guard = {},
         std::vector<int> coop_axes = {},
-        symbolic::Expression coop_threads = {}
+        symbolic::Expression coop_threads = {},
+        size_t coop_lanes = 1
     );
 
     const TiledCopy& plan() const {
@@ -101,6 +105,10 @@ public:
     /// Symbolic cooperating thread count (null = unknown; runtime loop).
     const symbolic::Expression& coop_threads() const {
         return coop_threads_;
+    }
+
+    size_t coop_lanes() const {
+        return coop_lanes_;
     }
 
 

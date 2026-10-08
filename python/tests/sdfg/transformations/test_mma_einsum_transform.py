@@ -27,6 +27,7 @@ from docc.sdfg import (
     GpuMmaEinsumTransform,
     IfElse,
     LocalStorage,
+    LoopTiling,
     Pointer,
     PrimitiveType,
     RocmArch,
@@ -87,16 +88,23 @@ def _access_in_loop(loop, container, want_read=True):
     return node
 
 
-def _localize_operands(builder, a_name, b_name):
-    """Stage the A and B global tiles into LDS on the MMA K-sweep loop.
+def _localize_operands(builder, a_name, b_name, k_panel_blocks=2):
+    """Stage the A and B global tiles into LDS per K-panel.
 
-    Mirrors ``agent_rocm.py`` Step 5: after ``GpuMmaEinsumTransform`` the K loop is
-    renamed ``tile_k0``; LocalStorage on it localizes each read operand.
+    Mirrors ``agent_rocm.py`` Step 5: the expander's K-block loop ``tile_k0`` is
+    strip-mined into panels of ``k_panel_blocks`` MMA blocks and LocalStorage
+    localizes each read operand on the inner (per-panel) loop ``tile_k0``.
     """
+    am = AnalysisManager(builder)
+    k_loop = am.loop_analysis().find_loop_by_indvar("tile_k0")
+    assert k_loop is not None, "expander must create the 'tile_k0' K-block loop"
+    tiling = LoopTiling(k_loop, k_panel_blocks, True)
+    assert tiling.can_be_applied(builder, am)
+    tiling.apply(builder, am)
+
     for container in (a_name, b_name):
         am = AnalysisManager(builder)
-        k_loop = am.loop_analysis().find_loop_by_indvar("dummy0")
-        assert k_loop is not None, "expander must create the 'dummy0' loop"
+        k_loop = am.loop_analysis().find_loop_by_indvar("tile_k0")
         access = _access_in_loop(k_loop, container, want_read=True)
         ls = LocalStorage(k_loop, access, swizzle_layout=False, lane_contiguous=False)
         assert ls.can_be_applied(

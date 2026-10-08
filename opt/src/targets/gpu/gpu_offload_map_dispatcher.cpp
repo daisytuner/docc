@@ -97,6 +97,12 @@ void GPUOffloadMapDispatcher::dispatch_kernel_body(
     const std::string type_index = kernel_language_extension.primitive_type(indvar_dtype.primitive_type());
 
     std::string coverage_dim = kernel_language_extension.expression(get_target_level_dim(target_level, warp_size));
+    // A wave-granular map (lanes > 1) indexes groups of `lanes` consecutive threads.
+    const auto lanes = gpu::ScheduleType_GPU_Offload::lanes(node_.schedule_type())->as_int();
+    auto per_lanes = [&](const std::string& expr) {
+        return lanes == 1 ? expr : "(" + expr + " / " + std::to_string(lanes) + ")";
+    };
+    coverage_dim = per_lanes(coverage_dim);
     // For the WARP level each thread iterates sequentially over the warp-level
     // iteration space (the cross-lane reduction is performed by the reduce
     // dispatcher via __shfl_xor_sync over the enclosing X_BLOCK lanes), so the
@@ -175,8 +181,9 @@ void GPUOffloadMapDispatcher::dispatch_kernel_body(
         // units plus this thread/block's index. The map's induction variable is
         // then init + stride * parallel_index, so the stride applies to BOTH the
         // coverage and the index terms (tiled offload maps have stride != 1).
-        std::string dim_expr = kernel_language_extension.expression(get_target_level_dim(target_level, warp_size));
-        std::string idx_expr = kernel_language_extension.expression(get_target_level_idx(target_level));
+        std::string dim_expr =
+            per_lanes(kernel_language_extension.expression(get_target_level_dim(target_level, warp_size)));
+        std::string idx_expr = per_lanes(kernel_language_extension.expression(get_target_level_idx(target_level)));
         std::string parallel_index = coverage_loop_var + " * " + dim_expr + " + " + idx_expr;
 
         std::string offset;
