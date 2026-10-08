@@ -250,6 +250,86 @@ structured_control_flow::ControlFlowNode* staging_group_trailing_barrier(
     return &parent.at(pos - 1);
 }
 
+/// True if a sequential loop between @p loop and @p coop_map re-runs the staging copy.
+bool restaged_per_iteration(structured_control_flow::StructuredLoop& loop, structured_control_flow::Map* coop_map) {
+    for (auto* node : structured_control_flow::ControlFlowNode::parent_chain(loop)) {
+        if (node == coop_map) {
+            return false;
+        }
+        if (dynamic_cast<structured_control_flow::StructuredLoop*>(node) != nullptr &&
+            dynamic_cast<structured_control_flow::Map*>(node) == nullptr) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// Fold the block-level per-thread axes addressing @p info into the tile itself, so one
+/// block-wide buffer holds the union of the per-slot tiles. Each folded axis must span
+/// exactly one block (its Map runs `parallel_size` iterations) and address the bases
+/// affinely with a non-negative constant coefficient; the union must not exceed the
+/// slots' total size. Returns false (leaving @p info unchanged) when nothing folds.
+bool fold_block_slots(structured_control_flow::StructuredLoop& loop, LocalStorage::TileInfo& info) {
+    LocalStorage::TileInfo folded = info;
+    symbolic::Expression slots = symbolic::integer(1);
+    bool any = false;
+    auto chain = structured_control_flow::ControlFlowNode::parent_chain(loop);
+    for (const auto& axis : tiles::TileAxis::enclosing(loop, info.bases, info.offset)) {
+        if (axis.cooperative() || !axis.schedule().has_scratchpad() || axis.schedule().level() != tiles::Level::Group) {
+            continue;
+        }
+        const auto& d = axis.indvar();
+        const auto p = axis.schedule().parallel_size()->as_int();
+        if (p <= 0 || symbolic::uses(info.offset, d)) {
+            return false;
+        }
+        structured_control_flow::Map* map = nullptr;
+        for (auto* node : chain) {
+            auto* m = dynamic_cast<structured_control_flow::Map*>(node);
+            if (m != nullptr && symbolic::eq(m->indvar(), d)) {
+                map = m;
+                break;
+            }
+        }
+        if (map == nullptr || map->num_iterations().is_null() ||
+            !symbolic::eq(map->num_iterations(), symbolic::integer(p))) {
+            return false;
+        }
+        auto last = symbolic::add(axis.init(), symbolic::mul(axis.stride(), symbolic::integer(p - 1)));
+        for (size_t k = 0; k < folded.bases.size(); ++k) {
+            auto& base = folded.bases[k];
+            auto coeff =
+                symbolic::expand(symbolic::sub(symbolic::subs(base, d, symbolic::add(d, symbolic::one())), base));
+            if (!SymEngine::is_a<SymEngine::Integer>(*coeff) ||
+                SymEngine::rcp_static_cast<const SymEngine::Integer>(coeff)->is_negative()) {
+                return false;
+            }
+            folded.dimensions[k] = symbolic::
+                add(folded.dimensions[k], symbolic::mul(coeff, symbolic::mul(axis.stride(), symbolic::integer(p - 1))));
+            base = symbolic::subs(base, d, axis.init());
+            if (k < folded.maxes.size()) {
+                folded.maxes[k] = symbolic::subs(folded.maxes[k], d, last);
+            }
+        }
+        slots = symbolic::mul(slots, symbolic::integer(p));
+        any = true;
+    }
+    if (!any) {
+        return false;
+    }
+    symbolic::Expression before = slots;
+    symbolic::Expression after = symbolic::integer(1);
+    for (size_t k = 0; k < info.dimensions.size(); ++k) {
+        before = symbolic::mul(before, info.dimensions[k]);
+        after = symbolic::mul(after, folded.dimensions[k]);
+    }
+    if (!symbolic::is_true(symbolic::Le(after, before))) {
+        return false;
+    }
+    info = std::move(folded);
+    return true;
+}
+
 } // namespace
 
 std::vector<size_t> LocalStorage::TileInfo::varying_dims() const {
@@ -496,6 +576,26 @@ bool LocalStorage::prepare(builder::StructuredSDFGBuilder& builder, analysis::An
     tile_info_.strides = std::vector<symbolic::Expression>(t.layout.strides().begin(), t.layout.strides().end());
     tile_info_.offset = t.layout.offset();
     group_memlets_.insert(group->memlets.begin(), group->memlets.end());
+
+    // A block-shared library operand (MMA fragments) is staged once per block rather
+    // than per wave slot: fewer, wider copy rows and one block-wide copy.
+    if (!container_written_ && has_library_operand(group_memlets_)) {
+        bool block_shared = false;
+        for (const auto& a : tiles::TileAxis::enclosing(loop_, tile_info_.bases, tile_info_.offset)) {
+            block_shared |= a.cooperative() && a.schedule().has_scratchpad() &&
+                            a.schedule().level() == tiles::Level::Group;
+        }
+        auto folded = tile_info_;
+        if (block_shared && fold_block_slots(loop_, folded)) {
+            symbolic::Expression folded_count = symbolic::integer(1);
+            for (const auto& e : folded.dimensions) {
+                folded_count = symbolic::mul(folded_count, e);
+            }
+            if (symbolic::is_true(symbolic::Le(folded_count, budget))) {
+                tile_info_ = std::move(folded);
+            }
+        }
+    }
 
     // A library-node operand can only be localized if the node can repoint it at its
     // view of the packed buffer (checked against the slot-free dense placement).
@@ -790,7 +890,7 @@ void LocalStorage::apply_prepared(builder::StructuredSDFGBuilder& builder, analy
                 slot_inits,
                 slot_strides
             );
-            const bool needs_leading = !slot_indices.empty();
+            const bool needs_leading = !slot_indices.empty() || restaged_per_iteration(loop_, coop_map);
             if (auto* group_end = staging_group_trailing_barrier(*parent, loop_, needs_leading)) {
                 // Join the preceding staging group: its barriers already fence this copy,
                 // so all its loads can be in flight together.
