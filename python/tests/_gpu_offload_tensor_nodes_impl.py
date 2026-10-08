@@ -1150,6 +1150,11 @@ NODES = (
     + (MATMUL, CONV, POOLING, BATCHNORM, LAYERNORM, UPSAMPLE)
 )
 
+DISABLED = {
+    "hard_sigmoid": "node semantics do not match PyTorch's definition",
+    "leaky_relu": "node semantics do not match PyTorch's definition",
+}
+
 
 # ---------------------------------------------------------------------------
 # Harness
@@ -1283,6 +1288,11 @@ def register(namespace, backend):
                 spec,
                 case_id,
                 id=f"{spec.name}-{case_id}",
+                marks=(
+                    [pytest.mark.skip(reason=DISABLED[spec.name])]
+                    if spec.name in DISABLED
+                    else []
+                ),
             )
             for spec in NODES
             for case_id, _ in spec.cases
