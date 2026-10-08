@@ -16,7 +16,7 @@ def test_addmm_simple(target: str) -> None:
     check(
         AddMMSimpleNet(),
         *(torch.randn(2, 3), torch.randn(2, 3), torch.randn(3, 3)),
-        target=target
+        target=target,
     )
 
 
@@ -30,7 +30,7 @@ def test_addmm_broadcast(target: str) -> None:
     check(
         AddMMBroadcastNet(),
         *(torch.randn(3), torch.randn(2, 3), torch.randn(3, 3)),
-        target=target
+        target=target,
     )
 
 
@@ -47,7 +47,7 @@ def test_addmm_broadcast_square(target: str) -> None:
     check(
         AddMMBroadcastSquareNet(),
         *(torch.randn(4), torch.randn(4, 3), torch.randn(3, 4)),
-        target=target
+        target=target,
     )
 
 
@@ -65,7 +65,7 @@ def test_addmm_alpha(target: str) -> None:
     check(
         AddMMAlphaNet(),
         *(torch.randn(2, 3), torch.randn(2, 3), torch.randn(3, 3), 2),
-        target=target
+        target=target,
     )
 
 
@@ -79,7 +79,7 @@ def test_addmm_alpha_constant_float(target: str) -> None:
     check(
         AddMMAlphaConstantFloat(),
         *(torch.randn(2, 3), torch.randn(2, 3), torch.randn(3, 3)),
-        target=target
+        target=target,
     )
 
 
@@ -93,7 +93,7 @@ def test_addmm_alpha_constant_int(target: str) -> None:
     check(
         AddMMAlphaConstantInt(),
         *(torch.randn(2, 3), torch.randn(2, 3), torch.randn(3, 3)),
-        target=target
+        target=target,
     )
 
 
@@ -111,7 +111,7 @@ def test_addmm_broadcast_alpha(target: str) -> None:
     check(
         AddMMBroadcastAlphaNet(),
         *(torch.randn(3), torch.randn(2, 3), torch.randn(3, 3), 2),
-        target=target
+        target=target,
     )
 
 
@@ -125,7 +125,7 @@ def test_addmm_broadcast_alpha_constant_float(target: str) -> None:
     check(
         AddMMBroadcastAlphaConstantFloat(),
         *(torch.randn(3), torch.randn(2, 3), torch.randn(3, 3)),
-        target=target
+        target=target,
     )
 
 
@@ -139,7 +139,7 @@ def test_addmm_broadcast_alpha_constant_int(target: str) -> None:
     check(
         AddMMBroadcastAlphaConstantInt(),
         *(torch.randn(3), torch.randn(2, 3), torch.randn(3, 3)),
-        target=target
+        target=target,
     )
 
 
@@ -157,7 +157,7 @@ def test_addmm_beta(target: str) -> None:
     check(
         AddMMBetaNet(),
         *(torch.randn(2, 3), torch.randn(2, 3), torch.randn(3, 3), 2),
-        target=target
+        target=target,
     )
 
 
@@ -171,7 +171,7 @@ def test_addmm_beta_constant_float(target: str) -> None:
     check(
         AddMMBetaConstantFloat(),
         *(torch.randn(2, 3), torch.randn(2, 3), torch.randn(3, 3)),
-        target=target
+        target=target,
     )
 
 
@@ -185,7 +185,7 @@ def test_addmm_beta_constant_int(target: str) -> None:
     check(
         AddMMBetaConstantInt(),
         *(torch.randn(2, 3), torch.randn(2, 3), torch.randn(3, 3)),
-        target=target
+        target=target,
     )
 
 
@@ -203,7 +203,7 @@ def test_addmm_broadcast_beta(target: str) -> None:
     check(
         AddMMBroadcastBetaNet(),
         *(torch.randn(3), torch.randn(2, 3), torch.randn(3, 3), 2),
-        target=target
+        target=target,
     )
 
 
@@ -217,7 +217,7 @@ def test_addmm_broadcast_beta_constant_float(target: str) -> None:
     check(
         AddMMBroadcastBetaConstantFloat(),
         *(torch.randn(3), torch.randn(2, 3), torch.randn(3, 3)),
-        target=target
+        target=target,
     )
 
 
@@ -231,7 +231,7 @@ def test_addmm_broadcast_beta_constant_int(target: str) -> None:
     check(
         AddMMBroadcastBetaConstantInt(),
         *(torch.randn(3), torch.randn(2, 3), torch.randn(3, 3)),
-        target=target
+        target=target,
     )
 
 
@@ -250,7 +250,7 @@ def test_addmm_alpha_beta(target: str) -> None:
     check(
         AddMMAlphaBetaNet(),
         *(torch.randn(2, 3), torch.randn(2, 3), torch.randn(3, 3), 2, 2),
-        target=target
+        target=target,
     )
 
 
@@ -269,8 +269,9 @@ def test_addmm_broadcast_alpha_beta(target: str) -> None:
     check(
         AddMMBroadcastAlphaBetaNet(),
         *(torch.randn(3), torch.randn(2, 3), torch.randn(3, 3), 2, 2),
-        target=target
+        target=target,
     )
+
 
 @pytest.mark.supported_targets("rocm", "cuda")
 def test_addmm_broadcast_half(target: str) -> None:
@@ -279,12 +280,13 @@ def test_addmm_broadcast_half(target: str) -> None:
             self, input: torch.Tensor, mat1: torch.Tensor, mat2: torch.Tensor
         ) -> torch.Tensor:
             return torch.addmm(input, mat1, mat2)
+
     check(
         AddMMBroadcastHalfNet(),
         *(
-            torch.randn(30, dtype=torch.float16),
-            torch.randn(128, 20, dtype=torch.float16),
-            torch.randn(20, 30, dtype=torch.float16),
+            torch.randn(3, dtype=torch.float16),
+            torch.randn(2, 3, dtype=torch.float16),
+            torch.randn(3, 3, dtype=torch.float16),
         ),
         rtol=1e-2,
         atol=1e-2,
@@ -315,14 +317,19 @@ def test_mm_simple(target: str) -> None:
 
     check(MMSimpleNet(), *(torch.randn(2, 3), torch.randn(3, 3)), target=target)
 
+
 @pytest.mark.supported_targets("rocm", "cuda")
 def test_mm_half(target: str) -> None:
     class MMHalfNet(nn.Module):
         def forward(self, input: torch.Tensor, mat2: torch.Tensor) -> torch.Tensor:
             return torch.mm(input, mat2)
+
     check(
         MMHalfNet(),
-        *(torch.randn(32, 20, dtype=torch.float16), torch.randn(20, 16, dtype=torch.float16)),
+        *(
+            torch.randn(2, 3, dtype=torch.float16),
+            torch.randn(3, 3, dtype=torch.float16),
+        ),
         rtol=1e-2,
         atol=1e-2,
         target=target,

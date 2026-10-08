@@ -43,8 +43,8 @@ void GEMMNodeDispatcher_CUBLASWithTransfers::dispatch_code(
     library_snippet_factory.add_global("#include <cuda_fp16.h>");
 
     std::string type, type2;
-    std::cout << "OUTPUT IS OF TYPE " << static_cast<int>(gemm_node.precision()) << std::endl;   
-    
+    std::cout << "OUTPUT IS OF TYPE " << static_cast<int>(gemm_node.precision()) << std::endl;
+
     switch (gemm_node.precision()) {
         case sdfg::math::blas::BLAS_Precision::s:
             type = "float";
@@ -151,7 +151,7 @@ void generate_kernel_gemm(
     const math::blas::GEMMNode& gemm_node
 ) {
     std::string type;
-    
+
     switch (gemm_node.precision()) {
         case sdfg::math::blas::BLAS_Precision::s:
             type = "S";
@@ -216,10 +216,10 @@ void generate_kernel_gemm(
     stream << "cublasStatus_t err;" << std::endl;
     stream << "err = cublas" << type << "gemm(handle, " << trans_first_str << ", " << trans_second_str << ", "
            << language_extension.expression(first_dim) << ", " << language_extension.expression(second_dim) << ", "
-           << language_extension.expression(gemm_node.k()) << ", "
-           << alpha_arg << ", " << a_arg << ", " << language_extension.expression(ld_first) << ", "
-           << b_arg << ", " << language_extension.expression(ld_second) << ", "
-           << beta_arg << ", " << c_arg << ", " << language_extension.expression(ldc) << ");" << std::endl;
+           << language_extension.expression(gemm_node.k()) << ", " << alpha_arg << ", " << a_arg << ", "
+           << language_extension.expression(ld_first) << ", " << b_arg << ", "
+           << language_extension.expression(ld_second) << ", " << beta_arg << ", " << c_arg << ", "
+           << language_extension.expression(ldc) << ");" << std::endl;
 
     cublas_error_checking(stream, language_extension, "err");
     check_cuda_kernel_launch_errors(stream, language_extension, false);

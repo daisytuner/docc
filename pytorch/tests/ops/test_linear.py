@@ -29,6 +29,7 @@ def test_linear_bias(target: str) -> None:
 
     check(LinearBiasNet(), torch.randn(128, 20), target=target)
 
+
 @pytest.mark.supported_targets("rocm", "cuda")
 def test_linear_half(target: str) -> None:
     class LinearHalfNet(nn.Module):
@@ -48,6 +49,7 @@ def test_linear_half(target: str) -> None:
         target=target,
     )
 
+
 @pytest.mark.supported_targets("rocm", "cuda")
 def test_linear_bias_half(target: str) -> None:
     class LinearBiasHalfNet(nn.Module):
@@ -66,4 +68,3 @@ def test_linear_bias_half(target: str) -> None:
         atol=1e-2,
         target=target,
     )
-
