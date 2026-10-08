@@ -1,5 +1,6 @@
 #include "sdfg/targets/gpu/gpu_mma_dispatcher.h"
 
+#include "sdfg/data_flow/access_node.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/gpu/gpu_mma_fill_node.h"
 #include "sdfg/targets/gpu/gpu_mma_fragment_eltwise_add_node.h"
@@ -207,7 +208,20 @@ void GpuMmaMatmulDispatcher::
     const std::string& frag = inputs.at(GpuMmaFragmentLoadNode::FRAG_INPUT_IDX).expr;
     const std::string& base = inputs.at(GpuMmaFragmentLoadNode::PTR_INPUT_IDX).expr;
 
-    emit_load_macro(out, frag, base, layout.offset, layout.ldstride, layout.layout);
+    // A/B fragments with a matching declared layout take the direct overload; the runtime-layout one goes through a
+    // temporary that defeats packing of the operand registers.
+    auto mem_layout = layout.layout;
+    if (node.fragment_type() != MmaFragmentType::C) {
+        auto& frag_node =
+            static_cast<const data_flow::AccessNode&>(inputs.at(GpuMmaFragmentLoadNode::FRAG_INPUT_IDX).edge.src());
+        auto frag_storage = function_.type(frag_node.data()).storage_type();
+        auto& frag_args = frag_storage.args();
+        if (frag_args.size() > 4 && symbolic::eq(frag_args.at(4), symbolic::integer(static_cast<int>(mem_layout)))) {
+            mem_layout = MmaFragmentLayout::MMA_LAYOUT_UNSPECIFIED;
+        }
+    }
+
+    emit_load_macro(out, frag, base, layout.offset, layout.ldstride, mem_layout);
 }
 
 void GpuMmaMatmulDispatcher::
