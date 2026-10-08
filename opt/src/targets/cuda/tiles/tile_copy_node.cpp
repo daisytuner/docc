@@ -22,7 +22,7 @@ void TileCopyNodeDispatcher::dispatch_code_with_edges(
     // Connector order {"_dst", "_src"} — both are the bare base pointers.
     const std::string& dst = inputs.at(0).expr;
     const std::string& src = inputs.at(1).expr;
-    const auto pt = inputs.at(0).edge.base_type().primitive_type();
+    const auto pt = inputs.at(node.element_input()).edge.base_type().primitive_type();
 
     // CpAsync lowers each step to a cp.async global->shared transfer; the pipeline's
     // commit/wait nodes fence it. Scalar/vector stay synchronous.

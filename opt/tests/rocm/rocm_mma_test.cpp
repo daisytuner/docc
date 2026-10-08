@@ -762,4 +762,100 @@ TEST(ROCMMMATest, LocalStorageTransposedBStagesKMajor_gfx90a) {
     EXPECT_NE(kernels.find("rocwmma::mem_col_major"), std::string::npos) << kernels;
 }
 
+// Register-staged pipelining: panel 0 staged in a prologue; in the loop the next panel is
+// loaded into per-thread registers before the compute and stored after a barrier.
+TEST(ROCMMMATest, SoftwarePipeliningRegisterStaged_gfx90a) {
+    auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
+    sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+    auto [block, matmul_node] = build_offloaded_mma_structure(builder, 1024, 1024, 1024, 32, 32, 16, arch);
+    passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch));
+    strip_mine_k(builder, 2);
+    localize(builder, "tile_k0", /*transpose_b=*/true);
+    {
+        analysis::AnalysisManager am(builder.subject());
+        transformations::SoftwarePipelining sp(*find_loop(am, "tile_k0_tile0"), 2, false, /*register_staged=*/true);
+        ASSERT_TRUE(sp.can_be_applied(builder, am));
+        sp.apply(builder, am);
+    }
+    EXPECT_NO_THROW(builder.subject().validate());
+
+    size_t stages = 0;
+    for (const auto& name : builder.subject().containers()) {
+        if (name.rfind("__daisy_stage_", 0) == 0) {
+            ++stages;
+            auto& type = static_cast<const types::Array&>(builder.subject().type(name));
+            EXPECT_EQ(type.element_type().primitive_type(), types::PrimitiveType::UInt32) << name;
+        }
+        if (name.rfind("__daisy_local_storage_", 0) == 0) {
+            // Still one shared buffer per operand: no stage axis.
+            auto& type = static_cast<const types::Array&>(builder.subject().type(name));
+            EXPECT_TRUE(symbolic::eq(type.num_elements(), symbolic::integer(32))) << name;
+        }
+    }
+    EXPECT_EQ(stages, 2u);
+
+    // Loop body: [if load; compute; barrier; if store; barrier], no full copies inside.
+    analysis::AnalysisManager am(builder.subject());
+    auto* panel = find_loop(am, "tile_k0_tile0");
+    size_t loads = 0, stores = 0, full = 0;
+    visitor::for_each_block(panel->root(), [&](structured_control_flow::Block& b) {
+        for (auto* lib : b.dataflow().library_nodes()) {
+            if (auto* tc = dynamic_cast<tiles::TileCopyNode*>(lib)) {
+                loads += tc->phase() == tiles::CopyPhase::LoadRegs;
+                stores += tc->phase() == tiles::CopyPhase::StoreRegs;
+                full += tc->phase() == tiles::CopyPhase::Full;
+            }
+        }
+    });
+    EXPECT_EQ(loads, 2u);
+    EXPECT_EQ(stores, 2u);
+    EXPECT_EQ(full, 0u);
+    {
+        // The phases survive a JSON round trip (the gym replays SDFGs through JSON).
+        serializer::JSONSerializer ser;
+        auto j = ser.serialize(builder.subject());
+        auto copy = ser.deserialize(j);
+        size_t staged = 0;
+        visitor::for_each_block(copy->root(), [&](structured_control_flow::Block& b) {
+            for (auto* lib : b.dataflow().library_nodes()) {
+                if (auto* tc = dynamic_cast<tiles::TileCopyNode*>(lib)) {
+                    staged += tc->phase() != tiles::CopyPhase::Full;
+                }
+            }
+        });
+        EXPECT_EQ(staged, 4u);
+    }
+    auto* body = &panel->root();
+    while (body->size() == 1 && dynamic_cast<structured_control_flow::Sequence*>(&body->at(0))) {
+        body = static_cast<structured_control_flow::Sequence*>(&body->at(0));
+    }
+    ASSERT_EQ(body->size(), 5u);
+    EXPECT_NE(dynamic_cast<structured_control_flow::IfElse*>(&body->at(0)), nullptr);
+    EXPECT_NE(dynamic_cast<structured_control_flow::StructuredLoop*>(&body->at(1)), nullptr);
+    EXPECT_NE(dynamic_cast<structured_control_flow::IfElse*>(&body->at(3)), nullptr);
+
+    {
+        // Vectorize from the wave map so the prologue copies outside the panel loop widen too.
+        transformations::TileVectorizer tv(*find_loop(am, "wave_col0"));
+        ASSERT_TRUE(tv.can_be_applied(builder, am));
+        tv.apply(builder, am);
+    }
+    visitor::for_each_block(builder.subject().root(), [&](structured_control_flow::Block& b) {
+        for (auto* lib : b.dataflow().library_nodes()) {
+            if (auto* tc = dynamic_cast<tiles::TileCopyNode*>(lib)) {
+                EXPECT_NE(tc->atom(), tiles::CopyAtom::ScalarSync) << tc->toStr();
+            }
+        }
+    });
+
+    auto out = test::utils::test_codegen(builder.subject(), "reg_staged", true);
+    std::string kernels;
+    for (auto& [name, snippet] : out.snippets) {
+        kernels += snippet.content;
+    }
+    EXPECT_NE(kernels.find("__daisy_stage_"), std::string::npos) << kernels;
+    EXPECT_NE(kernels.find("#pragma unroll"), std::string::npos) << kernels;
+    EXPECT_NE(kernels.find("make_uint4"), std::string::npos) << kernels;
+}
+
 } // namespace sdfg::rocm
