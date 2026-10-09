@@ -118,10 +118,9 @@ class ClampParser(GraphParserModule):
                 node,
                 "Expected one to three arguments but got " + str(len(node.args)),
             )
-        unsupported_kwargs: set[str] = set(node.kwargs) - set(self.BOUNDS)
-        if len(unsupported_kwargs) != 0:
+        if len(node.kwargs) != 0:
             raise GraphParserError(
-                self, node, "Unsupported kwargs: " + str(unsupported_kwargs)
+                self, node, "Unsupported kwargs: " + str(node.kwargs)
             )
 
         self_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 0)
@@ -146,15 +145,7 @@ class ClampParser(GraphParserModule):
 
         bounds: list[tuple[str, Scalar | None]] = []
         for i, name in enumerate(self.BOUNDS):
-            value: Argument = None
-            if i + 1 < len(node.args):
-                if name in node.kwargs:
-                    raise GraphParserError(
-                        self, node, name + " given as argument and as kwarg"
-                    )
-                value: Argument = node.args[i + 1]
-            elif name in node.kwargs:
-                value: Argument = node.kwargs[name]
+            value: Argument = node.args[i + 1] if i + 1 < len(node.args) else None
             if value is None:
                 bounds.append(("", None))
                 continue
