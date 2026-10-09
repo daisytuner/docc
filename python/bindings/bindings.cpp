@@ -759,9 +759,9 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("X"),
             py::arg("X_type"),
             py::arg("Min"),
-            py::arg("Min_type").none(true),
+            py::arg("Min_type"),
             py::arg("Max"),
-            py::arg("Max_type").none(true),
+            py::arg("Max_type"),
             py::arg("Y"),
             py::arg("Y_type"),
             py::arg("debug_info") = sdfg::DebugInfo()

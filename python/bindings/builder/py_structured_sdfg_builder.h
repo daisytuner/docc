@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <pybind11/pybind11.h>
 #include <sdfg/builder/structured_sdfg_builder.h>
 #include <sdfg/data_flow/access_node.h>
@@ -618,9 +619,9 @@ public:
         const std::string& X,
         const sdfg::types::Tensor& X_type,
         const std::string& Min,
-        const sdfg::types::Scalar* Min_type,
+        const std::optional<sdfg::types::Scalar>& Min_type,
         const std::string& Max,
-        const sdfg::types::Scalar* Max_type,
+        const std::optional<sdfg::types::Scalar>& Max_type,
         const std::string& Y,
         const sdfg::types::Tensor& Y_type,
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
