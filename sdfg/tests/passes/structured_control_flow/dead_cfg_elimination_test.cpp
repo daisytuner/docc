@@ -94,6 +94,32 @@ TEST(DeadCFGEliminationTest, TrivialMap) {
     EXPECT_EQ(root.size(), 0);
 }
 
+TEST(DeadCFGEliminationTest, TrivialNonSequentialMapIsKept) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+
+    types::Scalar int_type(types::PrimitiveType::Int64);
+    builder.add_container("i", int_type);
+    auto& root = builder.subject().root();
+
+    auto indvar = symbolic::symbol("i");
+    auto& map_loop = builder.add_map(
+        root,
+        indvar,
+        symbolic::Lt(indvar, symbolic::integer(1)),
+        symbolic::integer(0),
+        symbolic::add(indvar, symbolic::integer(1)),
+        structured_control_flow::ScheduleType("TEST_OFFLOAD", structured_control_flow::ScheduleTypeCategory::Offloader)
+    );
+    builder.add_block(map_loop.root());
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    passes::DeadCFGElimination dce_pass;
+    dce_pass.run(builder, analysis_manager);
+
+    ASSERT_EQ(root.size(), 1);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Map*>(&root.at(0)) != nullptr);
+}
+
 TEST(DeadCFGEliminationTest, TrivialMapWithSymbolicInit) {
     // Test trivial loop: for (i = N; i < N+1; i++) with body
     builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);

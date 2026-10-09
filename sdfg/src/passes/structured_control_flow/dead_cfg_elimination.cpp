@@ -41,6 +41,10 @@ bool DeadCFGElimination::is_dead(const structured_control_flow::ControlFlowNode&
 };
 
 bool DeadCFGElimination::is_trivial(structured_control_flow::Map* loop) {
+    // Non-sequential maps carry semantics beyond their iterations (e.g. a single-wave GPU map defines 64 lanes).
+    if (loop->schedule_type().value() != structured_control_flow::ScheduleType_Sequential::value()) {
+        return false;
+    }
     // Check if stride is 1
     if (!loop->is_contiguous()) {
         return false;
