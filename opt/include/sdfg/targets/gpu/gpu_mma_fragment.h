@@ -60,6 +60,14 @@ struct GpuMmaSupport {
     const uint16_t threads_per_mma_block;
 
     virtual ~GpuMmaSupport() = default;
+
+    virtual types::PrimitiveType get_accumulator_type(
+        types::PrimitiveType output_type, types::PrimitiveType input_type, types::PrimitiveType desired_acc_type
+    ) const = 0;
+    types::PrimitiveType get_accumulator_type(types::PrimitiveType output_type, types::PrimitiveType input_type) const {
+        return get_accumulator_type(output_type, input_type, types::PrimitiveType::Void);
+    }
+
     GpuMmaSupport(uint16_t block_m, uint16_t block_n, uint16_t block_k, uint16_t threads_per_mma_block)
         : mma_block_size{block_m, block_n, block_k}, threads_per_mma_block(threads_per_mma_block) {
     }

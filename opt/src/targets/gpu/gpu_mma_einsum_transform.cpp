@@ -106,7 +106,7 @@ einsum::ReplaceOutcome GpuMmaEinsumReplacer::
         analysis.layout_b.value(),
         analysis.layout_y.value(),
         analysis.input_type,
-        GpuMmaExpander::accumulator_type(*mma_arch, analysis.input_type, analysis.output_type),
+        mma_arch->get_accumulator_type(analysis.output_type, analysis.input_type),
         analysis.output_type,
         impl_type.value(),
         true,
