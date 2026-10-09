@@ -8,7 +8,6 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/add_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/cast_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/div_node.h"
-#include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/elu_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/erf_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/exp_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/hard_sigmoid_node.h"
@@ -327,16 +326,6 @@ REGISTER_UNARY_TEST(SigmoidNode, 1)
 REGISTER_UNARY_TEST(SigmoidNode, 2)
 REGISTER_UNARY_TEST(SigmoidNode, 3)
 REGISTER_UNARY_TEST(SigmoidNode, 4)
-
-REGISTER_UNARY_TEST(EluNode, 1)
-REGISTER_UNARY_TEST(EluNode, 2)
-REGISTER_UNARY_TEST(EluNode, 3)
-REGISTER_UNARY_TEST(EluNode, 4)
-
-REGISTER_UNARY_SCALAR_PARAMS_TEST(EluNode, alpha, 1, "alpha")
-REGISTER_UNARY_SCALAR_PARAMS_TEST(EluNode, alpha, 2, "alpha")
-REGISTER_UNARY_SCALAR_PARAMS_TEST(EluNode, alpha, 3, "alpha")
-REGISTER_UNARY_SCALAR_PARAMS_TEST(EluNode, alpha, 4, "alpha")
 
 REGISTER_UNARY_SCALAR_PARAMS_TEST(HardSigmoidNode, alpha_beta, 1, "alpha", "beta")
 REGISTER_UNARY_SCALAR_PARAMS_TEST(HardSigmoidNode, alpha_beta, 2, "alpha", "beta")
@@ -723,14 +712,6 @@ void TestSerializeRoundTrip(const data_flow::LibraryNodeCode& code, const std::v
 
 TEST(ErfNodeTest, SerializeDeserialize_RoundTrip) {
     TestSerializeRoundTrip<math::tensor::ErfNode>(math::tensor::LibraryNodeType_Erf, {});
-}
-
-TEST(EluNodeTest, SerializeDeserialize_RoundTrip) {
-    TestSerializeRoundTrip<math::tensor::EluNode>(math::tensor::LibraryNodeType_Elu, {});
-}
-
-TEST(EluNodeTest, SerializeDeserialize_RoundTrip_alpha) {
-    TestSerializeRoundTrip<math::tensor::EluNode>(math::tensor::LibraryNodeType_Elu, {"alpha"});
 }
 
 TEST(HardSigmoidNodeTest, SerializeDeserialize_RoundTrip) {

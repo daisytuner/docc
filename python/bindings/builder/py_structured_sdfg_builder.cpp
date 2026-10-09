@@ -2397,6 +2397,10 @@ void PyStructuredSDFGBuilder::add_elu(
     const sdfg::types::Tensor& X_type,
     const std::string& Alpha,
     const sdfg::types::Scalar& Alpha_type,
+    const std::string& Scale,
+    const sdfg::types::Scalar& Scale_type,
+    const std::string& InputScale,
+    const sdfg::types::Scalar& InputScale_type,
     const std::string& Y,
     const sdfg::types::Tensor& Y_type,
     const sdfg::DebugInfo& debug_info
@@ -2419,6 +2423,16 @@ void PyStructuredSDFGBuilder::add_elu(
         (builder_.subject().exists(Alpha) ? builder_.add_access(block, Alpha, debug_info)
                                           : builder_.add_constant(block, Alpha, Alpha_type, debug_info));
     builder_.add_computational_memlet(block, Alpha_access, libnode, "alpha", {}, Alpha_type, debug_info);
+
+    auto& Scale_access =
+        (builder_.subject().exists(Scale) ? builder_.add_access(block, Scale, debug_info)
+                                          : builder_.add_constant(block, Scale, Scale_type, debug_info));
+    builder_.add_computational_memlet(block, Scale_access, libnode, "scale", {}, Scale_type, debug_info);
+
+    auto& InputScale_access =
+        (builder_.subject().exists(InputScale) ? builder_.add_access(block, InputScale, debug_info)
+                                               : builder_.add_constant(block, InputScale, InputScale_type, debug_info));
+    builder_.add_computational_memlet(block, InputScale_access, libnode, "input_scale", {}, InputScale_type, debug_info);
 }
 
 void PyStructuredSDFGBuilder::add_erf(

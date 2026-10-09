@@ -729,6 +729,10 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("X_type"),
             py::arg("Alpha"),
             py::arg("Alpha_type"),
+            py::arg("Scale"),
+            py::arg("Scale_type"),
+            py::arg("InputScale"),
+            py::arg("InputScale_type"),
             py::arg("Y"),
             py::arg("Y_type"),
             py::arg("debug_info") = sdfg::DebugInfo()
