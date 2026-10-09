@@ -65,6 +65,11 @@ public:
         Block& block
     );
 
+    /// fp32 for half/bfloat inputs when the arch supports it (the native MFMA/HMMA
+    /// accumulator), else @p output_type.
+    static types::PrimitiveType
+    accumulator_type(const GpuMmaSupport& mma, types::PrimitiveType input_type, types::PrimitiveType output_type);
+
     static passes::LibNodeExpander::ExpandOutcome expand_mma_standalone(
         LibNodeExpander::AccessNodeExpand& standalone,
         const GpuArch& arch,
