@@ -62,7 +62,7 @@ TEST(TensorLayoutTest, PartitionOffsetIntoDimensions2) {
 
     EXPECT_TRUE(symbolic::eq(result->at(1), tile_k0));
 
-    // 32*_i1_tile0 (stride 32) + 512*wave_row0 (stride 32) -> dim 0: coord _i1_tile0 + 16*wave_col0
+    // 32*_i1_tile0 (stride 32) + 512*wave_row0 (stride 32) -> dim 0: coord _i1_tile0 + 16*wave_row0
     auto expected_dim0 = symbolic::add(i1_tile0, symbolic::mul(symbolic::integer(16), wave_row0));
     EXPECT_TRUE(symbolic::eq(symbolic::expand(result->at(0)), symbolic::expand(expected_dim0)));
 

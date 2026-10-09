@@ -232,7 +232,7 @@ types::PrimitiveType RocmMmaSupport::get_accumulator_type(
     // assumes input & output types are supported by this architecture, as checked by supported_types()
 
     if (types::is_floating_point(input_type) && types::bit_width(input_type) < 32) {
-        // while on CDNA there are lib-functionsthat can output fp16 for fp16 inputs and bf16 for bf16 inputs,
+        // while on CDNA there are library functions that can output fp16 for fp16 inputs and bf16 for bf16 inputs,
         // the MMA instructions themselves always accumulate to fp32
         // and the conversion will happen while reading the data with additional slowdown. In all current usecases,
         // we can handle converting to the external output type before writeback if needed.
@@ -429,7 +429,7 @@ void RocmMmaSupport::emit_block_frag_type(
 std::vector<MmaBlockSize> RocmMmaSupport::
     get_supported_block_sizes(types::PrimitiveType input_type, types::PrimitiveType acc_type) const {
     std::vector<MmaBlockSize> supported_sizes;
-    if (acc_type == types::is_floating_point(acc_type)) {
+    if (types::is_floating_point(acc_type)) {
         supported_sizes.push_back(DEFAULT_BLOCK_SIZE);
     }
     if (f32_support) {

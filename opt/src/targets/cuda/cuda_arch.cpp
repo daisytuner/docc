@@ -150,6 +150,7 @@ std::optional<GpuMmaTiling> CudaMmaSupport::get_mma_tiling(
     }
 
     tiling.threads_per_mma_block_m = THREADS_PER_BLOCK;
+    tiling.acc_type = acc_type;
 
     auto mma_blocks_m = get_integer_block_count(res_shape.at(0), tiling.mma_block_size.m);
     auto mma_blocks_n = get_integer_block_count(res_shape.at(1), tiling.mma_block_size.n);

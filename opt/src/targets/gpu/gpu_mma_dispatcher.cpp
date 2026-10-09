@@ -115,10 +115,10 @@ void GpuMmaMatmulDispatcher::dispatch_code_with_edges(
     );
 
     emit_block_frag_declaration(
-        out, "fragAcc", MmaFragmentType::C, wave_tile_dims, MmaFragmentLayout::MMA_LAYOUT_UNSPECIFIED, input_type
+        out, "fragAcc", MmaFragmentType::C, wave_tile_dims, MmaFragmentLayout::MMA_LAYOUT_UNSPECIFIED, acc_type
     );
 
-    emit_frag_zero_init(out, "fragAcc", input_type);
+    emit_frag_zero_init(out, "fragAcc", acc_type);
 
     auto sym_k = symbolic::symbol("k");
 

@@ -64,7 +64,7 @@ struct GpuMmaSupport {
     virtual types::PrimitiveType get_accumulator_type(
         types::PrimitiveType input_type, types::PrimitiveType output_type, types::PrimitiveType desired_acc_type
     ) const = 0;
-    types::PrimitiveType get_accumulator_type(types::PrimitiveType output_type, types::PrimitiveType input_type) const {
+    types::PrimitiveType get_accumulator_type(types::PrimitiveType input_type, types::PrimitiveType output_type) const {
         return get_accumulator_type(input_type, output_type, types::PrimitiveType::Void);
     }
 
