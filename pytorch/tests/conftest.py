@@ -9,6 +9,14 @@ do not want a test to run on GPUs, put this code before it:
 def test_foo(target: str) -> None:
     ...
 
+To make a test only run with the given targets, it can be marked with ``supported_targets``. For
+example, say you want a test to run only on GPUs, put this code before it:
+@pytest.mark.supported_targets("cuda", "rocm")
+def test_foo(target: str) -> None:
+    ...
+
+The markers ``unsupported_targets`` and ``supported_targets`` cannot be used for the same test.
+
 Some features are not available in older PyTorch versions. Marking a test with
 ``minimum_pytorch_version`` and a tuple version skips the test if the currently installed PyTorch
 version is lower than the minimum required one:
@@ -58,6 +66,10 @@ def pytest_configure(config):
     )
     config.addinivalue_line(
         "markers",
+        "supported_targets(*targets): mark test as only supported for given targets",
+    )
+    config.addinivalue_line(
+        "markers",
         "minimum_pytorch_version(version_tuple): mark test to require a minimum PyTorch version",
     )
 
@@ -74,8 +86,23 @@ def pytest_collection_modifyitems(config, items):
     torch_version = _parse_version_tuple(torch.__version__)
 
     for item in items:
-        marker = item.get_closest_marker("unsupported_targets")
-        if marker and selected_target in marker.args:
+        unsupported_targets_marker = item.get_closest_marker("unsupported_targets")
+        supported_targets_marker = item.get_closest_marker("supported_targets")
+        if unsupported_targets_marker and supported_targets_marker:
+            raise pytest.UsageError(
+                "Cannot have unsupported_targets marker AND supported_targets marker on the same test"
+            )
+        if (
+            unsupported_targets_marker
+            and selected_target in unsupported_targets_marker.args
+        ):
+            item.add_marker(
+                pytest.mark.skip(reason=f"Test skipped for target '{selected_target}'")
+            )
+        if (
+            supported_targets_marker
+            and selected_target not in supported_targets_marker.args
+        ):
             item.add_marker(
                 pytest.mark.skip(reason=f"Test skipped for target '{selected_target}'")
             )
