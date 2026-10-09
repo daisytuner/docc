@@ -1,6 +1,7 @@
 #include "sdfg/targets/gpu/gpu_mma_fragment.h"
 
 #include <nlohmann/json.hpp>
+#include <sstream>
 
 namespace sdfg::gpu {
 
@@ -76,6 +77,17 @@ symbolic::MultiExpression MmaBlockSize::get_shape(MmaFragmentType frag) const {
         default:
             throw std::invalid_argument("Invalid MMA fragment type");
     }
+}
+
+MmaBlockSize MmaBlockSize::parse_block_size(const std::string& block_size_str) {
+    MmaBlockSize block_size{};
+    char sep1 = 0, sep2 = 0, extra = 0;
+    std::istringstream ss(block_size_str);
+    ss >> block_size.m >> sep1 >> block_size.n >> sep2 >> block_size.k;
+    if (ss.fail() || (sep1 != 'x' && sep1 != 'X') || (sep2 != 'x' && sep2 != 'X') || (ss >> extra)) {
+        throw std::invalid_argument("Invalid MMA block size: '" + block_size_str + "' (expected format MxNxK)");
+    }
+    return block_size;
 }
 
 int GpuMmaSupport::get_storage_type_arg_as_int(const types::StorageType& storage, int idx) {

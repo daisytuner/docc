@@ -44,7 +44,8 @@ void GpuMmaMatmulDispatcher::dispatch_code_with_edges(
 ) {
     auto& node = static_cast<const math::tensor::MatMulNode&>(this->node_);
 
-    auto uniform_type = node.uniform_quantization(node.get_parent()).value();
+    auto input_type = node.input_quantization();
+    auto output_type = node.output_quantization();
 
     auto result_layout = node.layout_y();
     if (result_layout.dims() > 2) {
@@ -61,7 +62,17 @@ void GpuMmaMatmulDispatcher::dispatch_code_with_edges(
     auto k_dim = layout_org_a.get_dim(1);
     auto layout_a_line_size = layout_org_a_col_major ? layout_org_a.get_stride(1) : layout_org_a.get_stride(0);
 
-    auto tiling = get_mma_tiling({result_layout.get_dim(0), result_layout.get_dim(1), k_dim});
+    auto arch = get_gpu_arch_from_context(out);
+    if (!arch) {
+        throw std::invalid_argument("GPU architecture not found in codegen context");
+    }
+    auto mma_arch = arch->mma_support();
+    auto acc_type = mma_arch->get_accumulator_type(input_type, output_type, types::PrimitiveType::Void);
+
+    auto tiling =
+        mma_arch
+            ->get_mma_tiling({result_layout.get_dim(0), result_layout.get_dim(1), k_dim}, input_type, acc_type, nullptr)
+            .value();
 
     auto wave_tile_m = tiling.wave_tile_blocks_m * tiling.mma_block_size.m;
     auto wave_tile_n = tiling.wave_tile_blocks_n * tiling.mma_block_size.n;
@@ -92,7 +103,7 @@ void GpuMmaMatmulDispatcher::dispatch_code_with_edges(
         MmaFragmentType::A,
         wave_tile_dims,
         layout_org_a_col_major ? MmaFragmentLayout::MMA_LAYOUT_COL_MAJOR : MmaFragmentLayout::MMA_LAYOUT_ROW_MAJOR,
-        uniform_type
+        input_type
     );
     emit_block_frag_declaration(
         out,
@@ -100,14 +111,14 @@ void GpuMmaMatmulDispatcher::dispatch_code_with_edges(
         MmaFragmentType::B,
         wave_tile_dims,
         layout_org_b_col_major ? MmaFragmentLayout::MMA_LAYOUT_COL_MAJOR : MmaFragmentLayout::MMA_LAYOUT_ROW_MAJOR,
-        uniform_type
+        input_type
     );
 
     emit_block_frag_declaration(
-        out, "fragAcc", MmaFragmentType::C, wave_tile_dims, MmaFragmentLayout::MMA_LAYOUT_UNSPECIFIED, uniform_type
+        out, "fragAcc", MmaFragmentType::C, wave_tile_dims, MmaFragmentLayout::MMA_LAYOUT_UNSPECIFIED, input_type
     );
 
-    emit_frag_zero_init(out, "fragAcc", uniform_type);
+    emit_frag_zero_init(out, "fragAcc", input_type);
 
     auto sym_k = symbolic::symbol("k");
 
@@ -145,7 +156,7 @@ void GpuMmaMatmulDispatcher::dispatch_code_with_edges(
     out.stream << "}" << std::endl;
 
     emit_block_frag_declaration(
-        out, "fragC", MmaFragmentType::C, wave_tile_dims, MmaFragmentLayout::MMA_LAYOUT_UNSPECIFIED, uniform_type
+        out, "fragC", MmaFragmentType::C, wave_tile_dims, MmaFragmentLayout::MMA_LAYOUT_UNSPECIFIED, input_type
     );
     emit_load_macro(
         out,

@@ -15,6 +15,7 @@
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/gpu/gpu_mma_fragment_load_node.h"
+#include "sdfg/targets/gpu/gpu_mma_matmul_node.h"
 #include "sdfg/targets/gpu/gpu_offload_schedule_type.h"
 #include "sdfg/targets/gpu/gpu_types.h"
 #include "sdfg/targets/rocm/rocm.h"
@@ -187,6 +188,19 @@ static std::tuple<Block&, math::tensor::MatMulNode&> build_offloaded_mma_structu
     return {block, matmul_node};
 }
 
+/// The single GpuMmaMatmulNode produced by expansion; its block size is the one actually applied.
+static const gpu::GpuMmaMatmulNode* find_mma_matmul(structured_control_flow::ControlFlowNode& root) {
+    const gpu::GpuMmaMatmulNode* found = nullptr;
+    visitor::for_each_block(root, [&](structured_control_flow::Block& b) {
+        for (auto* lib : b.dataflow().library_nodes()) {
+            if (auto* mma = dynamic_cast<gpu::GpuMmaMatmulNode*>(lib)) {
+                found = mma;
+            }
+        }
+    });
+    return found;
+}
+
 TEST(ROCMMMATest, 1K_1K_1K_16x16_gfx1201) {
     constexpr int M = 1024; // rows of A / C
     constexpr int N = 1024; // cols of B / C
@@ -265,7 +279,7 @@ TEST(ROCMMMATest, 1K_1K_1K_64x64_gfx90a) {
     constexpr int K = 1024; // contraction dimension
     constexpr int TILE = 64; // MMA-friendly tile width for the outer maps
 
-    auto& arch = gpu::rocm::ROCM_ARCH_GFX1201;
+    auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
 
     sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
     auto [block, matmul_node] = build_offloaded_mma_structure(builder, M, N, K, TILE, TILE, 16, arch);
@@ -282,6 +296,97 @@ TEST(ROCMMMATest, 1K_1K_1K_64x64_gfx90a) {
 
     test::utils::test_codegen(builder.subject(), "result", true);
 }
+
+TEST(ROCMMMATest, 1K_1K_1K_64x64_gfx90a_with_explicit_32x32x8_blocks) {
+    constexpr int M = 1024; // rows of A / C
+    constexpr int N = 1024; // cols of B / C
+    constexpr int K = 1024; // contraction dimension
+    constexpr int TILE = 64; // MMA-friendly tile width for the outer maps
+
+    auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
+
+    sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+    auto [block, matmul_node] = build_offloaded_mma_structure(builder, M, N, K, TILE, TILE, 16, arch);
+
+    dump_sdfg(builder.subject(), "0.init");
+
+    EXPECT_NO_THROW(builder.subject().validate());
+
+    auto override_block = gpu::MmaBlockSize::parse_block_size("32x32x8");
+    ASSERT_EQ(override_block.m, 32);
+    ASSERT_EQ(override_block.n, 32);
+    ASSERT_EQ(override_block.k, 8);
+    passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch, &override_block));
+
+    dump_sdfg(builder.subject(), "1.expanded");
+
+    EXPECT_NO_THROW(builder.subject().validate());
+
+    // The explicit 32x32x8 hint is valid on gfx90a (CDNA) and must drive the emitted MMA.
+    auto* mma = find_mma_matmul(builder.subject().root());
+    ASSERT_NE(mma, nullptr);
+    EXPECT_EQ(mma->mma_block_size().m, 32);
+    EXPECT_EQ(mma->mma_block_size().n, 32);
+    EXPECT_EQ(mma->mma_block_size().k, 8);
+
+    test::utils::test_codegen(builder.subject(), "result", true);
+}
+
+TEST(ROCMMMATest, DefaultBlockSizeIs16x16x16_gfx90a) {
+    constexpr int M = 1024; // rows of A / C
+    constexpr int N = 1024; // cols of B / C
+    constexpr int K = 1024; // contraction dimension
+    constexpr int TILE = 64; // MMA-friendly tile width for the outer maps
+
+    auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
+
+    sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+    auto [block, matmul_node] = build_offloaded_mma_structure(builder, M, N, K, TILE, TILE, 16, arch);
+
+    EXPECT_NO_THROW(builder.subject().validate());
+
+    // No block-size hint: expansion must fall back to the 16x16x16 default.
+    passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch));
+
+    EXPECT_NO_THROW(builder.subject().validate());
+
+    auto* mma = find_mma_matmul(builder.subject().root());
+    ASSERT_NE(mma, nullptr);
+    EXPECT_EQ(mma->mma_block_size().m, 16);
+    EXPECT_EQ(mma->mma_block_size().n, 16);
+    EXPECT_EQ(mma->mma_block_size().k, 16);
+}
+
+TEST(ROCMMMATest, ExplicitBlockSizeIgnoredOnRdna_gfx1201) {
+    constexpr int M = 1024; // rows of A / C
+    constexpr int N = 1024; // cols of B / C
+    constexpr int K = 1024; // contraction dimension
+    constexpr int TILE = 64; // MMA-friendly tile width for the outer maps
+
+    auto& arch = gpu::rocm::ROCM_ARCH_GFX1201;
+
+    sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+    auto [block, matmul_node] = build_offloaded_mma_structure(builder, M, N, K, TILE, TILE, 16, arch);
+
+    EXPECT_NO_THROW(builder.subject().validate());
+
+    // 32x32x8 is CDNA-only; on gfx1201 (RDNA) the hint is invalid and must be ignored,
+    // leaving the 16x16x16 default in place.
+    auto override_block = gpu::MmaBlockSize::parse_block_size("32x32x8");
+    ASSERT_EQ(override_block.m, 32);
+    ASSERT_EQ(override_block.n, 32);
+    ASSERT_EQ(override_block.k, 8);
+    passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch, &override_block));
+
+    EXPECT_NO_THROW(builder.subject().validate());
+
+    auto* mma = find_mma_matmul(builder.subject().root());
+    ASSERT_NE(mma, nullptr);
+    EXPECT_EQ(mma->mma_block_size().m, 16);
+    EXPECT_EQ(mma->mma_block_size().n, 16);
+    EXPECT_EQ(mma->mma_block_size().k, 16);
+}
+
 
 TEST(ROCMMMATest, ExpansionEmitsWaveMap_gfx90a) {
     constexpr int TILE = 32; // 2x2 waves of 16x16 MMA blocks
@@ -464,7 +569,7 @@ TEST(ROCMMMATest, FragmentLayoutFromTensorLayoutKeepsMajorness) {
     EXPECT_TRUE(symbolic::eq(c->ldstride, symbolic::integer(24)));
 
     // Round trip through the fragment's own tensor layout.
-    auto back = c->to_tensor_layout(gpu::rocm::ROCM_ARCH_GFX90A.mma_support()->mma_block_size, gpu::MmaFragmentType::B);
+    auto back = c->to_tensor_layout(gpu::MmaBlockSize(16, 16, 16), gpu::MmaFragmentType::B);
     ASSERT_TRUE(back.has_value());
     EXPECT_EQ(back->is_2d_col_or_row_major(), math::tensor::TensorLayout::LAYOUT_COL_MAJOR);
 }
@@ -472,15 +577,20 @@ TEST(ROCMMMATest, FragmentLayoutFromTensorLayoutKeepsMajorness) {
 TEST(ROCMMMATest, FragmentLoadRelocalizesToBufferView) {
     auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
     auto* mma = arch.mma_support();
+    gpu::MmaBlockSize block_size(16, 16, 16);
+
+    ASSERT_TRUE(mma->is_valid_block_size(block_size, types::PrimitiveType::Half, types::PrimitiveType::Half));
+
     builder::StructuredSDFGBuilder builder("reloc", FunctionType_CPU);
     auto& block = builder.add_block(builder.subject().root());
     gpu::GpuMmaFromMemoryLayout global{
         .offset = symbolic::symbol("g"), .ldstride = symbolic::integer(1024), .layout = gpu::MMA_LAYOUT_ROW_MAJOR
     };
+
     auto& load = static_cast<gpu::GpuMmaFragmentLoadNode&>(builder.add_library_node<gpu::GpuMmaFragmentLoadNode>(
         block,
         DebugInfo(),
-        mma->mma_block_size,
+        block_size,
         gpu::MmaFragmentType::A,
         global,
         types::PrimitiveType::Half,

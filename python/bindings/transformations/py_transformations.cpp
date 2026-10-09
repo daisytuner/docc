@@ -637,6 +637,18 @@ void register_transformations(py::module& m) {
             "    outermost_mma_loop (StructuredLoop): The outermost loop of the supposed MMA block.\n"
             "    arch (GpuArch): The GPU architecture. If none, infer.\n"
         )
+        .def(
+            py::init<StructuredLoop&, const sdfg::gpu::GpuArch*, const sdfg::gpu::MmaBlockSize*>(),
+            py::arg("outermost_mma_loop"),
+            py::arg("arch"),
+            py::arg("block_size_hint"),
+            py::keep_alive<1, 4>(),
+            "Same as above but with an explicit MMA block-size hint (ignored if unsupported by the arch).\n\n"
+            "Args:\n"
+            "    outermost_mma_loop (StructuredLoop): The outermost loop of the supposed MMA block.\n"
+            "    arch (GpuArch): The GPU architecture.\n"
+            "    block_size_hint (MmaBlockSize): Preferred MMA block size (e.g. MmaBlockSize.parse('32x32x8')).\n"
+        )
         .def_property_readonly(
             "matched", &sdfg::gpu::GpuMmaEinsumTransform::matched, "Whether the node was expanded (valid after apply())"
         )

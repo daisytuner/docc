@@ -32,29 +32,44 @@ struct CudaComputeCapability {
 std::vector<CudaComputeCapability> query_cuda_compute_capabilities();
 
 struct CudaMmaSupport : public GpuMmaSupport {
+    const bool base_support;
     const bool tf32_support;
     const bool fp64_support;
 
-    CudaMmaSupport(uint16_t base_size, bool tf32_support, bool fp64_support)
-        : GpuMmaSupport(base_size, base_size, base_size, 32), tf32_support(tf32_support), fp64_support(fp64_support) {
+    CudaMmaSupport(bool base_support, bool tf32_support, bool fp64_support)
+        : GpuMmaSupport(), base_support(base_support), tf32_support(tf32_support), fp64_support(fp64_support) {
     }
+
+protected:
+    static constexpr MmaBlockSize DEFAULT_BLOCK_SIZE = {16, 16, 16};
+    static constexpr int THREADS_PER_BLOCK = 32;
 
 public:
     static constexpr const char* MMA_STORAGE_TYPE = "CUDA_MMA";
 
-    bool valid_block_counts(uint16_t block_base, int m_blocks, int n_blocks, int k_blocks) const override;
     bool supported_types(types::PrimitiveType input_type, types::PrimitiveType output_type) const override;
     types::PrimitiveType get_accumulator_type(
-        types::PrimitiveType output_type, types::PrimitiveType input_type, types::PrimitiveType desired_acc_type
+        types::PrimitiveType input_type, types::PrimitiveType output_type, types::PrimitiveType desired_acc_type
     ) const override;
 
-    std::optional<data_flow::ImplementationType>
-    get_matmul_impl_type(const GpuArch& arch, const GpuMmaTiling& tiling) const override;
     data_flow::ImplementationType get_mma_impl_type() const override;
-    GpuMmaTiling get_mma_tiling(const symbolic::MultiExpression& res_shape) const override;
+
+    bool is_valid_block_size(
+        const MmaBlockSize& block_size, types::PrimitiveType input_type, types::PrimitiveType acc_type
+    ) const override;
+
+    std::optional<GpuMmaTiling> get_mma_tiling(
+        const symbolic::MultiExpression& res_shape,
+        types::PrimitiveType input_type,
+        types::PrimitiveType acc_type,
+        const MmaBlockSize* block_size_hint
+    ) const override;
     void set_mma_fragment_storage_type(
         types::StorageType& storage_type, const MmaBlockSize& size, MmaFragmentType type, MmaFragmentLayout layout
     ) const override;
+
+    std::vector<MmaBlockSize>
+    get_supported_block_sizes(types::PrimitiveType input_type, types::PrimitiveType acc_type) const override;
 
     static bool is_mma_type(const types::StorageType& storage);
 };
@@ -66,8 +81,7 @@ class CudaArch : public GpuArch {
 
 public:
     CudaArch(int sm_version, bool mma_base_support, bool mma_tf32_support, bool mma_fp64_support)
-        : GpuArch(), sm_version_(sm_version),
-          mma_support_(mma_base_support ? 16 : 0, mma_tf32_support, mma_fp64_support) {
+        : GpuArch(), sm_version_(sm_version), mma_support_(mma_base_support, mma_tf32_support, mma_fp64_support) {
     }
 
     std::string unique_id() const override;
@@ -78,7 +92,7 @@ public:
     }
 
     const CudaMmaSupport* mma_support() const override {
-        if (mma_support_.mma_block_size.m > 0) {
+        if (mma_support_.base_support) {
             return &mma_support_;
         } else {
             return nullptr;

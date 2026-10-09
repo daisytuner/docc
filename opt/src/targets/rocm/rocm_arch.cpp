@@ -215,36 +215,6 @@ const RocmArch* rocm_arch_from_available_hardware() {
     return rocm_arch_for_device(devices.front());
 }
 
-
-bool RocmMmaSupport::valid_block_counts(uint16_t block_base, int m_blocks, int n_blocks, int k_blocks) const {
-    // M: a rows
-    // N: b cols
-    // K: a cols = b rows, irrelevant to valid, as long as multiple of block size
-
-    if (block_base == 16) {
-        if (m_blocks == 1 && n_blocks == 1) {
-            return true;
-        } else if (m_blocks <= 2 && n_blocks <= 2) {
-            return true;
-        } else if (m_blocks == 4 && n_blocks == 4) {
-            return true;
-        } else if (m_blocks == 8 && n_blocks == 4) { // this is limited by shared memory size, but this is the
-                                                     // perf-recommend form for RDNA3
-            return true;
-        }
-    } else if (block_base == 32) {
-        if (m_blocks == 1 && n_blocks == 1) {
-            return true;
-        } else if (m_blocks <= 2 && n_blocks <= 2) {
-            return true;
-        } else if (m_blocks == 4 && n_blocks == 4) { // this is limited by shared memory size, but this is the
-                                                     // perf-recommended form for CDA
-            return true;
-        }
-    }
-    return false;
-}
-
 bool RocmMmaSupport::supported_types(types::PrimitiveType input_type, types::PrimitiveType output_type) const {
     if (input_type == types::PrimitiveType::BFloat || input_type == types::PrimitiveType::Half) {
         return output_type == types::PrimitiveType::Float || output_type == input_type;
@@ -257,7 +227,7 @@ bool RocmMmaSupport::supported_types(types::PrimitiveType input_type, types::Pri
 }
 
 types::PrimitiveType RocmMmaSupport::get_accumulator_type(
-    types::PrimitiveType output_type, types::PrimitiveType input_type, types::PrimitiveType desired_acc_type
+    types::PrimitiveType input_type, types::PrimitiveType output_type, types::PrimitiveType desired_acc_type
 ) const {
     // assumes input & output types are supported by this architecture, as checked by supported_types()
 
@@ -282,17 +252,20 @@ types::PrimitiveType RocmMmaSupport::get_accumulator_type(
     }
 }
 
-GpuMmaTiling RocmMmaSupport::get_mma_tiling(const symbolic::MultiExpression& res_shape) const {
+std::optional<GpuMmaTiling> RocmMmaSupport::try_get_mma_tiling(
+    const MmaBlockSize& block_size, const symbolic::MultiExpression& res_shape, types::PrimitiveType acc_type
+) const {
     GpuMmaTiling tiling;
-    tiling.mma_block_size = mma_block_size;
+    tiling.mma_block_size = block_size;
     tiling.threads_per_mma_block_m = threads_per_mma_block;
+    tiling.acc_type = acc_type;
 
     auto mma_blocks_m = get_integer_block_count(res_shape.at(0), tiling.mma_block_size.m);
     auto mma_blocks_n = get_integer_block_count(res_shape.at(1), tiling.mma_block_size.n);
     auto mma_blocks_k = get_integer_block_count(res_shape.at(2), tiling.mma_block_size.k);
 
     if (!mma_blocks_m || !mma_blocks_n || !mma_blocks_k) {
-        throw std::runtime_error("Result shape is not compatible with MMA block sizes.");
+        return std::nullopt;
     }
     if (mma_blocks_m == 1 && mma_blocks_n == 1) {
         tiling.wave_tile_blocks_m = 1;
@@ -316,10 +289,37 @@ GpuMmaTiling RocmMmaSupport::get_mma_tiling(const symbolic::MultiExpression& res
         // tiling.macro_blocks_m = 2;
         // tiling.macro_blocks_n = 2;
     } else {
-        throw std::runtime_error("Unsupported MMA block configuration for this GPU target.");
+        return std::nullopt;
     }
 
     return tiling;
+}
+
+std::optional<GpuMmaTiling> RocmMmaSupport::get_mma_tiling(
+    const symbolic::MultiExpression& res_shape,
+    types::PrimitiveType input_type,
+    types::PrimitiveType acc_type,
+    const MmaBlockSize* block_size_hint
+) const {
+    std::optional<MmaBlockSize> desired_block_size;
+
+    if (block_size_hint) {
+        if (is_valid_block_size(*block_size_hint, input_type, acc_type)) {
+            desired_block_size = *block_size_hint;
+        }
+    }
+
+    std::optional<GpuMmaTiling> mma_tiling;
+    if (desired_block_size) {
+        mma_tiling = try_get_mma_tiling(desired_block_size.value(), res_shape, acc_type);
+    }
+
+    if (!mma_tiling) {
+        // fallback to default block size
+        mma_tiling = try_get_mma_tiling(DEFAULT_BLOCK_SIZE, res_shape, acc_type);
+    }
+
+    return mma_tiling;
 }
 
 void RocmMmaSupport::set_mma_fragment_storage_type(
@@ -333,6 +333,19 @@ void RocmMmaSupport::set_mma_fragment_storage_type(
          symbolic::integer(static_cast<int>(type)),
          symbolic::integer(static_cast<int>(layout))}
     );
+}
+
+bool RocmMmaSupport::is_valid_block_size(
+    const MmaBlockSize& block_size, types::PrimitiveType input_type, types::PrimitiveType acc_type
+) const {
+    if (block_size.m == 16 && block_size.n == 16 && block_size.k == 16) {
+        return true;
+    } else if (block_size.m == 32 && block_size.n == 32 && block_size.k == 8) {
+        // 32x32x8 is a CDNA-only (MFMA) block size; RDNA (e.g. gfx1201) lacks it.
+        return f32_support;
+    } else {
+        return false;
+    }
 }
 
 bool RocmMmaSupport::is_mma_type(const types::StorageType& storage) {
@@ -413,15 +426,16 @@ void RocmMmaSupport::emit_block_frag_type(
     os << ">";
 }
 
-std::optional<data_flow::ImplementationType> RocmMmaSupport::
-    get_matmul_impl_type(const GpuArch& arch, const GpuMmaTiling& tiling) const {
-    auto arch_name = arch.name();
-    if (arch_name == "gfx1201") {
-        return ImplementationType_ROCM_MMA_GFX1201;
-    } else if (arch_name == "gfx90a") {
-        return ImplementationType_ROCM_MMA_GFX90A;
+std::vector<MmaBlockSize> RocmMmaSupport::
+    get_supported_block_sizes(types::PrimitiveType input_type, types::PrimitiveType acc_type) const {
+    std::vector<MmaBlockSize> supported_sizes;
+    if (acc_type == types::is_floating_point(acc_type)) {
+        supported_sizes.push_back(DEFAULT_BLOCK_SIZE);
     }
-    return std::nullopt;
+    if (f32_support) {
+        supported_sizes.push_back(CDNA_BLOCK_SIZE);
+    }
+    return supported_sizes;
 }
 
 } // namespace sdfg::gpu::rocm
