@@ -43,7 +43,6 @@ void GEMMNodeDispatcher_CUBLASWithTransfers::dispatch_code(
     library_snippet_factory.add_global("#include <cuda_fp16.h>");
 
     std::string type, type2;
-    std::cout << "OUTPUT IS OF TYPE " << static_cast<int>(gemm_node.precision()) << std::endl;
 
     switch (gemm_node.precision()) {
         case sdfg::math::blas::BLAS_Precision::s:

@@ -382,7 +382,8 @@ TEST(RocBlasTest, GemmNodeWithDataTransfers_HalfPrecisionUsesFloat16Buffers) {
     EXPECT_NE(code.find("_Float16 *dA, *dB, *dC;"), std::string::npos);
     // The hipblas call still goes through hipblasHgemm with correctly-typed device pointers.
     EXPECT_NE(code.find("hipblasHgemm"), std::string::npos);
-    EXPECT_NE(code.find("const hipblasHalf* A_h = reinterpret_cast<const hipblasHalf*>(dA);"), std::string::npos);
+    EXPECT_NE(code.find("const hipblasHalf* A_h = reinterpret_cast<const hipblasHalf*>(dB);"), std::string::npos);
+    EXPECT_NE(code.find("const hipblasHalf* B_h = reinterpret_cast<const hipblasHalf*>(dA);"), std::string::npos);
     EXPECT_NE(code.find("hipblasHalf* C_h = reinterpret_cast<hipblasHalf*>(dC);"), std::string::npos);
 }
 
