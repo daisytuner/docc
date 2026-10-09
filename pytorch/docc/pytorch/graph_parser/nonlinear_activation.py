@@ -117,10 +117,9 @@ class EluParser(GraphParserModule):
                 node,
                 "Expected one to four arguments but got " + str(len(node.args)),
             )
-        unsupported_kwargs: set[str] = set(node.kwargs) - set(self.PARAMS)
-        if len(unsupported_kwargs) != 0:
+        if len(node.kwargs) != 0:
             raise GraphParserError(
-                self, node, "Unsupported kwargs: " + str(unsupported_kwargs)
+                self, node, "Unsupported kwargs: " + str(node.kwargs)
             )
 
         self_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 0)
@@ -140,15 +139,7 @@ class EluParser(GraphParserModule):
 
         params: list[tuple[str, Scalar]] = []
         for i, name in enumerate(self.PARAMS):
-            value: Argument = 1
-            if i + 1 < len(node.args):
-                if name in node.kwargs:
-                    raise GraphParserError(
-                        self, node, name + " given as argument and as kwarg"
-                    )
-                value: Argument = node.args[i + 1]
-            elif name in node.kwargs:
-                value: Argument = node.kwargs[name]
+            value: Argument = node.args[i + 1] if i + 1 < len(node.args) else 1
             if isinstance(value, bool) or not isinstance(value, (int, float)):
                 raise GraphParserError(
                     self,
