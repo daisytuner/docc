@@ -215,3 +215,35 @@ def test_rsqrt_simple(target: str) -> None:
 
     x = torch.tensor([[1.0, 4.0, 9.0], [16.0, 25.0, 36.0]])
     check(RsqrtNet(), x, target=target)
+
+
+class ErfNet(nn.Module):
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        return torch.erf(input)
+
+
+def test_erf_simple(target: str) -> None:
+    check(ErfNet(), torch.randn(4), target=target)
+
+
+def test_erf_multidim(target: str) -> None:
+    check(ErfNet(), torch.randn(2, 3, 4), target=target)
+
+
+def test_erf_float64(target: str) -> None:
+    check(ErfNet(), torch.randn(3, 5, dtype=torch.float64), target=target)
+
+
+def test_erf_special_values(target: str) -> None:
+    x = torch.tensor(
+        [torch.nan, torch.inf, -torch.inf, 0.0, -0.0, 10.0, -10.0, 1e-30, -1e-30]
+    )
+    check(ErfNet(), x, target=target, equal_nan=True)
+
+
+def test_special_erf(target: str) -> None:
+    class SpecialErfNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.special.erf(input)
+
+    check(SpecialErfNet(), torch.randn(4), target=target)
