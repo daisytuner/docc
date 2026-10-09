@@ -1163,7 +1163,6 @@ NODES = (
 
 DISABLED = {
     "hard_sigmoid": "node semantics do not match PyTorch's definition",
-    "leaky_relu": "node semantics do not match PyTorch's definition",
 }
 
 

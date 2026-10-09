@@ -11,7 +11,6 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/erf_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/exp_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/hard_sigmoid_node.h"
-#include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/leaky_relu_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/logical_not_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/mul_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/pow_node.h"
@@ -332,11 +331,6 @@ REGISTER_UNARY_SCALAR_PARAMS_TEST(HardSigmoidNode, alpha_beta, 1, "alpha", "beta
 REGISTER_UNARY_SCALAR_PARAMS_TEST(HardSigmoidNode, alpha_beta, 2, "alpha", "beta")
 REGISTER_UNARY_SCALAR_PARAMS_TEST(HardSigmoidNode, alpha_beta, 3, "alpha", "beta")
 REGISTER_UNARY_SCALAR_PARAMS_TEST(HardSigmoidNode, alpha_beta, 4, "alpha", "beta")
-
-REGISTER_UNARY_SCALAR_PARAMS_TEST(LeakyReLUNode, alpha, 1, "alpha")
-REGISTER_UNARY_SCALAR_PARAMS_TEST(LeakyReLUNode, alpha, 2, "alpha")
-REGISTER_UNARY_SCALAR_PARAMS_TEST(LeakyReLUNode, alpha, 3, "alpha")
-REGISTER_UNARY_SCALAR_PARAMS_TEST(LeakyReLUNode, alpha, 4, "alpha")
 
 // Binary Tests
 REGISTER_BINARY_TEST(AddNode, 1)
@@ -722,8 +716,4 @@ TEST(ErfNodeTest, SerializeDeserialize_RoundTrip) {
 
 TEST(HardSigmoidNodeTest, SerializeDeserialize_RoundTrip) {
     TestSerializeRoundTrip<math::tensor::HardSigmoidNode>(math::tensor::LibraryNodeType_HardSigmoid, {"alpha", "beta"});
-}
-
-TEST(LeakyReLUNodeTest, SerializeDeserialize_RoundTrip) {
-    TestSerializeRoundTrip<math::tensor::LeakyReLUNode>(math::tensor::LibraryNodeType_LeakyReLU, {"alpha"});
 }
