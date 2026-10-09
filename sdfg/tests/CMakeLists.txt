@@ -50,6 +50,7 @@ set(TEST_FILES
     data_flow/library_nodes/math/cmath/cmath_node_test.cpp
     data_flow/library_nodes/math/tensor/arange_node_test.cpp
     data_flow/library_nodes/math/tensor/batchnorm_test.cpp
+    data_flow/library_nodes/math/tensor/clamp_node_test.cpp
     data_flow/library_nodes/math/tensor/cmath_node_test.cpp
     data_flow/library_nodes/math/tensor/concat_node_test.cpp
     data_flow/library_nodes/math/tensor/conditional_copy_node_test.cpp

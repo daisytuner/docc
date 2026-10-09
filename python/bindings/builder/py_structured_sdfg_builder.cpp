@@ -2443,42 +2443,6 @@ void PyStructuredSDFGBuilder::add_erf(
     }
 }
 
-void PyStructuredSDFGBuilder::add_hard_sigmoid(
-    const std::string& X,
-    const sdfg::types::Tensor& X_type,
-    const std::string& Alpha,
-    const sdfg::types::Scalar& Alpha_type,
-    const std::string& Beta,
-    const sdfg::types::Scalar& Beta_type,
-    const std::string& Y,
-    const sdfg::types::Tensor& Y_type,
-    const sdfg::DebugInfo& debug_info
-) {
-    auto& block = builder_.add_block(current_sequence(), {}, debug_info);
-    auto& libnode = builder_.add_library_node<sdfg::math::tensor::HardSigmoidNode>(block, debug_info, Y_type.shape());
-
-    auto& Y_access = builder_.add_access(block, Y, debug_info);
-    builder_.add_computational_memlet(block, Y_access, libnode, "Y", {}, Y_type, debug_info);
-
-    if (builder_.subject().exists(X)) {
-        auto& X_access = builder_.add_access(block, X, debug_info);
-        builder_.add_computational_memlet(block, X_access, libnode, "X", {}, X_type, debug_info);
-    } else {
-        auto& X_access = builder_.add_constant(block, X, X_type.element_type(), debug_info);
-        builder_.add_memlet(block, X_access, "void", libnode, "X", {}, X_type, debug_info);
-    }
-
-    auto& Alpha_access =
-        (builder_.subject().exists(Alpha) ? builder_.add_access(block, Alpha, debug_info)
-                                          : builder_.add_constant(block, Alpha, Alpha_type, debug_info));
-    builder_.add_computational_memlet(block, Alpha_access, libnode, "alpha", {}, Alpha_type, debug_info);
-
-    auto& Beta_access =
-        (builder_.subject().exists(Beta) ? builder_.add_access(block, Beta, debug_info)
-                                         : builder_.add_constant(block, Beta, Beta_type, debug_info));
-    builder_.add_computational_memlet(block, Beta_access, libnode, "beta", {}, Beta_type, debug_info);
-}
-
 void PyStructuredSDFGBuilder::add_leaky_relu(
     const std::string& X,
     const sdfg::types::Tensor& X_type,
@@ -2506,4 +2470,37 @@ void PyStructuredSDFGBuilder::add_leaky_relu(
         (builder_.subject().exists(Alpha) ? builder_.add_access(block, Alpha, debug_info)
                                           : builder_.add_constant(block, Alpha, Alpha_type, debug_info));
     builder_.add_computational_memlet(block, Alpha_access, libnode, "alpha", {}, Alpha_type, debug_info);
+}
+
+void PyStructuredSDFGBuilder::add_clamp(
+    const std::string& X,
+    const sdfg::types::Tensor& X_type,
+    const std::string& Min,
+    const std::optional<sdfg::types::Scalar>& Min_type,
+    const std::string& Max,
+    const std::optional<sdfg::types::Scalar>& Max_type,
+    const std::string& Y,
+    const sdfg::types::Tensor& Y_type,
+    const sdfg::DebugInfo& debug_info
+) {
+    auto& block = builder_.add_block(current_sequence(), {}, debug_info);
+    auto& libnode = builder_.add_library_node<
+        sdfg::math::tensor::ClampNode>(block, debug_info, Y_type.shape(), Min_type.has_value(), Max_type.has_value());
+
+    auto& Y_access = builder_.add_access(block, Y, debug_info);
+    builder_.add_computational_memlet(block, Y_access, libnode, "Y", {}, Y_type, debug_info);
+
+    auto& X_access = builder_.add_access(block, X, debug_info);
+    builder_.add_computational_memlet(block, X_access, libnode, "X", {}, X_type, debug_info);
+
+    for (auto [conn, name, type] : {std::tuple{"min", &Min, &Min_type}, std::tuple{"max", &Max, &Max_type}}) {
+        if (!type->has_value()) {
+            continue;
+        }
+        const auto& scalar = type->value();
+        auto& access =
+            (builder_.subject().exists(*name) ? builder_.add_access(block, *name, debug_info)
+                                              : builder_.add_constant(block, *name, scalar, debug_info));
+        builder_.add_computational_memlet(block, access, libnode, conn, {}, scalar, debug_info);
+    }
 }

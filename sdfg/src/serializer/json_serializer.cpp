@@ -1635,6 +1635,10 @@ void register_default_serializers() {
             return std::make_unique<math::tensor::ConditionalTensorCopyNodeSerializer>();
         });
     LibraryNodeSerializerRegistry::instance()
+        .register_library_node_serializer(math::tensor::LibraryNodeType_Clamp.value(), []() {
+            return std::make_unique<math::tensor::ClampNodeSerializer>();
+        });
+    LibraryNodeSerializerRegistry::instance()
         .register_library_node_serializer(math::tensor::LibraryNodeType_ConstPadding.value(), []() {
             return std::make_unique<math::tensor::ConstPaddingNodeSerializer>();
         });
@@ -1683,10 +1687,6 @@ void register_default_serializers() {
     LibraryNodeSerializerRegistry::instance()
         .register_library_node_serializer(math::tensor::LibraryNodeType_Erf.value(), []() {
             return std::make_unique<math::tensor::ErfNodeSerializer>();
-        });
-    LibraryNodeSerializerRegistry::instance()
-        .register_library_node_serializer(math::tensor::LibraryNodeType_HardSigmoid.value(), []() {
-            return std::make_unique<math::tensor::HardSigmoidNodeSerializer>();
         });
     LibraryNodeSerializerRegistry::instance()
         .register_library_node_serializer(math::tensor::LibraryNodeType_LeakyReLU.value(), []() {

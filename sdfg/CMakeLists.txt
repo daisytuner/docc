@@ -78,6 +78,7 @@ set(SOURCE_FILES
     src/data_flow/library_nodes/math/tensor/arange_node.cpp
     src/data_flow/library_nodes/math/tensor/batchnorm_node.cpp
     src/data_flow/library_nodes/math/tensor/broadcast_node.cpp
+    src/data_flow/library_nodes/math/tensor/clamp_node.cpp
     src/data_flow/library_nodes/math/tensor/concat_node.cpp
     src/data_flow/library_nodes/math/tensor/conditional_copy_node.cpp
     src/data_flow/library_nodes/math/tensor/const_padding_node.cpp
@@ -94,7 +95,6 @@ set(SOURCE_FILES
     src/data_flow/library_nodes/math/tensor/elementwise_ops/exp_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/fill_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/gelu_node.cpp
-    src/data_flow/library_nodes/math/tensor/elementwise_ops/hard_sigmoid_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/leaky_relu_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/logical_not_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/maximum_node.cpp

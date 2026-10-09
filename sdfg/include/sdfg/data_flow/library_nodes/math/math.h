@@ -14,6 +14,7 @@
 // Tensor
 #include "sdfg/data_flow/library_nodes/math/tensor/batchnorm_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/broadcast_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/clamp_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/concat_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/conditional_copy_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/const_padding_node.h"
@@ -28,7 +29,6 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/exp_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/fill_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/gelu_node.h"
-#include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/hard_sigmoid_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/leaky_relu_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/maximum_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/minimum_node.h"
