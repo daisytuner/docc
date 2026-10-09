@@ -203,16 +203,17 @@ public:
     PointerAccessType pointer_access_type(const Memlet& edge) const;
 
     /**
-     * Repoint the operand at @p input_idx to a locally staged, densely packed
-     * buffer with layout @p packed (shape/strides/offset in elements), updating the
-     * node's own addressing metadata to match. Returns false
-     * if the node cannot express the packed layout (localization is then rejected).
+     * Repoint the operand at @p input_idx to a locally staged buffer. @p packed is the
+     * operand's own view of that buffer: its shape, the buffer's strides, and the
+     * buffer offset of its origin (in elements; may be a sub-window of the staged
+     * tile). Updates the node's addressing metadata to match. Returns false if the
+     * node cannot express the view (localization is then rejected).
      */
     virtual bool relocalize_operand(int input_idx, const math::tensor::TensorLayout& packed) {
         return false;
     }
     /// Side-effect-free predicate mirroring @ref relocalize_operand: whether the
-    /// operand at @p input_idx can be repointed at a @p packed dense buffer.
+    /// operand at @p input_idx can be repointed at the buffer view @p packed.
     virtual bool can_relocalize_operand(int input_idx, const math::tensor::TensorLayout& packed) const {
         return false;
     }

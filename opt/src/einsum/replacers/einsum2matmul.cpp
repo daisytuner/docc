@@ -40,19 +40,22 @@ math::tensor::TensorLayout Einsum2MatMul::build_tensor_layout(
     bool swapped,
     const symbolic::Expression& outer_dim,
     const symbolic::Expression& inner_dim,
-    const symbolic::Expression& linearized_offset
+    const symbolic::Expression& outer_offset,
+    const symbolic::Expression& inner_offset,
+    const symbolic::Expression& external_offset
 ) const {
-    std::vector<symbolic::Expression> shape, strides;
-    strides.resize(2);
-    shape = {outer_dim, inner_dim};
+    std::vector<symbolic::Expression> shape = {outer_dim, inner_dim};
+    symbolic::Expression offset = external_offset;
+
+    // Reorder the contributions so that ordered[d] corresponds to shape[d] (outer, inner).
+    std::vector<EinsumIndexContribution> ordered(indexing.contributions.begin(), indexing.contributions.end());
     if (swapped) {
-        strides[0] = indexing.get_stride_including_subsets(1, shape);
-        strides[1] = indexing.get_stride_including_subsets(0, shape);
-    } else {
-        strides[0] = indexing.get_stride_including_subsets(0, shape);
-        strides[1] = indexing.get_stride_including_subsets(1, shape);
+        std::reverse(ordered.begin(), ordered.end());
     }
-    return std::move(math::tensor::TensorLayout(shape, strides, linearized_offset));
+    auto strides = indexing.get_strides(ordered, shape);
+
+    offset = SymEngine::add({offset, symbolic::mul(outer_offset, strides[0]), symbolic::mul(inner_offset, strides[1])});
+    return std::move(math::tensor::TensorLayout(shape, strides, offset));
 }
 
 bool Einsum2MatMul::analyze(const EinsumCluster& cluster, MatMulAnalysis& analysis) const {
@@ -60,9 +63,17 @@ bool Einsum2MatMul::analyze(const EinsumCluster& cluster, MatMulAnalysis& analys
     if (cluster.dims.size() != 3) {
         return false;
     }
-    for (const auto& dim : cluster.dims) {
+    for (int d = 0; d < 3; ++d) {
+        auto& dim = cluster.dims.at(d);
+        // Prevent triangular access: initial values must not depend on the outer loopvars (technically, should be
+        // constant inside the entire loop stack of EinsumCluster)
         if (!symbolic::eq(dim.init, symbolic::zero())) {
-            return false;
+            for (int e = 0; e < d; ++e) {
+                const auto& other_dim = cluster.dims.at(e);
+                if (symbolic::uses(dim.init, other_dim.indvar)) {
+                    return false;
+                }
+            }
         }
     }
 
@@ -72,31 +83,33 @@ bool Einsum2MatMul::analyze(const EinsumCluster& cluster, MatMulAnalysis& analys
     if (out_indices.contributions.size() != 2) {
         return false;
     }
-    symbolic::Symbol indvar_outer_1 = SymEngine::null, indvar_outer_2 = SymEngine::null, indvar_inner = SymEngine::null;
     std::array<size_t, 3> permutation = {0, 1, 2};
     do {
         if (symbolic::eq(out_indices.contributions.at(0).indvar, cluster.dims.at(permutation[0]).indvar) &&
             symbolic::eq(out_indices.contributions.at(1).indvar, cluster.dims.at(permutation[1]).indvar)) {
-            indvar_outer_1 = cluster.dims.at(permutation[0]).indvar;
-            indvar_outer_2 = cluster.dims.at(permutation[1]).indvar;
-            indvar_inner = cluster.dims.at(permutation[2]).indvar;
-            analysis.m = cluster.dims.at(permutation[0]).bound;
-            analysis.n = cluster.dims.at(permutation[1]).bound;
-            analysis.k = cluster.dims.at(permutation[2]).bound;
+            analysis.indvar_outer_1 = cluster.dims.at(permutation[0]).indvar;
+            analysis.indvar_outer_2 = cluster.dims.at(permutation[1]).indvar;
+            analysis.indvar_inner = cluster.dims.at(permutation[2]).indvar;
+            analysis.m = symbolic::sub(cluster.dims.at(permutation[0]).bound, cluster.dims.at(permutation[0]).init);
+            analysis.n = symbolic::sub(cluster.dims.at(permutation[1]).bound, cluster.dims.at(permutation[1]).init);
+            analysis.k = symbolic::sub(cluster.dims.at(permutation[2]).bound, cluster.dims.at(permutation[2]).init);
+            analysis.m_init = cluster.dims.at(permutation[0]).init;
+            analysis.n_init = cluster.dims.at(permutation[1]).init;
+            analysis.k_init = cluster.dims.at(permutation[2]).init;
+
             break;
         }
     } while (std::next_permutation(permutation.begin(), permutation.end()));
-    if (indvar_outer_1.is_null() || indvar_outer_2.is_null() || indvar_inner.is_null()) {
+    if (analysis.indvar_outer_1.is_null() || analysis.indvar_outer_2.is_null() || analysis.indvar_inner.is_null()) {
         return false;
     }
-    analysis.indvar_outer_1 = indvar_outer_1;
-    analysis.indvar_outer_2 = indvar_outer_2;
-    analysis.indvar_inner = indvar_inner;
 
     // Prevent triangular access: bounds must not depend on the loop indvars.
-    for (const auto& dim : cluster.dims) {
-        if (symbolic::uses(dim.bound, indvar_outer_1) || symbolic::uses(dim.bound, indvar_outer_2) ||
-            symbolic::uses(dim.bound, indvar_inner)) {
+    for (int d = 0; d < 3; ++d) {
+        const auto& dim = cluster.dims.at(d);
+
+        if (symbolic::uses(dim.bound, analysis.indvar_outer_1) || symbolic::uses(dim.bound, analysis.indvar_outer_2) ||
+            symbolic::uses(dim.bound, analysis.indvar_inner)) {
             return false;
         }
     }
@@ -114,10 +127,10 @@ bool Einsum2MatMul::analyze(const EinsumCluster& cluster, MatMulAnalysis& analys
         if (indices.contributions.size() != 2) {
             return false;
         }
-        if (auto a_use = uses_indices(indices, indvar_outer_1, indvar_inner)) {
+        if (auto a_use = uses_indices(indices, analysis.indvar_outer_1, analysis.indvar_inner)) {
             analysis.a_idx = static_cast<int>(i);
             a_swapped = a_use == 2;
-        } else if (auto b_use = uses_indices(indices, indvar_inner, indvar_outer_2)) {
+        } else if (auto b_use = uses_indices(indices, analysis.indvar_inner, analysis.indvar_outer_2)) {
             analysis.b_idx = static_cast<int>(i);
             b_swapped = b_use == 2;
         }
@@ -149,6 +162,8 @@ bool Einsum2MatMul::analyze(const EinsumCluster& cluster, MatMulAnalysis& analys
         a_swapped,
         analysis.m,
         analysis.k,
+        analysis.m_init,
+        analysis.k_init,
         cluster.get_linearized_outer_offset(analysis.a_idx)
     );
     analysis.layout_b = build_tensor_layout(
@@ -156,10 +171,19 @@ bool Einsum2MatMul::analyze(const EinsumCluster& cluster, MatMulAnalysis& analys
         b_swapped,
         analysis.k,
         analysis.n,
+        analysis.k_init,
+        analysis.n_init,
         cluster.get_linearized_outer_offset(analysis.b_idx)
     );
-    analysis.layout_y =
-        build_tensor_layout(out_indices, false, analysis.m, analysis.n, cluster.get_linearized_outer_offset(-1));
+    analysis.layout_y = build_tensor_layout(
+        out_indices,
+        false,
+        analysis.m,
+        analysis.n,
+        analysis.m_init,
+        analysis.n_init,
+        cluster.get_linearized_outer_offset(-1)
+    );
 
     return true;
 }

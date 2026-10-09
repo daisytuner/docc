@@ -256,6 +256,32 @@ bool RocmMmaSupport::supported_types(types::PrimitiveType input_type, types::Pri
     return false;
 }
 
+types::PrimitiveType RocmMmaSupport::get_accumulator_type(
+    types::PrimitiveType output_type, types::PrimitiveType input_type, types::PrimitiveType desired_acc_type
+) const {
+    // assumes input & output types are supported by this architecture, as checked by supported_types()
+
+    if (types::is_floating_point(input_type) && types::bit_width(input_type) < 32) {
+        // while on CDNA there are lib-functionsthat can output fp16 for fp16 inputs and bf16 for bf16 inputs,
+        // the MMA instructions themselves always accumulate to fp32
+        // and the conversion will happen while reading the data with additional slowdown. In all current usecases,
+        // we can handle converting to the external output type before writeback if needed.
+        if (!f32_support && desired_acc_type != types::PrimitiveType::Void) {
+            return desired_acc_type;
+        } else {
+            return types::PrimitiveType::Float;
+        }
+    } else if (input_type == types::PrimitiveType::Float) {
+        return types::PrimitiveType::Float;
+    } else if (input_type == types::PrimitiveType::Double) {
+        return types::PrimitiveType::Double;
+    } else if (types::is_integer(input_type)) {
+        return types::PrimitiveType::Int32;
+    } else {
+        throw std::runtime_error("Unsupported MMA input type: " + std::string(types::primitive_type_to_string(input_type)));
+    }
+}
+
 GpuMmaTiling RocmMmaSupport::get_mma_tiling(const symbolic::MultiExpression& res_shape) const {
     GpuMmaTiling tiling;
     tiling.mma_block_size = mma_block_size;

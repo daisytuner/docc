@@ -84,6 +84,7 @@ set(TEST_FILES
     targets/cuda/cuda_language_extension_test.cpp
     targets/cuda/cuda_lib_dispatcher_test.cpp
     targets/omp/codegen/omp_map_dispatcher_test.cpp
+    targets/gpu/wave_map_test.cpp
     targets/omp/schedule_test.cpp
     transformations/collapse_to_depth_test.cpp
     transformations/omp_transform_test.cpp

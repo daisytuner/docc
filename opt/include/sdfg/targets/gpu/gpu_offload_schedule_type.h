@@ -156,6 +156,40 @@ public:
     }
 
     /**
+     * @brief Lanes that jointly execute each iteration (1 = one thread per iteration;
+     *        the warp size = one wave per iteration, a subgroup-collective body).
+     */
+    static symbolic::Integer lanes(const structured_control_flow::ScheduleType& schedule) {
+        auto it = schedule.properties().find("lanes");
+        if (it == schedule.properties().end()) {
+            return symbolic::integer(1);
+        }
+        return symbolic::integer(std::stoi(it->second));
+    }
+
+    /**
+     * @brief Set the lanes per iteration. Only X_BLOCK can host lanes: they are the
+     *        fastest-varying part of the flat thread id.
+     */
+    static void lanes(structured_control_flow::ScheduleType& schedule, const symbolic::Integer lanes) {
+        if (target_level(schedule) != TargetLevel::X_BLOCK) {
+            throw InvalidSDFGException("lanes can only be set on an X_BLOCK schedule");
+        }
+        if (lanes->as_int() < 1) {
+            throw InvalidSDFGException("lanes must be positive");
+        }
+        serializer::JSONSerializer serializer;
+        schedule.set_property("lanes", serializer.expression(lanes));
+    }
+
+    /**
+     * @brief Hardware threads the schedule occupies along its dimension: parallel_size * lanes.
+     */
+    static symbolic::Integer threads(const structured_control_flow::ScheduleType& schedule) {
+        return symbolic::integer(parallel_size(schedule)->as_int() * lanes(schedule)->as_int());
+    }
+
+    /**
      * @brief Check if nested synchronization is enabled
      */
     static bool nested_sync(const structured_control_flow::ScheduleType& schedule) {

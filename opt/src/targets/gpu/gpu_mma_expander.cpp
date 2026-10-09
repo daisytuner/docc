@@ -105,7 +105,8 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
     types::PrimitiveType output_type,
     const data_flow::ImplementationType& impl_type,
     bool include_c_add,
-    const DebugInfo& org_debug_info
+    const DebugInfo& org_debug_info,
+    const std::array<int, 3>& args_order // {y, a, b}
 ) {
     auto* mma_arch = arch.mma_support();
     auto mma_impl_type = mma_arch->get_mma_impl_type();
@@ -114,11 +115,9 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
     auto& k_dim = layout_b.get_dim(0);
 
     auto& builder = standalone.builder();
-    auto thread_x = symbolic::symbol(builder.find_new_name("wave_x"));
-    auto threads_x_count = symbolic::integer(mma_tiling.macro_blocks_m * mma_tiling.threads_per_mma_block_m);
-    builder.add_container(
-        thread_x->get_name(), types::Scalar(types::get_primitive_type_to_hold_upper_bound(threads_x_count))
-    );
+    auto wave_row = symbolic::symbol(builder.find_new_name("wave_row"));
+    auto waves_m = symbolic::integer(mma_tiling.macro_blocks_m);
+    builder.add_container(wave_row->get_name(), types::Scalar(types::get_primitive_type_to_hold_upper_bound(waves_m)));
 
     auto acc_frag_name = builder.find_new_name("mma_acc");
     types::Pointer acc_frag_type{types::Scalar(acc_type)};
@@ -133,78 +132,72 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
     types::Pointer a_frag_type{types::Scalar(input_type)};
     auto a_frag_name = builder.find_new_name("mma_a");
     auto a_col_major = layout_a.is_2d_col_or_row_major() == math::tensor::TensorLayout::LAYOUT_COL_MAJOR;
+    MmaFragmentLayout a_frag_layout = a_col_major ? MmaFragmentLayout::MMA_LAYOUT_COL_MAJOR
+                                                  : MmaFragmentLayout::MMA_LAYOUT_ROW_MAJOR;
     mma_arch->set_mma_fragment_storage_type(
-        a_frag_type.storage_type(),
-        mma_tiling.mma_block_size,
-        MmaFragmentType::A,
-        a_col_major ? MmaFragmentLayout::MMA_LAYOUT_COL_MAJOR : MmaFragmentLayout::MMA_LAYOUT_ROW_MAJOR
+        a_frag_type.storage_type(), mma_tiling.mma_block_size, MmaFragmentType::A, a_frag_layout
     );
     builder.add_container(a_frag_name, a_frag_type);
 
     types::Pointer b_frag_type{types::Scalar(input_type)};
     auto b_frag_name = builder.find_new_name("mma_b");
     auto b_col_major = layout_b.is_2d_col_or_row_major() == math::tensor::TensorLayout::LAYOUT_COL_MAJOR;
+    MmaFragmentLayout b_frag_layout = b_col_major ? MmaFragmentLayout::MMA_LAYOUT_COL_MAJOR
+                                                  : MmaFragmentLayout::MMA_LAYOUT_ROW_MAJOR;
     mma_arch->set_mma_fragment_storage_type(
-        b_frag_type.storage_type(),
-        mma_tiling.mma_block_size,
-        MmaFragmentType::B,
-        b_col_major ? MmaFragmentLayout::MMA_LAYOUT_COL_MAJOR : MmaFragmentLayout::MMA_LAYOUT_ROW_MAJOR
+        b_frag_type.storage_type(), mma_tiling.mma_block_size, MmaFragmentType::B, b_frag_layout
     );
     builder.add_container(b_frag_name, b_frag_type);
     auto y_col_major = layout_y.is_2d_col_or_row_major() == math::tensor::TensorLayout::LAYOUT_COL_MAJOR;
 
-    auto threads_y_count = symbolic::integer(mma_tiling.macro_blocks_n);
+    auto waves_n = symbolic::integer(mma_tiling.macro_blocks_n);
+    // Each wave_row iteration is one whole wave: the MMA nodes below are wave-collective.
+    auto wave_row_sched = ScheduleType_GPU_Offload::create(arch, TargetLevel::X_BLOCK, waves_m);
+    ScheduleType_GPU_Offload::lanes(wave_row_sched, symbolic::integer(mma_tiling.threads_per_mma_block_m));
     auto& col_map = standalone.replace_with_structured_loop(
         AccessNodeExpand::LoopType::Map,
-        thread_x,
-        symbolic::Lt(thread_x, threads_x_count),
+        wave_row,
+        symbolic::Lt(wave_row, waves_m),
         symbolic::zero(),
-        symbolic::add(thread_x, symbolic::integer(1)),
-        ScheduleType_GPU_Offload::create(arch, TargetLevel::X_BLOCK, threads_x_count)
+        symbolic::add(wave_row, symbolic::integer(1)),
+        wave_row_sched
     );
 
-    symbolic::Expression brow_in_tile;
-    if (mma_tiling.macro_blocks_m > 1) {
-        auto wave_row_name = builder.find_new_name("wave_row");
-        auto brow_in_tile_sym = symbolic::symbol(wave_row_name);
-        brow_in_tile = brow_in_tile_sym;
-        builder.add_container(wave_row_name, types::Scalar(types::get_primitive_type_to_hold_upper_bound(m_dim)));
-        builder.add_assignments(
-            col_map.root(),
-            {{brow_in_tile_sym, symbolic::div(thread_x, symbolic::integer(mma_tiling.threads_per_mma_block_m))}}
-        );
-    } else {
-        brow_in_tile = symbolic::zero();
-    }
+    symbolic::Expression brow_in_tile = wave_row;
 
     auto bcol_in_tile = symbolic::symbol(builder.find_new_name("wave_col"));
-    builder.add_container(
-        bcol_in_tile->get_name(), types::Scalar(types::get_primitive_type_to_hold_upper_bound(threads_y_count))
-    );
+    builder
+        .add_container(bcol_in_tile->get_name(), types::Scalar(types::get_primitive_type_to_hold_upper_bound(waves_n)));
 
     auto& row_map = builder.add_map(
         col_map.root(),
         bcol_in_tile,
-        symbolic::Lt(bcol_in_tile, threads_y_count),
+        symbolic::Lt(bcol_in_tile, waves_n),
         symbolic::zero(),
         symbolic::add(bcol_in_tile, symbolic::integer(1)),
-        ScheduleType_GPU_Offload::create(arch, TargetLevel::Y_BLOCK, symbolic::integer(mma_tiling.macro_blocks_m))
+        ScheduleType_GPU_Offload::create(arch, TargetLevel::Y_BLOCK, waves_n)
     );
 
-    // K-tile loop variable; A and B advance along K with it.
+    // K-block loop (unit stride, so LoopTiling can strip-mine it into staged K-panels).
     auto k_tile = symbolic::symbol(builder.find_new_name("tile_k"));
-    builder.add_container(k_tile->get_name(), types::Scalar(types::get_primitive_type_to_hold_upper_bound(k_dim)));
+    auto k_blocks = GpuMmaSupport::get_integer_block_count(k_dim, mma_tiling.mma_block_size.k);
+    if (!k_blocks) {
+        throw std::runtime_error("MMA expansion: K is not a multiple of the MMA block size");
+    }
+    auto k_count = symbolic::integer(k_blocks);
+    builder.add_container(k_tile->get_name(), types::Scalar(types::get_primitive_type_to_hold_upper_bound(k_count)));
+    auto k_elem = symbolic::mul(k_tile, symbolic::integer(mma_tiling.mma_block_size.k));
 
     auto lda = layout_a.get_stride(a_col_major ? 1 : 0);
     auto a_offset = SymEngine::add({
         layout_a.offset(),
         SymEngine::mul({brow_in_tile, symbolic::integer(mma_tiling.mma_block_size.m), layout_a.get_stride(0)}),
-        SymEngine::mul({k_tile, layout_a.get_stride(1)}),
+        SymEngine::mul({k_elem, layout_a.get_stride(1)}),
     });
     auto ldb = layout_b.get_stride(b_col_major ? 1 : 0);
     auto b_offset = SymEngine::add(
         {layout_b.offset(),
-         SymEngine::mul({k_tile, layout_b.get_stride(0)}),
+         SymEngine::mul({k_elem, layout_b.get_stride(0)}),
          SymEngine::mul({bcol_in_tile, symbolic::integer(mma_tiling.mma_block_size.n), layout_b.get_stride(1)})}
     );
     auto ldc = layout_y.get_stride(y_col_major ? 1 : 0);
@@ -227,9 +220,9 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
     auto& k_sweep = builder.add_for(
         row_map.root(),
         k_tile,
-        symbolic::Lt(k_tile, k_dim),
+        symbolic::Lt(k_tile, k_count),
         symbolic::zero(),
-        symbolic::add(k_tile, symbolic::integer(mma_tiling.mma_block_size.k))
+        symbolic::add(k_tile, symbolic::integer(1))
     );
 
     auto& load_block = builder.add_block(k_sweep.root());
@@ -242,8 +235,8 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
         a_frag_name,
         mma_tiling.mma_block_size,
         MmaFragmentType::A,
-        {.offset = a_offset, .ldstride = lda, .layout = MMA_LAYOUT_UNSPECIFIED},
-        1,
+        {.offset = a_offset, .ldstride = lda, .layout = a_frag_layout},
+        args_order.at(1),
         load_block
     );
     create_fragment_load(
@@ -255,8 +248,8 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
         b_frag_name,
         mma_tiling.mma_block_size,
         MmaFragmentType::B,
-        {.offset = b_offset, .ldstride = ldb, .layout = MMA_LAYOUT_UNSPECIFIED},
-        2,
+        {.offset = b_offset, .ldstride = ldb, .layout = b_frag_layout},
+        args_order.at(2),
         load_block
     );
 
@@ -300,7 +293,7 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
             mma_tiling.mma_block_size,
             MmaFragmentType::C,
             {.offset = y_offset, .ldstride = ldc, .layout = y_layout},
-            0,
+            args_order.at(0),
             load_c_block
         );
 
@@ -343,7 +336,7 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
         mma_tiling.mma_block_size,
         MmaFragmentType::C,
         {.offset = y_offset, .ldstride = ldc, .layout = y_layout},
-        0,
+        args_order.at(0),
         store_block
     );
 
@@ -411,7 +404,8 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::handle_expand(
     auto input_type = node.uniform_quantization(node.get_parent()).value();
     auto output_type = input_type;
 
-    auto new_impl_type = arch_->mma_support()->get_mma_impl_type();
+    auto mma_arch = arch_->mma_support();
+    auto new_impl_type = mma_arch->get_mma_impl_type();
 
     auto standalone = context.replacement_requires_access_nodes({InputUse::Scalar, InputUse::Scalar, InputUse::Scalar});
 
@@ -424,11 +418,12 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::handle_expand(
             node.layout_b(),
             result_layout,
             input_type,
-            output_type,
+            mma_arch->get_accumulator_type(output_type, input_type),
             output_type,
             new_impl_type.value(),
             true,
-            node.debug_info()
+            node.debug_info(),
+            {0, 1, 2} // {y, a, b}: MatMulNode access nodes are already ordered Y, A, B
         );
     } else {
         return context.unable();

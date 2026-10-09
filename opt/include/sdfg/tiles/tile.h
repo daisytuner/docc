@@ -46,6 +46,7 @@ class AxisSchedule {
     unsigned spatial_axis_ = 0; ///< the parallel grid dimension of this axis: 0=X, 1=Y, 2=Z
     symbolic::Integer parallel_size_ = symbolic::integer(0); ///< 0 when unknown (CPU)
     bool needs_sync_ = false;
+    symbolic::Integer lanes_ = symbolic::integer(1); ///< lanes jointly executing one iteration (subgroup width)
 
 public:
     AxisSchedule() = default;
@@ -55,7 +56,8 @@ public:
         bool has_scratchpad,
         unsigned spatial_axis = 0,
         symbolic::Integer parallel_size = symbolic::integer(0),
-        bool needs_sync = false
+        bool needs_sync = false,
+        symbolic::Integer lanes = symbolic::integer(1)
     );
 
     /// Classify a loop's schedule, or `std::nullopt` for a sequential loop (which
@@ -91,6 +93,9 @@ public:
     }
     bool needs_sync() const {
         return needs_sync_;
+    }
+    const symbolic::Integer& lanes() const {
+        return lanes_;
     }
 };
 

@@ -172,7 +172,14 @@ def test_mma_from_shared_executes(arch, M, N, K, tile_m, tile_n, b_col_major):
     if RocmArch.current_name() != arch:
         pytest.skip(f"DOCC_ROCM_ARCH ({RocmArch.current_name()}) != {arch}")
 
+    tag = "Bcol" if b_col_major else "Brow"
+    output_dir = (
+        PYTEST_OUTPUT_DIR / f"mma_shared_{arch}_{M}x{N}x{K}_{tile_m}x{tile_n}_{tag}"
+    )
+    output_dir.mkdir(parents=True, exist_ok=True)
+
     builder, node = _build_shared_staged_mma(M, N, K, tile_m, tile_n, b_col_major)
+    builder.dump(output_dir, "init", True, True)
     am = AnalysisManager(builder)
     xform = GpuMmaTransform(node, RocmArch.get_from_name(arch))
     assert xform.can_be_applied(builder, am), "MMA over the LDS tiles should expand"
@@ -180,11 +187,7 @@ def test_mma_from_shared_executes(arch, M, N, K, tile_m, tile_n, b_col_major):
     assert xform.expanded
 
     sdfg = builder.move()
-    tag = "Bcol" if b_col_major else "Brow"
-    output_dir = (
-        PYTEST_OUTPUT_DIR / f"mma_shared_{arch}_{M}x{N}x{K}_{tile_m}x{tile_n}_{tag}"
-    )
-    output_dir.mkdir(parents=True, exist_ok=True)
+
     sdfg.dump(str(output_dir), "expanded", True, True)
     sdfg.validate()
 

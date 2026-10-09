@@ -8,6 +8,7 @@
 
 #include "sdfg/data_flow/data_flow_graph.h"
 #include "sdfg/exceptions.h"
+#include "sdfg/symbolic/utils.h"
 #include "sdfg/types/type.h"
 
 namespace sdfg::gpu {
@@ -27,6 +28,9 @@ GpuMmaFragmentLoadNode::GpuMmaFragmentLoadNode(
           element_id, debug_info, vertex, parent, LibraryNodeType_GpuMmaFragmentLoad, {}, {"frag", "ptr"}, false, impl_type
       ),
       block_size_(block_size), fragment_type_(fragment_type), layout_(layout), element_type_(element_type) {
+    if (layout_.layout == MmaFragmentLayout::MMA_LAYOUT_UNSPECIFIED) {
+        throw std::invalid_argument("GpuMmaFragmentLoadNode: MMA from-memory layout must be specified");
+    }
 }
 
 void GpuMmaFragmentLoadNode::validate(const Function& function) const {
@@ -58,6 +62,42 @@ std::unique_ptr<data_flow::DataFlowNode> GpuMmaFragmentLoadNode::
     return std::unique_ptr<data_flow::DataFlowNode>(new GpuMmaFragmentLoadNode(
         element_id, debug_info(), vertex, parent, block_size_, fragment_type_, layout_, element_type_, implementation_type_
     ));
+}
+
+data_flow::PointerAccessType GpuMmaFragmentLoadNode::pointer_access_type(int input_idx) const {
+    if (input_idx == FRAG_INPUT_IDX) {
+        return data_flow::PointerAccessMeta::
+            create_full_write_only(SymEngine::mul(block_size_.get_shape(fragment_type_)), true);
+    } else if (input_idx == PTR_INPUT_IDX) {
+        auto t_layout = layout_.to_tensor_layout(block_size_, fragment_type_);
+        return data_flow::PointerAccessMeta::create_read_only(symbolic::__nullptr__(), true, t_layout);
+    }
+    return LibraryNode::pointer_access_type(input_idx);
+}
+
+bool GpuMmaFragmentLoadNode::can_relocalize_operand(int input_idx, const math::tensor::TensorLayout& packed) const {
+    if (input_idx == PTR_INPUT_IDX) {
+        if (!symbolic::vectors_of_expressions_match(packed.shape(), block_size_.get_shape(fragment_type_))) {
+            return false;
+        }
+        if (GpuMmaFromMemoryLayout::from_tensor_layout(packed)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool GpuMmaFragmentLoadNode::relocalize_operand(int input_idx, const math::tensor::TensorLayout& packed) {
+    if (input_idx == PTR_INPUT_IDX) {
+        if (!symbolic::vectors_of_expressions_match(packed.shape(), block_size_.get_shape(fragment_type_))) {
+            return false;
+        }
+        if (auto new_layout = GpuMmaFromMemoryLayout::from_tensor_layout(packed)) {
+            layout_ = new_layout.value();
+            return true;
+        }
+    }
+    return false;
 }
 
 std::string GpuMmaFragmentLoadNode::toStr() const {

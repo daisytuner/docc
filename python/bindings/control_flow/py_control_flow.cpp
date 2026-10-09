@@ -341,7 +341,8 @@ void register_control_flow(py::module& m) {
             [](sdfg::gpu::TargetLevel target_level,
                int64_t parallel_size,
                py::object partial_storage,
-               py::object partial_container) {
+               py::object partial_container,
+               py::object lanes) {
                 auto schedule = sdfg::cuda::ScheduleType_CUDA_Offload::create<
                     sdfg::cuda::ScheduleType_CUDA_Offload>(target_level, sdfg::symbolic::integer(parallel_size));
                 if (!partial_storage.is_none()) {
@@ -351,14 +352,19 @@ void register_control_flow(py::module& m) {
                 if (!partial_container.is_none()) {
                     sdfg::gpu::ScheduleType_GPU_Offload::partial_container(schedule, partial_container.cast<std::string>());
                 }
+                if (!lanes.is_none()) {
+                    sdfg::gpu::ScheduleType_GPU_Offload::lanes(schedule, sdfg::symbolic::integer(lanes.cast<int64_t>()));
+                }
                 return schedule;
             },
             py::arg("target_level"),
             py::arg("parallel_size"),
             py::arg("partial_storage") = py::none(),
             py::arg("partial_container") = py::none(),
+            py::arg("lanes") = py::none(),
             "Create a CUDA offload schedule type for the given target level and parallel size; for a "
-            "reduction, partial_storage (ReduceStrategy) and partial_container (buffer name) may be set"
+            "reduction, partial_storage (ReduceStrategy) and partial_container (buffer name) may be set; "
+            "lanes (X_BLOCK only) makes each iteration a wave of that many lanes"
         )
         .def_static(
             "rocm_offload",
@@ -366,7 +372,8 @@ void register_control_flow(py::module& m) {
                int64_t parallel_size,
                py::object partial_storage,
                py::object partial_container,
-               const sdfg::gpu::GpuArch* arch) {
+               const sdfg::gpu::GpuArch* arch,
+               py::object lanes) {
                 ScheduleType schedule = ScheduleType_Sequential::create();
                 if (arch) {
                     schedule = sdfg::gpu::ScheduleType_GPU_Offload::
@@ -382,6 +389,9 @@ void register_control_flow(py::module& m) {
                 if (!partial_container.is_none()) {
                     sdfg::gpu::ScheduleType_GPU_Offload::partial_container(schedule, partial_container.cast<std::string>());
                 }
+                if (!lanes.is_none()) {
+                    sdfg::gpu::ScheduleType_GPU_Offload::lanes(schedule, sdfg::symbolic::integer(lanes.cast<int64_t>()));
+                }
                 return schedule;
             },
             py::arg("target_level"),
@@ -389,8 +399,10 @@ void register_control_flow(py::module& m) {
             py::arg("partial_storage") = py::none(),
             py::arg("partial_container") = py::none(),
             py::arg("arch") = py::none(),
+            py::arg("lanes") = py::none(),
             "Create a ROCm offload schedule type for the given target level and parallel size; for a "
-            "reduction, partial_storage (ReduceStrategy) and partial_container (buffer name) may be set"
+            "reduction, partial_storage (ReduceStrategy) and partial_container (buffer name) may be set; "
+            "lanes (X_BLOCK only) makes each iteration a wave of that many lanes"
         )
         .def("__repr__", [](const ScheduleType& st) {
             std::ostringstream oss;

@@ -88,10 +88,7 @@ einsum::ReplaceOutcome GpuMmaEinsumReplacer::
     }
 
     auto mma_tiling = mma_arch->get_mma_tiling({analysis.m, analysis.n, analysis.k});
-    auto impl_type = mma_arch->get_matmul_impl_type(*arch_, mma_tiling);
-    if (!impl_type) {
-        return context.unable();
-    }
+    auto impl_type = mma_arch->get_mma_impl_type();
 
     // --- Replacement ---
 
@@ -109,11 +106,13 @@ einsum::ReplaceOutcome GpuMmaEinsumReplacer::
         analysis.layout_b.value(),
         analysis.layout_y.value(),
         analysis.input_type,
-        analysis.output_type,
+        mma_arch->get_accumulator_type(analysis.output_type, analysis.input_type),
         analysis.output_type,
         impl_type.value(),
         true,
-        cluster.consumed_loops.front()->debug_info()
+        cluster.consumed_loops.front()->debug_info(),
+        // {y, a, b}: the cluster lists the output after its inputs, and A/B in no particular order.
+        {static_cast<int>(cluster.inputs.size()), analysis.a_idx, analysis.b_idx}
     );
 }
 

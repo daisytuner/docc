@@ -57,7 +57,8 @@ public:
                 has_scratchpad(),
                 spatial_axis_of(tl),
                 gpu::ScheduleType_GPU_Offload::parallel_size(sched),
-                gpu::ScheduleType_GPU_Offload::nested_sync(sched)
+                gpu::ScheduleType_GPU_Offload::nested_sync(sched),
+                gpu::ScheduleType_GPU_Offload::lanes(sched)
             );
         }
         // Legacy fused block-thread schedule.

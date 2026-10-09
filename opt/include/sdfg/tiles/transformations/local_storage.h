@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -157,6 +158,7 @@ private:
         std::vector<int> coop_axes;
         tiles::TileGuard guard;
         symbolic::Expression coop_threads; ///< symbolic cooperating thread count (null = unknown)
+        size_t coop_lanes = 1; ///< lanes of a wave-granular slot axis that join the copy
     };
 
     /// Build the complete movement plan for the staged tile from its geometry.
@@ -210,6 +212,14 @@ private:
         const types::IType& buffer_type,
         const std::vector<symbolic::Expression>& slot_indices
     );
+
+    /// A library-node operand's own view of @p buffer: its shape, the buffer's tile
+    /// strides, and the buffer offset of its origin (slot + position within the tile).
+    std::optional<math::tensor::TensorLayout> operand_view(
+        const analysis::MemoryTile& access,
+        const tiles::PackedBuffer& buffer,
+        const std::vector<symbolic::Expression>& slot_indices
+    ) const;
 
 public:
     /**
