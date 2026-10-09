@@ -139,6 +139,31 @@ void ArgumentsAnalysis::collect_arg_sizes(
             }
 
             auto tile = memory_layout_analysis.tile(node, argument);
+            std::pair<symbolic::Expression, symbolic::Expression> range = {SymEngine::null, SymEngine::null};
+            if (tile != nullptr) {
+                range = tile->contiguous_range();
+            }
+
+            // Fall back to the byte size recorded on the container (e.g. from tensor layouts before expansion)
+            if (range.first.is_null() || range.second.is_null()) {
+                symbolic::Expression allocation_size = SymEngine::null;
+                if (sdfg_.exists(argument)) {
+                    allocation_size = sdfg_.type(argument).storage_type().allocation_size();
+                }
+                if (!allocation_size.is_null()) {
+                    auto base_type = type_analysis.get_outer_type(argument);
+                    symbolic::Expression elem_size = SymEngine::null;
+                    if (base_type != nullptr) {
+                        elem_size = types::get_contiguous_element_size(*base_type, true);
+                    }
+                    if (!elem_size.is_null()) {
+                        argument_sizes_.at(&node).insert({argument, allocation_size});
+                        argument_element_sizes_.at(&node).insert({argument, elem_size});
+                        continue;
+                    }
+                }
+            }
+
             if (tile == nullptr) {
                 if (do_not_throw) {
                     known_sizes_.insert({&node, false});
@@ -147,7 +172,6 @@ void ArgumentsAnalysis::collect_arg_sizes(
                     throw std::runtime_error("Tile not found for " + argument);
                 }
             }
-            auto range = tile->contiguous_range();
             // contiguous_range returns {null, null} when the tile's extent would depend on
             // an unbounded leading dimension; treat that as "size unknown" rather than
             // dereferencing a null expression.

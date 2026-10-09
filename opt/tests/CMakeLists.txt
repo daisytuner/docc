@@ -63,10 +63,10 @@ set(TEST_FILES
     transformations/offloading/rocblas_data_transfer_extraction_test.cpp
     transformations/offloading/cuda_stdlib_data_transfer_extraction_test.cpp
     transformations/offloading/rocm_stdlib_data_transfer_extraction_test.cpp
-    transformations/offloading/gpu_embedding_data_transfer_extraction_test.cpp
     transformations/offloading/gpu_offload_nested_loop_test.cpp
     transformations/offloading/cuda_offload_transform_test.cpp
     transformations/offloading/rocm_offload_transform_test.cpp
+    transformations/offloading/gpu_tensor_allocation_size_offload_test.cpp
     optimizations/parallelogram_tiling_test.cpp
     passes/redundant_load_elimination_pass_test.cpp
     passes/offloading/cuda_library_node_transfer_extraction_pass_test.cpp
@@ -84,7 +84,6 @@ set(TEST_FILES
     targets/cuda/cuda_language_extension_test.cpp
     targets/cuda/cuda_lib_dispatcher_test.cpp
     targets/omp/codegen/omp_map_dispatcher_test.cpp
-    targets/gpu/embedding_dispatcher_test.cpp
     targets/omp/schedule_test.cpp
     transformations/collapse_to_depth_test.cpp
     transformations/omp_transform_test.cpp

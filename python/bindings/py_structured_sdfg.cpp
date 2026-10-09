@@ -59,6 +59,7 @@
 #include "docc/util/docc_paths.h"
 #include "sdfg/passes/dataflow/tasklet_fusion.h"
 #include "sdfg/passes/loop_fusion/loop_fusion_pass.h"
+#include "sdfg/passes/memory/tensor_allocation_size_inference.h"
 #include "sdfg/passes/offloading/code_motion/block_hoisting.h"
 #include "sdfg/passes/offloading/code_motion/block_sorting.h"
 #include "sdfg/passes/offloading/cuda_library_node_expansion_pass.h"
@@ -221,6 +222,10 @@ void PyStructuredSDFG::expand(const docc::target::TargetOptions& options) {
     sdfg::passes::CompileStatistics::enter_stage_if_enabled("expand");
     sdfg::builder::StructuredSDFGBuilder builder_opt(*sdfg_);
     sdfg::analysis::AnalysisManager analysis_manager(*sdfg_, options_);
+
+    // Tensor layouts are lost on expansion, so record buffer sizes for offloading first
+    sdfg::passes::TensorAllocationSizeInference tensor_allocation_size_inference;
+    tensor_allocation_size_inference.run(builder_opt, analysis_manager);
 
     if (auto* target = docc_context_.get_target_handler(options.target)) {
         if (auto target_expand = target->safe_apply_expand_time_mapping_fn_get()) {
