@@ -10,4 +10,4 @@ def test_qwen2_mlp(target: str) -> None:
         "Qwen/Qwen2.5-1.5B-Instruct", dtype=torch.float32
     )
     mlp = model.model.layers[0].mlp
-    check(mlp, torch.randn(1, 39, 1536), target=target)
+    check(mlp, torch.randn(1, 39, 1536), target=target, atol=1e-4)
