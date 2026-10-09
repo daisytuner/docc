@@ -16,8 +16,10 @@ namespace normalization {
  * 1. (Optional) Initial map fusion without init-into-reduction hoisting
  * 2. Loop distribution and stride minimization
  * 3. (Optional) Final map fusion with init-into-reduction hoisting
+ *
+ * `eliminate_trivial_loops` = false keeps single-iteration maps (needed before GPU scheduling).
  */
-void normalize(sdfg::StructuredSDFG& sdfg, bool enable_fusion = true);
+void normalize(sdfg::StructuredSDFG& sdfg, bool enable_fusion = true, bool eliminate_trivial_loops = true);
 
 } // namespace normalization
 } // namespace passes

@@ -121,10 +121,10 @@ Pipeline Pipeline::symbolic_simplification() {
     return p;
 };
 
-Pipeline Pipeline::dead_code_elimination() {
+Pipeline Pipeline::dead_code_elimination(bool eliminate_trivial_loops) {
     Pipeline p("DeadCodeElimination");
 
-    p.register_pass<DeadCFGElimination>();
+    p.register_pass<DeadCFGElimination>(false, eliminate_trivial_loops);
     p.register_pass<SequenceFusion>();
 
     return p;

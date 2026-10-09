@@ -261,10 +261,13 @@ void PyStructuredSDFG::simplify(const docc::target::TargetOptions& options) {
     sdfg::builder::StructuredSDFGBuilder builder_opt(*sdfg_);
     sdfg::analysis::AnalysisManager analysis_manager(*sdfg_, options_);
 
+    // Single-iteration maps must survive until GPU scheduling, otherwise their bodies stay on the host.
+    bool eliminate_trivial_loops = !(options.target == "cuda" || options.target == "rocm");
+
     // Optimization Pipelines
     sdfg::passes::Pipeline dataflow_simplification = sdfg::passes::Pipeline::dataflow_simplification();
     sdfg::passes::Pipeline symbolic_simplification = sdfg::passes::Pipeline::symbolic_simplification();
-    sdfg::passes::Pipeline dce = sdfg::passes::Pipeline::dead_code_elimination();
+    sdfg::passes::Pipeline dce = sdfg::passes::Pipeline::dead_code_elimination(eliminate_trivial_loops);
     sdfg::passes::Pipeline memlet_combine = sdfg::passes::Pipeline::memlet_combine();
     sdfg::passes::Pipeline ce = sdfg::passes::Pipeline::constant_elimination();
     sdfg::passes::DeadDataElimination dde;
@@ -400,7 +403,7 @@ void PyStructuredSDFG::simplify(const docc::target::TargetOptions& options) {
 
     // Fuse maps (no init-into-reduction hoisting in simplify; reserved for the final
     // normalize() map-fusion run so loop distribution and fusion do not fight)
-    auto map_fusion = sdfg::passes::normalization::map_fusion(false, false);
+    auto map_fusion = sdfg::passes::normalization::map_fusion(false, false, eliminate_trivial_loops);
     map_fusion.run(builder_opt, analysis_manager);
 
     sdfg::passes::CompileStatistics::exit_stage_if_enabled();
@@ -465,7 +468,8 @@ void PyStructuredSDFG::dump(
 }
 
 void PyStructuredSDFG::normalize(const docc::target::TargetOptions& options) {
-    sdfg::passes::normalization::normalize(*sdfg_, options.enable_fusion_in_normalize);
+    bool eliminate_trivial_loops = !(options.target == "cuda" || options.target == "rocm");
+    sdfg::passes::normalization::normalize(*sdfg_, options.enable_fusion_in_normalize, eliminate_trivial_loops);
 }
 
 void PyStructuredSDFG::schedule(const std::string& target, const std::string& category, bool remote_tuning) {

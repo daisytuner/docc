@@ -352,13 +352,13 @@ class DoccProgram(ABC):
                 sdfg.dump(output_folder, "py2.expanded", dump_dot=True)
 
             # Simplify pipelines
-            sdfg.simplify()
+            sdfg.simplify(target_options)
             if self.options.debug_dump:
                 sdfg.dump(output_folder, "py3.opt", dump_dot=True)
 
             # Normalization for scheduling
             if self.options.normalize:
-                sdfg.normalize()
+                sdfg.normalize(target_options)
                 target_options.already_normalized = True
             if self.options.debug_dump:
                 sdfg.dump(

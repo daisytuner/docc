@@ -97,12 +97,17 @@ void DeadCFGElimination::
 }
 
 DeadCFGElimination::DeadCFGElimination()
-    : Pass(), permissive_(false) {
+    : Pass(), permissive_(false), eliminate_trivial_loops_(true) {
 
       };
 
 DeadCFGElimination::DeadCFGElimination(bool permissive)
-    : Pass(), permissive_(permissive) {
+    : Pass(), permissive_(permissive), eliminate_trivial_loops_(true) {
+
+      };
+
+DeadCFGElimination::DeadCFGElimination(bool permissive, bool eliminate_trivial_loops)
+    : Pass(), permissive_(permissive), eliminate_trivial_loops_(eliminate_trivial_loops) {
 
       };
 
@@ -171,7 +176,7 @@ bool DeadCFGElimination::run_pass(builder::StructuredSDFGBuilder& builder, analy
 
                 // Trivial structured loop (bound - init == 1 and stride == 1)
                 if (auto sloop = dyn_cast<structured_control_flow::Map*>(&child)) {
-                    if (is_trivial(sloop)) {
+                    if (eliminate_trivial_loops_ && is_trivial(sloop)) {
                         auto indvar = sloop->indvar();
                         auto init = sloop->init();
                         sloop->root().replace(indvar, init);

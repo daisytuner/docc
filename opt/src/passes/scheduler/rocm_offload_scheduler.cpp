@@ -126,7 +126,7 @@ void ROCMOffloadScheduler::pre_schedule(
     symbol_propagation_pass.run(builder, analysis_manager);
     passes::DeadDataElimination ddead_pass;
     ddead_pass.run(builder, analysis_manager);
-    passes::DeadCFGElimination dcfg_pass;
+    passes::DeadCFGElimination dcfg_pass(false, false);
     dcfg_pass.run(builder, analysis_manager);
     passes::MemletSimplificationPass subset_simplification_pass;
     subset_simplification_pass.run(builder, analysis_manager);

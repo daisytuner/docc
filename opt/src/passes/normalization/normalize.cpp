@@ -14,7 +14,7 @@ namespace sdfg {
 namespace passes {
 namespace normalization {
 
-void normalize(sdfg::StructuredSDFG& sdfg, bool enable_fusion) {
+void normalize(sdfg::StructuredSDFG& sdfg, bool enable_fusion, bool eliminate_trivial_loops) {
     CompileStatistics::enter_stage_if_enabled("normalize");
     builder::StructuredSDFGBuilder builder(sdfg);
     analysis::AnalysisManager analysis_manager(sdfg);
@@ -28,7 +28,7 @@ void normalize(sdfg::StructuredSDFG& sdfg, bool enable_fusion) {
         auto pipeline = stride_minimization();
         pipeline.run(builder, analysis_manager);
 
-        Pipeline dce = Pipeline::dead_code_elimination();
+        Pipeline dce = Pipeline::dead_code_elimination(eliminate_trivial_loops);
         DeadDataElimination dde;
 
         // New Map Fusion, simpler than previous, but what it can do should be cheaper to do
@@ -49,7 +49,7 @@ void normalize(sdfg::StructuredSDFG& sdfg, bool enable_fusion) {
         task_fuse_pass.run(builder, analysis_manager);
 
         // Fuse maps (final run: allow init-into-reduction hoisting now that distribution is done)
-        auto map_fusion_hoist = map_fusion(true, false);
+        auto map_fusion_hoist = map_fusion(true, false, eliminate_trivial_loops);
         map_fusion_hoist.run(builder, analysis_manager);
     }
     CompileStatistics::exit_stage_if_enabled();

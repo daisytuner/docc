@@ -48,7 +48,7 @@ public:
 
     static Pipeline symbolic_simplification();
 
-    static Pipeline dead_code_elimination();
+    static Pipeline dead_code_elimination(bool eliminate_trivial_loops = true);
 
     static Pipeline expression_combine();
 
