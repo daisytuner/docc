@@ -26,8 +26,14 @@
 
 using namespace sdfg;
 
+// scalar_inputs: names of additional scalar connectors (e.g. alpha), each fed by a scalar container of the same name
 template<typename NodeType, typename... Args>
-void TestUnary(std::vector<size_t> shape_dims, types::PrimitiveType expected_indvar_type, Args&&... args) {
+void TestUnary(
+    std::vector<size_t> shape_dims,
+    types::PrimitiveType expected_indvar_type,
+    const std::vector<std::string>& scalar_inputs,
+    Args&&... args
+) {
     builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
     auto& sdfg = builder.subject();
 
@@ -36,6 +42,9 @@ void TestUnary(std::vector<size_t> shape_dims, types::PrimitiveType expected_ind
 
     builder.add_container("a", desc_ptr);
     builder.add_container("b", desc_ptr);
+    for (auto& scalar_name : scalar_inputs) {
+        builder.add_container(scalar_name, desc);
+    }
 
     auto& block = builder.add_block(sdfg.root());
 
@@ -56,6 +65,10 @@ void TestUnary(std::vector<size_t> shape_dims, types::PrimitiveType expected_ind
 
     builder.add_computational_memlet(block, a_node, node, "X", {}, tensor_type, block.debug_info());
     builder.add_computational_memlet(block, b_node, node, "Y", {}, tensor_type, block.debug_info());
+    for (auto& scalar_name : scalar_inputs) {
+        auto& scalar_node = builder.add_access(block, scalar_name);
+        builder.add_computational_memlet(block, scalar_node, node, scalar_name, {}, desc, block.debug_info());
+    }
 
     dump_sdfg(builder.subject(), "0.init");
 
@@ -84,6 +97,38 @@ void TestUnary(std::vector<size_t> shape_dims, types::PrimitiveType expected_ind
     // Check that the block is not empty (contains either tasklets or library nodes)
     bool has_content = !code_block->dataflow().tasklets().empty() || !code_block->dataflow().library_nodes().empty();
     EXPECT_TRUE(has_content) << "Inner block is empty for " << typeid(NodeType).name();
+
+    // Check that all original inputs are read and the output is written with the right subsets
+    std::unordered_set<std::string> read_containers;
+    bool writes_output = false;
+    for (auto& edge : code_block->dataflow().edges()) {
+        if (auto* src_access = dynamic_cast<const data_flow::AccessNode*>(&edge.src())) {
+            read_containers.insert(src_access->data());
+            if (src_access->data() == a_name) {
+                EXPECT_EQ(edge.subset().size(), shape_dims.size())
+                    << "Input subset size is not " << shape_dims.size() << " for " << typeid(NodeType).name();
+            }
+            for (auto& scalar_name : scalar_inputs) {
+                if (src_access->data() == scalar_name) {
+                    EXPECT_TRUE(edge.subset().empty())
+                        << "Scalar input " << scalar_name << " is indexed for " << typeid(NodeType).name();
+                }
+            }
+        }
+        if (auto* dst_access = dynamic_cast<const data_flow::AccessNode*>(&edge.dst())) {
+            if (dst_access->data() == b_name) {
+                writes_output = true;
+                EXPECT_EQ(edge.subset().size(), shape_dims.size())
+                    << "Output subset size is not " << shape_dims.size() << " for " << typeid(NodeType).name();
+            }
+        }
+    }
+    EXPECT_TRUE(read_containers.contains(a_name)) << "Input is not read for " << typeid(NodeType).name();
+    EXPECT_TRUE(writes_output) << "Output is not written for " << typeid(NodeType).name();
+    for (auto& scalar_name : scalar_inputs) {
+        EXPECT_TRUE(read_containers.contains(scalar_name))
+            << "Scalar input " << scalar_name << " is not read for " << typeid(NodeType).name();
+    }
 
     // Check subsets of the first node's edges
     data_flow::DataFlowNode* inner_node = nullptr;
@@ -206,20 +251,28 @@ void TestBinary(std::vector<size_t> shape_dims, types::PrimitiveType expected_in
     }
 }
 
-#define REGISTER_UNARY_TEST(NodeType, Dim)                                    \
-    TEST(ElementWiseTest, NodeType##_##Dim##D) {                              \
-        std::vector<size_t> dims;                                             \
-        for (int i = 0; i < Dim; ++i)                                         \
-            dims.push_back(32);                                               \
-        TestUnary<math::tensor::NodeType>(dims, types::PrimitiveType::Int32); \
+#define REGISTER_UNARY_TEST(NodeType, Dim)                                        \
+    TEST(ElementWiseTest, NodeType##_##Dim##D) {                                  \
+        std::vector<size_t> dims;                                                 \
+        for (int i = 0; i < Dim; ++i)                                             \
+            dims.push_back(32);                                                   \
+        TestUnary<math::tensor::NodeType>(dims, types::PrimitiveType::Int32, {}); \
     }
 
-#define REGISTER_UNARY_TEST_OPT(NodeType, Dim, Opt)                                \
-    TEST(ElementWiseTest, NodeType##_##Dim##D) {                                   \
-        std::vector<size_t> dims;                                                  \
-        for (int i = 0; i < Dim; ++i)                                              \
-            dims.push_back(32);                                                    \
-        TestUnary<math::tensor::NodeType>(dims, types::PrimitiveType::Int32, Opt); \
+#define REGISTER_UNARY_TEST_OPT(NodeType, Dim, Opt)                                    \
+    TEST(ElementWiseTest, NodeType##_##Dim##D) {                                       \
+        std::vector<size_t> dims;                                                      \
+        for (int i = 0; i < Dim; ++i)                                                  \
+            dims.push_back(32);                                                        \
+        TestUnary<math::tensor::NodeType>(dims, types::PrimitiveType::Int32, {}, Opt); \
+    }
+
+#define REGISTER_UNARY_SCALAR_PARAMS_TEST(NodeType, Suffix, Dim, ...)                        \
+    TEST(ElementWiseTest, NodeType##_##Suffix##_##Dim##D) {                                  \
+        std::vector<size_t> dims;                                                            \
+        for (int i = 0; i < Dim; ++i)                                                        \
+            dims.push_back(32);                                                              \
+        TestUnary<math::tensor::NodeType>(dims, types::PrimitiveType::Int32, {__VA_ARGS__}); \
     }
 
 #define REGISTER_BINARY_TEST(NodeType, Dim)                                    \
@@ -251,11 +304,10 @@ REGISTER_UNARY_TEST(TanhNode, 2)
 REGISTER_UNARY_TEST(TanhNode, 3)
 REGISTER_UNARY_TEST(TanhNode, 4)
 
-// REGISTER_UNARY_TEST(ErfNode, 1)
-// REGISTER_UNARY_TEST(ErfNode, 2)
-// REGISTER_UNARY_TEST(ErfNode, 3)
-// REGISTER_UNARY_TEST(ErfNode, 4)
-// Math is untested
+REGISTER_UNARY_TEST(ErfNode, 1)
+REGISTER_UNARY_TEST(ErfNode, 2)
+REGISTER_UNARY_TEST(ErfNode, 3)
+REGISTER_UNARY_TEST(ErfNode, 4)
 
 REGISTER_UNARY_TEST(ExpNode, 1)
 REGISTER_UNARY_TEST(ExpNode, 2)
@@ -277,23 +329,25 @@ REGISTER_UNARY_TEST(SigmoidNode, 2)
 REGISTER_UNARY_TEST(SigmoidNode, 3)
 REGISTER_UNARY_TEST(SigmoidNode, 4)
 
-// REGISTER_UNARY_TEST(EluNode, 1)
-// REGISTER_UNARY_TEST(EluNode, 2)
-// REGISTER_UNARY_TEST(EluNode, 3)
-// REGISTER_UNARY_TEST(EluNode, 4)
-// Elu with alpha input is untested & math is untested
+REGISTER_UNARY_TEST(EluNode, 1)
+REGISTER_UNARY_TEST(EluNode, 2)
+REGISTER_UNARY_TEST(EluNode, 3)
+REGISTER_UNARY_TEST(EluNode, 4)
 
-// REGISTER_UNARY_TEST(HardSigmoidNode, 1)
-// REGISTER_UNARY_TEST(HardSigmoidNode, 2)
-// REGISTER_UNARY_TEST(HardSigmoidNode, 3)
-// REGISTER_UNARY_TEST(HardSigmoidNode, 4)
-// alpha & beta are non-optional, not unary!
+REGISTER_UNARY_SCALAR_PARAMS_TEST(EluNode, alpha, 1, "alpha")
+REGISTER_UNARY_SCALAR_PARAMS_TEST(EluNode, alpha, 2, "alpha")
+REGISTER_UNARY_SCALAR_PARAMS_TEST(EluNode, alpha, 3, "alpha")
+REGISTER_UNARY_SCALAR_PARAMS_TEST(EluNode, alpha, 4, "alpha")
 
-// REGISTER_UNARY_TEST(LeakyReLUNode, 1)
-// REGISTER_UNARY_TEST(LeakyReLUNode, 2)
-// REGISTER_UNARY_TEST(LeakyReLUNode, 3)
-// REGISTER_UNARY_TEST(LeakyReLUNode, 4)
-// alpha is non-optiona. Not unary!
+REGISTER_UNARY_SCALAR_PARAMS_TEST(HardSigmoidNode, alpha_beta, 1, "alpha", "beta")
+REGISTER_UNARY_SCALAR_PARAMS_TEST(HardSigmoidNode, alpha_beta, 2, "alpha", "beta")
+REGISTER_UNARY_SCALAR_PARAMS_TEST(HardSigmoidNode, alpha_beta, 3, "alpha", "beta")
+REGISTER_UNARY_SCALAR_PARAMS_TEST(HardSigmoidNode, alpha_beta, 4, "alpha", "beta")
+
+REGISTER_UNARY_SCALAR_PARAMS_TEST(LeakyReLUNode, alpha, 1, "alpha")
+REGISTER_UNARY_SCALAR_PARAMS_TEST(LeakyReLUNode, alpha, 2, "alpha")
+REGISTER_UNARY_SCALAR_PARAMS_TEST(LeakyReLUNode, alpha, 3, "alpha")
+REGISTER_UNARY_SCALAR_PARAMS_TEST(LeakyReLUNode, alpha, 4, "alpha")
 
 // Binary Tests
 REGISTER_BINARY_TEST(AddNode, 1)
@@ -607,4 +661,88 @@ TEST(RsqrtNodeTest, SerializeDeserialize_RoundTrip) {
     }
     ASSERT_NE(found, nullptr);
     EXPECT_EQ(found->code(), math::tensor::LibraryNodeType_Rsqrt.value());
+}
+
+template<typename NodeType>
+void TestSerializeRoundTrip(const data_flow::LibraryNodeCode& code, const std::vector<std::string>& scalar_inputs) {
+    builder::StructuredSDFGBuilder builder("sdfg_serialize", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+
+    types::Scalar desc(types::PrimitiveType::Float);
+    types::Pointer desc_ptr(desc);
+    builder.add_container("a", desc_ptr);
+    builder.add_container("b", desc_ptr);
+    for (auto& scalar_name : scalar_inputs) {
+        builder.add_container(scalar_name, desc);
+    }
+
+    auto& block = builder.add_block(sdfg.root());
+    auto& a_node = builder.add_access(block, "a");
+    auto& b_node = builder.add_access(block, "b");
+
+    std::vector<symbolic::Expression> shape = {symbolic::integer(2), symbolic::integer(3)};
+    types::Tensor tensor_type(types::PrimitiveType::Float, shape);
+
+    auto& node = builder.add_library_node<NodeType>(block, DebugInfo(), shape);
+    builder.add_computational_memlet(block, a_node, node, "X", {}, tensor_type);
+    builder.add_computational_memlet(block, b_node, node, "Y", {}, tensor_type);
+    for (auto& scalar_name : scalar_inputs) {
+        auto& scalar_node = builder.add_access(block, scalar_name);
+        builder.add_computational_memlet(block, scalar_node, node, scalar_name, {}, desc);
+    }
+
+    ASSERT_NO_THROW(sdfg.validate());
+
+    serializer::JSONSerializer serializer;
+    nlohmann::json j;
+    ASSERT_NO_THROW(j = serializer.serialize(sdfg));
+
+    std::unique_ptr<StructuredSDFG> new_sdfg;
+    ASSERT_NO_THROW(new_sdfg = serializer.deserialize(j));
+    ASSERT_NE(new_sdfg, nullptr);
+    ASSERT_NO_THROW(new_sdfg->validate());
+
+    const NodeType* found = nullptr;
+    auto& new_root = new_sdfg->root();
+    ASSERT_EQ(new_root.size(), 1);
+    auto* deserialized_block = dyn_cast<structured_control_flow::Block*>(&new_root.at(0));
+    ASSERT_NE(deserialized_block, nullptr);
+    for (auto& n : deserialized_block->dataflow().nodes()) {
+        if (auto* typed_node = dynamic_cast<const NodeType*>(&n)) {
+            found = typed_node;
+            break;
+        }
+    }
+    ASSERT_NE(found, nullptr);
+    EXPECT_EQ(found->code(), code.value());
+    ASSERT_EQ(found->shape().size(), shape.size());
+    for (size_t i = 0; i < shape.size(); ++i) {
+        EXPECT_TRUE(symbolic::eq(found->shape().at(i), shape.at(i)));
+    }
+    EXPECT_EQ(found->inputs(), node.inputs());
+    for (auto& conn : node.inputs()) {
+        bool is_connected = deserialized_block->dataflow().in_edge_for_connector(*found, conn) != nullptr;
+        bool was_connected = block.dataflow().in_edge_for_connector(node, conn) != nullptr;
+        EXPECT_EQ(is_connected, was_connected) << "Connector " << conn;
+    }
+}
+
+TEST(ErfNodeTest, SerializeDeserialize_RoundTrip) {
+    TestSerializeRoundTrip<math::tensor::ErfNode>(math::tensor::LibraryNodeType_Erf, {});
+}
+
+TEST(EluNodeTest, SerializeDeserialize_RoundTrip) {
+    TestSerializeRoundTrip<math::tensor::EluNode>(math::tensor::LibraryNodeType_Elu, {});
+}
+
+TEST(EluNodeTest, SerializeDeserialize_RoundTrip_alpha) {
+    TestSerializeRoundTrip<math::tensor::EluNode>(math::tensor::LibraryNodeType_Elu, {"alpha"});
+}
+
+TEST(HardSigmoidNodeTest, SerializeDeserialize_RoundTrip) {
+    TestSerializeRoundTrip<math::tensor::HardSigmoidNode>(math::tensor::LibraryNodeType_HardSigmoid, {"alpha", "beta"});
+}
+
+TEST(LeakyReLUNodeTest, SerializeDeserialize_RoundTrip) {
+    TestSerializeRoundTrip<math::tensor::LeakyReLUNode>(math::tensor::LibraryNodeType_LeakyReLU, {"alpha"});
 }

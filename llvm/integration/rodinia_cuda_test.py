@@ -1029,15 +1029,15 @@ def test_particlefilter(compiler="clang-21"):
             "sdfgs": 17,
             "Free": 2,
             "Malloc": 4,
-            "CUDA_Offload": 22,
+            "CUDA_Offload": 24,
             "REDUCE": 1,
             "Call": 29,
             "WHILE": 12,
             "CMath": 7,
-            "CUDAOffloading": 34,
+            "CUDAOffloading": 46,
             "MAP": 30,
             "FOR": 32,
-            "SEQUENTIAL": 41,
+            "SEQUENTIAL": 39,
         }
     )
     runner = TestRunner(

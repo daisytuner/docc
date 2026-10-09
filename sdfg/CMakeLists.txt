@@ -163,6 +163,7 @@ set(SOURCE_FILES
     src/passes/expansion/lib_node_expansion_context.cpp
     src/passes/expansion/library_node_expansion_pass.cpp
     src/passes/memory/allocation_management.cpp
+    src/passes/memory/tensor_allocation_size_inference.cpp
     src/passes/pass.cpp
     src/passes/pipeline.cpp
     src/passes/statistics.cpp

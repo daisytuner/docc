@@ -59,9 +59,9 @@ def compare(
         assert res.dtype == ref.dtype
         compare_shapes(res.shape, ref.shape)
         if torch.is_floating_point(res):
-            torch_allclose(res, ref, rtol, atol, equal_nan)
+            torch_allclose(res.cpu(), ref.cpu(), rtol, atol, equal_nan)
         else:
-            assert torch.all(res == ref)
+            assert torch.all(res.cpu() == ref.cpu())
     elif type(res) == np.ndarray and type(ref) == torch.Tensor:
         # Happens when there is a PyTorch model without inputs
         compare(torch.from_numpy(res), ref, rtol=rtol, atol=atol, equal_nan=equal_nan)
@@ -85,6 +85,13 @@ def check(
     remote_tuning: bool = False,
 ) -> None:
     model_ref = copy.deepcopy(model)
+    if hasattr(model, "is_docc") != hasattr(model_ref, "is_docc"):
+        raise AttributeError(
+            "Either both models are required to have attr 'is_docc' or neither"
+        )
+    if hasattr(model, "is_docc"):
+        setattr(model, "is_docc", True)
+        setattr(model_ref, "is_docc", False)
     program = torch.compile(
         model,
         backend="docc",
