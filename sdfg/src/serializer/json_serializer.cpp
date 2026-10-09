@@ -959,6 +959,9 @@ void JSONSerializer::json_to_structured_loop_node(
     auto& for_node = builder.add_for(parent, indvar, condition, init, update, json_to_debug_info(j["debug_info"]));
     for_node.element_id_ = j["element_id"];
     json_to_element_metadata(j, for_node);
+    if (j.contains("schedule_type")) {
+        builder.update_schedule_type(for_node, json_to_schedule_type(j["schedule_type"]));
+    }
 
     assert(j["root"].contains("type"));
     assert(j["root"]["type"].is_string());

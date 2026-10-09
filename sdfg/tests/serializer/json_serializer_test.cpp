@@ -1616,6 +1616,35 @@ TEST(JSONSerializerTest, SerializeDeserialize_forloop) {
     auto& des_block_new = sdfg::dyn_cast<sdfg::structured_control_flow::Block&>(des_for_loop.root().at(0));
 }
 
+TEST(JSONSerializerTest, SerializeDeserialize_ForKeepsSchedule) {
+    sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+    types::Scalar base_desc(types::PrimitiveType::Int32);
+    builder.add_container("i", base_desc);
+    auto i = symbolic::symbol("i");
+    auto& for_loop = builder.add_for(
+        builder.subject().root(),
+        i,
+        symbolic::Lt(i, symbolic::integer(4)),
+        symbolic::zero(),
+        symbolic::add(i, symbolic::one())
+    );
+    builder.add_block(for_loop.root());
+    auto schedule = for_loop.schedule_type();
+    structured_control_flow::ScheduleType_Unroll::set(schedule);
+    builder.update_schedule_type(for_loop, schedule);
+
+    sdfg::serializer::JSONSerializer serializer;
+    nlohmann::json j;
+    serializer.structured_loop_to_json(j, for_loop);
+
+    auto des_builder = sdfg::builder::StructuredSDFGBuilder("test_sdfg", FunctionType_CPU);
+    des_builder.add_container("i", base_desc);
+    serializer.json_to_structured_loop_node(j, des_builder, des_builder.subject().root());
+    auto& des_for = sdfg::dyn_cast<sdfg::structured_control_flow::For&>(des_builder.subject().root().at(0));
+    EXPECT_TRUE(structured_control_flow::ScheduleType_Unroll::is_set(des_for.schedule_type()));
+    EXPECT_EQ(des_for.schedule_type().value(), for_loop.schedule_type().value());
+}
+
 TEST(JSONSerializerTest, SerializeDeserialize_ifelse) {
     // Create a sample IfElse node
     sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
