@@ -15,7 +15,8 @@
 
 namespace sdfg::gpu {
 
-GpuMmaEinsumReplacer::GpuMmaEinsumReplacer(const GpuArch* arch) : arch_(arch) {
+GpuMmaEinsumReplacer::GpuMmaEinsumReplacer(const GpuArch* arch, const MmaBlockSize* block_size_hint)
+    : arch_(arch), block_size_hint_(block_size_hint) {
 }
 
 bool GpuMmaEinsumReplacer::matches_possible_mma_pattern(const MatMulAnalysis& analysis) const {
@@ -48,22 +49,18 @@ bool GpuMmaEinsumReplacer::matches_possible_mma_pattern(const MatMulAnalysis& an
     auto& n = dims_b.get_dim(1);
     auto& k = dims_a.get_dim(1);
 
-    auto m_blocks = GpuMmaSupport::get_integer_block_count(m, mma_arch->mma_block_size.m);
-    auto n_blocks = GpuMmaSupport::get_integer_block_count(n, mma_arch->mma_block_size.n);
-    auto k_blocks = GpuMmaSupport::get_integer_block_count(k, mma_arch->mma_block_size.k);
-
-    if (!m_blocks || !n_blocks || !k_blocks) {
-        return false;
-    }
-
-    if (!mma_arch->valid_block_counts(mma_arch->mma_block_size.m, m_blocks, n_blocks, k_blocks)) {
-        return false;
-    }
-
     auto input_type = analysis.input_type;
     auto output_type = analysis.output_type;
 
-    return mma_arch->supported_types(input_type, output_type);
+    if (!mma_arch->supported_types(input_type, output_type)) {
+        return false;
+    }
+
+    auto acc_type = mma_arch->get_accumulator_type(input_type, output_type, types::PrimitiveType::Void);
+
+    auto tiling = mma_arch->get_mma_tiling({m, n, k}, input_type, acc_type, block_size_hint_);
+
+    return tiling.has_value();
 }
 
 bool GpuMmaEinsumReplacer::analyze(const einsum::EinsumCluster& cluster, EinsumMmaAnalysis& result) const {
@@ -87,7 +84,17 @@ einsum::ReplaceOutcome GpuMmaEinsumReplacer::
         return context.unapplicable();
     }
 
-    auto mma_tiling = mma_arch->get_mma_tiling({analysis.m, analysis.n, analysis.k});
+    auto mma_tiling = mma_arch->get_mma_tiling(
+        {analysis.m, analysis.n, analysis.k},
+        analysis.input_type,
+        mma_arch->get_accumulator_type(analysis.input_type, analysis.output_type, types::PrimitiveType::Void),
+        block_size_hint_
+    );
+
+    if (!mma_tiling) {
+        return context.unable();
+    }
+
     auto impl_type = mma_arch->get_mma_impl_type();
 
     // --- Replacement ---
@@ -101,12 +108,11 @@ einsum::ReplaceOutcome GpuMmaEinsumReplacer::
     return GpuMmaExpander::expand_mma_standalone(
         *standalone,
         *arch_,
-        mma_tiling,
+        mma_tiling.value(),
         analysis.layout_a.value(),
         analysis.layout_b.value(),
         analysis.layout_y.value(),
         analysis.input_type,
-        mma_arch->get_accumulator_type(analysis.output_type, analysis.input_type),
         analysis.output_type,
         impl_type.value(),
         true,
@@ -143,7 +149,7 @@ bool GpuMmaEinsumTransform::run_internal(
 
     std::vector<einsum::EinsumNode*> mapped_einsums;
     for (auto& einsum_node : detector.einsums()) {
-        GpuMmaEinsumReplacer repl(arch_);
+        GpuMmaEinsumReplacer repl(arch_, block_size_hint_);
         // einsum::Einsum2MatMul repl;
         if (verify_only) {
             matched_ |= repl.can_be_applied(*einsum_node);
@@ -158,8 +164,10 @@ bool GpuMmaEinsumTransform::run_internal(
     return matched_;
 }
 
-GpuMmaEinsumTransform::GpuMmaEinsumTransform(StructuredLoop& outermoost_mma_loop, const gpu::GpuArch* arch)
-    : outermost_mma_loop_(outermoost_mma_loop), arch_(arch) {
+GpuMmaEinsumTransform::GpuMmaEinsumTransform(
+    StructuredLoop& outermoost_mma_loop, const gpu::GpuArch* arch, const MmaBlockSize* block_size_hint
+)
+    : outermost_mma_loop_(outermoost_mma_loop), arch_(arch), block_size_hint_(block_size_hint) {
 }
 
 bool GpuMmaEinsumTransform::try_apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {

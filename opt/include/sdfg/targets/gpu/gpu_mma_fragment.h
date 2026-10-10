@@ -23,6 +23,8 @@ struct MmaBlockSize {
     std::string dim_str(MmaFragmentType for_type) const;
 
     symbolic::MultiExpression get_shape(MmaFragmentType frag) const;
+
+    static MmaBlockSize parse_block_size(const std::string& block_size_str);
 };
 
 std::ostream& operator<<(std::ostream& os, const MmaBlockSize& block_size);
@@ -34,6 +36,7 @@ struct GpuMmaTiling {
     int threads_per_mma_block_m = 0;
     int macro_blocks_m = 0;
     int macro_blocks_n = 0;
+    types::PrimitiveType acc_type;
 };
 
 enum MmaFragmentLayout {
@@ -56,26 +59,20 @@ constexpr const char* mma_fragment_layout_to_string(MmaFragmentLayout layout) {
 }
 
 struct GpuMmaSupport {
-    MmaBlockSize mma_block_size;
-    const uint16_t threads_per_mma_block;
-
     virtual ~GpuMmaSupport() = default;
 
     virtual types::PrimitiveType get_accumulator_type(
-        types::PrimitiveType output_type, types::PrimitiveType input_type, types::PrimitiveType desired_acc_type
+        types::PrimitiveType input_type, types::PrimitiveType output_type, types::PrimitiveType desired_acc_type
     ) const = 0;
-    types::PrimitiveType get_accumulator_type(types::PrimitiveType output_type, types::PrimitiveType input_type) const {
-        return get_accumulator_type(output_type, input_type, types::PrimitiveType::Void);
+    types::PrimitiveType get_accumulator_type(types::PrimitiveType input_type, types::PrimitiveType output_type) const {
+        return get_accumulator_type(input_type, output_type, types::PrimitiveType::Void);
     }
 
-    GpuMmaSupport(uint16_t block_m, uint16_t block_n, uint16_t block_k, uint16_t threads_per_mma_block)
-        : mma_block_size{block_m, block_n, block_k}, threads_per_mma_block(threads_per_mma_block) {
-    }
-    virtual bool valid_block_counts(uint16_t block_base, int m_blocks, int n_blocks, int k_blocks) const = 0;
+    GpuMmaSupport() = default;
 
-    [[deprecated("only for Tensor Matmul. Use get_mma_impl_type() for everything new")]]
-    virtual std::optional<
-        data_flow::ImplementationType> get_matmul_impl_type(const GpuArch& arch, const GpuMmaTiling& tiling) const = 0;
+    virtual bool is_valid_block_size(
+        const MmaBlockSize& block_size, types::PrimitiveType input_type, types::PrimitiveType acc_type
+    ) const = 0;
 
     virtual data_flow::ImplementationType get_mma_impl_type() const = 0;
 
@@ -83,11 +80,19 @@ struct GpuMmaSupport {
 
     virtual bool supported_types(types::PrimitiveType input_type, types::PrimitiveType output_type) const = 0;
 
-    virtual GpuMmaTiling get_mma_tiling(const symbolic::MultiExpression& res_shape) const = 0;
+    virtual std::optional<GpuMmaTiling> get_mma_tiling(
+        const symbolic::MultiExpression& res_shape,
+        types::PrimitiveType input_type,
+        types::PrimitiveType acc_type,
+        const MmaBlockSize* block_size_hint
+    ) const = 0;
 
     virtual void set_mma_fragment_storage_type(
         types::StorageType& storage_type, const MmaBlockSize& size, MmaFragmentType type, MmaFragmentLayout layout
     ) const = 0;
+
+    virtual std::vector<MmaBlockSize>
+    get_supported_block_sizes(types::PrimitiveType input_type, types::PrimitiveType acc_type) const = 0;
 
 protected:
     static int get_storage_type_arg_as_int(const types::StorageType& storage, int idx);

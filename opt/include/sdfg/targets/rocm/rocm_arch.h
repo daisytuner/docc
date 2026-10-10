@@ -11,26 +11,41 @@
 namespace sdfg::gpu::rocm {
 
 struct RocmMmaSupport : public GpuMmaSupport {
+    const bool base_support;
     const bool f32_support;
+    const uint16_t threads_per_mma_block;
 
-    RocmMmaSupport(uint16_t base_size, bool f32_support, uint16_t threads)
-        : GpuMmaSupport(base_size, base_size, base_size, threads), f32_support(f32_support) {
+    RocmMmaSupport(bool base_support, bool f32_support, uint16_t threads)
+        : GpuMmaSupport(), base_support(base_support), f32_support(f32_support), threads_per_mma_block(threads) {
     }
+
+protected:
+    static constexpr MmaBlockSize DEFAULT_BLOCK_SIZE = {16, 16, 16};
+    static constexpr MmaBlockSize CDNA_BLOCK_SIZE = {32, 32, 8};
 
 public:
     static constexpr const char* MMA_STORAGE_TYPE = "ROCM_MMA";
 
-    bool valid_block_counts(uint16_t block_base, int m_blocks, int n_blocks, int k_blocks) const override;
     bool supported_types(types::PrimitiveType input_type, types::PrimitiveType output_type) const override;
 
     types::PrimitiveType get_accumulator_type(
-        types::PrimitiveType output_type, types::PrimitiveType input_type, types::PrimitiveType desired_acc_type
+        types::PrimitiveType input_type, types::PrimitiveType output_type, types::PrimitiveType desired_acc_type
     ) const override;
 
-    std::optional<data_flow::ImplementationType>
-    get_matmul_impl_type(const GpuArch& arch, const GpuMmaTiling& tiling) const override;
+    bool is_valid_block_size(
+        const MmaBlockSize& block_size, types::PrimitiveType input_type, types::PrimitiveType acc_type
+    ) const override;
 
-    GpuMmaTiling get_mma_tiling(const symbolic::MultiExpression& res_shape) const override;
+    std::optional<GpuMmaTiling> try_get_mma_tiling(
+        const MmaBlockSize& block_size, const symbolic::MultiExpression& res_shape, types::PrimitiveType acc_type
+    ) const;
+
+    std::optional<GpuMmaTiling> get_mma_tiling(
+        const symbolic::MultiExpression& res_shape,
+        types::PrimitiveType input_type,
+        types::PrimitiveType acc_type,
+        const MmaBlockSize* block_size_hint
+    ) const override;
 
     void set_mma_fragment_storage_type(
         types::StorageType& storage_type, const MmaBlockSize& size, MmaFragmentType type, MmaFragmentLayout layout
@@ -52,6 +67,9 @@ public:
         types::PrimitiveType scalar_type,
         std::optional<std::pair<int, int>> coop_dims
     );
+
+    std::vector<MmaBlockSize>
+    get_supported_block_sizes(types::PrimitiveType input_type, types::PrimitiveType acc_type) const override;
 };
 
 
@@ -74,7 +92,7 @@ public:
     }
 
     const RocmMmaSupport* mma_support() const override {
-        if (mma_support_.mma_block_size.m > 0) {
+        if (mma_support_.base_support) {
             return &mma_support_;
         } else {
             return nullptr;

@@ -98,18 +98,21 @@ std::vector<CudaComputeCapability> query_cuda_compute_capabilities() {
 
 bool CudaMmaSupport::supported_types(types::PrimitiveType input_type, types::PrimitiveType output_type) const {
     if (input_type == types::PrimitiveType::Half) {
-        return this->mma_block_size.m > 0;
+        // we can down-convert the result below the precision that will be used for accumulation
+        return this->base_support && types::is_floating_point(output_type) && types::bit_width(output_type) <= 32;
     } else if (input_type == types::PrimitiveType::BFloat) { // TF32 would go here
-        return this->tf32_support;
+        // we can down-convert the result below the precision that will be used for accumulation
+        return this->tf32_support && types::is_floating_point(output_type) && types::bit_width(output_type) <= 32;
     } else if (input_type == types::PrimitiveType::Double) {
-        return this->fp64_support;
+        // we can down-convert the result below the precision that will be used for accumulation
+        return this->fp64_support && types::is_floating_point(output_type);
     } else {
         return false;
     }
 }
 
 types::PrimitiveType CudaMmaSupport::get_accumulator_type(
-    types::PrimitiveType output_type, types::PrimitiveType input_type, types::PrimitiveType desired_acc_type
+    types::PrimitiveType input_type, types::PrimitiveType output_type, types::PrimitiveType desired_acc_type
 ) const {
     if (types::is_floating_point(input_type) && types::bit_width(input_type) <= 32) {
         return types::PrimitiveType::Float;
@@ -122,26 +125,39 @@ types::PrimitiveType CudaMmaSupport::get_accumulator_type(
     }
 }
 
-std::optional<data_flow::ImplementationType> CudaMmaSupport::
-    get_matmul_impl_type(const GpuArch& arch, const GpuMmaTiling& tiling) const {
-    return std::nullopt;
-}
-
 data_flow::ImplementationType CudaMmaSupport::get_mma_impl_type() const {
     return {"CUDA_MMA"};
 }
 
-GpuMmaTiling CudaMmaSupport::get_mma_tiling(const symbolic::MultiExpression& res_shape) const {
+bool CudaMmaSupport::is_valid_block_size(
+    const MmaBlockSize& block_size, types::PrimitiveType input_type, types::PrimitiveType acc_type
+) const {
+    return block_size.m == 16 && block_size.n == 16 && block_size.k == 16;
+}
+
+std::optional<GpuMmaTiling> CudaMmaSupport::get_mma_tiling(
+    const symbolic::MultiExpression& res_shape,
+    types::PrimitiveType input_type,
+    types::PrimitiveType acc_type,
+    const MmaBlockSize* block_size_hint
+) const {
     GpuMmaTiling tiling;
-    tiling.mma_block_size = mma_block_size;
-    tiling.threads_per_mma_block_m = threads_per_mma_block;
+
+    if (block_size_hint && is_valid_block_size(*block_size_hint, input_type, acc_type)) {
+        tiling.mma_block_size = *block_size_hint;
+    } else {
+        tiling.mma_block_size = DEFAULT_BLOCK_SIZE;
+    }
+
+    tiling.threads_per_mma_block_m = THREADS_PER_BLOCK;
+    tiling.acc_type = acc_type;
 
     auto mma_blocks_m = get_integer_block_count(res_shape.at(0), tiling.mma_block_size.m);
     auto mma_blocks_n = get_integer_block_count(res_shape.at(1), tiling.mma_block_size.n);
     auto mma_blocks_k = get_integer_block_count(res_shape.at(2), tiling.mma_block_size.k);
 
     if (!mma_blocks_m || !mma_blocks_n || !mma_blocks_k) {
-        throw std::runtime_error("Result shape is not compatible with MMA block sizes.");
+        return std::nullopt;
     }
     if (mma_blocks_m == 1 && mma_blocks_n == 1) {
         tiling.wave_tile_blocks_m = 1;
@@ -165,7 +181,7 @@ GpuMmaTiling CudaMmaSupport::get_mma_tiling(const symbolic::MultiExpression& res
         // tiling.macro_blocks_m = 2;
         // tiling.macro_blocks_n = 2;
     } else {
-        throw std::runtime_error("Unsupported MMA block configuration for this GPU target.");
+        return std::nullopt;
     }
 
     return tiling;
@@ -184,24 +200,13 @@ void CudaMmaSupport::set_mma_fragment_storage_type(
     );
 }
 
-bool CudaMmaSupport::is_mma_type(const types::StorageType& storage) {
-    return storage.value() == MMA_STORAGE_TYPE;
+std::vector<MmaBlockSize> CudaMmaSupport::
+    get_supported_block_sizes(types::PrimitiveType input_type, types::PrimitiveType acc_type) const {
+    return {DEFAULT_BLOCK_SIZE};
 }
 
-bool CudaMmaSupport::valid_block_counts(uint16_t block_base, int m_blocks, int n_blocks, int k_blocks) const {
-    // very preliminary table
-    if (m_blocks == 1 && n_blocks == 1) {
-        return true;
-    } else if (m_blocks <= 2 && n_blocks <= 2) {
-        return true;
-    } else if (m_blocks == 4 && n_blocks == 4) {
-        return true;
-    } else if (m_blocks == 8 && n_blocks == 4) { // this is limited by shared memory size, but this is the
-        // perf-recommend form for RDNA3
-        return true;
-    }
-
-    return false;
+bool CudaMmaSupport::is_mma_type(const types::StorageType& storage) {
+    return storage.value() == MMA_STORAGE_TYPE;
 }
 
 const CudaArch* cuda_arch_from_schedule_type(const structured_control_flow::ScheduleType& schedule) {

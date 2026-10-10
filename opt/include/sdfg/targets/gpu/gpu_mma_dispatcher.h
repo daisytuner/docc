@@ -12,11 +12,7 @@ namespace sdfg::gpu {
 
 class GpuMmaMatmulDispatcher : public codegen::LibraryNodeDispatcher {
 protected:
-    virtual const GpuMmaSupport* get_mma_arch_from_impl_type_hack() const = 0;
-
     virtual const GpuArch* get_gpu_arch_from_context(codegen::CodegenOutput& out) const = 0;
-
-    virtual GpuMmaTiling get_mma_tiling(const symbolic::MultiExpression& res_shape) const = 0;
 
     virtual void emit_block_frag_declaration(
         codegen::CodegenOutput& out,

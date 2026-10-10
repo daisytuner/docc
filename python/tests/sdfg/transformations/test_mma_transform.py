@@ -77,8 +77,7 @@ def _add_tile_matmul(builder, M, N, K, tile_m, tile_n, a="A", b="B", c="C"):
 def _build_offloaded_mma(M, N, K, tile_m, tile_n, arch: Optional[RocmArch] = None):
     """Recreate the offloaded MatMul SDFG from the C++ ``build_offloaded_mma_structure``.
 
-    Device pointers ``A``/``B``/``C
-    `` are kernel arguments; the outer Y_GRID map
+    Device pointers ``A``/``B``/``C`` are kernel arguments; the outer Y_GRID map
     walks the C rows in ``tile_m`` steps, the inner X_GRID map the C columns in
     ``tile_n`` steps, and the innermost block computes one output tile.
     """

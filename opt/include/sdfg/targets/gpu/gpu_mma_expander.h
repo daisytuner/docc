@@ -12,10 +12,13 @@ namespace sdfg::gpu {
 class GpuMmaExpander : public passes::CodeLibNodeExpander<math::tensor::MatMulNode> {
 protected:
     const GpuArch* arch_;
+    const MmaBlockSize* block_size_hint_ = nullptr;
 
 public:
-    GpuMmaExpander(const GpuArch* arch) : arch_(arch), CodeLibNodeExpander(math::tensor::LibraryNodeType_MatMul) {
+    GpuMmaExpander(const GpuArch* arch, const MmaBlockSize* block_size_hint = nullptr)
+        : arch_(arch), CodeLibNodeExpander(math::tensor::LibraryNodeType_MatMul), block_size_hint_(block_size_hint) {
     }
+
     virtual ~GpuMmaExpander() = default;
     const LibNodeExpander* for_lib_node(const data_flow::LibraryNode& node) const override;
 
@@ -73,7 +76,6 @@ public:
         const math::tensor::TensorLayout& layout_b,
         const math::tensor::TensorLayout& layout_y,
         types::PrimitiveType input_type,
-        types::PrimitiveType acc_type,
         types::PrimitiveType output_type,
         const data_flow::ImplementationType& impl_type,
         bool include_c_add,
@@ -88,7 +90,6 @@ public:
         types::PrimitiveType input_type,
         const std::string& frag_a,
         const std::string& frag_b,
-        types::PrimitiveType acc_type,
         const std::string& frag_acc,
         const data_flow::ImplementationType& impl_type,
         const DebugInfo& org_debug_info,
@@ -98,7 +99,6 @@ public:
 
 protected:
     virtual bool matches_possible_mma_pattern(const math::tensor::MatMulNode& node) const;
-    virtual GpuMmaTiling get_mma_tiling(const symbolic::MultiExpression& res_shape) const;
 };
 
 } // namespace sdfg::gpu

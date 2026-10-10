@@ -13,8 +13,6 @@ inline data_flow::ImplementationType ImplementationType_ROCM_MMA("ROCM_MMA");
 
 class RocmMmaBaseDispatcher : public GpuMmaMatmulDispatcher {
 protected:
-    const GpuMmaSupport* get_mma_arch_from_impl_type_hack() const override;
-
     const GpuArch* get_gpu_arch_from_context(codegen::CodegenOutput& out) const override;
 
 public:
@@ -37,8 +35,6 @@ protected:
         types::PrimitiveType scalar_type,
         std::optional<std::pair<int, int>> coop_dims
     ) const override;
-
-    GpuMmaTiling get_mma_tiling(const symbolic::MultiExpression& res_shape) const override;
 
     void emit_load_macro(
         codegen::CodegenOutput& out,

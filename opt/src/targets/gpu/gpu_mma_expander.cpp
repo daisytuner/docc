@@ -101,7 +101,6 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
     const math::tensor::TensorLayout& layout_b,
     const math::tensor::TensorLayout& layout_y,
     types::PrimitiveType input_type,
-    types::PrimitiveType acc_type,
     types::PrimitiveType output_type,
     const data_flow::ImplementationType& impl_type,
     bool include_c_add,
@@ -120,7 +119,7 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
     builder.add_container(wave_row->get_name(), types::Scalar(types::get_primitive_type_to_hold_upper_bound(waves_m)));
 
     auto acc_frag_name = builder.find_new_name("mma_acc");
-    types::Pointer acc_frag_type{types::Scalar(acc_type)};
+    types::Pointer acc_frag_type{types::Scalar(mma_tiling.acc_type)};
     mma_arch->set_mma_fragment_storage_type(
         acc_frag_type.storage_type(),
         mma_tiling.mma_block_size,
@@ -209,11 +208,17 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
 
     auto& per_wavefront_block = builder.add_block(row_map.root());
     {
-        auto& fill_node = builder.add_library_node<
-            GpuMmaFillNode>(per_wavefront_block, org_debug_info, mma_tiling.mma_block_size, acc_type, impl_type);
+        auto& fill_node = builder.add_library_node<GpuMmaFillNode>(
+            per_wavefront_block, org_debug_info, mma_tiling.mma_block_size, mma_tiling.acc_type, impl_type
+        );
         auto& acc_frag_ptr = builder.add_access(per_wavefront_block, acc_frag_name);
         builder.add_computational_memlet(
-            per_wavefront_block, acc_frag_ptr, fill_node, fill_node.input(0), {}, types::Pointer(types::Scalar(acc_type))
+            per_wavefront_block,
+            acc_frag_ptr,
+            fill_node,
+            fill_node.input(0),
+            {},
+            types::Pointer(types::Scalar(mma_tiling.acc_type))
         );
     }
 
@@ -262,7 +267,6 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
         input_type,
         a_frag_name,
         b_frag_name,
-        acc_type,
         acc_frag_name,
         impl_type,
         org_debug_info,
@@ -310,7 +314,7 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
         create_eltwise_add_block(
             standalone,
             mma_tiling.mma_block_size,
-            acc_type,
+            mma_tiling.acc_type,
             output_type,
             impl_type,
             org_debug_info,
@@ -321,7 +325,7 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
             eltwise_add_block
         );
     } else {
-        assert(output_type == acc_type && "Output and Accumulate type must be identical if we do not add C");
+        assert(output_type == mma_tiling.acc_type && "Output and Accumulate type must be identical if we do not add C");
         store_frag_name = acc_frag_name;
     }
 
@@ -350,7 +354,6 @@ void GpuMmaExpander::create_fragment_mma(
     types::PrimitiveType input_type,
     const std::string& frag_a,
     const std::string& frag_b,
-    types::PrimitiveType acc_type,
     const std::string& frag_acc,
     const data_flow::ImplementationType& impl_type,
     const DebugInfo& org_debug_info,
@@ -358,10 +361,10 @@ void GpuMmaExpander::create_fragment_mma(
     structured_control_flow::Block& block
 ) {
     auto& inner_node = builder.add_library_node<
-        GpuMmaMatmulNode>(block, org_debug_info, mma_tiling.mma_block_size, input_type, acc_type, impl_type);
+        GpuMmaMatmulNode>(block, org_debug_info, mma_tiling.mma_block_size, input_type, mma_tiling.acc_type, impl_type);
 
     types::Scalar input_scalar_type(input_type);
-    types::Scalar acc_scalar_type(acc_type);
+    types::Scalar acc_scalar_type(mma_tiling.acc_type);
     types::Pointer ptr_type(input_scalar_type);
 
     auto& acc_access = builder.add_access(block, frag_acc);
@@ -399,12 +402,16 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::handle_expand(
     auto result_layout = node.layout_y();
     auto k_dim = node.layout_a().get_dim(1);
 
-    auto mma_tiling = get_mma_tiling({result_layout.get_dim(0), result_layout.get_dim(1), k_dim});
-
     auto input_type = node.uniform_quantization(node.get_parent()).value();
     auto output_type = input_type;
 
     auto mma_arch = arch_->mma_support();
+    auto acc_type = mma_arch->get_accumulator_type(input_type, output_type, types::PrimitiveType::Void);
+
+    auto mma_tiling = mma_arch->get_mma_tiling(
+        {result_layout.get_dim(0), result_layout.get_dim(1), k_dim}, input_type, acc_type, block_size_hint_
+    );
+
     auto new_impl_type = mma_arch->get_mma_impl_type();
 
     auto standalone = context.replacement_requires_access_nodes({InputUse::Scalar, InputUse::Scalar, InputUse::Scalar});
@@ -413,12 +420,11 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::handle_expand(
         return expand_mma_standalone(
             *standalone,
             *arch_,
-            mma_tiling,
+            mma_tiling.value(),
             node.layout_a(),
             node.layout_b(),
             result_layout,
             input_type,
-            mma_arch->get_accumulator_type(output_type, input_type),
             output_type,
             new_impl_type.value(),
             true,
@@ -482,10 +488,6 @@ bool GpuMmaExpander::matches_possible_mma_pattern(const math::tensor::MatMulNode
     if (!mma_arch) {
         return false;
     }
-    GpuMmaTiling dummy_tiling;
-    if (!mma_arch->get_matmul_impl_type(*arch_, dummy_tiling).has_value()) {
-        return false;
-    }
 
     // basic sanity checks
     auto& dims_a = node.layout_a();
@@ -511,18 +513,6 @@ bool GpuMmaExpander::matches_possible_mma_pattern(const math::tensor::MatMulNode
     auto& n = dims_b.get_dim(1);
     auto& k = dims_a.get_dim(1);
 
-    auto m_blocks = GpuMmaSupport::get_integer_block_count(m, mma_arch->mma_block_size.m);
-    auto n_blocks = GpuMmaSupport::get_integer_block_count(n, mma_arch->mma_block_size.n);
-    auto k_blocks = GpuMmaSupport::get_integer_block_count(k, mma_arch->mma_block_size.k);
-
-    if (!m_blocks || !n_blocks || !k_blocks) {
-        return false;
-    }
-
-    if (!mma_arch->valid_block_counts(mma_arch->mma_block_size.m, m_blocks, n_blocks, k_blocks)) {
-        return false;
-    }
-
     auto input_type = node.uniform_quantization(node.get_parent());
     auto output_type = input_type;
 
@@ -531,16 +521,15 @@ bool GpuMmaExpander::matches_possible_mma_pattern(const math::tensor::MatMulNode
         return false;
     }
 
-    return mma_arch->supported_types(input_type.value(), output_type.value());
-}
-
-GpuMmaTiling GpuMmaExpander::get_mma_tiling(const symbolic::MultiExpression& res_shape) const {
-    auto* mma_arch = arch_->mma_support();
-    if (!mma_arch) {
-        throw std::runtime_error("No MMA architecture available for this GPU target.");
+    if (!mma_arch->supported_types(input_type.value(), output_type.value())) {
+        return false;
     }
 
-    return mma_arch->get_mma_tiling(res_shape);
+    auto acc_type = mma_arch->get_accumulator_type(input_type.value(), output_type.value(), types::PrimitiveType::Void);
+
+    auto tiling = mma_arch->get_mma_tiling({m, n, k}, input_type.value(), acc_type, block_size_hint_);
+
+    return tiling.has_value();
 }
 
 } // namespace sdfg::gpu

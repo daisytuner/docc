@@ -6,10 +6,6 @@
 
 namespace sdfg::gpu::rocm {
 
-const GpuMmaSupport* RocmMmaBaseDispatcher::get_mma_arch_from_impl_type_hack() const {
-    return ROCM_ARCH_GFX1201.mma_support();
-}
-
 const GpuArch* RocmMmaBaseDispatcher::get_gpu_arch_from_context(codegen::CodegenOutput& out) const {
     auto* rocm_lang = dynamic_cast<sdfg::rocm::ROCMLanguageExtension*>(&out.language_extension);
     if (rocm_lang) {
@@ -31,15 +27,6 @@ void RocmMmaBaseDispatcher::emit_block_frag_declaration(
     std::stringstream ss;
     RocmMmaSupport::emit_block_frag_type(ss, type, dims, layout, scalar_type, coop_dims);
     out.stream << ss.str() << " " << name << ";" << std::endl;
-}
-
-GpuMmaTiling RocmMmaBaseDispatcher::get_mma_tiling(const symbolic::MultiExpression& res_shape) const {
-    auto* mma_arch = get_mma_arch_from_impl_type_hack();
-    if (!mma_arch) {
-        throw std::runtime_error("No MMA architecture available for this GPU target.");
-    }
-
-    return mma_arch->get_mma_tiling(res_shape);
 }
 
 void RocmMmaBaseDispatcher::emit_load_macro(

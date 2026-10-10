@@ -39,7 +39,7 @@ static DoccTarget cuda_target = {
             builder.add_compile_option("--cuda-gpu-arch=" + std::string(arch_env));
             b.add_compile_option("--cuda-gpu-arch=" + std::string(arch_env));
         } else {
-            auto caps = util::query_cuda_compute_capabilities();
+            auto caps = sdfg::gpu::cuda::query_cuda_compute_capabilities();
             if (!caps.empty()) {
                 auto& first = caps.front();
                 std::cerr << "[DOCC] Compiling CUDA for sm_" << first.compute_cap << " of "
@@ -80,8 +80,8 @@ static DoccTarget cuda_target = {
         sdfg::cuda::CudaLibraryNodeRewriterPass cuda_pass;
         return cuda_pass.run(builder, analysis_manager);
     },
-    .get_target_loop_schedulers = [](const TargetOptions& options
-                                  ) -> std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> {
+    .get_target_loop_schedulers =
+        [](const TargetOptions& options) -> std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> {
         std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> schedulers;
         schedulers.push_back(std::make_shared<sdfg::passes::scheduler::CUDAOffloadScheduler>());
         return schedulers;
@@ -95,11 +95,27 @@ static DoccTarget rocm_target = {
         builder.add_compile_option("-x hip");
         // Enable the synchronizing warp builtins (e.g. __shfl_xor_sync).
         builder.add_compile_option("-DHIP_ENABLE_WARP_SYNC_BUILTINS");
-        const char* arch_env = std::getenv("DOCC_ROCM_ARCH");
-        if (!arch_env) {
-            arch_env = "gfx1201";
+
+        std::string arch_str;
+        const char* arch_name = std::getenv("DOCC_ROCM_ARCH");
+        if (arch_name) {
+            arch_str = arch_name;
+        } else {
+            auto devs = sdfg::gpu::rocm::query_rocm_devices();
+            if (!devs.empty()) {
+                auto& first = devs.front();
+                std::cerr << "[DOCC] Compiling ROCM for " << first.gfx_name << " of "
+                          << ((first.device_names.empty()) ? "unidentified GPU" : first.device_names.front())
+                          << std::endl;
+                arch_str = first.gfx_name;
+            } else {
+                throw std::runtime_error(
+                    "Could not determine ROCm architecture. Please set the DOCC_ROCM_ARCH environment variable."
+                );
+            }
         }
-        builder.add_compile_option("--offload-arch=" + std::string(arch_env));
+
+        builder.add_compile_option("--offload-arch=" + arch_str);
         std::filesystem::path rocm_path = "/opt/rocm";
         builder.add_compile_option("--offload-host-only");
         builder.add_compile_option("--rocm-path=" + rocm_path.string());
@@ -138,8 +154,8 @@ static DoccTarget rocm_target = {
         sdfg::rocm::RocmLibraryNodeRewriterPass rocm_pass;
         return rocm_pass.run(builder, analysis_manager);
     },
-    .get_target_loop_schedulers = [](const TargetOptions& options
-                                  ) -> std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> {
+    .get_target_loop_schedulers =
+        [](const TargetOptions& options) -> std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> {
         std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> schedulers;
         schedulers.push_back(std::make_shared<sdfg::passes::scheduler::ROCMOffloadScheduler>());
         return schedulers;
@@ -155,8 +171,8 @@ static DoccTarget sequential_target = {
         sdfg::passes::LibraryNodeExpansionPass libnode_expansion_pass(conv_expander);
         return libnode_expansion_pass.run(builder, analysis_manager);
     },
-    .get_target_loop_schedulers = [](const TargetOptions& options
-                                  ) -> std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> {
+    .get_target_loop_schedulers =
+        [](const TargetOptions& options) -> std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> {
         std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> schedulers;
         schedulers.push_back(std::make_shared<sdfg::passes::scheduler::VectorizeScheduler>());
         return schedulers;
@@ -183,8 +199,8 @@ static DoccTarget openmp_target = {
         sdfg::passes::LibraryNodeExpansionPass libnode_expansion_pass(conv_expander);
         return libnode_expansion_pass.run(builder, analysis_manager);
     },
-    .get_target_loop_schedulers = [](const TargetOptions& options
-                                  ) -> std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> {
+    .get_target_loop_schedulers =
+        [](const TargetOptions& options) -> std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> {
         std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> schedulers;
         schedulers.push_back(std::make_shared<sdfg::passes::scheduler::OMPScheduler>());
         schedulers.push_back(std::make_shared<sdfg::passes::scheduler::VectorizeScheduler>());

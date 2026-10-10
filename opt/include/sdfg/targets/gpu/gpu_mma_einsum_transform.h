@@ -9,9 +9,10 @@ namespace sdfg::gpu {
 
 class GpuMmaEinsumReplacer : public einsum::Einsum2MatMul {
     const GpuArch* arch_;
+    const MmaBlockSize* block_size_hint_ = nullptr;
 
 public:
-    GpuMmaEinsumReplacer(const GpuArch* arch);
+    GpuMmaEinsumReplacer(const GpuArch* arch, const MmaBlockSize* block_size_hint = nullptr);
 
     struct EinsumMmaAnalysis : public MatMulAnalysis {};
 
@@ -30,6 +31,7 @@ class GpuMmaEinsumTransform : public transformations::Transformation {
     bool matched_ = false;
     StructuredLoop& outermost_mma_loop_;
     const gpu::GpuArch* arch_;
+    const MmaBlockSize* block_size_hint_;
 
 protected:
     /// the einsum parts modify the SDFG in place, so WILL ALWAYS CHANGE IT. We need to revert the changes if we did not
@@ -39,7 +41,11 @@ protected:
     );
 
 public:
-    GpuMmaEinsumTransform(StructuredLoop& outermoost_mma_loop, const gpu::GpuArch* arch = nullptr);
+    GpuMmaEinsumTransform(
+        StructuredLoop& outermoost_mma_loop,
+        const gpu::GpuArch* arch = nullptr,
+        const MmaBlockSize* block_size_hint = nullptr
+    );
 
     std::string name() const override {
         return "GpuMmaEinsumTransform";
