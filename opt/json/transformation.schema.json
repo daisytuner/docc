@@ -15,7 +15,7 @@
             "type": "string",
             "minLength": 1,
             "description":
-                "The transformation name, equal to Transformation::name() (e.g. \"LoopTiling\"). Used by the Replayer to dispatch to the matching from_json()."
+                "The transformation name, equal to Transformation::name() (e.g. \"StripMining\"). Used by the Replayer to dispatch to the matching from_json()."
         },
         "subgraph": {
             "type": "object",

@@ -11,6 +11,7 @@
 #include "sdfg/codegen/utils.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/matmul_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/tensor_layout.h"
+#include "sdfg/loops/transformations/strip_mining.h"
 #include "sdfg/passes/expansion/library_node_expansion_pass.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/symbolic/symbolic.h"
@@ -21,7 +22,6 @@
 #include "sdfg/targets/rocm/rocm_arch.h"
 #include "sdfg/tiles/library_nodes/tile_copy_node.h"
 #include "sdfg/tiles/transformations/local_storage.h"
-#include "sdfg/transformations/loop_tiling.h"
 #include "sdfg/types/array.h"
 #include "sdfg/types/tensor.h"
 #include "sdfg/visitor/for_each.h"
@@ -375,7 +375,7 @@ void strip_mine_k(builder::StructuredSDFGBuilder& builder, size_t blocks) {
     analysis::AnalysisManager am(builder.subject());
     auto* k = find_loop(am, "tile_k0");
     ASSERT_NE(k, nullptr);
-    transformations::LoopTiling tiling(*k, blocks, /*simplify_bounds=*/true);
+    loops::StripMining tiling(*k, blocks, /*simplify_bounds=*/true);
     ASSERT_TRUE(tiling.can_be_applied(builder, am));
     tiling.apply(builder, am);
 }

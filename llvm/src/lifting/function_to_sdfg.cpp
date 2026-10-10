@@ -15,9 +15,9 @@
 #include <sdfg/analysis/users.h>
 #include <sdfg/builder/sdfg_builder.h>
 #include <sdfg/helpers/helpers.h>
+#include <sdfg/loops/passes/loop_normal_form.h>
 #include <sdfg/parallelization/passes/auto_parallelization.h>
 #include <sdfg/passes/debug_info_propagation.h>
-#include <sdfg/passes/normalization/loop_normal_form.h>
 #include <sdfg/passes/opt_pipeline.h>
 #include <sdfg/passes/pipeline.h>
 #include <sdfg/passes/schedules/expansion_pass.h>
@@ -766,7 +766,7 @@ std::unique_ptr<sdfg::StructuredSDFG> FunctionToSDFG::simplify(std::unique_ptr<s
     dump_structured_sdfg(builder_opt.subject(), "5.condelim");
 
     // Normalize loop condition and update (run twice)
-    sdfg::passes::normalization::LoopNormalFormPass loop_normalization_pass;
+    sdfg::loops::LoopNormalFormPass loop_normalization_pass;
     loop_normalization_pass.run(builder_opt, analysis_manager);
     symbol_propagation_pass.run(builder_opt, analysis_manager);
     dde.run(builder_opt, analysis_manager);

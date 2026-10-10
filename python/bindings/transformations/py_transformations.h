@@ -9,7 +9,7 @@ namespace py = pybind11;
  * @brief Register transformation bindings for Python
  *
  * This function registers Python bindings for all SDFG transformations:
- * - LoopTiling: Tile a loop with a given tile size
+ * - StripMining: Tile a loop with a given tile size
  * - LoopInterchange: Interchange two nested loops
  * - LoopDistribute: Distribute a loop into multiple loops
  * - LoopSkewing: Skew a loop by a given factor

@@ -1,6 +1,6 @@
 #include "sdfg/transformations/offloading/gpu_loop_reordering.h"
 
-#include <sdfg/transformations/loop_interchange.h>
+#include <sdfg/reordering/transformations/loop_interchange.h>
 #include <vector>
 
 #include "sdfg/analysis/loop_analysis.h"
@@ -53,7 +53,7 @@ void GPULoopReordering::apply(builder::StructuredSDFGBuilder& builder, analysis:
             if (!for_loop || !map) {
                 continue;
             }
-            transformations::LoopInterchange loop_interchange(*for_loop, *map);
+            reordering::LoopInterchange loop_interchange(*for_loop, *map);
             if (loop_interchange.can_be_applied(builder, analysis_manager)) {
                 loop_interchange.apply(builder, analysis_manager);
                 nested_loops[j] = loop_interchange.new_outer_loop();

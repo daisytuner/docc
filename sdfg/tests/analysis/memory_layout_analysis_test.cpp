@@ -2592,7 +2592,7 @@ TEST(MemoryLayoutAnalysisTest, LU_Factorization_Diagnostic) {
 // Blocked LU factorization MLA diagnostic
 //
 // Mirrors the loop structure that BlockingTest.LU_BlockedPipeline produces
-// after `LoopTiling(i, 64)` followed by `LoopSplit(j2, (i_tile0+64) - i)`:
+// after `StripMining(i, 64)` followed by `LoopSplit(j2, (i_tile0+64) - i)`:
 //
 //   for i_tile0 in [0, N) step 64:
 //     for i in [i_tile0, min(N, i_tile0+64)):
@@ -3173,7 +3173,7 @@ TEST(MemoryLayoutAnalysisTest, ScopeAPI_TileGroups_NonLoopScope) {
     EXPECT_FALSE(groups_root->empty());
 }
 
-// Reproduces the structure LoopTiling produces for a two-level-tiled 2D map: each
+// Reproduces the structure StripMining produces for a two-level-tiled 2D map: each
 // of i, j is tiled twice, giving 6 stepped/offset loops
 //   i_t0[0,N) step T1 -> i_t1[i_t0,i_t0+T1) step T2 -> i[i_t1,i_t1+T2) step 1
 // (same for j), with row-major access A[i*N + j]. The per-level tiles walking from
@@ -3333,7 +3333,7 @@ TEST(MemoryLayoutAnalysisTest, PeeledOffsetInSubset_ExtentDivergence) {
     auto it0 = symbolic::symbol("i_t0"), it1 = symbolic::symbol("i_t1");
     auto kt0 = symbolic::symbol("k_t0"), k = symbolic::symbol("k"), i = symbolic::symbol("i");
 
-    // Enclosing stepped tile loops (as LoopTiling leaves them): i_t0 grid, i_t1 thread.
+    // Enclosing stepped tile loops (as StripMining leaves them): i_t0 grid, i_t1 thread.
     auto& L_it0 = builder.add_map(
         root, it0, symbolic::Lt(it0, N), symbolic::zero(), symbolic::add(it0, T1e), ScheduleType_Sequential::create()
     );

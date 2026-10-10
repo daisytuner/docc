@@ -1,6 +1,6 @@
 #include "sdfg/passes/scheduler/rocm_scheduler.h"
 
-#include "sdfg/passes/collapse_pass.h"
+#include "sdfg/loops/passes/collapse_pass.h"
 #include "sdfg/passes/dataflow/dead_data_elimination.h"
 #include "sdfg/passes/dataflow/memlet_simplification.h"
 #include "sdfg/passes/offloading/gpu_loop_reordering_pass.h"
@@ -93,7 +93,7 @@ void ROCMScheduler::pre_schedule(
         return;
     }
 
-    CollapsePass collapse_pass(applicable_maps, 2);
+    loops::CollapsePass collapse_pass(applicable_maps, 2);
     collapse_pass.run(builder, analysis_manager);
     analysis_manager.invalidate_all();
 

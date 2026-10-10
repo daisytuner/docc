@@ -8,7 +8,7 @@ from docc.sdfg import (
     Scalar,
     PrimitiveType,
     For,
-    LoopTiling,
+    StripMining,
     Recorder,
 )
 
@@ -29,7 +29,7 @@ def test_recorder():
 
     # Create recorder and apply transformation
     recorder = Recorder()
-    tiling = LoopTiling(loop, tile_size=16)
+    tiling = StripMining(loop, tile_size=16)
 
     # Apply via recorder
     result = recorder.apply(tiling, builder, analysis_manager)
@@ -38,7 +38,7 @@ def test_recorder():
     # Check history
     history = json.loads(recorder.history)
     assert len(history) == 1
-    assert history[0]["transformation_type"] == "LoopTiling"
+    assert history[0]["transformation_type"] == "StripMining"
     assert history[0]["parameters"]["tile_size"] == 16
 
     # Check that transformation was actually applied

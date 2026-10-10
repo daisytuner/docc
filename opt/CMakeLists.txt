@@ -35,9 +35,33 @@ set(SOURCE_FILES
     src/einsum/transformations/einsum_promotion.cpp
     src/einsum/transformations/einsum2dot.cpp
     src/einsum/transformations/einsum2gemm.cpp
-    src/parallelization/analysis/loop_carried_dependency_analysis.cpp
+    src/loops/passes/collapse_pass.cpp
+    src/loops/passes/loop_normal_form.cpp
+    src/loops/passes/tiling_pass.cpp
+    src/loops/transformations/collapse_to_depth.cpp
+    src/loops/transformations/loop_condition_normalize.cpp
+    src/loops/transformations/loop_indvar_finalize.cpp
+    src/loops/transformations/loop_peeling.cpp
+    src/loops/transformations/loop_rotate.cpp
+    src/loops/transformations/loop_shift.cpp
+    src/loops/transformations/loop_skewing.cpp
+    src/loops/transformations/loop_split.cpp
+    src/loops/transformations/strip_mining.cpp
+    src/loops/transformations/loop_unit_stride.cpp
+    src/loops/transformations/map_collapse.cpp
+    src/loops/transformations/multi_level_tiling.cpp
+    src/loops/transformations/unroll_transform.cpp
     src/parallelization/passes/auto_parallelization.cpp
     src/parallelization/transformations/loop_parallelization.cpp
+    src/reordering/analysis/loop_carried_dependency_analysis.cpp
+    src/reordering/fusion/loop_fusion_by_accesses.cpp
+    src/reordering/fusion/passes/loop_fusion_pass.cpp
+    src/reordering/fusion/passes/map_fusion_pass.cpp
+    src/reordering/fusion/transformations/map_fusion.cpp
+    src/reordering/passes/perfect_loop_distribution.cpp
+    src/reordering/passes/stride_minimization.cpp
+    src/reordering/transformations/loop_distribute.cpp
+    src/reordering/transformations/loop_interchange.cpp
     src/tiles/analysis/tile_analysis.cpp
     src/tiles/analysis/reduction_analysis.cpp
     src/tiles/analysis/reduction_buffer_analysis.cpp
@@ -55,16 +79,8 @@ set(SOURCE_FILES
     src/tiles/transformations/tile_vectorizer.cpp
     src/passes/code_motion/extended_block_hoisting.cpp
     src/passes/code_motion/extended_block_sorting.cpp
-    src/passes/collapse_pass.cpp
-    src/passes/tiling_pass.cpp
     src/passes/dot_expansion_pass.cpp
-    src/passes/loop_fusion/loop_fusion_by_access.cpp
-    src/passes/loop_fusion/loop_fusion_pass.cpp
-    src/passes/normalization/loop_normal_form.cpp
-    src/passes/normalization/map_fusion.cpp
     src/passes/normalization/normalize.cpp
-    src/passes/normalization/perfect_loop_distribution.cpp
-    src/passes/normalization/stride_minimization.cpp
     src/passes/offloading/code_motion/block_hoisting.cpp
     src/passes/offloading/code_motion/block_sorting.cpp
     src/passes/offloading/cuda_library_node_expansion_pass.cpp
@@ -156,21 +172,6 @@ set(SOURCE_FILES
     src/targets/rocm/stdlib/memcpy.cpp
     src/targets/rocm/stdlib/memset.cpp
     src/targets/vectorize/codegen/vectorize_dispatcher.cpp
-    src/transformations/collapse_to_depth.cpp
-    src/transformations/loop_condition_normalize.cpp
-    src/transformations/loop_distribute.cpp
-    src/transformations/loop_indvar_finalize.cpp
-    src/transformations/loop_interchange.cpp
-    src/transformations/loop_peeling.cpp
-    src/transformations/loop_rotate.cpp
-    src/transformations/loop_shift.cpp
-    src/transformations/loop_skewing.cpp
-    src/transformations/loop_split.cpp
-    src/transformations/loop_tiling.cpp
-    src/transformations/loop_unit_stride.cpp
-    src/transformations/map_collapse.cpp
-    src/transformations/map_fusion.cpp
-    src/transformations/multi_level_tiling.cpp
     src/transformations/offloading/cublas_data_transfer_extraction.cpp
     src/transformations/offloading/cuda_offload_transform.cpp
     src/transformations/offloading/cuda_parallelize_nested_map.cpp
@@ -192,7 +193,6 @@ set(SOURCE_FILES
     src/transformations/replayer.cpp
     src/transformations/stream_k.cpp
     src/transformations/transformation_schema.cpp
-    src/transformations/unroll_transform.cpp
     src/transformations/vectorize_transform.cpp
 )
 add_library(sdfgopt

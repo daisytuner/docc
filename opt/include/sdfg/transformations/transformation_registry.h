@@ -12,19 +12,20 @@
 #include <nlohmann/json.hpp>
 
 #include <sdfg/einsum/einsum.h>
+#include <sdfg/loops/transformations/loop_peeling.h>
+#include <sdfg/loops/transformations/loop_shift.h>
+#include <sdfg/loops/transformations/loop_skewing.h>
+#include <sdfg/loops/transformations/loop_split.h>
+#include <sdfg/loops/transformations/map_collapse.h>
+#include <sdfg/loops/transformations/multi_level_tiling.h>
+#include <sdfg/loops/transformations/strip_mining.h>
+#include <sdfg/loops/transformations/unroll_transform.h>
 #include <sdfg/parallelization/transformations/loop_parallelization.h>
+#include <sdfg/reordering/transformations/loop_distribute.h>
+#include <sdfg/reordering/transformations/loop_interchange.h>
 #include <sdfg/tiles/transformations/local_storage.h>
 #include <sdfg/tiles/transformations/software_pipelining.h>
 #include <sdfg/tiles/transformations/tile_fusion.h>
-#include <sdfg/transformations/loop_distribute.h>
-#include <sdfg/transformations/loop_interchange.h>
-#include <sdfg/transformations/loop_peeling.h>
-#include <sdfg/transformations/loop_shift.h>
-#include <sdfg/transformations/loop_skewing.h>
-#include <sdfg/transformations/loop_split.h>
-#include <sdfg/transformations/loop_tiling.h>
-#include <sdfg/transformations/map_collapse.h>
-#include <sdfg/transformations/multi_level_tiling.h>
 #include <sdfg/transformations/offloading/cuda_offload_transform.h>
 #include <sdfg/transformations/offloading/cuda_parallelize_nested_map.h>
 #include <sdfg/transformations/offloading/cuda_transform.h>
@@ -36,7 +37,6 @@
 #include <sdfg/transformations/offloading/rocm_transform.h>
 #include <sdfg/transformations/omp_transform.h>
 #include <sdfg/transformations/stream_k.h>
-#include <sdfg/transformations/unroll_transform.h>
 #include <sdfg/transformations/vectorize_transform.h>
 
 namespace sdfg {
@@ -83,6 +83,14 @@ decltype(auto) invoke_for(Visitor&& visitor) {
 
 } // namespace detail
 
+/// Maps deprecated transformation names to their current name; other names are returned unchanged.
+inline std::string canonical_transformation_name(const std::string& transformation_name) {
+    if (transformation_name == "LoopTiling") {
+        return "StripMining";
+    }
+    return transformation_name;
+}
+
 /**
  * @brief Central registry mapping transformation type names to their C++ types.
  *
@@ -106,16 +114,16 @@ decltype(auto) invoke_for(Visitor&& visitor) {
 template<typename Visitor>
 decltype(auto)
 dispatch_transformation(const std::string& transformation_name, const nlohmann::json& desc, Visitor&& visitor) {
-    if (transformation_name == "LoopTiling") {
-        return detail::invoke_for<transformations::LoopTiling>(std::forward<Visitor>(visitor));
+    if (transformation_name == "StripMining" || transformation_name == "LoopTiling") {
+        return detail::invoke_for<loops::StripMining>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "MapCollapse") {
-        return detail::invoke_for<transformations::MapCollapse>(std::forward<Visitor>(visitor));
+        return detail::invoke_for<loops::MapCollapse>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "MultiLevelTiling") {
-        return detail::invoke_for<transformations::MultiLevelTiling>(std::forward<Visitor>(visitor));
+        return detail::invoke_for<loops::MultiLevelTiling>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "LoopDistribute") {
-        return detail::invoke_for<transformations::LoopDistribute>(std::forward<Visitor>(visitor));
+        return detail::invoke_for<reordering::LoopDistribute>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "LoopInterchange") {
-        return detail::invoke_for<transformations::LoopInterchange>(std::forward<Visitor>(visitor));
+        return detail::invoke_for<reordering::LoopInterchange>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "LocalStorage") {
         return detail::invoke_for<transformations::LocalStorage>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "SoftwarePipelining") {
@@ -123,23 +131,23 @@ dispatch_transformation(const std::string& transformation_name, const nlohmann::
     } else if (transformation_name == "TileFusion") {
         return detail::invoke_for<transformations::TileFusion>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "LoopSkewing") {
-        return detail::invoke_for<transformations::LoopSkewing>(std::forward<Visitor>(visitor));
+        return detail::invoke_for<loops::LoopSkewing>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "LoopShift") {
-        return detail::invoke_for<transformations::LoopShift>(std::forward<Visitor>(visitor));
+        return detail::invoke_for<loops::LoopShift>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "LoopSplit") {
-        return detail::invoke_for<transformations::LoopSplit>(std::forward<Visitor>(visitor));
+        return detail::invoke_for<loops::LoopSplit>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "LoopParallelization") {
         return detail::invoke_for<transformations::LoopParallelization>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "OMPTransform") {
         return detail::invoke_for<transformations::OMPTransform>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "LoopPeeling") {
-        return detail::invoke_for<transformations::LoopPeeling>(std::forward<Visitor>(visitor));
+        return detail::invoke_for<loops::LoopPeeling>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "StreamK") {
         return detail::invoke_for<transformations::StreamK>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "VectorizeTransform") {
         return detail::invoke_for<transformations::VectorizeTransform>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "UnrollTransform") {
-        return detail::invoke_for<transformations::UnrollTransform>(std::forward<Visitor>(visitor));
+        return detail::invoke_for<loops::UnrollTransform>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "CUDATransform") {
         return detail::invoke_for<cuda::CUDATransform>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "CUDAOffloadTransform") {
@@ -220,7 +228,9 @@ bool verify_round_trip(builder::StructuredSDFGBuilder& builder, const nlohmann::
     }
 
     // 3) The reconstructed type must match the description that selected it.
-    if (desc.contains("transformation_type") && desc.at("transformation_type") != canonical.at("transformation_type")) {
+    if (desc.contains("transformation_type") &&
+        canonical_transformation_name(desc.at("transformation_type").get<std::string>()) !=
+            canonical.at("transformation_type").get<std::string>()) {
         error_out = "transformation_type changed across round-trip: description '" +
                     desc.at("transformation_type").get<std::string>() + "' vs to_json '" +
                     canonical.at("transformation_type").get<std::string>() + "'";

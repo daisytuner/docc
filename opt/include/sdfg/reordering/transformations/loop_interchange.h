@@ -1,0 +1,106 @@
+#pragma once
+
+#include "sdfg/loops/loop_header.h"
+#include "sdfg/structured_control_flow/structured_loop.h"
+#include "sdfg/tiles/analysis/reduction_buffer_analysis.h"
+#include "sdfg/transformations/transformation.h"
+
+namespace sdfg {
+namespace reordering {
+
+/**
+ * @brief Loop interchange transformation that swaps two nested loops
+ *
+ * This transformation swaps the order of two nested loops (outer and inner),
+ * potentially improving data locality and parallelization opportunities.
+ * The transformation preserves the computational semantics while reordering
+ * loop execution.
+ *
+ * Supports two cases:
+ * - Independent bounds: inner loop bounds do not reference the outer induction
+ *   variable. The loop headers are simply swapped.
+ * - Dependent bounds (Fourier-Motzkin): inner loop bounds are min/max of affine
+ *   terms in the outer induction variable with non-negative coefficients. The new
+ *   outer range is spanned by the first and last outer iteration; the new inner
+ *   range inverts each affine term, rounded onto the outer loop's stride lattice.
+ *
+ * @note The outer loop must have exactly one child (the inner loop)
+ * @note For-For interchange is checked via dependence analysis (delta sets must remain lex-non-negative)
+ */
+class LoopInterchange : public transformations::Transformation {
+    structured_control_flow::StructuredLoop& outer_loop_;
+    structured_control_flow::StructuredLoop& inner_loop_;
+    bool applied_ = false;
+    structured_control_flow::StructuredLoop* new_outer_loop_;
+    structured_control_flow::StructuredLoop* new_inner_loop_;
+
+    /**
+     * @brief Preview affected GPU reduction footprints without modifying the SDFG
+     * @param analysis_manager The analysis manager for the current graph
+     * @return true if affected footprints are exact and any materialized buffers remain compatible
+     */
+    bool reduction_buffers_supported(analysis::AnalysisManager& analysis_manager) const;
+
+public:
+    /**
+     * @brief Construct a loop interchange transformation
+     * @param outer_loop The outer loop to be interchanged
+     * @param inner_loop The inner loop to be interchanged
+     */
+    LoopInterchange(
+        structured_control_flow::StructuredLoop& outer_loop, structured_control_flow::StructuredLoop& inner_loop
+    );
+
+    /**
+     * @brief Get the name of this transformation
+     * @return "LoopInterchange"
+     */
+    virtual std::string name() const override;
+
+    /**
+     * @brief Compute the interchanged loop headers without modifying the SDFG
+     *
+     * Includes bound projection and inversion for dependent loops. Shared by
+     * the reduction-footprint preview and apply(); does not check dependence legality.
+     *
+     * @param analysis_manager Optional; enables floor-division bounds whose numerator is provably non-negative
+     * @return Original loop IDs and the proposed outer and inner headers
+     */
+    loops::LoopSwap proposal(analysis::AnalysisManager* analysis_manager = nullptr) const;
+
+    /**
+     * @brief Check if this transformation can be applied
+     * @param builder The SDFG builder
+     * @param analysis_manager The analysis manager
+     * @return true if the transformation can be applied safely
+     */
+    virtual bool
+    can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
+
+    /**
+     * @brief Apply the loop interchange transformation
+     * @param builder The SDFG builder
+     * @param analysis_manager The analysis manager
+     */
+    virtual void apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
+
+    /**
+     * @brief Serialize this transformation to JSON
+     * @param j JSON object to populate
+     */
+    virtual void to_json(nlohmann::json& j) const override;
+
+    /**
+     * @brief Deserialize a loop interchange transformation from JSON
+     * @param builder The SDFG builder
+     * @param j JSON description of the transformation
+     * @return The deserialized transformation
+     */
+    static LoopInterchange from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& j);
+
+    structured_control_flow::StructuredLoop* new_outer_loop() const;
+    structured_control_flow::StructuredLoop* new_inner_loop() const;
+};
+
+} // namespace reordering
+} // namespace sdfg

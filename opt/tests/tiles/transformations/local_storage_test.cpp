@@ -14,6 +14,7 @@
 #include "sdfg/data_flow/library_nodes/stdlib/memset.h"
 #include "sdfg/data_flow/tasklet.h"
 #include "sdfg/function.h"
+#include "sdfg/loops/transformations/strip_mining.h"
 #include "sdfg/passes/offloading/reduction_shared_memory_delinearization.h"
 #include "sdfg/serializer/json_serializer.h"
 #include "sdfg/structured_control_flow/block.h"
@@ -29,7 +30,6 @@
 #include "sdfg/tiles/analysis/tile_analysis.h"
 #include "sdfg/tiles/library_nodes/tile_copy_node.h"
 #include "sdfg/tiles/locality.h"
-#include "sdfg/transformations/loop_tiling.h"
 #include "sdfg/types/array.h"
 #include "sdfg/types/pointer.h"
 #include "sdfg/types/scalar.h"
@@ -3241,15 +3241,15 @@ TEST(LocalStorageTest, Matmul_WrongTiledLoop) {
 
     analysis::AnalysisManager analysis_manager(sdfg);
 
-    transformations::LoopTiling outer_map_tiling(outer_map, 512);
+    loops::StripMining outer_map_tiling(outer_map, 512);
     ASSERT_TRUE(outer_map_tiling.can_be_applied(builder, analysis_manager));
     outer_map_tiling.apply(builder, analysis_manager);
 
-    transformations::LoopTiling inner_map_tiling(inner_map, 4);
+    loops::StripMining inner_map_tiling(inner_map, 4);
     ASSERT_TRUE(inner_map_tiling.can_be_applied(builder, analysis_manager));
     inner_map_tiling.apply(builder, analysis_manager);
 
-    transformations::LoopTiling reduce_tiling(reduce, 4);
+    loops::StripMining reduce_tiling(reduce, 4);
     ASSERT_TRUE(reduce_tiling.can_be_applied(builder, analysis_manager));
     reduce_tiling.apply(builder, analysis_manager);
 

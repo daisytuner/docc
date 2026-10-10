@@ -1,10 +1,10 @@
 #include "sdfg/tiles/analysis/reduction_analysis.h"
+#include "sdfg/loops/transformations/multi_level_tiling.h"
+#include "sdfg/loops/transformations/strip_mining.h"
 #include "sdfg/passes/offloading/reduction_shared_memory_delinearization.h"
+#include "sdfg/reordering/transformations/loop_interchange.h"
 #include "sdfg/serializer/json_serializer.h"
 #include "sdfg/tiles/analysis/reduction_buffer_analysis.h"
-#include "sdfg/transformations/loop_interchange.h"
-#include "sdfg/transformations/loop_tiling.h"
-#include "sdfg/transformations/multi_level_tiling.h"
 
 #include <gtest/gtest.h>
 #include <type_traits>
@@ -401,7 +401,7 @@ TEST(ReductionBufferAnalysisTest, NestedSharedOwnersGrowWithoutDoubleCounting) {
         if (reductions.size() > 1) {
             auto& outer = *reductions.front();
             auto& inner = *reductions.at(1);
-            transformations::LoopInterchange interchange(outer, inner);
+            reordering::LoopInterchange interchange(outer, inner);
             const auto proposal = interchange.proposal();
             serializer::JSONSerializer serializer;
             const auto unchanged = serializer.serialize(builder.subject());
@@ -509,7 +509,7 @@ TEST(ReductionBufferAnalysisTest, DependentInterchangePreservesScalarFootprint) 
     analysis::AnalysisManager manager(builder.subject());
     serializer::JSONSerializer serializer;
     const auto unchanged = serializer.serialize(builder.subject());
-    transformations::LoopInterchange interchange(outer, reduction);
+    reordering::LoopInterchange interchange(outer, reduction);
     ASSERT_TRUE(interchange.can_be_applied(builder, manager));
     EXPECT_EQ(serializer.serialize(builder.subject()), unchanged);
     interchange.apply(builder, manager);
@@ -600,9 +600,9 @@ TEST(ReductionBufferAnalysisTest, TilingPreservesFootprintAddresses) {
                 EXPECT_TRUE(symbolic::eq(estimate.layout->base, symbolic::integer(13)));
                 EXPECT_EQ(estimate.private_bytes, 64);
                 EXPECT_EQ(estimate.shared_bytes, mapped ? 2048 : 512);
-                transformations::LoopTiling ragged_tiling(*output_loop, 5, true);
+                loops::StripMining ragged_tiling(*output_loop, 5, true);
                 EXPECT_FALSE(ragged_tiling.can_be_applied(builder, manager));
-                transformations::MultiLevelTiling tiling(*output_loop, 4, 2, simplify);
+                loops::MultiLevelTiling tiling(*output_loop, 4, 2, simplify);
                 ASSERT_TRUE(tiling.can_be_applied(builder, manager));
                 EXPECT_EQ(serializer.serialize(builder.subject()), unchanged);
                 tiling.apply(builder, manager);
@@ -616,7 +616,7 @@ TEST(ReductionBufferAnalysisTest, TilingPreservesFootprintAddresses) {
                     EXPECT_TRUE(symbolic::eq(actual.layout->unpack(symbolic::integer(slot)), address));
                     EXPECT_TRUE(symbolic::eq(actual.layout->pack(address), symbolic::integer(slot)));
                 }
-                transformations::LoopTiling reduction_tiling(reduction, 3, false);
+                loops::StripMining reduction_tiling(reduction, 3, false);
                 const auto before_reduction_tiling = serializer.serialize(builder.subject());
                 ASSERT_TRUE(reduction_tiling.can_be_applied(builder, manager));
                 EXPECT_EQ(serializer.serialize(builder.subject()), before_reduction_tiling);
@@ -767,9 +767,9 @@ TEST(ReductionBufferAnalysisTest, DenseFootprintAndInvalidation) {
     const auto before_schedule_preview = schedule_serializer.serialize(builder.subject());
     EXPECT_TRUE(manager.get<tiles::ReductionBufferAnalysis>().supports_schedule(reduction, larger_schedule));
     EXPECT_EQ(schedule_serializer.serialize(builder.subject()), before_schedule_preview);
-    transformations::LoopTiling column_tiling(cols, 2, true);
+    loops::StripMining column_tiling(cols, 2, true);
     EXPECT_TRUE(column_tiling.can_be_applied(builder, manager));
-    transformations::LoopInterchange interchange(reduction, rows);
+    reordering::LoopInterchange interchange(reduction, rows);
     serializer::JSONSerializer serializer;
     const auto before_preview = serializer.serialize(builder.subject());
     const auto interchanged = manager.get<tiles::ReductionBufferAnalysis>()
@@ -802,7 +802,7 @@ TEST(ReductionBufferAnalysisTest, DenseFootprintAndInvalidation) {
     EXPECT_EQ(actual.layout->extent, 2);
     EXPECT_TRUE(symbolic::eq(actual.layout->base, expected_origin));
     EXPECT_TRUE(symbolic::eq(actual.layout->base, interchanged.layout->base));
-    transformations::LoopInterchange reverse(*interchange.new_outer_loop(), *interchange.new_inner_loop());
+    reordering::LoopInterchange reverse(*interchange.new_outer_loop(), *interchange.new_inner_loop());
     EXPECT_TRUE(manager.get<tiles::ReductionBufferAnalysis>().supports_interchange(reverse.proposal()));
     builder.add_container("unknown_bound", integer_type, true);
     auto& new_rows = *interchange.new_outer_loop();
@@ -871,8 +871,8 @@ TEST(ReductionBufferAnalysisTest, DenseFootprintAndInvalidation) {
     EXPECT_THROW(reverse.apply(builder, manager), InvalidSDFGException);
     auto input_edges = block.dataflow().out_edges(input);
     const auto before_tiling = serializer.serialize(builder.subject());
-    transformations::LoopTiling packed_tiling(cols, 2, true);
-    transformations::MultiLevelTiling packed_multilevel(new_rows, 4, 2, true);
+    loops::StripMining packed_tiling(cols, 2, true);
+    loops::MultiLevelTiling packed_multilevel(new_rows, 4, 2, true);
     EXPECT_FALSE(packed_tiling.can_be_applied(builder, manager));
     EXPECT_THROW(packed_tiling.apply(builder, manager), InvalidSDFGException);
     EXPECT_FALSE(packed_multilevel.can_be_applied(builder, manager));
