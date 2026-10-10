@@ -734,7 +734,7 @@ void MemoryLayoutAnalysis::merge_scope_layouts(
                     for (auto& op : outer_partitions) {
                         bool const_diff = true;
                         for (size_t d = 0; d < ndims; ++d) {
-                            auto diff = symbolic::simplify(symbolic::sub(base[d], op.base[d]));
+                            auto diff = symbolic::expand(symbolic::sub(base[d], op.base[d]));
                             if (!SymEngine::is_a<SymEngine::Integer>(*diff)) {
                                 const_diff = false;
                                 break;
@@ -964,7 +964,7 @@ void MemoryLayoutAnalysis::compute_tile_groups(
         for (auto& existing : merged_groups) {
             bool const_diff = true;
             for (size_t d = 0; d < ndims; ++d) {
-                auto diff = symbolic::simplify(symbolic::sub(group.base[d], existing.base[d]));
+                auto diff = symbolic::expand(symbolic::sub(group.base[d], existing.base[d]));
                 if (!SymEngine::is_a<SymEngine::Integer>(*diff)) {
                     const_diff = false;
                     break;
