@@ -351,6 +351,8 @@ TEST(ROCMMMATest, ExpansionEmitsWaveMap_gfx90a) {
     for (auto& [name, snippet] : out.snippets) {
         kernels += snippet.content;
     }
+    // The static 128x2 block bounds the kernel, so the compiler may use the full register file.
+    EXPECT_NE(kernels.find("__global__ void __launch_bounds__(256) kernel_"), std::string::npos) << kernels;
     EXPECT_NE(kernels.find("rocwmma::accumulator, 16, 16, 16, rocwmma::float32_t> mma_acc"), std::string::npos)
         << kernels;
     EXPECT_NE(kernels.find("rocwmma::accumulator, 16, 16, 16, rocwmma::float16_t> mma_c"), std::string::npos)
