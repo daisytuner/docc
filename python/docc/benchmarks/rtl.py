@@ -57,6 +57,7 @@ __all__ = [
     "InstrumentationNotReady",
     "total_stats",
     "RtlTotalStats",
+    "GpuRegion",
     "configure_rtl_compiler_env",
 ]
 
@@ -376,6 +377,105 @@ def total_stats() -> Optional[RtlTotalStats]:
     return RtlTotalStats(
         mean_us=mean.value, variance_us2=variance.value, count=count.value
     )
+
+
+class _DaisyMetadata(ctypes.Structure):
+    """Mirror of ``__daisy_metadata_t`` in ``daisy_rtl.h`` (field order matters)."""
+
+    _fields_ = [
+        ("file_name", ctypes.c_char_p),
+        ("function_name", ctypes.c_char_p),
+        ("line_begin", ctypes.c_long),
+        ("line_end", ctypes.c_long),
+        ("column_begin", ctypes.c_long),
+        ("column_end", ctypes.c_long),
+        ("sdfg_name", ctypes.c_char_p),
+        ("sdfg_file", ctypes.c_char_p),
+        ("arg_capture_path", ctypes.c_char_p),
+        ("features_file", ctypes.c_char_p),
+        ("opt_report_file", ctypes.c_char_p),
+        ("element_id", ctypes.c_size_t),
+        ("element_type", ctypes.c_char_p),
+        ("target_type", ctypes.c_char_p),
+        ("loopnest_index", ctypes.c_int),
+        ("num_loops", ctypes.c_size_t),
+        ("num_maps", ctypes.c_size_t),
+        ("num_fors", ctypes.c_size_t),
+        ("num_whiles", ctypes.c_size_t),
+        ("max_depth", ctypes.c_size_t),
+        ("is_perfectly_nested", ctypes.c_bool),
+        ("is_perfectly_parallel", ctypes.c_bool),
+        ("is_elementwise", ctypes.c_bool),
+        ("has_side_effects", ctypes.c_bool),
+        ("region_uuid", ctypes.c_char_p),
+        ("transfer_tuning_session_id", ctypes.c_char_p),
+        ("source_loop_id", ctypes.c_longlong),
+        ("member_loops_json", ctypes.c_char_p),
+        ("expected_performance_json", ctypes.c_char_p),
+        ("vector_distance", ctypes.c_double),
+    ]
+
+
+_EVENT_SET_CUDA = 1
+
+
+class GpuRegion:
+    """Time a block of host code that launches GPU work as an RTL region.
+
+    Uses the same entry points as generated code (init/enter/exit/finalize with the
+    CUDA/HIP event set), so a reference such as ``torch.mm`` is measured -- and its
+    counters collected -- exactly like a compiled kernel::
+
+        region = GpuRegion("baseline")
+        with region:
+            torch.mm(a, b, out=c)
+
+    The RTL must be a shared library loaded into this process (the GPU runtime is
+    resolved from the already-loaded one), and ``__DAISY_PAPI_VERSION`` must be set.
+    """
+
+    def __init__(self, name: str, target_type: str = "ROCM"):
+        lib = _rtl_lib()
+        if lib is None:
+            raise InstrumentationNotReady("Could not locate or load libdaisy_rtl.")
+        self._init = lib["__daisy_instrumentation_init"]
+        self._init.restype = ctypes.c_size_t
+        self._init.argtypes = [ctypes.POINTER(_DaisyMetadata), ctypes.c_int]
+        self._calls = {}
+        for sym in ("enter", "exit", "finalize"):
+            fn = lib[f"__daisy_instrumentation_{sym}"]
+            fn.restype = None
+            fn.argtypes = [ctypes.c_size_t]
+            self._calls[sym] = fn
+        # Keep the encoded strings alive for as long as the RTL may read them.
+        self._strings = [s.encode() for s in (name, target_type, "", "[]", "map")]
+        uuid, target, empty, members, element = self._strings
+        self._md = _DaisyMetadata(
+            file_name=empty,
+            function_name=uuid,
+            sdfg_name=uuid,
+            sdfg_file=empty,
+            arg_capture_path=empty,
+            features_file=empty,
+            opt_report_file=empty,
+            element_type=element,
+            target_type=target,
+            region_uuid=uuid,
+            transfer_tuning_session_id=empty,
+            member_loops_json=members,
+            expected_performance_json=empty,
+            vector_distance=-1.0,
+        )
+        self._id = None
+
+    def __enter__(self) -> "GpuRegion":
+        self._id = self._init(ctypes.byref(self._md), _EVENT_SET_CUDA)
+        self._calls["enter"](self._id)
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self._calls["exit"](self._id)
+        self._calls["finalize"](self._id)
 
 
 def _find_schema() -> Path:
