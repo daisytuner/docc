@@ -19,8 +19,11 @@
 #include "sdfg/targets/gpu/gpu_types.h"
 #include "sdfg/targets/rocm/rocm.h"
 #include "sdfg/targets/rocm/rocm_arch.h"
+#include "sdfg/targets/rocm/rocm_mma_dispatcher.h"
 #include "sdfg/tiles/library_nodes/tile_copy_node.h"
 #include "sdfg/tiles/transformations/local_storage.h"
+#include "sdfg/tiles/transformations/software_pipelining.h"
+#include "sdfg/tiles/transformations/tile_vectorizer.h"
 #include "sdfg/transformations/loop_tiling.h"
 #include "sdfg/types/array.h"
 #include "sdfg/types/tensor.h"
@@ -411,14 +414,19 @@ const tiles::TileCopyNode* find_copy_from(structured_control_flow::ControlFlowNo
     return found;
 }
 
-void localize(builder::StructuredSDFGBuilder& builder, const std::string& loop_indvar) {
+void localize(
+    builder::StructuredSDFGBuilder& builder,
+    const std::string& loop_indvar,
+    bool transpose_b = false,
+    size_t row_pad_bytes = 0
+) {
     for (const std::string container : {"A", "B"}) {
         analysis::AnalysisManager am(builder.subject());
         auto* loop = find_loop(am, loop_indvar);
         ASSERT_NE(loop, nullptr);
         auto* access = find_access(*loop, container);
         ASSERT_NE(access, nullptr) << container;
-        transformations::LocalStorage ls(*loop, *access);
+        transformations::LocalStorage ls(*loop, *access, false, false, transpose_b && container == "B", row_pad_bytes);
         ASSERT_TRUE(ls.can_be_applied(builder, am)) << container;
         ls.apply(builder, am);
     }
@@ -504,7 +512,7 @@ TEST(ROCMMMATest, FragmentLoadRelocalizesToBufferView) {
     EXPECT_FALSE(load.can_relocalize_operand(gpu::GpuMmaFragmentLoadNode::PTR_INPUT_IDX, wide));
 }
 
-// Step 3: per-wave slots, and the lanes of each wave share the copy.
+// Per-wave slots fold into one block tile, staged by the whole block (all lanes of all waves).
 TEST(ROCMMMATest, LocalStorageOnWaveMapSharesCopyAcrossLanes_gfx90a) {
     auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
     sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
@@ -515,27 +523,24 @@ TEST(ROCMMMATest, LocalStorageOnWaveMapSharesCopyAcrossLanes_gfx90a) {
     localize(builder, "tile_k0");
     EXPECT_NO_THROW(builder.subject().validate());
 
-    // A: slot per wave_row (x), cooperative over wave_col (y) + the 64 lanes.
-    auto* copy_a = find_copy_from(builder.subject().root(), "A");
-    ASSERT_NE(copy_a, nullptr);
-    EXPECT_EQ(copy_a->coop_axes(), std::vector<int>{1});
-    EXPECT_EQ(copy_a->coop_lanes(), 64u);
-    EXPECT_TRUE(symbolic::eq(copy_a->coop_threads(), symbolic::integer(128))) << copy_a->coop_threads()->__str__();
-    EXPECT_NE(copy_a->plan().dst.offset()->__str__().find("wave_row"), std::string::npos);
+    // Both operands: whole-block copy (2x2 waves x 64 lanes), no per-wave slot in the target.
+    for (const char* operand : {"A", "B"}) {
+        auto* copy = find_copy_from(builder.subject().root(), operand);
+        ASSERT_NE(copy, nullptr) << operand;
+        EXPECT_TRUE(copy->coop_axes().empty()) << operand;
+        EXPECT_EQ(copy->coop_lanes(), 1u) << operand;
+        EXPECT_TRUE(symbolic::eq(copy->coop_threads(), symbolic::integer(256))) << copy->coop_threads()->__str__();
+        EXPECT_EQ(copy->plan().dst.offset()->__str__().find("wave_"), std::string::npos) << operand;
+    }
 
-    // B: slot per wave_col (y), cooperative over the whole wave_row axis (2 waves x 64 lanes).
-    auto* copy_b = find_copy_from(builder.subject().root(), "B");
-    ASSERT_NE(copy_b, nullptr);
-    EXPECT_EQ(copy_b->coop_axes(), std::vector<int>{0});
-    EXPECT_EQ(copy_b->coop_lanes(), 1u);
-    EXPECT_TRUE(symbolic::eq(copy_b->coop_threads(), symbolic::integer(128))) << copy_b->coop_threads()->__str__();
-    EXPECT_NE(copy_b->plan().dst.offset()->__str__().find("wave_col"), std::string::npos);
-
-    // Two slots per operand (one per wave), not one per thread.
+    // One [32][32+8] block tile per operand: 32 rows, each a padded row array.
     for (const auto& name : builder.subject().containers()) {
         if (name.rfind("__daisy_local_storage_", 0) == 0) {
             auto& type = static_cast<const types::Array&>(builder.subject().type(name));
-            EXPECT_TRUE(symbolic::eq(type.num_elements(), symbolic::integer(2))) << name;
+            EXPECT_TRUE(symbolic::eq(type.num_elements(), symbolic::integer(32))) << name;
+            auto* row = dynamic_cast<const types::Array*>(&type.element_type());
+            ASSERT_NE(row, nullptr) << name;
+            EXPECT_TRUE(symbolic::eq(row->num_elements(), symbolic::integer(40))) << name;
         }
     }
 
@@ -544,11 +549,17 @@ TEST(ROCMMMATest, LocalStorageOnWaveMapSharesCopyAcrossLanes_gfx90a) {
     for (auto& [name, snippet] : out.snippets) {
         kernels += snippet.content;
     }
-    EXPECT_NE(kernels.find("threadIdx.x % 64 + threadIdx.y * (64)"), std::string::npos) << kernels;
+    // Re-staged every panel: a leading barrier fences the previous panel's reads.
+    auto panel = kernels.find("for(tile_k0_tile0");
+    ASSERT_NE(panel, std::string::npos) << kernels;
+    auto copy = kernels.find("__tc_tid", panel);
+    auto barrier = kernels.find("__syncthreads", panel);
+    ASSERT_NE(copy, std::string::npos) << kernels;
+    EXPECT_LT(barrier, copy) << kernels;
 }
 
-// Steps 4+5: K strip-mined into 32-wide panels (2 MMA blocks); each fragment reads a
-// 16x16 window of its own wave's slot of the MultiDim [2][16][32] / [2][32][16] buffers.
+// Steps 4+5: K strip-mined into 32-wide panels (2 MMA blocks); each fragment reads its
+// wave's 16x16 window of the block-tile [32][32+8] buffers.
 TEST(ROCMMMATest, LocalStorageFragmentsReadOwnSlotWindow_gfx90a) {
     auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
     sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
@@ -559,21 +570,22 @@ TEST(ROCMMMATest, LocalStorageFragmentsReadOwnSlotWindow_gfx90a) {
     EXPECT_NO_THROW(builder.subject().validate());
 
     analysis::AnalysisManager am(builder.subject());
-    auto wave_row = symbolic::mod(find_loop(am, "wave_row0")->indvar(), symbolic::integer(2));
-    auto wave_col = symbolic::mod(find_loop(am, "wave_col0")->indvar(), symbolic::integer(2));
+    auto wave_row = find_loop(am, "wave_row0")->indvar();
+    auto wave_col = find_loop(am, "wave_col0")->indvar();
     // Element column of the fragment within the panel: 16 * (block - panel start).
     auto k_in_panel = symbolic::
         mul(symbolic::integer(16),
             symbolic::sub(find_loop(am, "tile_k0")->indvar(), find_loop(am, "tile_k0_tile0")->indvar()));
 
+    // Rows are padded by 8 halves (16 B): A tile [32 m][32+8], B tile [32 k][32+8].
     auto* a = find_local_load(builder.subject().root(), "A");
     ASSERT_NE(a, nullptr);
     EXPECT_TRUE(
         symbolic::
             eq(a->layout().offset,
-               symbolic::expand(symbolic::add(symbolic::mul(symbolic::integer(512), wave_row), k_in_panel)))
+               symbolic::expand(symbolic::add(symbolic::mul(symbolic::integer(640), wave_row), k_in_panel)))
     ) << a->layout().offset->__str__();
-    EXPECT_TRUE(symbolic::eq(a->layout().ldstride, symbolic::integer(32)));
+    EXPECT_TRUE(symbolic::eq(a->layout().ldstride, symbolic::integer(40)));
 
     auto* b = find_local_load(builder.subject().root(), "B");
     ASSERT_NE(b, nullptr);
@@ -582,23 +594,14 @@ TEST(ROCMMMATest, LocalStorageFragmentsReadOwnSlotWindow_gfx90a) {
             eq(b->layout().offset,
                symbolic::expand(
                    symbolic::
-                       add(symbolic::mul(symbolic::integer(512), wave_col),
-                           symbolic::mul(symbolic::integer(16), k_in_panel))
+                       add(symbolic::mul(symbolic::integer(16), wave_col),
+                           symbolic::mul(symbolic::integer(40), k_in_panel))
                ))
     ) << b->layout().offset->__str__();
-    EXPECT_TRUE(symbolic::eq(b->layout().ldstride, symbolic::integer(16)));
-
-    // Library-node operands keep a dense MultiDim buffer (no flat padded slot block).
-    for (const auto& name : builder.subject().containers()) {
-        if (name.rfind("__daisy_local_storage_", 0) == 0) {
-            auto& slots = static_cast<const types::Array&>(builder.subject().type(name));
-            EXPECT_TRUE(symbolic::eq(slots.num_elements(), symbolic::integer(2))) << name;
-            EXPECT_NE(dynamic_cast<const types::Array*>(&slots.element_type()), nullptr) << name;
-        }
-    }
+    EXPECT_TRUE(symbolic::eq(b->layout().ldstride, symbolic::integer(40)));
 }
 
-// Staging around the whole K-block loop: the slot holds the full K panel.
+// Staging around the whole K-block loop: the block tile holds the full K panel.
 TEST(ROCMMMATest, LocalStorageFragmentsReadSubWindow_gfx90a) {
     auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
     sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
@@ -608,31 +611,339 @@ TEST(ROCMMMATest, LocalStorageFragmentsReadSubWindow_gfx90a) {
     EXPECT_NO_THROW(builder.subject().validate());
 
     analysis::AnalysisManager am(builder.subject());
-    auto wave_row = symbolic::mod(find_loop(am, "wave_row0")->indvar(), symbolic::integer(2));
-    auto wave_col = symbolic::mod(find_loop(am, "wave_col0")->indvar(), symbolic::integer(2));
+    auto wave_row = find_loop(am, "wave_row0")->indvar();
+    auto wave_col = find_loop(am, "wave_col0")->indvar();
     auto tile_k = find_loop(am, "tile_k0")->indvar();
 
-    // A slot = [16][64] panel; the fragment window starts at column 16*tile_k.
+    // A tile = [32][64+8]; the fragment window starts at row 16*wave_row, column 16*tile_k.
     auto* a = find_local_load(builder.subject().root(), "A");
     ASSERT_NE(a, nullptr);
     EXPECT_TRUE(
         symbolic::eq(
             a->layout().offset,
-            symbolic::add(symbolic::mul(symbolic::integer(1024), wave_row), symbolic::mul(symbolic::integer(16), tile_k))
+            symbolic::add(symbolic::mul(symbolic::integer(1152), wave_row), symbolic::mul(symbolic::integer(16), tile_k))
         )
     ) << a->layout().offset->__str__();
-    EXPECT_TRUE(symbolic::eq(a->layout().ldstride, symbolic::integer(64)));
+    EXPECT_TRUE(symbolic::eq(a->layout().ldstride, symbolic::integer(72)));
 
-    // B slot = [64][16] panel; the fragment window starts at row 16*tile_k.
+    // B tile = [64][32+8]; the fragment window starts at row 16*tile_k, column 16*wave_col.
     auto* b = find_local_load(builder.subject().root(), "B");
     ASSERT_NE(b, nullptr);
     EXPECT_TRUE(
         symbolic::eq(
             b->layout().offset,
-            symbolic::add(symbolic::mul(symbolic::integer(1024), wave_col), symbolic::mul(symbolic::integer(256), tile_k))
+            symbolic::add(symbolic::mul(symbolic::integer(16), wave_col), symbolic::mul(symbolic::integer(640), tile_k))
         )
     ) << b->layout().offset->__str__();
-    EXPECT_TRUE(symbolic::eq(b->layout().ldstride, symbolic::integer(16)));
+    EXPECT_TRUE(symbolic::eq(b->layout().ldstride, symbolic::integer(40)));
+}
+
+// Double-buffered panels: fragments select the stage by an offset bias (not a memlet
+// subscript), and per-thread-slot copies stay synchronous (no CDNA global_load_lds).
+TEST(ROCMMMATest, SoftwarePipeliningBiasesFragmentStage_gfx90a) {
+    auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
+    sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+    auto [block, matmul_node] = build_offloaded_mma_structure(builder, 1024, 1024, 1024, 32, 32, 16, arch);
+    passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch));
+    strip_mine_k(builder, 2);
+    localize(builder, "tile_k0");
+
+    auto offset_before = find_local_load(builder.subject().root(), "A")->layout().offset;
+    symbolic::Expression a_stage_stride = symbolic::one();
+    for (const auto& name : builder.subject().containers()) {
+        if (name.rfind("__daisy_local_storage_A", 0) == 0) {
+            const types::IType* t = &builder.subject().type(name);
+            while (auto* arr = dynamic_cast<const types::Array*>(t)) {
+                a_stage_stride = symbolic::mul(a_stage_stride, arr->num_elements());
+                t = &arr->element_type();
+            }
+        }
+    }
+
+    {
+        analysis::AnalysisManager am(builder.subject());
+        transformations::SoftwarePipelining sp(*find_loop(am, "tile_k0_tile0"), 2);
+        ASSERT_TRUE(sp.can_be_applied(builder, am));
+        sp.apply(builder, am);
+    }
+    EXPECT_NO_THROW(builder.subject().validate());
+
+    analysis::AnalysisManager am(builder.subject());
+    auto panel = find_loop(am, "tile_k0_tile0");
+    auto stage = symbolic::mod(symbolic::div(panel->indvar(), symbolic::integer(2)), symbolic::integer(2));
+    auto* a = find_local_load(builder.subject().root(), "A");
+    ASSERT_NE(a, nullptr);
+    EXPECT_TRUE(
+        symbolic::
+            eq(symbolic::expand(symbolic::sub(a->layout().offset, offset_before)),
+               symbolic::expand(symbolic::mul(stage, a_stage_stride)))
+    ) << a->layout().offset->__str__();
+
+    auto out = test::utils::test_codegen(builder.subject(), "pipelined", true);
+    std::string kernels;
+    for (auto& [name, snippet] : out.snippets) {
+        kernels += snippet.content;
+    }
+    EXPECT_EQ(kernels.find("global_load_lds"), std::string::npos) << kernels;
+    EXPECT_NE(kernels.find("load_matrix_sync(mma_a0, (reinterpret_cast"), std::string::npos) << kernels;
+}
+
+// A/B fragments declared with the memory layout must use the layout-less overload (the runtime-layout one
+// round-trips through a temporary); accumulators have no layout and must keep it.
+TEST(ROCMMMATest, FragmentLoadOverload_gfx90a) {
+    auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
+    sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+    auto [block, matmul_node] = build_offloaded_mma_structure(builder, 1024, 1024, 1024, 32, 32, 16, arch);
+    passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch));
+
+    auto out = test::utils::test_codegen(builder.subject(), "overload", true);
+    std::string kernels;
+    for (auto& [name, snippet] : out.snippets) {
+        kernels += snippet.content;
+    }
+    auto load_line = [&](const std::string& frag) {
+        auto pos = kernels.find("load_matrix_sync(" + frag + ",");
+        EXPECT_NE(pos, std::string::npos) << frag << "\n" << kernels;
+        return pos == std::string::npos ? std::string() : kernels.substr(pos, kernels.find('\n', pos) - pos);
+    };
+    EXPECT_EQ(load_line("mma_a0").find("rocwmma::mem_"), std::string::npos) << kernels;
+    EXPECT_EQ(load_line("mma_b0").find("rocwmma::mem_"), std::string::npos) << kernels;
+    EXPECT_NE(load_line("mma_c0").find("rocwmma::mem_row_major"), std::string::npos) << kernels;
+}
+
+// K-major B: the transposed block tile [32 n][32+4 k] is read column-major by the fragments,
+// and TileVectorizer stages it with the 4x4 register-transposing copy.
+TEST(ROCMMMATest, LocalStorageTransposedBStagesKMajor_gfx90a) {
+    auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
+    sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+    auto [block, matmul_node] = build_offloaded_mma_structure(builder, 1024, 1024, 1024, 32, 32, 16, arch);
+    passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch));
+    strip_mine_k(builder, 2);
+    localize(builder, "tile_k0", /*transpose_b=*/true);
+    EXPECT_NO_THROW(builder.subject().validate());
+
+    for (const auto& name : builder.subject().containers()) {
+        if (name.rfind("__daisy_local_storage_B", 0) == 0) {
+            auto& type = static_cast<const types::Array&>(builder.subject().type(name));
+            EXPECT_TRUE(symbolic::eq(type.num_elements(), symbolic::integer(32))) << name;
+            auto& row = static_cast<const types::Array&>(type.element_type());
+            EXPECT_TRUE(symbolic::eq(row.num_elements(), symbolic::integer(36))) << name;
+        }
+    }
+
+    analysis::AnalysisManager am(builder.subject());
+    auto wave_col = find_loop(am, "wave_col0")->indvar();
+    auto k_in_panel = symbolic::
+        mul(symbolic::integer(16),
+            symbolic::sub(find_loop(am, "tile_k0")->indvar(), find_loop(am, "tile_k0_tile0")->indvar()));
+    auto* b = find_local_load(builder.subject().root(), "B");
+    ASSERT_NE(b, nullptr);
+    EXPECT_EQ(b->layout().layout, gpu::MMA_LAYOUT_COL_MAJOR);
+    EXPECT_TRUE(symbolic::eq(b->layout().ldstride, symbolic::integer(36)));
+    EXPECT_TRUE(
+        symbolic::
+            eq(b->layout().offset,
+               symbolic::expand(symbolic::add(symbolic::mul(symbolic::integer(576), wave_col), k_in_panel)))
+    ) << b->layout().offset->__str__();
+
+    {
+        transformations::TileVectorizer tv(*find_loop(am, "tile_k0_tile0"));
+        ASSERT_TRUE(tv.can_be_applied(builder, am));
+        tv.apply(builder, am);
+    }
+    auto* copy_b = find_copy_from(builder.subject().root(), "B");
+    ASSERT_NE(copy_b, nullptr);
+    EXPECT_EQ(copy_b->atom(), tiles::CopyAtom::TransposeSync);
+    EXPECT_EQ(copy_b->bytes(), 8u);
+    auto* copy_a = find_copy_from(builder.subject().root(), "A");
+    ASSERT_NE(copy_a, nullptr);
+    EXPECT_EQ(copy_a->atom(), tiles::CopyAtom::VectorSync);
+
+    auto out = test::utils::test_codegen(builder.subject(), "kmajor_b", true);
+    std::string kernels;
+    for (auto& [name, snippet] : out.snippets) {
+        kernels += snippet.content;
+    }
+    EXPECT_NE(kernels.find("make_uint2"), std::string::npos) << kernels;
+    EXPECT_NE(kernels.find("rocwmma::mem_col_major"), std::string::npos) << kernels;
+}
+
+// Register-staged pipelining: panel 0 staged in a prologue; in the loop the next panel is
+// loaded into per-thread registers before the compute and stored after a barrier.
+TEST(ROCMMMATest, SoftwarePipeliningRegisterStaged_gfx90a) {
+    auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
+    sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+    auto [block, matmul_node] = build_offloaded_mma_structure(builder, 1024, 1024, 1024, 32, 32, 16, arch);
+    passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch));
+    strip_mine_k(builder, 2);
+    localize(builder, "tile_k0", /*transpose_b=*/true);
+    {
+        analysis::AnalysisManager am(builder.subject());
+        transformations::SoftwarePipelining sp(*find_loop(am, "tile_k0_tile0"), 2, false, /*register_staged=*/true);
+        ASSERT_TRUE(sp.can_be_applied(builder, am));
+        sp.apply(builder, am);
+    }
+    EXPECT_NO_THROW(builder.subject().validate());
+
+    size_t stages = 0;
+    for (const auto& name : builder.subject().containers()) {
+        if (name.rfind("__daisy_stage_", 0) == 0) {
+            ++stages;
+            auto& type = static_cast<const types::Array&>(builder.subject().type(name));
+            EXPECT_EQ(type.element_type().primitive_type(), types::PrimitiveType::UInt32) << name;
+        }
+        if (name.rfind("__daisy_local_storage_", 0) == 0) {
+            // Still one shared buffer per operand: no stage axis.
+            auto& type = static_cast<const types::Array&>(builder.subject().type(name));
+            EXPECT_TRUE(symbolic::eq(type.num_elements(), symbolic::integer(32))) << name;
+        }
+    }
+    EXPECT_EQ(stages, 2u);
+
+    // Loop body: [if load; compute; barrier; if store; barrier], no full copies inside.
+    analysis::AnalysisManager am(builder.subject());
+    auto* panel = find_loop(am, "tile_k0_tile0");
+    size_t loads = 0, stores = 0, full = 0;
+    visitor::for_each_block(panel->root(), [&](structured_control_flow::Block& b) {
+        for (auto* lib : b.dataflow().library_nodes()) {
+            if (auto* tc = dynamic_cast<tiles::TileCopyNode*>(lib)) {
+                loads += tc->phase() == tiles::CopyPhase::LoadRegs;
+                stores += tc->phase() == tiles::CopyPhase::StoreRegs;
+                full += tc->phase() == tiles::CopyPhase::Full;
+            }
+        }
+    });
+    EXPECT_EQ(loads, 2u);
+    EXPECT_EQ(stores, 2u);
+    EXPECT_EQ(full, 0u);
+    {
+        // The phases survive a JSON round trip (the gym replays SDFGs through JSON).
+        serializer::JSONSerializer ser;
+        auto j = ser.serialize(builder.subject());
+        auto copy = ser.deserialize(j);
+        size_t staged = 0;
+        visitor::for_each_block(copy->root(), [&](structured_control_flow::Block& b) {
+            for (auto* lib : b.dataflow().library_nodes()) {
+                if (auto* tc = dynamic_cast<tiles::TileCopyNode*>(lib)) {
+                    staged += tc->phase() != tiles::CopyPhase::Full;
+                }
+            }
+        });
+        EXPECT_EQ(staged, 4u);
+    }
+    auto* body = &panel->root();
+    while (body->size() == 1 && dynamic_cast<structured_control_flow::Sequence*>(&body->at(0))) {
+        body = static_cast<structured_control_flow::Sequence*>(&body->at(0));
+    }
+    ASSERT_EQ(body->size(), 5u);
+    EXPECT_NE(dynamic_cast<structured_control_flow::IfElse*>(&body->at(0)), nullptr);
+    EXPECT_NE(dynamic_cast<structured_control_flow::StructuredLoop*>(&body->at(1)), nullptr);
+    EXPECT_NE(dynamic_cast<structured_control_flow::IfElse*>(&body->at(3)), nullptr);
+
+    {
+        // Vectorize from the wave map so the prologue copies outside the panel loop widen too.
+        transformations::TileVectorizer tv(*find_loop(am, "wave_col0"));
+        ASSERT_TRUE(tv.can_be_applied(builder, am));
+        tv.apply(builder, am);
+    }
+    visitor::for_each_block(builder.subject().root(), [&](structured_control_flow::Block& b) {
+        for (auto* lib : b.dataflow().library_nodes()) {
+            if (auto* tc = dynamic_cast<tiles::TileCopyNode*>(lib)) {
+                EXPECT_NE(tc->atom(), tiles::CopyAtom::ScalarSync) << tc->toStr();
+            }
+        }
+    });
+
+    auto out = test::utils::test_codegen(builder.subject(), "reg_staged", true);
+    std::string kernels;
+    for (auto& [name, snippet] : out.snippets) {
+        kernels += snippet.content;
+    }
+    EXPECT_NE(kernels.find("__daisy_stage_"), std::string::npos) << kernels;
+    EXPECT_NE(kernels.find("#pragma unroll"), std::string::npos) << kernels;
+    EXPECT_NE(kernels.find("make_uint4"), std::string::npos) << kernels;
+}
+
+// Raw 32x32x8 MFMA atom: only CDNA offers it; fragments are register vectors and every operand
+// read from LDS (A row-major, K-major B) is one 8-byte access per lane.
+TEST(ROCMMMATest, RawMfma32x32x8_gfx90a) {
+    EXPECT_EQ(gpu::rocm::ROCM_ARCH_GFX1201.mma_support_for("32x32x8"), nullptr);
+    auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
+    auto* mfma = arch.mma_support_for("32x32x8");
+    ASSERT_NE(mfma, nullptr);
+    EXPECT_EQ(mfma->mma_block_size.m, 32);
+    EXPECT_EQ(mfma->mma_block_size.k, 8);
+
+    sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+    auto [block, matmul_node] = build_offloaded_mma_structure(builder, 1024, 1024, 1024, 64, 64, 16, arch);
+    passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch, mfma));
+    EXPECT_NO_THROW(builder.subject().validate());
+
+    size_t fragments = 0;
+    for (const auto& name : builder.subject().containers()) {
+        if (name.rfind("mma_", 0) == 0) {
+            ++fragments;
+            EXPECT_TRUE(gpu::rocm::RocmMfma32Support::is_mma_type(builder.subject().type(name).storage_type())) << name;
+        }
+    }
+    EXPECT_GT(fragments, 0u);
+
+    strip_mine_k(builder, 8);
+    localize(builder, "tile_k0", /*transpose_b=*/true, /*row_pad_bytes=*/8);
+    EXPECT_NO_THROW(builder.subject().validate());
+    // 8 B lane reads: 64 + 4 halves per row for both operands.
+    for (const auto& name : builder.subject().containers()) {
+        if (name.rfind("__daisy_local_storage_", 0) == 0) {
+            auto& type = static_cast<const types::Array&>(builder.subject().type(name));
+            auto& row = static_cast<const types::Array&>(type.element_type());
+            EXPECT_TRUE(symbolic::eq(row.num_elements(), symbolic::integer(68))) << name;
+        }
+    }
+    auto* b = find_local_load(builder.subject().root(), "B");
+    ASSERT_NE(b, nullptr);
+    EXPECT_EQ(b->layout().layout, gpu::MMA_LAYOUT_COL_MAJOR);
+    EXPECT_EQ(b->implementation_type(), gpu::rocm::ImplementationType_ROCM_MFMA);
+
+    auto out = test::utils::test_codegen(builder.subject(), "mfma32", true);
+    std::string kernels;
+    for (auto& [name, snippet] : out.snippets) {
+        kernels += snippet.content;
+    }
+    EXPECT_EQ(kernels.find("rocwmma::"), std::string::npos) << kernels;
+    EXPECT_NE(kernels.find("__builtin_amdgcn_mfma_f32_32x32x8f16"), std::string::npos) << kernels;
+    EXPECT_NE(kernels.find("_Float16 __attribute__((ext_vector_type(4))) mma_a0"), std::string::npos) << kernels;
+    EXPECT_NE(kernels.find("float __attribute__((ext_vector_type(16))) mma_acc0"), std::string::npos) << kernels;
+    // A and B fragment reads from LDS: one vector access each.
+    size_t vector_reads = 0;
+    for (auto pos = kernels.find("__typeof__(mma_"); pos != std::string::npos;
+         pos = kernels.find("__typeof__(mma_", pos + 1)) {
+        ++vector_reads;
+    }
+    EXPECT_GE(vector_reads, 2u) << kernels;
+}
+
+TEST(ROCMMMATest, RawMfma32x32x8_128x96Tile_LaunchBounds) {
+    auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
+    auto* mfma = arch.mma_support_for("32x32x8");
+    ASSERT_NE(mfma, nullptr);
+    EXPECT_TRUE(mfma->valid_block_counts(32, 4, 3, 1));
+    EXPECT_FALSE(mfma->valid_block_counts(32, 8, 8, 1));
+    auto tiling = mfma->get_mma_tiling({symbolic::integer(128), symbolic::integer(96), symbolic::integer(1024)});
+    EXPECT_EQ(tiling.macro_blocks_m, 4);
+    EXPECT_EQ(tiling.macro_blocks_n, 3);
+
+    sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+    auto [block, matmul_node] = build_offloaded_mma_structure(builder, 1024, 1152, 1024, 128, 96, 16, arch);
+    passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch, mfma));
+    EXPECT_NO_THROW(builder.subject().validate());
+
+    auto out = test::utils::test_codegen(builder.subject(), "mfma32_128x96", true);
+    std::string kernels;
+    for (auto& [name, snippet] : out.snippets) {
+        kernels += snippet.content;
+    }
+    // 4 x 3 waves of 64 lanes.
+    EXPECT_NE(kernels.find("__global__ void __launch_bounds__(768) kernel_"), std::string::npos) << kernels;
 }
 
 } // namespace sdfg::rocm

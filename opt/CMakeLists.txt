@@ -149,6 +149,7 @@ set(SOURCE_FILES
     src/targets/rocm/rocm_data_offloading_node.cpp
     src/targets/rocm/rocm_map_dispatcher.cpp
     src/targets/rocm/rocm_mma_dispatcher.cpp
+    src/targets/rocm/rocm_mfma_dispatcher.cpp
     src/targets/rocm/rocm_mma_transform.cpp
     src/targets/rocm/rocm_offload_dispatcher_strategy.cpp
     src/targets/rocm/rocm_reduce_dispatcher.cpp

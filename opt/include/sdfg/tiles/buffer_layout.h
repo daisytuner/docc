@@ -27,12 +27,15 @@ enum class BufferKind {
 
 /// Build the packed buffer as a @ref ComposedLayout over `[slot ++ tile]`;
 /// `apply_coords(slot ++ tile)` is the scalar offset. @p inner_stride applies
-/// only to @ref BufferKind::Padded (others use the natural `product(tile_sizes)`).
+/// only to @ref BufferKind::Padded (others use the natural `product(tile_sizes)`);
+/// @p row_pad widens the stored innermost row of a @ref BufferKind::MultiDim or
+/// @ref BufferKind::Transposed buffer.
 ComposedLayout buffer_layout(
     const symbolic::MultiExpression& slot_sizes,
     const symbolic::MultiExpression& tile_sizes,
     BufferKind kind,
-    const symbolic::Expression& inner_stride
+    const symbolic::Expression& inner_stride,
+    size_t row_pad = 0
 );
 
 /// The packed local buffer as a value: its nested-array shape (@ref axes), the
@@ -46,6 +49,9 @@ struct PackedBuffer {
     /// Padded inner stride congruent to it mod 32 so a warp's stores are
     /// bank-conflict-free. 0 falls back to the next coprime-with-32 (odd) stride.
     size_t coop_warp_span = 0;
+    /// Unused elements appended to each stored innermost row (MultiDim / Transposed):
+    /// spreads the rows of a strided (e.g. MMA fragment) read across shared-memory banks.
+    size_t row_pad = 0;
 
     /// Total scalar slots = product(slot_sizes) * product(tile_sizes).
     symbolic::Expression total_size() const;
@@ -61,7 +67,7 @@ struct PackedBuffer {
     subset(const symbolic::MultiExpression& slot_indices, const symbolic::MultiExpression& tile_indices) const;
     /// The scalar element offset as a (possibly swizzled) layout over `[slot ++ tile]`.
     ComposedLayout layout() const {
-        return buffer_layout(slot_sizes, tile_sizes, kind, inner_stride());
+        return buffer_layout(slot_sizes, tile_sizes, kind, inner_stride(), row_pad);
     }
 };
 

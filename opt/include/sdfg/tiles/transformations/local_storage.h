@@ -86,6 +86,7 @@ private:
     bool lane_contiguous_ = false; ///< Lay the NV_Shared tile thread-linearly (flat, no slots) for the CDNA async
     bool transpose_layout_ = false; ///< Store the (no-slot) NV_Shared tile column-major (reversed tile axes)
                                     ///< global->LDS DMA, which writes lane-contiguous from a wave-uniform base.
+    size_t row_pad_bytes_ = 0; ///< Library-operand row pad in bytes; 0 = default (16 B row-major, 8 B transposed)
     std::unordered_set<const data_flow::Memlet*> group_memlets_; ///< Memlets in the selected tile group
     std::vector<structured_control_flow::Reduce*> reduce_retargets_; ///< non-cooperative Reduce nodes to retarget in
                                                                      ///< apply()
@@ -237,17 +238,20 @@ public:
      * @param transpose_layout Store a cooperative (no-slot) NV_Shared tile
      *        column-major (its tile axes reversed), so consumers read it transposed
      *        without a separate pass. A pure affine relabelling of storage.
+     * @param row_pad_bytes Row pad of a library-operand NV_Shared tile in bytes; set it to
+     *        the per-lane fragment read width (8 for CDNA 32x32x8 MFMA). 0 keeps the default.
      */
     LocalStorage(
         structured_control_flow::StructuredLoop& loop,
         const data_flow::AccessNode& access_node,
         bool swizzle_layout = false,
         bool lane_contiguous = false,
-        bool transpose_layout = false
+        bool transpose_layout = false,
+        size_t row_pad_bytes = 0
     )
         : loop_(loop), access_node_(access_node), container_(access_node.data()),
           storage_type_(types::StorageType::CPU_Stack()), swizzle_layout_(swizzle_layout),
-          lane_contiguous_(lane_contiguous), transpose_layout_(transpose_layout) {
+          lane_contiguous_(lane_contiguous), transpose_layout_(transpose_layout), row_pad_bytes_(row_pad_bytes) {
     }
 
     std::string name() const override {

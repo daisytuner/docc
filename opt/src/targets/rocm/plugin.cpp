@@ -14,6 +14,7 @@
 #include "sdfg/targets/gpu/gpu_offload_reduce_dispatcher.h"
 #include "sdfg/targets/gpu/gpu_tile_target.h"
 #include "sdfg/targets/rocm/rocm.h"
+#include "sdfg/targets/rocm/rocm_mfma_dispatcher.h"
 #include "sdfg/targets/rocm/rocm_mma_dispatcher.h"
 #include "sdfg/targets/rocm/rocm_offload_dispatcher_strategy.h"
 #include "sdfg/targets/rocm/rocm_reduce_dispatcher.h"
@@ -351,6 +352,37 @@ void register_rocm_plugin(plugins::Context& context) {
                 gpu::rocm::RocmMmaEltwiseAddDispatcher>(language_extension, function, data_flow_graph, node);
         }
     );
+
+    // Raw 32x32x8 MFMA atom
+    auto register_mfma = [&](const data_flow::LibraryNodeCode& code, auto make) {
+        libNodeDispatcherRegistry.register_library_node_dispatcher(
+            code,
+            gpu::rocm::ImplementationType_ROCM_MFMA,
+            [make](
+                codegen::LanguageExtension& language_extension,
+                const Function& function,
+                const data_flow::DataFlowGraph& data_flow_graph,
+                const data_flow::LibraryNode& node
+            ) -> std::unique_ptr<codegen::LibraryNodeDispatcher> {
+                return make(language_extension, function, data_flow_graph, node);
+            }
+        );
+    };
+    register_mfma(gpu::LibraryNodeType_GpuMmaMatmul, [](auto& le, auto& f, auto& g, auto& n) {
+        return std::make_unique<gpu::rocm::RocmMfmaMatmulDispatcher>(le, f, g, n);
+    });
+    register_mfma(gpu::LibraryNodeType_GpuMmaFill, [](auto& le, auto& f, auto& g, auto& n) {
+        return std::make_unique<gpu::rocm::RocmMfmaFillDispatcher>(le, f, g, n);
+    });
+    register_mfma(gpu::LibraryNodeType_GpuMmaFragmentLoad, [](auto& le, auto& f, auto& g, auto& n) {
+        return std::make_unique<gpu::rocm::RocmMfmaFragmentLoadDispatcher>(le, f, g, n);
+    });
+    register_mfma(gpu::LibraryNodeType_GpuMmaFragmentStore, [](auto& le, auto& f, auto& g, auto& n) {
+        return std::make_unique<gpu::rocm::RocmMfmaFragmentStoreDispatcher>(le, f, g, n);
+    });
+    register_mfma(gpu::LibraryNodeType_GpuMmaFragmentEltwiseAdd, [](auto& le, auto& f, auto& g, auto& n) {
+        return std::make_unique<gpu::rocm::RocmMfmaEltwiseAddDispatcher>(le, f, g, n);
+    });
 
     // legacy standalone MMA node based on Matmul. Does not know the enough details about the underlying hardware, so we
     // register it for specific ROCm MMA implementations as a workaround
