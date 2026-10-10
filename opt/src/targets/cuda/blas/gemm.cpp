@@ -40,14 +40,19 @@ void GEMMNodeDispatcher_CUBLASWithTransfers::dispatch_code(
 
     library_snippet_factory.add_global("#include <cuda.h>");
     library_snippet_factory.add_global("#include <cublas_v2.h>");
+    library_snippet_factory.add_global("#include <cuda_fp16.h>");
 
     std::string type, type2;
+
     switch (gemm_node.precision()) {
         case sdfg::math::blas::BLAS_Precision::s:
             type = "float";
             break;
         case sdfg::math::blas::BLAS_Precision::d:
             type = "double";
+            break;
+        case sdfg::math::blas::BLAS_Precision::h:
+            type = "half";
             break;
         default:
             throw std::runtime_error("Invalid precision for CUBLAS GEMM node");
@@ -128,6 +133,7 @@ void GEMMNodeDispatcher_CUBLASWithoutTransfers::dispatch_code(
 
     library_snippet_factory.add_global("#include <cuda.h>");
     library_snippet_factory.add_global("#include <cublas_v2.h>");
+    library_snippet_factory.add_global("#include <cuda_fp16.h>");
 
     add_guard_clause(stream, this->language_extension_, gemm_node);
 
@@ -144,12 +150,16 @@ void generate_kernel_gemm(
     const math::blas::GEMMNode& gemm_node
 ) {
     std::string type;
+
     switch (gemm_node.precision()) {
         case sdfg::math::blas::BLAS_Precision::s:
             type = "S";
             break;
         case sdfg::math::blas::BLAS_Precision::d:
             type = "D";
+            break;
+        case sdfg::math::blas::BLAS_Precision::h:
+            type = "H";
             break;
         default:
             throw std::runtime_error("Invalid precision for CUBLAS GEMM node");
@@ -182,13 +192,34 @@ void generate_kernel_gemm(
 
     std::string prefix = gemm_node.implementation_type() == cuda::ImplementationType_CUDAWithTransfers ? "d" : "__";
 
+    // cublasHgemm expects __half operands. The SDFG types the operands as _Float16, which is
+    // bit-identical to __half but a distinct C++ type, so bind correctly-typed locals once.
+    std::string alpha_arg = "&__alpha";
+    std::string beta_arg = "&__beta";
+    std::string a_arg = prefix + first_mat;
+    std::string b_arg = prefix + second_mat;
+    std::string c_arg = prefix + "C";
+    if (gemm_node.precision() == sdfg::math::blas::BLAS_Precision::h) {
+        stream << "const __half* alpha_h = reinterpret_cast<const __half*>(&__alpha);" << std::endl;
+        stream << "const __half* beta_h = reinterpret_cast<const __half*>(&__beta);" << std::endl;
+        stream << "const __half* A_h = reinterpret_cast<const __half*>(" << a_arg << ");" << std::endl;
+        stream << "const __half* B_h = reinterpret_cast<const __half*>(" << b_arg << ");" << std::endl;
+        stream << "__half* C_h = reinterpret_cast<__half*>(" << c_arg << ");" << std::endl;
+        alpha_arg = "alpha_h";
+        beta_arg = "beta_h";
+        a_arg = "A_h";
+        b_arg = "B_h";
+        c_arg = "C_h";
+    }
+
     stream << "cublasStatus_t err;" << std::endl;
     stream << "err = cublas" << type << "gemm(handle, " << trans_first_str << ", " << trans_second_str << ", "
            << language_extension.expression(first_dim) << ", " << language_extension.expression(second_dim) << ", "
-           << language_extension.expression(gemm_node.k()) << ", "
-           << "&__alpha, " << prefix << first_mat << ", " << language_extension.expression(ld_first) << ", " << prefix
-           << second_mat << ", " << language_extension.expression(ld_second) << ", "
-           << "&__beta, " << prefix << "C, " << language_extension.expression(ldc) << ");" << std::endl;
+           << language_extension.expression(gemm_node.k()) << ", " << alpha_arg << ", " << a_arg << ", "
+           << language_extension.expression(ld_first) << ", " << b_arg << ", "
+           << language_extension.expression(ld_second) << ", " << beta_arg << ", " << c_arg << ", "
+           << language_extension.expression(ldc) << ");" << std::endl;
+
     cublas_error_checking(stream, language_extension, "err");
     check_cuda_kernel_launch_errors(stream, language_extension, false);
 }
