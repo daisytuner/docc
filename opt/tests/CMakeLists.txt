@@ -35,26 +35,42 @@ set(TEST_FILES
     einsum/transformations/einsum_extend_test.cpp
     einsum/transformations/einsum_lift_test.cpp
     einsum/transformations/einsum_promotion_test.cpp
-    parallelization/analysis/loop_carried_dependency_analysis_test.cpp
+    loops/passes/loop_normal_form_test.cpp
+    loops/passes/tiling_pass_test.cpp
+    loops/transformations/collapse_to_depth_test.cpp
+    loops/transformations/loop_condition_normalize_test.cpp
+    loops/transformations/loop_indvar_finalize_test.cpp
+    loops/transformations/loop_peeling_test.cpp
+    loops/transformations/loop_rotate_test.cpp
+    loops/transformations/loop_shift_test.cpp
+    loops/transformations/loop_skewing_test.cpp
+    loops/transformations/loop_split_test.cpp
+    loops/transformations/strip_mining_test.cpp
+    loops/transformations/loop_unit_stride_test.cpp
+    loops/transformations/map_collapse_test.cpp
+    loops/transformations/multi_level_tiling_test.cpp
+    loops/transformations/unroll_transform_test.cpp
     parallelization/passes/auto_parallelization_test.cpp
     parallelization/transformations/loop_parallelization_test.cpp
+    reordering/analysis/loop_carried_dependency_analysis_test.cpp
+    reordering/fusion/passes/loop_fusion_by_domain_pass_test.cpp
+    reordering/fusion/passes/loop_fusion_pass_test.cpp
+    reordering/fusion/passes/map_fusion_pass_test.cpp
+    reordering/fusion/transformations/map_fusion_test.cpp
+    reordering/passes/perfect_loop_distribution_test.cpp
+    reordering/passes/stride_minimization_test.cpp
+    reordering/transformations/loop_distribute_test.cpp
+    reordering/transformations/loop_interchange_test.cpp
     rocm/blas/rocblas_test.cpp
     rocm/rocm_library_nodes_test.cpp
     rocm/rocm_mma_test.cpp
     rocm/rocm_reduce_dispatcher_test.cpp
-    passes/loop_fusion/loop_fusion_by_domain_pass_test.cpp
-    passes/loop_fusion/loop_fusion_pass_test.cpp
-    passes/normalization/loop_normal_form_test.cpp
-    passes/normalization/map_fusion_test.cpp
-    passes/normalization/perfect_loop_distribution_test.cpp
-    passes/normalization/stride_minimization_test.cpp
     passes/offloading/code_motion/block_hoisting_test.cpp
     passes/offloading/code_motion/block_sorting_test.cpp
     passes/offloading/data_transfer_minimization_pass_test.cpp
     passes/offloading/device_buffer_reuse_pass_test.cpp
     passes/offloading/gpu_nested_offload_pass_test.cpp
     analysis/data_dependency_tile_copy_test.cpp
-    passes/tiling_pass_test.cpp
     transformations/offloading/cuda_parallelize_nested_map_test.cpp
     transformations/offloading/rocm_parallelize_nested_map_test.cpp
     transformations/offloading/rocm_transform_test.cpp
@@ -86,26 +102,10 @@ set(TEST_FILES
     targets/omp/codegen/omp_map_dispatcher_test.cpp
     targets/gpu/wave_map_test.cpp
     targets/omp/schedule_test.cpp
-    transformations/collapse_to_depth_test.cpp
     transformations/omp_transform_test.cpp
-    transformations/map_collapse_test.cpp
-    transformations/loop_condition_normalize_test.cpp
-    transformations/loop_distribute_test.cpp
-    transformations/loop_indvar_finalize_test.cpp
-    transformations/loop_interchange_test.cpp
-    transformations/loop_rotate_test.cpp
-    transformations/loop_shift_test.cpp
-    transformations/loop_skewing_test.cpp
-    transformations/loop_peeling_test.cpp
-    transformations/loop_split_test.cpp
-    transformations/loop_tiling_test.cpp
-    transformations/loop_unit_stride_test.cpp
-    transformations/map_fusion_test.cpp
-    transformations/multi_level_tiling_test.cpp
     transformations/stream_k_test.cpp
     transformations/recorder_test.cpp
     transformations/vectorize_transform_test.cpp
-    transformations/unroll_transform_test.cpp
     transformations/transformation_serialization_test.cpp
     test.cpp
 )

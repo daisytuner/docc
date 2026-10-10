@@ -147,9 +147,7 @@ effective_schedule(const structured_control_flow::StructuredLoop& loop, const Re
 }
 
 auto projected_ancestors(
-    structured_control_flow::ControlFlowNode* node,
-    analysis::LoopAnalysis& loops,
-    const transformations::LoopSwap* proposal
+    structured_control_flow::ControlFlowNode* node, analysis::LoopAnalysis& loops, const loops::LoopSwap* proposal
 ) {
     auto result = loops.ancestors(node);
     if (proposal && node == &proposal->outer) {
@@ -161,9 +159,7 @@ auto projected_ancestors(
 }
 
 auto projected_descendants(
-    structured_control_flow::ControlFlowNode* node,
-    analysis::LoopAnalysis& loops,
-    const transformations::LoopSwap* proposal
+    structured_control_flow::ControlFlowNode* node, analysis::LoopAnalysis& loops, const loops::LoopSwap* proposal
 ) {
     auto result = loops.descendants(node);
     if (proposal && node == &proposal->outer) {
@@ -175,9 +171,7 @@ auto projected_descendants(
 }
 
 std::vector<ReductionLoopDomain> inner_domains(
-    structured_control_flow::Reduce& reduction,
-    analysis::LoopAnalysis& loops,
-    const transformations::LoopSwap* proposal = nullptr
+    structured_control_flow::Reduce& reduction, analysis::LoopAnalysis& loops, const loops::LoopSwap* proposal = nullptr
 ) {
     std::vector<structured_control_flow::StructuredLoop*> inner;
     for (auto* node : projected_descendants(&reduction, loops, proposal)) {
@@ -291,7 +285,7 @@ void allocation_cost(
     const std::string& container,
     analysis::LoopAnalysis& loops,
     const ReductionScheduleProposal* proposal = nullptr,
-    const transformations::LoopSwap* interchange = nullptr
+    const loops::LoopSwap* interchange = nullptr
 ) {
     auto footprint_bytes = checked_product(result.layout->extent, *result.element_bytes);
     result.private_bytes = footprint_bytes;
@@ -400,8 +394,7 @@ void allocation_cost(
 
 } // namespace
 
-ReductionLoopDomain ReductionLoopDomain::
-    from_header(const symbolic::Symbol& indvar, const transformations::LoopHeader& header) {
+ReductionLoopDomain ReductionLoopDomain::from_header(const symbolic::Symbol& indvar, const loops::LoopHeader& header) {
     auto step = symbolic::expand(symbolic::sub(header.update, indvar));
     if (!positive_integer(step)) {
         return {indvar, header.init, SymEngine::null, SymEngine::null};
@@ -525,7 +518,7 @@ ReductionBufferInfo ReductionBufferAnalysis::estimate_interchange(
     structured_control_flow::Reduce& reduction,
     const std::string& container,
     ReductionBufferInfo footprint,
-    const transformations::LoopSwap& proposal
+    const loops::LoopSwap& proposal
 ) const {
     try {
         if (proposal.outer.root().size() != 1 || &proposal.outer.root().at(0) != &proposal.inner) {
@@ -744,7 +737,7 @@ ReductionBufferInfo ReductionBufferAnalysis::
     }
 }
 
-bool ReductionBufferAnalysis::supports_interchange(const transformations::LoopSwap& proposal) const {
+bool ReductionBufferAnalysis::supports_interchange(const loops::LoopSwap& proposal) const {
     if (proposal.outer.root().size() != 1 || &proposal.outer.root().at(0) != &proposal.inner) {
         throw InvalidSDFGException("ReductionBufferAnalysis: proposal requires directly nested loops");
     }

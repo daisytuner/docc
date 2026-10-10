@@ -8,7 +8,7 @@ from docc.sdfg import (
     Scalar,
     PrimitiveType,
     For,
-    LoopTiling,
+    StripMining,
 )
 
 
@@ -26,7 +26,7 @@ def test_loop_tiling():
     builder.end_for()
 
     # Apply transformation
-    tiling = LoopTiling(loop, tile_size=16)
+    tiling = StripMining(loop, tile_size=16)
     assert tiling.can_be_applied(builder, analysis_manager)
     tiling.apply(builder, analysis_manager)
 

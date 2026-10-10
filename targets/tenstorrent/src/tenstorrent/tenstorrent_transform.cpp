@@ -10,11 +10,13 @@
 #include "sdfg/types/type.h"
 #include "sdfg/types/utils.h"
 
-#include "sdfg/transformations/loop_tiling.h"
+#include "sdfg/loops/transformations/strip_mining.h"
 
 namespace sdfg::tenstorrent {
 
-std::string TenstorrentTransform::name() const { return "TenstorrentTransform"; }
+std::string TenstorrentTransform::name() const {
+    return "TenstorrentTransform";
+}
 
 void TenstorrentTransform::setup_device(builder::StructuredSDFGBuilder& builder, Block& global_alloc_block) {
     auto& sdfg = builder.subject();
@@ -22,7 +24,8 @@ void TenstorrentTransform::setup_device(builder::StructuredSDFGBuilder& builder,
     auto& block = builder.add_block_before(sdfg.root(), global_alloc_block, {});
 }
 
-void TenstorrentTransform::teardown_device(builder::StructuredSDFGBuilder& builder, Block& global_alloc_block) {}
+void TenstorrentTransform::teardown_device(builder::StructuredSDFGBuilder& builder, Block& global_alloc_block) {
+}
 
 bool has_no_nested_loops(const structured_control_flow::ControlFlowNode& root) {
     // std::unordered_set<const data_flow::Tasklet*> tasklets;
@@ -76,13 +79,17 @@ std::unique_ptr<TransformPlan> TenstorrentTransform::
     try_create_transform_plan(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     auto stride = loop_.stride();
     if (!symbolic::eq(stride, symbolic::one())) { // map stride must be 1 for convenient tiling
-        if (report_) report_->transform_impossible(this, "non-1 stride");
+        if (report_) {
+            report_->transform_impossible(this, "non-1 stride");
+        }
         return {};
     }
 
     // Criterion: Map must start at 0
     if (!symbolic::eq(this->loop_.init(), symbolic::zero())) {
-        if (report_) report_->transform_impossible(this, "non zero start");
+        if (report_) {
+            report_->transform_impossible(this, "non zero start");
+        }
         return {};
     }
 
@@ -96,7 +103,9 @@ std::unique_ptr<TransformPlan> TenstorrentTransform::
     auto& arguments_analysis = analysis_manager.get<analysis::ArgumentsAnalysis>();
 
     if (!arguments_analysis.inferred_types(analysis_manager, this->loop_)) {
-        if (report_) report_->transform_impossible(this, "confusing arg types");
+        if (report_) {
+            report_->transform_impossible(this, "confusing arg types");
+        }
         return {};
     }
 
@@ -106,15 +115,21 @@ std::unique_ptr<TransformPlan> TenstorrentTransform::
     for (auto& [argument, meta] : arguments) {
         auto base_type = analysis::TypeAnalysis(sdfg, &loop_, analysis_manager).get_outer_type(argument);
         if (base_type == nullptr) {
-            if (report_) report_->transform_impossible(this, "cannot infer type");
+            if (report_) {
+                report_->transform_impossible(this, "cannot infer type");
+            }
             return {};
         }
         if (!types::is_contiguous_type(*base_type, sdfg)) {
-            if (report_) report_->transform_impossible(this, "type is not contiguous");
+            if (report_) {
+                report_->transform_impossible(this, "type is not contiguous");
+            }
             return {};
         }
         if (meta.is_scalar && meta.is_output) {
-            if (report_) report_->transform_impossible(this, "scalar output");
+            if (report_) {
+                report_->transform_impossible(this, "scalar output");
+            }
             return {};
         }
     }
@@ -122,13 +137,17 @@ std::unique_ptr<TransformPlan> TenstorrentTransform::
     // Criterion: Map cannot write to scalar arguments
     for (auto& [argument, meta] : arguments) {
         if (meta.is_scalar && meta.is_output) {
-            if (report_) report_->transform_impossible(this, "scalar output");
+            if (report_) {
+                report_->transform_impossible(this, "scalar output");
+            }
             return {};
         }
     }
 
     if (!arguments_analysis.argument_size_known(analysis_manager, this->loop_, allow_dynamic_sizes_)) {
-        if (report_) report_->transform_impossible(this, "transfer args not sized");
+        if (report_) {
+            report_->transform_impossible(this, "transfer args not sized");
+        }
         return {};
     }
 
@@ -183,7 +202,9 @@ std::unique_ptr<TransformPlan> TenstorrentTransform::
                     switch (user->use()) {
                         case analysis::MOVE:
                         case analysis::VIEW:
-                            if (report_) report_->transform_impossible(this, "use of arg " + arg + " too complex");
+                            if (report_) {
+                                report_->transform_impossible(this, "use of arg " + arg + " too complex");
+                            }
                             return {};
                         default:
                             break;
@@ -236,9 +257,10 @@ std::unique_ptr<TransformPlan> TenstorrentTransform::
             }
             auto dims = arg_dims[arg];
             if (dims > 1) {
-                if (report_)
+                if (report_) {
                     report_
                         ->transform_impossible(this, arg + " is unsupported multi-dim (" + std::to_string(dims) + ")");
+                }
                 return {};
             }
             auto page_size = symbolic::mul(tile_entries, types::get_contiguous_element_size(*type));
@@ -246,11 +268,15 @@ std::unique_ptr<TransformPlan> TenstorrentTransform::
         } else {
             auto type = type_analysis.get_outer_type(arg);
             if (type->type_id() != types::TypeID::Scalar) {
-                if (report_) report_->transform_impossible(this, "use of arg " + arg + " is not a scalar");
+                if (report_) {
+                    report_->transform_impossible(this, "use of arg " + arg + " is not a scalar");
+                }
                 return {};
             }
             if (types::bit_width(type->primitive_type()) > 32) {
-                if (report_) report_->transform_impossible(this, "use of arg " + arg + " does not map to uint32_t");
+                if (report_) {
+                    report_->transform_impossible(this, "use of arg " + arg + " does not map to uint32_t");
+                }
                 return {};
             }
             plan.scalar_args_.emplace_back(arg, *type);
@@ -265,7 +291,9 @@ std::unique_ptr<TransformPlan> TenstorrentTransform::
     // TODO check if no input is WAY smaller than this
 
 
-    if (report_) report_->transform_possible(this);
+    if (report_) {
+        report_->transform_possible(this);
+    }
     return std::move(plan_ptr);
 }
 
@@ -291,7 +319,7 @@ void TenstorrentTransform::apply_plan(
     analysis::AnalysisManager& analysis_manager,
     std::unique_ptr<TransformPlan> plan
 ) {
-    transformations::LoopTiling tiler(loop_, plan->tile_entries_);
+    loops::StripMining tiler(loop_, plan->tile_entries_);
     assert(tiler.can_be_applied(builder, analysis_manager) && "Cannot apply tiling");
 
     auto& parent_scope = require_parent_scope();
@@ -316,7 +344,9 @@ void TenstorrentTransform::apply_plan(
     auto& outer_map = dyn_cast<structured_control_flow::Map&>(parent_scope.at(outer_loop_idx));
 
     builder.subject().type(outer_map.indvar()->get_name()).storage_type() = local_device_storage_type();
-    if (report_) report_->transform_applied(this);
+    if (report_) {
+        report_->transform_applied(this);
+    }
 }
 
 void TenstorrentTransform::set_report(sdfg::PassReportConsumer* report) {

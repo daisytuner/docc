@@ -19,12 +19,12 @@
 #include <sdfg/codegen/instrumentation/instrumentation_plan.h>
 #include <sdfg/codegen/loop_report.h>
 #include <sdfg/einsum/einsum.h>
+#include <sdfg/loops/passes/loop_normal_form.h>
 #include <sdfg/parallelization/passes/auto_parallelization.h>
 #include <sdfg/passes/dataflow/dead_data_elimination.h>
 #include <sdfg/passes/dataflow/local_buffer_reuse.h>
 #include <sdfg/passes/dataflow/tensor_to_pointer_conversion.h>
 #include <sdfg/passes/dot_expansion_pass.h>
-#include <sdfg/passes/normalization/loop_normal_form.h>
 #include <sdfg/passes/normalization/normalization.h>
 #include <sdfg/passes/normalization/normalize.h>
 #include <sdfg/passes/offloading/cuda_library_node_rewriter_pass.h>
@@ -58,7 +58,6 @@
 #include "docc/compile/src_file_compiler_builder.h"
 #include "docc/util/docc_paths.h"
 #include "sdfg/passes/dataflow/tasklet_fusion.h"
-#include "sdfg/passes/loop_fusion/loop_fusion_pass.h"
 #include "sdfg/passes/memory/tensor_allocation_size_inference.h"
 #include "sdfg/passes/offloading/code_motion/block_hoisting.h"
 #include "sdfg/passes/offloading/code_motion/block_sorting.h"
@@ -71,6 +70,7 @@
 #include "sdfg/passes/scheduler/vectorize_scheduler.h"
 #include "sdfg/passes/schedules/expansion_pass.h"
 #include "sdfg/passes/targets/target_mapping_pass.h"
+#include "sdfg/reordering/fusion/passes/loop_fusion_pass.h"
 #include "sdfg/targets/omp/schedule.h"
 #include "sdfg/util/offloading_instrumentation_plan.h"
 #include "targets/target_mapping.h"
@@ -320,7 +320,7 @@ void PyStructuredSDFG::simplify(const docc::target::TargetOptions& options) {
     }
 
     // Normalize loop condition and update (run twice)
-    sdfg::passes::normalization::LoopNormalFormPass loop_normalization_pass;
+    sdfg::loops::LoopNormalFormPass loop_normalization_pass;
     loop_normalization_pass.run(builder_opt, analysis_manager);
 
     // Dead code elimination
@@ -377,7 +377,7 @@ void PyStructuredSDFG::simplify(const docc::target::TargetOptions& options) {
         dump_debug("py3.1.pre-fusion");
 
         // New Map Fusion, simpler than previous, but what it can do should be cheaper to do
-        sdfg::passes::loop_fusion::LoopFusionPass map_fusion_by_domain_pass({.allow_init_hoist = false});
+        sdfg::reordering::fusion::LoopFusionPass map_fusion_by_domain_pass({.allow_init_hoist = false});
         map_fusion_by_domain_pass.run(builder_opt, analysis_manager);
 
         dump_debug("py3.2.post-fusion");

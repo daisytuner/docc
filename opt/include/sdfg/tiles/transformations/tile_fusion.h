@@ -13,7 +13,7 @@ namespace transformations {
 /**
  * @brief Tile fusion transformation that merges two consecutive sibling tiled Maps
  *
- * Takes two consecutive tiled Maps (each the result of LoopTiling applied to a Map)
+ * Takes two consecutive tiled Maps (each the result of StripMining applied to a Map)
  * that communicate through an intermediate array and merges their outer tile loops
  * into a single For loop. The producer's inner iteration range is extended by the
  * computed stencil radius to cover cross-tile reads by the consumer.

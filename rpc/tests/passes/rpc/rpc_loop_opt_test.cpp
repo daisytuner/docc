@@ -4,15 +4,15 @@
 #include "sdfg/analysis/loop_analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/deepcopy/structured_sdfg_deep_copy.h"
+#include "sdfg/loops/transformations/strip_mining.h"
 #include "sdfg/passes/rpc/rpc_context.h"
 #include "sdfg/passes/rpc/rpc_scheduling_pass.h"
+#include "sdfg/reordering/transformations/loop_interchange.h"
 #include "sdfg/serializer/json_serializer.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/structured_sdfg.h"
-#include "sdfg/transformations/loop_interchange.h"
-#include "sdfg/transformations/loop_tiling.h"
 #include "sdfg/transformations/recorder.h"
 #include "sdfg/types/pointer.h"
 #include "sdfg/types/type.h"
@@ -364,7 +364,9 @@ protected:
         test_ctx_ = ctx_builder.initialize_local_default().from_env().from_header_env().build();
     }
 
-    void TearDown() override { unsetenv("RPC_HEADER"); }
+    void TearDown() override {
+        unsetenv("RPC_HEADER");
+    }
 };
 
 TEST_F(RPCLoopOptMoveChildrenTest, MoveAllChildrenFromRPCResult) {

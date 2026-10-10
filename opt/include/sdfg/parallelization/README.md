@@ -91,6 +91,7 @@ This is why the classifier does not reject a WAW outright: it only requires that
 ## How the Analysis Sees It: `LoopCarriedDependencyAnalysis`
 
 `LoopCarriedDependencyAnalysis` (LCDA) computes, for each loop, exactly which containers carry a cross-iteration dependency and of what kind.
+It lives in the `reordering` namespace (`sdfg/reordering/analysis/`), since loop interchange and distribution rely on it as well.
 It does not scan every pair of statements blindly; it rides on top of `DataDependencyAnalysis` (DDA), which already summarizes each loop by two boundary sets:
 
 - **upward-exposed reads** $\mathrm{ue}(L)$ — reads inside the loop that consume a value from *outside* the current iteration (a candidate *consumer*);

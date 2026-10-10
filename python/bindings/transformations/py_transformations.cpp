@@ -4,7 +4,15 @@
 #include <sstream>
 
 #include <sdfg/data_flow/access_node.h>
+#include <sdfg/loops/transformations/loop_peeling.h>
+#include <sdfg/loops/transformations/loop_skewing.h>
+#include <sdfg/loops/transformations/map_collapse.h>
+#include <sdfg/loops/transformations/strip_mining.h>
+#include <sdfg/loops/transformations/unroll_transform.h>
 #include <sdfg/parallelization/transformations/loop_parallelization.h>
+#include <sdfg/reordering/fusion/transformations/map_fusion.h>
+#include <sdfg/reordering/transformations/loop_distribute.h>
+#include <sdfg/reordering/transformations/loop_interchange.h>
 #include <sdfg/symbolic/symbolic.h>
 #include <sdfg/targets/cuda/cuda.h>
 #include <sdfg/targets/gpu/gpu_mma_einsum_transform.h>
@@ -15,13 +23,6 @@
 #include <sdfg/tiles/transformations/software_pipelining.h>
 #include <sdfg/tiles/transformations/tile_fusion.h>
 #include <sdfg/tiles/transformations/tile_vectorizer.h>
-#include <sdfg/transformations/loop_distribute.h>
-#include <sdfg/transformations/loop_interchange.h>
-#include <sdfg/transformations/loop_peeling.h>
-#include <sdfg/transformations/loop_skewing.h>
-#include <sdfg/transformations/loop_tiling.h>
-#include <sdfg/transformations/map_collapse.h>
-#include <sdfg/transformations/map_fusion.h>
 #include <sdfg/transformations/offloading/cuda_offload_transform.h>
 #include <sdfg/transformations/offloading/cuda_parallelize_nested_map.h>
 #include <sdfg/transformations/offloading/cuda_transform.h>
@@ -31,7 +32,6 @@
 #include <sdfg/transformations/recorder.h>
 #include <sdfg/transformations/stream_k.h>
 #include <sdfg/transformations/transformation.h>
-#include <sdfg/transformations/unroll_transform.h>
 #include <sdfg/transformations/vectorize_transform.h>
 #include <sdfg/types/type.h>
 
@@ -40,6 +40,14 @@
 
 using namespace sdfg::transformations;
 using namespace sdfg::structured_control_flow;
+using sdfg::loops::LoopPeeling;
+using sdfg::loops::LoopSkewing;
+using sdfg::loops::MapCollapse;
+using sdfg::loops::StripMining;
+using sdfg::loops::UnrollTransform;
+using sdfg::reordering::LoopDistribute;
+using sdfg::reordering::LoopInterchange;
+using sdfg::reordering::fusion::MapFusion;
 
 void register_transformations(py::module& m) {
     // Base Transformation class (abstract)
@@ -82,37 +90,39 @@ void register_transformations(py::module& m) {
             "Serialize the transformation to a JSON string"
         );
 
-    // LoopTiling transformation
-    py::class_<LoopTiling, Transformation>(m, "LoopTiling")
+    // StripMining transformation
+    py::class_<StripMining, Transformation>(m, "StripMining")
         .def(
             py::init<StructuredLoop&, size_t, bool>(),
             py::arg("loop"),
             py::arg("tile_size"),
             py::arg("simplify_bounds") = false,
-            "Create a loop tiling transformation.\n\n"
+            "Create a strip-mining transformation.\n\n"
             "Args:\n"
-            "    loop: The loop to tile\n"
+            "    loop: The loop to strip-mine\n"
             "    tile_size: The tile size (must be > 1)\n"
             "    simplify_bounds: Drop the redundant inner bound for perfectly dividing tiles,\n"
             "        yielding a clean constant-trip tile that unrolls/vectorizes (default: False)"
         )
         .def_property_readonly(
             "inner_loop",
-            &LoopTiling::inner_loop,
+            &StripMining::inner_loop,
             py::return_value_policy::reference,
             "Get the inner (tiled) loop after apply"
         )
         .def_property_readonly(
             "outer_loop",
-            &LoopTiling::outer_loop,
+            &StripMining::outer_loop,
             py::return_value_policy::reference,
             "Get the outer (tile) loop after apply"
         )
-        .def("__repr__", [](const LoopTiling& t) {
+        .def("__repr__", [](const StripMining& t) {
             std::ostringstream oss;
-            oss << "<LoopTiling name='" << t.name() << "'>";
+            oss << "<StripMining name='" << t.name() << "'>";
             return oss.str();
         });
+    // Deprecated: former name of StripMining.
+    m.attr("LoopTiling") = m.attr("StripMining");
 
     // LoopInterchange transformation
     py::class_<LoopInterchange, Transformation>(m, "LoopInterchange")

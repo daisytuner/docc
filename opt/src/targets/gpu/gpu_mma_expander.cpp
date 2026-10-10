@@ -178,7 +178,7 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
         ScheduleType_GPU_Offload::create(arch, TargetLevel::Y_BLOCK, waves_n)
     );
 
-    // K-block loop (unit stride, so LoopTiling can strip-mine it into staged K-panels).
+    // K-block loop (unit stride, so StripMining can strip-mine it into staged K-panels).
     auto k_tile = symbolic::symbol(builder.find_new_name("tile_k"));
     auto k_blocks = GpuMmaSupport::get_integer_block_count(k_dim, mma_tiling.mma_block_size.k);
     if (!k_blocks) {

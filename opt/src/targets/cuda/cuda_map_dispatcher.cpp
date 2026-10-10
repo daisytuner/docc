@@ -353,7 +353,7 @@ void CUDAMapDispatcher::dispatch_kernel_preamble(
     //   <map.indvar> = <map.init> + <thread_flat_id> * <map.stride>
     //
     // This lets the dispatcher consume Maps with arbitrary init / stride
-    // (e.g. block-tiled outer loops produced by LoopTiling). The bound check
+    // (e.g. block-tiled outer loops produced by StripMining). The bound check
     // in dispatch_kernel_body() guards on the flat id against num_iterations,
     // so out-of-grid threads are skipped before any body access.
     auto x_maps = gpu::get_gpu_maps<ScheduleType_CUDA>(node_, analysis_manager, CUDADimension::X);

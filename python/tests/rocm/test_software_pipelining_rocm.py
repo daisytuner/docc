@@ -18,7 +18,7 @@ from docc.sdfg import (
     BufferLifecycle,
     DataTransferDirection,
     LocalStorage,
-    LoopTiling,
+    StripMining,
     Pointer,
     PrimitiveType,
     Scalar,
@@ -135,7 +135,7 @@ def test_software_pipelining_cooperative_rocm(N, K, block, tile, stages, tmp_pat
 
     # Tile the reduction loop so each outer (panel) iteration stages a *new*
     # A[kt:kt+tile] shared tile — the structure software pipelining overlaps.
-    tiling = LoopTiling(inner, tile)
+    tiling = StripMining(inner, tile)
     assert tiling.can_be_applied(builder, am)
     tiling.apply(builder, am)
     panel = tiling.outer_loop

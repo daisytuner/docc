@@ -18,7 +18,7 @@ from docc.sdfg import (
     AnalysisManager,
     BufferLifecycle,
     DataTransferDirection,
-    LoopTiling,
+    StripMining,
     Pointer,
     LoopPeeling,
     PrimitiveType,
@@ -141,7 +141,7 @@ def test_loop_peeling_ragged_reduction(N, K, block, tile, predicate, tmp_path):
     # Tiling the reduction loop yields the inner condition `k < k_tile + tile`, plus a redundant
     # `k < K` guard only when the tile does not evenly divide K (a ragged remainder to peel).
     # simplify_bounds=True opts into dropping that guard for evenly-dividing tiles.
-    tiling = LoopTiling(inner, tile, simplify_bounds=True)
+    tiling = StripMining(inner, tile, simplify_bounds=True)
     assert tiling.can_be_applied(builder, am)
     tiling.apply(builder, am)
     tiled_inner = tiling.inner_loop
@@ -149,7 +149,7 @@ def test_loop_peeling_ragged_reduction(N, K, block, tile, predicate, tmp_path):
     pb = LoopPeeling(tiled_inner, predicate=predicate)
     inner_clean = (
         K % tile == 0
-    )  # evenly-dividing tile: LoopTiling already dropped the `k < K` guard
+    )  # evenly-dividing tile: StripMining already dropped the `k < K` guard
     if inner_clean:
         assert not pb.can_be_applied(
             builder, am

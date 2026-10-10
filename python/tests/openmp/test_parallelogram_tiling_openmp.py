@@ -16,7 +16,7 @@ from docc.sdfg import (
     LoopInterchange,
     LoopParallelization,
     LoopSkewing,
-    LoopTiling,
+    StripMining,
     OMPTransform,
     Pointer,
     PrimitiveType,
@@ -143,10 +143,10 @@ def test_parallelogram_tiling_gauss_seidel(N, M, tmp_path):
     builder = _build_gauss_seidel(M)
 
     # Parallelogram tiles (32x32): strip i, skew within the band, interchange, tile j, sweep tiles row-wise.
-    _apply(builder, LoopTiling(_loop(builder, "i"), 32))
+    _apply(builder, StripMining(_loop(builder, "i"), 32))
     _apply(builder, LoopSkewing(_loop(builder, "i"), _loop(builder, "j"), 1))
     _apply(builder, LoopInterchange(_loop(builder, "i"), _loop(builder, "j")))
-    _apply(builder, LoopTiling(_loop(builder, "j"), 32))
+    _apply(builder, StripMining(_loop(builder, "j"), 32))
     _apply(builder, LoopInterchange(_loop(builder, "j"), _loop(builder, "i")))
     # Tile distances (0,1), (1,0), (1,-1): wavefront 2*band + tile.
     _apply(
@@ -228,10 +228,10 @@ def test_parallelogram_tiling_jacobi_1d(T, N, tmp_path):
     builder = _build_jacobi_1d()
 
     # Parallelogram tiles (16x32): strip t, skew by the stencil slope, interchange, tile f, sweep tiles row-wise.
-    _apply(builder, LoopTiling(_loop(builder, "t"), 16))
+    _apply(builder, StripMining(_loop(builder, "t"), 16))
     _apply(builder, LoopSkewing(_loop(builder, "t"), _loop(builder, "f"), 2))
     _apply(builder, LoopInterchange(_loop(builder, "t"), _loop(builder, "f")))
-    _apply(builder, LoopTiling(_loop(builder, "f"), 32))
+    _apply(builder, StripMining(_loop(builder, "f"), 32))
     _apply(builder, LoopInterchange(_loop(builder, "f"), _loop(builder, "t")))
     # A band shifts by 2*16 = 32 = one tile: wavefront 2*band + tile, i.e. 4 per time step.
     _apply(

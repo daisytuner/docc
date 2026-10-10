@@ -8,8 +8,8 @@
 
 #include "sdfg/analysis/loop_analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
-#include "sdfg/transformations/loop_interchange.h"
-#include "sdfg/transformations/loop_tiling.h"
+#include "sdfg/loops/transformations/strip_mining.h"
+#include "sdfg/reordering/transformations/loop_interchange.h"
 #include "sdfg/types/pointer.h"
 #include "sdfg/types/type.h"
 
@@ -65,14 +65,14 @@ TEST_F(RecorderLoopTilingTest, Apply_LoopTiling) {
 
     EXPECT_TRUE(loop_ != nullptr);
     EXPECT_TRUE(analysis_manager_ != nullptr);
-    EXPECT_NO_THROW(recorder.apply<transformations::LoopTiling>(*builder_, *analysis_manager_, true, *loop_, 32));
+    EXPECT_NO_THROW(recorder.apply<loops::StripMining>(*builder_, *analysis_manager_, true, *loop_, 32));
 }
 
 TEST_F(RecorderLoopTilingTest, Apply_InvalidTransformation) {
     transformations::Recorder recorder;
 
     EXPECT_THROW(
-        recorder.apply<transformations::LoopTiling>(*builder_, *analysis_manager_, false, *loop_, 0),
+        recorder.apply<loops::StripMining>(*builder_, *analysis_manager_, false, *loop_, 0),
         transformations::InvalidTransformationException
     );
 }
@@ -82,7 +82,7 @@ TEST_F(RecorderLoopTilingTest, Save_SingleTransformation) {
 
     size_t loop_id = loop_->element_id();
 
-    EXPECT_NO_THROW(recorder.apply<transformations::LoopTiling>(*builder_, *analysis_manager_, true, *loop_, 32));
+    EXPECT_NO_THROW(recorder.apply<loops::StripMining>(*builder_, *analysis_manager_, true, *loop_, 32));
 
     // Use temporary file to save the transformation
     std::filesystem::path tmp_file = std::filesystem::temp_directory_path() / "Save_SingleTransformation.json";
@@ -98,7 +98,7 @@ TEST_F(RecorderLoopTilingTest, Save_SingleTransformation) {
 
     EXPECT_TRUE(j.is_array());
     EXPECT_EQ(j.size(), 1);
-    EXPECT_EQ(j[0]["transformation_type"], "LoopTiling");
+    EXPECT_EQ(j[0]["transformation_type"], "StripMining");
     EXPECT_EQ(j[0]["parameters"]["tile_size"], 32);
     EXPECT_EQ(j[0]["subgraph"]["0"]["element_id"], loop_id);
 }
@@ -110,12 +110,29 @@ TEST_F(RecorderLoopTilingTest, Replay_Transformations) {
 
     nlohmann::json j_array = nlohmann::json::array();
     nlohmann::json j;
-    j["transformation_type"] = "LoopTiling";
+    j["transformation_type"] = "StripMining";
     j["subgraph"] = {{"0", {{"element_id", 1}, {"type", "for"}}}};
     j["parameters"] = {{"tile_size", 0}};
     j_array.push_back(j);
 
     EXPECT_NO_THROW(replayer.replay(*builder_, *analysis_manager_, j_array));
+}
+
+TEST_F(RecorderLoopTilingTest, Replay_LegacyLoopTilingName) {
+    transformations::Replayer replayer;
+
+    nlohmann::json j_array = nlohmann::json::array();
+    nlohmann::json j;
+    j["transformation_type"] = "LoopTiling";
+    j["subgraph"] = {{"0", {{"element_id", loop_->element_id()}, {"type", "for"}}}};
+    j["parameters"] = {{"tile_size", 32}};
+    j_array.push_back(j);
+
+    EXPECT_NO_THROW(replayer.replay(*builder_, *analysis_manager_, j_array));
+    EXPECT_EQ(builder_->subject().root().size(), 1);
+    auto* outer = dynamic_cast<structured_control_flow::For*>(&builder_->subject().root().at(0));
+    ASSERT_NE(outer, nullptr);
+    EXPECT_NE(dynamic_cast<structured_control_flow::For*>(&outer->root().at(0)), nullptr);
 }
 
 class RecorderMultiTransformationTest : public ::testing::Test {
@@ -210,8 +227,8 @@ TEST_F(RecorderMultiTransformationTest, Apply_LoopInterchange) {
     }
     EXPECT_TRUE((loop_1_ != nullptr && loop_2_ != nullptr));
 
-    EXPECT_NO_THROW(recorder.apply<
-                    transformations::LoopInterchange>(*builder_, *analysis_manager_, true, *loop_1_, *loop_2_));
+    EXPECT_NO_THROW(recorder
+                        .apply<reordering::LoopInterchange>(*builder_, *analysis_manager_, true, *loop_1_, *loop_2_));
 }
 
 TEST_F(RecorderMultiTransformationTest, Apply_Transformations) {
@@ -234,7 +251,7 @@ TEST_F(RecorderMultiTransformationTest, Apply_Transformations) {
         }
     }
     EXPECT_TRUE(loop_1_ != nullptr);
-    recorder.apply<transformations::LoopTiling>(*builder_, *analysis_manager_, true, *loop_1_, 32);
+    recorder.apply<loops::StripMining>(*builder_, *analysis_manager_, true, *loop_1_, 32);
 
     analysis_manager_->invalidate_all();
 
@@ -248,7 +265,7 @@ TEST_F(RecorderMultiTransformationTest, Apply_Transformations) {
     }
 
     EXPECT_TRUE(loop_2_ != nullptr);
-    recorder.apply<transformations::LoopTiling>(*builder_, *analysis_manager_, true, *loop_2_, 16);
+    recorder.apply<loops::StripMining>(*builder_, *analysis_manager_, true, *loop_2_, 16);
 
     analysis_manager_->invalidate_all();
 
@@ -273,7 +290,7 @@ TEST_F(RecorderMultiTransformationTest, Apply_Transformations) {
     EXPECT_TRUE(loop_j_outer_id != 0);
 
     EXPECT_NO_THROW(recorder.apply<
-                    transformations::LoopInterchange>(*builder_, *analysis_manager_, true, *loop_i_tile, *loop_j_outer));
+                    reordering::LoopInterchange>(*builder_, *analysis_manager_, true, *loop_i_tile, *loop_j_outer));
 
     /**** Save ****/
 
@@ -288,11 +305,11 @@ TEST_F(RecorderMultiTransformationTest, Apply_Transformations) {
 
     EXPECT_TRUE(j.is_array());
     EXPECT_EQ(j.size(), 3);
-    EXPECT_EQ(j[0]["transformation_type"], "LoopTiling");
+    EXPECT_EQ(j[0]["transformation_type"], "StripMining");
     EXPECT_EQ(j[0]["parameters"]["tile_size"], 32);
     EXPECT_EQ(j[0]["subgraph"]["0"]["element_id"], 1);
 
-    EXPECT_EQ(j[1]["transformation_type"], "LoopTiling");
+    EXPECT_EQ(j[1]["transformation_type"], "StripMining");
     EXPECT_EQ(j[1]["parameters"]["tile_size"], 16);
     EXPECT_EQ(j[1]["subgraph"]["0"]["element_id"], 3);
 
@@ -306,13 +323,13 @@ TEST_F(RecorderMultiTransformationTest, Replay_Transformations) {
 
     nlohmann::json j_array = nlohmann::json::array();
     nlohmann::json j;
-    j["transformation_type"] = "LoopTiling";
+    j["transformation_type"] = "StripMining";
     j["subgraph"] = {{"0", {{"element_id", 1}, {"type", "for"}}}};
     j["parameters"] = {{"tile_size", 32}};
     j_array.push_back(j);
 
     nlohmann::json j1;
-    j1["transformation_type"] = "LoopTiling";
+    j1["transformation_type"] = "StripMining";
     j1["subgraph"] = {{"0", {{"element_id", 3}, {"type", "map"}}}};
     j1["parameters"] = {{"tile_size", 16}};
     j_array.push_back(j1);
@@ -328,7 +345,7 @@ TEST_F(RecorderMultiTransformationTest, Replay_Transformations) {
 TEST_F(RecorderMultiTransformationTest, Replay_InvalidTransformation) {
     nlohmann::json j_array = nlohmann::json::array();
     nlohmann::json j;
-    j["transformation_type"] = "LoopTiling";
+    j["transformation_type"] = "StripMining";
     j["subgraph"] = {{"0", {{"element_id", 1}, {"type", "for"}}}};
     j["parameters"] = {{"tile_size", 0}};
     j_array.push_back(j);
@@ -421,12 +438,12 @@ TEST_F(ReplayerTest, Replay_Transformations) {
 
     nlohmann::json j = nlohmann::json::array();
     j.push_back(
-        {{"transformation_type", "LoopTiling"},
+        {{"transformation_type", "StripMining"},
          {"subgraph", {{"0", {{"element_id", 1}, {"type", "map"}}}}},
          {"parameters", {{"tile_size", 32}}}}
     );
     j.push_back(
-        {{"transformation_type", "LoopTiling"},
+        {{"transformation_type", "StripMining"},
          {"subgraph", {{"0", {{"element_id", 3}, {"type", "map"}}}}},
          {"parameters", {{"tile_size", 16}}}}
     );
@@ -441,7 +458,7 @@ TEST_F(ReplayerTest, Replay_Transformations) {
 TEST_F(ReplayerTest, Replay_InvalidTransformation) {
     nlohmann::json j = nlohmann::json::array();
     j.push_back(
-        {{"transformation_type", "LoopTiling"},
+        {{"transformation_type", "StripMining"},
          {"subgraph", {{"0", {{"element_id", 1}, {"type", "map"}}}}},
          {"parameters", {{"tile_size", 0}}}}
     );

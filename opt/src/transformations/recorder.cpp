@@ -1,7 +1,7 @@
+#include <sdfg/loops/transformations/strip_mining.h>
+#include <sdfg/reordering/transformations/loop_distribute.h>
+#include <sdfg/reordering/transformations/loop_interchange.h>
 #include <sdfg/tiles/transformations/tile_fusion.h>
-#include <sdfg/transformations/loop_distribute.h>
-#include <sdfg/transformations/loop_interchange.h>
-#include <sdfg/transformations/loop_tiling.h>
 #include <sdfg/transformations/recorder.h>
 
 namespace sdfg {

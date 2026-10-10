@@ -27,7 +27,7 @@ from docc.sdfg import (
     GpuMmaEinsumTransform,
     IfElse,
     LocalStorage,
-    LoopTiling,
+    StripMining,
     Pointer,
     PrimitiveType,
     RocmArch,
@@ -98,7 +98,7 @@ def _localize_operands(builder, a_name, b_name, k_panel_blocks=2):
     am = AnalysisManager(builder)
     k_loop = am.loop_analysis().find_loop_by_indvar("tile_k0")
     assert k_loop is not None, "expander must create the 'tile_k0' K-block loop"
-    tiling = LoopTiling(k_loop, k_panel_blocks, True)
+    tiling = StripMining(k_loop, k_panel_blocks, True)
     assert tiling.can_be_applied(builder, am)
     tiling.apply(builder, am)
 

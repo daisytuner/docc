@@ -3,13 +3,13 @@
 #include <memory>
 
 #include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/loops/transformations/loop_skewing.h"
+#include "sdfg/loops/transformations/strip_mining.h"
 #include "sdfg/parallelization/passes/auto_parallelization.h"
+#include "sdfg/reordering/transformations/loop_interchange.h"
 #include "sdfg/structured_control_flow/for.h"
 #include "sdfg/structured_control_flow/if_else.h"
 #include "sdfg/structured_control_flow/map.h"
-#include "sdfg/transformations/loop_interchange.h"
-#include "sdfg/transformations/loop_skewing.h"
-#include "sdfg/transformations/loop_tiling.h"
 
 namespace parallelogram_tiling_test {
 
@@ -155,7 +155,7 @@ TEST(ParallelogramTilingTest, Wavefront_Unskewed_Illegal) {
     analysis::AnalysisManager am(builder->subject());
     auto& root = builder->subject().root();
 
-    transformations::LoopInterchange interchange(loop_at(root, {0}), loop_at(root, {0, 0}));
+    reordering::LoopInterchange interchange(loop_at(root, {0}), loop_at(root, {0, 0}));
     EXPECT_FALSE(interchange.can_be_applied(*builder, am));
 }
 
@@ -164,12 +164,8 @@ TEST(ParallelogramTilingTest, Wavefront_Skew1_InnerSequential) {
     analysis::AnalysisManager am(builder->subject());
     auto& root = builder->subject().root();
 
-    ASSERT_NO_FATAL_FAILURE(
-        apply(*builder, am, transformations::LoopSkewing(loop_at(root, {0}), loop_at(root, {0, 0}), 1))
-    );
-    ASSERT_NO_FATAL_FAILURE(
-        apply(*builder, am, transformations::LoopInterchange(loop_at(root, {0}), loop_at(root, {0, 0})))
-    );
+    ASSERT_NO_FATAL_FAILURE(apply(*builder, am, loops::LoopSkewing(loop_at(root, {0}), loop_at(root, {0, 0}), 1)));
+    ASSERT_NO_FATAL_FAILURE(apply(*builder, am, reordering::LoopInterchange(loop_at(root, {0}), loop_at(root, {0, 0}))));
 
     // (1, -1) skewed by 1 is (1, 0) in (i, j'), i.e. (0, 1) in (j', i): still carried by the inner i.
     parallelization::AutoParallelization classification;
@@ -183,12 +179,8 @@ TEST(ParallelogramTilingTest, Wavefront_Skew2_InnerParallel) {
     analysis::AnalysisManager am(builder->subject());
     auto& root = builder->subject().root();
 
-    ASSERT_NO_FATAL_FAILURE(
-        apply(*builder, am, transformations::LoopSkewing(loop_at(root, {0}), loop_at(root, {0, 0}), 2))
-    );
-    ASSERT_NO_FATAL_FAILURE(
-        apply(*builder, am, transformations::LoopInterchange(loop_at(root, {0}), loop_at(root, {0, 0})))
-    );
+    ASSERT_NO_FATAL_FAILURE(apply(*builder, am, loops::LoopSkewing(loop_at(root, {0}), loop_at(root, {0, 0}), 2)));
+    ASSERT_NO_FATAL_FAILURE(apply(*builder, am, reordering::LoopInterchange(loop_at(root, {0}), loop_at(root, {0, 0}))));
 
     parallelization::AutoParallelization classification;
     classification.run(*builder, am);
@@ -206,23 +198,17 @@ TEST(ParallelogramTilingTest, TileWavefront_GaussSeidel) {
     analysis::AnalysisManager am(builder->subject());
     auto& root = builder->subject().root();
 
-    ASSERT_NO_FATAL_FAILURE(apply(*builder, am, transformations::LoopTiling(loop_at(root, {0}), 32)));
+    ASSERT_NO_FATAL_FAILURE(apply(*builder, am, loops::StripMining(loop_at(root, {0}), 32)));
+    ASSERT_NO_FATAL_FAILURE(apply(*builder, am, loops::LoopSkewing(loop_at(root, {0, 0}), loop_at(root, {0, 0, 0}), 1)));
     ASSERT_NO_FATAL_FAILURE(
-        apply(*builder, am, transformations::LoopSkewing(loop_at(root, {0, 0}), loop_at(root, {0, 0, 0}), 1))
+        apply(*builder, am, reordering::LoopInterchange(loop_at(root, {0, 0}), loop_at(root, {0, 0, 0})))
     );
+    ASSERT_NO_FATAL_FAILURE(apply(*builder, am, loops::StripMining(loop_at(root, {0, 0}), 32)));
     ASSERT_NO_FATAL_FAILURE(
-        apply(*builder, am, transformations::LoopInterchange(loop_at(root, {0, 0}), loop_at(root, {0, 0, 0})))
+        apply(*builder, am, reordering::LoopInterchange(loop_at(root, {0, 0, 0}), loop_at(root, {0, 0, 0, 0})))
     );
-    ASSERT_NO_FATAL_FAILURE(apply(*builder, am, transformations::LoopTiling(loop_at(root, {0, 0}), 32)));
-    ASSERT_NO_FATAL_FAILURE(
-        apply(*builder, am, transformations::LoopInterchange(loop_at(root, {0, 0, 0}), loop_at(root, {0, 0, 0, 0})))
-    );
-    ASSERT_NO_FATAL_FAILURE(
-        apply(*builder, am, transformations::LoopSkewing(loop_at(root, {0}), loop_at(root, {0, 0}), 2))
-    );
-    ASSERT_NO_FATAL_FAILURE(
-        apply(*builder, am, transformations::LoopInterchange(loop_at(root, {0}), loop_at(root, {0, 0})))
-    );
+    ASSERT_NO_FATAL_FAILURE(apply(*builder, am, loops::LoopSkewing(loop_at(root, {0}), loop_at(root, {0, 0}), 2)));
+    ASSERT_NO_FATAL_FAILURE(apply(*builder, am, reordering::LoopInterchange(loop_at(root, {0}), loop_at(root, {0, 0}))));
 
     parallelization::AutoParallelization classification;
     classification.run(*builder, am);
@@ -241,23 +227,17 @@ TEST(ParallelogramTilingTest, TileWavefront_Jacobi1D) {
     analysis::AnalysisManager am(builder->subject());
     auto& root = builder->subject().root();
 
-    ASSERT_NO_FATAL_FAILURE(apply(*builder, am, transformations::LoopTiling(loop_at(root, {0}), 16)));
+    ASSERT_NO_FATAL_FAILURE(apply(*builder, am, loops::StripMining(loop_at(root, {0}), 16)));
+    ASSERT_NO_FATAL_FAILURE(apply(*builder, am, loops::LoopSkewing(loop_at(root, {0, 0}), loop_at(root, {0, 0, 0}), 2)));
     ASSERT_NO_FATAL_FAILURE(
-        apply(*builder, am, transformations::LoopSkewing(loop_at(root, {0, 0}), loop_at(root, {0, 0, 0}), 2))
+        apply(*builder, am, reordering::LoopInterchange(loop_at(root, {0, 0}), loop_at(root, {0, 0, 0})))
     );
+    ASSERT_NO_FATAL_FAILURE(apply(*builder, am, loops::StripMining(loop_at(root, {0, 0}), 32)));
     ASSERT_NO_FATAL_FAILURE(
-        apply(*builder, am, transformations::LoopInterchange(loop_at(root, {0, 0}), loop_at(root, {0, 0, 0})))
+        apply(*builder, am, reordering::LoopInterchange(loop_at(root, {0, 0, 0}), loop_at(root, {0, 0, 0, 0})))
     );
-    ASSERT_NO_FATAL_FAILURE(apply(*builder, am, transformations::LoopTiling(loop_at(root, {0, 0}), 32)));
-    ASSERT_NO_FATAL_FAILURE(
-        apply(*builder, am, transformations::LoopInterchange(loop_at(root, {0, 0, 0}), loop_at(root, {0, 0, 0, 0})))
-    );
-    ASSERT_NO_FATAL_FAILURE(
-        apply(*builder, am, transformations::LoopSkewing(loop_at(root, {0}), loop_at(root, {0, 0}), 4))
-    );
-    ASSERT_NO_FATAL_FAILURE(
-        apply(*builder, am, transformations::LoopInterchange(loop_at(root, {0}), loop_at(root, {0, 0})))
-    );
+    ASSERT_NO_FATAL_FAILURE(apply(*builder, am, loops::LoopSkewing(loop_at(root, {0}), loop_at(root, {0, 0}), 4)));
+    ASSERT_NO_FATAL_FAILURE(apply(*builder, am, reordering::LoopInterchange(loop_at(root, {0}), loop_at(root, {0, 0}))));
 
     // AutoParallelization is not run: its dependence analysis does not finish on these bounds yet.
     expect_loop(loop_at(root, {0}), "f_tile0", 32, false);

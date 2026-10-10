@@ -1,5 +1,6 @@
 #include "sdfg/passes/scheduler/cuda_offload_scheduler.h"
 
+#include "sdfg/loops/passes/tiling_pass.h"
 #include "sdfg/passes/dataflow/dead_data_elimination.h"
 #include "sdfg/passes/dataflow/memlet_simplification.h"
 #include "sdfg/passes/offloading/cuda_library_node_transfer_extraction_pass.h"
@@ -8,7 +9,6 @@
 #include "sdfg/passes/scheduler/loop_scheduler.h"
 #include "sdfg/passes/structured_control_flow/dead_cfg_elimination.h"
 #include "sdfg/passes/symbolic/symbol_propagation.h"
-#include "sdfg/passes/tiling_pass.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/structured_control_flow/reduce.h"
 #include "sdfg/symbolic/symbolic.h"
@@ -119,7 +119,7 @@ void CUDAOffloadScheduler::pre_schedule(
     }
 
     // Tile the single loops to expose an outer parallel loop.
-    TilingPass tiling_pass(single_loops, 128);
+    loops::TilingPass tiling_pass(single_loops, 128);
     tiling_pass.run(builder, analysis_manager);
     analysis_manager.invalidate_all();
 

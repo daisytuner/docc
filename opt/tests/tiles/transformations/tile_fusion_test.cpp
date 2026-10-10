@@ -6,11 +6,11 @@
 
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/loops/transformations/strip_mining.h"
 #include "sdfg/passes/structured_control_flow/dead_cfg_elimination.h"
 #include "sdfg/passes/structured_control_flow/sequence_fusion.h"
 #include "sdfg/structured_control_flow/for.h"
 #include "sdfg/structured_control_flow/map.h"
-#include "sdfg/transformations/loop_tiling.h"
 #include "sdfg/types/array.h"
 #include "sdfg/types/scalar.h"
 
@@ -187,7 +187,7 @@ TEST(TileFusionTest, Jacobi1D_Basic) {
     ASSERT_NE(k2, nullptr);
 
     // Tile K1
-    transformations::LoopTiling tiling_k1(*k1, 32);
+    loops::StripMining tiling_k1(*k1, 32);
     ASSERT_TRUE(tiling_k1.can_be_applied(builder_opt, analysis_manager));
     tiling_k1.apply(builder_opt, analysis_manager);
     auto* k1_outer = dyn_cast<structured_control_flow::Map*>(tiling_k1.outer_loop());
@@ -196,7 +196,7 @@ TEST(TileFusionTest, Jacobi1D_Basic) {
     ASSERT_NE(k1_inner, nullptr);
 
     // Tile K2
-    transformations::LoopTiling tiling_k2(*k2, 32);
+    loops::StripMining tiling_k2(*k2, 32);
     ASSERT_TRUE(tiling_k2.can_be_applied(builder_opt, analysis_manager));
     tiling_k2.apply(builder_opt, analysis_manager);
     auto* k2_outer = dyn_cast<structured_control_flow::Map*>(tiling_k2.outer_loop());
@@ -689,11 +689,11 @@ TEST(TileFusionTest, Jacobi1D_DoubleBufferContainers) {
     auto* k1 = dyn_cast<structured_control_flow::Map*>(&time_loop->root().at(0));
     auto* k2 = dyn_cast<structured_control_flow::Map*>(&time_loop->root().at(1));
 
-    transformations::LoopTiling tiling_k1(*k1, 32);
+    loops::StripMining tiling_k1(*k1, 32);
     ASSERT_TRUE(tiling_k1.can_be_applied(builder_opt, analysis_manager));
     tiling_k1.apply(builder_opt, analysis_manager);
 
-    transformations::LoopTiling tiling_k2(*k2, 32);
+    loops::StripMining tiling_k2(*k2, 32);
     ASSERT_TRUE(tiling_k2.can_be_applied(builder_opt, analysis_manager));
     tiling_k2.apply(builder_opt, analysis_manager);
 
@@ -801,10 +801,10 @@ TEST(TileFusionTest, Jacobi1D_CopyLoopTargets) {
     auto* k1 = dyn_cast<structured_control_flow::Map*>(&time_loop->root().at(0));
     auto* k2 = dyn_cast<structured_control_flow::Map*>(&time_loop->root().at(1));
 
-    transformations::LoopTiling tiling_k1(*k1, 32);
+    loops::StripMining tiling_k1(*k1, 32);
     tiling_k1.can_be_applied(builder_opt, analysis_manager);
     tiling_k1.apply(builder_opt, analysis_manager);
-    transformations::LoopTiling tiling_k2(*k2, 32);
+    loops::StripMining tiling_k2(*k2, 32);
     tiling_k2.can_be_applied(builder_opt, analysis_manager);
     tiling_k2.apply(builder_opt, analysis_manager);
 
@@ -989,10 +989,10 @@ TEST(TileFusionTest, Jacobi1D_Serialization) {
     auto* k1 = dyn_cast<structured_control_flow::Map*>(&time_loop->root().at(0));
     auto* k2 = dyn_cast<structured_control_flow::Map*>(&time_loop->root().at(1));
 
-    transformations::LoopTiling tiling_k1(*k1, 32);
+    loops::StripMining tiling_k1(*k1, 32);
     tiling_k1.can_be_applied(builder_opt, analysis_manager);
     tiling_k1.apply(builder_opt, analysis_manager);
-    transformations::LoopTiling tiling_k2(*k2, 32);
+    loops::StripMining tiling_k2(*k2, 32);
     tiling_k2.can_be_applied(builder_opt, analysis_manager);
     tiling_k2.apply(builder_opt, analysis_manager);
 
