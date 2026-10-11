@@ -12,6 +12,7 @@
 #include "sdfg/data_flow/library_node.h"
 #include "sdfg/data_flow/library_nodes/atomic_op_node.h"
 #include "sdfg/data_flow/library_nodes/barrier_local_node.h"
+#include "sdfg/data_flow/library_nodes/math/cmath/cmath_node.h"
 #include "sdfg/data_flow/library_nodes/math/math_node.h"
 #include "sdfg/data_flow/tasklet.h"
 #include "sdfg/structured_control_flow/block.h"
@@ -608,7 +609,8 @@ bool LocalStorage::prepare(builder::StructuredSDFGBuilder& builder, analysis::An
         auto& mla = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
         for (const auto* m : group_memlets_) {
             const auto* lib = dynamic_cast<const data_flow::LibraryNode*>(&m->dst());
-            if (lib == nullptr) {
+            // CMath operands are scalar element accesses, rewritten like tasklet inputs.
+            if (lib == nullptr || dynamic_cast<const math::cmath::CMathNode*>(lib)) {
                 continue;
             }
             const auto& inputs = lib->inputs();
@@ -1313,7 +1315,8 @@ void LocalStorage::rewrite_body(
                 // A library-node operand is a bare base pointer addressed via the
                 // node's own layout, not a per-element subset. Repoint it at the
                 // local buffer and hand the node its view of that buffer.
-                if (auto* lib = dynamic_cast<data_flow::LibraryNode*>(&memlet.dst())) {
+                auto* lib = dynamic_cast<data_flow::LibraryNode*>(&memlet.dst());
+                if (lib != nullptr && dynamic_cast<math::cmath::CMathNode*>(lib) == nullptr) {
                     const auto& inputs = lib->inputs();
                     auto it = std::find(inputs.begin(), inputs.end(), memlet.dst_conn());
                     const auto* acc = mla.access(memlet);
