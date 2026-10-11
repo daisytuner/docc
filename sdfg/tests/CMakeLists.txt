@@ -83,6 +83,7 @@ set(TEST_FILES
     passes/dataflow/dead_data_elimination_test.cpp
     passes/dataflow/local_buffer_reuse_test.cpp
     passes/dataflow/memlet_linearization_test.cpp
+    passes/dataflow/approximate_math_test.cpp
     passes/dataflow/memlet_simplification_test.cpp
     passes/dataflow/reference_propagation_test.cpp
     passes/dataflow/tasklet_fusion_test.cpp
