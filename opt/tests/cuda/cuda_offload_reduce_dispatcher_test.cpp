@@ -6,6 +6,7 @@
 
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/codegen/language_extensions/c_language_extension.h"
+#include "sdfg/data_flow/library_nodes/math/cmath/cmath_node.h"
 #include "sdfg/data_flow/tasklet.h"
 #include "sdfg/passes/offloading/reduction_shared_memory_delinearization.h"
 #include "sdfg/serializer/json_serializer.h"
@@ -448,15 +449,21 @@ void add_accumulate(
 }
 
 // Block-level reduce carrying the max anchor `m[0]` and `d[0]` rescaled by exp(m); with
-// @p indexed, also an `o[j]` (j < 8) dependent like a FlashAttention output row.
-std::string
-dispatch_rescale_reduce(int64_t block_threads, bool indexed, gpu::TargetLevel level = gpu::TargetLevel::X_BLOCK) {
+// @p indexed, also an `o[j]` (j < 8) dependent like a FlashAttention output row. With
+// @p body_exp, the body also evaluates a CMath exp with that approximate flag.
+std::string dispatch_rescale_reduce(
+    int64_t block_threads,
+    bool indexed,
+    gpu::TargetLevel level = gpu::TargetLevel::X_BLOCK,
+    std::optional<bool> body_exp = std::nullopt
+) {
     builder::StructuredSDFGBuilder builder("rescale", FunctionType_CPU);
     auto& root = builder.subject().root();
     types::Scalar base_desc(types::PrimitiveType::Float);
     types::Pointer pointer_type(types::StorageType::NV_Generic(), 0, "", base_desc);
     builder.add_container("i", types::Scalar(types::PrimitiveType::Int32));
     builder.add_container("j", types::Scalar(types::PrimitiveType::Int32));
+    builder.add_container("t", base_desc);
     for (const auto* name : {"A", "m", "d", "o"}) {
         builder.add_container(name, pointer_type);
     }
@@ -480,6 +487,17 @@ dispatch_rescale_reduce(int64_t block_threads, bool indexed, gpu::TargetLevel le
     );
     add_accumulate(builder, reduce.root(), "m", symbolic::zero(), pointer_type);
     add_accumulate(builder, reduce.root(), "d", symbolic::zero(), pointer_type);
+    if (body_exp.has_value()) {
+        auto& block = builder.add_block(reduce.root());
+        auto& exp_node = static_cast<math::cmath::CMathNode&>(builder.add_library_node<math::cmath::CMathNode>(
+            block, DebugInfo(), math::cmath::CMathFunction::exp, types::PrimitiveType::Float
+        ));
+        exp_node.approximate(*body_exp);
+        builder.add_computational_memlet(
+            block, builder.add_access(block, "A"), exp_node, "_in1", {symbolic::symbol("i")}, pointer_type
+        );
+        builder.add_computational_memlet(block, exp_node, "_out", builder.add_access(block, "t"), {}, base_desc);
+    }
     if (indexed) {
         auto j = symbolic::symbol("j");
         auto& map = builder.add_map(
@@ -562,6 +580,16 @@ TEST(CUDAOffloadReduceDispatcherTest, RescaleGroup_IndexedDependent) {
 TEST(CUDAOffloadReduceDispatcherTest, RescaleGroup_RequiresWarpShuffleWidth) {
     // 48 threads: lane groups of 32 do not tile the row.
     EXPECT_THROW(dispatch_rescale_reduce(48, false), InvalidSDFGException);
+}
+
+// The combine's exp follows the precision the body's exp was compiled with.
+TEST(CUDAOffloadReduceDispatcherTest, RescaleGroup_ExpFollowsApproximateFlag) {
+    std::string precise = dispatch_rescale_reduce(32, false, gpu::TargetLevel::X_BLOCK, false);
+    EXPECT_NE(precise.find("expf((float)((__daisy_rescale"), std::string::npos);
+    EXPECT_EQ(precise.find("__expf"), std::string::npos);
+
+    std::string approximate = dispatch_rescale_reduce(32, false, gpu::TargetLevel::X_BLOCK, true);
+    EXPECT_NE(approximate.find("__expf((float)((__daisy_rescale"), std::string::npos);
 }
 
 } // namespace sdfg::cuda

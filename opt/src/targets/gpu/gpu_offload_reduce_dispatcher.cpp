@@ -30,12 +30,14 @@
 #include <algorithm>
 #include <functional>
 #include <sdfg/data_flow/access_node.h>
+#include <sdfg/data_flow/library_nodes/math/cmath/cmath_node.h>
 #include <sdfg/data_flow/memlet.h>
 #include <sdfg/structured_control_flow/block.h>
 #include <sdfg/structured_control_flow/reduce.h>
 #include <sdfg/types/pointer.h>
 #include <sdfg/types/scalar.h>
 #include <sdfg/types/utils.h>
+#include <sdfg/visitor/for_each.h>
 
 namespace sdfg {
 namespace gpu {
@@ -764,11 +766,25 @@ void GPUOffloadReduceDispatcher::dispatch_rescale_group_combine(
     const bool is_double = prim == types::PrimitiveType::Double;
     const std::string ftype = is_double ? "double" : "float";
 
-    std::string exp_fn;
-    if (dependents.front()->rescale_base == structured_control_flow::RescaleBase::E) {
-        exp_fn = is_double ? "exp" : "expf";
-    } else {
-        exp_fn = is_double ? "exp2" : "exp2f";
+    const bool base_e = dependents.front()->rescale_base == structured_control_flow::RescaleBase::E;
+    const auto exp_function = base_e ? math::cmath::CMathFunction::exp : math::cmath::CMathFunction::exp2;
+    const auto exp_type = is_double ? types::PrimitiveType::Double : types::PrimitiveType::Float;
+    // The combine uses the body's precision choice: approximate iff the body's exp is.
+    bool approximate = false;
+    visitor::for_each_block(node_.root(), [&](structured_control_flow::Block& block) {
+        for (auto* lib : block.dataflow().library_nodes()) {
+            auto* cmath = dynamic_cast<const math::cmath::CMathNode*>(lib);
+            if (cmath != nullptr && cmath->function() == exp_function && cmath->approximate()) {
+                approximate = true;
+            }
+        }
+    });
+    std::string exp_fn = math::cmath::get_cmath_intrinsic_name(exp_function, exp_type);
+    if (approximate) {
+        auto fast = math::cmath::get_cmath_approximate_intrinsic_name(exp_function, exp_type);
+        if (!fast.empty()) {
+            exp_fn = fast;
+        }
     }
     // Factor that moves a partial anchored at `from` to the merged anchor `to`; the equality
     // case keeps identity partials (anchor -inf) from producing exp(-inf - -inf) = NaN.
