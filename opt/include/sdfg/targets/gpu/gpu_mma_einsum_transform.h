@@ -11,10 +11,12 @@ class GpuMmaEinsumReplacer : public einsum::Einsum2MatMul {
     const GpuArch* arch_;
     int wave_tile_m_;
     int wave_tile_n_;
+    std::string mma_shape_;
 
 public:
-    /// @p wave_tile_m x @p wave_tile_n MMA blocks per wave (register blocking).
-    GpuMmaEinsumReplacer(const GpuArch* arch, int wave_tile_m = 1, int wave_tile_n = 1);
+    /// @p wave_tile_m x @p wave_tile_n MMA blocks per wave (register blocking); @p mma_shape selects the
+    /// MMA atom (e.g. "32x32x8"), empty for the arch default.
+    GpuMmaEinsumReplacer(const GpuArch* arch, int wave_tile_m = 1, int wave_tile_n = 1, const std::string& mma_shape = "");
 
     struct EinsumMmaAnalysis : public MatMulAnalysis {};
 
@@ -28,6 +30,8 @@ public:
 protected:
     bool matches_possible_mma_pattern(const MatMulAnalysis& analysis) const;
     bool wave_tile_divides(const MatMulAnalysis& analysis) const;
+    /// The selected MMA atom, or null if the arch does not offer it.
+    const GpuMmaSupport* mma_support() const;
 };
 
 class GpuMmaEinsumTransform : public transformations::Transformation {
@@ -36,6 +40,7 @@ class GpuMmaEinsumTransform : public transformations::Transformation {
     const gpu::GpuArch* arch_;
     int wave_tile_m_;
     int wave_tile_n_;
+    std::string mma_shape_;
 
 protected:
     /// the einsum parts modify the SDFG in place, so WILL ALWAYS CHANGE IT. We need to revert the changes if we did not
@@ -46,7 +51,11 @@ protected:
 
 public:
     GpuMmaEinsumTransform(
-        StructuredLoop& outermoost_mma_loop, const gpu::GpuArch* arch = nullptr, int wave_tile_m = 1, int wave_tile_n = 1
+        StructuredLoop& outermoost_mma_loop,
+        const gpu::GpuArch* arch = nullptr,
+        int wave_tile_m = 1,
+        int wave_tile_n = 1,
+        const std::string& mma_shape = ""
     );
 
     std::string name() const override {

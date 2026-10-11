@@ -631,17 +631,19 @@ void register_transformations(py::module& m) {
 
     py::class_<sdfg::gpu::GpuMmaEinsumTransform, Transformation>(m, "GpuMmaEinsumTransform")
         .def(
-            py::init<StructuredLoop&, const sdfg::gpu::GpuArch*, int, int>(),
+            py::init<StructuredLoop&, const sdfg::gpu::GpuArch*, int, int, const std::string&>(),
             py::arg("outermost_mma_loop"),
             py::arg("arch") = nullptr,
             py::arg("wave_tile_m") = 1,
             py::arg("wave_tile_n") = 1,
+            py::arg("mma_shape") = "",
             "Transform will try to match up the loop-nest given as Matmul of 1 or multiple MMA blocks using Einsum "
             "detection.\n\n"
             "Args:\n"
             "    outermost_mma_loop (StructuredLoop): The outermost loop of the supposed MMA block.\n"
             "    arch (GpuArch): The GPU architecture. If none, infer.\n"
             "    wave_tile_m, wave_tile_n (int): MMA blocks per wave (register blocking); must divide the block tile.\n"
+            "    mma_shape (str): MMA atom, e.g. \"32x32x8\" (raw MFMA on CDNA); empty uses the arch default.\n"
         )
         .def_property_readonly(
             "matched", &sdfg::gpu::GpuMmaEinsumTransform::matched, "Whether the node was expanded (valid after apply())"

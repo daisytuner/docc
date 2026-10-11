@@ -88,7 +88,7 @@ def _access_in_loop(loop, container, want_read=True):
     return node
 
 
-def _localize_operands(builder, a_name, b_name, k_panel_blocks=2):
+def _localize_operands(builder, a_name, b_name, k_panel_blocks=2, transpose_b=False):
     """Stage the A and B global tiles into LDS per K-panel.
 
     Mirrors ``agent_rocm.py`` Step 5: the expander's K-block loop ``tile_k0`` is
@@ -106,7 +106,13 @@ def _localize_operands(builder, a_name, b_name, k_panel_blocks=2):
         am = AnalysisManager(builder)
         k_loop = am.loop_analysis().find_loop_by_indvar("tile_k0")
         access = _access_in_loop(k_loop, container, want_read=True)
-        ls = LocalStorage(k_loop, access, swizzle_layout=False, lane_contiguous=False)
+        ls = LocalStorage(
+            k_loop,
+            access,
+            swizzle_layout=False,
+            lane_contiguous=False,
+            transpose_layout=transpose_b and container == b_name,
+        )
         assert ls.can_be_applied(
             builder, am
         ), f"LocalStorage should apply for {container}"
@@ -453,3 +459,69 @@ def test_mma_einsum_wave_tile_executes(wave_tile, localize):
     CompiledSDFG(lib_path, sdfg)(A.reshape(-1), B.reshape(-1), C.reshape(-1))
 
     _assert_matmul_close(C, A.astype(np.float32) @ B.astype(np.float32))
+
+
+# ---------------------------------------------------------------------------
+# Raw 32x32x8 MFMA atom (CDNA): register-vector fragments, own lane layouts.
+# ---------------------------------------------------------------------------
+
+MFMA32_CASES = [
+    # (tile, wave_tile, staging)
+    (32, (1, 1), "global"),
+    (64, (1, 1), "global"),
+    (64, (2, 2), "global"),
+    (64, (1, 1), "lds"),
+    (64, (1, 1), "lds_kmajor_b"),
+    (64, (2, 2), "lds_kmajor_b"),
+]
+
+
+@pytest.mark.rocm()
+@pytest.mark.parametrize(
+    "tile,wave_tile,staging",
+    MFMA32_CASES,
+    ids=[f"t{t}_wt{w[0]}x{w[1]}_{s}" for (t, w, s) in MFMA32_CASES],
+)
+def test_mma_einsum_mfma32_executes(tile, wave_tile, staging):
+    arch_name = RocmArch.current_name()
+    if arch_name != "gfx90a":
+        pytest.skip(f"raw 32x32x8 MFMA runs on CDNA (gfx90a), not {arch_name}")
+    M, N, K = 128, 128, 64
+    output_dir = (
+        PYTEST_OUTPUT_DIR
+        / f"mma_einsum_mfma32_t{tile}_wt{wave_tile[0]}x{wave_tile[1]}_{staging}"
+    )
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    builder, loop_i1 = _build_executable_einsum_mma(M, N, K, tile, tile)
+    am = AnalysisManager(builder)
+    xform = GpuMmaEinsumTransform(
+        loop_i1, RocmArch.get_current(), *wave_tile, mma_shape="32x32x8"
+    )
+    assert xform.can_be_applied(builder, am)
+    xform.apply(builder, am)
+    assert xform.matched
+    if staging != "global":
+        _localize_operands(builder, "dA", "dB", transpose_b=staging == "lds_kmajor_b")
+
+    sdfg = builder.move()
+    sdfg.validate()
+    lib_path = sdfg._compile(str(output_dir), "rocm")
+
+    generated = "\n".join(p.read_text() for p in output_dir.rglob("*rocm.cpp"))
+    assert "rocwmma::" not in generated
+    assert (
+        generated.count("__builtin_amdgcn_mfma_f32_32x32x8f16(")
+        == wave_tile[0] * wave_tile[1]
+    )
+
+    rng = np.random.default_rng(0)
+    A = (rng.standard_normal((M, K)) * 0.1).astype(np.float16)
+    B = (rng.standard_normal((K, N)) * 0.1).astype(np.float16)
+    C0 = (rng.standard_normal((M, N)) * 0.1).astype(np.float16)
+    C = C0.copy()
+    CompiledSDFG(lib_path, sdfg)(A.reshape(-1), B.reshape(-1), C.reshape(-1))
+
+    _assert_matmul_close(
+        C, C0.astype(np.float32) + A.astype(np.float32) @ B.astype(np.float32)
+    )
