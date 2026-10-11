@@ -131,6 +131,11 @@ protected:
     // combine is unchanged.
     bool uses_register_partial(TargetLevel target_level, const std::string& container);
 
+    // Lane-group width for combining a register partial with warp shuffles before the
+    // cross-warp step (X_BLOCK reduce, constant block width divisible by the power-of-two
+    // group), or 0 to fall back to the shared halving tree.
+    int64_t warp_combine_width(TargetLevel target_level, const std::string& container);
+
     // Publish each register partial to its shared slot once, after the coverage loop and
     // before the combine (a single st.shared per thread instead of one per element).
     void dispatch_reduction_publish(
