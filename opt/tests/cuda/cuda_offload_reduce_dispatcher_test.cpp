@@ -554,6 +554,8 @@ size_t count(const std::string& text, const std::string& needle) {
 TEST(CUDAOffloadReduceDispatcherTest, RescaleGroup_SharedCombine) {
     std::string kernel = dispatch_rescale_reduce(64, false);
     ASSERT_FALSE(kernel.empty());
+    // 1024 iterations over 64 threads: whole waves, so the body is unguarded.
+    EXPECT_EQ(kernel.find("if (i < 1024)"), std::string::npos);
     EXPECT_NE(kernel.find("__shfl_xor_sync"), std::string::npos);
     EXPECT_NE(kernel.find("__daisy_rescale_nm_m"), std::string::npos);
     EXPECT_NE(kernel.find("expf("), std::string::npos);

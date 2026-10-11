@@ -295,6 +295,7 @@ void GPUOffloadReduceDispatcher::dispatch_kernel_body(
     // With a constant trip and parallel size the bound folds to a literal, so the loop
     // fully unrolls and its loads issue back to back. The launch dim is >= parallel_size,
     // so this only over-covers, which the boundary guard (absent under nested_sync) masks.
+    bool guard_redundant = false;
     if (target_level != TargetLevel::WARP && !gpu::ScheduleType_GPU_Offload::nested_sync(node_.schedule_type())) {
         auto trip = node_.num_iterations();
         auto psize = gpu::ScheduleType_GPU_Offload::parallel_size(node_.schedule_type());
@@ -304,6 +305,9 @@ void GPUOffloadReduceDispatcher::dispatch_kernel_body(
             auto p = SymEngine::rcp_static_cast<const SymEngine::Integer>(psize)->as_int();
             if (t >= 0 && p > 0) {
                 coverage_bound = std::to_string(std::max<long long>(1, (t + p - 1) / p));
+                // As in the map dispatcher: a whole number of waves leaves no thread out of
+                // range, and an unguarded body lets the loads of all waves issue together.
+                guard_redundant = t % p == 0;
             }
         }
     }
@@ -345,7 +349,8 @@ void GPUOffloadReduceDispatcher::dispatch_kernel_body(
 
 
     // Boundary Conditions
-    if (!gpu::ScheduleType_GPU_Offload::nested_sync(node_.schedule_type())) {
+    const bool emit_guard = !gpu::ScheduleType_GPU_Offload::nested_sync(node_.schedule_type()) && !guard_redundant;
+    if (emit_guard) {
         kernel_source_stream << "if (" << kernel_language_extension.expression(node_.condition()) << ") {" << std::endl;
         kernel_source_stream.changeIndent(+4);
     }
@@ -366,7 +371,7 @@ void GPUOffloadReduceDispatcher::dispatch_kernel_body(
         }
     }
 
-    if (!gpu::ScheduleType_GPU_Offload::nested_sync(node_.schedule_type())) {
+    if (emit_guard) {
         kernel_source_stream.changeIndent(-4);
         kernel_source_stream << "}" << std::endl;
     }
