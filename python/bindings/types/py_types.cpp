@@ -310,7 +310,9 @@ void register_types(py::module& m) {
                 slots_e.push_back(sdfg::symbolic::parse(s));
             }
             sdfg::tiles::PackedBuffer buffer{slots_e, tiles_e};
-            if (kind == "Transposed") {
+            if (kind == "MultiDim") {
+                // Default PackedBuffer: row-major, unpadded.
+            } else if (kind == "Transposed") {
                 buffer.placement = sdfg::tiles::Placement::ColMajor;
             } else if (kind == "Padded") {
                 buffer.conflict = sdfg::tiles::ConflictPolicy::PadSlot;
