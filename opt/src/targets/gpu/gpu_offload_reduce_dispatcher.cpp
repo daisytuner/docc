@@ -304,8 +304,12 @@ void GPUOffloadReduceDispatcher::dispatch_kernel_body(
             }
         }
     }
-    kernel_source_stream << "for (int " << coverage_loop_var << " = 0; " << coverage_loop_var << " < " << coverage_bound
-                         << "; " << coverage_loop_var << "++) {" << std::endl;
+    if (coverage_bound == "1") {
+        kernel_source_stream << "{" << std::endl << "    const int " << coverage_loop_var << " = 0;" << std::endl;
+    } else {
+        kernel_source_stream << "for (int " << coverage_loop_var << " = 0; " << coverage_loop_var << " < "
+                             << coverage_bound << "; " << coverage_loop_var << "++) {" << std::endl;
+    }
     kernel_source_stream.changeIndent(+4);
 
     if (target_level == TargetLevel::WARP) {
