@@ -24,6 +24,7 @@
 #include "sdfg/symbolic/extreme_values.h"
 #include "sdfg/tiles/analysis/reduction_buffer_analysis.h"
 #include "sdfg/tiles/analysis/tile_analysis.h"
+#include "sdfg/tiles/bank_conflicts.h"
 #include "sdfg/tiles/library_nodes/tile_copy_node.h"
 #include "sdfg/tiles/locality.h"
 #include "sdfg/tiles/tile.h"
@@ -248,6 +249,86 @@ structured_control_flow::ControlFlowNode* staging_group_trailing_barrier(
         return nullptr;
     }
     return &parent.at(pos - 1);
+}
+
+/// True if a sequential loop between @p loop and @p coop_map re-runs the staging copy.
+bool restaged_per_iteration(structured_control_flow::StructuredLoop& loop, structured_control_flow::Map* coop_map) {
+    for (auto* node : structured_control_flow::ControlFlowNode::parent_chain(loop)) {
+        if (node == coop_map) {
+            return false;
+        }
+        if (dynamic_cast<structured_control_flow::StructuredLoop*>(node) != nullptr &&
+            dynamic_cast<structured_control_flow::Map*>(node) == nullptr) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// Fold the block-level per-thread axes addressing @p info into the tile itself, so one
+/// block-wide buffer holds the union of the per-slot tiles. Each folded axis must span
+/// exactly one block (its Map runs `parallel_size` iterations) and address the bases
+/// affinely with a non-negative constant coefficient; the union must not exceed the
+/// slots' total size. Returns false (leaving @p info unchanged) when nothing folds.
+bool fold_block_slots(structured_control_flow::StructuredLoop& loop, LocalStorage::TileInfo& info) {
+    LocalStorage::TileInfo folded = info;
+    symbolic::Expression slots = symbolic::integer(1);
+    bool any = false;
+    auto chain = structured_control_flow::ControlFlowNode::parent_chain(loop);
+    for (const auto& axis : tiles::TileAxis::enclosing(loop, info.bases, info.offset)) {
+        if (axis.cooperative() || !axis.schedule().has_scratchpad() || axis.schedule().level() != tiles::Level::Group) {
+            continue;
+        }
+        const auto& d = axis.indvar();
+        const auto p = axis.schedule().parallel_size()->as_int();
+        if (p <= 0 || symbolic::uses(info.offset, d)) {
+            return false;
+        }
+        structured_control_flow::Map* map = nullptr;
+        for (auto* node : chain) {
+            auto* m = dynamic_cast<structured_control_flow::Map*>(node);
+            if (m != nullptr && symbolic::eq(m->indvar(), d)) {
+                map = m;
+                break;
+            }
+        }
+        if (map == nullptr || map->num_iterations().is_null() ||
+            !symbolic::eq(map->num_iterations(), symbolic::integer(p))) {
+            return false;
+        }
+        auto last = symbolic::add(axis.init(), symbolic::mul(axis.stride(), symbolic::integer(p - 1)));
+        for (size_t k = 0; k < folded.bases.size(); ++k) {
+            auto& base = folded.bases[k];
+            auto coeff =
+                symbolic::expand(symbolic::sub(symbolic::subs(base, d, symbolic::add(d, symbolic::one())), base));
+            if (!SymEngine::is_a<SymEngine::Integer>(*coeff) ||
+                SymEngine::rcp_static_cast<const SymEngine::Integer>(coeff)->is_negative()) {
+                return false;
+            }
+            folded.dimensions[k] = symbolic::
+                add(folded.dimensions[k], symbolic::mul(coeff, symbolic::mul(axis.stride(), symbolic::integer(p - 1))));
+            base = symbolic::subs(base, d, axis.init());
+            if (k < folded.maxes.size()) {
+                folded.maxes[k] = symbolic::subs(folded.maxes[k], d, last);
+            }
+        }
+        slots = symbolic::mul(slots, symbolic::integer(p));
+        any = true;
+    }
+    if (!any) {
+        return false;
+    }
+    symbolic::Expression before = slots;
+    symbolic::Expression after = symbolic::integer(1);
+    for (size_t k = 0; k < info.dimensions.size(); ++k) {
+        before = symbolic::mul(before, info.dimensions[k]);
+        after = symbolic::mul(after, folded.dimensions[k]);
+    }
+    if (!symbolic::is_true(symbolic::Le(after, before))) {
+        return false;
+    }
+    info = std::move(folded);
+    return true;
 }
 
 } // namespace
@@ -497,12 +578,32 @@ bool LocalStorage::prepare(builder::StructuredSDFGBuilder& builder, analysis::An
     tile_info_.offset = t.layout.offset();
     group_memlets_.insert(group->memlets.begin(), group->memlets.end());
 
+    // A block-shared library operand (MMA fragments) is staged once per block rather
+    // than per wave slot: fewer, wider copy rows and one block-wide copy.
+    if (!container_written_ && has_library_operand(group_memlets_)) {
+        bool block_shared = false;
+        for (const auto& a : tiles::TileAxis::enclosing(loop_, tile_info_.bases, tile_info_.offset)) {
+            block_shared |= a.cooperative() && a.schedule().has_scratchpad() &&
+                            a.schedule().level() == tiles::Level::Group;
+        }
+        auto folded = tile_info_;
+        if (block_shared && fold_block_slots(loop_, folded)) {
+            symbolic::Expression folded_count = symbolic::integer(1);
+            for (const auto& e : folded.dimensions) {
+                folded_count = symbolic::mul(folded_count, e);
+            }
+            if (symbolic::is_true(symbolic::Le(folded_count, budget))) {
+                tile_info_ = std::move(folded);
+            }
+        }
+    }
+
     // A library-node operand can only be localized if the node can repoint it at its
     // view of the packed buffer (checked against the slot-free dense placement).
     {
         tiles::PackedBuffer dense{{}, tile_info_.varying_sizes()};
         if (is_col_major_operand(tile_info_.strides)) {
-            dense.kind = tiles::BufferKind::Transposed;
+            dense.placement = tiles::Placement::ColMajor;
         }
         auto& mla = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
         for (const auto* m : group_memlets_) {
@@ -653,78 +754,25 @@ void LocalStorage::apply_prepared(builder::StructuredSDFGBuilder& builder, analy
     }
 
     tiles::PackedBuffer buffer{slot_sizes, tile_info_.varying_sizes()};
-    // GPU shared buffers with a per-thread slot prefix use a flat per-slot block so
-    // a warp's per-slot accesses hit distinct banks: Padded (stride coprime with 32)
-    // by default, or Swizzle (XOR the inner index) when opted in with a constant
-    // power-of-two block. CPU/private buffers keep the dense multi-dim layout.
+    // Per-thread slots of a plain shared tile keep the natural order; their banks are
+    // spread by the conflict policy below.
+    const bool slotted_shared = storage_type_.is_nv_shared() && !slot_sizes.empty() &&
+                                !has_library_operand(group_memlets_);
     if (lane_contiguous_ && storage_type_.is_nv_shared()) {
         // Fully flat, thread-linear staging for the CDNA async global->LDS DMA
         // (global_load_lds writes lane-contiguous from a wave-uniform base).
-        buffer.kind = tiles::BufferKind::Linearized;
+        buffer.placement = tiles::Placement::Flat;
     } else if (transpose_layout_ && storage_type_.is_nv_shared() && slot_sizes.empty()) {
         // Cooperative (no-slot) tile stored column-major, so consumers read it
-        // transposed. A pure affine relabelling — no padding, no per-thread slot.
-        buffer.kind = tiles::BufferKind::Transposed;
-    } else if (storage_type_.is_nv_shared() && !slot_sizes.empty() && !has_library_operand(group_memlets_)) {
-        buffer.kind = tiles::BufferKind::Padded;
-        if (swizzle_layout_) {
-            auto total = buffer.tile_total_size();
-            if (SymEngine::is_a<SymEngine::Integer>(*total)) {
-                auto n = SymEngine::rcp_static_cast<const SymEngine::Integer>(total)->as_int();
-                if (n > 0 && (n & (n - 1)) == 0) {
-                    buffer.kind = tiles::BufferKind::Swizzle;
-                }
-            }
-        }
-    } else if (is_col_major_operand(tile_info_.strides)) {
-        // Private column-major operand: store the tile column-major so the node
-        // reads it with the same orientation and only a tighter leading dimension.
-        buffer.kind = tiles::BufferKind::Transposed;
+        // transposed. A pure affine relabelling — no per-thread slot.
+        buffer.placement = tiles::Placement::ColMajor;
+    } else if (!slotted_shared && is_col_major_operand(tile_info_.strides)) {
+        // Column-major operand: store the tile column-major so the node reads it
+        // with the same orientation and only a tighter leading dimension.
+        buffer.placement = tiles::Placement::ColMajor;
     }
-    // Cooperative-store conflict avoidance: pad the inner stride to the coop axis's
-    // per-warp thread count (mod 32). Compute it from the block dims + the coop
-    // copy's axis (A tiles are coop over X, B over Y -> different spans, so a single
-    // odd stride leaves one of them 2-way conflicted; this makes both conflict-free).
-    if (buffer.kind == tiles::BufferKind::Padded) {
-        if (auto* coop_map = find_cooperative_offload_map(loop_, plan_.cooperative_axes())) {
-            auto block_width = [&](unsigned axis) -> size_t {
-                for (const auto& d : plan_.axes()) {
-                    if (d.schedule().level() == tiles::Level::Group && d.schedule().spatial_axis() == axis &&
-                        SymEngine::is_a<SymEngine::Integer>(*d.schedule().parallel_size())) {
-                        return static_cast<
-                            size_t>(d.schedule().parallel_size()->as_int() * d.schedule().lanes()->as_int());
-                    }
-                }
-                return 1;
-            };
-            const auto* warp_target = tiles::TileTargetRegistry::instance().get(coop_map->schedule_type().value());
-            const size_t warp = warp_target ? static_cast<size_t>(warp_target->lane_width()) : 1;
-            const size_t bx = block_width(/*X=*/0);
-            const size_t by = block_width(/*Y=*/1);
-            const size_t bz = block_width(/*Z=*/2);
-            // Per-warp thread counts, x fastest in the flat thread index.
-            const size_t x_per = std::min(bx, warp);
-            const size_t rem_y = std::max<size_t>(1, warp / std::max<size_t>(1, x_per));
-            const size_t y_per = std::min(by, rem_y);
-            const size_t rem_z = std::max<size_t>(1, rem_y / std::max<size_t>(1, y_per));
-            const size_t z_per = std::min(bz, rem_z);
-            // The cooperative copy's own spatial axis (0=X, 1=Y, 2=Z) selects which
-            // per-warp span pads the inner stride.
-            auto coop_schedule = tiles::AxisSchedule::classify(coop_map->schedule_type());
-            switch (coop_schedule ? coop_schedule->spatial_axis() : 0) {
-                case 0:
-                    buffer.coop_warp_span = x_per;
-                    break;
-                case 1:
-                    buffer.coop_warp_span = y_per;
-                    break;
-                case 2:
-                    buffer.coop_warp_span = z_per;
-                    break;
-                default:
-                    break;
-            }
-        }
+    if (storage_type_.is_nv_shared() && buffer.placement != tiles::Placement::Flat) {
+        choose_conflict_policy(analysis_manager, buffer, scalar_type.primitive_type());
     }
     // Multi-dimensional (nested-array) buffer: one array level per [slot ++ tile]
     // axis, so every access is a clean per-axis subset and clang recovers the
@@ -781,7 +829,7 @@ void LocalStorage::apply_prepared(builder::StructuredSDFGBuilder& builder, analy
                 slot_inits,
                 slot_strides
             );
-            const bool needs_leading = !slot_indices.empty();
+            const bool needs_leading = !slot_indices.empty() || restaged_per_iteration(loop_, coop_map);
             if (auto* group_end = staging_group_trailing_barrier(*parent, loop_, needs_leading)) {
                 // Join the preceding staging group: its barriers already fence this copy,
                 // so all its loads can be in flight together.
@@ -1075,7 +1123,7 @@ LocalStorage::BuiltCopy LocalStorage::build_tiled_copy(
     auto vsizes = tile_info_.varying_sizes();
     plan.atom = tiles::CopyAtom::ScalarSync;
 
-    if (buffer.kind == tiles::BufferKind::Linearized) {
+    if (buffer.placement == tiles::Placement::Flat) {
         // Lane-contiguous flat staging (CDNA async global->LDS). Fold the slot
         // indvars (threadIdx) out of the source offset into leading affine dims, so
         // the whole block sweeps [slot ++ tile] thread-linearly into a flat buffer;
@@ -1109,7 +1157,7 @@ LocalStorage::BuiltCopy LocalStorage::build_tiled_copy(
         // Whole-block flat sweep bounded by the flat size — no per-element guard.
         out.guard = {};
     } else if (!slot_indices.empty()) {
-        // Per-thread-slot (Padded/Swizzle): each thread stages its own slot (source
+        // Per-thread-slot (padded or swizzled slots): each thread stages its own slot (source
         // uses its own thread index; the slot prefix folds into the buffer offset)
         // while the cooperating Group spatial axes split the tile. Referencing the
         // slot index but not the coop index lets codegen guard by `i < N` only, so
@@ -1140,8 +1188,8 @@ LocalStorage::BuiltCopy LocalStorage::build_tiled_copy(
         }
         out.guard = tile_boundary_guard(analysis_manager, guard_scope, vsizes);
     } else {
-        // Dense whole-block (MultiDim or Transposed, no slots): the buffer's affine
-        // layout is the physical tile placement (row- or column-major); every block
+        // Dense whole-block (no slots): the buffer's affine layout is the physical tile
+        // placement (row- or column-major, rows possibly padded); every block
         // thread strides the flat tile.
         plan.src = tile_info_.source_layout();
         plan.dst = buffer.layout().layout;
@@ -1301,6 +1349,116 @@ void LocalStorage::rewrite_body(
             }
         }
     });
+}
+
+void LocalStorage::choose_conflict_policy(
+    analysis::AnalysisManager& analysis_manager, tiles::PackedBuffer& buffer, types::PrimitiveType element_type
+) {
+    auto* coop_map = find_cooperative_offload_map(loop_, plan_.cooperative_axes());
+    const tiles::TileTarget* target = coop_map
+                                          ? tiles::TileTargetRegistry::instance().get(coop_map->schedule_type().value())
+                                          : enclosing_tile_target(loop_);
+    if (target == nullptr) {
+        if (auto* coop = tiles::find_block_scheduled_descendant(loop_, analysis_manager)) {
+            target = tiles::TileTargetRegistry::instance().get(coop->schedule_type().value());
+        }
+    }
+    const auto banks = target ? target->bank_model(tiles::Space::Shared) : std::nullopt;
+    if (!banks) {
+        return;
+    }
+
+    const auto total = buffer.tile_total_size();
+    const bool constant_block = SymEngine::is_a<SymEngine::Integer>(*total);
+    if (!buffer.slot_sizes.empty() && !has_library_operand(group_memlets_)) {
+        // Each thread owns a slot: a warp's per-slot accesses go to distinct banks via a
+        // swizzled (opt-in, power-of-two block) or a padded slot stride.
+        const long n = constant_block ? SymEngine::rcp_static_cast<const SymEngine::Integer>(total)->as_int() : 0;
+        if (swizzle_layout_ && n > 0 && (n & (n - 1)) == 0) {
+            buffer.conflict = tiles::ConflictPolicy::Swizzle;
+            return;
+        }
+        buffer.conflict = tiles::ConflictPolicy::PadSlot;
+        if (!constant_block) {
+            return;
+        }
+        // The slot stride follows the cooperative copy's per-warp span along its own axis
+        // (A tiles are coop over X, B over Y, so a single odd stride would leave one conflicted).
+        size_t coop_span = 0;
+        if (coop_map != nullptr) {
+            auto block_width = [&](unsigned axis) -> size_t {
+                for (const auto& d : plan_.axes()) {
+                    if (d.schedule().level() == tiles::Level::Group && d.schedule().spatial_axis() == axis &&
+                        SymEngine::is_a<SymEngine::Integer>(*d.schedule().parallel_size())) {
+                        return static_cast<
+                            size_t>(d.schedule().parallel_size()->as_int() * d.schedule().lanes()->as_int());
+                    }
+                }
+                return 1;
+            };
+            const size_t warp = target->lane_width();
+            // Per-warp thread counts, x fastest in the flat thread index.
+            const size_t x_per = std::min(block_width(0), warp);
+            const size_t rem_y = std::max<size_t>(1, warp / std::max<size_t>(1, x_per));
+            const size_t y_per = std::min(block_width(1), rem_y);
+            const size_t rem_z = std::max<size_t>(1, rem_y / std::max<size_t>(1, y_per));
+            const size_t z_per = std::min(block_width(2), rem_z);
+            auto coop_schedule = tiles::AxisSchedule::classify(coop_map->schedule_type());
+            const unsigned axis = coop_schedule ? coop_schedule->spatial_axis() : 0;
+            coop_span = axis == 0 ? x_per : axis == 1 ? y_per : z_per;
+        }
+        buffer.pad = tiles::slot_pad(*banks, static_cast<size_t>(n), coop_span);
+        return;
+    }
+
+    // Library operands read with a declared per-lane pattern: pad rows so those reads spread
+    // over the banks.
+    const size_t elem_bytes = types::bit_width(element_type) / 8;
+    if (elem_bytes == 0) {
+        return;
+    }
+    auto& mla = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
+    std::vector<std::pair<const analysis::MemoryTile*, data_flow::SubgroupAccess>> reads;
+    for (const auto* m : group_memlets_) {
+        const auto* lib = dynamic_cast<const data_flow::LibraryNode*>(&m->dst());
+        if (lib == nullptr) {
+            continue;
+        }
+        const auto& inputs = lib->inputs();
+        auto it = std::find(inputs.begin(), inputs.end(), m->dst_conn());
+        const auto* acc = mla.access(*m);
+        if (it == inputs.end() || acc == nullptr) {
+            continue;
+        }
+        if (auto access = lib->operand_access(static_cast<int>(it - inputs.begin()), target->lane_width())) {
+            reads.emplace_back(acc, std::move(*access));
+        }
+    }
+    if (reads.empty()) {
+        return;
+    }
+    const std::vector<symbolic::Expression> slot_origin(buffer.slot_sizes.size(), symbolic::zero());
+    auto cost = [&](const tiles::PackedBuffer& candidate) -> std::optional<size_t> {
+        size_t cycles = 0;
+        for (const auto& [acc, access] : reads) {
+            auto view = operand_view(*acc, candidate, slot_origin);
+            if (!view) {
+                return std::nullopt;
+            }
+            std::vector<int64_t> strides;
+            for (const auto& s : view->strides()) {
+                if (!SymEngine::is_a<SymEngine::Integer>(*s)) {
+                    return std::nullopt;
+                }
+                strides.push_back(SymEngine::rcp_static_cast<const SymEngine::Integer>(s)->as_int());
+            }
+            cycles += tiles::access_cycles(*banks, elem_bytes, strides, access);
+        }
+        return cycles;
+    };
+    // Rows stay aligned to the widest copy vector when that costs no extra cycles.
+    buffer.pad = tiles::row_pad(*banks, elem_bytes, buffer, /*align_bytes=*/16, cost);
+    buffer.conflict = buffer.pad > 0 ? tiles::ConflictPolicy::PadRow : tiles::ConflictPolicy::None;
 }
 
 std::optional<math::tensor::TensorLayout> LocalStorage::operand_view(

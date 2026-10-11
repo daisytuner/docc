@@ -25,6 +25,9 @@ enum class CopyAtom {
     ScalarSync, ///< one element per lane, synchronous store
     VectorSync, ///< a contiguous 4/8/16-byte vector per lane, synchronous
     CpAsync, ///< a contiguous 4/8/16-byte async global->shared cp.async
+    /// 2-D 16-bit copy into a buffer stored transposed: each lane moves a 4x4 block
+    /// (four 8-byte source rows, register transpose, four 8-byte buffer rows).
+    TransposeSync,
 };
 
 /// Row-major delinearization of a flat index into per-dim coordinates (dim 0
@@ -35,6 +38,15 @@ symbolic::MultiExpression delinearize_rowmajor(const symbolic::Expression& flat,
 enum class CopyDirection {
     In, ///< read the global tile into the local buffer (copy-in / stage)
     Out, ///< write the local buffer back to the global tile (copy-out / writeback)
+};
+
+/// Which half of a register-staged copy a node performs. A staged pair shares one plan
+/// and per-thread register array (32-bit words, indexed by the copy step), so the load
+/// can be issued early and the buffer store deferred.
+enum class CopyPhase {
+    Full, ///< source -> destination
+    LoadRegs, ///< source -> registers (`_dst` is the register array)
+    StoreRegs, ///< registers -> destination (`_src` is the register array)
 };
 
 struct TiledCopy {

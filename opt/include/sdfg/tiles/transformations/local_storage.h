@@ -162,9 +162,9 @@ private:
     };
 
     /// Build the complete movement plan for the staged tile from its geometry.
-    /// The buffer kind selects the placement — dense whole-block (MultiDim),
-    /// per-thread-slot (Padded/Swizzle, with the swizzle riding on the plan), or
-    /// lane-contiguous flat (Linearized) — so this is the single place the copy's
+    /// The buffer placement selects the copy — dense whole-block (no slots),
+    /// per-thread-slot (slots, the swizzle riding on the plan), or lane-contiguous
+    /// flat (@ref tiles::Placement::Flat) — so this is the single place the copy's
     /// data-movement logic lives; callers only choose placement, direction, and
     /// barriers. @p guard_scope supplies the assumptions that discharge the guard.
     BuiltCopy build_tiled_copy(
@@ -220,6 +220,13 @@ private:
         const tiles::PackedBuffer& buffer,
         const std::vector<symbolic::Expression>& slot_indices
     ) const;
+
+    /// Choose the bank-conflict policy of @p buffer staged in banked memory: pad per-thread
+    /// slots for the cooperative stores, or pad rows for the subgroup reads library nodes
+    /// declare on their operands.
+    void choose_conflict_policy(
+        analysis::AnalysisManager& analysis_manager, tiles::PackedBuffer& buffer, types::PrimitiveType element_type
+    );
 
 public:
     /**

@@ -68,7 +68,11 @@ std::string ROCMLanguageExtension::
         val << " ";
         val << name;
     } else if (auto array_type = dynamic_cast<const types::Array*>(&type)) {
-        if (gpu::rocm::RocmMmaSupport::is_mma_type(array_type->storage_type())) {
+        if (gpu::rocm::RocmMfma32Support::is_mma_type(array_type->storage_type())) {
+            gpu::rocm::RocmMfma32Support::
+                emit_fragment_type(val, array_type->storage_type(), array_type->element_type().primitive_type());
+            val << " " << name;
+        } else if (gpu::rocm::RocmMmaSupport::is_mma_type(array_type->storage_type())) {
             arch_->mma_support()
                 ->emit_block_frag_type(val, array_type->storage_type(), array_type->element_type().primitive_type());
             val << " " << name;
@@ -80,7 +84,11 @@ std::string ROCMLanguageExtension::
             val << declaration(name + "[" + this->expression(array_type->num_elements()) + "]", element_type);
         }
     } else if (auto pointer_type = dynamic_cast<const types::Pointer*>(&type)) {
-        if (gpu::rocm::RocmMmaSupport::is_mma_type(pointer_type->storage_type())) {
+        if (gpu::rocm::RocmMfma32Support::is_mma_type(pointer_type->storage_type())) {
+            gpu::rocm::RocmMfma32Support::
+                emit_fragment_type(val, pointer_type->storage_type(), pointer_type->pointee_type().primitive_type());
+            val << " " << name;
+        } else if (gpu::rocm::RocmMmaSupport::is_mma_type(pointer_type->storage_type())) {
             arch_->mma_support()
                 ->emit_block_frag_type(val, pointer_type->storage_type(), pointer_type->pointee_type().primitive_type());
             val << " " << name;

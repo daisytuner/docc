@@ -12,9 +12,15 @@ namespace sdfg::gpu {
 class GpuMmaExpander : public passes::CodeLibNodeExpander<math::tensor::MatMulNode> {
 protected:
     const GpuArch* arch_;
+    const GpuMmaSupport* mma_; ///< explicit MMA atom; null = the arch default
+
+    const GpuMmaSupport* mma() const {
+        return mma_ ? mma_ : arch_->mma_support();
+    }
 
 public:
-    GpuMmaExpander(const GpuArch* arch) : arch_(arch), CodeLibNodeExpander(math::tensor::LibraryNodeType_MatMul) {
+    GpuMmaExpander(const GpuArch* arch, const GpuMmaSupport* mma = nullptr)
+        : arch_(arch), mma_(mma), CodeLibNodeExpander(math::tensor::LibraryNodeType_MatMul) {
     }
     virtual ~GpuMmaExpander() = default;
     const LibNodeExpander* for_lib_node(const data_flow::LibraryNode& node) const override;
@@ -78,7 +84,8 @@ public:
         const data_flow::ImplementationType& impl_type,
         bool include_c_add,
         const DebugInfo& org_debug_info,
-        const std::array<int, 3>& args_order // indices of inputs in order of {y, a, b}
+        const std::array<int, 3>& args_order, // indices of inputs in order of {y, a, b}
+        const GpuMmaSupport* mma = nullptr // the MMA atom; null = the arch default
     );
 
     static void create_fragment_mma(

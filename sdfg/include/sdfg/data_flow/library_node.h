@@ -44,6 +44,7 @@
 
 #pragma once
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -81,6 +82,12 @@ typedef StringEnum ImplementationType;
  * during the expansion pass.
  */
 inline ImplementationType ImplementationType_NONE{""};
+
+/// The operand elements one subgroup touches in a single access: for every lane, the operand
+/// coordinates it reads, in register order. Lets a staging buffer be laid out bank-conflict-free.
+struct SubgroupAccess {
+    std::vector<std::vector<std::vector<int64_t>>> lanes;
+};
 
 /**
  * @class LibraryNode
@@ -216,6 +223,11 @@ public:
     /// operand at @p input_idx can be repointed at the buffer view @p packed.
     virtual bool can_relocalize_operand(int input_idx, const math::tensor::TensorLayout& packed) const {
         return false;
+    }
+    /// The elements one subgroup of @p subgroup_size lanes reads from the operand at @p input_idx,
+    /// if the node declares them.
+    virtual std::optional<SubgroupAccess> operand_access(int input_idx, unsigned subgroup_size) const {
+        return std::nullopt;
     }
     EdgeRemoveOption can_remove_out_edge(const data_flow::DataFlowGraph& graph, const Memlet* memlet) const override;
 

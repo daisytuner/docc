@@ -10,6 +10,8 @@ namespace sdfg::gpu::rocm {
 inline data_flow::ImplementationType ImplementationType_ROCM_MMA_GFX1201("ROCM_MMA_GFX1201");
 inline data_flow::ImplementationType ImplementationType_ROCM_MMA_GFX90A("ROCM_MMA_GFX90A");
 inline data_flow::ImplementationType ImplementationType_ROCM_MMA("ROCM_MMA");
+/// Raw `v_mfma_f32_32x32x8f16` atom (see RocmMfma32Support).
+inline data_flow::ImplementationType ImplementationType_ROCM_MFMA("ROCM_MFMA");
 
 class RocmMmaBaseDispatcher : public GpuMmaMatmulDispatcher {
 protected:
