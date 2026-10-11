@@ -136,6 +136,22 @@ protected:
     // group), or 0 to fall back to the shared halving tree.
     int64_t warp_combine_width(TargetLevel target_level, const std::string& container);
 
+    // Lane-group width of the X_BLOCK warp-shuffle combine for this node (0 if unavailable),
+    // independent of any particular accumulator.
+    int64_t lane_group_width(TargetLevel target_level);
+
+    // Whether @p container is the anchor or a dependent of a rescaled (max-anchored) group.
+    bool in_rescale_group(const std::string& container);
+
+    // Combine a rescale group (a Max anchor and the Adds rescaled by base^anchor) as a unit:
+    // shuffle within lane groups, fold the groups of a row through shared, then commit.
+    void dispatch_rescale_group_combine(
+        codegen::LanguageExtension& language_extension,
+        codegen::PrettyPrinter& stream,
+        const structured_control_flow::ReductionInfo& anchor,
+        TargetLevel target_level
+    );
+
     // Publish each register partial to its shared slot once, after the coverage loop and
     // before the combine (a single st.shared per thread instead of one per element).
     void dispatch_reduction_publish(
