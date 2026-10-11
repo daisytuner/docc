@@ -388,10 +388,11 @@ void register_transformations(py::module& m) {
     // SoftwarePipelining transformation (cp.async double-buffer a panel loop)
     py::class_<SoftwarePipelining, Transformation>(m, "SoftwarePipelining")
         .def(
-            py::init<StructuredLoop&, size_t, bool>(),
+            py::init<StructuredLoop&, size_t, bool, bool>(),
             py::arg("loop"),
             py::arg("stages") = 2,
             py::arg("single_operand") = false,
+            py::arg("register_staged") = false,
             "Software-pipeline a sequential panel loop that cooperatively stages a\n"
             "shared-memory tile each iteration, overlapping the next panel's global\n"
             "load (via cp.async) with the current panel's compute.\n\n"
@@ -401,7 +402,9 @@ void register_transformations(py::module& m) {
             "    single_operand: Pipeline only the first (name-ordered) shared\n"
             "        operand and keep the rest single-buffered + synchronous. Uses\n"
             "        less shared memory, preserving occupancy when double-buffering\n"
-            "        every operand would drop a block per SM."
+            "        every operand would drop a block per SM.\n"
+            "    register_staged: Keep one shared buffer; load the next panel into\n"
+            "        registers before the current compute and store it after a barrier."
         )
         .def("__repr__", [](const SoftwarePipelining& t) {
             std::ostringstream oss;

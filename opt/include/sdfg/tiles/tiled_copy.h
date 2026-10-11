@@ -40,6 +40,15 @@ enum class CopyDirection {
     Out, ///< write the local buffer back to the global tile (copy-out / writeback)
 };
 
+/// Which half of a register-staged copy a node performs. A staged pair shares one plan
+/// and per-thread register array (32-bit words, indexed by the copy step), so the load
+/// can be issued early and the buffer store deferred.
+enum class CopyPhase {
+    Full, ///< source -> destination
+    LoadRegs, ///< source -> registers (`_dst` is the register array)
+    StoreRegs, ///< registers -> destination (`_src` is the register array)
+};
+
 struct TiledCopy {
     Layout src{symbolic::MultiExpression{}}; ///< tile-local coordinate -> global element
     Layout dst{symbolic::MultiExpression{}}; ///< tile-local coordinate -> local-buffer slot
