@@ -161,8 +161,13 @@ void GPUOffloadMapDispatcher::dispatch_kernel_body(
         coverage_bound = "max((" + type_coverage + ")1, (" + type_coverage + ")((" + size + " + " + coverage_count_dim +
                          " - 1) / " + coverage_count_dim + "))";
     }
-    kernel_source_stream << "for (" << type_coverage << " " << coverage_loop_var << " = 0; " << coverage_loop_var
-                         << " < " << coverage_bound << "; " << coverage_loop_var << "++) {" << std::endl;
+    if (coverage_bound == "1") {
+        kernel_source_stream << "{" << std::endl
+                             << "    const " << type_coverage << " " << coverage_loop_var << " = 0;" << std::endl;
+    } else {
+        kernel_source_stream << "for (" << type_coverage << " " << coverage_loop_var << " = 0; " << coverage_loop_var
+                             << " < " << coverage_bound << "; " << coverage_loop_var << "++) {" << std::endl;
+    }
     kernel_source_stream.setIndent(kernel_source_stream.indent() + 4);
 
     std::string indvar_name = indvar->get_name();

@@ -303,7 +303,10 @@ TEST(CUDAOffloadReduceDispatcherTest, BlockLevelDefaultsToSharedTree) {
 
     ASSERT_FALSE(info.shared_buffer.empty());
     EXPECT_NE(kernel.find("__shared__ float " + info.shared_buffer + "[32]"), std::string::npos);
-    EXPECT_NE(kernel.find("__syncthreads()"), std::string::npos);
+    // A single-warp block combines entirely by shuffles: no halving tree, no barrier.
+    EXPECT_NE(kernel.find("__shfl_xor_sync"), std::string::npos);
+    EXPECT_EQ(kernel.find("__daisy_reduce_m_acc"), std::string::npos);
+    EXPECT_EQ(kernel.find("__syncthreads()"), std::string::npos);
     // The block result is assigned (single owner), not atomically merged.
     EXPECT_EQ(kernel.find("atomicAdd"), std::string::npos);
 }
@@ -354,16 +357,9 @@ TEST(CUDAOffloadReduceDispatcherTest, PlacedPartialContainerRenamesBuffer) {
 
     EXPECT_EQ(kernel.find("__daisy_reduce_smem_acc"), std::string::npos);
     EXPECT_NE(kernel.find("__shared__ float __daisy_reduce_myBuf[32]"), std::string::npos);
-    // Declared exactly once (no clash with a scope-variable declaration path), and
-    // referenced again by init + tree.
+    // Declared exactly once (no clash with a scope-variable declaration path).
     size_t first_decl = kernel.find("__shared__ float __daisy_reduce_myBuf[32]");
     EXPECT_EQ(kernel.find("__shared__ float __daisy_reduce_myBuf[32]", first_decl + 1), std::string::npos);
-    size_t count = 0;
-    for (size_t p = kernel.find("__daisy_reduce_myBuf"); p != std::string::npos;
-         p = kernel.find("__daisy_reduce_myBuf", p + 1)) {
-        count++;
-    }
-    EXPECT_GE(count, 3u); // declaration + identity init + halving tree
 }
 
 // A metadata-only placed name (no declared container) still just renames the buffer.
