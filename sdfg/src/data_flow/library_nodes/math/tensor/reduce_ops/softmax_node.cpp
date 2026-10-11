@@ -121,37 +121,8 @@ passes::LibNodeExpander::ExpandOutcome SoftmaxNode::expand(passes::LibNodeExpand
         loop_vars[dim_idx] = indvar;
     }
 
-    auto build_inner_for_nest = [&](structured_control_flow::Sequence& start) {
-        std::map<size_t, symbolic::Expression> vars = loop_vars;
-        structured_control_flow::Sequence* scope = &start;
-        for (size_t j = 0; j < inner_dims.size(); ++j) {
-            size_t dim_idx = inner_dims[j];
-            std::string indvar_str = builder.find_new_name("_k");
-            auto& limit = shape_[dim_idx];
-            builder.add_container(indvar_str, types::Scalar(types::get_primitive_type_to_hold_upper_bound(limit)));
-            auto indvar = symbolic::symbol(indvar_str);
-            structured_control_flow::StructuredLoop* loop;
-            loop = &builder.add_for(
-                *scope,
-                indvar,
-                symbolic::Lt(indvar, limit),
-                symbolic::zero(),
-                symbolic::add(indvar, symbolic::one()),
-                this->debug_info()
-            );
-            scope = &loop->root();
-            vars[dim_idx] = indvar;
-        }
-        data_flow::Subset index;
-        for (size_t i = 0; i < shape_.size(); ++i) {
-            index.push_back(vars.at(i));
-        }
-        return std::make_pair(scope, index);
-    };
-
     auto build_inner_reduce_nest = [&](structured_control_flow::Sequence& start,
-                                       structured_control_flow::ReductionOperation op,
-                                       const std::string& accum_container) {
+                                       const std::vector<structured_control_flow::ReductionInfo>& reductions) {
         std::map<size_t, symbolic::Expression> vars = loop_vars;
         structured_control_flow::Sequence* scope = &start;
         for (size_t j = 0; j < inner_dims.size(); ++j) {
@@ -166,7 +137,7 @@ passes::LibNodeExpander::ExpandOutcome SoftmaxNode::expand(passes::LibNodeExpand
                 symbolic::Lt(indvar, limit),
                 symbolic::zero(),
                 symbolic::add(indvar, symbolic::one()),
-                {{.operation = op, .container = accum_container}},
+                reductions,
                 structured_control_flow::ScheduleType_Sequential::create(),
                 this->debug_info()
             );
@@ -241,9 +212,17 @@ passes::LibNodeExpander::ExpandOutcome SoftmaxNode::expand(passes::LibNodeExpand
 
         // 2. Online statistics: one streaming pass computing running max m and
         //    denominator d = sum(exp(X - m)) via the running-max correction
-        //    d <- d * exp(m_old - m_new) + exp(x - m_new).
+        //    d <- d * exp(m_old - m_new) + exp(x - m_new). The pair is a Max reduction
+        //    with d an Add rescaled by exp(m), so partials can be combined in parallel.
         {
-            auto [scope, index] = build_inner_for_nest(*outer_scope);
+            auto [scope, index] = build_inner_reduce_nest(
+                *outer_scope,
+                {{.operation = structured_control_flow::ReductionOperation::Max, .container = m_name},
+                 {.operation = structured_control_flow::ReductionOperation::Add,
+                  .container = d_name,
+                  .rescale = m_name,
+                  .rescale_base = structured_control_flow::RescaleBase::E}}
+            );
 
             // m_old = m ; m = fmax(m_old, X[idx])   (in-place running-max update)
             {
@@ -365,8 +344,9 @@ passes::LibNodeExpander::ExpandOutcome SoftmaxNode::expand(passes::LibNodeExpand
             builder.add_computational_memlet(blk, tasklet, "_out", m_write, {}, element_type, this->debug_info());
         }
         {
-            auto [scope, index] =
-                build_inner_reduce_nest(*outer_scope, structured_control_flow::ReductionOperation::Max, m_name);
+            auto [scope, index] = build_inner_reduce_nest(
+                *outer_scope, {{.operation = structured_control_flow::ReductionOperation::Max, .container = m_name}}
+            );
             auto& blk = builder.add_block(*scope, {}, this->debug_info());
             auto& fmax_node = builder.add_library_node<
                 cmath::CMathNode>(blk, this->debug_info(), cmath::CMathFunction::fmax, element_type.primitive_type());
@@ -389,8 +369,9 @@ passes::LibNodeExpander::ExpandOutcome SoftmaxNode::expand(passes::LibNodeExpand
             builder.add_computational_memlet(blk, tasklet, "_out", d_write, {}, element_type, this->debug_info());
         }
         {
-            auto [scope, index] =
-                build_inner_reduce_nest(*outer_scope, structured_control_flow::ReductionOperation::Add, d_name);
+            auto [scope, index] = build_inner_reduce_nest(
+                *outer_scope, {{.operation = structured_control_flow::ReductionOperation::Add, .container = d_name}}
+            );
             auto& blk = builder.add_block(*scope, {}, this->debug_info());
             auto& sub =
                 builder.add_tasklet(blk, data_flow::TaskletCode::fp_sub, {"_out"}, {"_in1", "_in2"}, this->debug_info());
