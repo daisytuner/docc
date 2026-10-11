@@ -823,6 +823,13 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
         const auto& buffer = reduction_buffers_.at(r.container);
         auto prim = *buffer.primitive;
         std::string ctype = language_extension.primitive_type(prim);
+        // Warp shuffles have no _Float16/__bf16 overloads; round-trip through float (lossless).
+        auto shuffle_xor = [&](const std::string& value, const std::string& lane_mask) {
+            if (prim == types::PrimitiveType::Half || prim == types::PrimitiveType::BFloat) {
+                return "(" + ctype + ")" + strategy_->warp_shuffle_xor("(float)" + value, lane_mask);
+            }
+            return strategy_->warp_shuffle_xor(value, lane_mask);
+        };
         std::string reg_name = buffer.private_buffer;
         std::string smem_name = partials_buffer_name(r.container);
         auto index = buffer.accumulator_index;
@@ -866,8 +873,8 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
             stream << "for (int __daisy_reduce_mask = " << warp_size << " / 2; __daisy_reduce_mask > 0; "
                    << "__daisy_reduce_mask >>= 1) {" << std::endl;
             stream.setIndent(stream.indent() + 4);
-            stream << ctype << " " << other << " = " << strategy_->warp_shuffle_xor(reg_name, "__daisy_reduce_mask")
-                   << ";" << std::endl;
+            stream << ctype << " " << other << " = " << shuffle_xor(reg_name, "__daisy_reduce_mask") << ";"
+                   << std::endl;
             stream << reg_name << " = " << combine_expr(r.operation, reg_name, other) << ";" << std::endl;
             stream.setIndent(stream.indent() - 4);
             stream << "}" << std::endl;
@@ -960,8 +967,8 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
                 stream << "for (int __daisy_reduce_mask = " << warp_width / 2 << "; __daisy_reduce_mask > 0; "
                        << "__daisy_reduce_mask >>= 1) {" << std::endl;
                 stream.setIndent(stream.indent() + 4);
-                stream << ctype << " " << other << " = " << strategy_->warp_shuffle_xor(reg_name, "__daisy_reduce_mask")
-                       << ";" << std::endl;
+                stream << ctype << " " << other << " = " << shuffle_xor(reg_name, "__daisy_reduce_mask") << ";"
+                       << std::endl;
                 stream << reg_name << " = " << combine_expr(r.operation, reg_name, other) << ";" << std::endl;
                 stream.setIndent(stream.indent() - 4);
                 stream << "}" << std::endl;
