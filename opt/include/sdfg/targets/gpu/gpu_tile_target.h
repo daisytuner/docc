@@ -102,6 +102,14 @@ public:
         return lane_width_;
     }
 
+    /// Shared memory (NVIDIA and CDNA LDS): 32 banks of 4 bytes.
+    std::optional<tiles::BankModel> bank_model(tiles::Space space) const override {
+        if (space == tiles::Space::Shared) {
+            return tiles::BankModel{32, 4};
+        }
+        return std::nullopt;
+    }
+
     data_flow::ImplementationType implementation_type() const override {
         return implementation_type_;
     }

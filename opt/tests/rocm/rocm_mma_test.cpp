@@ -530,14 +530,17 @@ TEST(ROCMMMATest, LocalStorageOnWaveMapSharesCopyAcrossLanes_gfx90a) {
         EXPECT_EQ(copy->plan().dst.offset()->__str__().find("wave_"), std::string::npos) << operand;
     }
 
-    // One [32][32] block tile per operand.
+    // One block tile of 32 padded rows per operand. A fragments read 8 B k-runs per lane, so
+    // 4 halves spread a phase's rows over all banks; B fragments read k strided, where 4 or 8
+    // halves are equally conflict-free and 8 keeps rows 16-byte aligned.
     for (const auto& name : builder.subject().containers()) {
         if (name.rfind("__daisy_local_storage_", 0) == 0) {
             auto& type = static_cast<const types::Array&>(builder.subject().type(name));
             EXPECT_TRUE(symbolic::eq(type.num_elements(), symbolic::integer(32))) << name;
             auto* row = dynamic_cast<const types::Array*>(&type.element_type());
             ASSERT_NE(row, nullptr) << name;
-            EXPECT_TRUE(symbolic::eq(row->num_elements(), symbolic::integer(32))) << name;
+            const int64_t padded = name.rfind("__daisy_local_storage_A", 0) == 0 ? 36 : 40;
+            EXPECT_TRUE(symbolic::eq(row->num_elements(), symbolic::integer(padded))) << name;
         }
     }
 
@@ -556,7 +559,7 @@ TEST(ROCMMMATest, LocalStorageOnWaveMapSharesCopyAcrossLanes_gfx90a) {
 }
 
 // Steps 4+5: K strip-mined into 32-wide panels (2 MMA blocks); each fragment reads its
-// wave's 16x16 window of the block-tile [32][32] buffers.
+// wave's 16x16 window of the padded block-tile buffers.
 TEST(ROCMMMATest, LocalStorageFragmentsReadOwnSlotWindow_gfx90a) {
     auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
     sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
@@ -574,14 +577,15 @@ TEST(ROCMMMATest, LocalStorageFragmentsReadOwnSlotWindow_gfx90a) {
         mul(symbolic::integer(16),
             symbolic::sub(find_loop(am, "tile_k0")->indvar(), find_loop(am, "tile_k0_tile0")->indvar()));
 
+    // A tile [32 m][32+4], B tile [32 k][32+8].
     auto* a = find_local_load(builder.subject().root(), "A");
     ASSERT_NE(a, nullptr);
     EXPECT_TRUE(
         symbolic::
             eq(a->layout().offset,
-               symbolic::expand(symbolic::add(symbolic::mul(symbolic::integer(512), wave_row), k_in_panel)))
+               symbolic::expand(symbolic::add(symbolic::mul(symbolic::integer(576), wave_row), k_in_panel)))
     ) << a->layout().offset->__str__();
-    EXPECT_TRUE(symbolic::eq(a->layout().ldstride, symbolic::integer(32)));
+    EXPECT_TRUE(symbolic::eq(a->layout().ldstride, symbolic::integer(36)));
 
     auto* b = find_local_load(builder.subject().root(), "B");
     ASSERT_NE(b, nullptr);
@@ -591,10 +595,10 @@ TEST(ROCMMMATest, LocalStorageFragmentsReadOwnSlotWindow_gfx90a) {
                symbolic::expand(
                    symbolic::
                        add(symbolic::mul(symbolic::integer(16), wave_col),
-                           symbolic::mul(symbolic::integer(32), k_in_panel))
+                           symbolic::mul(symbolic::integer(40), k_in_panel))
                ))
     ) << b->layout().offset->__str__();
-    EXPECT_TRUE(symbolic::eq(b->layout().ldstride, symbolic::integer(32)));
+    EXPECT_TRUE(symbolic::eq(b->layout().ldstride, symbolic::integer(40)));
 }
 
 // Staging around the whole K-block loop: the block tile holds the full K panel.
@@ -611,30 +615,31 @@ TEST(ROCMMMATest, LocalStorageFragmentsReadSubWindow_gfx90a) {
     auto wave_col = find_loop(am, "wave_col0")->indvar();
     auto tile_k = find_loop(am, "tile_k0")->indvar();
 
-    // A tile = [32][64]; the fragment window starts at row 16*wave_row, column 16*tile_k.
+    // A tile = [32][64+4]; the fragment window starts at row 16*wave_row, column 16*tile_k.
     auto* a = find_local_load(builder.subject().root(), "A");
     ASSERT_NE(a, nullptr);
     EXPECT_TRUE(
         symbolic::eq(
             a->layout().offset,
-            symbolic::add(symbolic::mul(symbolic::integer(1024), wave_row), symbolic::mul(symbolic::integer(16), tile_k))
+            symbolic::add(symbolic::mul(symbolic::integer(1088), wave_row), symbolic::mul(symbolic::integer(16), tile_k))
         )
     ) << a->layout().offset->__str__();
-    EXPECT_TRUE(symbolic::eq(a->layout().ldstride, symbolic::integer(64)));
+    EXPECT_TRUE(symbolic::eq(a->layout().ldstride, symbolic::integer(68)));
 
-    // B tile = [64][32]; the fragment window starts at row 16*tile_k, column 16*wave_col.
+    // B tile = [64][32+8]; the fragment window starts at row 16*tile_k, column 16*wave_col.
     auto* b = find_local_load(builder.subject().root(), "B");
     ASSERT_NE(b, nullptr);
     EXPECT_TRUE(
         symbolic::eq(
             b->layout().offset,
-            symbolic::add(symbolic::mul(symbolic::integer(16), wave_col), symbolic::mul(symbolic::integer(512), tile_k))
+            symbolic::add(symbolic::mul(symbolic::integer(16), wave_col), symbolic::mul(symbolic::integer(640), tile_k))
         )
     ) << b->layout().offset->__str__();
-    EXPECT_TRUE(symbolic::eq(b->layout().ldstride, symbolic::integer(32)));
+    EXPECT_TRUE(symbolic::eq(b->layout().ldstride, symbolic::integer(40)));
 }
 
-// Double-buffered panels: fragments select the stage by an offset bias (not a memlet subscript).
+// Double-buffered panels: fragments select the stage by an offset bias (not a memlet
+// subscript), and per-thread-slot copies stay synchronous (no CDNA global_load_lds).
 TEST(ROCMMMATest, SoftwarePipeliningBiasesFragmentStage_gfx90a) {
     auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
     sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
@@ -679,6 +684,7 @@ TEST(ROCMMMATest, SoftwarePipeliningBiasesFragmentStage_gfx90a) {
     for (auto& [name, snippet] : out.snippets) {
         kernels += snippet.content;
     }
+    EXPECT_EQ(kernels.find("global_load_lds"), std::string::npos) << kernels;
     EXPECT_NE(kernels.find("load_matrix_sync(mma_a0, (reinterpret_cast"), std::string::npos) << kernels;
 }
 
@@ -705,7 +711,7 @@ TEST(ROCMMMATest, FragmentLoadOverload_gfx90a) {
     EXPECT_NE(load_line("mma_c0").find("rocwmma::mem_row_major"), std::string::npos) << kernels;
 }
 
-// K-major B: the transposed block tile [32 n][32 k] is read column-major by the fragments,
+// K-major B: the transposed block tile [32 n][32+4 k] is read column-major by the fragments,
 // and TileVectorizer stages it with the 4x4 register-transposing copy.
 TEST(ROCMMMATest, LocalStorageTransposedBStagesKMajor_gfx90a) {
     auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
@@ -721,7 +727,7 @@ TEST(ROCMMMATest, LocalStorageTransposedBStagesKMajor_gfx90a) {
             auto& type = static_cast<const types::Array&>(builder.subject().type(name));
             EXPECT_TRUE(symbolic::eq(type.num_elements(), symbolic::integer(32))) << name;
             auto& row = static_cast<const types::Array&>(type.element_type());
-            EXPECT_TRUE(symbolic::eq(row.num_elements(), symbolic::integer(32))) << name;
+            EXPECT_TRUE(symbolic::eq(row.num_elements(), symbolic::integer(36))) << name;
         }
     }
 
@@ -733,11 +739,11 @@ TEST(ROCMMMATest, LocalStorageTransposedBStagesKMajor_gfx90a) {
     auto* b = find_local_load(builder.subject().root(), "B");
     ASSERT_NE(b, nullptr);
     EXPECT_EQ(b->layout().layout, gpu::MMA_LAYOUT_COL_MAJOR);
-    EXPECT_TRUE(symbolic::eq(b->layout().ldstride, symbolic::integer(32)));
+    EXPECT_TRUE(symbolic::eq(b->layout().ldstride, symbolic::integer(36)));
     EXPECT_TRUE(
         symbolic::
             eq(b->layout().offset,
-               symbolic::expand(symbolic::add(symbolic::mul(symbolic::integer(512), wave_col), k_in_panel)))
+               symbolic::expand(symbolic::add(symbolic::mul(symbolic::integer(576), wave_col), k_in_panel)))
     ) << b->layout().offset->__str__();
 
     {
@@ -855,7 +861,11 @@ TEST(ROCMMMATest, SoftwarePipeliningRegisterStaged_gfx90a) {
     }
     EXPECT_NE(kernels.find("__daisy_stage_"), std::string::npos) << kernels;
     EXPECT_NE(kernels.find("#pragma unroll"), std::string::npos) << kernels;
-    EXPECT_NE(kernels.find("make_uint4"), std::string::npos) << kernels;
+    // A's padded rows (36 halves) are 8- but not 16-byte aligned: 16-byte global loads,
+    // stored to LDS in 8-byte pieces.
+    EXPECT_NE(kernels.find("const uint4 __tc_v"), std::string::npos) << kernels;
+    EXPECT_NE(kernels.find("reinterpret_cast<int2*>"), std::string::npos) << kernels;
+    EXPECT_EQ(kernels.find("*reinterpret_cast<uint4*>"), std::string::npos) << kernels;
 }
 
 // Raw 32x32x8 MFMA atom: only CDNA offers it; fragments are register vectors and every operand
@@ -885,6 +895,14 @@ TEST(ROCMMMATest, RawMfma32x32x8_gfx90a) {
     strip_mine_k(builder, 8);
     localize(builder, "tile_k0", /*transpose_b=*/true);
     EXPECT_NO_THROW(builder.subject().validate());
+    // 8 B lane reads over 16-lane phases: 64 + 4 halves per row spread a phase over all banks.
+    for (const auto& name : builder.subject().containers()) {
+        if (name.rfind("__daisy_local_storage_", 0) == 0) {
+            auto& type = static_cast<const types::Array&>(builder.subject().type(name));
+            auto& row = static_cast<const types::Array&>(type.element_type());
+            EXPECT_TRUE(symbolic::eq(row.num_elements(), symbolic::integer(68))) << name;
+        }
+    }
     auto* b = find_local_load(builder.subject().root(), "B");
     ASSERT_NE(b, nullptr);
     EXPECT_EQ(b->layout().layout, gpu::MMA_LAYOUT_COL_MAJOR);

@@ -530,7 +530,8 @@ void register_transformations(py::module& m) {
             py::arg("transpose_layout") = false,
             "Create a local-storage transformation.\n\n"
             "The copy direction (in/out) and the storage space are both derived\n"
-            "from the dataflow and the enclosing parallel schedule.\n\n"
+            "from the dataflow and the enclosing parallel schedule. Shared buffers\n"
+            "are padded against the target's memory banks automatically.\n\n"
             "Args:\n"
             "    loop: The loop defining the localization scope\n"
             "    access_node: An access node for the container to localize\n"

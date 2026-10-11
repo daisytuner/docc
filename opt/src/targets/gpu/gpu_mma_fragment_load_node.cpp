@@ -100,6 +100,33 @@ bool GpuMmaFragmentLoadNode::relocalize_operand(int input_idx, const math::tenso
     return false;
 }
 
+std::optional<data_flow::SubgroupAccess> GpuMmaFragmentLoadNode::operand_access(int input_idx, unsigned subgroup_size) const {
+    if (input_idx != PTR_INPUT_IDX || fragment_type_ == MmaFragmentType::C || subgroup_size == 0) {
+        return std::nullopt;
+    }
+    // A/B register layout of the CDNA matrix cores: lane l holds row (A) / column (B) l % rows and a
+    // run of k values starting at per_lane * (l / rows).
+    const int rows = fragment_type_ == MmaFragmentType::A ? block_size_.m : block_size_.n;
+    const int k = block_size_.k;
+    const int lanes = static_cast<int>(subgroup_size);
+    if (rows <= 0 || lanes % rows != 0 || (rows * k) % lanes != 0) {
+        return std::nullopt;
+    }
+    const int per_lane = rows * k / lanes;
+    data_flow::SubgroupAccess access;
+    access.lanes.resize(lanes);
+    for (int l = 0; l < lanes; ++l) {
+        for (int e = 0; e < per_lane; ++e) {
+            const int64_t r = l % rows;
+            const int64_t kk = per_lane * (l / rows) + e;
+            access.lanes[l].push_back(
+                fragment_type_ == MmaFragmentType::A ? std::vector<int64_t>{r, kk} : std::vector<int64_t>{kk, r}
+            );
+        }
+    }
+    return access;
+}
+
 std::string GpuMmaFragmentLoadNode::toStr() const {
     std::stringstream ss;
     ss << "MmaFragmentLoad(" << block_size_.dim_str(fragment_type_) << ", " << layout_;

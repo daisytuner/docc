@@ -37,8 +37,8 @@ tiles::TileCopyNode* tile_copy_node_in(Block& block) {
 // Widen a scalar/async TileCopyNode to the widest legal vector transfer, deriving
 // contiguity/alignment from the plan layouts: the inner (fastest) tile dim must be
 // unit-stride on both sides, the inner extent and total must be a multiple of the
-// coalescing factor, and the outer source strides must keep each inner run
-// factor-aligned. A ScalarSync copy becomes VectorSync; a (pipelined) CpAsync copy
+// coalescing factor, and the outer source strides (plus buffer strides for an async
+// copy) must keep each inner run factor-aligned. A ScalarSync copy becomes VectorSync; a (pipelined) CpAsync copy
 // keeps its atom and only widens the transfer. Mutates atom/bytes; true if widened.
 bool widen_tile_copy_node(tiles::TileCopyNode& node) {
     if (node.atom() != tiles::CopyAtom::ScalarSync && node.atom() != tiles::CopyAtom::CpAsync) {
@@ -77,12 +77,17 @@ bool widen_tile_copy_node(tiles::TileCopyNode& node) {
         if (inner_n % factor != 0 || total_n % factor != 0) {
             continue;
         }
+        // Synchronous copies split buffer-side accesses to the row alignment at emission;
+        // an async copy writes the buffer directly, so its rows must hold the full width.
         bool outer_ok = true;
-        for (size_t d = 0; d + 1 < plan.src.strides().size(); ++d) {
-            auto* s = dynamic_cast<const SymEngine::Integer*>(plan.src.strides()[d].get());
-            if (s == nullptr || s->as_int() % factor != 0) {
-                outer_ok = false;
-                break;
+        std::vector<const symbolic::MultiExpression*> sides = {&plan.src.strides()};
+        if (node.atom() == tiles::CopyAtom::CpAsync) {
+            sides.push_back(&plan.dst.strides());
+        }
+        for (const auto* strides : sides) {
+            for (size_t d = 0; outer_ok && d + 1 < strides->size(); ++d) {
+                auto* s = dynamic_cast<const SymEngine::Integer*>((*strides)[d].get());
+                outer_ok = s != nullptr && s->as_int() % factor == 0;
             }
         }
         if (!outer_ok) {

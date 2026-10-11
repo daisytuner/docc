@@ -44,6 +44,7 @@ set(SOURCE_FILES
     src/tiles/locality.cpp
     src/tiles/swizzle.cpp
     src/tiles/tile.cpp
+    src/tiles/bank_conflicts.cpp
     src/tiles/buffer_layout.cpp
     src/tiles/tiled_copy.cpp
     src/tiles/library_nodes/pipeline_node.cpp

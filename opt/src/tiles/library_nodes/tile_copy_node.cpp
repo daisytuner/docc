@@ -318,6 +318,38 @@ void require_constant_steps(const TileCopyNode& node) {
     }
 }
 
+// Widest access (at most the transfer width) that keeps every buffer row aligned: padded
+// rows may not be multiples of the global-side transfer.
+size_t buffer_access_bytes(const TileCopyNode& node, size_t elem_bytes) {
+    const auto& strides = node.plan().dst.strides();
+    size_t width = std::max(node.bytes(), elem_bytes);
+    for (size_t d = 0; d + 1 < strides.size() && width > elem_bytes; ++d) {
+        auto* s = dynamic_cast<const SymEngine::Integer*>(strides[d].get());
+        if (s == nullptr) {
+            return elem_bytes;
+        }
+        while (width > elem_bytes && (s->as_int() * static_cast<long long>(elem_bytes)) % width != 0) {
+            width /= 2;
+        }
+    }
+    return width;
+}
+
+const char* int_type(size_t bytes) {
+    switch (bytes) {
+        case 16:
+            return "int4";
+        case 8:
+            return "int2";
+        case 4:
+            return "int";
+        case 2:
+            return "short";
+        default:
+            return "char";
+    }
+}
+
 // TransposeSync body: the 2-D tile [R][C] (source unit-stride along C, buffer along R) is
 // split into 4x4 blocks; each lane loads four 8-byte source rows, transposes them in
 // registers and stores four 8-byte buffer rows. When the block grid allows, 16-lane groups
@@ -541,12 +573,26 @@ void emit_cooperative_copy_loop(
             }
         } else {
             const std::string dst_addr = "&(" + dcast + ")[" + doff + "]";
-            if (words > 1) {
+            const size_t chunk = buffer_access_bytes(node, elem_bytes);
+            if (words > 1 && chunk >= node.bytes()) {
                 stmt = std::string("*reinterpret_cast<") + wide_t + "*>(" + dst_addr + ") = make_" + wide_t + "(";
                 for (size_t k = 0; k < words; ++k) {
                     stmt += (k ? ", " : "") + reg(k);
                 }
                 stmt += ");";
+            } else if (words > 1) {
+                // Padded buffer rows: store the transfer in row-aligned pieces.
+                const char* piece = int_type(chunk);
+                stmt = std::string("{ const ") + wide_t + " __tc_w = make_" + wide_t + "(";
+                for (size_t k = 0; k < words; ++k) {
+                    stmt += (k ? ", " : "") + reg(k);
+                }
+                stmt += "); ";
+                for (size_t k = 0; k < node.bytes() / chunk; ++k) {
+                    stmt += std::string("reinterpret_cast<") + piece + "*>(" + dst_addr + ")[" + std::to_string(k) +
+                            "] = reinterpret_cast<const " + piece + "*>(&__tc_w)[" + std::to_string(k) + "]; ";
+                }
+                stmt += "}";
             } else {
                 stmt = std::string("*reinterpret_cast<") + lane + "*>(" + dst_addr + ") = static_cast<" + lane + ">(" +
                        reg(0) + ");";
@@ -557,9 +603,33 @@ void emit_cooperative_copy_loop(
         const std::string src_addr = "&(" + scast + ")[" + soff + "]";
         stmt = async_stmt(dst_addr, src_addr, node.bytes());
     } else if (node.atom() == CopyAtom::VectorSync) {
-        const char* vec = node.bytes() == 16 ? "int4" : node.bytes() == 8 ? "int2" : "int";
-        stmt = std::string("*reinterpret_cast<") + vec + "*>(&(" + dcast + ")[" + doff +
-               "]) = " + "*reinterpret_cast<const " + vec + "*>(&(" + scast + ")[" + soff + "]);";
+        const char* vec = int_type(node.bytes());
+        const size_t chunk = buffer_access_bytes(node, elem_bytes);
+        const std::string dst_addr = "&(" + dcast + ")[" + doff + "]";
+        const std::string src_addr = "&(" + scast + ")[" + soff + "]";
+        if (chunk >= node.bytes()) {
+            stmt = std::string("*reinterpret_cast<") + vec + "*>(" + dst_addr + ") = " + "*reinterpret_cast<const " +
+                   vec + "*>(" + src_addr + ");";
+        } else {
+            // Padded buffer rows: the buffer side moves in row-aligned pieces.
+            const char* piece = int_type(chunk);
+            auto pieces = [&](const std::string& to, const std::string& from) {
+                std::string out;
+                for (size_t k = 0; k < node.bytes() / chunk; ++k) {
+                    const std::string idx = "[" + std::to_string(k) + "]";
+                    out += std::string("reinterpret_cast<") + piece + "*>(" + to + ")" + idx +
+                           " = reinterpret_cast<const " + piece + "*>(" + from + ")" + idx + "; ";
+                }
+                return out;
+            };
+            if (copy_in) {
+                stmt = std::string("{ const ") + vec + " __tc_w = *reinterpret_cast<const " + vec + "*>(" + src_addr +
+                       "); " + pieces(dst_addr, "&__tc_w") + "}";
+            } else {
+                stmt = std::string("{ ") + vec + " __tc_w; " + pieces("&__tc_w", src_addr) + "*reinterpret_cast<" +
+                       vec + "*>(" + dst_addr + ") = __tc_w; }";
+            }
+        }
     } else {
         stmt = "(" + dcast + ")[" + doff + "] = (" + scast + ")[" + soff + "];";
     }

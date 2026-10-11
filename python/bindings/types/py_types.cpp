@@ -294,7 +294,7 @@ void register_types(py::module& m) {
         .def("is_tight", &Tensor::is_tight);
 
     // Canonical packed-buffer geometry from the tiles module: given a tile shape
-    // and a BufferKind ("MultiDim"/"Transposed"/"Padded"/"Linearized"), return the
+    // and a kind ("MultiDim"/"Transposed"/"Padded"/"Linearized"), return the
     // buffer's affine layout as a Tensor — so callers don't hand-roll strides.
     m.def(
         "tile_buffer_layout",
@@ -309,25 +309,19 @@ void register_types(py::module& m) {
             for (const auto& s : slot_sizes) {
                 slots_e.push_back(sdfg::symbolic::parse(s));
             }
-            sdfg::tiles::BufferKind bk;
-            if (kind == "MultiDim") {
-                bk = sdfg::tiles::BufferKind::MultiDim;
-            } else if (kind == "Transposed") {
-                bk = sdfg::tiles::BufferKind::Transposed;
+            sdfg::tiles::PackedBuffer buffer{slots_e, tiles_e};
+            if (kind == "Transposed") {
+                buffer.placement = sdfg::tiles::Placement::ColMajor;
             } else if (kind == "Padded") {
-                bk = sdfg::tiles::BufferKind::Padded;
+                buffer.conflict = sdfg::tiles::ConflictPolicy::PadSlot;
             } else if (kind == "Linearized") {
-                bk = sdfg::tiles::BufferKind::Linearized;
+                buffer.placement = sdfg::tiles::Placement::Flat;
             } else if (kind == "Swizzle") {
-                bk = sdfg::tiles::BufferKind::Swizzle;
+                buffer.conflict = sdfg::tiles::ConflictPolicy::Swizzle;
             } else {
-                throw std::invalid_argument("tile_buffer_layout: unknown BufferKind '" + kind + "'");
+                throw std::invalid_argument("tile_buffer_layout: unknown kind '" + kind + "'");
             }
-            sdfg::symbolic::Expression inner = sdfg::symbolic::integer(1);
-            for (const auto& e : tiles_e) {
-                inner = sdfg::symbolic::mul(inner, e);
-            }
-            auto composed = sdfg::tiles::buffer_layout(slots_e, tiles_e, bk, inner);
+            auto composed = buffer.layout();
             if (!composed.swizzle.is_identity()) {
                 throw std::invalid_argument(
                     "tile_buffer_layout: Swizzle is non-affine; carry it via the copy's dst_swizzle instead"
