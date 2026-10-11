@@ -19,6 +19,8 @@ const char* atom_to_string(CopyAtom atom) {
             return "vector_sync";
         case CopyAtom::CpAsync:
             return "cp_async";
+        case CopyAtom::TransposeSync:
+            return "transpose_sync";
     }
     return "scalar_sync";
 }
@@ -29,6 +31,9 @@ CopyAtom atom_from_string(const std::string& s) {
     }
     if (s == "cp_async") {
         return CopyAtom::CpAsync;
+    }
+    if (s == "transpose_sync") {
+        return CopyAtom::TransposeSync;
     }
     return CopyAtom::ScalarSync;
 }
@@ -281,6 +286,82 @@ std::string emit_tile_copy_stmt(
     return stmt;
 }
 
+namespace {
+
+// TransposeSync body: the 2-D tile [R][C] (source unit-stride along C, buffer along R) is
+// split into 4x4 blocks; each lane loads four 8-byte source rows, transposes them in
+// registers and stores four 8-byte buffer rows. When the block grid allows, 16-lane groups
+// cover 4x4 blocks, so a wave reads whole 128-byte source rows and writes distinct banks.
+void emit_transpose_copy_blocks(
+    codegen::LanguageExtension& language_extension,
+    codegen::PrettyPrinter& stream,
+    const TileCopyNode& node,
+    const std::string& dst_expr,
+    const std::string& src_expr,
+    types::PrimitiveType elem,
+    const std::string& runtime_threads
+) {
+    const auto& plan = node.plan();
+    const long long rows = SymEngine::rcp_static_cast<const SymEngine::Integer>(plan.src.shape()[0])->as_int();
+    const long long cols = SymEngine::rcp_static_cast<const SymEngine::Integer>(plan.src.shape()[1])->as_int();
+    const long long rb = rows / 4, cb = cols / 4, blocks = rb * cb;
+
+    types::Pointer elem_ptr{types::Scalar(elem)};
+    const std::string dcast = language_extension.type_cast(dst_expr, elem_ptr);
+    const std::string scast = language_extension.type_cast(src_expr, elem_ptr);
+
+    const auto& ct = node.coop_threads();
+    const bool known = !ct.is_null() && SymEngine::is_a<SymEngine::Integer>(*ct);
+    if (known) {
+        const long long t = SymEngine::rcp_static_cast<const SymEngine::Integer>(ct)->as_int();
+        stream << "for (int __tc_i = 0; __tc_i < " << (blocks + t - 1) / t << "; __tc_i++) {" << std::endl;
+        stream << "int __tc_b = __tc_i * " << t << " + __tc_tid;" << std::endl;
+        if (blocks % t != 0) {
+            stream << "if (__tc_b < " << blocks << ") {" << std::endl;
+        }
+    } else {
+        stream << "for (int __tc_b = __tc_tid; __tc_b < " << blocks << "; __tc_b += " << runtime_threads << ") {"
+               << std::endl;
+    }
+    if (rb % 4 == 0 && cb % 4 == 0) {
+        stream << "int __tc_r4 = (__tc_b % 16) / 4 + 4 * ((__tc_b / 16) / " << cb / 4 << ");" << std::endl;
+        stream << "int __tc_c4 = (__tc_b % 4) + 4 * ((__tc_b / 16) % " << cb / 4 << ");" << std::endl;
+    } else {
+        stream << "int __tc_r4 = __tc_b / " << cb << ";" << std::endl;
+        stream << "int __tc_c4 = __tc_b % " << cb << ";" << std::endl;
+    }
+
+    auto r4 = symbolic::mul(symbolic::integer(4), symbolic::symbol("__tc_r4"));
+    auto c4 = symbolic::mul(symbolic::integer(4), symbolic::symbol("__tc_c4"));
+    stream << "unsigned __tc_x[4][2];" << std::endl;
+    for (int q = 0; q < 4; ++q) {
+        auto off = plan.src.resolve_element({symbolic::add(r4, symbolic::integer(q)), c4}, false);
+        stream << "{ const uint2 __tc_v = *reinterpret_cast<const uint2*>(&(" << scast << ")["
+               << language_extension.expression(off) << "]); __tc_x[" << q << "][0] = __tc_v.x; __tc_x[" << q
+               << "][1] = __tc_v.y; }" << std::endl;
+    }
+    // Buffer row c = source column c of the block: even columns are the low halves of a
+    // source word, odd columns the high halves.
+    for (int c = 0; c < 4; ++c) {
+        const int w = c / 2;
+        auto pick = [&](int lo_row, int hi_row) {
+            const std::string lo = "__tc_x[" + std::to_string(lo_row) + "][" + std::to_string(w) + "]";
+            const std::string hi = "__tc_x[" + std::to_string(hi_row) + "][" + std::to_string(w) + "]";
+            return c % 2 == 0 ? "((" + lo + " & 0xffffu) | (" + hi + " << 16))"
+                              : "((" + lo + " >> 16) | (" + hi + " & 0xffff0000u))";
+        };
+        auto off = plan.dst.resolve_element({r4, symbolic::add(c4, symbolic::integer(c))}, false);
+        stream << "*reinterpret_cast<uint2*>(&(" << dcast << ")[" << language_extension.expression(off)
+               << "]) = make_uint2(" << pick(0, 1) << ", " << pick(2, 3) << ");" << std::endl;
+    }
+    if (known && blocks % SymEngine::rcp_static_cast<const SymEngine::Integer>(ct)->as_int() != 0) {
+        stream << "}" << std::endl;
+    }
+    stream << "}" << std::endl;
+}
+
+} // namespace
+
 void emit_cooperative_copy_loop(
     codegen::LanguageExtension& language_extension,
     codegen::PrettyPrinter& stream,
@@ -330,6 +411,12 @@ void emit_cooperative_copy_loop(
 
     stream << "{" << std::endl;
     stream << "int __tc_tid = " << tid << ";" << std::endl;
+
+    if (node.atom() == CopyAtom::TransposeSync) {
+        emit_transpose_copy_blocks(language_extension, stream, node, dst_expr, src_expr, elem, n);
+        stream << "}" << std::endl;
+        return;
+    }
 
     // When the cooperating thread count is known, emit a from-zero loop whose trip
     // count `ceil(size/(threads*factor))` is a symbolic expression that folds to a
