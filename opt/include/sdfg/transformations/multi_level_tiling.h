@@ -32,23 +32,23 @@ public:
      * @param tile_size The size of the outer tile (must be > 1)
      * @param tile_size_2 The size of the inner tile (must be > 1 and < tile_size)
      * @param simplify_bounds Drop the redundant inner bound for perfectly dividing tiles at both
-     *        levels (off by default; see LoopTiling::tile_loop)
+     *        levels (see LoopTiling::tile_loop)
      */
     MultiLevelTiling(
-        structured_control_flow::StructuredLoop& loop, size_t tile_size, size_t tile_size_2, bool simplify_bounds = false
+        structured_control_flow::StructuredLoop& loop, size_t tile_size, size_t tile_size_2, bool simplify_bounds = true
     );
 
     /**
      * @brief Construct a multi-level loop tiling transformation
      * @param loop The loop to be tiled
      * @param tile_sizes The tile sizes (must be at least 2)
-     * @param simplify_bounds Drop the redundant inner bound for perfectly dividing tiles at all levels (off by default;
-     *        see LoopTiling::tile_loop)
+     * @param simplify_bounds Drop the redundant inner bound for perfectly dividing tiles at all levels (see
+     *        LoopTiling::tile_loop)
      */
     MultiLevelTiling(
         structured_control_flow::StructuredLoop& loop,
         const std::vector<size_t>& tile_sizes,
-        bool simplify_bounds = false
+        bool simplify_bounds = true
     );
 
     std::string name() const override;

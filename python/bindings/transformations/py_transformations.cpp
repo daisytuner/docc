@@ -88,13 +88,13 @@ void register_transformations(py::module& m) {
             py::init<StructuredLoop&, size_t, bool>(),
             py::arg("loop"),
             py::arg("tile_size"),
-            py::arg("simplify_bounds") = false,
+            py::arg("simplify_bounds") = true,
             "Create a loop tiling transformation.\n\n"
             "Args:\n"
             "    loop: The loop to tile\n"
             "    tile_size: The tile size (must be > 1)\n"
             "    simplify_bounds: Drop the redundant inner bound for perfectly dividing tiles,\n"
-            "        yielding a clean constant-trip tile that unrolls/vectorizes (default: False)"
+            "        yielding a clean constant-trip tile that unrolls/vectorizes (default: True)"
         )
         .def_property_readonly(
             "inner_loop",
