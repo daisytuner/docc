@@ -1933,6 +1933,51 @@ TEST(JSONSerializerTest, SerializeDeserialize_Reduce) {
     EXPECT_EQ(des_reduce.root().size(), 0);
 }
 
+TEST(JSONSerializerTest, SerializeDeserialize_ReduceRescale) {
+    sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+    auto& root = builder.subject().root();
+
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
+    types::Scalar float_desc(types::PrimitiveType::Float);
+    builder.add_container("i", sym_desc);
+    builder.add_container("m", float_desc);
+    builder.add_container("d", float_desc);
+
+    using structured_control_flow::ReductionInfo;
+    using structured_control_flow::ReductionOperation;
+    using structured_control_flow::RescaleBase;
+    auto& reduce = builder.add_reduce(
+        root,
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::symbol("i"), symbolic::integer(10)),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
+        {ReductionInfo{ReductionOperation::Max, "m"},
+         ReductionInfo{ReductionOperation::Add, "d", SymEngine::null, "m", RescaleBase::Two}},
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+
+    sdfg::serializer::JSONSerializer serializer;
+    nlohmann::json j;
+    serializer.structured_loop_to_json(j, reduce);
+    EXPECT_FALSE(j["reductions"][0].contains("rescale"));
+    EXPECT_EQ(j["reductions"][1]["rescale"]["anchor"], "m");
+    EXPECT_EQ(j["reductions"][1]["rescale"]["base"], "2");
+
+    auto des_builder = sdfg::builder::StructuredSDFGBuilder("test_sdfg", FunctionType_CPU);
+    des_builder.add_container("i", sym_desc);
+    des_builder.add_container("m", float_desc);
+    des_builder.add_container("d", float_desc);
+    serializer.json_to_structured_loop_node(j, des_builder, des_builder.subject().root());
+
+    auto& des_reduce = sdfg::dyn_cast<structured_control_flow::Reduce&>(des_builder.subject().root().at(0));
+    ASSERT_EQ(des_reduce.reductions().size(), 2u);
+    EXPECT_TRUE(des_reduce.reductions()[0].rescale.empty());
+    EXPECT_EQ(des_reduce.reductions()[1].rescale, "m");
+    EXPECT_EQ(des_reduce.reductions()[1].rescale_base, RescaleBase::Two);
+    EXPECT_NO_THROW(des_reduce.validate(des_builder.subject()));
+}
+
 TEST(JSONSerializerTest, SerializeDeserialize_return) {
     sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
     auto& root = builder.subject().root();
