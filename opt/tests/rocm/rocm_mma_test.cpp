@@ -861,6 +861,7 @@ TEST(ROCMMMATest, SoftwarePipeliningRegisterStaged_gfx90a) {
     }
     EXPECT_NE(kernels.find("__daisy_stage_"), std::string::npos) << kernels;
     EXPECT_NE(kernels.find("#pragma unroll"), std::string::npos) << kernels;
+    EXPECT_NE(kernels.find("__builtin_amdgcn_sched_barrier(0);"), std::string::npos) << kernels;
     // A's padded rows (36 halves) are 8- but not 16-byte aligned: 16-byte global loads,
     // stored to LDS in 8-byte pieces.
     EXPECT_NE(kernels.find("const uint4 __tc_v"), std::string::npos) << kernels;
