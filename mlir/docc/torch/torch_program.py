@@ -260,7 +260,7 @@ class TorchProgram(DoccProgram):
         # instrumentation/arg-capture/remote-tuning do not alias to the first
         # built binary (the on-disk hash already accounts for these options).
         mem_cache_key = (
-            f"{cache_key}|{self.options.capture_args}|{self.options.instrumentation_mode}|"
+            f"{cache_key}|{self.options.codegen}|{self.options.capture_args}|{self.options.instrumentation_mode}|"
             f"{self.options.remote_tuning}|{self.options.fp_contract}|{self.options.contraction_precision}"
         )
 
@@ -292,7 +292,7 @@ class TorchProgram(DoccProgram):
                 except Exception:
                     pass
 
-            hash_input = f"{self.name}|{self.options.target}|{self.options.category}|{cache_key}|{model_code}|{self.options.capture_args}|{self.options.instrumentation_mode}|{self.options.remote_tuning}|{self.options.approximate_math}|{self.options.fp_contract}|{self.options.contraction_precision}".encode(
+            hash_input = f"{self.name}|{self.options.target}|{self.options.codegen}|{self.options.category}|{cache_key}|{model_code}|{self.options.capture_args}|{self.options.instrumentation_mode}|{self.options.remote_tuning}|{self.options.approximate_math}|{self.options.fp_contract}|{self.options.contraction_precision}".encode(
                 "utf-8"
             )
             stable_id = hashlib.sha256(hash_input).hexdigest()[:16]
@@ -354,7 +354,10 @@ class TorchProgram(DoccProgram):
                 self._input_info.append({})
 
         if docc_reuse_binaries:
-            lib_path = f"{output_folder}/lib__docc_{self.name}.so"
+            if self.options.codegen == "numpy":
+                lib_path = f"{output_folder}/__docc_{self.name}.py"
+            else:
+                lib_path = f"{output_folder}/lib__docc_{self.name}.so"
             if not os.path.exists(lib_path):
                 raise ValueError(
                     f"Tried reusing binary '{lib_path}' but does not exist"
@@ -669,12 +672,16 @@ def compile_torch(
     category: str = "server",
     remote_tuning: bool = False,
     force_rebuild: bool = False,
+    codegen: Optional[str] = None,
 ) -> CompiledSDFG:
     return TorchProgram(
         model,
         example_input=example_input,
         options=DoccOptions(
-            target=target, category=category, remote_tuning=remote_tuning
+            target=target,
+            category=category,
+            remote_tuning=remote_tuning,
+            codegen=codegen,
         ),
         force_rebuild=force_rebuild,
     )
