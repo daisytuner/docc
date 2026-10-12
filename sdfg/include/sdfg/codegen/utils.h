@@ -1,8 +1,12 @@
 #pragma once
 
+#include <algorithm>
+#include <cctype>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
+#include <string_view>
+#include <type_traits>
 
 #include "sdfg/types/type.h"
 
@@ -28,6 +32,11 @@ public:
     // Clear the stringstream content
     void clear();
 
+    /// Monotonic count of writes that emitted non-whitespace text; compare two readings to detect an empty region.
+    size_t content() const {
+        return content_;
+    }
+
     // Overload the insertion operator
     template<typename T>
     PrettyPrinter& operator<<(const T& value) {
@@ -36,6 +45,9 @@ public:
         }
         applyIndent();
         stream << value;
+        if (has_content(value)) {
+            ++content_;
+        }
         return *this;
     }
 
@@ -48,9 +60,26 @@ private:
     int indentSize;
     bool isNewLine = true;
     bool frozen_;
+    size_t content_ = 0;
 
     // Apply indentation only at the beginning of a new line
     void applyIndent();
+
+    template<typename T>
+    static bool has_content(const T& value) {
+        auto not_space = [](char c) {
+            return !std::isspace(static_cast<unsigned char>(c));
+        };
+        if constexpr (std::is_same_v<T, char>) {
+            return not_space(value);
+        } else if constexpr (std::is_convertible_v<const T&, std::string_view>) {
+            std::string_view text(value);
+            return std::any_of(text.begin(), text.end(), not_space);
+        } else {
+            // Stream manipulators such as std::hex emit nothing.
+            return !std::is_function_v<T>;
+        }
+    }
 };
 
 class Reference : public types::IType {

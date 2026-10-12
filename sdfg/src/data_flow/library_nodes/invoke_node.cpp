@@ -184,11 +184,7 @@ void InvokeNodeDispatcher::dispatch_code(
         }
         func_ptr_type += ")";
 
-        if (this->language_extension_.language() == "C") {
-            stream << "((" << func_ptr_type << ") " << node.callee_name() << ")" << "(";
-        } else if (this->language_extension_.language() == "C++") {
-            stream << "reinterpret_cast<" << func_ptr_type << ">(" << node.callee_name() << ")" << "(";
-        }
+        stream << this->language_extension_.reinterpret_cast_expr(node.callee_name(), func_ptr_type) << "(";
     } else {
         stream << this->language_extension_.external_prefix() << node.callee_name() << "(";
     }

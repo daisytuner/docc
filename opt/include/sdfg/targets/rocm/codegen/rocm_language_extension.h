@@ -2,21 +2,21 @@
 
 #include <string>
 
-#include "sdfg/codegen/language_extension.h"
+#include "sdfg/codegen/language_extensions/c_style_language_extension.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/rocm/rocm_arch.h"
 #include "sdfg/types/type.h"
 
 namespace sdfg::rocm {
 
-class ROCMLanguageExtension : public sdfg::codegen::LanguageExtension {
+class ROCMLanguageExtension : public sdfg::codegen::CStyleLanguageExtension {
     const gpu::rocm::RocmArch* arch_;
 
 public:
     ROCMLanguageExtension(
         sdfg::Function& function, const gpu::rocm::RocmArch* arch, const std::string& external_prefix = ""
     )
-        : LanguageExtension(function, external_prefix), arch_(arch) {
+        : CStyleLanguageExtension(function, external_prefix), arch_(arch) {
     }
 
     ROCMLanguageExtension(sdfg::Function& function, const std::string& external_prefix = "")

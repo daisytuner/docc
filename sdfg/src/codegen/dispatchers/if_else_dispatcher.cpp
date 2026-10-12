@@ -24,26 +24,12 @@ void IfElseDispatcher::dispatch_node(
     for (size_t i = 0; i < node_.size(); i++) {
         auto child = node_.at(i);
 
-        if (i == 0) {
-            main_stream << "if";
-        } else {
-            main_stream << "else if";
-        }
-        main_stream << "(";
-        main_stream << language_extension_.expression(child.second);
-        main_stream << ")";
-        main_stream << std::endl;
-
-        main_stream << "{" << std::endl;
-
-        main_stream.setIndent(main_stream.indent() + 4);
+        auto body = language_extension_.begin_branch(main_stream, i, node_.size(), child.second);
         SequenceDispatcher dispatcher(
             language_extension_, sdfg_, analysis_manager_, child.first, instrumentation_plan_, arg_capture_plan_
         );
         dispatcher.dispatch(main_stream, globals_stream, library_snippet_factory);
-        main_stream.setIndent(main_stream.indent() - 4);
-
-        main_stream << "}" << std::endl;
+        language_extension_.end(main_stream, body);
     }
 };
 

@@ -2,16 +2,16 @@
 
 #include <string>
 
-#include "sdfg/codegen/language_extension.h"
+#include "sdfg/codegen/language_extensions/c_style_language_extension.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/types/type.h"
 
 namespace sdfg::cuda {
 
-class CUDALanguageExtension : public sdfg::codegen::LanguageExtension {
+class CUDALanguageExtension : public sdfg::codegen::CStyleLanguageExtension {
 public:
     CUDALanguageExtension(sdfg::Function& function, const std::string& external_prefix = "")
-        : LanguageExtension(function, external_prefix) {
+        : CStyleLanguageExtension(function, external_prefix) {
     }
 
     const std::string language() const override {

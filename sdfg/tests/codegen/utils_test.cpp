@@ -19,3 +19,17 @@ TEST(PrettyPrinterTest, Frozen) {
     codegen::PrettyPrinter printer(0, true);
     EXPECT_THROW(printer << "Hello", std::runtime_error);
 }
+
+TEST(PrettyPrinterTest, ContentIgnoresWhitespace) {
+    codegen::PrettyPrinter printer(4);
+    auto mark = printer.content();
+    printer << "" << " " << '\n' << std::endl;
+    EXPECT_EQ(printer.content(), mark);
+
+    printer << "x = 1" << std::endl;
+    EXPECT_GT(printer.content(), mark);
+
+    mark = printer.content();
+    printer << 0;
+    EXPECT_GT(printer.content(), mark);
+}

@@ -52,6 +52,7 @@ set(SOURCE_FILES
     src/codegen/instrumentation/instrumentation_info.cpp
     src/codegen/instrumentation/instrumentation_plan.cpp
     src/codegen/language_extensions/c_language_extension.cpp
+    src/codegen/language_extensions/c_style_language_extension.cpp
     src/codegen/language_extensions/cpp_language_extension.cpp
     src/codegen/loop_report.cpp
     src/codegen/utils.cpp

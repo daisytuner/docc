@@ -4,17 +4,17 @@
 
 #include <string>
 
-#include "sdfg/codegen/language_extension.h"
+#include "sdfg/codegen/language_extensions/c_style_language_extension.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/types/type.h"
 
 namespace sdfg {
 namespace codegen {
 
-class CPPLanguageExtension : public LanguageExtension {
+class CPPLanguageExtension : public CStyleLanguageExtension {
 public:
     CPPLanguageExtension(sdfg::Function& function, const std::string& external_prefix = "")
-        : LanguageExtension(function, external_prefix) {
+        : CStyleLanguageExtension(function, external_prefix) {
     }
 
     const std::string language() const override {
