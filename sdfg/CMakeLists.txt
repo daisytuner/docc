@@ -54,6 +54,7 @@ set(SOURCE_FILES
     src/codegen/language_extensions/c_language_extension.cpp
     src/codegen/language_extensions/c_style_language_extension.cpp
     src/codegen/language_extensions/cpp_language_extension.cpp
+    src/codegen/language_extensions/python_language_extension.cpp
     src/codegen/loop_report.cpp
     src/codegen/utils.cpp
     src/control_flow/interstate_edge.cpp

@@ -36,6 +36,7 @@ set(TEST_FILES
     codegen/instrumentation/arg_capture_plan_test.cpp
     codegen/language_extensions/c_language_extension_test.cpp
     codegen/language_extensions/cpp_language_extension_test.cpp
+    codegen/language_extensions/python_language_extension_test.cpp
     codegen/utils_test.cpp
     control_flow/interstate_edge_test.cpp
     control_flow/state_test.cpp
