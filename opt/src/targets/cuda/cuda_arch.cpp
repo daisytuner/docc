@@ -125,7 +125,7 @@ types::PrimitiveType CudaMmaSupport::get_accumulator_type(
     }
 }
 
-data_flow::ImplementationType CudaMmaSupport::get_mma_impl_type() const {
+data_flow::ImplementationType CudaMmaSupport::get_mma_impl_type(const GpuMmaTiling& tiling) const {
     return {"CUDA_MMA"};
 }
 
@@ -188,9 +188,10 @@ std::optional<GpuMmaTiling> CudaMmaSupport::get_mma_tiling(
 }
 
 void CudaMmaSupport::set_mma_fragment_storage_type(
-    types::StorageType& storage_type, const MmaBlockSize& size, MmaFragmentType type, MmaFragmentLayout layout
+    types::StorageType& storage_type, const GpuMmaTiling& tiling, MmaFragmentType type, MmaFragmentLayout layout
 ) const {
     storage_type.value() = MMA_STORAGE_TYPE;
+    auto& size = tiling.mma_block_size;
     storage_type.args(
         {symbolic::integer(size.m),
          symbolic::integer(size.n),

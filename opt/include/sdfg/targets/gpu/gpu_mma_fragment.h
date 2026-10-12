@@ -37,6 +37,7 @@ struct GpuMmaTiling {
     int macro_blocks_m = 0;
     int macro_blocks_n = 0;
     types::PrimitiveType acc_type;
+    int impl_details = 0; // implementation-specific details, e.g. for ROCm MFMA variant selection
 };
 
 enum MmaFragmentLayout {
@@ -74,7 +75,7 @@ struct GpuMmaSupport {
         const MmaBlockSize& block_size, types::PrimitiveType input_type, types::PrimitiveType acc_type
     ) const = 0;
 
-    virtual data_flow::ImplementationType get_mma_impl_type() const = 0;
+    virtual data_flow::ImplementationType get_mma_impl_type(const GpuMmaTiling& tiling) const = 0;
 
     static int get_integer_block_count(const symbolic::Expression& size, uint16_t block_size);
 
@@ -88,7 +89,7 @@ struct GpuMmaSupport {
     ) const = 0;
 
     virtual void set_mma_fragment_storage_type(
-        types::StorageType& storage_type, const MmaBlockSize& size, MmaFragmentType type, MmaFragmentLayout layout
+        types::StorageType& storage_type, const GpuMmaTiling& tiling, MmaFragmentType type, MmaFragmentLayout layout
     ) const = 0;
 
     virtual std::vector<MmaBlockSize>

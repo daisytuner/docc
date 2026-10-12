@@ -14,12 +14,14 @@
 #include "sdfg/passes/expansion/library_node_expansion_pass.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/symbolic/symbolic.h"
+#include "sdfg/targets/gpu/gpu_mma_fragment.h"
 #include "sdfg/targets/gpu/gpu_mma_fragment_load_node.h"
 #include "sdfg/targets/gpu/gpu_mma_matmul_node.h"
 #include "sdfg/targets/gpu/gpu_offload_schedule_type.h"
 #include "sdfg/targets/gpu/gpu_types.h"
 #include "sdfg/targets/rocm/rocm.h"
 #include "sdfg/targets/rocm/rocm_arch.h"
+#include "sdfg/targets/rocm/rocm_mfma_dispatcher.h"
 #include "sdfg/tiles/library_nodes/tile_copy_node.h"
 #include "sdfg/tiles/transformations/local_storage.h"
 #include "sdfg/transformations/loop_tiling.h"
@@ -328,6 +330,10 @@ TEST(ROCMMMATest, 1K_1K_1K_64x64_gfx90a_with_explicit_32x32x8_blocks) {
     EXPECT_EQ(mma->mma_block_size().m, 32);
     EXPECT_EQ(mma->mma_block_size().n, 32);
     EXPECT_EQ(mma->mma_block_size().k, 8);
+    EXPECT_EQ(mma->implementation_type().value(), gpu::rocm::ImplementationType_ROCM_MMA_BARE.value());
+    ASSERT_TRUE(builder.subject().exists("mma_a0"));
+    auto& regs_type = builder.subject().type("mma_a0");
+    EXPECT_EQ(regs_type.storage_type().value(), gpu::rocm::RocmMmaSupport::MMA_REGS_STORAGE_TYPE);
 
     test::utils::test_codegen(builder.subject(), "result", true);
 }
@@ -577,9 +583,17 @@ TEST(ROCMMMATest, FragmentLayoutFromTensorLayoutKeepsMajorness) {
 TEST(ROCMMMATest, FragmentLoadRelocalizesToBufferView) {
     auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
     auto* mma = arch.mma_support();
-    gpu::MmaBlockSize block_size(16, 16, 16);
+    gpu::GpuMmaTiling tiling{
+        .mma_block_size = gpu::MmaBlockSize(16, 16, 16),
+        .wave_tile_blocks_m = 1,
+        .wave_tile_blocks_n = 1,
+        .threads_per_mma_block_m = 32,
+        .macro_blocks_m = 1,
+        .macro_blocks_n = 1,
+        .acc_type = types::PrimitiveType::Half,
+    };
 
-    ASSERT_TRUE(mma->is_valid_block_size(block_size, types::PrimitiveType::Half, types::PrimitiveType::Half));
+    ASSERT_TRUE(mma->is_valid_block_size(tiling.mma_block_size, types::PrimitiveType::Half, tiling.acc_type));
 
     builder::StructuredSDFGBuilder builder("reloc", FunctionType_CPU);
     auto& block = builder.add_block(builder.subject().root());
@@ -590,11 +604,11 @@ TEST(ROCMMMATest, FragmentLoadRelocalizesToBufferView) {
     auto& load = static_cast<gpu::GpuMmaFragmentLoadNode&>(builder.add_library_node<gpu::GpuMmaFragmentLoadNode>(
         block,
         DebugInfo(),
-        block_size,
+        tiling.mma_block_size,
         gpu::MmaFragmentType::A,
         global,
         types::PrimitiveType::Half,
-        mma->get_mma_impl_type()
+        mma->get_mma_impl_type(tiling)
     ));
     auto s16 = symbolic::integer(16);
     auto view_offset =

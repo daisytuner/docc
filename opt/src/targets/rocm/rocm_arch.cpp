@@ -11,6 +11,7 @@
 
 #include "sdfg/targets/gpu/gpu_arch.h"
 #include "sdfg/targets/rocm/rocm.h"
+#include "sdfg/targets/rocm/rocm_mfma_dispatcher.h"
 #include "sdfg/targets/rocm/rocm_mma_dispatcher.h"
 
 namespace sdfg::gpu::rocm {
@@ -323,9 +324,17 @@ std::optional<GpuMmaTiling> RocmMmaSupport::get_mma_tiling(
 }
 
 void RocmMmaSupport::set_mma_fragment_storage_type(
-    types::StorageType& storage_type, const MmaBlockSize& size, MmaFragmentType type, MmaFragmentLayout layout
+    types::StorageType& storage_type, const GpuMmaTiling& tiling, MmaFragmentType type, MmaFragmentLayout layout
 ) const {
-    storage_type.value(MMA_STORAGE_TYPE);
+    auto variant = select_variant(tiling);
+    if (variant == RocmMmaVariant::Bare) {
+        storage_type.value(MMA_REGS_STORAGE_TYPE);
+    } else if (variant == RocmMmaVariant::Fragment) {
+        storage_type.value(MMA_FRAGMENT_STORAGE_TYPE);
+    } else {
+        throw std::invalid_argument("Unknown RocmMmaVariant: " + std::to_string(static_cast<int>(variant)));
+    }
+    auto& size = tiling.mma_block_size;
     storage_type.args(
         {symbolic::integer(size.m),
          symbolic::integer(size.n),
@@ -349,32 +358,83 @@ bool RocmMmaSupport::is_valid_block_size(
 }
 
 bool RocmMmaSupport::is_mma_type(const types::StorageType& storage) {
-    return storage.value() == MMA_STORAGE_TYPE;
+    return storage.value() == MMA_FRAGMENT_STORAGE_TYPE || storage.value() == MMA_REGS_STORAGE_TYPE;
 }
 
-data_flow::ImplementationType RocmMmaSupport::get_mma_impl_type() const {
-    return ImplementationType_ROCM_MMA;
+RocmMmaVariant RocmMmaSupport::select_variant(const GpuMmaTiling& tiling) {
+    auto& block_size = tiling.mma_block_size;
+    const bool is_32_block = block_size.m == 32 && block_size.n == 32 && block_size.k == 8;
+    if (tiling.impl_details) {
+        if (static_cast<RocmMmaVariant>(tiling.impl_details) == RocmMmaVariant::Bare && !is_32_block) {
+            throw std::
+                invalid_argument("RocmMmaBareStrategy (MFMA) only supports 32x32x8 blocks, got " + block_size.toStr());
+        }
+        return static_cast<RocmMmaVariant>(tiling.impl_details);
+    }
+    return is_32_block ? RocmMmaVariant::Bare : RocmMmaVariant::Fragment;
+}
+
+data_flow::ImplementationType RocmMmaSupport::get_mma_impl_type(const GpuMmaTiling& tiling) const {
+    auto variant = select_variant(tiling);
+
+    if (variant == RocmMmaVariant::Bare) {
+        return ImplementationType_ROCM_MMA_BARE;
+    } else if (variant == RocmMmaVariant::Fragment) {
+        return ImplementationType_ROCM_MMA_FRAGMENT;
+    } else {
+        throw std::invalid_argument("Unknown RocmMmaVariant: " + std::to_string(static_cast<int>(variant)));
+    }
 }
 
 void RocmMmaSupport::emit_block_frag_type(
     std::ostream& os, const types::StorageType& storage_type, types::PrimitiveType element_type
 ) const {
-    emit_block_frag_type(
-        os,
-        static_cast<MmaFragmentType>(get_storage_type_arg_as_int(storage_type, 3)),
-        {get_storage_type_arg_as_int(storage_type, 0),
-         get_storage_type_arg_as_int(storage_type, 1),
-         get_storage_type_arg_as_int(storage_type, 2)},
-        static_cast<MmaFragmentLayout>(get_storage_type_arg_as_int(storage_type, 4)),
-        element_type,
-        std::nullopt
-    );
+    MmaBlockSize size{
+        get_storage_type_arg_as_int(storage_type, 0),
+        get_storage_type_arg_as_int(storage_type, 1),
+        get_storage_type_arg_as_int(storage_type, 2)
+    };
+    auto type = static_cast<MmaFragmentType>(get_storage_type_arg_as_int(storage_type, 3));
+    auto layout = static_cast<MmaFragmentLayout>(get_storage_type_arg_as_int(storage_type, 4));
+    auto val = storage_type.value();
+    if (val == MMA_FRAGMENT_STORAGE_TYPE) {
+        emit_block_frag_type(os, type, size, layout, element_type, std::nullopt);
+    } else if (val == MMA_REGS_STORAGE_TYPE) {
+        emit_bare_fragment_decl_type(os, type, size, layout, element_type, std::nullopt);
+    }
+}
+
+void RocmMmaSupport::emit_bare_fragment_decl_type(
+    std::ostream& os,
+    MmaFragmentType type,
+    const MmaBlockSize& dims,
+    MmaFragmentLayout layout,
+    types::PrimitiveType scalar_type,
+    std::optional<std::pair<int, int>> coop_dims
+) {
+    auto shape = dims.get_shape(type);
+    const auto elems =
+        SymEngine::rcp_static_cast<const SymEngine::Integer>(symbolic::mul(shape.at(0), shape.at(1)))->as_int() / 64;
+    switch (scalar_type) {
+        case types::PrimitiveType::Half:
+            os << "_Float16";
+            break;
+        case types::PrimitiveType::Float:
+            os << "float";
+            break;
+        default:
+            throw std::invalid_argument(
+                "invalid scalar type: " + std::string(types::primitive_type_to_string(scalar_type)) +
+                " on mfma fragment declaration"
+            );
+    }
+    os << " __attribute__((ext_vector_type(" << elems << ")))";
 }
 
 void RocmMmaSupport::emit_block_frag_type(
     std::ostream& os,
     MmaFragmentType type,
-    std::array<int, 3> dims,
+    const MmaBlockSize& dims,
     MmaFragmentLayout layout,
     types::PrimitiveType scalar_type,
     std::optional<std::pair<int, int>> coop_dims
@@ -393,9 +453,9 @@ void RocmMmaSupport::emit_block_frag_type(
         default:
             throw std::invalid_argument("invalid fragment type");
     }
-    os << dims[0] << ", ";
-    os << dims[1] << ", ";
-    os << dims[2] << ", ";
+    os << dims.m << ", ";
+    os << dims.n << ", ";
+    os << dims.k << ", ";
     switch (scalar_type) {
         case types::PrimitiveType::BFloat:
             os << "rocwmma::bfloat16_t";

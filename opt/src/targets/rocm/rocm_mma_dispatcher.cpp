@@ -1,99 +1,88 @@
 #include "sdfg/targets/rocm/rocm_mma_dispatcher.h"
 
-#include "sdfg/targets/rocm/codegen/rocm_language_extension.h"
-#include "sdfg/targets/rocm/rocm_arch.h"
-
 
 namespace sdfg::gpu::rocm {
 
-const GpuArch* RocmMmaBaseDispatcher::get_gpu_arch_from_context(codegen::CodegenOutput& out) const {
-    auto* rocm_lang = dynamic_cast<sdfg::rocm::ROCMLanguageExtension*>(&out.language_extension);
-    if (rocm_lang) {
-        return rocm_lang->gpu_arch();
-    } else {
-        return nullptr;
-    }
-}
-
-void RocmMmaBaseDispatcher::emit_block_frag_declaration(
-    codegen::CodegenOutput& out,
-    const std::string& name,
-    MmaFragmentType type,
-    std::array<int, 3> dims,
-    MmaFragmentLayout layout,
-    types::PrimitiveType scalar_type,
-    std::optional<std::pair<int, int>> coop_dims
-) const {
-    std::stringstream ss;
-    RocmMmaSupport::emit_block_frag_type(ss, type, dims, layout, scalar_type, coop_dims);
-    out.stream << ss.str() << " " << name << ";" << std::endl;
-}
-
-void RocmMmaBaseDispatcher::emit_load_macro(
-    codegen::CodegenOutput& out,
-    const std::string& name,
-    const std::string& base_addr,
-    const symbolic::Expression& offset,
-    const symbolic::Expression& line_size,
-    MmaFragmentLayout layout
-) const {
-    out.stream << "rocwmma::load_matrix_sync(" << name << ", " << base_addr;
-    if (!offset.is_null()) {
-        out.stream << " + " << language_extension_.expression(offset);
-    }
-    out.stream << ", " << language_extension_.expression(line_size);
-    if (layout == MmaFragmentLayout::MMA_LAYOUT_COL_MAJOR) {
-        out.stream << ", rocwmma::mem_col_major";
-    } else if (layout == MmaFragmentLayout::MMA_LAYOUT_ROW_MAJOR) {
-        out.stream << ", rocwmma::mem_row_major";
-    }
-    out.stream << ");" << std::endl;
-}
-
-void RocmMmaBaseDispatcher::emit_frag_zero_init(
-    codegen::CodegenOutput& out, const std::string& frag_name, types::PrimitiveType scalar_type
-) const {
-    out.stream << "rocwmma::fill_fragment(" << frag_name << ", static_cast<"
-               << language_extension_.primitive_type(scalar_type) << ">(0.0));" << std::endl;
-}
-
-void RocmMmaBaseDispatcher::emit_mma_compute(
-    codegen::CodegenOutput& out,
-    const std::string& frag_d_out,
-    const std::string& frag_a,
-    const std::string& frag_b,
-    const std::string& frag_c_in
-) const {
-    out.stream << "rocwmma::mma_sync(" << frag_d_out << ", " << frag_a << ", " << frag_b << ", " << frag_c_in << ");"
-               << std::endl;
-}
-
-void RocmMmaBaseDispatcher::emit_needed_declarations(codegen::CodegenOutput& out) const {
-    GpuMmaMatmulDispatcher::emit_needed_declarations(out);
-
+void RocmMmaFragmentStrategy::emit_needed_declarations(codegen::CodegenOutput& out) const {
     out.library_snippet_factory.require_dependency(RocmWmmaLibDependency::instance());
 }
 
-void RocmMmaBaseDispatcher::emit_store_macro(
-    const codegen::CodegenOutput& out,
-    const std::string& frag_name,
-    const std::string& base_addr,
-    const symbolic::Expression& offset,
-    const symbolic::Expression& line_size,
-    MmaFragmentLayout layout
+void RocmMmaFragmentStrategy::
+    emit_fill(codegen::CodegenOutput& out, const std::string& acc_frag, types::PrimitiveType fill_type) const {
+    out.stream << "rocwmma::fill_fragment(" << acc_frag << ", static_cast<"
+               << out.language_extension.primitive_type(fill_type) << ">(0.0));" << std::endl;
+}
+
+void RocmMmaFragmentStrategy::emit_mma(
+    codegen::CodegenOutput& out,
+    const std::string& frag_d,
+    const std::string& frag_a,
+    const std::string& frag_b,
+    const std::string& frag_c
 ) const {
-    out.stream << "rocwmma::store_matrix_sync(" << base_addr;
-    if (!offset.is_null()) {
-        out.stream << " + " << language_extension_.expression(offset);
+    out.stream << "rocwmma::mma_sync(" << frag_d << ", " << frag_a << ", " << frag_b << ", " << frag_c << ");"
+               << std::endl;
+}
+
+void RocmMmaFragmentStrategy::emit_fragment_load(
+    codegen::CodegenOutput& out,
+    const std::string& frag,
+    const std::string& base,
+    const GpuMmaFromMemoryLayout& layout,
+    MmaFragmentType /*frag_type*/,
+    types::PrimitiveType /*element_type*/
+) const {
+    out.stream << "rocwmma::load_matrix_sync(" << frag << ", " << base;
+    if (!layout.offset.is_null()) {
+        out.stream << " + " << out.language_extension.expression(layout.offset);
     }
-    out.stream << ", " << frag_name;
-    out.stream << ", " << language_extension_.expression(line_size);
-    if (layout == MmaFragmentLayout::MMA_LAYOUT_COL_MAJOR) {
+    out.stream << ", " << out.language_extension.expression(layout.ldstride);
+    if (layout.layout == MmaFragmentLayout::MMA_LAYOUT_COL_MAJOR) {
         out.stream << ", rocwmma::mem_col_major";
-    } else if (layout == MmaFragmentLayout::MMA_LAYOUT_ROW_MAJOR) {
+    } else if (layout.layout == MmaFragmentLayout::MMA_LAYOUT_ROW_MAJOR) {
         out.stream << ", rocwmma::mem_row_major";
     }
     out.stream << ");" << std::endl;
+}
+
+void RocmMmaFragmentStrategy::emit_fragment_store(
+    codegen::CodegenOutput& out,
+    const std::string& frag,
+    const std::string& base,
+    const GpuMmaFromMemoryLayout& layout,
+    MmaFragmentType /*frag_type*/,
+    types::PrimitiveType /*element_type*/
+) const {
+    out.stream << "rocwmma::store_matrix_sync(" << base;
+    if (!layout.offset.is_null()) {
+        out.stream << " + " << out.language_extension.expression(layout.offset);
+    }
+    out.stream << ", " << frag;
+    out.stream << ", " << out.language_extension.expression(layout.ldstride);
+    if (layout.layout == MmaFragmentLayout::MMA_LAYOUT_COL_MAJOR) {
+        out.stream << ", rocwmma::mem_col_major";
+    } else if (layout.layout == MmaFragmentLayout::MMA_LAYOUT_ROW_MAJOR) {
+        out.stream << ", rocwmma::mem_row_major";
+    }
+    out.stream << ");" << std::endl;
+}
+
+void RocmMmaFragmentStrategy::emit_eltwise(
+    codegen::CodegenOutput& out,
+    const std::string& main_frag,
+    const std::vector<std::string>& additional_frags,
+    const EltwiseCompute& compute
+) const {
+    out.stream << "for (int _ei = 0; _ei < " << main_frag << ".num_elements; ++_ei) {" << std::endl;
+    out.stream.changeIndent(+4);
+    std::vector<std::string> args;
+    args.reserve(additional_frags.size());
+    for (auto& frag : additional_frags) {
+        args.push_back(frag + ".x[_ei]");
+    }
+    compute(out, main_frag + ".x[_ei]", "_ei", args);
+    out.stream.changeIndent(-4);
+    out.stream << "}" << std::endl;
 }
 
 } // namespace sdfg::gpu::rocm

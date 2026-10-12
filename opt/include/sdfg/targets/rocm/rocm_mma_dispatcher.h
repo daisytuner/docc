@@ -7,133 +7,47 @@
 
 namespace sdfg::gpu::rocm {
 
-inline data_flow::ImplementationType ImplementationType_ROCM_MMA_GFX1201("ROCM_MMA_GFX1201");
-inline data_flow::ImplementationType ImplementationType_ROCM_MMA_GFX90A("ROCM_MMA_GFX90A");
-inline data_flow::ImplementationType ImplementationType_ROCM_MMA("ROCM_MMA");
+inline data_flow::ImplementationType ImplementationType_ROCM_MMA_FRAGMENT("ROCM_MMA");
 
-class RocmMmaBaseDispatcher : public GpuMmaMatmulDispatcher {
-protected:
-    const GpuArch* get_gpu_arch_from_context(codegen::CodegenOutput& out) const override;
-
+/// Classic rocwmma fragment-based emit strategy (load/store/mma_sync/fill_fragment).
+class RocmMmaFragmentStrategy : public GpuMmaDispatcherStrategy {
 public:
-    RocmMmaBaseDispatcher(
-        codegen::LanguageExtension& language_extension,
-        const Function& function,
-        const data_flow::DataFlowGraph& data_flow_graph,
-        const data_flow::LibraryNode& node
-    )
-        : GpuMmaMatmulDispatcher(language_extension, function, data_flow_graph, node) {
-    }
+    void emit_needed_declarations(codegen::CodegenOutput& out) const override;
 
-protected:
-    void emit_block_frag_declaration(
-        codegen::CodegenOutput& out,
-        const std::string& name,
-        MmaFragmentType type,
-        std::array<int, 3> dims,
-        MmaFragmentLayout layout,
-        types::PrimitiveType scalar_type,
-        std::optional<std::pair<int, int>> coop_dims
-    ) const override;
+    void emit_fill(codegen::CodegenOutput& out, const std::string& acc_frag, types::PrimitiveType fill_type) const override;
 
-    void emit_load_macro(
+    void emit_mma(
         codegen::CodegenOutput& out,
-        const std::string& name,
-        const std::string& base_addr,
-        const symbolic::Expression& offset,
-        const symbolic::Expression& line_size,
-        MmaFragmentLayout layout
-    ) const override;
-    void emit_store_macro(
-        const codegen::CodegenOutput& out,
-        const std::string& frag_name,
-        const std::string& base_addr,
-        const symbolic::Expression& offset,
-        const symbolic::Expression& line_size,
-        MmaFragmentLayout layout
-    ) const override;
-
-    void emit_frag_zero_init(
-        codegen::CodegenOutput& out, const std::string& frag_name, types::PrimitiveType scalar_type
-    ) const override;
-    void emit_mma_compute(
-        codegen::CodegenOutput& out,
-        const std::string& frag_d_out,
+        const std::string& frag_d,
         const std::string& frag_a,
         const std::string& frag_b,
-        const std::string& frag_c_in
+        const std::string& frag_c
     ) const override;
 
-    void emit_needed_declarations(codegen::CodegenOutput& out) const override;
-};
-
-/// Dispatches a gpu::GpuMmaNode: a single MMA accumulation into a preinitialized accumulator.
-class RocmMmaMatmulDispatcher : public RocmMmaBaseDispatcher {
-public:
-    using RocmMmaBaseDispatcher::RocmMmaBaseDispatcher;
-
-    void dispatch_code_with_edges(
+    void emit_fragment_load(
         codegen::CodegenOutput& out,
-        std::vector<codegen::DispatchInput>& inputs,
-        std::vector<codegen::DispatchOutput>& outputs
-    ) override {
-        dispatch_single_mma(out, inputs);
-    }
-};
+        const std::string& frag,
+        const std::string& base,
+        const GpuMmaFromMemoryLayout& layout,
+        MmaFragmentType frag_type,
+        types::PrimitiveType element_type
+    ) const override;
 
-/// Dispatches a gpu::GpuMmaFillNode: declare and zero-initialize an MMA accumulator fragment.
-class RocmMmaFillDispatcher : public RocmMmaBaseDispatcher {
-public:
-    using RocmMmaBaseDispatcher::RocmMmaBaseDispatcher;
-
-    void dispatch_code_with_edges(
+    void emit_fragment_store(
         codegen::CodegenOutput& out,
-        std::vector<codegen::DispatchInput>& inputs,
-        std::vector<codegen::DispatchOutput>& outputs
-    ) override {
-        dispatch_accumulator_fill(out, inputs);
-    }
-};
+        const std::string& frag,
+        const std::string& base,
+        const GpuMmaFromMemoryLayout& layout,
+        MmaFragmentType frag_type,
+        types::PrimitiveType element_type
+    ) const override;
 
-/// Dispatches a gpu::MmaFragmentLoadNode: load a tile from memory into a fragment.
-class RocmMmaFragmentLoadDispatcher : public RocmMmaBaseDispatcher {
-public:
-    using RocmMmaBaseDispatcher::RocmMmaBaseDispatcher;
-
-    void dispatch_code_with_edges(
+    void emit_eltwise(
         codegen::CodegenOutput& out,
-        std::vector<codegen::DispatchInput>& inputs,
-        std::vector<codegen::DispatchOutput>& outputs
-    ) override {
-        dispatch_fragment_load(out, inputs);
-    }
-};
-
-/// Dispatches a gpu::MmaFragmentStoreNode: store a fragment to a tile in memory.
-class RocmMmaFragmentStoreDispatcher : public RocmMmaBaseDispatcher {
-public:
-    using RocmMmaBaseDispatcher::RocmMmaBaseDispatcher;
-
-    void dispatch_code_with_edges(
-        codegen::CodegenOutput& out,
-        std::vector<codegen::DispatchInput>& inputs,
-        std::vector<codegen::DispatchOutput>& outputs
-    ) override {
-        dispatch_fragment_store(out, inputs);
-    }
-};
-
-class RocmMmaEltwiseAddDispatcher : public RocmMmaBaseDispatcher {
-public:
-    using RocmMmaBaseDispatcher::RocmMmaBaseDispatcher;
-
-    void dispatch_code_with_edges(
-        codegen::CodegenOutput& out,
-        std::vector<codegen::DispatchInput>& inputs,
-        std::vector<codegen::DispatchOutput>& outputs
-    ) override {
-        dispatch_eltwise_add(out, inputs);
-    }
+        const std::string& main_frag,
+        const std::vector<std::string>& additional_frags,
+        const EltwiseCompute& compute
+    ) const override;
 };
 
 class RocmWmmaLibDependency : public codegen::LibDependency {

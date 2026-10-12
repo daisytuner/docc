@@ -102,16 +102,16 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
     const math::tensor::TensorLayout& layout_y,
     types::PrimitiveType input_type,
     types::PrimitiveType output_type,
-    const data_flow::ImplementationType& impl_type,
     bool include_c_add,
     const DebugInfo& org_debug_info,
     const std::array<int, 3>& args_order // {y, a, b}
 ) {
     auto* mma_arch = arch.mma_support();
-    auto mma_impl_type = mma_arch->get_mma_impl_type();
 
     auto& m_dim = layout_a.get_dim(0);
     auto& k_dim = layout_b.get_dim(0);
+
+    auto impl_type = mma_arch->get_mma_impl_type(mma_tiling);
 
     auto& builder = standalone.builder();
     auto wave_row = symbolic::symbol(builder.find_new_name("wave_row"));
@@ -121,10 +121,7 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
     auto acc_frag_name = builder.find_new_name("mma_acc");
     types::Pointer acc_frag_type{types::Scalar(mma_tiling.acc_type)};
     mma_arch->set_mma_fragment_storage_type(
-        acc_frag_type.storage_type(),
-        mma_tiling.mma_block_size,
-        MmaFragmentType::C,
-        MmaFragmentLayout::MMA_LAYOUT_UNSPECIFIED
+        acc_frag_type.storage_type(), mma_tiling, MmaFragmentType::C, MmaFragmentLayout::MMA_LAYOUT_UNSPECIFIED
     );
     builder.add_container(acc_frag_name, acc_frag_type);
 
@@ -133,9 +130,7 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
     auto a_col_major = layout_a.is_2d_col_or_row_major() == math::tensor::TensorLayout::LAYOUT_COL_MAJOR;
     MmaFragmentLayout a_frag_layout = a_col_major ? MmaFragmentLayout::MMA_LAYOUT_COL_MAJOR
                                                   : MmaFragmentLayout::MMA_LAYOUT_ROW_MAJOR;
-    mma_arch->set_mma_fragment_storage_type(
-        a_frag_type.storage_type(), mma_tiling.mma_block_size, MmaFragmentType::A, a_frag_layout
-    );
+    mma_arch->set_mma_fragment_storage_type(a_frag_type.storage_type(), mma_tiling, MmaFragmentType::A, a_frag_layout);
     builder.add_container(a_frag_name, a_frag_type);
 
     types::Pointer b_frag_type{types::Scalar(input_type)};
@@ -143,9 +138,7 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
     auto b_col_major = layout_b.is_2d_col_or_row_major() == math::tensor::TensorLayout::LAYOUT_COL_MAJOR;
     MmaFragmentLayout b_frag_layout = b_col_major ? MmaFragmentLayout::MMA_LAYOUT_COL_MAJOR
                                                   : MmaFragmentLayout::MMA_LAYOUT_ROW_MAJOR;
-    mma_arch->set_mma_fragment_storage_type(
-        b_frag_type.storage_type(), mma_tiling.mma_block_size, MmaFragmentType::B, b_frag_layout
-    );
+    mma_arch->set_mma_fragment_storage_type(b_frag_type.storage_type(), mma_tiling, MmaFragmentType::B, b_frag_layout);
     builder.add_container(b_frag_name, b_frag_type);
     auto y_col_major = layout_y.is_2d_col_or_row_major() == math::tensor::TensorLayout::LAYOUT_COL_MAJOR;
 
@@ -280,10 +273,7 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
         auto c_frag_name = builder.find_new_name("mma_c");
         types::Pointer c_type{types::Scalar(output_type)};
         mma_arch->set_mma_fragment_storage_type(
-            c_type.storage_type(),
-            mma_tiling.mma_block_size,
-            MmaFragmentType::C,
-            MmaFragmentLayout::MMA_LAYOUT_UNSPECIFIED
+            c_type.storage_type(), mma_tiling, MmaFragmentType::C, MmaFragmentLayout::MMA_LAYOUT_UNSPECIFIED
         );
         builder.add_container(c_frag_name, c_type);
         auto& load_c_block = builder.add_block(row_map.root());
@@ -304,10 +294,7 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
         store_frag_name = builder.find_new_name("mma_d");
         types::Pointer d_type{types::Scalar(output_type)};
         mma_arch->set_mma_fragment_storage_type(
-            d_type.storage_type(),
-            mma_tiling.mma_block_size,
-            MmaFragmentType::C,
-            MmaFragmentLayout::MMA_LAYOUT_UNSPECIFIED
+            d_type.storage_type(), mma_tiling, MmaFragmentType::C, MmaFragmentLayout::MMA_LAYOUT_UNSPECIFIED
         );
         builder.add_container(store_frag_name, d_type);
         auto& eltwise_add_block = builder.add_block(row_map.root());
@@ -412,8 +399,6 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::handle_expand(
         {result_layout.get_dim(0), result_layout.get_dim(1), k_dim}, input_type, acc_type, block_size_hint_
     );
 
-    auto new_impl_type = mma_arch->get_mma_impl_type();
-
     auto standalone = context.replacement_requires_access_nodes({InputUse::Scalar, InputUse::Scalar, InputUse::Scalar});
 
     if (standalone) {
@@ -426,7 +411,6 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::handle_expand(
             result_layout,
             input_type,
             output_type,
-            new_impl_type.value(),
             true,
             node.debug_info(),
             {0, 1, 2} // {y, a, b}: MatMulNode access nodes are already ordered Y, A, B

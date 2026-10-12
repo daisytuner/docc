@@ -95,8 +95,6 @@ einsum::ReplaceOutcome GpuMmaEinsumReplacer::
         return context.unable();
     }
 
-    auto impl_type = mma_arch->get_mma_impl_type();
-
     // --- Replacement ---
 
     std::vector<Dir> access_dirs{Dir::Scalar, Dir::Scalar, Dir::Scalar}; // last one is the output ptr
@@ -114,7 +112,6 @@ einsum::ReplaceOutcome GpuMmaEinsumReplacer::
         analysis.layout_y.value(),
         analysis.input_type,
         analysis.output_type,
-        impl_type.value(),
         true,
         cluster.consumed_loops.front()->debug_info(),
         // {y, a, b}: the cluster lists the output after its inputs, and A/B in no particular order.

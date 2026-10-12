@@ -10,6 +10,11 @@
 
 namespace sdfg::gpu::rocm {
 
+enum class RocmMmaVariant {
+    Fragment = 1, ///< rocwmma fragment path (RocmMmaFragmentStrategy)
+    Bare = 2, ///< raw MFMA builtin path (RocmMmaBareStrategy)
+};
+
 struct RocmMmaSupport : public GpuMmaSupport {
     const bool base_support;
     const bool f32_support;
@@ -24,7 +29,8 @@ protected:
     static constexpr MmaBlockSize CDNA_BLOCK_SIZE = {32, 32, 8};
 
 public:
-    static constexpr const char* MMA_STORAGE_TYPE = "ROCM_MMA";
+    static constexpr const char* MMA_FRAGMENT_STORAGE_TYPE = "ROCM_MMA";
+    static constexpr const char* MMA_REGS_STORAGE_TYPE = "ROCM_MMA_REGS";
 
     bool supported_types(types::PrimitiveType input_type, types::PrimitiveType output_type) const override;
 
@@ -48,21 +54,32 @@ public:
     ) const override;
 
     void set_mma_fragment_storage_type(
-        types::StorageType& storage_type, const MmaBlockSize& size, MmaFragmentType type, MmaFragmentLayout layout
+        types::StorageType& storage_type, const GpuMmaTiling& tiling, MmaFragmentType type, MmaFragmentLayout layout
     ) const override;
 
     static bool is_mma_type(const types::StorageType& storage);
 
-    data_flow::ImplementationType get_mma_impl_type() const override;
+    static RocmMmaVariant select_variant(const GpuMmaTiling& tiling);
+
+    data_flow::ImplementationType get_mma_impl_type(const GpuMmaTiling& tiling) const override;
 
     void emit_block_frag_type(
         std::ostream& os, const types::StorageType& storage_type, types::PrimitiveType element_type
     ) const;
 
+    static void emit_bare_fragment_decl_type(
+        std::ostream& os,
+        MmaFragmentType type,
+        const MmaBlockSize& dims,
+        MmaFragmentLayout layout,
+        types::PrimitiveType scalar_type,
+        std::optional<std::pair<int, int>> coop_dims
+    );
+
     static void emit_block_frag_type(
         std::ostream& os,
         MmaFragmentType type,
-        std::array<int, 3> dims,
+        const MmaBlockSize& dims,
         MmaFragmentLayout layout,
         types::PrimitiveType scalar_type,
         std::optional<std::pair<int, int>> coop_dims

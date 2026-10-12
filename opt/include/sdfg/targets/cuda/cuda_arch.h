@@ -52,7 +52,7 @@ public:
         types::PrimitiveType input_type, types::PrimitiveType output_type, types::PrimitiveType desired_acc_type
     ) const override;
 
-    data_flow::ImplementationType get_mma_impl_type() const override;
+    data_flow::ImplementationType get_mma_impl_type(const GpuMmaTiling& tiling) const override;
 
     bool is_valid_block_size(
         const MmaBlockSize& block_size, types::PrimitiveType input_type, types::PrimitiveType acc_type
@@ -65,7 +65,7 @@ public:
         const MmaBlockSize* block_size_hint
     ) const override;
     void set_mma_fragment_storage_type(
-        types::StorageType& storage_type, const MmaBlockSize& size, MmaFragmentType type, MmaFragmentLayout layout
+        types::StorageType& storage_type, const GpuMmaTiling& tiling, MmaFragmentType type, MmaFragmentLayout layout
     ) const override;
 
     std::vector<MmaBlockSize>

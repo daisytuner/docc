@@ -77,7 +77,6 @@ public:
         const math::tensor::TensorLayout& layout_y,
         types::PrimitiveType input_type,
         types::PrimitiveType output_type,
-        const data_flow::ImplementationType& impl_type,
         bool include_c_add,
         const DebugInfo& org_debug_info,
         const std::array<int, 3>& args_order // indices of inputs in order of {y, a, b}
