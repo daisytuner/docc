@@ -10,6 +10,9 @@
 namespace sdfg {
 namespace codegen {
 
+/// Implementation type under which Python library node dispatchers are registered.
+inline data_flow::ImplementationType ImplementationType_Python{"Python"};
+
 /**
  * Emits Python operating on NumPy arrays and scalars with C semantics: values are cast to their
  * NumPy dtype when read, integer division truncates, and pointers are numpy arrays that can be
@@ -36,6 +39,15 @@ public:
 
     /// Imports and helper functions that generated code relies on.
     static std::string runtime_prelude();
+
+    /// A zero-filled NumPy buffer of @p bytes bytes typed by @p pointer_type; opaque pointers get bytes.
+    std::string allocation(const types::IType& pointer_type, const std::string& bytes);
+
+    std::string identifier(const std::string& name) const override;
+
+    std::string library_node_implementation() const override {
+        return ImplementationType_Python.value();
+    }
 
     const std::string language() const override {
         return "Python";

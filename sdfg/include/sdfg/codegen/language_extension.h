@@ -72,6 +72,17 @@ public:
 
     virtual std::string zero(const types::PrimitiveType prim_type) = 0;
 
+    /// Implementation type under which this language's library node dispatchers are registered, replacing each
+    /// node's own; empty to dispatch by the node's implementation type.
+    virtual std::string library_node_implementation() const {
+        return "";
+    }
+
+    /// Spells a tasklet connector as a local identifier, e.g. escaping reserved words.
+    virtual std::string identifier(const std::string& name) const {
+        return name;
+    }
+
     /* Statements; each returns one complete statement without a trailing newline. */
 
     virtual std::string comment(const std::string& text) = 0;

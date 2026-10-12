@@ -245,7 +245,7 @@ void DataFlowDispatcher::dispatch_tasklet(PrettyPrinter& stream, const data_flow
         auto& src = dynamic_cast<const data_flow::AccessNode&>(iedge->src());
         std::string src_name = this->language_extension_.access_node(src);
 
-        std::string conn = iedge->dst_conn();
+        std::string conn = this->language_extension_.identifier(iedge->dst_conn());
         auto conn_type = iedge->result_type(this->function_);
         auto& conn_type_scalar = dynamic_cast<const types::Scalar&>(*conn_type);
 
@@ -270,7 +270,7 @@ void DataFlowDispatcher::dispatch_tasklet(PrettyPrinter& stream, const data_flow
     }
 
     auto& oedge = *this->data_flow_graph_.out_edges(tasklet).begin();
-    std::string out_conn = oedge.src_conn();
+    std::string out_conn = this->language_extension_.identifier(oedge.src_conn());
     auto out_conn_type = oedge.result_type(this->function_);
     auto& out_conn_type_scalar = dynamic_cast<const types::Scalar&>(*out_conn_type);
     std::string out_decl;
@@ -304,7 +304,8 @@ void DataFlowDispatcher::dispatch_tasklet(PrettyPrinter& stream, const data_flow
         }
         target += this->language_extension_.subset(oedge->base_type(), oedge->subset());
 
-        stream << this->language_extension_.assignment(target, oedge->src_conn()) << std::endl;
+        stream << this->language_extension_.assignment(target, this->language_extension_.identifier(oedge->src_conn()))
+               << std::endl;
     }
 
     this->language_extension_.end(stream, scope);
@@ -316,7 +317,11 @@ void DataFlowDispatcher::dispatch_library_node(
     CodeSnippetFactory& library_snippet_factory,
     const data_flow::LibraryNode& libnode
 ) {
-    auto dispatcher_id = libnode.code().value() + "::" + libnode.implementation_type().value();
+    auto implementation = this->language_extension_.library_node_implementation();
+    if (implementation.empty()) {
+        implementation = libnode.implementation_type().value();
+    }
+    auto dispatcher_id = libnode.code().value() + "::" + implementation;
     auto dispatcher_fn = LibraryNodeDispatcherRegistry::instance().get_library_node_dispatcher(dispatcher_id);
     if (dispatcher_fn) {
         auto dispatcher = dispatcher_fn(this->language_extension_, this->function_, this->data_flow_graph_, libnode);

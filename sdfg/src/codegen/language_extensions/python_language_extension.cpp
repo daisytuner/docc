@@ -8,6 +8,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "sdfg/data_flow/tasklet.h"
 #include "sdfg/exceptions.h"
@@ -98,6 +99,24 @@ std::string floating_value(const std::string& data) {
     if (lower == "nan" || lower == "-nan") {
         return "np.nan";
     }
+    static const std::unordered_map<std::string, std::string> math_constants = {
+        {"M_PI", "math.pi"},
+        {"M_PI_2", "(math.pi / 2)"},
+        {"M_PI_4", "(math.pi / 4)"},
+        {"M_1_PI", "(1 / math.pi)"},
+        {"M_2_PI", "(2 / math.pi)"},
+        {"M_2_SQRTPI", "(2 / math.sqrt(math.pi))"},
+        {"M_E", "math.e"},
+        {"M_LOG2E", "math.log2(math.e)"},
+        {"M_LOG10E", "math.log10(math.e)"},
+        {"M_LN2", "math.log(2)"},
+        {"M_LN10", "math.log(10)"},
+        {"M_SQRT2", "math.sqrt(2)"},
+        {"M_SQRT1_2", "math.sqrt(0.5)"},
+    };
+    if (auto it = math_constants.find(text); it != math_constants.end()) {
+        return it->second;
+    }
     while (!text.empty() && std::strchr("fFlL", text.back())) {
         text.pop_back();
     }
@@ -150,7 +169,52 @@ def _docc_zext_i64(x):
 
 def _docc_trunc_i32(x):
     return int(np.int32(np.uint32(np.uint64(np.int64(int(x))))))
+
+
+def _docc_bytes(buffer):
+    return buffer.reshape(-1).view(np.uint8)
+
+
+def _docc_memcpy(dst, src, count):
+    count = int(count)
+    _docc_bytes(dst)[:count] = _docc_bytes(src)[:count]
+
+
+def _docc_memset(dst, value, count):
+    _docc_bytes(dst)[: int(count)] = int(value) & 0xFF
+
+
+def _docc_round(x):
+    t = np.trunc(x)
+    return t + np.copysign(type(x)(1), x) if abs(x - t) >= 0.5 else t
 )";
+}
+
+std::string PythonLanguageExtension::allocation(const types::IType& pointer_type, const std::string& bytes) {
+    auto pointer = dynamic_cast<const types::Pointer*>(&pointer_type);
+    if (!pointer) {
+        unsupported("allocating " + pointer_type.print());
+    }
+    std::vector<std::string> inner_dims;
+    types::PrimitiveType element = types::PrimitiveType::UInt8;
+    if (pointer->has_pointee_type()) {
+        const types::IType* current = &pointer->pointee_type();
+        while (auto array = dynamic_cast<const types::Array*>(current)) {
+            inner_dims.push_back(this->expression(array->num_elements()));
+            current = &array->element_type();
+        }
+        auto scalar = dynamic_cast<const types::Scalar*>(current);
+        if (!scalar) {
+            unsupported("allocating " + pointer_type.print());
+        }
+        element = scalar->primitive_type();
+    }
+    std::string buffer = "np.zeros(_docc_idiv(" + bytes + ", " + std::to_string(types::bit_width(element) / 8) + "), " +
+                         primitive_type(element) + ")";
+    if (!inner_dims.empty()) {
+        buffer += ".reshape(-1, " + join(inner_dims, ", ") + ")";
+    }
+    return buffer;
 }
 
 std::string PythonLanguageExtension::primitive_type(const types::PrimitiveType prim_type) {
@@ -292,8 +356,22 @@ std::string PythonLanguageExtension::access_node(const data_flow::AccessNode& no
     return node.data();
 }
 
+std::string PythonLanguageExtension::identifier(const std::string& name) const {
+    static const std::unordered_set<std::string> reserved = {
+        "False", "None",     "True",  "and",    "as",    "assert", "async",  "await",    "break",
+        "class", "continue", "def",   "del",    "elif",  "else",   "except", "finally",  "for",
+        "from",  "global",   "if",    "import", "in",    "is",     "lambda", "nonlocal", "not",
+        "or",    "pass",     "raise", "return", "try",   "while",  "with",   "yield",    "np",
+        "math",  "range",    "type",  "int",    "float", "bool",   "len",    "min",      "max",
+    };
+    return reserved.count(name) ? name + "_" : name;
+}
+
 std::string PythonLanguageExtension::tasklet(const data_flow::Tasklet& tasklet) {
-    auto& in = tasklet.inputs();
+    std::vector<std::string> in;
+    for (auto& name : tasklet.inputs()) {
+        in.push_back(identifier(name));
+    }
     auto binary = [&](const std::string& op) {
         return in.at(0) + " " + op + " " + in.at(1);
     };
