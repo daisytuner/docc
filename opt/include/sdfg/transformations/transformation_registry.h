@@ -16,6 +16,7 @@
 #include <sdfg/tiles/transformations/local_storage.h>
 #include <sdfg/tiles/transformations/software_pipelining.h>
 #include <sdfg/tiles/transformations/tile_fusion.h>
+#include <sdfg/tiles/transformations/tile_vectorizer.h>
 #include <sdfg/transformations/loop_distribute.h>
 #include <sdfg/transformations/loop_interchange.h>
 #include <sdfg/transformations/loop_peeling.h>
@@ -122,6 +123,8 @@ dispatch_transformation(const std::string& transformation_name, const nlohmann::
         return detail::invoke_for<transformations::SoftwarePipelining>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "TileFusion") {
         return detail::invoke_for<transformations::TileFusion>(std::forward<Visitor>(visitor));
+    } else if (transformation_name == "TileVectorizer") {
+        return detail::invoke_for<transformations::TileVectorizer>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "LoopSkewing") {
         return detail::invoke_for<transformations::LoopSkewing>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "LoopShift") {
