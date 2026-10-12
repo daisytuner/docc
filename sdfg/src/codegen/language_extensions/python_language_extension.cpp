@@ -146,6 +146,7 @@ std::string floating_value(const std::string& data) {
 std::string PythonLanguageExtension::runtime_prelude() {
     return R"(import math
 
+import ml_dtypes
 import numpy as np
 
 
@@ -253,6 +254,8 @@ std::string PythonLanguageExtension::primitive_type(const types::PrimitiveType p
             return "np.uint64";
         case types::PrimitiveType::Half:
             return "np.float16";
+        case types::PrimitiveType::BFloat:
+            return "ml_dtypes.bfloat16";
         case types::PrimitiveType::Float:
             return "np.float32";
         case types::PrimitiveType::Double:
@@ -261,7 +264,6 @@ std::string PythonLanguageExtension::primitive_type(const types::PrimitiveType p
             return "np.longdouble";
         case types::PrimitiveType::Int128:
         case types::PrimitiveType::UInt128:
-        case types::PrimitiveType::BFloat:
         case types::PrimitiveType::FP128:
         case types::PrimitiveType::PPC_FP128:
             unsupported(std::string("primitive type ") + types::primitive_type_to_string(prim_type));
