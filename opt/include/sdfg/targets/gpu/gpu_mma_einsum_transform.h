@@ -35,7 +35,7 @@ class GpuMmaEinsumTransform : public transformations::Transformation {
     StructuredLoop& outermost_mma_loop_;
     const gpu::GpuArch* arch_;
     const MmaBlockSize* block_size_hint_;
-    const BlockCounts* wave_tile_hint_;
+    const BlockCounts* wave_tiling_hint_;
 
     // Optional owned copies of the hints. Used when the caller passes hints by
     // value (e.g. the legacy Python constructor, which synthesises them from
@@ -43,7 +43,7 @@ class GpuMmaEinsumTransform : public transformations::Transformation {
     // these, so the hints' lifetime is tied to the transform and no external
     // object needs to be kept alive.
     std::optional<MmaBlockSize> owned_block_size_hint_;
-    std::optional<BlockCounts> owned_wave_tile_hint_;
+    std::optional<BlockCounts> owned_wave_tiling_hint_;
 
 protected:
     /// the einsum parts modify the SDFG in place, so WILL ALWAYS CHANGE IT. We need to revert the changes if we did not
@@ -57,7 +57,7 @@ public:
         StructuredLoop& outermoost_mma_loop,
         const gpu::GpuArch* arch = nullptr,
         const MmaBlockSize* block_size_hint = nullptr,
-        const BlockCounts* wave_tile_hint = nullptr
+        const BlockCounts* wave_tiling_hint = nullptr
     );
 
     /// Owning overload: takes the hints by value and stores them internally, so

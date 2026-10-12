@@ -28,6 +28,21 @@ void register_gpu_arch(py::module& m, sdfg::plugins::Context& context) {
             return "<MmaBlockSize '" + self.toStr() + "'>";
         });
 
+    py::class_<sdfg::gpu::BlockCounts>(m, "BlockCounts")
+        .def(
+            py::init([](int blocks_m, int blocks_n) {
+                return sdfg::gpu::BlockCounts{blocks_m, blocks_n};
+            }),
+            py::arg("blocks_m"),
+            py::arg("blocks_n"),
+            "Create a BlockCounts object from its M and N block counts."
+        )
+        .def_readwrite("blocks_m", &sdfg::gpu::BlockCounts::blocks_m)
+        .def_readwrite("blocks_n", &sdfg::gpu::BlockCounts::blocks_n)
+        .def("__repr__", [](const sdfg::gpu::BlockCounts& self) {
+            return "<BlockCounts '" + std::to_string(self.blocks_m) + "x" + std::to_string(self.blocks_n) + "'>";
+        });
+
     py::class_<sdfg::gpu::GpuArch>(m, "GpuArch")
         .def_property_readonly("name", &sdfg::gpu::GpuArch::name, "Get the GPU architecture name")
         .def_static(

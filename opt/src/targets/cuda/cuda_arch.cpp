@@ -160,15 +160,9 @@ std::optional<GpuMmaTiling> CudaMmaSupport::get_mma_tiling(
     if (!mma_blocks_m || !mma_blocks_n || !mma_blocks_k) {
         return std::nullopt;
     }
-    if (mma_blocks_m == 1 && mma_blocks_n == 1) {
-        tiling.macro_tiling = {.blocks_m = 1, .blocks_n = 1};
-    } else if (mma_blocks_m <= 2 && mma_blocks_n <= 2) {
-        tiling.macro_tiling = {.blocks_m = mma_blocks_m, .blocks_n = mma_blocks_n};
-    } else if (mma_blocks_n <= 4 && (mma_blocks_m == 4 || mma_blocks_m == 8)) {
+    if (mma_blocks_m * mma_blocks_n <= 32) {
         tiling.macro_tiling = {.blocks_m = mma_blocks_m, .blocks_n = mma_blocks_n};
         // TODO: update to include wave_tiling per heuristic.
-        // tiling.mma_block_m *= 2;
-        // tiling.mma_block_n += 2;
         // tiling.wave_tile_blocks_m = mma_blocks_m / 2;
         // tiling.wave_tile_blocks_n = mma_blocks_n / 2;
         // tiling.macro_blocks_m = 2;

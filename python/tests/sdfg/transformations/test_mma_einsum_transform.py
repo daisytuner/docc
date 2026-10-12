@@ -29,6 +29,7 @@ from docc.sdfg import (
     LocalStorage,
     LoopTiling,
     MmaBlockSize,
+    BlockCounts,
     Pointer,
     PrimitiveType,
     RocmArch,
@@ -460,11 +461,17 @@ def test_mma_einsum_local_storage_executes(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("wave_tile", [(3, 1), (1, 3), (0, 1)])
+@pytest.mark.parametrize(
+    "wave_tile", [(3, 1), (1, 3), (0, 1)], ids=["3x1", "1x3", "0x1"]
+)
 def test_mma_einsum_wave_tile_must_divide(wave_tile):
     builder, loop_i1 = _build_offloaded_einsum_mma(1024, 1024, 1024, 64, 64)
     am = AnalysisManager(builder)
-    xform = GpuMmaEinsumTransform(loop_i1, RocmArch.get_from_name("gfx90a"), *wave_tile)
+    xform = GpuMmaEinsumTransform(
+        loop_i1,
+        RocmArch.get_from_name("gfx90a"),
+        wave_tiling_hint=BlockCounts(*wave_tile),
+    )
     assert not xform.can_be_applied(builder, am)
 
 
@@ -489,7 +496,9 @@ def test_mma_einsum_wave_tile_executes(wave_tile, localize):
 
     builder, loop_i1 = _build_executable_einsum_mma(M, N, K, tile, tile)
     am = AnalysisManager(builder)
-    xform = GpuMmaEinsumTransform(loop_i1, RocmArch.get_current(), *wave_tile)
+    xform = GpuMmaEinsumTransform(
+        loop_i1, RocmArch.get_current(), wave_tiling_hint=BlockCounts(*wave_tile)
+    )
     assert xform.can_be_applied(builder, am)
     xform.apply(builder, am)
     assert xform.matched
@@ -546,8 +555,12 @@ def test_mma_einsum_mfma32_executes(tile, wave_tile, staging):
 
     builder, loop_i1 = _build_executable_einsum_mma(M, N, K, tile, tile)
     am = AnalysisManager(builder)
+    block_hint = MmaBlockSize.parse("32x32x8")
     xform = GpuMmaEinsumTransform(
-        loop_i1, RocmArch.get_current(), *wave_tile, mma_shape="32x32x8"
+        loop_i1,
+        RocmArch.get_current(),
+        wave_tiling_hint=BlockCounts(*wave_tile),
+        block_hint=block_hint,
     )
     assert xform.can_be_applied(builder, am)
     xform.apply(builder, am)

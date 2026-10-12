@@ -148,7 +148,7 @@ bool GpuMmaEinsumTransform::run_internal(
 
     std::vector<einsum::EinsumNode*> mapped_einsums;
     for (auto& einsum_node : detector.einsums()) {
-        GpuMmaEinsumReplacer repl(arch_, block_size_hint_);
+        GpuMmaEinsumReplacer repl(arch_, block_size_hint_, wave_tiling_hint_);
         // einsum::Einsum2MatMul repl;
         if (verify_only) {
             matched_ |= repl.can_be_applied(*einsum_node);
@@ -167,10 +167,10 @@ GpuMmaEinsumTransform::GpuMmaEinsumTransform(
     StructuredLoop& outermoost_mma_loop,
     const gpu::GpuArch* arch,
     const MmaBlockSize* block_size_hint,
-    const BlockCounts* wave_tile_hint
+    const BlockCounts* wave_tiling_hint
 )
     : outermost_mma_loop_(outermoost_mma_loop), arch_(arch), block_size_hint_(block_size_hint),
-      wave_tile_hint_(wave_tile_hint) {
+      wave_tiling_hint_(wave_tiling_hint) {
 }
 
 GpuMmaEinsumTransform::GpuMmaEinsumTransform(
@@ -179,16 +179,16 @@ GpuMmaEinsumTransform::GpuMmaEinsumTransform(
     std::optional<MmaBlockSize> block_size_hint,
     std::optional<BlockCounts> wave_tile_hint
 )
-    : outermost_mma_loop_(outermoost_mma_loop), arch_(arch), block_size_hint_(nullptr), wave_tile_hint_(nullptr),
-      owned_block_size_hint_(block_size_hint), owned_wave_tile_hint_(wave_tile_hint) {
+    : outermost_mma_loop_(outermoost_mma_loop), arch_(arch), block_size_hint_(nullptr), wave_tiling_hint_(nullptr),
+      owned_block_size_hint_(block_size_hint), owned_wave_tiling_hint_(wave_tile_hint) {
     // Point the raw hint pointers at our owned storage so they stay valid for
     // the lifetime of this transform. This instance must not be moved/copied
     // afterwards (pybind holds it in place), otherwise these would dangle.
     if (owned_block_size_hint_) {
         block_size_hint_ = &*owned_block_size_hint_;
     }
-    if (owned_wave_tile_hint_) {
-        wave_tile_hint_ = &*owned_wave_tile_hint_;
+    if (owned_wave_tiling_hint_) {
+        wave_tiling_hint_ = &*owned_wave_tiling_hint_;
     }
 }
 
@@ -219,9 +219,9 @@ void GpuMmaEinsumTransform::to_json(nlohmann::json& j) const {
         j["parameters"]["block_size"]["n"] = block_size_hint_->n;
         j["parameters"]["block_size"]["k"] = block_size_hint_->k;
     }
-    if (wave_tile_hint_) {
-        j["parameters"]["wave_tile"]["blocks_m"] = wave_tile_hint_->blocks_m;
-        j["parameters"]["wave_tile"]["blocks_n"] = wave_tile_hint_->blocks_n;
+    if (wave_tiling_hint_) {
+        j["parameters"]["wave_tile"]["blocks_m"] = wave_tiling_hint_->blocks_m;
+        j["parameters"]["wave_tile"]["blocks_n"] = wave_tiling_hint_->blocks_n;
     }
     j["subgraph"] = nlohmann::json::object();
 }
