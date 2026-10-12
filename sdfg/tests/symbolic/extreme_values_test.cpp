@@ -1317,3 +1317,12 @@ TEST(ExtremeValuesTest, CopyGuard_TileBaseCancels_IDivImodResidual) {
         )
     ) << "base + imod(coop,32) <= 31 + base failed";
 }
+
+// A factored constant offset must still fold: min(16*(1 + t), 16*t) = 16*t.
+TEST(ExtremeValuesTest, SimplifyMinMaxFoldsFactoredOffsets) {
+    auto t = symbolic::symbol("t");
+    auto lo = symbolic::mul(symbolic::integer(16), t);
+    auto hi = symbolic::mul(symbolic::integer(16), symbolic::add(symbolic::one(), t));
+    EXPECT_TRUE(symbolic::eq(symbolic::simplify(SymEngine::min({hi, lo})), lo));
+    EXPECT_TRUE(symbolic::eq(symbolic::expand(symbolic::simplify(SymEngine::max({hi, lo}))), symbolic::expand(hi)));
+}

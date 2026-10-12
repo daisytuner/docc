@@ -40,6 +40,18 @@ std::string reduction_operation_to_string(ReductionOperation op);
 ReductionOperation reduction_operation_from_string(const std::string& value);
 
 /**
+ * @brief Exponential base of a rescaled reduction (see @ref ReductionInfo::rescale)
+ */
+enum class RescaleBase { E, Two };
+
+std::string rescale_base_to_string(RescaleBase base);
+
+/**
+ * @throws InvalidSDFGException if the string does not name a known base
+ */
+RescaleBase rescale_base_from_string(const std::string& value);
+
+/**
  * @brief A single reduction carried by a @ref Reduce loop
  *
  * Pairs an associative/commutative @ref ReductionOperation with the name of the
@@ -51,11 +63,20 @@ ReductionOperation reduction_operation_from_string(const std::string& value);
  *
  * A @ref Reduce may carry several of these at once (e.g. a fused sum and max),
  * which is why the node stores a collection rather than a single operator.
+ *
+ * A rescaled reduction (non-empty @ref rescale) is an `Add` whose partials stand for
+ * `value * base^anchor`, where the anchor is a `Max` reduction of the same Reduce
+ * (e.g. the online-softmax denominator, or the FlashAttention output, relative to the
+ * running max). Combining partials rescales them to the merged anchor; the body is
+ * responsible for keeping its dependents relative to the anchor in the same base.
  */
 struct ReductionInfo {
     ReductionOperation operation;
     std::string container;
     symbolic::Expression original_index = SymEngine::null;
+    // Anchor (`Max`) container this `Add` is relative to; empty for a plain reduction.
+    std::string rescale = "";
+    RescaleBase rescale_base = RescaleBase::E;
 };
 
 /**

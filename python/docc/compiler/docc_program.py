@@ -89,6 +89,9 @@ class DoccOptions:
     einsum: Optional[bool] = None
     normalize: Optional[bool] = None
     device_residency: Optional[bool] = None
+    # Fast, approximate device math intrinsics (e.g. __expf). Unset resolves to the
+    # frontend default (DoccProgram.default_approximate_math).
+    approximate_math: Optional[bool] = None
 
     # Frontend: parse array shapes as symbolic sizes (``_s{i}`` arguments) when
     # True, or bake in the concrete integer sizes from the example inputs when
@@ -279,6 +282,8 @@ class DoccOptions:
 
 class DoccProgram(ABC):
 
+    default_approximate_math: bool = False
+
     def __init__(
         self,
         name: str,
@@ -287,6 +292,8 @@ class DoccProgram(ABC):
         self.name = name
         # Options are fully resolved at construction (DoccOptions.__post_init__).
         self.options = options
+        if self.options.approximate_math is None:
+            self.options.approximate_math = self.default_approximate_math
 
         self.last_sdfg: Optional[StructuredSDFG] = None
         self.cache: dict = {}
@@ -380,6 +387,10 @@ class DoccProgram(ABC):
                     target_options,
                     not self.options.capture_args,
                 )
+
+            # CMath nodes exist only after expansion.
+            if self.options.approximate_math:
+                sdfg.approximate_math()
 
             # Promote pointer arguments to device residency when the whole program keeps
             # data on device. Communicated explicitly via the pass return value (bool),

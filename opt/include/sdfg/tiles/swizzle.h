@@ -36,7 +36,7 @@ struct Swizzle {
 };
 
 /// A layout with a swizzle on its output offset (`S o L`) — the bank-conflict
-/// `Swizzle` placement. `MultiDim`/`Linearized`/`Padded` use an identity swizzle.
+/// @ref ConflictPolicy::Swizzle. Every other buffer uses an identity swizzle.
 struct ComposedLayout {
     Swizzle swizzle;
     Layout layout{symbolic::MultiExpression{}};

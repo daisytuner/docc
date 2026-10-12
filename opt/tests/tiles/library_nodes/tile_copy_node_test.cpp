@@ -1,11 +1,15 @@
 #include <gtest/gtest.h>
 
+#include <set>
+
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/codegen/language_extensions/c_language_extension.h"
 #include "sdfg/serializer/json_serializer.h"
 #include "sdfg/targets/cuda/codegen/cuda_language_extension.h"
 #include "sdfg/targets/cuda/tiles/tile_copy_node.h"
+#include "sdfg/targets/rocm/codegen/rocm_language_extension.h"
+#include "sdfg/targets/rocm/tiles/tile_copy_node.h"
 #include "sdfg/tiles/layout.h"
 #include "sdfg/tiles/library_nodes/tile_copy_node.h"
 #include "sdfg/tiles/tiled_copy.h"
@@ -471,4 +475,149 @@ TEST(TileCopyNodeTest, CudaVectorAtomEmitsWidenedTransfer) {
     EXPECT_NE(code.find("__tc_c = __tc_tid * 4"), std::string::npos) << code;
     EXPECT_NE(code.find("__tc_c += __tc_n * 4"), std::string::npos) << code;
     EXPECT_NE(code.find("reinterpret_cast<int4*>"), std::string::npos) << code;
+}
+
+namespace {
+tiles::TileCopyNode& add_lane_copy(
+    builder::StructuredSDFGBuilder& builder,
+    structured_control_flow::Block& block,
+    std::vector<int> coop_axes,
+    size_t coop_lanes,
+    symbolic::Expression coop_threads = {}
+) {
+    tiles::TiledCopy plan;
+    plan.src = tiles::Layout({symbolic::integer(256)}, {symbolic::integer(1)}, symbolic::integer(0));
+    plan.dst = tiles::Layout({symbolic::integer(256)}, {symbolic::integer(1)}, symbolic::integer(0));
+    plan.atom = tiles::CopyAtom::ScalarSync;
+    return static_cast<tiles::TileCopyNode&>(builder.add_library_node<tiles::TileCopyNode>(
+        block,
+        DebugInfo(),
+        data_flow::ImplementationType_NONE,
+        plan,
+        tiles::CopyDirection::In,
+        2,
+        tiles::TileGuard{},
+        std::move(coop_axes),
+        coop_threads,
+        coop_lanes
+    ));
+}
+} // namespace
+
+TEST(TileCopyNodeTest, CoopLanesDefaultOneAndRoundTrip) {
+    auto builder = make_builder();
+    auto& block = builder.add_block(builder.subject().root());
+    auto& plain = add_lane_copy(builder, block, {1}, 1);
+    EXPECT_EQ(plain.coop_lanes(), 1u);
+    auto& lanes = add_lane_copy(builder, block, {1}, 64, symbolic::integer(128));
+    EXPECT_EQ(lanes.coop_lanes(), 64u);
+
+    auto cloned = lanes.clone(lanes.element_id(), lanes.vertex(), lanes.get_parent());
+    EXPECT_EQ(dynamic_cast<tiles::TileCopyNode*>(cloned.get())->coop_lanes(), 64u);
+
+    serializer::JSONSerializer serializer;
+    auto j = serializer.serialize(builder.subject());
+    auto restored = serializer.deserialize(j);
+    auto& rblock = static_cast<structured_control_flow::Block&>(restored->root().at(0));
+    std::multiset<size_t> seen;
+    for (auto& n_ : rblock.dataflow().nodes()) {
+        if (auto* c = dynamic_cast<tiles::TileCopyNode*>(&n_)) {
+            seen.insert(c->coop_lanes());
+        }
+    }
+    EXPECT_EQ(seen, (std::multiset<size_t>{1, 64}));
+}
+
+TEST(TileCopyNodeTest, CoopLanesRejectCooperativeX) {
+    auto builder = make_builder();
+    auto& block = builder.add_block(builder.subject().root());
+    EXPECT_THROW(add_lane_copy(builder, block, {0, 1}, 64), InvalidSDFGException);
+}
+
+// A wave-granular slot axis on x: the lanes (threadIdx.x % 64) join the y-cooperative split.
+TEST(TileCopyNodeTest, CudaCooperativeDispatcherSplitsOverLanes) {
+    auto builder = make_builder();
+    types::Scalar elem(types::PrimitiveType::Half);
+    types::Pointer ptr(elem);
+    builder.add_container("g", ptr);
+    builder.add_container("buf", types::Array(elem, symbolic::integer(256)));
+    auto& block = builder.add_block(builder.subject().root());
+    auto& g = builder.add_access(block, "g");
+    auto& buf = builder.add_access(block, "buf");
+    auto& node = add_lane_copy(builder, block, {1}, 64, symbolic::integer(128));
+    builder.add_computational_memlet(block, buf, node, "_dst", {}, ptr);
+    builder.add_computational_memlet(block, g, node, "_src", {}, ptr);
+
+    cuda::CUDALanguageExtension le(builder.subject());
+    cuda::tiles::TileCopyNodeDispatcher dispatcher(le, builder.subject(), block.dataflow(), node);
+    codegen::PrettyPrinter stream, globals;
+    codegen::CodeSnippetFactory snippets;
+    dispatcher.dispatch(stream, globals, snippets);
+
+    const std::string code = stream.str();
+    EXPECT_NE(code.find("int __tc_tid = threadIdx.x % 64 + threadIdx.y * (64);"), std::string::npos) << code;
+    EXPECT_NE(code.find("__tc_i < ((256) + (128) * 1 - 1) / ((128) * 1)"), std::string::npos) << code;
+}
+
+namespace {
+std::string rocm_async_copy_code(
+    std::vector<int> coop_axes, size_t coop_lanes, size_t bytes, const symbolic::MultiExpression& dst_strides
+) {
+    auto builder = make_builder();
+    types::Scalar elem(types::PrimitiveType::Half);
+    types::Pointer ptr(elem);
+    builder.add_container("g", ptr);
+    builder.add_container("buf", types::Array(elem, symbolic::integer(512)));
+    auto& block = builder.add_block(builder.subject().root());
+    auto& g = builder.add_access(block, "g");
+    auto& buf = builder.add_access(block, "buf");
+    tiles::TiledCopy plan;
+    plan.src = tiles::Layout(
+        {symbolic::integer(16), symbolic::integer(16)},
+        {symbolic::integer(1024), symbolic::integer(1)},
+        symbolic::integer(0)
+    );
+    plan.dst = tiles::Layout({symbolic::integer(16), symbolic::integer(16)}, dst_strides, symbolic::integer(0));
+    plan.atom = tiles::CopyAtom::CpAsync;
+    auto& node = static_cast<tiles::TileCopyNode&>(builder.add_library_node<tiles::TileCopyNode>(
+        block,
+        DebugInfo(),
+        data_flow::ImplementationType_NONE,
+        plan,
+        tiles::CopyDirection::In,
+        bytes,
+        tiles::TileGuard{},
+        std::move(coop_axes),
+        symbolic::Expression{},
+        coop_lanes
+    ));
+    builder.add_computational_memlet(block, buf, node, "_dst", {}, ptr);
+    builder.add_computational_memlet(block, g, node, "_src", {}, ptr);
+
+    rocm::ROCMLanguageExtension le(builder.subject());
+    rocm::tiles::TileCopyNodeDispatcher dispatcher(le, builder.subject(), block.dataflow(), node);
+    codegen::PrettyPrinter stream, globals;
+    codegen::CodeSnippetFactory snippets;
+    dispatcher.dispatch(stream, globals, snippets);
+    return stream.str();
+}
+} // namespace
+
+// global_load_lds writes lane-contiguously from a wave-uniform base: only a dense
+// whole-block copy of <= 4 bytes per lane may use it; anything else copies synchronously.
+TEST(TileCopyNodeTest, RocmAsyncCopyUsesLdsDmaOnlyWhenLaneContiguous) {
+    const symbolic::MultiExpression dense = {symbolic::integer(16), symbolic::one()};
+    const symbolic::MultiExpression padded = {symbolic::integer(24), symbolic::one()};
+
+    auto ok = rocm_async_copy_code({}, 1, 4, dense);
+    EXPECT_NE(ok.find("__builtin_amdgcn_global_load_lds"), std::string::npos) << ok;
+
+    for (const auto& code : {
+             rocm_async_copy_code({}, 1, 16, dense), // 16 B per lane
+             rocm_async_copy_code({}, 1, 4, padded), // non-dense destination rows
+             rocm_async_copy_code({1}, 64, 4, dense), // per-thread-slot copy
+         }) {
+        EXPECT_EQ(code.find("global_load_lds"), std::string::npos) << code;
+        EXPECT_NE(code.find("reinterpret_cast<unsigned*>"), std::string::npos) << code;
+    }
 }

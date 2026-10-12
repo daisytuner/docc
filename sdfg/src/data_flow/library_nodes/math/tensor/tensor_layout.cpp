@@ -2,6 +2,10 @@
 
 #include <memory>
 
+#include <symengine/add.h>
+#include <symengine/integer.h>
+#include <symengine/mul.h>
+
 #include "sdfg/serializer/json_serializer.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/types/utils.h"
@@ -140,6 +144,78 @@ symbolic::Expression TensorLayout::resolve_element(const symbolic::MultiExpressi
         addr = symbolic::add(addr, symbolic::mul(indices.at(i), strides_.at(i)));
     }
     return addr;
+}
+
+std::optional<symbolic::MultiExpression> TensorLayout::partition_offset_into_dimensions() const {
+    size_t n = shape_.size();
+
+    // Only attempt this if every stride is an integer immediate.
+    std::vector<int64_t> stride_vals(n);
+    for (size_t d = 0; d < n; d++) {
+        if (!SymEngine::is_a<SymEngine::Integer>(*strides_.at(d))) {
+            return std::nullopt;
+        }
+        stride_vals[d] = SymEngine::rcp_static_cast<const SymEngine::Integer>(strides_.at(d))->as_int();
+    }
+
+    symbolic::MultiExpression dim_offsets(n, symbolic::zero());
+
+    // Split the offset into its additive summands (a lone term or 0 are handled too).
+    auto offset = symbolic::expand(offset_);
+    symbolic::MultiExpression summands;
+    if (SymEngine::is_a<SymEngine::Add>(*offset)) {
+        for (auto& term : offset->get_args()) {
+            summands.push_back(term);
+        }
+    } else if (!symbolic::eq(offset, symbolic::zero())) {
+        summands.push_back(offset);
+    }
+
+    for (auto& term : summands) {
+        // Each summand must be `imm * x` with `imm` an integer immediate.
+        symbolic::Expression imm_expr;
+        symbolic::Expression x;
+        if (SymEngine::is_a<SymEngine::Integer>(*term)) {
+            imm_expr = term;
+            x = symbolic::one();
+        } else if (SymEngine::is_a<SymEngine::Mul>(*term)) {
+            auto coef = SymEngine::rcp_static_cast<const SymEngine::Mul>(term)->get_coef();
+            if (!SymEngine::is_a<SymEngine::Integer>(*coef)) {
+                return std::nullopt;
+            }
+            imm_expr = coef;
+            x = SymEngine::div(term, imm_expr);
+        } else {
+            // Bare symbol / power / function: implicit coefficient of 1.
+            imm_expr = symbolic::one();
+            x = term;
+        }
+
+        int64_t imm = SymEngine::rcp_static_cast<const SymEngine::Integer>(imm_expr)->as_int();
+
+        // Attribute the summand to the dimension with the largest |stride| dividing imm.
+        int best_dim = -1;
+        int64_t best_mag = 0;
+        for (size_t d = 0; d < n; d++) {
+            int64_t st = stride_vals[d];
+            if (st == 0 || imm % st != 0) {
+                continue;
+            }
+            int64_t mag = st < 0 ? -st : st;
+            if (best_dim == -1 || mag > best_mag) {
+                best_dim = static_cast<int>(d);
+                best_mag = mag;
+            }
+        }
+        if (best_dim == -1) {
+            return std::nullopt;
+        }
+
+        auto contribution = symbolic::mul(symbolic::integer(imm / stride_vals[best_dim]), x);
+        dim_offsets[best_dim] = symbolic::add(dim_offsets[best_dim], contribution);
+    }
+
+    return dim_offsets;
 }
 
 symbolic::Expression TensorLayout::max_accessed_byte_offset_from_ptr(types::PrimitiveType element_type) const {

@@ -657,7 +657,8 @@ Expression simplify_minmax(const SymEngine::vec_basic& args) {
     std::vector<std::pair<Expression, std::pair<int64_t, Expression>>> groups;
 
     for (const auto& arg : args) {
-        auto [base, offset] = decompose_offset(arg);
+        // Expanded so a factored offset (16*(1 + i) vs 16*i) still exposes its constant.
+        auto [base, offset] = decompose_offset(symbolic::expand(arg));
 
         bool found = false;
         for (auto& [g_base, g_best] : groups) {

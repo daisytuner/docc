@@ -33,7 +33,9 @@ public:
         bool swapped,
         const symbolic::Expression& outer_dim,
         const symbolic::Expression& inner_dim,
-        const symbolic::Expression& linearized_offset
+        const symbolic::Expression& outer_offset,
+        const symbolic::Expression& inner_offset,
+        const symbolic::Expression& external_offset
     ) const;
 
     ReplaceOutcome replace(EinsumReplacementContext& context, const EinsumCluster& cluster) const override;
@@ -53,6 +55,9 @@ public:
         symbolic::Expression m = SymEngine::null;
         symbolic::Expression n = SymEngine::null;
         symbolic::Expression k = SymEngine::null;
+        symbolic::Expression m_init = SymEngine::null;
+        symbolic::Expression n_init = SymEngine::null;
+        symbolic::Expression k_init = SymEngine::null;
         int a_idx = -1;
         int b_idx = -1;
         std::optional<math::tensor::TensorLayout> layout_a;

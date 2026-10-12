@@ -90,12 +90,10 @@ set(SOURCE_FILES
     src/data_flow/library_nodes/math/tensor/elementwise_ops/cast_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/cmath_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/div_node.cpp
-    src/data_flow/library_nodes/math/tensor/elementwise_ops/elu_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/erf_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/exp_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/fill_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/gelu_node.cpp
-    src/data_flow/library_nodes/math/tensor/elementwise_ops/leaky_relu_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/logical_not_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/maximum_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/minimum_node.cpp
@@ -108,10 +106,12 @@ set(SOURCE_FILES
     src/data_flow/library_nodes/math/tensor/elementwise_ops/sub_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/tanh_node.cpp
     src/data_flow/library_nodes/math/tensor/elementwise_ops/tasklet_node.cpp
+    src/data_flow/library_nodes/math/tensor/elu_node.cpp
     src/data_flow/library_nodes/math/tensor/embedding_node.cpp
     src/data_flow/library_nodes/math/tensor/embedding_renorm_node.cpp
     src/data_flow/library_nodes/math/tensor/index_node.cpp
     src/data_flow/library_nodes/math/tensor/layernorm_node.cpp
+    src/data_flow/library_nodes/math/tensor/leaky_relu_node.cpp
     src/data_flow/library_nodes/math/tensor/matmul_node.cpp
     src/data_flow/library_nodes/math/tensor/pooling_node.cpp
     src/data_flow/library_nodes/math/tensor/reduce_node.cpp
@@ -148,6 +148,7 @@ set(SOURCE_FILES
     src/offloading/data_offloading_node.cpp
     src/optimization_report/optimization_report.cpp
     src/passes/dataflow/byte_reference_elimination.cpp
+    src/passes/dataflow/approximate_math.cpp
     src/passes/dataflow/constant_propagation.cpp
     src/passes/dataflow/dead_data_elimination.cpp
     src/passes/dataflow/dead_reference_elimination.cpp

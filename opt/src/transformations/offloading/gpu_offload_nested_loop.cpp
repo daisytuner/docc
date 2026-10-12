@@ -1,5 +1,6 @@
 #include "sdfg/transformations/offloading/gpu_offload_nested_loop.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <utility>
 #include <vector>
@@ -314,6 +315,23 @@ bool GPUOffloadNestedLoop<
     // self-accumulation is a hard reject.
     if (gpu::analyze_nested_fold(loop_, target_level_, analysis_manager).unsafe) {
         return false;
+    }
+
+    // Condition: a rescaled (max-anchored) group lowers only to the X_BLOCK warp-shuffle
+    // combine, whose lane groups must tile the block width and fill whole warps.
+    if (auto* reduce = dynamic_cast<structured_control_flow::Reduce*>(&loop_)) {
+        bool rescaled = false;
+        for (const auto& entry : reduce->reductions()) {
+            rescaled |= !entry.rescale.empty();
+        }
+        if (rescaled) {
+            const int64_t warp = gpu::gpu_warp_size<GPUType>();
+            const int64_t width = std::min<int64_t>(parallel_size_->as_int(), warp);
+            if (target_level_ != gpu::TargetLevel::X_BLOCK || (width & (width - 1)) != 0 ||
+                parallel_size_->as_int() % width != 0 || block_product % warp != 0) {
+                return false;
+            }
+        }
     }
 
     return analysis_manager.get<tiles::ReductionBufferAnalysis>()

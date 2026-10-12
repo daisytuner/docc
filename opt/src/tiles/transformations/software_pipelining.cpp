@@ -1,5 +1,6 @@
 #include "sdfg/tiles/transformations/software_pipelining.h"
 
+#include <algorithm>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -7,7 +8,9 @@
 #include <vector>
 
 #include "sdfg/data_flow/access_node.h"
+#include "sdfg/data_flow/library_node.h"
 #include "sdfg/data_flow/library_nodes/barrier_local_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/tensor_layout.h"
 #include "sdfg/data_flow/memlet.h"
 #include "sdfg/data_flow/tasklet.h"
 #include "sdfg/deepcopy/structured_sdfg_deep_copy.h"
@@ -24,6 +27,7 @@
 #include "sdfg/types/array.h"
 #include "sdfg/types/pointer.h"
 #include "sdfg/types/scalar.h"
+#include "sdfg/types/utils.h"
 #include "sdfg/visitor/for_each.h"
 
 #include <symengine/add.h>
@@ -189,10 +193,271 @@ std::unique_ptr<types::IType> prepend_stage_dim(const types::IType& buf, size_t 
         types::Array>(buf.storage_type(), buf.alignment(), buf.initializer(), *inner, symbolic::integer(stages));
 }
 
+// The layout through which library node @p lib addresses its operand on memlet @p m, or nullptr.
+std::optional<math::tensor::TensorLayout>
+library_operand_layout(const data_flow::LibraryNode& lib, const data_flow::Memlet& m) {
+    auto meta = lib.pointer_access_type(m);
+    if (!meta) {
+        return std::nullopt;
+    }
+    auto read = meta->access_read_pattern();
+    auto write = meta->access_write_pattern();
+    if (read && read->layout()) {
+        return *read->layout();
+    }
+    if (write && write->layout()) {
+        return *write->layout();
+    }
+    return std::nullopt;
+}
+
+int library_input_index(const data_flow::LibraryNode& lib, const data_flow::Memlet& m) {
+    const auto& inputs = lib.inputs();
+    auto it = std::find(inputs.begin(), inputs.end(), m.dst_conn());
+    return it == inputs.end() ? -1 : static_cast<int>(it - inputs.begin());
+}
+
+// Library-node consumers address a staged buffer through their own operand layout
+// (a bare-pointer memlet), so stage selection must be expressible as an offset bias.
+bool library_consumers_relocalizable(structured_control_flow::ControlFlowNode& root, const Function& sdfg) {
+    bool ok = true;
+    visitor::for_each_block(root, [&](structured_control_flow::Block& b) {
+        auto& dfg = b.dataflow();
+        for (auto* acc : dfg.data_nodes()) {
+            if (!is_shared_container(sdfg, acc->data())) {
+                continue;
+            }
+            for (auto& m : dfg.out_edges(*acc)) {
+                auto* lib = dynamic_cast<const data_flow::LibraryNode*>(&m.dst());
+                if (lib == nullptr || dynamic_cast<const tiles::TileCopyNode*>(lib) != nullptr) {
+                    continue;
+                }
+                auto layout = library_operand_layout(*lib, m);
+                int idx = library_input_index(*lib, m);
+                if (!layout || idx < 0 || !lib->can_relocalize_operand(idx, *layout)) {
+                    ok = false;
+                }
+            }
+        }
+    });
+    return ok;
+}
+
+bool is_barrier_block(structured_control_flow::ControlFlowNode& node) {
+    auto* block = dynamic_cast<structured_control_flow::Block*>(&node);
+    if (block == nullptr || block->dataflow().nodes().size() != 1) {
+        return false;
+    }
+    auto libs = block->dataflow().library_nodes();
+    return libs.size() == 1 && dynamic_cast<const data_flow::BarrierLocalNode*>(*libs.begin()) != nullptr;
+}
+
+// A block holding one full copy-in TileCopyNode that writes a shared container.
+tiles::TileCopyNode* staging_copy(const Function& sdfg, structured_control_flow::ControlFlowNode& node) {
+    auto* block = dynamic_cast<structured_control_flow::Block*>(&node);
+    if (block == nullptr) {
+        return nullptr;
+    }
+    auto* tc = tile_copy_node_in(*block);
+    if (tc == nullptr || tc->direction() != tiles::CopyDirection::In || tc->phase() != tiles::CopyPhase::Full) {
+        return nullptr;
+    }
+    for (auto& m : block->dataflow().in_edges(*tc)) {
+        auto* acc = dynamic_cast<const data_flow::AccessNode*>(&m.src());
+        if (m.dst_conn() == "_dst" && acc != nullptr && is_shared_container(sdfg, acc->data())) {
+            return tc;
+        }
+    }
+    return nullptr;
+}
+
+/// `[barrier; staging copies...; barrier]` in @p body: indices of the leading barrier and
+/// the trailing barrier (copies lie strictly between).
+struct StagingGroup {
+    size_t lead;
+    size_t trail;
+};
+
+std::optional<StagingGroup> find_staging_group(const Function& sdfg, structured_control_flow::Sequence& body) {
+    for (size_t i = 1; i < body.size(); ++i) {
+        if (staging_copy(sdfg, body.at(i)) == nullptr) {
+            continue;
+        }
+        if (!is_barrier_block(body.at(i - 1))) {
+            return std::nullopt;
+        }
+        size_t j = i;
+        while (j + 1 < body.size() && staging_copy(sdfg, body.at(j + 1)) != nullptr) {
+            ++j;
+        }
+        if (j + 1 >= body.size() || !is_barrier_block(body.at(j + 1))) {
+            return std::nullopt;
+        }
+        return StagingGroup{i - 1, j + 1};
+    }
+    return std::nullopt;
+}
+
+// Per-thread 32-bit words a staged copy's register array needs, covering the scalar
+// (one word per element), 16-byte vector and 4x4-transposing lowerings of its plan.
+std::optional<size_t> stage_words(const tiles::TileCopyNode& tc, size_t elem_bytes) {
+    auto total = tc.plan().src.total_elements();
+    const auto& ct = tc.coop_threads();
+    if (ct.is_null() || !SymEngine::is_a<SymEngine::Integer>(*total) || !SymEngine::is_a<SymEngine::Integer>(*ct)) {
+        return std::nullopt;
+    }
+    const long long n = SymEngine::rcp_static_cast<const SymEngine::Integer>(total)->as_int();
+    const long long t = SymEngine::rcp_static_cast<const SymEngine::Integer>(ct)->as_int();
+    if (n <= 0 || t <= 0 || elem_bytes == 0 || elem_bytes > 4) {
+        return std::nullopt;
+    }
+    auto ceil_div = [](long long a, long long b) {
+        return (a + b - 1) / b;
+    };
+    const long long scalar = ceil_div(n, t);
+    const long long vec = 4 * ceil_div(n * static_cast<long long>(elem_bytes), 16 * t);
+    const long long transpose = 8 * ceil_div(n, 16 * t);
+    return static_cast<size_t>(std::max({scalar, vec, transpose}));
+}
+
+/// Element width of a staged copy, from its source pointer (the transfer width may
+/// already be widened).
+size_t staged_element_bytes(const tiles::TileCopyNode& tc) {
+    for (auto& m : tc.get_parent().in_edges(tc)) {
+        if (m.dst_conn() == "_src") {
+            return types::bit_width(m.base_type().primitive_type()) / 8;
+        }
+    }
+    return 0;
+}
+
+// The innermost sequence of @p loop's body (unwrapping single-child sequences).
+structured_control_flow::Sequence& loop_body(structured_control_flow::StructuredLoop& loop) {
+    structured_control_flow::Sequence* body = &loop.root();
+    while (body->size() == 1) {
+        auto* inner = dynamic_cast<structured_control_flow::Sequence*>(&body->at(0));
+        if (inner == nullptr) {
+            break;
+        }
+        body = inner;
+    }
+    return *body;
+}
+
 } // namespace
 
-SoftwarePipelining::SoftwarePipelining(structured_control_flow::StructuredLoop& loop, size_t stages, bool single_operand)
-    : loop_(loop), stages_(stages), single_operand_(single_operand) {
+// Register-staged rewrite (see the header): prologue copy, then per panel a guarded load of
+// the next panel into per-thread registers, the compute, and a guarded store into the
+// (single) shared buffer between two barriers.
+static void apply_register_staged(
+    builder::StructuredSDFGBuilder& builder,
+    structured_control_flow::StructuredLoop& loop,
+    const types::StorageType& register_storage
+) {
+    auto& sdfg = builder.subject();
+    auto& body = loop_body(loop);
+    auto group = find_staging_group(sdfg, body).value();
+    auto* parent = dynamic_cast<structured_control_flow::Sequence*>(loop.get_parent());
+    if (parent == nullptr) {
+        throw InvalidTransformationException("SoftwarePipelining: panel loop must sit in a sequence");
+    }
+    const auto indvar = loop.indvar();
+    const auto next = symbolic::add(indvar, loop.stride());
+    const auto guard = symbolic::Lt(next, loop.canonical_bound());
+
+    struct Staged {
+        tiles::TileCopyNode* copy;
+        std::string buffer, source;
+        std::unique_ptr<types::IType> buffer_type, source_type;
+    };
+    std::vector<Staged> staged;
+    std::vector<structured_control_flow::ControlFlowNode*> replaced;
+    for (size_t i = group.lead; i <= group.trail; ++i) {
+        replaced.push_back(&body.at(i));
+        if (i == group.lead || i == group.trail) {
+            continue;
+        }
+        Staged s{staging_copy(sdfg, body.at(i))};
+        for (auto& m : s.copy->get_parent().in_edges(*s.copy)) {
+            auto& acc = static_cast<const data_flow::AccessNode&>(m.src());
+            if (m.dst_conn() == "_dst") {
+                s.buffer = acc.data();
+                s.buffer_type = m.base_type().clone();
+            } else {
+                s.source = acc.data();
+                s.source_type = m.base_type().clone();
+            }
+        }
+        staged.push_back(std::move(s));
+    }
+
+    auto add_barrier = [&](structured_control_flow::Sequence& seq) {
+        builder.add_library_node<data_flow::BarrierLocalNode>(builder.add_block(seq, loop.debug_info()), DebugInfo());
+    };
+
+    // Prologue: the first panel, staged synchronously before the loop.
+    auto& prologue = builder.add_sequence_before(*parent, loop, loop.debug_info());
+    for (size_t i = group.lead + 1; i < group.trail; ++i) {
+        deepcopy::StructuredSDFGDeepCopy dc(builder, prologue, body.at(i));
+        auto mapping = dc.copy();
+        const_cast<structured_control_flow::ControlFlowNode*>(mapping.at(&body.at(i)))->replace(indvar, loop.init());
+    }
+    add_barrier(prologue);
+
+    auto& load_if = builder.add_if_else_before(body, body.at(group.lead), loop.debug_info());
+    auto& loads = builder.add_case(load_if, guard, loop.debug_info());
+    add_barrier(body);
+    auto& store_if = builder.add_if_else(body, loop.debug_info());
+    auto& stores = builder.add_case(store_if, guard, loop.debug_info());
+    add_barrier(body);
+
+    const types::Pointer word_ptr{types::Scalar(types::PrimitiveType::UInt32)};
+    for (auto& s : staged) {
+        const auto words = stage_words(*s.copy, staged_element_bytes(*s.copy)).value();
+        auto reg = builder.find_new_name("__daisy_stage_" + s.buffer);
+        builder.add_container(
+            reg,
+            types::Array(register_storage, 0, "", types::Scalar(types::PrimitiveType::UInt32), symbolic::integer(words))
+        );
+        auto emit_phase = [&](structured_control_flow::Sequence& seq,
+                              tiles::CopyPhase phase,
+                              const std::string& dst,
+                              const types::IType& dst_type,
+                              const std::string& src,
+                              const types::IType& src_type) {
+            auto& block = builder.add_block(seq, loop.debug_info());
+            auto& dst_acc = builder.add_access(block, dst);
+            auto& src_acc = builder.add_access(block, src);
+            auto& node = static_cast<tiles::TileCopyNode&>(builder.add_library_node<tiles::TileCopyNode>(
+                block,
+                loop.debug_info(),
+                s.copy->implementation_type(),
+                s.copy->plan(),
+                tiles::CopyDirection::In,
+                s.copy->bytes(),
+                s.copy->guard(),
+                s.copy->coop_axes(),
+                s.copy->coop_threads(),
+                s.copy->coop_lanes()
+            ));
+            node.set_phase(phase);
+            node.replace(indvar, next);
+            builder.add_computational_memlet(block, dst_acc, node, "_dst", {}, dst_type);
+            builder.add_computational_memlet(block, src_acc, node, "_src", {}, src_type);
+        };
+        emit_phase(loads, tiles::CopyPhase::LoadRegs, reg, word_ptr, s.source, *s.source_type);
+        emit_phase(stores, tiles::CopyPhase::StoreRegs, s.buffer, *s.buffer_type, reg, word_ptr);
+    }
+
+    for (auto it = replaced.rbegin(); it != replaced.rend(); ++it) {
+        builder.remove_child(body, body.index(**it));
+    }
+}
+
+SoftwarePipelining::SoftwarePipelining(
+    structured_control_flow::StructuredLoop& loop, size_t stages, bool single_operand, bool register_staged
+)
+    : loop_(loop), stages_(stages), single_operand_(single_operand), register_staged_(register_staged) {
 }
 
 std::string SoftwarePipelining::name() const {
@@ -247,6 +512,30 @@ bool SoftwarePipelining::
     if (!subtree_writes_shared(sdfg, loop_.root())) {
         return false;
     }
+    if (register_staged_) {
+        // One staging group, nothing else writes shared, and every staged copy has a
+        // constant per-thread share to hold in registers.
+        auto& body = loop_body(loop_);
+        auto group = find_staging_group(sdfg, body);
+        if (!group) {
+            return false;
+        }
+        for (size_t i = 0; i < body.size(); ++i) {
+            if (i > group->lead && i < group->trail) {
+                auto* tc = staging_copy(sdfg, body.at(i));
+                if (!tc->guard().trivial() || tc->atom() == tiles::CopyAtom::CpAsync ||
+                    !stage_words(*tc, staged_element_bytes(*tc))) {
+                    return false;
+                }
+            } else if (i != group->lead && i != group->trail && subtree_writes_shared(sdfg, body.at(i))) {
+                return false;
+            }
+        }
+        return true;
+    }
+    if (!library_consumers_relocalizable(loop_.root(), sdfg)) {
+        return false;
+    }
 
     return true;
 }
@@ -257,12 +546,23 @@ void SoftwarePipelining::apply(builder::StructuredSDFGBuilder& builder, analysis
     // The pipeline/copy nodes are stamped with the enclosing GPU tile target's
     // implementation type (CUDA/ROCm) so codegen picks that backend's dispatcher.
     data_flow::ImplementationType impl = data_flow::ImplementationType_NONE;
+    const tiles::TileTarget* target = nullptr;
     for (auto* node : structured_control_flow::ControlFlowNode::parent_chain(loop_)) {
         auto* map = dynamic_cast<structured_control_flow::Map*>(node);
         if (map != nullptr && tiles::AxisSchedule::classify_level(map->schedule_type()).has_value()) {
             impl = tiles::TileTargetRegistry::instance().implementation_type(map->schedule_type().value());
+            target = tiles::TileTargetRegistry::instance().get(map->schedule_type().value());
             break;
         }
+    }
+
+    if (register_staged_) {
+        if (target == nullptr) {
+            throw InvalidTransformationException("SoftwarePipelining: no tile target for register staging");
+        }
+        apply_register_staged(builder, loop_, target->storage_type(tiles::Space::Register));
+        analysis_manager.invalidate_all();
+        return;
     }
 
     // Stage slot for panel p: mod((indvar - init) / stride, stages).
@@ -295,6 +595,7 @@ void SoftwarePipelining::apply(builder::StructuredSDFGBuilder& builder, analysis
         // offset by stage_idx * per-stage buffer stride (padding included) instead of
         // reindexing that memlet.
         const auto stage_stride = buffer_element_count(sdfg.type(name));
+        const auto stage_bias = symbolic::mul(stage_idx, stage_stride);
         std::vector<tiles::TileCopyNode*> nodes_to_bias;
         visitor::for_each_block(loop_.root(), [&](structured_control_flow::Block& b) {
             auto& dfg = b.dataflow();
@@ -311,6 +612,20 @@ void SoftwarePipelining::apply(builder::StructuredSDFGBuilder& builder, analysis
                 for (auto& m : dfg.out_edges(*acc)) {
                     if (auto* tc = dynamic_cast<tiles::TileCopyNode*>(&m.dst())) {
                         nodes_to_bias.push_back(tc); // node writes via plan, not this memlet
+                    } else if (auto* lib = dynamic_cast<data_flow::LibraryNode*>(&m.dst())) {
+                        auto layout = library_operand_layout(*lib, m);
+                        int idx = library_input_index(*lib, m);
+                        if (!layout || idx < 0 ||
+                            !lib->relocalize_operand(
+                                idx,
+                                math::tensor::TensorLayout(
+                                    layout->shape(), layout->strides(), symbolic::add(layout->offset(), stage_bias)
+                                )
+                            )) {
+                            throw InvalidTransformationException(
+                                "SoftwarePipelining: library node cannot address the staged buffer"
+                            );
+                        }
                     } else {
                         reindex(m);
                     }
@@ -322,7 +637,7 @@ void SoftwarePipelining::apply(builder::StructuredSDFGBuilder& builder, analysis
         });
         for (auto* tc : nodes_to_bias) {
             auto plan = tc->plan();
-            auto biased = symbolic::add(plan.dst.offset(), symbolic::mul(stage_idx, stage_stride));
+            auto biased = symbolic::add(plan.dst.offset(), stage_bias);
             plan.dst = tiles::Layout(plan.dst.shape(), plan.dst.strides(), biased);
             tc->set_plan(plan);
         }
@@ -462,6 +777,7 @@ void SoftwarePipelining::to_json(nlohmann::json& j) const {
     j["parameters"] = nlohmann::json::object();
     j["parameters"]["stages"] = stages_;
     j["parameters"]["single_operand"] = single_operand_;
+    j["parameters"]["register_staged"] = register_staged_;
 
     serializer::JSONSerializer ser_flat(false);
     j["subgraph"] = nlohmann::json::object();
@@ -483,6 +799,7 @@ SoftwarePipelining SoftwarePipelining::from_json(builder::StructuredSDFGBuilder&
     }
     size_t stages = 2;
     bool single_operand = false;
+    bool register_staged = false;
     if (j.contains("parameters")) {
         if (j["parameters"].contains("stages")) {
             stages = j["parameters"]["stages"].get<size_t>();
@@ -490,8 +807,11 @@ SoftwarePipelining SoftwarePipelining::from_json(builder::StructuredSDFGBuilder&
         if (j["parameters"].contains("single_operand")) {
             single_operand = j["parameters"]["single_operand"].get<bool>();
         }
+        if (j["parameters"].contains("register_staged")) {
+            register_staged = j["parameters"]["register_staged"].get<bool>();
+        }
     }
-    return SoftwarePipelining(*loop, stages, single_operand);
+    return SoftwarePipelining(*loop, stages, single_operand, register_staged);
 }
 
 } // namespace transformations

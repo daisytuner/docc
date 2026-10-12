@@ -60,15 +60,18 @@ set(TEST_FILES
     data_flow/library_nodes/math/tensor/elementwise_ops/gelu_node_test.cpp
     data_flow/library_nodes/math/tensor/elementwise_ops/sub_node_test.cpp
     data_flow/library_nodes/math/tensor/elementwise_test.cpp
+    data_flow/library_nodes/math/tensor/elu_node_test.cpp
     data_flow/library_nodes/math/tensor/embedding_node_test.cpp
     data_flow/library_nodes/math/tensor/embedding_renorm_node_test.cpp
     data_flow/library_nodes/math/tensor/index_node_test.cpp
     data_flow/library_nodes/math/tensor/layernorm_test.cpp
+    data_flow/library_nodes/math/tensor/leaky_relu_node_test.cpp
     data_flow/library_nodes/math/tensor/matmul_test.cpp
     data_flow/library_nodes/math/tensor/pooling_test.cpp
     data_flow/library_nodes/math/tensor/primitive_type_test.cpp
     data_flow/library_nodes/math/tensor/reduce_test.cpp
     data_flow/library_nodes/math/tensor/tasklet_node_test.cpp
+    data_flow/library_nodes/math/tensor/tensor_layout_test.cpp
     data_flow/library_nodes/math/tensor/upsample_test.cpp
     data_flow/memlet_test.cpp
     data_flow/pointer_metadata_test.cpp
@@ -82,6 +85,7 @@ set(TEST_FILES
     passes/dataflow/dead_data_elimination_test.cpp
     passes/dataflow/local_buffer_reuse_test.cpp
     passes/dataflow/memlet_linearization_test.cpp
+    passes/dataflow/approximate_math_test.cpp
     passes/dataflow/memlet_simplification_test.cpp
     passes/dataflow/reference_propagation_test.cpp
     passes/dataflow/tasklet_fusion_test.cpp

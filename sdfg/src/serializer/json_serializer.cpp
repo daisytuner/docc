@@ -315,6 +315,12 @@ void JSONSerializer::structured_loop_to_json(nlohmann::json& j, const structured
             if (!reduction.original_index.is_null()) {
                 reduction_json["original_index"] = expression(reduction.original_index);
             }
+            if (!reduction.rescale.empty()) {
+                reduction_json["rescale"] = {
+                    {"anchor", reduction.rescale},
+                    {"base", structured_control_flow::rescale_base_to_string(reduction.rescale_base)},
+                };
+            }
             j["reductions"].push_back(reduction_json);
         }
     }
@@ -1122,6 +1128,12 @@ void JSONSerializer::json_to_reduce_node(
                     : symbolic::Expression(SymEngine::null)
             }
         );
+        if (reduction_json.contains("rescale")) {
+            const auto& rescale_json = reduction_json["rescale"];
+            reductions.back().rescale = rescale_json["anchor"].get<std::string>();
+            reductions.back().rescale_base =
+                structured_control_flow::rescale_base_from_string(rescale_json["base"].get<std::string>());
+        }
     }
 
     structured_control_flow::ScheduleType schedule_type = json_to_schedule_type(j["schedule_type"]);

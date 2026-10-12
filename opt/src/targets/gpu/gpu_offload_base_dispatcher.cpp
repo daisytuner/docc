@@ -163,6 +163,7 @@ void GPUOffloadBaseDispatcher::dispatch_node(
 
         std::unordered_map<TargetLevel, ScheduleType> nested_schedule_types;
         get_nested_schedule_types(node_, analysis_manager, nested_schedule_types);
+        validate_wave_maps(node_, analysis_manager, strategy_->get_warp_size());
 
         symbolic::Expression block_size_x = symbolic::one();
         symbolic::Expression block_size_y = symbolic::one();
@@ -172,7 +173,7 @@ void GPUOffloadBaseDispatcher::dispatch_node(
         symbolic::Expression grid_size_z = symbolic::one();
 
         if (nested_schedule_types.find(TargetLevel::X_BLOCK) != nested_schedule_types.end()) {
-            block_size_x = gpu::ScheduleType_GPU_Offload::parallel_size(nested_schedule_types.at(TargetLevel::X_BLOCK));
+            block_size_x = gpu::ScheduleType_GPU_Offload::threads(nested_schedule_types.at(TargetLevel::X_BLOCK));
         }
         if (nested_schedule_types.find(TargetLevel::Y_BLOCK) != nested_schedule_types.end()) {
             block_size_y = gpu::ScheduleType_GPU_Offload::parallel_size(nested_schedule_types.at(TargetLevel::Y_BLOCK));
@@ -190,6 +191,12 @@ void GPUOffloadBaseDispatcher::dispatch_node(
             grid_size_z = gpu::ScheduleType_GPU_Offload::parallel_size(nested_schedule_types.at(TargetLevel::Z_GRID));
         }
 
+
+        // Without launch bounds the compiler assumes 1024 threads/block and caps registers (128 VGPRs on CDNA).
+        auto block_threads = symbolic::mul(symbolic::mul(block_size_x, block_size_y), block_size_z);
+        if (SymEngine::is_a<SymEngine::Integer>(*block_threads)) {
+            launch_bounds_ = SymEngine::rcp_static_cast<const SymEngine::Integer>(block_threads)->as_int();
+        }
 
         std::string kernel_name = "kernel_" + sdfg_.name() + "_" + std::to_string(node_.element_id());
 
@@ -273,7 +280,11 @@ void GPUOffloadBaseDispatcher::dispatch_header(
     const std::string& kernel_name,
     std::vector<std::string>& arguments_declaration
 ) {
-    globals_stream << "__global__ void " << kernel_name << "(";
+    globals_stream << "__global__ void ";
+    if (launch_bounds_ > 0) {
+        globals_stream << "__launch_bounds__(" << launch_bounds_ << ") ";
+    }
+    globals_stream << kernel_name << "(";
     globals_stream << helpers::join(arguments_declaration, ", ");
     globals_stream << ")";
 }

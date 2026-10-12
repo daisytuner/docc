@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <functional>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -87,7 +89,11 @@ void add_contribution(
         indexing.contributions.begin(),
         indexing.contributions.end(),
         [](const EinsumIndexContribution& a, const EinsumIndexContribution& b) {
-            return a.index < b.index;
+            auto outer = a.index - b.index;
+            if (outer == 0) {
+                return a.factor > b.factor;
+            }
+            return outer < 0;
         }
     );
     indexing.covered = compute_covered(subset, indexing.contributions);
@@ -102,13 +108,6 @@ EinsumIndexing compute_indexing(const data_flow::Subset& subset, const std::vect
             indexing.contributions.push_back({dim.indvar, contrib.index, contrib.factor});
         }
     }
-    std::sort(
-        indexing.contributions.begin(),
-        indexing.contributions.end(),
-        [](const EinsumIndexContribution& a, const EinsumIndexContribution& b) {
-            return a.index < b.index;
-        }
-    );
     indexing.covered = compute_covered(subset, indexing.contributions);
     return indexing;
 }
@@ -119,15 +118,41 @@ symbolic::Expression EinsumIndexContribution::factor_expr() const {
     return symbolic::integer(this->factor);
 }
 
-symbolic::Expression EinsumIndexing::
-    get_stride_including_subsets(int idx, const std::vector<symbolic::Expression>& shape) const {
-    auto& contrib = this->contributions.at(idx);
-    auto dims = shape.size();
-    symbolic::Expression stride = contrib.factor_expr();
-    for (auto i = contrib.index; i < dims - 1; ++i) {
-        stride = symbolic::mul(stride, shape.at(i));
+std::vector<symbolic::Expression> EinsumIndexing::get_strides(
+    const std::vector<EinsumIndexContribution>& ordered_contributions, const std::vector<symbolic::Expression>& shape
+) const {
+    size_t n = shape.size();
+    std::vector<symbolic::Expression> strides(n, symbolic::zero());
+
+    // Distinct subset positions, innermost (largest index) first.
+    std::set<size_t, std::greater<size_t>> positions;
+    for (const auto& c : ordered_contributions) {
+        positions.insert(c.index);
     }
-    return stride;
+
+    symbolic::Expression running = symbolic::one();
+    for (size_t pos : positions) {
+        // Dimensions sharing this subset position are linearized: they all use the current memory
+        // stride (`running`) scaled by their own factor.
+        int64_t extent_factor = 0;
+        size_t extent_dim = 0;
+        bool found = false;
+        for (size_t d = 0; d < n; d++) {
+            if (ordered_contributions.at(d).index != pos) {
+                continue;
+            }
+            strides[d] = symbolic::mul(running, ordered_contributions.at(d).factor_expr());
+            if (!found || ordered_contributions.at(d).factor > extent_factor) {
+                extent_factor = ordered_contributions.at(d).factor;
+                extent_dim = d;
+                found = true;
+            }
+        }
+        // The outermost contributor (largest factor) spans the whole position; advance by its extent.
+        running = symbolic::
+            mul(running, symbolic::mul(ordered_contributions.at(extent_dim).factor_expr(), shape.at(extent_dim)));
+    }
+    return strides;
 }
 
 std::pair<data_flow::AccessNode*, const data_flow::Subset&> EinsumCluster::get_input_for(size_t input_idx) {
@@ -172,6 +197,10 @@ symbolic::Expression EinsumCluster::get_linearized_outer_offset(int input_idx) c
     auto& indexing = input_idx >= 0 ? einsum_in_indices.at(input_idx) : einsum_out_indices;
     auto& edge = input_idx >= 0 ? *in_edges.at(input_idx) : *output_edge;
     auto rem_dims = edge.subset().size() - indexing.covered;
+    if (rem_dims == 0) {
+        return symbolic::zero();
+    }
+
     data_flow::Subset rem_subset(edge.subset().begin(), edge.subset().begin() + rem_dims);
 
     auto layout = try_infer_tensor_layout(edge.base_type());

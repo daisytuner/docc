@@ -27,32 +27,55 @@ symbolic::Expression rowmajor(const symbolic::MultiExpression& sizes, const symb
     return linear;
 }
 
+// Tile dims (or indices) in storage order: reversed for the column-major placement.
+symbolic::MultiExpression storage_order(const symbolic::MultiExpression& v, Placement placement) {
+    if (placement == Placement::ColMajor) {
+        return symbolic::MultiExpression(v.rbegin(), v.rend());
+    }
+    return v;
+}
+
+// Whether each per-slot block is stored as one flat axis.
+bool flat_block(ConflictPolicy conflict) {
+    return conflict == ConflictPolicy::PadSlot || conflict == ConflictPolicy::Swizzle;
+}
+
+// The nested tile dims as allocated: storage order, the innermost row widened by a row pad.
+symbolic::MultiExpression stored_tile(const PackedBuffer& buffer) {
+    auto out = storage_order(buffer.tile_sizes, buffer.placement);
+    if (buffer.conflict == ConflictPolicy::PadRow && buffer.pad > 0 && !out.empty()) {
+        out.back() = symbolic::add(out.back(), symbolic::integer(static_cast<int64_t>(buffer.pad)));
+    }
+    return out;
+}
+
 } // namespace
 
-ComposedLayout buffer_layout(
-    const symbolic::MultiExpression& slot_sizes,
-    const symbolic::MultiExpression& tile_sizes,
-    BufferKind kind,
-    const symbolic::Expression& inner_stride
-) {
-    symbolic::Expression tile_total = product_of(tile_sizes, 0, tile_sizes.size());
-    // Padded widens the per-slot block; every other kind packs the natural block.
-    symbolic::Expression per_slot_block = (kind == BufferKind::Padded) ? inner_stride : tile_total;
-
+ComposedLayout PackedBuffer::layout() const {
     symbolic::MultiExpression shape, stride;
+    if (placement == Placement::Flat) {
+        symbolic::MultiExpression all = slot_sizes;
+        all.insert(all.end(), tile_sizes.begin(), tile_sizes.end());
+        for (size_t i = 0; i < all.size(); ++i) {
+            shape.push_back(all[i]);
+            stride.push_back(product_of(all, i + 1, all.size()));
+        }
+        return ComposedLayout{Swizzle{}, Layout(shape, stride, symbolic::integer(0))};
+    }
+
     // Slot dims (outermost): each owns a contiguous per-slot block.
+    const auto block = slot_stride();
     for (size_t i = 0; i < slot_sizes.size(); ++i) {
         shape.push_back(slot_sizes[i]);
-        stride.push_back(symbolic::mul(per_slot_block, product_of(slot_sizes, i + 1, slot_sizes.size())));
+        stride.push_back(symbolic::mul(block, product_of(slot_sizes, i + 1, slot_sizes.size())));
     }
-    // Tile dims within one per-slot block: row-major, or column-major (dim 0
-    // fastest) for the transposed placement.
-    for (size_t j = 0; j < tile_sizes.size(); ++j) {
+    // Tile dims: strides of the stored dims (a flat block keeps the natural, unpadded order).
+    const auto stored = flat_block(conflict) ? storage_order(tile_sizes, placement) : stored_tile(*this);
+    const size_t n = tile_sizes.size();
+    for (size_t j = 0; j < n; ++j) {
+        const size_t s = placement == Placement::ColMajor ? n - 1 - j : j;
         shape.push_back(tile_sizes[j]);
-        stride.push_back(
-            kind == BufferKind::Transposed ? product_of(tile_sizes, 0, j)
-                                           : product_of(tile_sizes, j + 1, tile_sizes.size())
-        );
+        stride.push_back(product_of(stored, s + 1, n));
     }
     Layout base(shape, stride, symbolic::integer(0));
 
@@ -60,11 +83,12 @@ ComposedLayout buffer_layout(
     // equivalent to bit_xor(tile_linearize, slot_linearize) when the block is a
     // constant power of two (and the slot fits in it).
     Swizzle sw;
-    if (kind == BufferKind::Swizzle && SymEngine::is_a<SymEngine::Integer>(*tile_total)) {
-        long n = SymEngine::rcp_static_cast<const SymEngine::Integer>(tile_total)->as_int();
-        if (n > 1 && (n & (n - 1)) == 0) {
+    const auto tile_total = tile_total_size();
+    if (conflict == ConflictPolicy::Swizzle && SymEngine::is_a<SymEngine::Integer>(*tile_total)) {
+        long total = SymEngine::rcp_static_cast<const SymEngine::Integer>(tile_total)->as_int();
+        if (total > 1 && (total & (total - 1)) == 0) {
             int bits = 0;
-            while ((1L << bits) < n) {
+            while ((1L << bits) < total) {
                 ++bits;
             }
             sw = Swizzle{bits, 0, bits};
@@ -74,79 +98,56 @@ ComposedLayout buffer_layout(
 }
 
 symbolic::Expression PackedBuffer::total_size() const {
-    return symbolic::mul(product_of(slot_sizes, 0, slot_sizes.size()), product_of(tile_sizes, 0, tile_sizes.size()));
+    return symbolic::mul(product_of(slot_sizes, 0, slot_sizes.size()), slot_stride());
 }
 
 symbolic::Expression PackedBuffer::tile_total_size() const {
     return product_of(tile_sizes, 0, tile_sizes.size());
 }
 
-symbolic::Expression PackedBuffer::inner_stride() const {
-    auto total = tile_total_size();
-    // Pad only a constant block; a symbolic block cannot be safely padded.
-    if (!SymEngine::is_a<SymEngine::Integer>(*total)) {
-        return total;
+symbolic::Expression PackedBuffer::slot_stride() const {
+    if (placement == Placement::Flat || conflict == ConflictPolicy::Swizzle) {
+        return tile_total_size();
     }
-    auto n = SymEngine::rcp_static_cast<const SymEngine::Integer>(total)->as_int();
-    // Cooperative-store conflict avoidance: pad the per-slot stride congruent to the
-    // coop warp span (mod 32), rounded up to a multiple of 4 so a whole shared row is
-    // float4-addressable; else fall back to the next odd (coprime-with-32) stride.
-    if (coop_warp_span > 0) {
-        long target = static_cast<long>(coop_warp_span % 32);
-        long add = ((target - (n % 32)) % 32 + 32) % 32;
-        long padded = (n + add + 3) & ~3L;
-        return symbolic::integer(padded);
+    if (conflict == ConflictPolicy::PadSlot) {
+        return symbolic::add(tile_total_size(), symbolic::integer(static_cast<int64_t>(pad)));
     }
-    if (n % 2 == 0) {
-        return symbolic::integer(n + 1);
-    }
-    return total;
+    const auto stored = stored_tile(*this);
+    return product_of(stored, 0, stored.size());
 }
 
 symbolic::MultiExpression PackedBuffer::axes() const {
+    if (placement == Placement::Flat) {
+        return {total_size()};
+    }
     symbolic::MultiExpression out = slot_sizes;
-    symbolic::Expression tile_total = product_of(tile_sizes, 0, tile_sizes.size());
-    switch (kind) {
-        case BufferKind::MultiDim:
-            out.insert(out.end(), tile_sizes.begin(), tile_sizes.end());
-            break;
-        case BufferKind::Transposed:
-            out.insert(out.end(), tile_sizes.rbegin(), tile_sizes.rend());
-            break;
-        case BufferKind::Padded:
-            out.push_back(inner_stride()); // one flat, padded per-slot block
-            break;
-        case BufferKind::Swizzle:
-            out.push_back(tile_total); // one flat, natural per-slot block
-            break;
-        case BufferKind::Linearized:
-            return {symbolic::mul(product_of(slot_sizes, 0, slot_sizes.size()), tile_total)};
+    if (flat_block(conflict)) {
+        out.push_back(slot_stride());
+    } else {
+        const auto stored = stored_tile(*this);
+        out.insert(out.end(), stored.begin(), stored.end());
     }
     return out;
 }
 
 symbolic::MultiExpression PackedBuffer::
     subset(const symbolic::MultiExpression& slot_indices, const symbolic::MultiExpression& tile_indices) const {
+    if (placement == Placement::Flat) {
+        symbolic::MultiExpression sizes = slot_sizes, indices = slot_indices;
+        sizes.insert(sizes.end(), tile_sizes.begin(), tile_sizes.end());
+        indices.insert(indices.end(), tile_indices.begin(), tile_indices.end());
+        return {rowmajor(sizes, indices)};
+    }
     symbolic::MultiExpression out = slot_indices;
-    switch (kind) {
-        case BufferKind::MultiDim:
-            out.insert(out.end(), tile_indices.begin(), tile_indices.end());
-            break;
-        case BufferKind::Transposed:
-            out.insert(out.end(), tile_indices.rbegin(), tile_indices.rend());
-            break;
-        case BufferKind::Padded:
-            out.push_back(rowmajor(tile_sizes, tile_indices));
-            break;
-        case BufferKind::Swizzle:
-            out.push_back(symbolic::bit_xor(rowmajor(tile_sizes, tile_indices), rowmajor(slot_sizes, slot_indices)));
-            break;
-        case BufferKind::Linearized: {
-            symbolic::MultiExpression sizes = slot_sizes, indices = slot_indices;
-            sizes.insert(sizes.end(), tile_sizes.begin(), tile_sizes.end());
-            indices.insert(indices.end(), tile_indices.begin(), tile_indices.end());
-            return {rowmajor(sizes, indices)};
+    const auto indices = storage_order(tile_indices, placement);
+    if (flat_block(conflict)) {
+        auto inner = rowmajor(storage_order(tile_sizes, placement), indices);
+        if (conflict == ConflictPolicy::Swizzle) {
+            inner = symbolic::bit_xor(inner, rowmajor(slot_sizes, slot_indices));
         }
+        out.push_back(inner);
+    } else {
+        out.insert(out.end(), indices.begin(), indices.end());
     }
     // A degenerate (all extent-1, no-slot) buffer is a single [1] element at index 0.
     if (out.empty()) {

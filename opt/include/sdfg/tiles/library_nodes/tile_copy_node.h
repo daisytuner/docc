@@ -42,6 +42,10 @@ class TileCopyNode : public data_flow::LibraryNode {
     /// from-zero copy loop whose trip count `ceil(size/(threads*factor))` folds to a
     /// constant the backend can unroll; null falls back to a runtime thread-strided loop.
     symbolic::Expression coop_threads_;
+    /// Fastest x-threads (`threadIdx.x % coop_lanes`) that also cooperate in per-thread-slot
+    /// mode: the lanes of a wave-granular slot axis, whose slot depends on the wave only.
+    size_t coop_lanes_ = 1;
+    CopyPhase phase_ = CopyPhase::Full;
 
 public:
     TileCopyNode(
@@ -55,7 +59,8 @@ public:
         size_t bytes,
         TileGuard guard = {},
         std::vector<int> coop_axes = {},
-        symbolic::Expression coop_threads = {}
+        symbolic::Expression coop_threads = {},
+        size_t coop_lanes = 1
     );
 
     const TiledCopy& plan() const {
@@ -103,6 +108,22 @@ public:
         return coop_threads_;
     }
 
+    size_t coop_lanes() const {
+        return coop_lanes_;
+    }
+
+    CopyPhase phase() const {
+        return phase_;
+    }
+    void set_phase(CopyPhase phase) {
+        phase_ = phase;
+    }
+    /// The input (0 = `_dst`, 1 = `_src`) whose pointer carries the tile element type —
+    /// the non-register side of a staged phase.
+    int element_input() const {
+        return phase_ == CopyPhase::LoadRegs ? 1 : 0;
+    }
+
 
     void validate(const Function& function) const override;
 
@@ -114,6 +135,8 @@ public:
     void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override;
 
     void replace(const symbolic::ExpressionMapping& replacements) override;
+
+    std::string toStr() const override;
 
     /// {"_dst", "_src"}: writes _dst, reads _src, captures neither. Lets escape
     /// analysis treat a container staged through this copy as an ordinary copy so a

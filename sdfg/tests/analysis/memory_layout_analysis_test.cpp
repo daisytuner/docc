@@ -3693,3 +3693,207 @@ TEST(MemoryLayoutAnalysisTest, LibraryNode_MatMul_InLoopPropagates) {
     EXPECT_TRUE(symbolic::eq(tile_a->max_subset.at(0), symbolic::integer(3)));
     EXPECT_TRUE(symbolic::eq(tile_a->max_subset.at(1), symbolic::integer(7)));
 }
+
+// A 16x16x16 MatMul whose operand layouts carry loop-variable offsets, swept by a
+// 2x2 grid of output tiles (i1, j1 in {0,1}) to realize a full 32x32x16 matmul.
+// MLA must partition each per-tile offset into its dimension bases and, after
+// bounding the grid loops, recover the whole-operand footprint: A[32,16], B[16,32],
+// Y[32,32].
+TEST(MemoryLayoutAnalysisTest, LibraryNode_MatMul_TiledOverGrid) {
+    builder::StructuredSDFGBuilder builder("mla_matmul_grid", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+
+    types::Scalar index_type(types::PrimitiveType::Int64);
+    types::Scalar desc(types::PrimitiveType::Float);
+    types::Pointer desc_ptr(desc);
+    builder.add_container("i1", index_type);
+    builder.add_container("j1", index_type);
+    builder.add_container("a", desc_ptr, true);
+    builder.add_container("b", desc_ptr, true);
+    builder.add_container("y", desc_ptr, true);
+
+    auto i1 = symbolic::symbol("i1");
+    auto j1 = symbolic::symbol("j1");
+
+    // 2x2 grid of 16x16 output tiles.
+    auto& i1_loop = builder.add_for(
+        sdfg.root(), i1, symbolic::Lt(i1, symbolic::integer(2)), symbolic::integer(0), symbolic::add(i1, symbolic::one())
+    );
+    auto& j1_loop = builder.add_for(
+        i1_loop.root(),
+        j1,
+        symbolic::Lt(j1, symbolic::integer(2)),
+        symbolic::integer(0),
+        symbolic::add(j1, symbolic::one())
+    );
+    auto& block = builder.add_block(j1_loop.root());
+    auto& a_node = builder.add_access(block, "a");
+    auto& b_node = builder.add_access(block, "b");
+    auto& y_node = builder.add_access(block, "y");
+
+    // A is 32x16 row-major (strides [16, 1]); the i1 row-tile offsets rows by 16*i1,
+    // i.e. a flat offset of 256*i1.
+    math::tensor::TensorLayout layout_a(
+        {symbolic::integer(16), symbolic::integer(16)},
+        {symbolic::integer(16), symbolic::integer(1)},
+        symbolic::mul(symbolic::integer(256), i1)
+    );
+    // B is 16x32 row-major (strides [32, 1]); the j1 col-tile offsets cols by 16*j1.
+    math::tensor::TensorLayout layout_b(
+        {symbolic::integer(16), symbolic::integer(16)},
+        {symbolic::integer(32), symbolic::integer(1)},
+        symbolic::mul(symbolic::integer(16), j1)
+    );
+    // Y is 32x32 row-major (strides [32, 1]); offset by (16*i1) rows + (16*j1) cols.
+    math::tensor::TensorLayout layout_y(
+        {symbolic::integer(16), symbolic::integer(16)},
+        {symbolic::integer(32), symbolic::integer(1)},
+        symbolic::add(symbolic::mul(symbolic::integer(512), i1), symbolic::mul(symbolic::integer(16), j1))
+    );
+
+    auto& matmul = static_cast<math::tensor::MatMulNode&>(builder.add_library_node<math::tensor::MatMulNode>(
+        block, DebugInfo(), layout_a, layout_b, math::tensor::QUANTIZATION_MATCH_INPUTS, &layout_y
+    ));
+    builder.add_computational_memlet(block, a_node, matmul, "A", {}, desc_ptr, block.debug_info());
+    builder.add_computational_memlet(block, b_node, matmul, "B", {}, desc_ptr, block.debug_info());
+    builder.add_computational_memlet(block, y_node, matmul, "Y", {}, desc_ptr, block.debug_info());
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    auto& analysis = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
+
+    // Outer-loop tile spans the full 32x32x16 footprint of each operand.
+    auto* tile_a = analysis.tile(i1_loop, "a");
+    ASSERT_NE(tile_a, nullptr);
+    ASSERT_EQ(tile_a->min_subset.size(), 2u);
+    EXPECT_TRUE(symbolic::eq(tile_a->min_subset.at(0), symbolic::zero()));
+    EXPECT_TRUE(symbolic::eq(tile_a->min_subset.at(1), symbolic::zero()));
+    EXPECT_TRUE(symbolic::eq(tile_a->max_subset.at(0), symbolic::integer(31)));
+    EXPECT_TRUE(symbolic::eq(tile_a->max_subset.at(1), symbolic::integer(15)));
+    auto ext_a = tile_a->extents_approx();
+    EXPECT_TRUE(symbolic::eq(ext_a.at(0), symbolic::integer(32)));
+    EXPECT_TRUE(symbolic::eq(ext_a.at(1), symbolic::integer(16)));
+
+    auto* tile_b = analysis.tile(i1_loop, "b");
+    ASSERT_NE(tile_b, nullptr);
+    EXPECT_TRUE(symbolic::eq(tile_b->min_subset.at(0), symbolic::zero()));
+    EXPECT_TRUE(symbolic::eq(tile_b->min_subset.at(1), symbolic::zero()));
+    EXPECT_TRUE(symbolic::eq(tile_b->max_subset.at(0), symbolic::integer(15)));
+    EXPECT_TRUE(symbolic::eq(tile_b->max_subset.at(1), symbolic::integer(31)));
+    auto ext_b = tile_b->extents_approx();
+    EXPECT_TRUE(symbolic::eq(ext_b.at(0), symbolic::integer(16)));
+    EXPECT_TRUE(symbolic::eq(ext_b.at(1), symbolic::integer(32)));
+
+    auto* tile_y = analysis.tile(i1_loop, "y");
+    ASSERT_NE(tile_y, nullptr);
+    EXPECT_TRUE(symbolic::eq(tile_y->min_subset.at(0), symbolic::zero()));
+    EXPECT_TRUE(symbolic::eq(tile_y->min_subset.at(1), symbolic::zero()));
+    EXPECT_TRUE(symbolic::eq(tile_y->max_subset.at(0), symbolic::integer(31)));
+    EXPECT_TRUE(symbolic::eq(tile_y->max_subset.at(1), symbolic::integer(31)));
+    auto ext_y = tile_y->extents_approx();
+    EXPECT_TRUE(symbolic::eq(ext_y.at(0), symbolic::integer(32)));
+    EXPECT_TRUE(symbolic::eq(ext_y.at(1), symbolic::integer(32)));
+}
+
+// Same 32x32x16 matmul, but the 2x2 tile grid is driven by a GPU block whose thread
+// extents exceed the tile grid: 64 threads in x, 2 in y, with 32 threads cooperating
+// on one 16x16 tile. The column tile index is therefore `block_x / 32` (an integer
+// floor-division) and the row tile index is `block_y`. The idiv in the operand
+// offsets is the case MLA must still bound: block_x in [0, 64) gives block_x/32 in
+// {0, 1}, so the full 32x32 footprint must still be recovered.
+TEST(MemoryLayoutAnalysisTest, LibraryNode_MatMul_GpuThreadsShareTile_Idiv) {
+    builder::StructuredSDFGBuilder builder("mla_matmul_idiv", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+
+    types::Scalar index_type(types::PrimitiveType::Int64);
+    types::Scalar desc(types::PrimitiveType::Float);
+    types::Pointer desc_ptr(desc);
+    builder.add_container("block_x", index_type);
+    builder.add_container("block_y", index_type);
+    builder.add_container("a", desc_ptr, true);
+    builder.add_container("b", desc_ptr, true);
+    builder.add_container("y", desc_ptr, true);
+
+    auto block_x = symbolic::symbol("block_x");
+    auto block_y = symbolic::symbol("block_y");
+
+    // GPU block: 64 threads in x (32 cooperate per tile -> 2 col tiles), 2 in y.
+    // Modeled with bounded maps; only the indvar ranges matter to MLA.
+    auto& bx_loop = builder.add_map(
+        sdfg.root(),
+        block_x,
+        symbolic::Lt(block_x, symbolic::integer(64)),
+        symbolic::zero(),
+        symbolic::add(block_x, symbolic::one()),
+        ScheduleType_Sequential::create()
+    );
+    auto& by_loop = builder.add_map(
+        bx_loop.root(),
+        block_y,
+        symbolic::Lt(block_y, symbolic::integer(2)),
+        symbolic::zero(),
+        symbolic::add(block_y, symbolic::one()),
+        ScheduleType_Sequential::create()
+    );
+    auto& block = builder.add_block(by_loop.root());
+    auto& a_node = builder.add_access(block, "a");
+    auto& b_node = builder.add_access(block, "b");
+    auto& y_node = builder.add_access(block, "y");
+
+    auto col_tile = symbolic::div(block_x, symbolic::integer(32)); // block_x / 32 -> {0, 1}
+    auto row_tile = block_y; // {0, 1}
+
+    // A 32x16: row tile offsets rows by 16*row_tile -> flat 256*row_tile.
+    math::tensor::TensorLayout layout_a(
+        {symbolic::integer(16), symbolic::integer(16)},
+        {symbolic::integer(16), symbolic::integer(1)},
+        symbolic::mul(symbolic::integer(256), row_tile)
+    );
+    // B 16x32: col tile offsets cols by 16*col_tile (carries the idiv).
+    math::tensor::TensorLayout layout_b(
+        {symbolic::integer(16), symbolic::integer(16)},
+        {symbolic::integer(32), symbolic::integer(1)},
+        symbolic::mul(symbolic::integer(16), col_tile)
+    );
+    // Y 32x32: (16*row_tile) rows + (16*col_tile) cols.
+    math::tensor::TensorLayout layout_y(
+        {symbolic::integer(16), symbolic::integer(16)},
+        {symbolic::integer(32), symbolic::integer(1)},
+        symbolic::add(symbolic::mul(symbolic::integer(512), row_tile), symbolic::mul(symbolic::integer(16), col_tile))
+    );
+
+    auto& matmul = static_cast<math::tensor::MatMulNode&>(builder.add_library_node<math::tensor::MatMulNode>(
+        block, DebugInfo(), layout_a, layout_b, math::tensor::QUANTIZATION_MATCH_INPUTS, &layout_y
+    ));
+    builder.add_computational_memlet(block, a_node, matmul, "A", {}, desc_ptr, block.debug_info());
+    builder.add_computational_memlet(block, b_node, matmul, "B", {}, desc_ptr, block.debug_info());
+    builder.add_computational_memlet(block, y_node, matmul, "Y", {}, desc_ptr, block.debug_info());
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    auto& analysis = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
+
+    // A depends only on block_y: full 32x16.
+    auto* tile_a = analysis.tile(bx_loop, "a");
+    ASSERT_NE(tile_a, nullptr);
+    EXPECT_TRUE(symbolic::eq(tile_a->max_subset.at(0), symbolic::integer(31)));
+    EXPECT_TRUE(symbolic::eq(tile_a->max_subset.at(1), symbolic::integer(15)));
+
+    // B carries the idiv on block_x: block_x/32 in {0,1} must bound cols to [0, 31].
+    auto* tile_b = analysis.tile(bx_loop, "b");
+    ASSERT_NE(tile_b, nullptr);
+    EXPECT_TRUE(symbolic::eq(tile_b->min_subset.at(0), symbolic::zero()));
+    EXPECT_TRUE(symbolic::eq(tile_b->min_subset.at(1), symbolic::zero()));
+    EXPECT_TRUE(symbolic::eq(tile_b->max_subset.at(0), symbolic::integer(15)));
+    EXPECT_TRUE(symbolic::eq(tile_b->max_subset.at(1), symbolic::integer(31)));
+    auto ext_b = tile_b->extents_approx();
+    EXPECT_TRUE(symbolic::eq(ext_b.at(0), symbolic::integer(16)));
+    EXPECT_TRUE(symbolic::eq(ext_b.at(1), symbolic::integer(32)));
+
+    // Y carries the idiv on block_x and the offset on block_y: full 32x32.
+    auto* tile_y = analysis.tile(bx_loop, "y");
+    ASSERT_NE(tile_y, nullptr);
+    EXPECT_TRUE(symbolic::eq(tile_y->max_subset.at(0), symbolic::integer(31)));
+    EXPECT_TRUE(symbolic::eq(tile_y->max_subset.at(1), symbolic::integer(31)));
+    auto ext_y = tile_y->extents_approx();
+    EXPECT_TRUE(symbolic::eq(ext_y.at(0), symbolic::integer(32)));
+    EXPECT_TRUE(symbolic::eq(ext_y.at(1), symbolic::integer(32)));
+}

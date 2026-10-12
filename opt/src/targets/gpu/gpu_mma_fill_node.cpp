@@ -67,7 +67,7 @@ std::string GpuMmaFillNode::toStr() const {
 data_flow::PointerAccessType GpuMmaFillNode::pointer_access_type(int input_idx) const {
     if (input_idx == Y_INPUT_IDX) {
         return data_flow::PointerAccessMeta::
-            create_full_write_only(symbolic::integer(mma_block_size_.m * mma_block_size_.n), true);
+            create_full_write_only(SymEngine::mul(mma_block_size_.get_shape(MmaFragmentType::C)), true);
     }
     throw std::invalid_argument("GpuMmaFillNode: Invalid input index for pointer access type");
 }
