@@ -119,12 +119,12 @@ ALIGNED = [
     (1024, 1024, 1024, 16, 16),
     (1024, 1024, 1024, 32, 32),
     (1024, 1024, 1024, 64, 64),
+    (1024, 1024, 1024, 48, 48),
+    (1024, 1024, 1024, 16, 48),
 ]
 
 # Tiles the expander must decline.
 UNSUPPORTED = [
-    (1024, 1024, 1024, 48, 48),  # (3, 3) block shape is not supported
-    (1024, 1024, 1024, 16, 48),  # (1, 3) block shape is not supported
     (1024, 1024, 1020, 16, 16),  # K not a multiple of the 16-wide MMA block
     (1024, 1024, 1024, 17, 16),  # tile_m not a multiple of the 16-wide MMA block
     (1024, 1024, 1024, 16, 17),  # tile_n not a multiple of the 16-wide MMA block
@@ -233,6 +233,7 @@ EXEC_CASES = [
     (32, 32, 32, 16, 16),
     (64, 64, 32, 16, 16),
     (32, 32, 32, 32, 32),
+    (96, 96, 32, 48, 48),
 ]
 
 

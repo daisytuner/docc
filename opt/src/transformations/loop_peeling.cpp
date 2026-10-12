@@ -157,6 +157,43 @@ static bool is_positive_int(const symbolic::Expression& expr) {
            SymEngine::rcp_static_cast<const SymEngine::Integer>(expr)->as_int() > 0;
 }
 
+/// The top-level conjuncts of @p cond (the condition itself if it is no conjunction).
+static std::vector<symbolic::Condition> conjuncts(const symbolic::Condition& cond) {
+    if (SymEngine::is_a<SymEngine::And>(*cond)) {
+        std::vector<symbolic::Condition> out;
+        for (const auto& arg : SymEngine::rcp_static_cast<const SymEngine::And>(cond)->get_container()) {
+            out.push_back(arg);
+        }
+        return out;
+    }
+    return {cond};
+}
+
+/// Whether the loop bound @p bound holds for every iteration of @p indvar in
+/// [@p first, @p last]: an inequality affine in the indvar holds throughout iff it holds at
+/// both ends. Such a bound needs no guard after peeling.
+static bool holds_on_every_iteration(
+    const symbolic::Condition& bound,
+    const symbolic::Symbol& indvar,
+    const symbolic::Expression& first,
+    const symbolic::Expression& last,
+    const symbolic::SymbolSet& params,
+    const symbolic::Assumptions& assums
+) {
+    if (!SymEngine::is_a<SymEngine::StrictLessThan>(*bound) && !SymEngine::is_a<SymEngine::LessThan>(*bound)) {
+        return false;
+    }
+    auto rel = SymEngine::rcp_static_cast<const SymEngine::Relational>(bound);
+    auto diff = symbolic::sub(rel->get_arg1(), rel->get_arg2());
+    auto step =
+        symbolic::expand(symbolic::sub(symbolic::subs(diff, indvar, symbolic::add(indvar, symbolic::one())), diff));
+    if (symbolic::atoms(step).contains(indvar)) {
+        return false;
+    }
+    return prove_literal(symbolic::subs(bound, indvar, first), params, assums) == Provable::True &&
+           prove_literal(symbolic::subs(bound, indvar, last), params, assums) == Provable::True;
+}
+
 /// Applicable when the loop has a constant-trip overapproximation (so the nest
 /// can be fully unrolled) but a non-constant exact trip count (so there is a
 /// dynamic boundary to handle). Relies on the StructuredLoop trip-count helpers,
@@ -218,10 +255,14 @@ static structured_control_flow::StructuredLoop& append_loop(
 }
 
 bool LoopPeeling::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
-    return has_predicable_boundary(loop_);
+    // A constant-trip loop has no boundary to peel; accept it so apply is an idempotent no-op.
+    return loop_.is_monotonic() && is_positive_int(loop_.num_iterations_approx());
 };
 
 void LoopPeeling::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+    if (!has_predicable_boundary(loop_)) {
+        return;
+    }
     auto nest = collect_nest(loop_);
     auto* innermost = nest.back();
     auto zero = symbolic::integer(0);
@@ -241,6 +282,14 @@ void LoopPeeling::apply(builder::StructuredSDFGBuilder& builder, analysis::Analy
     std::vector<LoopInfo> infos;
     symbolic::Condition combined_guard = SymEngine::boolTrue;
     symbolic::Condition combined_fits = SymEngine::boolTrue;
+
+    // Assumptions at the innermost body scope carry every enclosing loop's bounds
+    // (e.g. tile-offset ranges), so a boundary that is dead given the surrounding
+    // nest is provable here — unlike the coarser function-level assumptions.
+    auto& assumptions_analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
+    const auto& assums = assumptions_analysis.get(innermost->root(), true);
+    const auto& params = assumptions_analysis.parameters();
+
     for (auto* l : nest) {
         auto indvar = l->indvar();
         auto init = l->init();
@@ -248,9 +297,14 @@ void LoopPeeling::apply(builder::StructuredSDFGBuilder& builder, analysis::Analy
         auto trip = l->num_iterations_approx();
         auto shifted = symbolic::add(indvar, init);
         symbolic::Condition zero_condition = symbolic::Lt(indvar, symbolic::mul(trip, stride));
-        combined_guard = symbolic::And(combined_guard, symbolic::subs(l->condition(), indvar, shifted));
         auto last = symbolic::add(init, symbolic::mul(symbolic::sub(trip, symbolic::integer(1)), stride));
-        combined_fits = symbolic::And(combined_fits, symbolic::subs(l->condition(), indvar, last));
+        for (const auto& bound : conjuncts(l->condition())) {
+            if (holds_on_every_iteration(bound, indvar, init, last, params, assums)) {
+                continue;
+            }
+            combined_guard = symbolic::And(combined_guard, symbolic::subs(bound, indvar, shifted));
+            combined_fits = symbolic::And(combined_fits, symbolic::subs(bound, indvar, last));
+        }
         infos.push_back({l, indvar, init, zero_condition, shifted});
     }
 
@@ -289,12 +343,6 @@ void LoopPeeling::apply(builder::StructuredSDFGBuilder& builder, analysis::Analy
         apply_shifts(body);
     };
 
-    // Assumptions at the innermost body scope carry every enclosing loop's bounds
-    // (e.g. tile-offset ranges), so a boundary that is dead given the surrounding
-    // nest is provable here — unlike the coarser function-level assumptions.
-    auto& assumptions_analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
-    const auto& assums = assumptions_analysis.get(innermost->root(), true);
-    const auto& params = assumptions_analysis.parameters();
     // The boundary is dead exactly when the last (worst-case, since the loops are
     // monotonic) iteration still fits: `combined_fits`. This governs both forms —
     // the hoisted remainder and the predicated per-iteration guard.

@@ -438,3 +438,64 @@ TEST(LoopPeelingTest, InnerRemainderEliminatedViaStrideTightBound) {
     ASSERT_EQ(clean->root().size(), 1);
     EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&clean->root().at(0)) != nullptr);
 }
+
+// Bounds every iteration provably satisfies (the tile bounds `i < P+4`, `j < Q+4`)
+// are dropped; the guard keeps only the undecided `N` bounds.
+TEST(LoopPeelingTest, PredicatedGuardKeepsOnlyUndecidedBounds) {
+    structured_control_flow::For* outer = nullptr;
+    auto builder = make_nested_loops(outer);
+
+    auto sdfg = builder.move();
+    builder::StructuredSDFGBuilder b(sdfg);
+    analysis::AnalysisManager am(b.subject());
+
+    transformations::LoopPeeling t(*outer, /*predicate=*/true);
+    EXPECT_TRUE(t.can_be_applied(b, am));
+    t.apply(b, am);
+
+    auto& s = b.subject();
+    auto* holder = dyn_cast<structured_control_flow::Sequence*>(&s.root().at(0));
+    ASSERT_TRUE(holder != nullptr);
+    auto* for_i = dyn_cast<structured_control_flow::For*>(&holder->at(0));
+    ASSERT_TRUE(for_i != nullptr);
+    auto* for_j = dyn_cast<structured_control_flow::For*>(&for_i->root().at(0));
+    ASSERT_TRUE(for_j != nullptr);
+    auto* guard = dyn_cast<structured_control_flow::IfElse*>(&for_j->root().at(0));
+    ASSERT_TRUE(guard != nullptr);
+
+    auto i = symbolic::symbol("i");
+    auto j = symbolic::symbol("j");
+    auto n = symbolic::symbol("N");
+    auto expected = symbolic::
+        And(symbolic::Lt(symbolic::add(i, symbolic::symbol("P")), n),
+            symbolic::Lt(symbolic::add(j, symbolic::symbol("Q")), n));
+    EXPECT_TRUE(symbolic::eq(guard->at(0).second, expected)) << guard->at(0).second->__str__();
+}
+
+// A constant-trip loop has nothing to peel: applicable, but a no-op.
+TEST(LoopPeelingTest, IdempotentOnConstantTripLoop) {
+    builder::StructuredSDFGBuilder builder("pb_const", FunctionType_CPU);
+    auto& root = builder.subject().root();
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
+    builder.add_container("i", sym_desc);
+
+    auto i = symbolic::symbol("i");
+    auto& loop = builder.add_for(
+        root, i, symbolic::Lt(i, symbolic::integer(8)), symbolic::integer(0), symbolic::add(i, symbolic::integer(1))
+    );
+    builder.add_block(loop.root());
+
+    auto sdfg = builder.move();
+    builder::StructuredSDFGBuilder b(sdfg);
+    analysis::AnalysisManager am(b.subject());
+
+    transformations::LoopPeeling t(loop);
+    EXPECT_TRUE(t.can_be_applied(b, am));
+    t.apply(b, am);
+
+    auto& s = b.subject();
+    ASSERT_EQ(s.root().size(), 1);
+    EXPECT_EQ(&s.root().at(0), &loop);
+    ASSERT_EQ(loop.root().size(), 1);
+    EXPECT_TRUE(dyn_cast<structured_control_flow::Block*>(&loop.root().at(0)) != nullptr);
+}

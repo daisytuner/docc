@@ -1,4 +1,4 @@
-#include "sdfg/targets/rocm/rocm_mma_dispatcher.h"
+#include "sdfg/targets/rocm/rocm_mma_fragment_dispatcher.h"
 
 
 namespace sdfg::gpu::rocm {
@@ -30,17 +30,20 @@ void RocmMmaFragmentStrategy::emit_fragment_load(
     const std::string& base,
     const GpuMmaFromMemoryLayout& layout,
     MmaFragmentType /*frag_type*/,
-    types::PrimitiveType /*element_type*/
+    types::PrimitiveType /*element_type*/,
+    MmaFragmentLayout fragment_layout
 ) const {
     out.stream << "rocwmma::load_matrix_sync(" << frag << ", " << base;
     if (!layout.offset.is_null()) {
         out.stream << " + " << out.language_extension.expression(layout.offset);
     }
     out.stream << ", " << out.language_extension.expression(layout.ldstride);
-    if (layout.layout == MmaFragmentLayout::MMA_LAYOUT_COL_MAJOR) {
-        out.stream << ", rocwmma::mem_col_major";
-    } else if (layout.layout == MmaFragmentLayout::MMA_LAYOUT_ROW_MAJOR) {
-        out.stream << ", rocwmma::mem_row_major";
+    if (fragment_layout == MMA_LAYOUT_UNSPECIFIED || fragment_layout != layout.layout) {
+        if (layout.layout == MmaFragmentLayout::MMA_LAYOUT_COL_MAJOR) {
+            out.stream << ", rocwmma::mem_col_major";
+        } else if (layout.layout == MmaFragmentLayout::MMA_LAYOUT_ROW_MAJOR) {
+            out.stream << ", rocwmma::mem_row_major";
+        }
     }
     out.stream << ");" << std::endl;
 }

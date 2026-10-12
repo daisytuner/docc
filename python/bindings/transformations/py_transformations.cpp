@@ -88,13 +88,13 @@ void register_transformations(py::module& m) {
             py::init<StructuredLoop&, size_t, bool>(),
             py::arg("loop"),
             py::arg("tile_size"),
-            py::arg("simplify_bounds") = false,
+            py::arg("simplify_bounds") = true,
             "Create a loop tiling transformation.\n\n"
             "Args:\n"
             "    loop: The loop to tile\n"
             "    tile_size: The tile size (must be > 1)\n"
             "    simplify_bounds: Drop the redundant inner bound for perfectly dividing tiles,\n"
-            "        yielding a clean constant-trip tile that unrolls/vectorizes (default: False)"
+            "        yielding a clean constant-trip tile that unrolls/vectorizes (default: True)"
         )
         .def_property_readonly(
             "inner_loop",
@@ -388,10 +388,11 @@ void register_transformations(py::module& m) {
     // SoftwarePipelining transformation (cp.async double-buffer a panel loop)
     py::class_<SoftwarePipelining, Transformation>(m, "SoftwarePipelining")
         .def(
-            py::init<StructuredLoop&, size_t, bool>(),
+            py::init<StructuredLoop&, size_t, bool, bool>(),
             py::arg("loop"),
             py::arg("stages") = 2,
             py::arg("single_operand") = false,
+            py::arg("register_staged") = false,
             "Software-pipeline a sequential panel loop that cooperatively stages a\n"
             "shared-memory tile each iteration, overlapping the next panel's global\n"
             "load (via cp.async) with the current panel's compute.\n\n"
@@ -401,7 +402,9 @@ void register_transformations(py::module& m) {
             "    single_operand: Pipeline only the first (name-ordered) shared\n"
             "        operand and keep the rest single-buffered + synchronous. Uses\n"
             "        less shared memory, preserving occupancy when double-buffering\n"
-            "        every operand would drop a block per SM."
+            "        every operand would drop a block per SM.\n"
+            "    register_staged: Keep one shared buffer; load the next panel into\n"
+            "        registers before the current compute and store it after a barrier."
         )
         .def("__repr__", [](const SoftwarePipelining& t) {
             std::ostringstream oss;
@@ -527,7 +530,8 @@ void register_transformations(py::module& m) {
             py::arg("transpose_layout") = false,
             "Create a local-storage transformation.\n\n"
             "The copy direction (in/out) and the storage space are both derived\n"
-            "from the dataflow and the enclosing parallel schedule.\n\n"
+            "from the dataflow and the enclosing parallel schedule. Shared buffers\n"
+            "are padded against the target's memory banks automatically.\n\n"
             "Args:\n"
             "    loop: The loop defining the localization scope\n"
             "    access_node: An access node for the container to localize\n"
@@ -628,26 +632,58 @@ void register_transformations(py::module& m) {
 
     py::class_<sdfg::gpu::GpuMmaEinsumTransform, Transformation>(m, "GpuMmaEinsumTransform")
         .def(
-            py::init<StructuredLoop&, const sdfg::gpu::GpuArch*>(),
+            py::init([](StructuredLoop& loop,
+                        const sdfg::gpu::GpuArch* arch,
+                        int wave_tile_m,
+                        int wave_tile_n,
+                        const std::string& mma_shape) {
+                // Synthesise the hints from the legacy scalar arguments and hand
+                // them to the owning constructor, which copies them internally.
+                // No keep_alive is needed for the hints: the C++ object owns
+                // them. An empty mma_shape means "use the arch default".
+                std::optional<sdfg::gpu::MmaBlockSize> block_hint;
+                if (!mma_shape.empty()) {
+                    block_hint = sdfg::gpu::MmaBlockSize::parse_block_size(mma_shape);
+                }
+                std::optional<sdfg::gpu::BlockCounts> wave_tiling =
+                    sdfg::gpu::BlockCounts{.blocks_m = wave_tile_m, .blocks_n = wave_tile_n};
+                return new sdfg::gpu::GpuMmaEinsumTransform(loop, arch, block_hint, wave_tiling);
+            }),
             py::arg("outermost_mma_loop"),
             py::arg("arch") = nullptr,
-            "Transform will try to match up the loop-nest given as Matmul of 1 or multiple MMA blocks using Einsum "
-            "detection.\n\n"
+            py::arg("wave_tile_m"),
+            py::arg("wave_tile_n"),
+            py::arg("mma_shape"),
+            py::keep_alive<1, 2>(),
+            "Transform with legacy parameters\n\n"
             "Args:\n"
             "    outermost_mma_loop (StructuredLoop): The outermost loop of the supposed MMA block.\n"
             "    arch (GpuArch): The GPU architecture. If none, infer.\n"
+            "    wave_tile_m, wave_tile_n (int): MMA blocks per wave (register blocking); must divide the block tile.\n"
+            "    mma_shape (str): MMA atom, e.g. \"32x32x8\" (raw MFMA on CDNA); empty uses the arch default.\n"
         )
         .def(
-            py::init<StructuredLoop&, const sdfg::gpu::GpuArch*, const sdfg::gpu::MmaBlockSize*>(),
+            py::init<
+                StructuredLoop&,
+                const sdfg::gpu::GpuArch*,
+                const sdfg::gpu::MmaBlockSize*,
+                const sdfg::gpu::BlockCounts*>(),
             py::arg("outermost_mma_loop"),
-            py::arg("arch"),
-            py::arg("block_size_hint"),
+            py::arg("arch") = nullptr,
+            py::arg("block_size_hint") = nullptr,
+            py::arg("wave_tiling_hint") = nullptr,
+            py::keep_alive<1, 2>(),
+            py::keep_alive<1, 3>(),
             py::keep_alive<1, 4>(),
-            "Same as above but with an explicit MMA block-size hint (ignored if unsupported by the arch).\n\n"
+            py::keep_alive<1, 5>(),
+            "Transform Einsum to MMA implementation if possible.\n\n"
             "Args:\n"
             "    outermost_mma_loop (StructuredLoop): The outermost loop of the supposed MMA block.\n"
-            "    arch (GpuArch): The GPU architecture.\n"
-            "    block_size_hint (MmaBlockSize): Preferred MMA block size (e.g. MmaBlockSize.parse('32x32x8')).\n"
+            "    arch (GpuArch): The GPU architecture. Infer from surrounding scopes architecture if null\n"
+            "    block_size_hint (MmaBlockSize): Required MMA block size (e.g. MmaBlockSize.parse('32x32x8')). "
+            "Defaults to arch-specific heuristic if null.\n"
+            "    wave_tiling_hint (BlockCounts): Required wave tiling (MMA blocks per wave). Defaults to arch-specific "
+            "heuristic if null.\n"
         )
         .def_property_readonly(
             "matched", &sdfg::gpu::GpuMmaEinsumTransform::matched, "Whether the node was expanded (valid after apply())"

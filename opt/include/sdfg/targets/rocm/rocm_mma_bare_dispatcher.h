@@ -29,7 +29,8 @@ public:
         const std::string& base,
         const GpuMmaFromMemoryLayout& layout,
         MmaFragmentType frag_type,
-        types::PrimitiveType element_type
+        types::PrimitiveType element_type,
+        MmaFragmentLayout fragment_layout
     ) const override;
 
     void emit_fragment_store(

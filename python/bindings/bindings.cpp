@@ -321,6 +321,11 @@ PYBIND11_MODULE(_sdfg, m) {
         .def("validate", &PyStructuredSDFG::validate, "Validates the SDFG")
         .def("einsum", &PyStructuredSDFG::einsum, "Performs Einsum detection")
         .def(
+            "approximate_math",
+            &PyStructuredSDFG::approximate_math,
+            "Marks all CMath nodes approximate, allowing fast device intrinsics (e.g. __expf)"
+        )
+        .def(
             "expand",
             static_cast<void (PyStructuredSDFG::*)()>(&PyStructuredSDFG::expand),
             "Expand step w/o target support for backwards compatibility"
@@ -729,6 +734,10 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("X_type"),
             py::arg("Alpha"),
             py::arg("Alpha_type"),
+            py::arg("Scale"),
+            py::arg("Scale_type"),
+            py::arg("InputScale"),
+            py::arg("InputScale_type"),
             py::arg("Y"),
             py::arg("Y_type"),
             py::arg("debug_info") = sdfg::DebugInfo()
@@ -743,25 +752,25 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("debug_info") = sdfg::DebugInfo()
         )
         .def(
-            "add_hard_sigmoid",
-            &PyStructuredSDFGBuilder::add_hard_sigmoid,
-            py::arg("X"),
-            py::arg("X_type"),
-            py::arg("Alpha"),
-            py::arg("Alpha_type"),
-            py::arg("Beta"),
-            py::arg("Beta_type"),
-            py::arg("Y"),
-            py::arg("Y_type"),
-            py::arg("debug_info") = sdfg::DebugInfo()
-        )
-        .def(
             "add_leaky_relu",
             &PyStructuredSDFGBuilder::add_leaky_relu,
             py::arg("X"),
             py::arg("X_type"),
             py::arg("Alpha"),
             py::arg("Alpha_type"),
+            py::arg("Y"),
+            py::arg("Y_type"),
+            py::arg("debug_info") = sdfg::DebugInfo()
+        )
+        .def(
+            "add_clamp",
+            &PyStructuredSDFGBuilder::add_clamp,
+            py::arg("X"),
+            py::arg("X_type"),
+            py::arg("Min"),
+            py::arg("Min_type"),
+            py::arg("Max"),
+            py::arg("Max_type"),
             py::arg("Y"),
             py::arg("Y_type"),
             py::arg("debug_info") = sdfg::DebugInfo()

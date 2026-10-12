@@ -29,15 +29,50 @@ struct MmaBlockSize {
 
 std::ostream& operator<<(std::ostream& os, const MmaBlockSize& block_size);
 
+/**
+ * Grouping of MMA blocks.
+ */
+struct BlockCounts {
+    int blocks_m;
+    int blocks_n;
+
+    int total_blocks() const {
+        return blocks_m * blocks_n;
+    }
+};
+
 struct GpuMmaTiling {
+    /// The MMA block size (m, n, k) in elements. While every underlying storage will only use 2 dimensions of this,
+    /// this qualifies all the possible operations on it
     MmaBlockSize mma_block_size;
-    int wave_tile_blocks_m = 0;
-    int wave_tile_blocks_n = 0;
-    int threads_per_mma_block_m = 0;
-    int macro_blocks_m = 0;
-    int macro_blocks_n = 0;
+    /// How many threads will work together on 1 MMA block
+    int threads_per_mma_wavefront = 0;
+    /// How many MMA blocks will be grouped together in a single wavefront / warp. MMA BlockSize * wave_tiling !=
+    /// macro_tiling
+    BlockCounts wave_tiling;
+    /// How many MMA blocks will be grouped together in a macro block / on a SM or CU
+    /// This controls how much data one block needs to handle and will typically need to be stored in block-shared
+    /// memory
+    BlockCounts macro_tiling;
+    /// The type used by the MMA hardware to accumulate the results of the MMA operation. This may be different from the
+    /// input and output types, e.g. for FP16 inputs and FP32 outputs. For a MatmulNode this would not be externally
+    /// visible other in the precision of the results
     types::PrimitiveType acc_type;
-    int impl_details = 0; // implementation-specific details, e.g. for ROCm MFMA variant selection
+
+    /// implementation-specific details, e.g. for ROCm MFMA variant selection
+    int impl_details = 0;
+
+    /**
+     * Check that we can use the given wave tiling for the given macro block tiling, i.e. that the wave tiling divides
+     * the macro block tiling and that the number of threads per wave does not exceed 1024.
+     * @param wave_tiling
+     * @param macro_block
+     * @return
+     */
+    static bool wave_tile_divides(const BlockCounts& wave_tiling, const BlockCounts& macro_block);
+
+    int get_mma_blocks_m_per_wavefront() const;
+    int get_mma_blocks_n_per_wavefront() const;
 };
 
 enum MmaFragmentLayout {
@@ -85,7 +120,8 @@ struct GpuMmaSupport {
         const symbolic::MultiExpression& res_shape,
         types::PrimitiveType input_type,
         types::PrimitiveType acc_type,
-        const MmaBlockSize* block_size_hint
+        const MmaBlockSize* block_size_hint,
+        const BlockCounts* wave_tile_hint
     ) const = 0;
 
     virtual void set_mma_fragment_storage_type(

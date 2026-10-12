@@ -1,4 +1,4 @@
-#include "sdfg/targets/rocm/rocm_mfma_dispatcher.h"
+#include "sdfg/targets/rocm/rocm_mma_bare_dispatcher.h"
 
 #include "sdfg/types/pointer.h"
 #include "sdfg/types/scalar.h"
@@ -141,7 +141,8 @@ void RocmMmaBareStrategy::emit_fragment_load(
     const std::string& base,
     const GpuMmaFromMemoryLayout& layout,
     MmaFragmentType frag_type,
-    types::PrimitiveType element_type
+    types::PrimitiveType element_type,
+    MmaFragmentLayout /*fragment_layout*/
 ) const {
     emit_fragment_transfer(out, true, frag_type, layout, element_type, frag, base);
 }

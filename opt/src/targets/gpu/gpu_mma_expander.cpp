@@ -115,37 +115,51 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
 
     auto& builder = standalone.builder();
     auto wave_row = symbolic::symbol(builder.find_new_name("wave_row"));
-    auto waves_m = symbolic::integer(mma_tiling.macro_blocks_m);
+    auto waves_m = symbolic::integer(mma_tiling.get_mma_blocks_m_per_wavefront());
     builder.add_container(wave_row->get_name(), types::Scalar(types::get_primitive_type_to_hold_upper_bound(waves_m)));
 
-    auto acc_frag_name = builder.find_new_name("mma_acc");
-    types::Pointer acc_frag_type{types::Scalar(mma_tiling.acc_type)};
-    mma_arch->set_mma_fragment_storage_type(
-        acc_frag_type.storage_type(), mma_tiling, MmaFragmentType::C, MmaFragmentLayout::MMA_LAYOUT_UNSPECIFIED
-    );
-    builder.add_container(acc_frag_name, acc_frag_type);
+    std::vector<std::string> acc_frag_names; // row-major over the wave's wt_m x wt_n blocks
+    for (int f = 0; f < mma_tiling.wave_tiling.total_blocks(); ++f) {
+        auto acc_frag_name = builder.find_new_name("mma_acc");
+        types::Pointer acc_frag_type{types::Scalar(mma_tiling.acc_type)};
+        mma_arch->set_mma_fragment_storage_type(
+            acc_frag_type.storage_type(), mma_tiling, MmaFragmentType::C, MmaFragmentLayout::MMA_LAYOUT_UNSPECIFIED
+        );
+        builder.add_container(acc_frag_name, acc_frag_type);
+        acc_frag_names.push_back(acc_frag_name);
+    }
 
-    types::Pointer a_frag_type{types::Scalar(input_type)};
-    auto a_frag_name = builder.find_new_name("mma_a");
     auto a_col_major = layout_a.is_2d_col_or_row_major() == math::tensor::TensorLayout::LAYOUT_COL_MAJOR;
     MmaFragmentLayout a_frag_layout = a_col_major ? MmaFragmentLayout::MMA_LAYOUT_COL_MAJOR
                                                   : MmaFragmentLayout::MMA_LAYOUT_ROW_MAJOR;
-    mma_arch->set_mma_fragment_storage_type(a_frag_type.storage_type(), mma_tiling, MmaFragmentType::A, a_frag_layout);
-    builder.add_container(a_frag_name, a_frag_type);
+    std::vector<std::string> a_frag_names;
+    for (int i = 0; i < mma_tiling.wave_tiling.blocks_m; ++i) {
+        types::Pointer a_frag_type{types::Scalar(input_type)};
+        auto a_frag_name = builder.find_new_name("mma_a");
+        mma_arch
+            ->set_mma_fragment_storage_type(a_frag_type.storage_type(), mma_tiling, MmaFragmentType::A, a_frag_layout);
+        builder.add_container(a_frag_name, a_frag_type);
+        a_frag_names.push_back(a_frag_name);
+    }
 
-    types::Pointer b_frag_type{types::Scalar(input_type)};
-    auto b_frag_name = builder.find_new_name("mma_b");
     auto b_col_major = layout_b.is_2d_col_or_row_major() == math::tensor::TensorLayout::LAYOUT_COL_MAJOR;
     MmaFragmentLayout b_frag_layout = b_col_major ? MmaFragmentLayout::MMA_LAYOUT_COL_MAJOR
                                                   : MmaFragmentLayout::MMA_LAYOUT_ROW_MAJOR;
-    mma_arch->set_mma_fragment_storage_type(b_frag_type.storage_type(), mma_tiling, MmaFragmentType::B, b_frag_layout);
-    builder.add_container(b_frag_name, b_frag_type);
+    std::vector<std::string> b_frag_names;
+    for (int j = 0; j < mma_tiling.wave_tiling.blocks_n; ++j) {
+        types::Pointer b_frag_type{types::Scalar(input_type)};
+        auto b_frag_name = builder.find_new_name("mma_b");
+        mma_arch
+            ->set_mma_fragment_storage_type(b_frag_type.storage_type(), mma_tiling, MmaFragmentType::B, b_frag_layout);
+        builder.add_container(b_frag_name, b_frag_type);
+        b_frag_names.push_back(b_frag_name);
+    }
     auto y_col_major = layout_y.is_2d_col_or_row_major() == math::tensor::TensorLayout::LAYOUT_COL_MAJOR;
 
-    auto waves_n = symbolic::integer(mma_tiling.macro_blocks_n);
+    auto waves_n = symbolic::integer(mma_tiling.get_mma_blocks_n_per_wavefront());
     // Each wave_row iteration is one whole wave: the MMA nodes below are wave-collective.
     auto wave_row_sched = ScheduleType_GPU_Offload::create(arch, TargetLevel::X_BLOCK, waves_m);
-    ScheduleType_GPU_Offload::lanes(wave_row_sched, symbolic::integer(mma_tiling.threads_per_mma_block_m));
+    ScheduleType_GPU_Offload::lanes(wave_row_sched, symbolic::integer(mma_tiling.threads_per_mma_wavefront));
     auto& col_map = standalone.replace_with_structured_loop(
         AccessNodeExpand::LoopType::Map,
         wave_row,
@@ -181,26 +195,43 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
     auto k_elem = symbolic::mul(k_tile, symbolic::integer(mma_tiling.mma_block_size.k));
 
     auto lda = layout_a.get_stride(a_col_major ? 1 : 0);
-    auto a_offset = SymEngine::add({
-        layout_a.offset(),
-        SymEngine::mul({brow_in_tile, symbolic::integer(mma_tiling.mma_block_size.m), layout_a.get_stride(0)}),
-        SymEngine::mul({k_elem, layout_a.get_stride(1)}),
-    });
+    auto block_m = symbolic::integer(mma_tiling.mma_block_size.m);
+    auto block_n = symbolic::integer(mma_tiling.mma_block_size.n);
+    // M block index of fragment i of this wave, N block index of fragment j.
+    auto brow = [&](int i) {
+        return symbolic::
+            add(symbolic::mul(brow_in_tile, symbolic::integer(mma_tiling.wave_tiling.blocks_m)), symbolic::integer(i));
+    };
+    auto bcol = [&](int j) {
+        return symbolic::
+            add(symbolic::mul(bcol_in_tile, symbolic::integer(mma_tiling.wave_tiling.blocks_n)), symbolic::integer(j));
+    };
+    auto a_offset = [&](int i) {
+        return SymEngine::add({
+            layout_a.offset(),
+            SymEngine::mul({brow(i), block_m, layout_a.get_stride(0)}),
+            SymEngine::mul({k_elem, layout_a.get_stride(1)}),
+        });
+    };
     auto ldb = layout_b.get_stride(b_col_major ? 1 : 0);
-    auto b_offset = SymEngine::add(
-        {layout_b.offset(),
-         SymEngine::mul({k_elem, layout_b.get_stride(0)}),
-         SymEngine::mul({bcol_in_tile, symbolic::integer(mma_tiling.mma_block_size.n), layout_b.get_stride(1)})}
-    );
+    auto b_offset = [&](int j) {
+        return SymEngine::add(
+            {layout_b.offset(),
+             SymEngine::mul({k_elem, layout_b.get_stride(0)}),
+             SymEngine::mul({bcol(j), block_n, layout_b.get_stride(1)})}
+        );
+    };
     auto ldc = layout_y.get_stride(y_col_major ? 1 : 0);
-    auto y_offset = SymEngine::add(
-        {layout_y.offset(),
-         SymEngine::mul({brow_in_tile, symbolic::integer(mma_tiling.mma_block_size.m), layout_y.get_stride(0)}),
-         SymEngine::mul({bcol_in_tile, symbolic::integer(mma_tiling.mma_block_size.n), layout_y.get_stride(1)})}
-    );
+    auto y_offset = [&](int i, int j) {
+        return SymEngine::add(
+            {layout_y.offset(),
+             SymEngine::mul({brow(i), block_m, layout_y.get_stride(0)}),
+             SymEngine::mul({bcol(j), block_n, layout_y.get_stride(1)})}
+        );
+    };
 
     auto& per_wavefront_block = builder.add_block(row_map.root());
-    {
+    for (const auto& acc_frag_name : acc_frag_names) {
         auto& fill_node = builder.add_library_node<GpuMmaFillNode>(
             per_wavefront_block, org_debug_info, mma_tiling.mma_block_size, mma_tiling.acc_type, impl_type
         );
@@ -224,112 +255,128 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
     );
 
     auto& load_block = builder.add_block(k_sweep.root());
-    create_fragment_load(
-        standalone,
-        input_type,
-        impl_type,
-        org_debug_info,
-        builder,
-        a_frag_name,
-        mma_tiling.mma_block_size,
-        MmaFragmentType::A,
-        {.offset = a_offset, .ldstride = lda, .layout = a_frag_layout},
-        args_order.at(1),
-        load_block
-    );
-    create_fragment_load(
-        standalone,
-        input_type,
-        impl_type,
-        org_debug_info,
-        builder,
-        b_frag_name,
-        mma_tiling.mma_block_size,
-        MmaFragmentType::B,
-        {.offset = b_offset, .ldstride = ldb, .layout = b_frag_layout},
-        args_order.at(2),
-        load_block
-    );
+    for (int i = 0; i < mma_tiling.wave_tiling.blocks_m; ++i) {
+        create_fragment_load(
+            standalone,
+            input_type,
+            impl_type,
+            org_debug_info,
+            builder,
+            a_frag_names[i],
+            mma_tiling.mma_block_size,
+            MmaFragmentType::A,
+            {.offset = a_offset(i), .ldstride = lda, .layout = a_frag_layout},
+            args_order.at(1),
+            load_block
+        );
+    }
+    for (int j = 0; j < mma_tiling.wave_tiling.blocks_n; ++j) {
+        create_fragment_load(
+            standalone,
+            input_type,
+            impl_type,
+            org_debug_info,
+            builder,
+            b_frag_names[j],
+            mma_tiling.mma_block_size,
+            MmaFragmentType::B,
+            {.offset = b_offset(j), .ldstride = ldb, .layout = b_frag_layout},
+            args_order.at(2),
+            load_block
+        );
+    }
 
     auto& inner_block = builder.add_block(k_sweep.root());
-
-    create_fragment_mma(
-        standalone,
-        arch,
-        mma_tiling,
-        input_type,
-        a_frag_name,
-        b_frag_name,
-        acc_frag_name,
-        impl_type,
-        org_debug_info,
-        builder,
-        inner_block
-    );
+    for (int i = 0; i < mma_tiling.wave_tiling.blocks_m; ++i) {
+        for (int j = 0; j < mma_tiling.wave_tiling.blocks_n; ++j) {
+            create_fragment_mma(
+                standalone,
+                arch,
+                mma_tiling,
+                input_type,
+                a_frag_names[i],
+                b_frag_names[j],
+                acc_frag_names[i * mma_tiling.wave_tiling.blocks_n + j],
+                impl_type,
+                org_debug_info,
+                builder,
+                inner_block
+            );
+        }
+    }
 
     auto y_layout = y_col_major ? MMA_LAYOUT_COL_MAJOR : MMA_LAYOUT_ROW_MAJOR;
-    std::string store_frag_name;
+    std::string c_frag_name;
+    std::string d_frag_name;
     if (include_c_add) {
-        auto c_frag_name = builder.find_new_name("mma_c");
+        c_frag_name = builder.find_new_name("mma_c");
         types::Pointer c_type{types::Scalar(output_type)};
         mma_arch->set_mma_fragment_storage_type(
             c_type.storage_type(), mma_tiling, MmaFragmentType::C, MmaFragmentLayout::MMA_LAYOUT_UNSPECIFIED
         );
         builder.add_container(c_frag_name, c_type);
-        auto& load_c_block = builder.add_block(row_map.root());
-        create_fragment_load(
-            standalone,
-            output_type,
-            impl_type,
-            org_debug_info,
-            builder,
-            c_frag_name,
-            mma_tiling.mma_block_size,
-            MmaFragmentType::C,
-            {.offset = y_offset, .ldstride = ldc, .layout = y_layout},
-            args_order.at(0),
-            load_c_block
-        );
-
-        store_frag_name = builder.find_new_name("mma_d");
+        d_frag_name = builder.find_new_name("mma_d");
         types::Pointer d_type{types::Scalar(output_type)};
         mma_arch->set_mma_fragment_storage_type(
             d_type.storage_type(), mma_tiling, MmaFragmentType::C, MmaFragmentLayout::MMA_LAYOUT_UNSPECIFIED
         );
-        builder.add_container(store_frag_name, d_type);
-        auto& eltwise_add_block = builder.add_block(row_map.root());
-        create_eltwise_add_block(
-            standalone,
-            mma_tiling.mma_block_size,
-            mma_tiling.acc_type,
-            output_type,
-            impl_type,
-            org_debug_info,
-            builder,
-            c_frag_name,
-            acc_frag_name,
-            store_frag_name,
-            eltwise_add_block
-        );
+        builder.add_container(d_frag_name, d_type);
     } else {
         assert(output_type == mma_tiling.acc_type && "Output and Accumulate type must be identical if we do not add C");
-        store_frag_name = acc_frag_name;
     }
 
-    auto& store_block = builder.add_block(row_map.root());
-    create_fragment_store(
-        standalone,
-        output_type,
-        impl_type,
-        org_debug_info,
-        builder,
-        store_frag_name,
-        mma_tiling.mma_block_size,
-        MmaFragmentType::C,
-        {.offset = y_offset, .ldstride = ldc, .layout = y_layout},
-        args_order.at(0),
-        store_block
-    );
+    for (int i = 0; i < mma_tiling.wave_tiling.blocks_m; ++i) {
+        for (int j = 0; j < mma_tiling.wave_tiling.blocks_n; ++j) {
+            const auto& acc_frag_name = acc_frag_names[i * mma_tiling.wave_tiling.blocks_n + j];
+            GpuMmaFromMemoryLayout y_mem{.offset = y_offset(i, j), .ldstride = ldc, .layout = y_layout};
+            std::string store_frag_name = acc_frag_name;
+            if (include_c_add) {
+                auto& load_c_block = builder.add_block(row_map.root());
+                create_fragment_load(
+                    standalone,
+                    output_type,
+                    impl_type,
+                    org_debug_info,
+                    builder,
+                    c_frag_name,
+                    mma_tiling.mma_block_size,
+                    MmaFragmentType::C,
+                    y_mem,
+                    args_order.at(0),
+                    load_c_block
+                );
+                auto& eltwise_add_block = builder.add_block(row_map.root());
+                create_eltwise_add_block(
+                    standalone,
+                    mma_tiling.mma_block_size,
+                    mma_tiling.acc_type,
+                    output_type,
+                    impl_type,
+                    org_debug_info,
+                    builder,
+                    c_frag_name,
+                    acc_frag_name,
+                    d_frag_name,
+                    eltwise_add_block
+                );
+                store_frag_name = d_frag_name;
+            }
+            auto& store_block = builder.add_block(row_map.root());
+            create_fragment_store(
+                standalone,
+                output_type,
+                impl_type,
+                org_debug_info,
+                builder,
+                store_frag_name,
+                mma_tiling.mma_block_size,
+                MmaFragmentType::C,
+                y_mem,
+                args_order.at(0),
+                store_block
+            );
+        }
+    }
 
     return standalone.successfully_expanded();
 }
@@ -396,7 +443,11 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::handle_expand(
     auto acc_type = mma_arch->get_accumulator_type(input_type, output_type, types::PrimitiveType::Void);
 
     auto mma_tiling = mma_arch->get_mma_tiling(
-        {result_layout.get_dim(0), result_layout.get_dim(1), k_dim}, input_type, acc_type, block_size_hint_
+        {result_layout.get_dim(0), result_layout.get_dim(1), k_dim},
+        input_type,
+        acc_type,
+        block_size_hint_,
+        wave_tile_hint_
     );
 
     auto standalone = context.replacement_requires_access_nodes({InputUse::Scalar, InputUse::Scalar, InputUse::Scalar});
@@ -511,7 +562,7 @@ bool GpuMmaExpander::matches_possible_mma_pattern(const math::tensor::MatMulNode
 
     auto acc_type = mma_arch->get_accumulator_type(input_type.value(), output_type.value(), types::PrimitiveType::Void);
 
-    auto tiling = mma_arch->get_mma_tiling({m, n, k}, input_type.value(), acc_type, block_size_hint_);
+    auto tiling = mma_arch->get_mma_tiling({m, n, k}, input_type.value(), acc_type, block_size_hint_, wave_tile_hint_);
 
     return tiling.has_value();
 }

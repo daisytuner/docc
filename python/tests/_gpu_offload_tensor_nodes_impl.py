@@ -239,8 +239,19 @@ UNARY = (
     ),
     _unary(
         "elu",
-        lambda b, t, p: b.add_elu("X", t["X"], "1.0", _scalar(p["dtype"]), "Y", t["Y"]),
-        lambda x: np.where(x > 0, x, np.exp(x) - 1),
+        lambda b, t, p: b.add_elu(
+            "X",
+            t["X"],
+            "1.0",
+            _scalar(p["dtype"]),
+            "1.0",
+            _scalar(p["dtype"]),
+            "1.0",
+            _scalar(p["dtype"]),
+            "Y",
+            t["Y"],
+        ),
+        lambda x: np.where(x > 0, x, np.expm1(x)),
         FLOAT_CASES,
         rtol=1e-4,
     ),
@@ -253,26 +264,34 @@ UNARY = (
         atol=1e-5,
     ),
     _unary(
-        "hard_sigmoid",
-        lambda b, t, p: b.add_hard_sigmoid(
-            "X",
-            t["X"],
-            "0.2",
-            _scalar(p["dtype"]),
-            "0.5",
-            _scalar(p["dtype"]),
-            "Y",
-            t["Y"],
-        ),
-        lambda x: np.clip(0.2 * x + 0.5, 0, 1),
-        FLOAT_CASES,
-    ),
-    _unary(
         "leaky_relu",
         lambda b, t, p: b.add_leaky_relu(
             "X", t["X"], "0.01", _scalar(p["dtype"]), "Y", t["Y"]
         ),
         lambda x: np.where(x > 0, x, 0.01 * x),
+        FLOAT_CASES,
+    ),
+    _unary(
+        "clamp",
+        lambda b, t, p: b.add_clamp(
+            "X",
+            t["X"],
+            "-1",
+            _scalar(p["dtype"]),
+            "2",
+            _scalar(p["dtype"]),
+            "Y",
+            t["Y"],
+        ),
+        lambda x: np.clip(x, -1, 2),
+        FLOAT_CASES + (INT_CASE,),
+    ),
+    _unary(
+        "clamp_min",
+        lambda b, t, p: b.add_clamp(
+            "X", t["X"], "0", _scalar(p["dtype"]), "", None, "Y", t["Y"]
+        ),
+        lambda x: np.maximum(x, 0),
         FLOAT_CASES,
     ),
     _unary(
@@ -1150,10 +1169,7 @@ NODES = (
     + (MATMUL, CONV, POOLING, BATCHNORM, LAYERNORM, UPSAMPLE)
 )
 
-DISABLED = {
-    "hard_sigmoid": "node semantics do not match PyTorch's definition",
-    "leaky_relu": "node semantics do not match PyTorch's definition",
-}
+DISABLED: dict[str, str] = {}
 
 
 # ---------------------------------------------------------------------------

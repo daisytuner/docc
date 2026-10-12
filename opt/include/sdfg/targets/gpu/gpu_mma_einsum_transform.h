@@ -9,10 +9,13 @@ namespace sdfg::gpu {
 
 class GpuMmaEinsumReplacer : public einsum::Einsum2MatMul {
     const GpuArch* arch_;
+    const BlockCounts* wave_tile_hint_ = nullptr;
     const MmaBlockSize* block_size_hint_ = nullptr;
 
 public:
-    GpuMmaEinsumReplacer(const GpuArch* arch, const MmaBlockSize* block_size_hint = nullptr);
+    GpuMmaEinsumReplacer(
+        const GpuArch* arch, const MmaBlockSize* block_size_hint = nullptr, const BlockCounts* wave_tile_hint = nullptr
+    );
 
     struct EinsumMmaAnalysis : public MatMulAnalysis {};
 
@@ -32,6 +35,15 @@ class GpuMmaEinsumTransform : public transformations::Transformation {
     StructuredLoop& outermost_mma_loop_;
     const gpu::GpuArch* arch_;
     const MmaBlockSize* block_size_hint_;
+    const BlockCounts* wave_tile_hint_;
+
+    // Optional owned copies of the hints. Used when the caller passes hints by
+    // value (e.g. the legacy Python constructor, which synthesises them from
+    // ints/strings). When set, `block_size_hint_` / `wave_tile_hint_` point into
+    // these, so the hints' lifetime is tied to the transform and no external
+    // object needs to be kept alive.
+    std::optional<MmaBlockSize> owned_block_size_hint_;
+    std::optional<BlockCounts> owned_wave_tile_hint_;
 
 protected:
     /// the einsum parts modify the SDFG in place, so WILL ALWAYS CHANGE IT. We need to revert the changes if we did not
@@ -44,7 +56,19 @@ public:
     GpuMmaEinsumTransform(
         StructuredLoop& outermoost_mma_loop,
         const gpu::GpuArch* arch = nullptr,
-        const MmaBlockSize* block_size_hint = nullptr
+        const MmaBlockSize* block_size_hint = nullptr,
+        const BlockCounts* wave_tile_hint = nullptr
+    );
+
+    /// Owning overload: takes the hints by value and stores them internally, so
+    /// the caller does not have to keep separate hint objects alive. Intended
+    /// for the backwards-compatible Python constructor, which synthesises the
+    /// hints from scalar arguments. An empty optional means "no hint".
+    GpuMmaEinsumTransform(
+        StructuredLoop& outermoost_mma_loop,
+        const gpu::GpuArch* arch,
+        std::optional<MmaBlockSize> block_size_hint,
+        std::optional<BlockCounts> wave_tile_hint
     );
 
     std::string name() const override {

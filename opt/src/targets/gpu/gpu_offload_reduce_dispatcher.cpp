@@ -28,13 +28,16 @@
 #include "sdfg/tiles/analysis/reduction_buffer_analysis.h"
 
 #include <algorithm>
+#include <functional>
 #include <sdfg/data_flow/access_node.h>
+#include <sdfg/data_flow/library_nodes/math/cmath/cmath_node.h>
 #include <sdfg/data_flow/memlet.h>
 #include <sdfg/structured_control_flow/block.h>
 #include <sdfg/structured_control_flow/reduce.h>
 #include <sdfg/types/pointer.h>
 #include <sdfg/types/scalar.h>
 #include <sdfg/types/utils.h>
+#include <sdfg/visitor/for_each.h>
 
 namespace sdfg {
 namespace gpu {
@@ -287,9 +290,33 @@ void GPUOffloadReduceDispatcher::dispatch_kernel_body(
     std::string coverage_count_dim = (target_level == TargetLevel::WARP) ? std::string("1") : coverage_dim;
     // Cast the ceil-div to int: blockDim/gridDim are unsigned, and CUDA 12.9's max()
     // overload set makes max(1, <unsigned>) ambiguous under clang-cuda.
-    kernel_source_stream << "for (int " << coverage_loop_var << " = 0; " << coverage_loop_var << " < "
-                         << "max(1, (int)((" << size << " + " << coverage_count_dim << " - 1) / " << coverage_count_dim
-                         << ")); " << coverage_loop_var << "++) {" << std::endl;
+    std::string coverage_bound = "max(1, (int)((" + size + " + " + coverage_count_dim + " - 1) / " +
+                                 coverage_count_dim + "))";
+    // With a constant trip and parallel size the bound folds to a literal, so the loop
+    // fully unrolls and its loads issue back to back. The launch dim is >= parallel_size,
+    // so this only over-covers, which the boundary guard (absent under nested_sync) masks.
+    bool guard_redundant = false;
+    if (target_level != TargetLevel::WARP && !gpu::ScheduleType_GPU_Offload::nested_sync(node_.schedule_type())) {
+        auto trip = node_.num_iterations();
+        auto psize = gpu::ScheduleType_GPU_Offload::parallel_size(node_.schedule_type());
+        if (!trip.is_null() && !psize.is_null() && SymEngine::is_a<SymEngine::Integer>(*trip) &&
+            SymEngine::is_a<SymEngine::Integer>(*psize)) {
+            auto t = SymEngine::rcp_static_cast<const SymEngine::Integer>(trip)->as_int();
+            auto p = SymEngine::rcp_static_cast<const SymEngine::Integer>(psize)->as_int();
+            if (t >= 0 && p > 0) {
+                coverage_bound = std::to_string(std::max<long long>(1, (t + p - 1) / p));
+                // As in the map dispatcher: a whole number of waves leaves no thread out of
+                // range, and an unguarded body lets the loads of all waves issue together.
+                guard_redundant = t % p == 0;
+            }
+        }
+    }
+    if (coverage_bound == "1") {
+        kernel_source_stream << "{" << std::endl << "    const int " << coverage_loop_var << " = 0;" << std::endl;
+    } else {
+        kernel_source_stream << "for (int " << coverage_loop_var << " = 0; " << coverage_loop_var << " < "
+                             << coverage_bound << "; " << coverage_loop_var << "++) {" << std::endl;
+    }
     kernel_source_stream.changeIndent(+4);
 
     if (target_level == TargetLevel::WARP) {
@@ -304,24 +331,26 @@ void GPUOffloadReduceDispatcher::dispatch_kernel_body(
                              << " + " << coverage_loop_var << " * "
                              << kernel_language_extension.expression(node_.stride()) << ";" << std::endl;
     } else {
-        std::string target_level_idx_access = kernel_language_extension.expression(node_.stride()) + " * " +
-                                              kernel_language_extension.expression(get_target_level_idx(target_level));
-
-        if (target_level == TargetLevel::X_BLOCK && nested_warp_dim(node_, analysis_manager_)) {
-            target_level_idx_access = kernel_language_extension.expression(get_target_level_idx(target_level));
+        // The stride scales the whole parallel index (coverage sweeps included), as in the
+        // map dispatcher; a nested warp handles the sub-stride itself.
+        std::string parallel_index =
+            coverage_loop_var + " * " +
+            kernel_language_extension.expression(get_target_level_dim(target_level, warp_size)) + " + " +
+            kernel_language_extension.expression(get_target_level_idx(target_level));
+        std::string offset = "(" + parallel_index + ")";
+        if (!(target_level == TargetLevel::X_BLOCK && nested_warp_dim(node_, analysis_manager_))) {
+            offset = kernel_language_extension.expression(node_.stride()) + " * " + offset;
         }
 
-        // compute the effective indvar for this coverage loop iteration
         kernel_source_stream << "size_t " << indvar->get_name() << " = "
-                             << kernel_language_extension.expression(node_.init()) << " + " << coverage_loop_var
-                             << " * "
-                             << kernel_language_extension.expression(get_target_level_dim(target_level, warp_size))
-                             << " + " << target_level_idx_access << ";" << std::endl;
+                             << kernel_language_extension.expression(node_.init()) << " + " << offset << ";"
+                             << std::endl;
     }
 
 
     // Boundary Conditions
-    if (!gpu::ScheduleType_GPU_Offload::nested_sync(node_.schedule_type())) {
+    const bool emit_guard = !gpu::ScheduleType_GPU_Offload::nested_sync(node_.schedule_type()) && !guard_redundant;
+    if (emit_guard) {
         kernel_source_stream << "if (" << kernel_language_extension.expression(node_.condition()) << ") {" << std::endl;
         kernel_source_stream.changeIndent(+4);
     }
@@ -342,7 +371,7 @@ void GPUOffloadReduceDispatcher::dispatch_kernel_body(
         }
     }
 
-    if (!gpu::ScheduleType_GPU_Offload::nested_sync(node_.schedule_type())) {
+    if (emit_guard) {
         kernel_source_stream.changeIndent(-4);
         kernel_source_stream << "}" << std::endl;
     }
@@ -655,12 +684,291 @@ bool GPUOffloadReduceDispatcher::uses_register_partial(TargetLevel target_level,
            !has_enclosing_block_reduction(container);
 }
 
+int64_t GPUOffloadReduceDispatcher::warp_combine_width(TargetLevel target_level, const std::string& container) {
+    if (!uses_register_partial(target_level, container)) {
+        return 0;
+    }
+    if (reduction_buffers_.at(container).multi_output) {
+        return 0;
+    }
+    return lane_group_width(target_level);
+}
+
+int64_t GPUOffloadReduceDispatcher::lane_group_width(TargetLevel target_level) {
+    if (target_level != TargetLevel::X_BLOCK) {
+        return 0;
+    }
+    auto bx_expr = reduce_block_dim(TargetLevel::X_BLOCK);
+    if (!SymEngine::is_a<SymEngine::Integer>(*bx_expr)) {
+        return 0;
+    }
+    const int64_t bx = SymEngine::rcp_static_cast<const SymEngine::Integer>(bx_expr)->as_int();
+    const int64_t width = std::min<int64_t>(bx, strategy_->get_warp_size());
+    // xor masks below a power-of-two width stay inside aligned lane groups; a group must not
+    // straddle two reduce rows, so it has to divide the block width.
+    if (width < 2 || (width & (width - 1)) != 0 || bx % width != 0) {
+        return 0;
+    }
+    // Full-mask shuffles need every lane of the wave resident.
+    auto threads = reduce_block_size_product();
+    if (!SymEngine::is_a<SymEngine::Integer>(*threads) ||
+        SymEngine::rcp_static_cast<const SymEngine::Integer>(threads)->as_int() % strategy_->get_warp_size() != 0) {
+        return 0;
+    }
+    return width;
+}
+
+bool GPUOffloadReduceDispatcher::in_rescale_group(const std::string& container) {
+    for (const auto& r : node_.reductions()) {
+        if ((r.container == container && !r.rescale.empty()) || r.rescale == container) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void GPUOffloadReduceDispatcher::dispatch_rescale_group_combine(
+    codegen::LanguageExtension& language_extension,
+    codegen::PrettyPrinter& stream,
+    const structured_control_flow::ReductionInfo& anchor,
+    TargetLevel target_level
+) {
+    const int64_t width = lane_group_width(target_level);
+    std::vector<const structured_control_flow::ReductionInfo*> dependents;
+    for (const auto& r : node_.reductions()) {
+        if (r.rescale == anchor.container) {
+            dependents.push_back(&r);
+        }
+    }
+    auto unsupported = [&](const std::string& why) {
+        return InvalidSDFGException("GPUOffloadReduceDispatcher: rescale group of '" + anchor.container + "' " + why);
+    };
+    if (dependents.empty()) {
+        throw unsupported("has no dependents");
+    }
+    if (width == 0) {
+        throw unsupported("requires the X_BLOCK warp-shuffle combine");
+    }
+    if (has_enclosing_grid_reduction(anchor.container)) {
+        throw unsupported("cannot be combined across blocks");
+    }
+    for (const auto* member : dependents) {
+        if (!uses_register_partial(target_level, member->container) ||
+            has_enclosing_grid_reduction(member->container)) {
+            throw unsupported("requires register partials owned by this block level");
+        }
+    }
+    if (!uses_register_partial(target_level, anchor.container)) {
+        throw unsupported("requires register partials owned by this block level");
+    }
+
+    const auto& anchor_buffer = reduction_buffers_.at(anchor.container);
+    if (anchor_buffer.multi_output) {
+        throw unsupported("requires a single-slot anchor");
+    }
+    const auto prim = *anchor_buffer.primitive;
+    const std::string ctype = language_extension.primitive_type(prim);
+    const bool is_double = prim == types::PrimitiveType::Double;
+    const std::string ftype = is_double ? "double" : "float";
+
+    const bool base_e = dependents.front()->rescale_base == structured_control_flow::RescaleBase::E;
+    const auto exp_function = base_e ? math::cmath::CMathFunction::exp : math::cmath::CMathFunction::exp2;
+    const auto exp_type = is_double ? types::PrimitiveType::Double : types::PrimitiveType::Float;
+    // The combine uses the body's precision choice: approximate iff the body's exp is.
+    bool approximate = false;
+    visitor::for_each_block(node_.root(), [&](structured_control_flow::Block& block) {
+        for (auto* lib : block.dataflow().library_nodes()) {
+            auto* cmath = dynamic_cast<const math::cmath::CMathNode*>(lib);
+            if (cmath != nullptr && cmath->function() == exp_function && cmath->approximate()) {
+                approximate = true;
+            }
+        }
+    });
+    std::string exp_fn = math::cmath::get_cmath_intrinsic_name(exp_function, exp_type);
+    if (approximate) {
+        auto fast = math::cmath::get_cmath_approximate_intrinsic_name(exp_function, exp_type);
+        if (!fast.empty()) {
+            exp_fn = fast;
+        }
+    }
+    // Factor that moves a partial anchored at `from` to the merged anchor `to`; the equality
+    // case keeps identity partials (anchor -inf) from producing exp(-inf - -inf) = NaN.
+    auto scale = [&](const std::string& from, const std::string& to) {
+        return "((" + from + ") == (" + to + ") ? (" + ctype + ")1 : (" + ctype + ")" + exp_fn + "((" + ftype + ")((" +
+               from + ") - (" + to + "))))";
+    };
+    auto shuffle = [&](const std::string& value, const std::string& mask) {
+        if (prim == types::PrimitiveType::Half || prim == types::PrimitiveType::BFloat) {
+            return "(" + ctype + ")" + strategy_->warp_shuffle_xor("(float)" + value, mask);
+        }
+        return strategy_->warp_shuffle_xor(value, mask);
+    };
+
+    // Run @p body once per slot of @p dep, with the slot's register and shared-slot suffix.
+    auto for_each_slot = [&](const structured_control_flow::ReductionInfo& dep,
+                             const std::function<void(const std::string& reg, const std::string& slot)>& body) {
+        const auto& buffer = reduction_buffers_.at(dep.container);
+        if (!buffer.multi_output) {
+            body(buffer.private_buffer + "[0]", "0");
+            return;
+        }
+        std::string slot = "__daisy_reduce_slot_" + dep.container;
+        stream << "for (int " << slot << " = 0; " << slot << " < " << buffer.layout->extent << "; ++" << slot << ") {"
+               << std::endl;
+        stream.changeIndent(+4);
+        body(buffer.private_buffer + "[" + slot + "]", slot);
+        stream.changeIndent(-4);
+        stream << "}" << std::endl;
+    };
+    auto shared_slot =
+        [&](const structured_control_flow::ReductionInfo& dep, const std::string& thread, const std::string& slot) {
+            const auto& buffer = reduction_buffers_.at(dep.container);
+            return partials_buffer_name(dep.container) + "[(" + thread + ") * " +
+                   std::to_string(buffer.layout->extent) + " + " + slot + "]";
+        };
+
+    const std::string tag = anchor.container;
+    const std::string a_reg = anchor_buffer.private_buffer + "[0]";
+    const std::string om = "__daisy_rescale_om_" + tag;
+    const std::string nm = "__daisy_rescale_nm_" + tag;
+    const std::string fs = "__daisy_rescale_fs_" + tag;
+    const std::string fo = "__daisy_rescale_fo_" + tag;
+
+    // Merge `other_anchor` (+ per-slot `other_dep`) into the registers.
+    auto emit_merge =
+        [&](const std::string& other_anchor,
+            const std::function<std::string(const structured_control_flow::ReductionInfo&, const std::string&)>&
+                other_dep) {
+            stream << ctype << " " << om << " = " << other_anchor << ";" << std::endl;
+            stream << ctype << " " << nm << " = " << combine_expr(ReductionOperation::Max, a_reg, om) << ";"
+                   << std::endl;
+            stream << ctype << " " << fs << " = " << scale(a_reg, nm) << ";" << std::endl;
+            stream << ctype << " " << fo << " = " << scale(om, nm) << ";" << std::endl;
+            for (const auto* dep : dependents) {
+                for_each_slot(*dep, [&](const std::string& reg, const std::string& slot) {
+                    std::string od = "__daisy_rescale_od_" + dep->container;
+                    stream << ctype << " " << od << " = " << other_dep(*dep, slot) << ";" << std::endl;
+                    stream << reg << " = " << fs << " * " << reg << " + " << fo << " * " << od << ";" << std::endl;
+                });
+            }
+            stream << a_reg << " = " << nm << ";" << std::endl;
+        };
+
+    // 1. Lane groups: every shuffle is issued unconditionally by all lanes.
+    stream << "for (int __daisy_reduce_mask = " << width / 2 << "; __daisy_reduce_mask > 0; "
+           << "__daisy_reduce_mask >>= 1) {" << std::endl;
+    stream.setIndent(stream.indent() + 4);
+    emit_merge(shuffle(a_reg, "__daisy_reduce_mask"), [&](const auto& dep, const std::string& slot) {
+        const auto& buffer = reduction_buffers_.at(dep.container);
+        std::string reg = buffer.private_buffer + "[" + slot + "]";
+        return shuffle(reg, "__daisy_reduce_mask");
+    });
+    stream.setIndent(stream.indent() - 4);
+    stream << "}" << std::endl;
+
+    // 2. Lane groups of one row, through shared memory.
+    auto bx = SymEngine::rcp_static_cast<const SymEngine::Integer>(reduce_block_dim(TargetLevel::X_BLOCK))->as_int();
+    const int64_t groups = bx / width;
+    if (groups > 1) {
+        std::string lin_tid = reduce_linear_thread_index(language_extension);
+        std::string tid_x = language_extension.expression(symbolic::threadIdx_x());
+        std::string row_base = "(" + lin_tid + ") - " + tid_x;
+        std::string anchor_smem = partials_buffer_name(anchor.container);
+        stream << "if ((" << tid_x << " & " << width - 1 << ") == 0) {" << std::endl;
+        stream.setIndent(stream.indent() + 4);
+        stream << anchor_smem << "[" << lin_tid << "] = " << a_reg << ";" << std::endl;
+        for (const auto* dep : dependents) {
+            for_each_slot(*dep, [&](const std::string& reg, const std::string& slot) {
+                stream << shared_slot(*dep, lin_tid, slot) << " = " << reg << ";" << std::endl;
+            });
+        }
+        stream.setIndent(stream.indent() - 4);
+        stream << "}" << std::endl;
+        stream << "__syncthreads();" << std::endl;
+        stream << a_reg << " = " << anchor_smem << "[" << row_base << "];" << std::endl;
+        for (const auto* dep : dependents) {
+            for_each_slot(*dep, [&](const std::string& reg, const std::string& slot) {
+                stream << reg << " = " << shared_slot(*dep, row_base, slot) << ";" << std::endl;
+            });
+        }
+        std::string gvar = "__daisy_reduce_group_" + tag;
+        std::string other = row_base + " + " + gvar + " * " + std::to_string(width);
+        stream << "for (int " << gvar << " = 1; " << gvar << " < " << groups << "; ++" << gvar << ") {" << std::endl;
+        stream.setIndent(stream.indent() + 4);
+        emit_merge(anchor_smem + "[" + other + "]", [&](const auto& dep, const std::string& slot) {
+            return shared_slot(dep, other, slot);
+        });
+        stream.setIndent(stream.indent() - 4);
+        stream << "}" << std::endl;
+        // A later instance of this reduce republishes into the same slots.
+        stream << "__syncthreads();" << std::endl;
+    }
+
+    // 3. Commit. Every thread now holds the row's merged group in its registers.
+    auto dep_target = [&](const structured_control_flow::ReductionInfo& dep, const std::string& slot) {
+        const auto& buffer = reduction_buffers_.at(dep.container);
+        auto index = buffer.multi_output ? buffer.layout->unpack(symbolic::symbol(slot)) : buffer.accumulator_index;
+        return reduction_target(language_extension, dep.container, index);
+    };
+    if (is_scalar_accumulator(anchor.container)) {
+        // A scalar anchor is thread-private and overwritten (as for plain scalar reductions), so
+        // its dependents are overwritten too: their live-in cannot be rescaled meaningfully.
+        stream << anchor.container << " = " << a_reg << ";" << std::endl;
+        std::string leader = block_reduce_leader_condition(language_extension, anchor.container);
+        for (const auto* dep : dependents) {
+            if (is_scalar_accumulator(dep->container)) {
+                stream << dep->container << " = " << reduction_buffers_.at(dep->container).private_buffer << "[0];"
+                       << std::endl;
+                continue;
+            }
+            if (block_result_collides_across_grid(reduction_buffers_.at(dep->container).accumulator_index)) {
+                throw unsupported("would need an atomic pair update across blocks");
+            }
+            stream << "if (" << leader << ") {" << std::endl;
+            stream.setIndent(stream.indent() + 4);
+            for_each_slot(*dep, [&](const std::string& reg, const std::string& slot) {
+                stream << dep_target(*dep, slot) << " = " << reg << ";" << std::endl;
+            });
+            stream.setIndent(stream.indent() - 4);
+            stream << "}" << std::endl;
+        }
+        return;
+    }
+
+    // An indexed anchor folds the block result into the accumulators' live-in values.
+    if (block_result_collides_across_grid(anchor_buffer.accumulator_index)) {
+        throw unsupported("would need an atomic pair update across blocks");
+    }
+    for (const auto* dep : dependents) {
+        if (is_scalar_accumulator(dep->container)) {
+            throw unsupported("cannot mix an indexed anchor with a scalar dependent");
+        }
+    }
+    std::string anchor_target = reduction_target(language_extension, anchor.container, anchor_buffer.accumulator_index);
+    stream << "if (" << block_reduce_leader_condition(language_extension, anchor.container) << ") {" << std::endl;
+    stream.setIndent(stream.indent() + 4);
+    stream << ctype << " " << om << " = " << anchor_target << ";" << std::endl;
+    stream << ctype << " " << nm << " = " << combine_expr(ReductionOperation::Max, om, a_reg) << ";" << std::endl;
+    stream << ctype << " " << fo << " = " << scale(om, nm) << ";" << std::endl;
+    stream << ctype << " " << fs << " = " << scale(a_reg, nm) << ";" << std::endl;
+    for (const auto* dep : dependents) {
+        for_each_slot(*dep, [&](const std::string& reg, const std::string& slot) {
+            std::string target = dep_target(*dep, slot);
+            stream << target << " = " << fo << " * " << target << " + " << fs << " * " << reg << ";" << std::endl;
+        });
+    }
+    stream << anchor_target << " = " << nm << ";" << std::endl;
+    stream.setIndent(stream.indent() - 4);
+    stream << "}" << std::endl;
+}
+
 void GPUOffloadReduceDispatcher::dispatch_reduction_publish(
     codegen::LanguageExtension& language_extension, codegen::PrettyPrinter& stream, TargetLevel target_level
 ) {
     std::string lin_tid = reduce_linear_thread_index(language_extension);
     for (const auto& r : node_.reductions()) {
-        if (!uses_register_partial(target_level, r.container)) {
+        if (!uses_register_partial(target_level, r.container) || warp_combine_width(target_level, r.container) > 0 ||
+            in_rescale_group(r.container)) {
             continue;
         }
         const auto& buffer = reduction_buffers_.at(r.container);
@@ -769,12 +1077,34 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
         language_extension.expression(get_target_level_dim(TargetLevel::WARP, strategy_->get_warp_size()));
 
     for (const auto& r : node_.reductions()) {
+        if (r.rescale.empty() && in_rescale_group(r.container)) {
+            if (strategy != ReduceStrategy::Shared) {
+                throw InvalidSDFGException(
+                    "GPUOffloadReduceDispatcher: rescale group of '" + r.container +
+                    "' requires the block-level shared strategy"
+                );
+            }
+            dispatch_rescale_group_combine(language_extension, stream, r, target_level);
+        }
+    }
+
+    for (const auto& r : node_.reductions()) {
+        if (in_rescale_group(r.container)) {
+            continue;
+        }
         if (strategy == ReduceStrategy::Shared && has_enclosing_block_reduction(r.container)) {
             continue;
         }
         const auto& buffer = reduction_buffers_.at(r.container);
         auto prim = *buffer.primitive;
         std::string ctype = language_extension.primitive_type(prim);
+        // Warp shuffles have no _Float16/__bf16 overloads; round-trip through float (lossless).
+        auto shuffle_xor = [&](const std::string& value, const std::string& lane_mask) {
+            if (prim == types::PrimitiveType::Half || prim == types::PrimitiveType::BFloat) {
+                return "(" + ctype + ")" + strategy_->warp_shuffle_xor("(float)" + value, lane_mask);
+            }
+            return strategy_->warp_shuffle_xor(value, lane_mask);
+        };
         std::string reg_name = buffer.private_buffer;
         std::string smem_name = partials_buffer_name(r.container);
         auto index = buffer.accumulator_index;
@@ -818,8 +1148,8 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
             stream << "for (int __daisy_reduce_mask = " << warp_size << " / 2; __daisy_reduce_mask > 0; "
                    << "__daisy_reduce_mask >>= 1) {" << std::endl;
             stream.setIndent(stream.indent() + 4);
-            stream << ctype << " " << other << " = " << strategy_->warp_shuffle_xor(reg_name, "__daisy_reduce_mask")
-                   << ";" << std::endl;
+            stream << ctype << " " << other << " = " << shuffle_xor(reg_name, "__daisy_reduce_mask") << ";"
+                   << std::endl;
             stream << reg_name << " = " << combine_expr(r.operation, reg_name, other) << ";" << std::endl;
             stream.setIndent(stream.indent() - 4);
             stream << "}" << std::endl;
@@ -904,27 +1234,69 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
 
             // Fold every nested block axis of this container first, then this (outermost)
             // level's axis, so all block dimensions collapse into flat slot 0.
-            auto& loop_analysis = analysis_manager_.get<analysis::LoopAnalysis>();
-            for (auto* loop : loop_analysis.descendants(&node_)) {
-                auto* reduce = dynamic_cast<structured_control_flow::Reduce*>(loop);
-                if (reduce == nullptr) {
-                    continue;
+            const int64_t warp_width = warp_combine_width(target_level, r.container);
+            if (warp_width > 0) {
+                // Shuffle-reduce each lane group in registers, then fold the per-group partials
+                // of the row through shared: one barrier instead of a log2(bx)-deep tree.
+                std::string other = "__daisy_reduce_shfl_" + r.container;
+                stream << "for (int __daisy_reduce_mask = " << warp_width / 2 << "; __daisy_reduce_mask > 0; "
+                       << "__daisy_reduce_mask >>= 1) {" << std::endl;
+                stream.setIndent(stream.indent() + 4);
+                stream << ctype << " " << other << " = " << shuffle_xor(reg_name, "__daisy_reduce_mask") << ";"
+                       << std::endl;
+                stream << reg_name << " = " << combine_expr(r.operation, reg_name, other) << ";" << std::endl;
+                stream.setIndent(stream.indent() - 4);
+                stream << "}" << std::endl;
+
+                auto bx = SymEngine::rcp_static_cast<const SymEngine::Integer>(reduce_block_dim(TargetLevel::X_BLOCK))
+                              ->as_int();
+                const int64_t groups = bx / warp_width;
+                if (groups > 1) {
+                    std::string tid_x = language_extension.expression(symbolic::threadIdx_x());
+                    std::string row_base = "(" + lin_tid + ") - " + tid_x;
+                    std::string gvar = "__daisy_reduce_group_" + r.container;
+                    stream << "if ((" << tid_x << " & " << warp_width - 1 << ") == 0) {" << std::endl;
+                    stream.setIndent(stream.indent() + 4);
+                    stream << smem_name << "[" << lin_tid << "] = " << reg_name << ";" << std::endl;
+                    stream.setIndent(stream.indent() - 4);
+                    stream << "}" << std::endl;
+                    stream << "__syncthreads();" << std::endl;
+                    stream << reg_name << " = " << smem_name << "[" << row_base << "];" << std::endl;
+                    stream << "for (int " << gvar << " = 1; " << gvar << " < " << groups << "; ++" << gvar << ") {"
+                           << std::endl;
+                    stream.setIndent(stream.indent() + 4);
+                    std::string slot = smem_name + "[" + row_base + " + " + gvar + " * " + std::to_string(warp_width) +
+                                       "]";
+                    stream << reg_name << " = " << combine_expr(r.operation, reg_name, slot) << ";" << std::endl;
+                    stream.setIndent(stream.indent() - 4);
+                    stream << "}" << std::endl;
+                    // A later instance of this reduce republishes into the same slots.
+                    stream << "__syncthreads();" << std::endl;
                 }
-                if (reduce->schedule_type().category() != structured_control_flow::ScheduleTypeCategory::Offloader) {
-                    continue;
-                }
-                TargetLevel nested = gpu::ScheduleType_GPU_Offload::target_level(reduce->schedule_type());
-                if (!is_block_level(nested)) {
-                    continue;
-                }
-                for (const auto& rr : reduce->reductions()) {
-                    if (rr.container == r.container) {
-                        emit_block_tree(nested, rr.operation);
-                        break;
+            } else {
+                auto& loop_analysis = analysis_manager_.get<analysis::LoopAnalysis>();
+                for (auto* loop : loop_analysis.descendants(&node_)) {
+                    auto* reduce = dynamic_cast<structured_control_flow::Reduce*>(loop);
+                    if (reduce == nullptr) {
+                        continue;
+                    }
+                    if (reduce->schedule_type().category() !=
+                        structured_control_flow::ScheduleTypeCategory::Offloader) {
+                        continue;
+                    }
+                    TargetLevel nested = gpu::ScheduleType_GPU_Offload::target_level(reduce->schedule_type());
+                    if (!is_block_level(nested)) {
+                        continue;
+                    }
+                    for (const auto& rr : reduce->reductions()) {
+                        if (rr.container == r.container) {
+                            emit_block_tree(nested, rr.operation);
+                            break;
+                        }
                     }
                 }
+                emit_block_tree(target_level, r.operation);
             }
-            emit_block_tree(target_level, r.operation);
 
             // The outermost block level commits to the global accumulator. The writer is the
             // leader across every reduced block axis (this level plus all nested block
@@ -937,11 +1309,15 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
                 // after the reduce (e.g. an in-place pooling writeback that runs on every
                 // thread of the reduced axis) all observe the combined result rather than
                 // only the leader.
-                stream << "__syncthreads();" << std::endl;
-                stream << r.container << " = " << smem_name << "[" << reduce_base_slot(language_extension, r.container)
-                       << "];" << std::endl;
+                if (warp_width > 0) {
+                    stream << r.container << " = " << reg_name << ";" << std::endl;
+                } else {
+                    stream << "__syncthreads();" << std::endl;
+                    stream << r.container << " = " << smem_name << "["
+                           << reduce_base_slot(language_extension, r.container) << "];" << std::endl;
+                }
             } else {
-                std::string block_src = smem_name + "[" + shared_index + "]";
+                std::string block_src = warp_width > 0 ? reg_name : smem_name + "[" + shared_index + "]";
                 std::string leader = block_reduce_leader_condition(language_extension, r.container);
                 bool enclosed_by_reduction = has_enclosing_grid_reduction(r.container);
                 bool collides = !enclosed_by_reduction && (multi_output || block_result_collides_across_grid(index));

@@ -192,6 +192,12 @@ void GPUOffloadBaseDispatcher::dispatch_node(
         }
 
 
+        // Without launch bounds the compiler assumes 1024 threads/block and caps registers (128 VGPRs on CDNA).
+        auto block_threads = symbolic::mul(symbolic::mul(block_size_x, block_size_y), block_size_z);
+        if (SymEngine::is_a<SymEngine::Integer>(*block_threads)) {
+            launch_bounds_ = SymEngine::rcp_static_cast<const SymEngine::Integer>(block_threads)->as_int();
+        }
+
         std::string kernel_name = "kernel_" + sdfg_.name() + "_" + std::to_string(node_.element_id());
 
 
@@ -274,7 +280,11 @@ void GPUOffloadBaseDispatcher::dispatch_header(
     const std::string& kernel_name,
     std::vector<std::string>& arguments_declaration
 ) {
-    globals_stream << "__global__ void " << kernel_name << "(";
+    globals_stream << "__global__ void ";
+    if (launch_bounds_ > 0) {
+        globals_stream << "__launch_bounds__(" << launch_bounds_ << ") ";
+    }
+    globals_stream << kernel_name << "(";
     globals_stream << helpers::join(arguments_declaration, ", ");
     globals_stream << ")";
 }

@@ -139,18 +139,19 @@ std::optional<GpuMmaTiling> CudaMmaSupport::get_mma_tiling(
     const symbolic::MultiExpression& res_shape,
     types::PrimitiveType input_type,
     types::PrimitiveType acc_type,
-    const MmaBlockSize* block_size_hint
+    const MmaBlockSize* block_size_hint,
+    const BlockCounts* wave_tile_hint
 ) const {
     GpuMmaTiling tiling;
+    tiling.threads_per_mma_wavefront = THREADS_PER_WAVEFRONT;
+    tiling.acc_type = acc_type;
+    tiling.wave_tiling = {.blocks_m = 1, .blocks_n = 1};
 
     if (block_size_hint && is_valid_block_size(*block_size_hint, input_type, acc_type)) {
         tiling.mma_block_size = *block_size_hint;
     } else {
         tiling.mma_block_size = DEFAULT_BLOCK_SIZE;
     }
-
-    tiling.threads_per_mma_block_m = THREADS_PER_BLOCK;
-    tiling.acc_type = acc_type;
 
     auto mma_blocks_m = get_integer_block_count(res_shape.at(0), tiling.mma_block_size.m);
     auto mma_blocks_n = get_integer_block_count(res_shape.at(1), tiling.mma_block_size.n);
@@ -160,20 +161,12 @@ std::optional<GpuMmaTiling> CudaMmaSupport::get_mma_tiling(
         return std::nullopt;
     }
     if (mma_blocks_m == 1 && mma_blocks_n == 1) {
-        tiling.wave_tile_blocks_m = 1;
-        tiling.wave_tile_blocks_n = 1;
-        tiling.macro_blocks_m = 1;
-        tiling.macro_blocks_n = 1;
+        tiling.macro_tiling = {.blocks_m = 1, .blocks_n = 1};
     } else if (mma_blocks_m <= 2 && mma_blocks_n <= 2) {
-        tiling.wave_tile_blocks_m = 1;
-        tiling.wave_tile_blocks_n = 1;
-        tiling.macro_blocks_m = mma_blocks_m;
-        tiling.macro_blocks_n = mma_blocks_n;
+        tiling.macro_tiling = {.blocks_m = mma_blocks_m, .blocks_n = mma_blocks_n};
     } else if (mma_blocks_n <= 4 && (mma_blocks_m == 4 || mma_blocks_m == 8)) {
-        tiling.wave_tile_blocks_m = 1;
-        tiling.wave_tile_blocks_n = 1;
-        tiling.macro_blocks_m = mma_blocks_m;
-        tiling.macro_blocks_n = mma_blocks_n;
+        tiling.macro_tiling = {.blocks_m = mma_blocks_m, .blocks_n = mma_blocks_n};
+        // TODO: update to include wave_tiling per heuristic.
         // tiling.mma_block_m *= 2;
         // tiling.mma_block_n += 2;
         // tiling.wave_tile_blocks_m = mma_blocks_m / 2;
@@ -181,6 +174,23 @@ std::optional<GpuMmaTiling> CudaMmaSupport::get_mma_tiling(
         // tiling.macro_blocks_m = 2;
         // tiling.macro_blocks_n = 2;
     } else {
+        return std::nullopt;
+    }
+
+    if (wave_tile_hint && GpuMmaTiling::wave_tile_divides(*wave_tile_hint, tiling.macro_tiling)) {
+        int waves = (tiling.macro_tiling.blocks_m / wave_tile_hint->blocks_m) *
+                    (tiling.macro_tiling.blocks_n / wave_tile_hint->blocks_n);
+        if (waves * tiling.threads_per_mma_wavefront <= 1024) {
+            tiling.wave_tiling = *wave_tile_hint;
+        } else {
+            DEBUG_PRINTLN(
+                "Wave tiling hint could not be applied because it would exceed the maximum number of threads.x per "
+                "block (1024)."
+            );
+            return std::nullopt;
+        }
+    } else {
+        DEBUG_PRINTLN("Wave tiling hint could not be applied as it does not divide the macro tiles.");
         return std::nullopt;
     }
 

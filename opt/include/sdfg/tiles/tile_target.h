@@ -4,6 +4,7 @@
 
 #include "sdfg/data_flow/library_node.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
+#include "sdfg/tiles/bank_conflicts.h"
 #include "sdfg/tiles/tile.h"
 #include "sdfg/types/type.h"
 
@@ -24,7 +25,8 @@ namespace tiles {
  *   2. which memory tier backs each cooperation level \-> @ref space (a @ref Level -> @ref Space),
  *   3. whether a schedule can drive a cooperative staging copy \-> @ref supports_cooperative_staging,
  *   4. which concrete buffer realizes a memory tier \-> @ref storage_type (a @ref Space -> StorageType),
- *   5. its SIMD lane width for bank-conflict avoidance \-> @ref lane_width.
+ *   5. its SIMD lane width for bank-conflict avoidance \-> @ref lane_width,
+ *   6. the banks of a banked memory tier (optional) \-> @ref bank_model.
  *
  * (@ref has_scratchpad is derived from @ref space, not implemented.) These are the
  * *only* places the tile algebra needs to know a target exists. A @ref TileTarget
@@ -77,6 +79,12 @@ public:
     /// stores bank-conflict-free (32 on NVIDIA, 64 on CDNA, 1 where there is no
     /// SIMD cooperation). Replaces `gpu::gpu_warp_size` in the padding heuristic.
     virtual unsigned lane_width() const = 0;
+
+    /// The banks of the memory realizing @p space, if it is banked (GPU shared memory). Drives
+    /// the bank-conflict policy of buffers staged there; unbanked memory returns nullopt.
+    virtual std::optional<BankModel> bank_model(Space space) const {
+        return std::nullopt;
+    }
 
     /// The implementation selector this target stamps onto its tile codegen library
     /// nodes (cp.async / vector copy / pipeline commit+wait) so the owning target's

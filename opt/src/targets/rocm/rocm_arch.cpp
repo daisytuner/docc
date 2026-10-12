@@ -11,8 +11,8 @@
 
 #include "sdfg/targets/gpu/gpu_arch.h"
 #include "sdfg/targets/rocm/rocm.h"
-#include "sdfg/targets/rocm/rocm_mfma_dispatcher.h"
-#include "sdfg/targets/rocm/rocm_mma_dispatcher.h"
+#include "sdfg/targets/rocm/rocm_mma_bare_dispatcher.h"
+#include "sdfg/targets/rocm/rocm_mma_fragment_dispatcher.h"
 
 namespace sdfg::gpu::rocm {
 
@@ -254,12 +254,16 @@ types::PrimitiveType RocmMmaSupport::get_accumulator_type(
 }
 
 std::optional<GpuMmaTiling> RocmMmaSupport::try_get_mma_tiling(
-    const MmaBlockSize& block_size, const symbolic::MultiExpression& res_shape, types::PrimitiveType acc_type
+    const MmaBlockSize& block_size,
+    const BlockCounts* wave_tile_hint,
+    const symbolic::MultiExpression& res_shape,
+    types::PrimitiveType acc_type
 ) const {
     GpuMmaTiling tiling;
     tiling.mma_block_size = block_size;
-    tiling.threads_per_mma_block_m = threads_per_mma_block;
+    tiling.threads_per_mma_wavefront = threads_per_mma_block;
     tiling.acc_type = acc_type;
+    tiling.wave_tiling = {.blocks_m = 1, .blocks_n = 1};
 
     auto mma_blocks_m = get_integer_block_count(res_shape.at(0), tiling.mma_block_size.m);
     auto mma_blocks_n = get_integer_block_count(res_shape.at(1), tiling.mma_block_size.n);
@@ -269,20 +273,12 @@ std::optional<GpuMmaTiling> RocmMmaSupport::try_get_mma_tiling(
         return std::nullopt;
     }
     if (mma_blocks_m == 1 && mma_blocks_n == 1) {
-        tiling.wave_tile_blocks_m = 1;
-        tiling.wave_tile_blocks_n = 1;
-        tiling.macro_blocks_m = 1;
-        tiling.macro_blocks_n = 1;
+        tiling.macro_tiling = {.blocks_m = 1, .blocks_n = 1};
     } else if (mma_blocks_m <= 2 && mma_blocks_n <= 2) {
-        tiling.wave_tile_blocks_m = 1;
-        tiling.wave_tile_blocks_n = 1;
-        tiling.macro_blocks_m = mma_blocks_m;
-        tiling.macro_blocks_n = mma_blocks_n;
+        tiling.macro_tiling = {.blocks_m = mma_blocks_m, .blocks_n = mma_blocks_n};
     } else if (mma_blocks_n <= 4 && (mma_blocks_m == 4 || mma_blocks_m == 8)) {
-        tiling.wave_tile_blocks_m = 1;
-        tiling.wave_tile_blocks_n = 1;
-        tiling.macro_blocks_m = mma_blocks_m;
-        tiling.macro_blocks_n = mma_blocks_n;
+        tiling.macro_tiling = {.blocks_m = mma_blocks_m, .blocks_n = mma_blocks_n};
+        // TODO: update to include wave_tiling per heuristic.
         // tiling.mma_block_m *= 2;
         // tiling.mma_block_n += 2;
         // tiling.wave_tile_blocks_m = mma_blocks_m / 2;
@@ -293,6 +289,25 @@ std::optional<GpuMmaTiling> RocmMmaSupport::try_get_mma_tiling(
         return std::nullopt;
     }
 
+    if (wave_tile_hint) {
+        if (GpuMmaTiling::wave_tile_divides(*wave_tile_hint, tiling.macro_tiling)) {
+            int waves = (tiling.macro_tiling.blocks_m / wave_tile_hint->blocks_m) *
+                        (tiling.macro_tiling.blocks_n / wave_tile_hint->blocks_n);
+            if (waves * tiling.threads_per_mma_wavefront <= 1024) {
+                tiling.wave_tiling = *wave_tile_hint;
+            } else {
+                DEBUG_PRINTLN(
+                    "Wave tiling hint could not be applied because it would exceed the maximum number of threads per "
+                    "block (1024)."
+                );
+                return std::nullopt;
+            }
+        } else {
+            DEBUG_PRINTLN("Wave tiling hint could not be applied as it does not divide the macro tiles.");
+            return std::nullopt;
+        }
+    }
+
     return tiling;
 }
 
@@ -300,27 +315,20 @@ std::optional<GpuMmaTiling> RocmMmaSupport::get_mma_tiling(
     const symbolic::MultiExpression& res_shape,
     types::PrimitiveType input_type,
     types::PrimitiveType acc_type,
-    const MmaBlockSize* block_size_hint
+    const MmaBlockSize* block_size_hint,
+    const BlockCounts* wave_tile_hint
 ) const {
     std::optional<MmaBlockSize> desired_block_size;
+    std::optional<GpuMmaTiling> mma_tiling;
 
     if (block_size_hint) {
-        if (is_valid_block_size(*block_size_hint, input_type, acc_type)) {
-            desired_block_size = *block_size_hint;
+        if (!is_valid_block_size(*block_size_hint, input_type, acc_type)) {
+            return std::nullopt;
         }
+        return try_get_mma_tiling(*block_size_hint, wave_tile_hint, res_shape, acc_type);
+    } else {
+        return try_get_mma_tiling(DEFAULT_BLOCK_SIZE, wave_tile_hint, res_shape, acc_type);
     }
-
-    std::optional<GpuMmaTiling> mma_tiling;
-    if (desired_block_size) {
-        mma_tiling = try_get_mma_tiling(desired_block_size.value(), res_shape, acc_type);
-    }
-
-    if (!mma_tiling) {
-        // fallback to default block size
-        mma_tiling = try_get_mma_tiling(DEFAULT_BLOCK_SIZE, res_shape, acc_type);
-    }
-
-    return mma_tiling;
 }
 
 void RocmMmaSupport::set_mma_fragment_storage_type(

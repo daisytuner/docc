@@ -1749,6 +1749,14 @@ TEST(LocalStorageTest, Gate_ReduceConsumerStaging_Accepts) {
     // A cmath (fmax) reading X must not flag X as pointer-captured (no_capture).
     LocalStorage xform(map_row, x_r);
     EXPECT_TRUE(xform.can_be_applied(builder, am));
+
+    // Every consumer, including the fmax CMath operand, reads the staged buffer.
+    xform.apply(builder, am);
+    auto buf = xform.local_container();
+    EXPECT_TRUE(block_uses(rblk, buf));
+    EXPECT_FALSE(block_uses(rblk, "X"));
+    EXPECT_TRUE(block_uses(r2blk, buf));
+    EXPECT_TRUE(block_uses(nblk, buf));
 }
 
 

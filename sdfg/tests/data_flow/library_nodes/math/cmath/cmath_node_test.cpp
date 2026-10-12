@@ -1,8 +1,15 @@
 #include "gtest/gtest.h"
 
+#include <functional>
+
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/codegen/code_snippet_factory.h"
+#include "sdfg/codegen/language_extensions/c_language_extension.h"
+#include "sdfg/codegen/utils.h"
 #include "sdfg/data_flow/library_nodes/math/cmath/cmath_node.h"
+#include "sdfg/serializer/json_serializer.h"
+#include "sdfg/structured_control_flow/block.h"
 
 using namespace sdfg;
 
@@ -167,4 +174,123 @@ TEST(CMathNodeTest, FlopEquivalents) {
     EXPECT_EQ(cmath_function_to_flop(CMathFunction::tanh), 20u);
     EXPECT_EQ(cmath_function_to_flop(CMathFunction::pow), 20u);
     EXPECT_EQ(cmath_function_to_flop(CMathFunction::tgamma), 20u);
+}
+
+namespace {
+
+class DeviceLanguageExtension : public codegen::CLanguageExtension {
+public:
+    DeviceLanguageExtension(Function& function, std::string language)
+        : codegen::CLanguageExtension(function), language_(std::move(language)) {
+    }
+
+    const std::string language() const override {
+        return language_;
+    }
+
+private:
+    std::string language_;
+};
+
+math::cmath::CMathNode& add_unary_cmath(
+    builder::StructuredSDFGBuilder& builder, math::cmath::CMathFunction function, types::PrimitiveType prim_type
+) {
+    types::Scalar desc(prim_type);
+    builder.add_container("x", desc);
+    builder.add_container("y", desc);
+    auto& block = builder.add_block(builder.subject().root());
+    auto& node = static_cast<math::cmath::CMathNode&>(builder.add_library_node<
+                                                      math::cmath::CMathNode>(block, DebugInfo(), function, prim_type));
+    builder.add_computational_memlet(block, builder.add_access(block, "x"), node, "_in1", {}, desc);
+    builder.add_computational_memlet(block, node, "_out", builder.add_access(block, "y"), {}, desc);
+    return node;
+}
+
+std::string dispatch_cmath(
+    builder::StructuredSDFGBuilder& builder, const math::cmath::CMathNode& node, const std::string& language
+) {
+    DeviceLanguageExtension language_extension(builder.subject(), language);
+    math::cmath::CMathNodeDispatcher dispatcher(language_extension, builder.subject(), node.get_parent(), node);
+    codegen::PrettyPrinter stream;
+    codegen::PrettyPrinter globals;
+    codegen::CodeSnippetFactory snippets;
+    dispatcher.dispatch_code(stream, globals, snippets);
+    return stream.str();
+}
+
+} // namespace
+
+TEST(CMathNodeTest, Approximate_SerializationRoundTrip) {
+    builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
+    auto& node = add_unary_cmath(builder, math::cmath::CMathFunction::exp, types::PrimitiveType::Float);
+    node.approximate(true);
+
+    serializer::JSONSerializer serializer;
+    auto j = serializer.serialize(builder.subject());
+    auto restored = serializer.deserialize(j);
+
+    auto& block = static_cast<structured_control_flow::Block&>(restored->root().at(0));
+    auto libs = block.dataflow().library_nodes();
+    ASSERT_EQ(libs.size(), 1u);
+    auto* restored_node = dynamic_cast<const math::cmath::CMathNode*>(*libs.begin());
+    ASSERT_NE(restored_node, nullptr);
+    EXPECT_TRUE(restored_node->approximate());
+
+    // Clones keep the flag.
+    auto cloned = restored->clone();
+    auto& clone_block = static_cast<structured_control_flow::Block&>(cloned->root().at(0));
+    auto* clone_node = dynamic_cast<const math::cmath::CMathNode*>(*clone_block.dataflow().library_nodes().begin());
+    ASSERT_NE(clone_node, nullptr);
+    EXPECT_TRUE(clone_node->approximate());
+}
+
+TEST(CMathNodeTest, Approximate_DefaultsToPreciseWhenMissing) {
+    builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
+    add_unary_cmath(builder, math::cmath::CMathFunction::exp, types::PrimitiveType::Float);
+
+    serializer::JSONSerializer serializer;
+    auto j = serializer.serialize(builder.subject());
+    std::function<void(nlohmann::json&)> strip = [&](nlohmann::json& node) {
+        if (node.is_object()) {
+            node.erase("approximate");
+            for (auto& [_, value] : node.items()) {
+                strip(value);
+            }
+        } else if (node.is_array()) {
+            for (auto& value : node) {
+                strip(value);
+            }
+        }
+    };
+    strip(j);
+    auto restored = serializer.deserialize(j);
+
+    auto& block = static_cast<structured_control_flow::Block&>(restored->root().at(0));
+    auto* restored_node = dynamic_cast<const math::cmath::CMathNode*>(*block.dataflow().library_nodes().begin());
+    ASSERT_NE(restored_node, nullptr);
+    EXPECT_FALSE(restored_node->approximate());
+}
+
+TEST(CMathNodeTest, Approximate_DispatchUsesDeviceIntrinsic) {
+    builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
+    auto& node = add_unary_cmath(builder, math::cmath::CMathFunction::exp, types::PrimitiveType::Float);
+
+    // Precise by default on every target.
+    EXPECT_NE(dispatch_cmath(builder, node, "ROCM").find("expf("), std::string::npos);
+    EXPECT_EQ(dispatch_cmath(builder, node, "ROCM").find("__expf("), std::string::npos);
+
+    node.approximate(true);
+    EXPECT_NE(dispatch_cmath(builder, node, "ROCM").find("__expf("), std::string::npos);
+    EXPECT_NE(dispatch_cmath(builder, node, "CUDA").find("__expf("), std::string::npos);
+    // Host code has no fast intrinsics: stays on libm.
+    EXPECT_EQ(dispatch_cmath(builder, node, "C").find("__expf("), std::string::npos);
+}
+
+TEST(CMathNodeTest, Approximate_NoIntrinsicFallsBackToPrecise) {
+    builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
+    auto& node = add_unary_cmath(builder, math::cmath::CMathFunction::exp, types::PrimitiveType::Double);
+    node.approximate(true);
+    auto code = dispatch_cmath(builder, node, "CUDA");
+    EXPECT_NE(code.find("exp("), std::string::npos);
+    EXPECT_EQ(code.find("__exp"), std::string::npos);
 }

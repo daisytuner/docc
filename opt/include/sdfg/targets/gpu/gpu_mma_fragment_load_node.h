@@ -67,6 +67,8 @@ public:
 
     bool relocalize_operand(int input_idx, const math::tensor::TensorLayout& packed) override;
 
+    std::optional<data_flow::SubgroupAccess> operand_access(int input_idx, unsigned subgroup_size) const override;
+
     std::string toStr() const override;
 };
 

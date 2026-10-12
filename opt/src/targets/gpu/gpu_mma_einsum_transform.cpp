@@ -15,8 +15,9 @@
 
 namespace sdfg::gpu {
 
-GpuMmaEinsumReplacer::GpuMmaEinsumReplacer(const GpuArch* arch, const MmaBlockSize* block_size_hint)
-    : arch_(arch), block_size_hint_(block_size_hint) {
+GpuMmaEinsumReplacer::
+    GpuMmaEinsumReplacer(const GpuArch* arch, const MmaBlockSize* block_size_hint, const BlockCounts* wave_tile_hint)
+    : arch_(arch), block_size_hint_(block_size_hint), wave_tile_hint_(wave_tile_hint) {
 }
 
 bool GpuMmaEinsumReplacer::matches_possible_mma_pattern(const MatMulAnalysis& analysis) const {
@@ -58,7 +59,7 @@ bool GpuMmaEinsumReplacer::matches_possible_mma_pattern(const MatMulAnalysis& an
 
     auto acc_type = mma_arch->get_accumulator_type(input_type, output_type, types::PrimitiveType::Void);
 
-    auto tiling = mma_arch->get_mma_tiling({m, n, k}, input_type, acc_type, block_size_hint_);
+    auto tiling = mma_arch->get_mma_tiling({m, n, k}, input_type, acc_type, block_size_hint_, wave_tile_hint_);
 
     return tiling.has_value();
 }
@@ -88,7 +89,8 @@ einsum::ReplaceOutcome GpuMmaEinsumReplacer::
         {analysis.m, analysis.n, analysis.k},
         analysis.input_type,
         mma_arch->get_accumulator_type(analysis.input_type, analysis.output_type, types::PrimitiveType::Void),
-        block_size_hint_
+        block_size_hint_,
+        wave_tile_hint_
     );
 
     if (!mma_tiling) {
@@ -162,9 +164,32 @@ bool GpuMmaEinsumTransform::run_internal(
 }
 
 GpuMmaEinsumTransform::GpuMmaEinsumTransform(
-    StructuredLoop& outermoost_mma_loop, const gpu::GpuArch* arch, const MmaBlockSize* block_size_hint
+    StructuredLoop& outermoost_mma_loop,
+    const gpu::GpuArch* arch,
+    const MmaBlockSize* block_size_hint,
+    const BlockCounts* wave_tile_hint
 )
-    : outermost_mma_loop_(outermoost_mma_loop), arch_(arch), block_size_hint_(block_size_hint) {
+    : outermost_mma_loop_(outermoost_mma_loop), arch_(arch), block_size_hint_(block_size_hint),
+      wave_tile_hint_(wave_tile_hint) {
+}
+
+GpuMmaEinsumTransform::GpuMmaEinsumTransform(
+    StructuredLoop& outermoost_mma_loop,
+    const gpu::GpuArch* arch,
+    std::optional<MmaBlockSize> block_size_hint,
+    std::optional<BlockCounts> wave_tile_hint
+)
+    : outermost_mma_loop_(outermoost_mma_loop), arch_(arch), block_size_hint_(nullptr), wave_tile_hint_(nullptr),
+      owned_block_size_hint_(block_size_hint), owned_wave_tile_hint_(wave_tile_hint) {
+    // Point the raw hint pointers at our owned storage so they stay valid for
+    // the lifetime of this transform. This instance must not be moved/copied
+    // afterwards (pybind holds it in place), otherwise these would dangle.
+    if (owned_block_size_hint_) {
+        block_size_hint_ = &*owned_block_size_hint_;
+    }
+    if (owned_wave_tile_hint_) {
+        wave_tile_hint_ = &*owned_wave_tile_hint_;
+    }
 }
 
 bool GpuMmaEinsumTransform::try_apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
@@ -188,6 +213,15 @@ void GpuMmaEinsumTransform::to_json(nlohmann::json& j) const {
     j["parameters"] = nlohmann::json::object();
     if (arch_) {
         j["parameters"]["arch"] = arch_->unique_id();
+    }
+    if (block_size_hint_) {
+        j["parameters"]["block_size"]["m"] = block_size_hint_->m;
+        j["parameters"]["block_size"]["n"] = block_size_hint_->n;
+        j["parameters"]["block_size"]["k"] = block_size_hint_->k;
+    }
+    if (wave_tile_hint_) {
+        j["parameters"]["wave_tile"]["blocks_m"] = wave_tile_hint_->blocks_m;
+        j["parameters"]["wave_tile"]["blocks_n"] = wave_tile_hint_->blocks_n;
     }
     j["subgraph"] = nlohmann::json::object();
 }

@@ -14,6 +14,7 @@ set(TEST_FILES
     tiles/tile_analysis_test.cpp
     tiles/reduction_analysis_test.cpp
     tiles/locality_test.cpp
+    tiles/bank_conflicts_test.cpp
     tiles/buffer_layout_test.cpp
     tiles/library_nodes/pipeline_node_test.cpp
     tiles/library_nodes/tile_copy_node_test.cpp

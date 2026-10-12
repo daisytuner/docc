@@ -90,6 +90,26 @@ MmaBlockSize MmaBlockSize::parse_block_size(const std::string& block_size_str) {
     return block_size;
 }
 
+bool GpuMmaTiling::wave_tile_divides(const BlockCounts& wave_tiling, const BlockCounts& macro_block) {
+    if (wave_tiling.blocks_m < 1 || wave_tiling.blocks_n < 1) {
+        return false;
+    }
+    if (macro_block.blocks_m % wave_tiling.blocks_m != 0 || macro_block.blocks_n % wave_tiling.blocks_n != 0) {
+        return false;
+    }
+    return true;
+}
+
+int GpuMmaTiling::get_mma_blocks_m_per_wavefront() const {
+    assert(wave_tiling.blocks_m > 0 && (macro_tiling.blocks_m % wave_tiling.blocks_m == 0));
+    return macro_tiling.blocks_m / wave_tiling.blocks_m;
+}
+
+int GpuMmaTiling::get_mma_blocks_n_per_wavefront() const {
+    assert(wave_tiling.blocks_n > 0 && (macro_tiling.blocks_n % wave_tiling.blocks_n == 0));
+    return macro_tiling.blocks_n / wave_tiling.blocks_n;
+}
+
 int GpuMmaSupport::get_storage_type_arg_as_int(const types::StorageType& storage, int idx) {
     auto& entry = storage.args().at(idx);
     auto int_entry = SymEngine::rcp_dynamic_cast<const SymEngine::Integer>(entry);

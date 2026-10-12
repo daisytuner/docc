@@ -37,8 +37,8 @@ tiles::TileCopyNode* tile_copy_node_in(Block& block) {
 // Widen a scalar/async TileCopyNode to the widest legal vector transfer, deriving
 // contiguity/alignment from the plan layouts: the inner (fastest) tile dim must be
 // unit-stride on both sides, the inner extent and total must be a multiple of the
-// coalescing factor, and the outer source strides must keep each inner run
-// factor-aligned. A ScalarSync copy becomes VectorSync; a (pipelined) CpAsync copy
+// coalescing factor, and the outer source strides (plus buffer strides for an async
+// copy) must keep each inner run factor-aligned. A ScalarSync copy becomes VectorSync; a (pipelined) CpAsync copy
 // keeps its atom and only widens the transfer. Mutates atom/bytes; true if widened.
 bool widen_tile_copy_node(tiles::TileCopyNode& node) {
     if (node.atom() != tiles::CopyAtom::ScalarSync && node.atom() != tiles::CopyAtom::CpAsync) {
@@ -77,12 +77,17 @@ bool widen_tile_copy_node(tiles::TileCopyNode& node) {
         if (inner_n % factor != 0 || total_n % factor != 0) {
             continue;
         }
+        // Synchronous copies split buffer-side accesses to the row alignment at emission;
+        // an async copy writes the buffer directly, so its rows must hold the full width.
         bool outer_ok = true;
-        for (size_t d = 0; d + 1 < plan.src.strides().size(); ++d) {
-            auto* s = dynamic_cast<const SymEngine::Integer*>(plan.src.strides()[d].get());
-            if (s == nullptr || s->as_int() % factor != 0) {
-                outer_ok = false;
-                break;
+        std::vector<const symbolic::MultiExpression*> sides = {&plan.src.strides()};
+        if (node.atom() == tiles::CopyAtom::CpAsync) {
+            sides.push_back(&plan.dst.strides());
+        }
+        for (const auto* strides : sides) {
+            for (size_t d = 0; outer_ok && d + 1 < strides->size(); ++d) {
+                auto* s = dynamic_cast<const SymEngine::Integer*>((*strides)[d].get());
+                outer_ok = s != nullptr && s->as_int() % factor == 0;
             }
         }
         if (!outer_ok) {
@@ -95,6 +100,32 @@ bool widen_tile_copy_node(tiles::TileCopyNode& node) {
         return true;
     }
     return false;
+}
+
+// A 2-D 16-bit copy-in whose source is unit-stride along dim 1 and whose buffer is
+// unit-stride along dim 0 (a transposed placement) moves 4x4 blocks with a register
+// transpose. Needs 4-multiple extents and 4-element-aligned rows on both sides.
+bool transpose_tile_copy_node(tiles::TileCopyNode& node) {
+    const auto& plan = node.plan();
+    if (node.atom() != tiles::CopyAtom::ScalarSync || node.direction() != tiles::CopyDirection::In ||
+        node.bytes() != 2 || plan.src.dims() != 2 || !plan.dst_swizzle.is_identity() || !node.guard().trivial()) {
+        return false;
+    }
+    if (!symbolic::eq(plan.src.strides()[1], symbolic::integer(1)) ||
+        !symbolic::eq(plan.dst.strides()[0], symbolic::integer(1))) {
+        return false;
+    }
+    auto multiple_of_4 = [](const symbolic::Expression& e) {
+        auto* i = dynamic_cast<const SymEngine::Integer*>(e.get());
+        return i != nullptr && i->as_int() % 4 == 0;
+    };
+    if (!multiple_of_4(plan.src.shape()[0]) || !multiple_of_4(plan.src.shape()[1]) ||
+        !multiple_of_4(plan.src.strides()[0]) || !multiple_of_4(plan.dst.strides()[1])) {
+        return false;
+    }
+    node.set_atom(tiles::CopyAtom::TransposeSync);
+    node.set_bytes(8);
+    return true;
 }
 
 // Does @p block hold a single scalar `assign` copy (one in, one out, both access
@@ -213,7 +244,9 @@ void TileVectorizer::apply(builder::StructuredSDFGBuilder& builder, analysis::An
     collect(loop_.root());
 
     for (auto* tc : tile_copies) {
-        widen_tile_copy_node(*tc);
+        if (!widen_tile_copy_node(*tc)) {
+            transpose_tile_copy_node(*tc);
+        }
     }
 
     // Recompute each pipeline wait's loads_per_group from the (now widened) cp.async

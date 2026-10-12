@@ -330,6 +330,116 @@ TEST(ReduceTest, ScheduleType) {
     EXPECT_EQ(reduce_seq.schedule_type().value(), ScheduleType_Sequential::value());
 }
 
+namespace {
+
+void validate_rescaled_reduce(const std::vector<ReductionInfo>& reductions) {
+    builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+    types::Scalar int_type(types::PrimitiveType::Int32);
+    types::Scalar float_type(types::PrimitiveType::Float);
+    builder.add_container("i", int_type);
+    builder.add_container("m", float_type);
+    builder.add_container("n", float_type);
+    builder.add_container("d", float_type);
+    builder.add_container("o", float_type);
+    auto& reduce = builder.add_reduce(
+        builder.subject().root(),
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::symbol("i"), symbolic::integer(10)),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
+        reductions,
+        ScheduleType_Sequential::create()
+    );
+    reduce.validate(builder.subject());
+}
+
+ReductionInfo rescaled(const std::string& container, const std::string& anchor, RescaleBase base = RescaleBase::E) {
+    return ReductionInfo{ReductionOperation::Add, container, SymEngine::null, anchor, base};
+}
+
+} // namespace
+
+TEST(ReduceTest, Rescale_Valid) {
+    // Online softmax (d) and a FlashAttention-style second dependent (o) on one anchor.
+    EXPECT_NO_THROW(
+        validate_rescaled_reduce({ReductionInfo{ReductionOperation::Max, "m"}, rescaled("d", "m"), rescaled("o", "m")})
+    );
+}
+
+TEST(ReduceTest, Rescale_AnchorMustExist) {
+    EXPECT_THROW(
+        validate_rescaled_reduce({ReductionInfo{ReductionOperation::Max, "m"}, rescaled("d", "n")}),
+        InvalidSDFGException
+    );
+    EXPECT_THROW(validate_rescaled_reduce({rescaled("d", "d")}), InvalidSDFGException);
+}
+
+TEST(ReduceTest, Rescale_AnchorMustBeMax) {
+    EXPECT_THROW(
+        validate_rescaled_reduce({ReductionInfo{ReductionOperation::Add, "m"}, rescaled("d", "m")}),
+        InvalidSDFGException
+    );
+}
+
+TEST(ReduceTest, Rescale_OnlyAdd) {
+    EXPECT_THROW(
+        validate_rescaled_reduce(
+            {ReductionInfo{ReductionOperation::Max, "m"},
+             ReductionInfo{ReductionOperation::Mul, "d", SymEngine::null, "m", RescaleBase::E}}
+        ),
+        InvalidSDFGException
+    );
+}
+
+TEST(ReduceTest, Rescale_NoChains) {
+    EXPECT_THROW(
+        validate_rescaled_reduce(
+            {ReductionInfo{ReductionOperation::Max, "m"},
+             ReductionInfo{ReductionOperation::Max, "n", SymEngine::null, "m", RescaleBase::E},
+             rescaled("d", "n")}
+        ),
+        InvalidSDFGException
+    );
+}
+
+TEST(ReduceTest, Rescale_BasesMustAgree) {
+    EXPECT_THROW(
+        validate_rescaled_reduce(
+            {ReductionInfo{ReductionOperation::Max, "m"}, rescaled("d", "m"), rescaled("o", "m", RescaleBase::Two)}
+        ),
+        InvalidSDFGException
+    );
+}
+
+TEST(ReduceTest, Rescale_AnchorRenamed) {
+    builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+    types::Scalar int_type(types::PrimitiveType::Int32);
+    builder.add_container("i", int_type);
+    auto& reduce = builder.add_reduce(
+        builder.subject().root(),
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::symbol("i"), symbolic::integer(10)),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
+        {ReductionInfo{ReductionOperation::Max, "m"}, rescaled("d", "m")},
+        ScheduleType_Sequential::create()
+    );
+    reduce.replace_reduction_container("m", "m2");
+    EXPECT_EQ(reduce.reductions()[0].container, "m2");
+    EXPECT_EQ(reduce.reductions()[1].rescale, "m2");
+
+    reduce.replace(symbolic::symbol("m2"), symbolic::symbol("m3"));
+    EXPECT_EQ(reduce.reductions()[1].rescale, "m3");
+}
+
+TEST(ReduceTest, RescaleBase_Strings) {
+    EXPECT_EQ(rescale_base_to_string(RescaleBase::E), "e");
+    EXPECT_EQ(rescale_base_to_string(RescaleBase::Two), "2");
+    EXPECT_EQ(rescale_base_from_string("e"), RescaleBase::E);
+    EXPECT_EQ(rescale_base_from_string("2"), RescaleBase::Two);
+    EXPECT_THROW(rescale_base_from_string("10"), InvalidSDFGException);
+}
+
 // Test Break and Continue structures
 TEST(BreakContinueTest, BasicStructure) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);

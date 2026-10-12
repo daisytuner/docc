@@ -13,10 +13,14 @@ class GpuMmaExpander : public passes::CodeLibNodeExpander<math::tensor::MatMulNo
 protected:
     const GpuArch* arch_;
     const MmaBlockSize* block_size_hint_ = nullptr;
+    const BlockCounts* wave_tile_hint_ = nullptr;
 
 public:
-    GpuMmaExpander(const GpuArch* arch, const MmaBlockSize* block_size_hint = nullptr)
-        : arch_(arch), CodeLibNodeExpander(math::tensor::LibraryNodeType_MatMul), block_size_hint_(block_size_hint) {
+    GpuMmaExpander(
+        const GpuArch* arch, const MmaBlockSize* block_size_hint = nullptr, const BlockCounts* wave_tile_hint = nullptr
+    )
+        : arch_(arch), CodeLibNodeExpander(math::tensor::LibraryNodeType_MatMul), block_size_hint_(block_size_hint),
+          wave_tile_hint_(wave_tile_hint) {
     }
 
     virtual ~GpuMmaExpander() = default;

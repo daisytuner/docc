@@ -44,6 +44,7 @@ set(SOURCE_FILES
     src/tiles/locality.cpp
     src/tiles/swizzle.cpp
     src/tiles/tile.cpp
+    src/tiles/bank_conflicts.cpp
     src/tiles/buffer_layout.cpp
     src/tiles/tiled_copy.cpp
     src/tiles/library_nodes/pipeline_node.cpp
@@ -148,8 +149,8 @@ set(SOURCE_FILES
     src/targets/rocm/rocm_arch.cpp
     src/targets/rocm/rocm_data_offloading_node.cpp
     src/targets/rocm/rocm_map_dispatcher.cpp
-    src/targets/rocm/rocm_mma_dispatcher.cpp
-    src/targets/rocm/rocm_mfma_dispatcher.cpp
+    src/targets/rocm/rocm_mma_bare_dispatcher.cpp
+    src/targets/rocm/rocm_mma_fragment_dispatcher.cpp
     src/targets/rocm/rocm_mma_transform.cpp
     src/targets/rocm/rocm_offload_dispatcher_strategy.cpp
     src/targets/rocm/rocm_reduce_dispatcher.cpp

@@ -43,18 +43,22 @@ public:
     ) const override;
 
     std::optional<GpuMmaTiling> try_get_mma_tiling(
-        const MmaBlockSize& block_size, const symbolic::MultiExpression& res_shape, types::PrimitiveType acc_type
+        const MmaBlockSize& block_size,
+        const BlockCounts* wave_tile_hint,
+        const symbolic::MultiExpression& res_shape,
+        types::PrimitiveType acc_type
     ) const;
 
     std::optional<GpuMmaTiling> get_mma_tiling(
         const symbolic::MultiExpression& res_shape,
         types::PrimitiveType input_type,
         types::PrimitiveType acc_type,
-        const MmaBlockSize* block_size_hint
+        const MmaBlockSize* block_size_hint,
+        const BlockCounts* wave_tile_hint
     ) const override;
 
     void set_mma_fragment_storage_type(
-        types::StorageType& storage_type, const GpuMmaTiling& tiling, MmaFragmentType type, MmaFragmentLayout layout
+        types::StorageType& storage_type, const GpuMmaTiling& size, MmaFragmentType type, MmaFragmentLayout layout
     ) const override;
 
     static bool is_mma_type(const types::StorageType& storage);

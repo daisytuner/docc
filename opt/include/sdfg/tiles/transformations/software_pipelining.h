@@ -37,10 +37,19 @@ class SoftwarePipelining : public Transformation {
     // synchronous. This keeps occupancy (fewer shared bytes) while still
     // overlapping the costlier operand's global load.
     bool single_operand_;
+    // Register-staged mode: keep one shared buffer and split each staging copy into a
+    // load into registers (issued for panel p+1 before compute p) and a store into the
+    // buffer after compute p, fenced by barriers:
+    //   prologue: copy panel 0; barrier
+    //   for p: [p+1 < n: load p+1 -> regs]; compute p; barrier; [p+1 < n: regs -> buf]; barrier
+    bool register_staged_;
 
 public:
     explicit SoftwarePipelining(
-        structured_control_flow::StructuredLoop& loop, size_t stages = 2, bool single_operand = false
+        structured_control_flow::StructuredLoop& loop,
+        size_t stages = 2,
+        bool single_operand = false,
+        bool register_staged = false
     );
 
     virtual std::string name() const override;

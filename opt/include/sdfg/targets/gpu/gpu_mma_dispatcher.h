@@ -54,7 +54,8 @@ public:
         const std::string& base,
         const GpuMmaFromMemoryLayout& layout,
         MmaFragmentType frag_type,
-        types::PrimitiveType element_type
+        types::PrimitiveType element_type,
+        MmaFragmentLayout fragment_layout
     ) const = 0;
 
     /// Store the fragment behind @p frag to memory (base + layout).

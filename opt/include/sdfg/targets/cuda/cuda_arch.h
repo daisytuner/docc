@@ -42,7 +42,7 @@ struct CudaMmaSupport : public GpuMmaSupport {
 
 protected:
     static constexpr MmaBlockSize DEFAULT_BLOCK_SIZE = {16, 16, 16};
-    static constexpr int THREADS_PER_BLOCK = 32;
+    static constexpr int THREADS_PER_WAVEFRONT = 32;
 
 public:
     static constexpr const char* MMA_STORAGE_TYPE = "CUDA_MMA";
@@ -62,10 +62,12 @@ public:
         const symbolic::MultiExpression& res_shape,
         types::PrimitiveType input_type,
         types::PrimitiveType acc_type,
-        const MmaBlockSize* block_size_hint
+        const MmaBlockSize* block_size_hint,
+        const BlockCounts* wave_tile_hint
     ) const override;
+
     void set_mma_fragment_storage_type(
-        types::StorageType& storage_type, const GpuMmaTiling& tiling, MmaFragmentType type, MmaFragmentLayout layout
+        types::StorageType& storage_type, const GpuMmaTiling& size, MmaFragmentType type, MmaFragmentLayout layout
     ) const override;
 
     std::vector<MmaBlockSize>
