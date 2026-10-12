@@ -1,5 +1,6 @@
 #include "py_structured_sdfg.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -594,6 +595,26 @@ std::string PyStructuredSDFG::compile(
     fs::path build_path(output_folder);
     if (!fs::exists(build_path)) {
         fs::create_directories(build_path);
+    }
+
+    auto codegens = docc::target::target_codegens(docc_context_.get_target_handler(target));
+    auto selected = std::find_if(codegens.begin(), codegens.end(), [&](const docc::target::TargetCodegen& candidate) {
+        return candidate.name == codegen;
+    });
+    if (selected == codegens.end()) {
+        throw std::runtime_error("Target '" + target + "' does not support codegen '" + codegen + "'");
+    }
+    if (selected->compile) {
+        docc::target::CodegenRequest request{
+            .output_folder = output_folder,
+            .instrumentation_mode = instrumentation_mode,
+            .capture_args = capture_args,
+            .debug_build = debug_build,
+            .threads = threads,
+            .reuse_sources = reuse_sources,
+            .options = &options_,
+        };
+        return selected->compile(*sdfg_, request);
     }
 
     if (codegen == "numpy") {

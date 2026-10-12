@@ -4,6 +4,7 @@ import os
 import re
 import warnings
 from docc.sdfg import Scalar, Array, Pointer, Structure, PrimitiveType
+from docc.compiler.codegens import is_python_module, load_artifact
 
 import numpy as np
 import ml_dtypes
@@ -326,17 +327,25 @@ class CompiledSDFG:
         device_backend=None,
         target=None,
         sort_output_args=True,
+        codegen=None,
     ):
         self.lib_path = lib_path
         self.sdfg = sdfg
         self.shape_sources = shape_sources or []
         self.structure_member_info = structure_member_info or {}
-        # The numpy codegen produces a Python module instead of a shared library.
-        self._module = None
-        if str(lib_path).endswith(".py"):
+        # The numpy codegen and some targets' codegens produce Python modules instead of a shared library.
+        if target is not None and codegen is not None:
+            self._pythonic = is_python_module(target, codegen)
+            func = load_artifact(target, codegen, str(lib_path), sdfg.name)
+        else:
+            self._pythonic = str(lib_path).endswith(".py")
+            func = None
+        if func is not None:
             self.lib = None
-            self._module = _load_python_module(lib_path)
-            self.func = getattr(self._module, sdfg.name)
+            self.func = func
+        elif self._pythonic:
+            self.lib = None
+            self.func = getattr(_load_python_module(lib_path), sdfg.name)
         else:
             self.lib = ctypes.CDLL(lib_path)
             self.func = getattr(self.lib, sdfg.name)
@@ -387,7 +396,7 @@ class CompiledSDFG:
             ct_type = self._get_ctypes_type(arg_type)
             self.arg_types.append(ct_type)
 
-        if self._module is None:
+        if not self._pythonic:
             self.func.argtypes = self.arg_types
             self.func.restype = self._get_ctypes_type(sdfg.return_type)
 
@@ -957,7 +966,7 @@ class CompiledSDFG:
                 a.detach().cpu().contiguous().numpy() if _is_torch_tensor(a) else a
                 for a in args
             )
-        if self._module is not None:
+        if self._pythonic:
             return self._call_python(*args)
         return self._call_host(*args)
 

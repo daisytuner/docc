@@ -176,6 +176,12 @@ static DoccTarget rocm_target = {
     }
 };
 
+/// No target-specific mapping; it only declares the codegens a plain, unscheduled SDFG supports.
+static DoccTarget none_target = {
+    .short_name = "none",
+    .codegens = {cpp_codegen(), numpy_codegen()},
+};
+
 static DoccTarget sequential_target = {
     .short_name = "sequential",
     .apply_expand_time_mapping = [](sdfg::builder::StructuredSDFGBuilder& builder,
@@ -192,7 +198,8 @@ static DoccTarget sequential_target = {
         std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> schedulers;
         schedulers.push_back(std::make_shared<sdfg::passes::scheduler::VectorizeScheduler>());
         return schedulers;
-    }
+    },
+    .codegens = {cpp_codegen(), numpy_codegen()},
 };
 
 static DoccTarget openmp_target = {
@@ -234,6 +241,7 @@ static DoccTarget openmp_target = {
 void register_builtin_targets(sdfg::plugins::Context& context) {
     context.add_target(&cuda_target);
     context.add_target(&rocm_target);
+    context.add_target(&none_target);
     context.add_target(&sequential_target);
     context.add_target(&openmp_target);
 }
