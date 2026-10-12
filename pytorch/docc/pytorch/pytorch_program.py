@@ -298,6 +298,8 @@ class PyTorchProgram(DoccProgram):
         if docc_reuse_binaries:
             if self.options.codegen == "numpy":
                 lib_path = f"{output_folder_path}/__docc_{self.name}.py"
+            elif self.options.codegen == "axscript":
+                lib_path = f"{output_folder_path}/__docc_{self.name}.axs.py"
             else:
                 lib_path = f"{output_folder_path}/lib__docc_{self.name}.so"
             if not os.path.exists(lib_path):

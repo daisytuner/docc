@@ -112,7 +112,7 @@ public:
      * @param capture_args
      * @param debug_build build with debug info
      * @param threads number of threads to use for the compile. 0 or negative means auto (max. hardware threads)
-     * @param codegen "cpp" builds a shared library; "numpy" writes a Python module instead
+     * @param codegen "cpp" builds a shared library; "numpy" and "axscript" write a Python module instead
      * @return path of the shared library or Python module
      */
     std::string compile(
@@ -140,4 +140,7 @@ public:
 
     /// Generates the NumPy module, expanding library nodes that have no Python implementation.
     std::string to_python() const;
+
+    /// Generates the AxScript module of an SDFG scheduled for the "axelera" target.
+    std::string to_axscript() const;
 };

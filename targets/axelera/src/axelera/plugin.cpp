@@ -1,0 +1,45 @@
+#include "docc/target/axelera/plugin.h"
+
+#include <sdfg/plugins/targets.h>
+
+#include "docc/target/axelera/axelera_scheduler.h"
+#include "docc/target/axelera/datapath_dispatcher.h"
+#include "docc/target/axelera/schedule.h"
+
+namespace docc::target::axelera {
+
+namespace {
+
+DoccTarget axelera_target = {
+    .short_name = "axelera",
+    .apply_additional_compile_options = nullptr,
+    .apply_expand_time_mapping = nullptr,
+    .apply_sched_time_mapping = nullptr,
+    .get_target_loop_schedulers =
+        [](const TargetOptions& options) -> std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> {
+        return {std::make_shared<sdfg::passes::scheduler::AxeleraScheduler>()};
+    }
+};
+
+} // namespace
+
+void register_plugin(sdfg::plugins::Context& context) {
+    context.map_dispatcher_registry.register_map_dispatcher(
+        sdfg::axelera::ScheduleType_Axelera_Datapath::value(),
+        [](sdfg::codegen::LanguageExtension& language_extension,
+           sdfg::StructuredSDFG& sdfg,
+           sdfg::analysis::AnalysisManager& analysis_manager,
+           sdfg::structured_control_flow::Map& node,
+           sdfg::codegen::InstrumentationPlan& instrumentation_plan,
+           sdfg::codegen::ArgCapturePlan& arg_capture_plan) {
+            return std::make_unique<sdfg::axelera::DatapathDispatcher>(
+                language_extension, sdfg, analysis_manager, node, instrumentation_plan, arg_capture_plan
+            );
+        }
+    );
+    context.scheduler_registry.register_loop_scheduler<
+        sdfg::passes::scheduler::AxeleraScheduler>(sdfg::passes::scheduler::AxeleraScheduler::target());
+    context.add_target(&axelera_target);
+}
+
+} // namespace docc::target::axelera

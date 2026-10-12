@@ -331,12 +331,16 @@ class CompiledSDFG:
         self.sdfg = sdfg
         self.shape_sources = shape_sources or []
         self.structure_member_info = structure_member_info or {}
-        # The numpy codegen produces a Python module instead of a shared library.
-        self._module = None
-        if str(lib_path).endswith(".py"):
+        # The numpy and axscript codegens produce Python modules instead of a shared library.
+        self._pythonic = str(lib_path).endswith(".py")
+        if str(lib_path).endswith(".axs.py"):
+            from docc.axelera.emulator import load
+
             self.lib = None
-            self._module = _load_python_module(lib_path)
-            self.func = getattr(self._module, sdfg.name)
+            self.func = load(lib_path, sdfg.name)
+        elif self._pythonic:
+            self.lib = None
+            self.func = getattr(_load_python_module(lib_path), sdfg.name)
         else:
             self.lib = ctypes.CDLL(lib_path)
             self.func = getattr(self.lib, sdfg.name)
@@ -387,7 +391,7 @@ class CompiledSDFG:
             ct_type = self._get_ctypes_type(arg_type)
             self.arg_types.append(ct_type)
 
-        if self._module is None:
+        if not self._pythonic:
             self.func.argtypes = self.arg_types
             self.func.restype = self._get_ctypes_type(sdfg.return_type)
 
@@ -957,7 +961,7 @@ class CompiledSDFG:
                 a.detach().cpu().contiguous().numpy() if _is_torch_tensor(a) else a
                 for a in args
             )
-        if self._module is not None:
+        if self._pythonic:
             return self._call_python(*args)
         return self._call_host(*args)
 

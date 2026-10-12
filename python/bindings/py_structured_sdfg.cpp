@@ -81,6 +81,10 @@
 #include <docc/target/et/target.h>
 #endif
 
+#ifdef DOCC_HAS_TARGET_AXELERA
+#include <docc/target/axelera/axscript_code_generator.h>
+#endif
+
 namespace fs = std::filesystem;
 using json = nlohmann::json;
 
@@ -615,6 +619,15 @@ std::string PyStructuredSDFG::compile(
             std::ofstream(module_path) << to_python();
         }
         return module_path.string();
+    } else if (codegen == "axscript") {
+        if (!instrumentation_mode.empty() || capture_args) {
+            throw std::runtime_error("The axscript codegen supports neither instrumentation nor argument capture");
+        }
+        fs::path module_path = build_path / (sdfg_->name() + ".axs.py");
+        if (!reuse_sources || !fs::exists(module_path)) {
+            std::ofstream(module_path) << to_axscript();
+        }
+        return module_path.string();
     } else if (codegen != "cpp") {
         throw std::runtime_error("Unsupported codegen: " + codegen);
     }
@@ -826,4 +839,20 @@ std::string PyStructuredSDFG::to_python() const {
     std::ostringstream oss;
     generator.emit_main_source(oss, "");
     return oss.str();
+}
+
+std::string PyStructuredSDFG::to_axscript() const {
+#ifdef DOCC_HAS_TARGET_AXELERA
+    sdfg::analysis::AnalysisManager analysis_manager(*sdfg_, options_);
+    auto instrumentation_plan = sdfg::codegen::InstrumentationPlan::none(*sdfg_);
+    auto arg_capture_plan = sdfg::codegen::ArgCapturePlan::none(*sdfg_);
+    sdfg::axelera::AxScriptCodeGenerator generator(*sdfg_, analysis_manager, *instrumentation_plan, *arg_capture_plan);
+    generator.generate();
+
+    std::ostringstream oss;
+    generator.emit_main_source(oss, "");
+    return oss.str();
+#else
+    throw std::runtime_error("docc was built without the Axelera target");
+#endif
 }

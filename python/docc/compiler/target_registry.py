@@ -15,6 +15,7 @@ _target_codegen_registry: dict[str, frozenset[str]] = {}
 _BUILTIN_TARGET_CODEGENS: dict[str, frozenset[str]] = {
     "none": frozenset({"cpp", "numpy"}),
     "sequential": frozenset({"cpp", "numpy"}),
+    "axelera": frozenset({"axscript"}),
 }
 
 
@@ -89,6 +90,18 @@ def get_target_codegens(name: str) -> frozenset[str]:
     if name in _target_codegen_registry:
         return _target_codegen_registry[name]
     return _BUILTIN_TARGET_CODEGENS.get(name, frozenset({"cpp"}))
+
+
+def get_target_default_codegen(name: str) -> str:
+    """Codegen used when none is selected: "cpp" if supported, else the target's only codegen."""
+    codegens = get_target_codegens(name)
+    if "cpp" in codegens:
+        return "cpp"
+    if len(codegens) == 1:
+        return next(iter(codegens))
+    raise ValueError(
+        f"Target '{name}' supports the codegens {sorted(codegens)}; select one with codegen="
+    )
 
 
 def reset_target_registry() -> None:

@@ -360,6 +360,8 @@ class PythonProgram(DoccProgram):
         sdfg_name = f"{self.name}_sdfg"
         if self.options.codegen == "numpy":
             lib_path = os.path.join(output_folder, f"{sdfg_name}.py")
+        elif self.options.codegen == "axscript":
+            lib_path = os.path.join(output_folder, f"{sdfg_name}.axs.py")
         else:
             lib_path = os.path.join(output_folder, f"lib{sdfg_name}.so")
         json_path = os.path.join(output_folder, f"{sdfg_name}.py5.post_sched.json")

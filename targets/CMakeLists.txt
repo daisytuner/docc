@@ -8,3 +8,8 @@ option(DOCC_BUILD_TARGET_TENSTORRENT "Build Tenstorrent backend" ON)
 if(DOCC_BUILD_TARGET_TENSTORRENT)
     add_subdirectory(tenstorrent)
 endif()
+
+option(DOCC_BUILD_TARGET_AXELERA "Build Axelera (Metis/Europa) backend" ON)
+if(DOCC_BUILD_TARGET_AXELERA)
+    add_subdirectory(axelera)
+endif()

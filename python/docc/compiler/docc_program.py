@@ -24,6 +24,7 @@ from docc.compiler.target_registry import (
     get_target_compile_fn,
     get_target_expand_fn,
     get_target_codegens,
+    get_target_default_codegen,
     register_target_overrides,
 )
 
@@ -125,7 +126,9 @@ class DoccOptions:
 
         # Code generation
         if self.codegen is None:
-            self.codegen = os.environ.get("DOCC_CODEGEN") or "cpp"
+            self.codegen = os.environ.get("DOCC_CODEGEN") or get_target_default_codegen(
+                self.target
+            )
 
         # Debug
         if self.debug_dump is None:
@@ -472,6 +475,10 @@ class DoccProgram(ABC):
                 reuse_sources=reuse_sources,
                 codegen=self.options.codegen,
             )
+            if self.options.codegen == "axscript":
+                from docc.axelera.toolchain import build
+
+                build(lib_path, sdfg.name)
 
         bin_build_time = time.perf_counter() - compile_end_time
         if metrics is not None:

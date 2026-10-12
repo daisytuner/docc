@@ -64,6 +64,9 @@
 #ifdef DOCC_HAS_TARGET_ET
 #include <docc/target/et/target.h>
 #endif
+#ifdef DOCC_HAS_TARGET_AXELERA
+#include <docc/target/axelera/plugin.h>
+#endif
 #include <docc/target/tenstorrent/target.h>
 #include "boost/stacktrace/stacktrace.hpp"
 #include "targets/target_mapping.h"
@@ -112,6 +115,9 @@ PYBIND11_MODULE(_sdfg, m) {
     docc::target::et::register_plugin(docc_context);
 #endif
     docc::target::tenstorrent::register_plugin(docc_context);
+#ifdef DOCC_HAS_TARGET_AXELERA
+    docc::target::axelera::register_plugin(docc_context);
+#endif
 
     // Discovery: enumerate registered options so the frontend (DoccOptions)
     // can accept and validate them without hardcoding each one.
@@ -413,7 +419,8 @@ PYBIND11_MODULE(_sdfg, m) {
         .def("to_json", &PyStructuredSDFG::to_json, "Serialize the SDFG to a JSON string")
         .def("to_dot", &PyStructuredSDFG::to_dot, "Serialize the SDFG to a DOT graph string")
         .def("to_cpp", &PyStructuredSDFG::to_cpp, "Generate C++ code from the SDFG")
-        .def("to_python", &PyStructuredSDFG::to_python, "Generate a NumPy module from the SDFG");
+        .def("to_python", &PyStructuredSDFG::to_python, "Generate a NumPy module from the SDFG")
+        .def("to_axscript", &PyStructuredSDFG::to_axscript, "Generate an AxScript module from the SDFG");
 
     // Register StructuredSDFGBuilder class
     py::class_<PyStructuredSDFGBuilder>(m, "StructuredSDFGBuilder")
