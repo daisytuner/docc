@@ -87,12 +87,23 @@ TEST(PythonCodeGeneratorTest, LocalsAreAllocatedWithNumpy) {
         f32
     );
     builder.add_container("tmp", heap);
+    builder.add_container(
+        "mask",
+        types::Pointer(
+            types::StorageType::
+                CPU_Heap(N, types::StorageType::AllocationType::Managed, types::StorageType::AllocationType::Managed),
+            0,
+            "",
+            types::Scalar(types::PrimitiveType::Bool)
+        )
+    );
     builder.add_container("tile", types::Array(types::Array(f32, symbolic::integer(4)), symbolic::integer(8)));
     builder.add_container("view", types::Pointer(f32));
 
     auto sdfg = builder.move();
     auto code = generate_python(*sdfg);
     EXPECT_NE(code.find("tmp = np.zeros(_docc_idiv(4*N, 4), np.float32)\n"), std::string::npos) << code;
+    EXPECT_NE(code.find("mask = np.zeros(_docc_idiv(N, 1), np.bool_)\n"), std::string::npos) << code;
     EXPECT_NE(code.find("tile = np.zeros((8, 4,), np.float32)\n"), std::string::npos) << code;
     EXPECT_NE(code.find("view = None\n"), std::string::npos) << code;
 }
@@ -143,6 +154,33 @@ TEST(PythonCodeGeneratorTest, KeywordConnectorsAreEscaped) {
     EXPECT_NE(code.find("y = out\n"), std::string::npos) << code;
 }
 
+TEST(PythonCodeGeneratorTest, SymbolAssignmentConvertsToContainerType) {
+    builder::StructuredSDFGBuilder builder("narrow", FunctionType_CPU);
+    builder.add_container("x", types::Scalar(types::PrimitiveType::Int64), true);
+    builder.add_container("n", types::Scalar(types::PrimitiveType::Int8));
+    builder.add_assignments(builder.subject().root(), {{symbolic::symbol("n"), symbolic::symbol("x")}});
+
+    auto sdfg = builder.move();
+    auto code = generate_python(*sdfg);
+    EXPECT_NE(code.find("n = _docc_cast(np.int8, x)\n"), std::string::npos) << code;
+}
+
+TEST(PythonCodeGeneratorTest, ReferenceIntoFlatBufferIsView) {
+    builder::StructuredSDFGBuilder builder("ref", FunctionType_CPU);
+    types::Scalar f64(types::PrimitiveType::Double);
+    types::Pointer ptr(f64);
+    builder.add_container("b", ptr, true);
+    builder.add_container("p", ptr);
+    auto& block = builder.add_block(builder.subject().root());
+    builder.add_reference_memlet(
+        block, builder.add_access(block, "b"), builder.add_access(block, "p"), {symbolic::integer(10)}, ptr
+    );
+
+    auto sdfg = builder.move();
+    auto code = generate_python(*sdfg);
+    EXPECT_NE(code.find("p = (b)[10:]\n"), std::string::npos) << code;
+}
+
 TEST(PythonCodeGeneratorTest, RejectsLibraryNodes) {
     builder::StructuredSDFGBuilder builder("lib", FunctionType_CPU);
     auto& block = builder.add_block(builder.subject().root());
@@ -167,6 +205,24 @@ TEST(PythonCodeGeneratorTest, RejectsParallelSchedules) {
 
     auto sdfg = builder.move();
     EXPECT_THROW(generate_python(*sdfg), std::runtime_error);
+}
+
+TEST(PythonCodeGeneratorTest, VectorizedMapRunsSequentially) {
+    builder::StructuredSDFGBuilder builder("vec", FunctionType_CPU);
+    builder.add_container("i", types::Scalar(types::PrimitiveType::Int64));
+    auto i = symbolic::symbol("i");
+    builder.add_map(
+        builder.subject().root(),
+        i,
+        symbolic::Lt(i, symbolic::integer(8)),
+        symbolic::integer(0),
+        symbolic::add(i, symbolic::integer(1)),
+        structured_control_flow::ScheduleType("VECTORIZE", structured_control_flow::ScheduleTypeCategory::Vectorizer)
+    );
+
+    auto sdfg = builder.move();
+    auto code = generate_python(*sdfg);
+    EXPECT_NE(code.find("for i in range(0, 8):\n"), std::string::npos) << code;
 }
 
 TEST(PythonCodeGeneratorTest, RejectsInstrumentation) {
