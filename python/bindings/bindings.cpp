@@ -336,6 +336,13 @@ PYBIND11_MODULE(_sdfg, m) {
             "Get native pointer to StructuredSDFG for external plugin use"
         )
         .def_property_readonly(
+            "_options_ptr",
+            [](PyStructuredSDFG& self) {
+                return reinterpret_cast<uintptr_t>(&self.options());
+            },
+            "Get native pointer to the SDFG's sdfg::Options for external plugin use"
+        )
+        .def_property_readonly(
             "root",
             [](PyStructuredSDFG& self) -> sdfg::structured_control_flow::Sequence& {
                 return self.root();
@@ -1386,6 +1393,26 @@ PYBIND11_MODULE(_sdfg, m) {
             return reinterpret_cast<uintptr_t>(&docc_context);
         },
         "Get native pointer to the global plugin context"
+    );
+
+    m.def(
+        "target_codegens",
+        [](const std::string& target) {
+            py::list result;
+            for (auto& codegen : docc::target::target_codegens(docc_context.get_target_handler(target))) {
+                py::dict entry;
+                entry["name"] = codegen.name;
+                entry["artifact"] = codegen.artifact;
+                entry["kind"] = codegen.kind == docc::target::ArtifactKind::PythonModule ? "python_module"
+                                                                                         : "shared_library";
+                entry["loader"] = codegen.loader;
+                entry["build"] = codegen.build;
+                result.append(entry);
+            }
+            return result;
+        },
+        py::arg("target"),
+        "Codegens the target supports, default first, as dicts of name, artifact, kind, loader and build"
     );
 
     m.def(

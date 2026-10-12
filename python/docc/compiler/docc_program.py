@@ -9,7 +9,6 @@ import warnings
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, fields
-from functools import lru_cache
 from typing import Any, Dict, Optional, get_args, get_type_hints
 
 from docc.sdfg import (
@@ -25,15 +24,16 @@ from docc.sdfg._sdfg import (
     _statistics_report,
 )
 from docc.compiler.compiled_sdfg import CompiledSDFG
-from docc.compiler.target_registry import (
-    get_target_compile_fn,
+from docc.compiler.codegens import (
+    build_artifact,
     get_target_codegens,
+    get_target_default_codegen,
 )
 
 
-@lru_cache(maxsize=1)
 def _pass_option_specs() -> Dict[str, dict]:
     """Registered pass options keyed by full key (empty if unavailable)."""
+    # Not cached: target plugins register their options when they are loaded.
     return {spec["key"]: spec for spec in registered_options()}
 
 
@@ -141,7 +141,9 @@ class DoccOptions:
 
         # Code generation
         if self.codegen is None:
-            self.codegen = os.environ.get("DOCC_CODEGEN") or "cpp"
+            self.codegen = os.environ.get("DOCC_CODEGEN") or get_target_default_codegen(
+                self.target
+            )
 
         # Debug
         if self.debug_dump is None:
@@ -466,30 +468,17 @@ class DoccProgram(ABC):
                 "sdfg_compile_time_ms", round(sdfg_opt_time * 1000), "compile_times"
             )
 
-        custom_compile_fn = get_target_compile_fn(self.options.target)
-        if custom_compile_fn is not None:
-            lib_path = custom_compile_fn(
-                sdfg,
-                output_folder,
-                self.options.instrumentation_mode,
-                self.options.capture_args,
-                {
-                    "debug_build": self.options.debug_build,
-                    "threads": self.options.build_thread_count,
-                    "codegen": self.options.codegen,
-                },
-            )
-        else:
-            lib_path = sdfg._compile(
-                output_folder=output_folder,
-                target=self.options.target,
-                instrumentation_mode=self.options.instrumentation_mode,
-                capture_args=self.options.capture_args,
-                debug_build=self.options.debug_build,
-                threads=self.options.build_thread_count,
-                reuse_sources=reuse_sources,
-                codegen=self.options.codegen,
-            )
+        lib_path = sdfg._compile(
+            output_folder=output_folder,
+            target=self.options.target,
+            instrumentation_mode=self.options.instrumentation_mode,
+            capture_args=self.options.capture_args,
+            debug_build=self.options.debug_build,
+            threads=self.options.build_thread_count,
+            reuse_sources=reuse_sources,
+            codegen=self.options.codegen,
+        )
+        build_artifact(self.options.target, self.options.codegen, lib_path, sdfg.name)
 
         bin_build_time = time.perf_counter() - compile_end_time
         if metrics is not None:
