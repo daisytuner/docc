@@ -590,6 +590,10 @@ public:
         const sdfg::types::Tensor& X_type,
         const std::string& Alpha,
         const sdfg::types::Scalar& Alpha_type,
+        const std::string& Scale,
+        const sdfg::types::Scalar& Scale_type,
+        const std::string& InputScale,
+        const sdfg::types::Scalar& InputScale_type,
         const std::string& Y,
         const sdfg::types::Tensor& Y_type,
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
