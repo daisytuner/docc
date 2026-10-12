@@ -7,6 +7,7 @@
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/cuda/cuda.h"
 #include "sdfg/targets/cuda/cuda_data_offloading_node.h"
+#include "sdfg/targets/cuda/plugin.h"
 #include "sdfg/targets/offloading/data_offloading_node.h"
 #include "symengine/symengine_rcp.h"
 
@@ -787,6 +788,248 @@ TEST(CUDAScheduleTypeTest, ScheduleTypeTest) {
 
     ScheduleType_CUDA::block_size(cuda_schedule, symbolic::integer(256));
     EXPECT_TRUE(symbolic::eq(ScheduleType_CUDA::block_size(cuda_schedule), symbolic::integer(256)));
+}
+
+TEST(CuBlasTest, GemmNodeWithoutDataTransfers_DoublePrecisionNoThrow) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+
+    int dim_i = 10;
+    int dim_j = 20;
+    int dim_k = 30;
+
+    types::Scalar desc(types::PrimitiveType::Double);
+    types::Array arr_a_type(desc, symbolic::mul(symbolic::integer(dim_k), symbolic::integer(dim_i)));
+    types::Array arr_b_type(desc, symbolic::mul(symbolic::integer(dim_j), symbolic::integer(dim_k)));
+    types::Array arr_res_type(desc, symbolic::mul(symbolic::integer(dim_j), symbolic::integer(dim_i)));
+
+    builder.add_container("arr_a", arr_a_type);
+    builder.add_container("arr_b", arr_b_type);
+    builder.add_container("output", arr_res_type);
+
+    auto& block = builder.add_block(sdfg.root());
+
+    auto& input_a_node = builder.add_access(block, "arr_a");
+    auto& input_b_node = builder.add_access(block, "arr_b");
+    auto& dummy_input_node = builder.add_access(block, "output");
+    auto& gemm_node = static_cast<math::blas::GEMMNode&>(builder.add_library_node<math::blas::GEMMNode>(
+        block,
+        DebugInfo(),
+        cuda::ImplementationType_CUDAWithoutTransfers,
+        math::blas::BLAS_Precision::d,
+        math::blas::BLAS_Layout::RowMajor,
+        math::blas::BLAS_Transpose::No,
+        math::blas::BLAS_Transpose::No,
+        symbolic::integer(dim_i),
+        symbolic::integer(dim_j),
+        symbolic::integer(dim_k),
+        symbolic::integer(dim_j),
+        symbolic::integer(dim_k),
+        symbolic::integer(dim_j)
+    ));
+
+    auto& alpha_node = builder.add_constant(block, "2.0", desc);
+    auto& beta_node = builder.add_constant(block, "1.0", desc);
+
+    builder.add_computational_memlet(block, input_a_node, gemm_node, "__A", {symbolic::integer(0)}, arr_a_type);
+    builder.add_computational_memlet(block, input_b_node, gemm_node, "__B", {symbolic::integer(0)}, arr_b_type);
+    builder.add_computational_memlet(block, dummy_input_node, gemm_node, "__C", {symbolic::integer(0)}, arr_res_type);
+    builder.add_computational_memlet(block, alpha_node, gemm_node, "__alpha", {}, desc);
+    builder.add_computational_memlet(block, beta_node, gemm_node, "__beta", {}, desc);
+
+    // Use a local registry so the test is isolated from global plugin state.
+    codegen::LibraryNodeDispatcherRegistry local_registry;
+    plugins::Context ctx{
+        serializer::LibraryNodeSerializerRegistry::instance(),
+        codegen::NodeDispatcherRegistry::instance(),
+        codegen::MapDispatcherRegistry::instance(),
+        codegen::ReduceDispatcherRegistry::instance(),
+        local_registry,
+        passes::scheduler::SchedulerRegistry::instance(),
+        tiles::TileTargetRegistry::instance()
+    };
+    cuda::register_cuda_plugin(ctx);
+
+    auto dispatcher_fn = local_registry.get_library_node_dispatcher(
+        math::blas::LibraryNodeType_GEMM.value() + "::" + cuda::ImplementationType_CUDAWithoutTransfers.value()
+    );
+    ASSERT_NE(dispatcher_fn, nullptr);
+
+    codegen::CLanguageExtension language_extension(sdfg);
+    auto dispatcher = dispatcher_fn(language_extension, sdfg, block.dataflow(), gemm_node);
+
+    codegen::PrettyPrinter stream;
+    codegen::PrettyPrinter globals_stream;
+    codegen::CodeSnippetFactory snippet_factory;
+
+    EXPECT_NO_THROW(dispatcher->dispatch(stream, globals_stream, snippet_factory));
+}
+
+TEST(CuBlasTest, GemmNodeWithoutDataTransfers_HalfPrecisionEmitsHgemm) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+
+    int dim_i = 10;
+    int dim_j = 20;
+    int dim_k = 30;
+
+    types::Scalar desc(types::PrimitiveType::Half);
+    types::Array arr_a_type(desc, symbolic::mul(symbolic::integer(dim_k), symbolic::integer(dim_i)));
+    types::Array arr_b_type(desc, symbolic::mul(symbolic::integer(dim_j), symbolic::integer(dim_k)));
+    types::Array arr_res_type(desc, symbolic::mul(symbolic::integer(dim_j), symbolic::integer(dim_i)));
+
+    builder.add_container("arr_a", arr_a_type);
+    builder.add_container("arr_b", arr_b_type);
+    builder.add_container("output", arr_res_type);
+
+    auto& block = builder.add_block(sdfg.root());
+
+    auto& input_a_node = builder.add_access(block, "arr_a");
+    auto& input_b_node = builder.add_access(block, "arr_b");
+    auto& dummy_input_node = builder.add_access(block, "output");
+    auto& gemm_node = static_cast<math::blas::GEMMNode&>(builder.add_library_node<math::blas::GEMMNode>(
+        block,
+        DebugInfo(),
+        cuda::ImplementationType_CUDAWithoutTransfers,
+        math::blas::BLAS_Precision::h,
+        math::blas::BLAS_Layout::RowMajor,
+        math::blas::BLAS_Transpose::No,
+        math::blas::BLAS_Transpose::No,
+        symbolic::integer(dim_i),
+        symbolic::integer(dim_j),
+        symbolic::integer(dim_k),
+        symbolic::integer(dim_j),
+        symbolic::integer(dim_k),
+        symbolic::integer(dim_j)
+    ));
+
+    auto& alpha_node = builder.add_constant(block, "2.0", desc);
+    auto& beta_node = builder.add_constant(block, "1.0", desc);
+
+    builder.add_computational_memlet(block, input_a_node, gemm_node, "__A", {symbolic::integer(0)}, arr_a_type);
+    builder.add_computational_memlet(block, input_b_node, gemm_node, "__B", {symbolic::integer(0)}, arr_b_type);
+    builder.add_computational_memlet(block, dummy_input_node, gemm_node, "__C", {symbolic::integer(0)}, arr_res_type);
+    builder.add_computational_memlet(block, alpha_node, gemm_node, "__alpha", {}, desc);
+    builder.add_computational_memlet(block, beta_node, gemm_node, "__beta", {}, desc);
+
+    // Use a local registry so the test is isolated from global plugin state.
+    codegen::LibraryNodeDispatcherRegistry local_registry;
+    plugins::Context ctx{
+        serializer::LibraryNodeSerializerRegistry::instance(),
+        codegen::NodeDispatcherRegistry::instance(),
+        codegen::MapDispatcherRegistry::instance(),
+        codegen::ReduceDispatcherRegistry::instance(),
+        local_registry,
+        passes::scheduler::SchedulerRegistry::instance(),
+        tiles::TileTargetRegistry::instance()
+    };
+    cuda::register_cuda_plugin(ctx);
+
+    auto dispatcher_fn = local_registry.get_library_node_dispatcher(
+        math::blas::LibraryNodeType_GEMM.value() + "::" + cuda::ImplementationType_CUDAWithoutTransfers.value()
+    );
+    ASSERT_NE(dispatcher_fn, nullptr);
+
+    codegen::CLanguageExtension language_extension(sdfg);
+    auto dispatcher = dispatcher_fn(language_extension, sdfg, block.dataflow(), gemm_node);
+
+    codegen::PrettyPrinter stream;
+    codegen::PrettyPrinter globals_stream;
+    codegen::CodeSnippetFactory snippet_factory;
+
+    ASSERT_NO_THROW(dispatcher->dispatch(stream, globals_stream, snippet_factory));
+
+    const std::string code = stream.str();
+    // Half precision must select the cublasHgemm entry point ...
+    EXPECT_NE(code.find("cublasHgemm"), std::string::npos);
+    // ... binding the _Float16 scalars/buffers to correctly-typed __half locals.
+    EXPECT_NE(code.find("const __half* alpha_h = reinterpret_cast<const __half*>(&__alpha);"), std::string::npos);
+    EXPECT_NE(code.find("const __half* beta_h = reinterpret_cast<const __half*>(&__beta);"), std::string::npos);
+    EXPECT_NE(code.find("__half* C_h = reinterpret_cast<__half*>(__C);"), std::string::npos);
+}
+
+TEST(CuBlasTest, GemmNodeWithDataTransfers_HalfPrecisionUsesHalfBuffers) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+
+    int dim_i = 10;
+    int dim_j = 20;
+    int dim_k = 30;
+
+    types::Scalar desc(types::PrimitiveType::Half);
+    types::Array arr_a_type(desc, symbolic::mul(symbolic::integer(dim_k), symbolic::integer(dim_i)));
+    types::Array arr_b_type(desc, symbolic::mul(symbolic::integer(dim_j), symbolic::integer(dim_k)));
+    types::Array arr_res_type(desc, symbolic::mul(symbolic::integer(dim_j), symbolic::integer(dim_i)));
+
+    builder.add_container("arr_a", arr_a_type);
+    builder.add_container("arr_b", arr_b_type);
+    builder.add_container("output", arr_res_type);
+
+    auto& block = builder.add_block(sdfg.root());
+
+    auto& input_a_node = builder.add_access(block, "arr_a");
+    auto& input_b_node = builder.add_access(block, "arr_b");
+    auto& dummy_input_node = builder.add_access(block, "output");
+    auto& gemm_node = static_cast<math::blas::GEMMNode&>(builder.add_library_node<math::blas::GEMMNode>(
+        block,
+        DebugInfo(),
+        cuda::ImplementationType_CUDAWithTransfers,
+        math::blas::BLAS_Precision::h,
+        math::blas::BLAS_Layout::RowMajor,
+        math::blas::BLAS_Transpose::No,
+        math::blas::BLAS_Transpose::No,
+        symbolic::integer(dim_i),
+        symbolic::integer(dim_j),
+        symbolic::integer(dim_k),
+        symbolic::integer(dim_j),
+        symbolic::integer(dim_k),
+        symbolic::integer(dim_j)
+    ));
+
+    auto& alpha_node = builder.add_constant(block, "2.0", desc);
+    auto& beta_node = builder.add_constant(block, "1.0", desc);
+
+    builder.add_computational_memlet(block, input_a_node, gemm_node, "__A", {symbolic::integer(0)}, arr_a_type);
+    builder.add_computational_memlet(block, input_b_node, gemm_node, "__B", {symbolic::integer(0)}, arr_b_type);
+    builder.add_computational_memlet(block, dummy_input_node, gemm_node, "__C", {symbolic::integer(0)}, arr_res_type);
+    builder.add_computational_memlet(block, alpha_node, gemm_node, "__alpha", {}, desc);
+    builder.add_computational_memlet(block, beta_node, gemm_node, "__beta", {}, desc);
+
+    // Use a local registry so the test is isolated from global plugin state.
+    codegen::LibraryNodeDispatcherRegistry local_registry;
+    plugins::Context ctx{
+        serializer::LibraryNodeSerializerRegistry::instance(),
+        codegen::NodeDispatcherRegistry::instance(),
+        codegen::MapDispatcherRegistry::instance(),
+        codegen::ReduceDispatcherRegistry::instance(),
+        local_registry,
+        passes::scheduler::SchedulerRegistry::instance(),
+        tiles::TileTargetRegistry::instance()
+    };
+    cuda::register_cuda_plugin(ctx);
+
+    auto dispatcher_fn = local_registry.get_library_node_dispatcher(
+        math::blas::LibraryNodeType_GEMM.value() + "::" + cuda::ImplementationType_CUDAWithTransfers.value()
+    );
+    ASSERT_NE(dispatcher_fn, nullptr);
+
+    codegen::CLanguageExtension language_extension(sdfg);
+    auto dispatcher = dispatcher_fn(language_extension, sdfg, block.dataflow(), gemm_node);
+
+    codegen::PrettyPrinter stream;
+    codegen::PrettyPrinter globals_stream;
+    codegen::CodeSnippetFactory snippet_factory;
+
+    ASSERT_NO_THROW(dispatcher->dispatch(stream, globals_stream, snippet_factory));
+
+    const std::string code = stream.str();
+    // Device buffers mirror the half type so cudaMemcpy stays type-consistent.
+    EXPECT_NE(code.find("half *dA, *dB, *dC;"), std::string::npos);
+    // The cublas call still goes through cublasHgemm with correctly-typed device pointers.
+    EXPECT_NE(code.find("cublasHgemm"), std::string::npos);
+    EXPECT_NE(code.find("const __half* A_h = reinterpret_cast<const __half*>(dB);"), std::string::npos);
+    EXPECT_NE(code.find("const __half* B_h = reinterpret_cast<const __half*>(dA);"), std::string::npos);
+    EXPECT_NE(code.find("__half* C_h = reinterpret_cast<__half*>(dC);"), std::string::npos);
 }
 
 } // namespace sdfg::cuda
