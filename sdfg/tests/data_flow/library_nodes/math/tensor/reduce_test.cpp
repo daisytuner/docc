@@ -4,6 +4,7 @@
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/library_nodes/math/cmath/cmath_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/reduce_ops/mean_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/reduce_ops/softmax_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/reduce_ops/std_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/reduce_ops/sum_node.h"
 #include "sdfg/data_flow/library_nodes/stdlib/malloc.h"
@@ -560,4 +561,77 @@ TEST(ReduceTest, StdNode_1D) {
     // Check last block (Sqrt)
     auto& sqrt_block = dyn_cast<structured_control_flow::Block&>(repl_seq.at(6));
     EXPECT_EQ(sqrt_block.dataflow().library_nodes().size(), 1);
+}
+
+namespace {
+
+void collect_reduces(structured_control_flow::Sequence& seq, std::vector<structured_control_flow::Reduce*>& out) {
+    for (size_t i = 0; i < seq.size(); ++i) {
+        auto& child = seq.at(i);
+        if (auto* reduce = dyn_cast<structured_control_flow::Reduce*>(&child)) {
+            out.push_back(reduce);
+        }
+        if (auto* loop = dyn_cast<structured_control_flow::StructuredLoop*>(&child)) {
+            collect_reduces(loop->root(), out);
+        } else if (auto* nested = dyn_cast<structured_control_flow::Sequence*>(&child)) {
+            collect_reduces(*nested, out);
+        }
+    }
+}
+
+std::vector<structured_control_flow::Reduce*> expand_softmax(builder::StructuredSDFGBuilder& builder, bool online) {
+    auto& sdfg = builder.subject();
+    types::Scalar desc(types::PrimitiveType::Float);
+    types::Pointer desc_ptr(desc);
+    builder.add_container("x", desc_ptr);
+    builder.add_container("y", desc_ptr);
+
+    auto& block = builder.add_block(sdfg.root());
+    auto& x_node = builder.add_access(block, "x");
+    auto& y_node = builder.add_access(block, "y");
+    std::vector<symbolic::Expression> shape = {symbolic::integer(8), symbolic::integer(64)};
+    types::Tensor tensor(desc.primitive_type(), shape);
+    auto& softmax =
+        builder.add_library_node<math::tensor::SoftmaxNode>(block, DebugInfo(), shape, std::vector<int64_t>{-1}, false);
+    builder.add_computational_memlet(block, y_node, softmax, "Y", {}, tensor, block.debug_info());
+    builder.add_computational_memlet(block, x_node, softmax, "X", {}, tensor, block.debug_info());
+
+    Options options;
+    options.set(std::string(passes::LibraryNodeExpansionPass<>::ONLINE_SOFTMAX.key), OptionValue{online});
+    analysis::AnalysisManager analysis_manager(sdfg, options);
+    passes::LibraryNodeExpansionPass<> pass(options);
+    EXPECT_TRUE(pass.run(builder, analysis_manager));
+    EXPECT_NO_THROW(sdfg.validate());
+
+    std::vector<structured_control_flow::Reduce*> reduces;
+    collect_reduces(sdfg.root(), reduces);
+    return reduces;
+}
+
+} // namespace
+
+TEST(ReduceTest, SoftmaxNode_Online_RescaledReduce) {
+    builder::StructuredSDFGBuilder builder("sdfg_softmax_online", FunctionType_CPU);
+    auto reduces = expand_softmax(builder, true);
+
+    // The single statistics pass: a max anchor plus the denominator rescaled by exp(max).
+    ASSERT_EQ(reduces.size(), 1u);
+    const auto& reductions = reduces[0]->reductions();
+    ASSERT_EQ(reductions.size(), 2u);
+    EXPECT_EQ(reductions[0].operation, structured_control_flow::ReductionOperation::Max);
+    EXPECT_TRUE(reductions[0].rescale.empty());
+    EXPECT_EQ(reductions[1].operation, structured_control_flow::ReductionOperation::Add);
+    EXPECT_EQ(reductions[1].rescale, reductions[0].container);
+    EXPECT_EQ(reductions[1].rescale_base, structured_control_flow::RescaleBase::E);
+}
+
+TEST(ReduceTest, SoftmaxNode_ThreePass_PlainReduces) {
+    builder::StructuredSDFGBuilder builder("sdfg_softmax_three_pass", FunctionType_CPU);
+    auto reduces = expand_softmax(builder, false);
+
+    ASSERT_EQ(reduces.size(), 2u);
+    for (auto* reduce : reduces) {
+        ASSERT_EQ(reduce->reductions().size(), 1u);
+        EXPECT_TRUE(reduce->reductions()[0].rescale.empty());
+    }
 }

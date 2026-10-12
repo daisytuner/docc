@@ -56,6 +56,14 @@ bool GPUOffloadTransform<OffloaderNodeType>::reduction_buffers_supported(analysi
             }
         }
     }
+    // A rescaled (max-anchored) group has no cross-block combine.
+    if (auto* reduce = dynamic_cast<structured_control_flow::Reduce*>(&loop_)) {
+        for (const auto& entry : reduce->reductions()) {
+            if (!entry.rescale.empty()) {
+                return false;
+            }
+        }
+    }
     return buffers.supports_schedule(loop_, transformed_schedule_type());
 }
 
