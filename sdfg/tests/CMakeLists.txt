@@ -24,6 +24,7 @@ set(TEST_FILES
     builder/structured_sdfg_conversion_test.cpp
     codegen/code_generators/c_code_generator_test.cpp
     codegen/code_generators/cpp_code_generator_test.cpp
+    codegen/code_generators/python_code_generator_test.cpp
     codegen/dispatchers/block_dispatcher_test.cpp
     codegen/dispatchers/for_dispatcher_test.cpp
     codegen/dispatchers/if_else_dispatcher_test.cpp
