@@ -353,8 +353,9 @@ bool RocmMmaSupport::is_valid_block_size(
     if (block_size.m == 16 && block_size.n == 16 && block_size.k == 16) {
         return true;
     } else if (block_size.m == 32 && block_size.n == 32 && block_size.k == 8) {
-        // 32x32x8 is a CDNA-only (MFMA) block size; RDNA (e.g. gfx1201) lacks it.
-        return f32_support;
+        // 32x32x8 is a CDNA-only (MFMA) block size; RDNA (e.g. gfx1201) lacks it. For now only supporting fp16->fp32
+        // accumulation.
+        return f32_support && input_type == types::PrimitiveType::Half && acc_type == types::PrimitiveType::Float;
     } else {
         return false;
     }

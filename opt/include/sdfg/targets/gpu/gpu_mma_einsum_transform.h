@@ -34,16 +34,9 @@ class GpuMmaEinsumTransform : public transformations::Transformation {
     bool matched_ = false;
     StructuredLoop& outermost_mma_loop_;
     const gpu::GpuArch* arch_;
-    const MmaBlockSize* block_size_hint_;
-    const BlockCounts* wave_tiling_hint_;
 
-    // Optional owned copies of the hints. Used when the caller passes hints by
-    // value (e.g. the legacy Python constructor, which synthesises them from
-    // ints/strings). When set, `block_size_hint_` / `wave_tile_hint_` point into
-    // these, so the hints' lifetime is tied to the transform and no external
-    // object needs to be kept alive.
-    std::optional<MmaBlockSize> owned_block_size_hint_;
-    std::optional<BlockCounts> owned_wave_tiling_hint_;
+    std::optional<MmaBlockSize> block_size_hint_;
+    std::optional<BlockCounts> wave_tiling_hint_;
 
 protected:
     /// the einsum parts modify the SDFG in place, so WILL ALWAYS CHANGE IT. We need to revert the changes if we did not

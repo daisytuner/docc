@@ -21,6 +21,10 @@ GpuMmaEinsumReplacer::
 }
 
 bool GpuMmaEinsumReplacer::matches_possible_mma_pattern(const MatMulAnalysis& analysis) const {
+    if (!arch_) {
+        return false;
+    }
+
     auto* mma_arch = arch_->mma_support();
     if (!mma_arch) {
         return false;
@@ -148,7 +152,9 @@ bool GpuMmaEinsumTransform::run_internal(
 
     std::vector<einsum::EinsumNode*> mapped_einsums;
     for (auto& einsum_node : detector.einsums()) {
-        GpuMmaEinsumReplacer repl(arch_, block_size_hint_, wave_tiling_hint_);
+        GpuMmaEinsumReplacer repl(
+            arch_, block_size_hint_ ? &*block_size_hint_ : nullptr, wave_tiling_hint_ ? &*wave_tiling_hint_ : nullptr
+        );
         // einsum::Einsum2MatMul repl;
         if (verify_only) {
             matched_ |= repl.can_be_applied(*einsum_node);
@@ -169,8 +175,11 @@ GpuMmaEinsumTransform::GpuMmaEinsumTransform(
     const MmaBlockSize* block_size_hint,
     const BlockCounts* wave_tiling_hint
 )
-    : outermost_mma_loop_(outermoost_mma_loop), arch_(arch), block_size_hint_(block_size_hint),
-      wave_tiling_hint_(wave_tiling_hint) {
+    : outermost_mma_loop_(outermoost_mma_loop), arch_(arch),
+      block_size_hint_(block_size_hint ? std::optional<MmaBlockSize>(*block_size_hint) : std::nullopt),
+      wave_tiling_hint_(wave_tiling_hint ? std::optional<BlockCounts>(*wave_tiling_hint) : std::nullopt) {
+    // Copy any provided hints into our own storage so we never retain pointers
+    // into caller-owned memory (which would dangle once the caller returns).
 }
 
 GpuMmaEinsumTransform::GpuMmaEinsumTransform(
@@ -179,17 +188,9 @@ GpuMmaEinsumTransform::GpuMmaEinsumTransform(
     std::optional<MmaBlockSize> block_size_hint,
     std::optional<BlockCounts> wave_tile_hint
 )
-    : outermost_mma_loop_(outermoost_mma_loop), arch_(arch), block_size_hint_(nullptr), wave_tiling_hint_(nullptr),
-      owned_block_size_hint_(block_size_hint), owned_wave_tiling_hint_(wave_tile_hint) {
-    // Point the raw hint pointers at our owned storage so they stay valid for
-    // the lifetime of this transform. This instance must not be moved/copied
-    // afterwards (pybind holds it in place), otherwise these would dangle.
-    if (owned_block_size_hint_) {
-        block_size_hint_ = &*owned_block_size_hint_;
-    }
-    if (owned_wave_tiling_hint_) {
-        wave_tiling_hint_ = &*owned_wave_tiling_hint_;
-    }
+    : outermost_mma_loop_(outermoost_mma_loop), arch_(arch), block_size_hint_(block_size_hint),
+      wave_tiling_hint_(wave_tile_hint) {
+    // Hints are stored by value, so copying/moving this transform stays safe.
 }
 
 bool GpuMmaEinsumTransform::try_apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
