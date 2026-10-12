@@ -9,6 +9,7 @@
 #include "sdfg/codegen/dispatchers/reduce_dispatcher.h"
 #include "sdfg/codegen/dispatchers/sequence_dispatcher.h"
 #include "sdfg/codegen/dispatchers/while_dispatcher.h"
+#include "sdfg/codegen/language_extensions/python_library_nodes.h"
 
 #include "sdfg/data_flow/library_nodes/atomic_op_node.h"
 #include "sdfg/data_flow/library_nodes/barrier_local_node.h"
@@ -39,6 +40,8 @@ std::unique_ptr<NodeDispatcher> create_dispatcher(
 
 void register_default_dispatchers() {
     auto& registry = NodeDispatcherRegistry::instance();
+
+    register_python_library_node_dispatchers();
 
     /* Control flow dispatchers */
     registry.register_dispatcher(
