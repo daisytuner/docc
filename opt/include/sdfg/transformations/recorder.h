@@ -21,6 +21,25 @@ template<typename T>
 concept transformation_concept = std::derived_from<T, sdfg::transformations::Transformation>;
 
 /**
+ * @brief Verify a recorded transformation description is replayable.
+ *
+ * Resolves the description's ``transformation_type`` through the central
+ * transformation registry and checks that its ``from_json``/``to_json`` form a
+ * consistent round-trip (@ref verify_transformation_round_trip). A transformation
+ * that records and applies fine but is not registered cannot be reconstructed
+ * from its JSON description and therefore cannot be replayed (e.g. by the
+ * transfer-tuning backend); resolving an unregistered name throws here.
+ *
+ * Declared here so the Recorder can assert replayability without pulling in the
+ * full registry header (which includes this one). Defined in recorder.cpp, where
+ * the registry is available.
+ *
+ * @throws InvalidTransformationDescriptionException if the transformation is not
+ *         registered or fails round-trip verification.
+ */
+void verify_transformation_replayable(builder::StructuredSDFGBuilder& builder, const nlohmann::json& desc);
+
+/**
  * @brief Records transformation history for replay and analysis
  *
  * The Recorder class tracks all transformations applied to an SDFG and
@@ -95,6 +114,8 @@ public:
         nlohmann::json desc;
         transformation.to_json(desc);
 
+        this->enrich(desc, builder, analysis_manager);
+
 #ifndef NDEBUG
         std::string schema_error;
         if (!validate_transformation_schema(desc, schema_error)) {
@@ -102,9 +123,12 @@ public:
                 "Transformation '" + transformation.name() + "' produced an invalid description: " + schema_error
             );
         }
+        // Resolve the type through the registry and round-trip its from_json/to_json. This throws for
+        // an unregistered (non-replayable) transformation, so a transformation that records and
+        // applies fine but cannot be replayed is caught here instead of only at replay time.
+        verify_transformation_replayable(builder, desc);
 #endif
 
-        this->enrich(desc, builder, analysis_manager);
         history_.push_back(desc);
         transformation.apply(builder, analysis_manager);
         return true;
