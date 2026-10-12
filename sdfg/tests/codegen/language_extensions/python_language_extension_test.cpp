@@ -36,6 +36,7 @@ TEST(PythonLanguageExtensionTest, PrimitiveTypes) {
     EXPECT_EQ(python.primitive_type(types::PrimitiveType::UInt64), "np.uint64");
     EXPECT_EQ(python.primitive_type(types::PrimitiveType::Float), "np.float32");
     EXPECT_EQ(python.primitive_type(types::PrimitiveType::Double), "np.float64");
+    EXPECT_EQ(python.primitive_type(types::PrimitiveType::BFloat), "ml_dtypes.bfloat16");
     EXPECT_THROW(python.primitive_type(types::PrimitiveType::Int128), std::runtime_error);
 }
 
