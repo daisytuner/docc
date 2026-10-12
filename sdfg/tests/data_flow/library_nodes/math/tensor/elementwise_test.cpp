@@ -10,7 +10,6 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/div_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/erf_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/exp_node.h"
-#include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/hard_sigmoid_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/logical_not_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/mul_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/elementwise_ops/pow_node.h"
@@ -326,11 +325,6 @@ REGISTER_UNARY_TEST(SigmoidNode, 1)
 REGISTER_UNARY_TEST(SigmoidNode, 2)
 REGISTER_UNARY_TEST(SigmoidNode, 3)
 REGISTER_UNARY_TEST(SigmoidNode, 4)
-
-REGISTER_UNARY_SCALAR_PARAMS_TEST(HardSigmoidNode, alpha_beta, 1, "alpha", "beta")
-REGISTER_UNARY_SCALAR_PARAMS_TEST(HardSigmoidNode, alpha_beta, 2, "alpha", "beta")
-REGISTER_UNARY_SCALAR_PARAMS_TEST(HardSigmoidNode, alpha_beta, 3, "alpha", "beta")
-REGISTER_UNARY_SCALAR_PARAMS_TEST(HardSigmoidNode, alpha_beta, 4, "alpha", "beta")
 
 // Binary Tests
 REGISTER_BINARY_TEST(AddNode, 1)
@@ -712,8 +706,4 @@ void TestSerializeRoundTrip(const data_flow::LibraryNodeCode& code, const std::v
 
 TEST(ErfNodeTest, SerializeDeserialize_RoundTrip) {
     TestSerializeRoundTrip<math::tensor::ErfNode>(math::tensor::LibraryNodeType_Erf, {});
-}
-
-TEST(HardSigmoidNodeTest, SerializeDeserialize_RoundTrip) {
-    TestSerializeRoundTrip<math::tensor::HardSigmoidNode>(math::tensor::LibraryNodeType_HardSigmoid, {"alpha", "beta"});
 }
