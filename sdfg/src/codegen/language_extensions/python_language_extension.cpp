@@ -38,6 +38,11 @@ bool is_integral(types::PrimitiveType prim) {
     return types::is_integer(prim) || prim == types::PrimitiveType::Bool;
 }
 
+/// sizeof in C, where bool occupies a whole byte.
+size_t byte_width(types::PrimitiveType prim) {
+    return (types::bit_width(prim) + 7) / 8;
+}
+
 /// Two's-complement bit pattern of a C integer literal; C suffixes and bases are accepted.
 uint64_t integer_bits(const std::string& data) {
     static const std::unordered_map<std::string, uint64_t> named = {
@@ -171,6 +176,13 @@ def _docc_trunc_i32(x):
     return int(np.int32(np.uint32(np.uint64(np.int64(int(x))))))
 
 
+def _docc_cast(dtype, value):
+    # NumPy rejects out-of-range Python ints; NumPy scalars convert with C wraparound.
+    if type(value) is int and np.issubdtype(dtype, np.integer):
+        value = np.uint64(value & 0xFFFFFFFFFFFFFFFF)
+    return dtype(value)
+
+
 def _docc_bytes(buffer):
     return buffer.reshape(-1).view(np.uint8)
 
@@ -209,7 +221,7 @@ std::string PythonLanguageExtension::allocation(const types::IType& pointer_type
         }
         element = scalar->primitive_type();
     }
-    std::string buffer = "np.zeros(_docc_idiv(" + bytes + ", " + std::to_string(types::bit_width(element) / 8) + "), " +
+    std::string buffer = "np.zeros(_docc_idiv(" + bytes + ", " + std::to_string(byte_width(element)) + "), " +
                          primitive_type(element) + ")";
     if (!inner_dims.empty()) {
         buffer += ".reshape(-1, " + join(inner_dims, ", ") + ")";
@@ -367,6 +379,13 @@ std::string PythonLanguageExtension::identifier(const std::string& name) const {
     return reserved.count(name) ? name + "_" : name;
 }
 
+std::string PythonLanguageExtension::loop_schedule(const structured_control_flow::ScheduleType& schedule) const {
+    if (schedule.category() == structured_control_flow::ScheduleTypeCategory::Vectorizer) {
+        return structured_control_flow::ScheduleType_Sequential::value();
+    }
+    return schedule.value();
+}
+
 std::string PythonLanguageExtension::tasklet(const data_flow::Tasklet& tasklet) {
     std::vector<std::string> in;
     for (auto& name : tasklet.inputs()) {
@@ -489,6 +508,11 @@ std::string PythonLanguageExtension::assignment(const std::string& lhs, const st
 }
 
 std::string PythonLanguageExtension::
+    converting_assignment(const std::string& lhs, const types::Scalar& type, const std::string& rhs) {
+    return lhs + " = _docc_cast(" + primitive_type(type.primitive_type()) + ", " + rhs + ")";
+}
+
+std::string PythonLanguageExtension::
     local_declaration(const std::string& name, const types::IType& type, const std::string& init) {
     if (init.empty()) {
         return "";
@@ -530,6 +554,16 @@ std::string PythonLanguageExtension::null_literal() {
 
 std::string PythonLanguageExtension::address_of(const std::string& expr) {
     unsupported("taking the address of " + expr);
+}
+
+std::string PythonLanguageExtension::
+    element_address(const std::string& base, const types::IType& base_type, const data_flow::Subset& indices) {
+    auto pointer = dynamic_cast<const types::Pointer*>(&base_type);
+    if (pointer && indices.size() == 1 && pointer->has_pointee_type() &&
+        dynamic_cast<const types::Scalar*>(&pointer->pointee_type())) {
+        return base + "[" + expression(indices.at(0)) + ":]";
+    }
+    return address_of(base + subset(base_type, indices));
 }
 
 std::string PythonLanguageExtension::dereference(const std::string& expr) {
@@ -692,7 +726,7 @@ void PythonSymbolicPrinter::bvisit(const SymEngine::FunctionSymbol& x) {
         if (!scalar) {
             unsupported("sizeof(" + type.print() + ")");
         }
-        str_ = std::to_string(types::bit_width(scalar->primitive_type()) / 8);
+        str_ = std::to_string(byte_width(scalar->primitive_type()));
     } else {
         unsupported("function symbol " + name);
     }

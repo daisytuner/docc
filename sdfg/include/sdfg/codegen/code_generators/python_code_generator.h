@@ -8,8 +8,8 @@ namespace codegen {
 
 /**
  * Generates a self-contained Python module whose function of the SDFG's name takes NumPy arrays
- * (flat views for pointers) and scalars. Supports sequential schedules only; library nodes must
- * be expanded beforehand.
+ * (flat views for pointers) and scalars. Supports sequential and vectorized schedules only; library nodes without a
+ * Python dispatcher must be expanded beforehand.
  */
 class PythonCodeGenerator : public CodeGenerator {
 private:

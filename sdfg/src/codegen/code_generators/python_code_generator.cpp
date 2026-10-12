@@ -74,7 +74,7 @@ void PythonCodeGenerator::validate(structured_control_flow::ControlFlowNode& nod
     if (auto block = dynamic_cast<structured_control_flow::Block*>(&node)) {
         for (auto& dataflow_node : block->dataflow().nodes()) {
             if (auto libnode = dynamic_cast<const data_flow::LibraryNode*>(&dataflow_node)) {
-                auto id = libnode->code().value() + "::" + ImplementationType_Python.value();
+                auto id = libnode->code().value() + "::" + language_extension_.library_node_implementation(*libnode);
                 if (!LibraryNodeDispatcherRegistry::instance().get_library_node_dispatcher(id)) {
                     unsupported("library node " + libnode->code().value() + " (expand it before code generation)");
                 }
@@ -91,7 +91,8 @@ void PythonCodeGenerator::validate(structured_control_flow::ControlFlowNode& nod
     } else if (auto loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&node)) {
         bool parallel = dynamic_cast<structured_control_flow::Map*>(loop) ||
                         dynamic_cast<structured_control_flow::Reduce*>(loop);
-        if (parallel && loop->schedule_type().value() != structured_control_flow::ScheduleType_Sequential::value()) {
+        if (parallel && language_extension_.loop_schedule(loop->schedule_type()) !=
+                            structured_control_flow::ScheduleType_Sequential::value()) {
             unsupported("schedule " + loop->schedule_type().value());
         }
         validate(loop->root());

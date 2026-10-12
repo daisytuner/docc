@@ -45,9 +45,12 @@ public:
 
     std::string identifier(const std::string& name) const override;
 
-    std::string library_node_implementation() const override {
+    std::string library_node_implementation(const data_flow::LibraryNode&) const override {
         return ImplementationType_Python.value();
     }
+
+    /// Vectorization schedules are hints; their loops run sequentially.
+    std::string loop_schedule(const structured_control_flow::ScheduleType& schedule) const override;
 
     const std::string language() const override {
         return "Python";
@@ -75,6 +78,8 @@ public:
 
     std::string assignment(const std::string& lhs, const std::string& rhs) override;
 
+    std::string converting_assignment(const std::string& lhs, const types::Scalar& type, const std::string& rhs) override;
+
     std::string local_declaration(const std::string& name, const types::IType& type, const std::string& init = "") override;
 
     std::string copy_bytes(const std::string& dst, const std::string& src, const std::string& size) override;
@@ -90,6 +95,10 @@ public:
     std::string null_literal() override;
 
     std::string address_of(const std::string& expr) override;
+
+    /// A pointer into a flat buffer is the view that starts at the element.
+    std::string
+    element_address(const std::string& base, const types::IType& base_type, const data_flow::Subset& indices) override;
 
     std::string dereference(const std::string& expr) override;
 
