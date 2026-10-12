@@ -3,6 +3,7 @@
 #include <list>
 #include <unordered_set>
 
+#include "sdfg/analysis/loop_analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/memlet.h"
 #include "sdfg/element.h"
@@ -171,7 +172,12 @@ bool DeadCFGElimination::run_pass(builder::StructuredSDFGBuilder& builder, analy
 
                 // Trivial structured loop (bound - init == 1 and stride == 1)
                 if (auto sloop = dyn_cast<structured_control_flow::Map*>(&child)) {
-                    if (is_trivial(sloop)) {
+                    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
+                    // Skip trivial loops that have no ancestors or descendants in the loop analysis.
+                    if (loop_analysis.descendants(sloop).empty() && loop_analysis.ancestors(sloop).empty()) {
+                        i++;
+                        continue;
+                    } else if (is_trivial(sloop)) {
                         auto indvar = sloop->indvar();
                         auto init = sloop->init();
                         sloop->root().replace(indvar, init);
