@@ -20,6 +20,7 @@
 #include <sdfg/codegen/loop_report.h>
 #include <sdfg/einsum/einsum.h>
 #include <sdfg/parallelization/passes/auto_parallelization.h>
+#include <sdfg/passes/dataflow/approximate_math.h>
 #include <sdfg/passes/dataflow/dead_data_elimination.h>
 #include <sdfg/passes/dataflow/local_buffer_reuse.h>
 #include <sdfg/passes/dataflow/tensor_to_pointer_conversion.h>
@@ -206,6 +207,13 @@ void PyStructuredSDFG::einsum() {
     sdfg::einsum::EinsumConversionPass einsum_conversion_pass;
     einsum_conversion_pass.run(builder_opt, analysis_manager);
     sdfg::passes::CompileStatistics::exit_stage_if_enabled();
+}
+
+void PyStructuredSDFG::approximate_math() {
+    sdfg::builder::StructuredSDFGBuilder builder(*sdfg_);
+    sdfg::analysis::AnalysisManager analysis_manager(*sdfg_, options_);
+    sdfg::passes::ApproximateMathPass pass;
+    pass.run(builder, analysis_manager);
 }
 
 void PyStructuredSDFG::expand() {

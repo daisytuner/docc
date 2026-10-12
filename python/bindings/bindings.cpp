@@ -321,6 +321,11 @@ PYBIND11_MODULE(_sdfg, m) {
         .def("validate", &PyStructuredSDFG::validate, "Validates the SDFG")
         .def("einsum", &PyStructuredSDFG::einsum, "Performs Einsum detection")
         .def(
+            "approximate_math",
+            &PyStructuredSDFG::approximate_math,
+            "Marks all CMath nodes approximate, allowing fast device intrinsics (e.g. __expf)"
+        )
+        .def(
             "expand",
             static_cast<void (PyStructuredSDFG::*)()>(&PyStructuredSDFG::expand),
             "Expand step w/o target support for backwards compatibility"

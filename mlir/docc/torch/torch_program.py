@@ -152,6 +152,9 @@ def _disable_export_guards():
 
 
 class TorchProgram(DoccProgram):
+    # Match torch.compile (Triton), which lowers exp & co. to fast approximations.
+    default_approximate_math = True
+
     def __init__(
         self,
         model,
@@ -287,7 +290,7 @@ class TorchProgram(DoccProgram):
                 except Exception:
                     pass
 
-            hash_input = f"{self.name}|{self.options.target}|{self.options.category}|{cache_key}|{model_code}|{self.options.capture_args}|{self.options.instrumentation_mode}|{self.options.remote_tuning}".encode(
+            hash_input = f"{self.name}|{self.options.target}|{self.options.category}|{cache_key}|{model_code}|{self.options.capture_args}|{self.options.instrumentation_mode}|{self.options.remote_tuning}|{self.options.approximate_math}".encode(
                 "utf-8"
             )
             stable_id = hashlib.sha256(hash_input).hexdigest()[:16]

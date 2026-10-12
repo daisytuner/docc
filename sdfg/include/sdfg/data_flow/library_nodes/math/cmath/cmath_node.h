@@ -458,10 +458,36 @@ inline std::string get_cmath_intrinsic_name(CMathFunction func, types::Primitive
     }
 }
 
+/**
+ * @brief Fast, approximate CUDA/HIP device intrinsic for a function, if one exists
+ * @return The intrinsic name (e.g. "__expf"), or an empty string if there is none for this type
+ */
+inline std::string get_cmath_approximate_intrinsic_name(CMathFunction func, types::PrimitiveType prim_type) {
+    if (prim_type != types::PrimitiveType::Float) {
+        return "";
+    }
+    switch (func) {
+        case CMathFunction::exp:
+        case CMathFunction::exp10:
+        case CMathFunction::log:
+        case CMathFunction::log2:
+        case CMathFunction::log10:
+        case CMathFunction::sin:
+        case CMathFunction::cos:
+        case CMathFunction::tan:
+        case CMathFunction::pow:
+            return std::string("__") + cmath_function_to_stem(func) + "f";
+        default:
+            return "";
+    }
+}
+
 class CMathNode : public math::MathNode {
 private:
     CMathFunction function_;
     types::PrimitiveType primitive_type_;
+    // Permits a faster, less accurate device intrinsic (e.g. __expf) where the target has one.
+    bool approximate_ = false;
 
 public:
     CMathNode(
@@ -470,12 +496,16 @@ public:
         const graph::Vertex vertex,
         data_flow::DataFlowGraph& parent,
         CMathFunction function,
-        types::PrimitiveType primitive_type
+        types::PrimitiveType primitive_type,
+        bool approximate = false
     );
 
     CMathFunction function() const;
     types::PrimitiveType primitive_type() const;
     std::string name() const;
+
+    bool approximate() const;
+    void approximate(bool approximate);
 
     void validate(const Function& function) const override;
 

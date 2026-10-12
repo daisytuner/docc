@@ -200,12 +200,13 @@ CMathNode::CMathNode(
     const graph::Vertex vertex,
     data_flow::DataFlowGraph& parent,
     CMathFunction function,
-    types::PrimitiveType primitive_type
+    types::PrimitiveType primitive_type,
+    bool approximate
 )
     : MathNode(
           element_id, debug_info, vertex, parent, LibraryNodeType_CMath, {"_out"}, {}, data_flow::ImplementationType_NONE
       ),
-      function_(function), primitive_type_(primitive_type) {
+      function_(function), primitive_type_(primitive_type), approximate_(approximate) {
     for (size_t i = 0; i < cmath_function_to_arity(function); i++) {
         this->inputs_.push_back("_in" + std::to_string(i + 1));
     }
@@ -221,6 +222,14 @@ types::PrimitiveType CMathNode::primitive_type() const {
 
 std::string CMathNode::name() const {
     return get_cmath_intrinsic_name(this->function_, this->primitive_type_);
+}
+
+bool CMathNode::approximate() const {
+    return this->approximate_;
+}
+
+void CMathNode::approximate(bool approximate) {
+    this->approximate_ = approximate;
 }
 
 symbolic::SymbolSet CMathNode::symbols() const {
@@ -327,8 +336,9 @@ void CMathNode::validate(const Function& function) const {
 
 std::unique_ptr<data_flow::DataFlowNode> CMathNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
-    return std::unique_ptr<
-        CMathNode>(new CMathNode(element_id, this->debug_info(), vertex, parent, this->function_, this->primitive_type_));
+    return std::unique_ptr<CMathNode>(new CMathNode(
+        element_id, this->debug_info(), vertex, parent, this->function_, this->primitive_type_, this->approximate_
+    ));
 }
 
 symbolic::Expression CMathNode::flop() const {
@@ -359,6 +369,7 @@ nlohmann::json CMathNodeSerializer::serialize(const data_flow::LibraryNode& libr
     j["name"] = node.name();
     j["function_stem"] = cmath_function_to_stem(node.function());
     j["primitive_type"] = static_cast<int>(node.primitive_type());
+    j["approximate"] = node.approximate();
 
     return j;
 }
@@ -404,7 +415,8 @@ data_flow::LibraryNode& CMathNodeSerializer::deserialize(
         }
     }
 
-    return builder.add_library_node<CMathNode>(parent, debug_info, function, prim_type);
+    bool approximate = j.contains("approximate") && j["approximate"].get<bool>();
+    return builder.add_library_node<CMathNode>(parent, debug_info, function, prim_type, approximate);
 }
 
 CMathNodeDispatcher::CMathNodeDispatcher(
@@ -426,8 +438,17 @@ void CMathNodeDispatcher::dispatch_code(
 
     auto& node = static_cast<const CMathNode&>(this->node_);
 
+    std::string callee = node.name();
+    const auto& language = this->language_extension_.language();
+    if (node.approximate() && (language == "CUDA" || language == "ROCM")) {
+        auto fast = get_cmath_approximate_intrinsic_name(node.function(), node.primitive_type());
+        if (!fast.empty()) {
+            callee = fast;
+        }
+    }
+
     stream << node.outputs().at(0) << " = ";
-    stream << node.name() << "(";
+    stream << callee << "(";
     for (size_t i = 0; i < node.inputs().size(); i++) {
         stream << node.inputs().at(i);
         if (i < node.inputs().size() - 1) {

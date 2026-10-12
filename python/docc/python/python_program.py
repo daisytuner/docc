@@ -208,7 +208,7 @@ class PythonProgram(DoccProgram):
 
         if output_folder is None:
             source_path = inspect.getsourcefile(self.func)
-            hash_input = f"{source_path}|{self.name}|{self.options.target}|{self.options.category}|{self.options.capture_args}|{self.options.instrumentation_mode}|{self.options.remote_tuning}|{signature}".encode(
+            hash_input = f"{source_path}|{self.name}|{self.options.target}|{self.options.category}|{self.options.capture_args}|{self.options.instrumentation_mode}|{self.options.remote_tuning}|{self.options.approximate_math}|{signature}".encode(
                 "utf-8"
             )
             stable_id = hashlib.sha256(hash_input).hexdigest()[:16]
