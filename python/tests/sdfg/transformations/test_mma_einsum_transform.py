@@ -560,7 +560,7 @@ def test_mma_einsum_mfma32_executes(tile, wave_tile, staging):
         loop_i1,
         RocmArch.get_current(),
         wave_tiling_hint=BlockCounts(*wave_tile),
-        block_hint=block_hint,
+        block_size_hint=block_hint,
     )
     assert xform.can_be_applied(builder, am)
     xform.apply(builder, am)
