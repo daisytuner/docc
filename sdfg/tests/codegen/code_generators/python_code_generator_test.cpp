@@ -225,6 +225,26 @@ TEST(PythonCodeGeneratorTest, VectorizedMapRunsSequentially) {
     EXPECT_NE(code.find("for i in range(0, 8):\n"), std::string::npos) << code;
 }
 
+TEST(PythonCodeGeneratorTest, SerializableOffloadRunsSequentially) {
+    builder::StructuredSDFGBuilder builder("ser", FunctionType_CPU);
+    builder.add_container("i", types::Scalar(types::PrimitiveType::Int64));
+    auto i = symbolic::symbol("i");
+    structured_control_flow::ScheduleType schedule("DEVICE", structured_control_flow::ScheduleTypeCategory::Offloader);
+    structured_control_flow::ScheduleType_Serializable::set(schedule);
+    builder.add_map(
+        builder.subject().root(),
+        i,
+        symbolic::Lt(i, symbolic::integer(8)),
+        symbolic::integer(0),
+        symbolic::add(i, symbolic::integer(1)),
+        schedule
+    );
+
+    auto sdfg = builder.move();
+    auto code = generate_python(*sdfg);
+    EXPECT_NE(code.find("for i in range(0, 8):\n"), std::string::npos) << code;
+}
+
 TEST(PythonCodeGeneratorTest, RejectsInstrumentation) {
     builder::StructuredSDFGBuilder builder("instr", FunctionType_CPU);
     builder.add_container("i", types::Scalar(types::PrimitiveType::Int64));

@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from docc.compiler.target_registry import register_target_overrides
+from docc.compiler.codegens import codegen_artifact, get_target_codegens
 from docc.python import native
 
 
@@ -61,25 +61,13 @@ def test_numpy_codegen_rejects_unsupported_target():
         program.compile(*_inputs(_axpy_sqrt))
 
 
-def test_registered_target_receives_codegen():
-    seen = {}
-
-    def _compile(sdfg, output_folder, instrumentation_mode, capture_args, options):
-        seen["codegen"] = options["codegen"]
-        return sdfg._compile(
-            output_folder,
-            "none",
-            instrumentation_mode,
-            capture_args,
-            codegen=options["codegen"],
-        )
-
-    register_target_overrides("numpy_only", compile_fn=_compile, codegens={"numpy"})
-
-    args = _inputs(_axpy_sqrt)
-    result = native(_axpy_sqrt, target="numpy_only", codegen="numpy")(*args)
-    assert seen["codegen"] == "numpy"
-    np.testing.assert_allclose(result, _axpy_sqrt(*args))
-
-    with pytest.raises(ValueError, match="does not support codegen 'cpp'"):
-        native(_axpy_sqrt, target="numpy_only", codegen="cpp").compile(*args)
+def test_targets_declare_codegens():
+    # Declared by the C++ targets (DoccTarget::codegens), default first.
+    assert get_target_codegens("none") == ("cpp", "numpy")
+    assert get_target_codegens("sequential") == ("cpp", "numpy")
+    assert get_target_codegens("openmp") == ("cpp",)
+    assert get_target_codegens("not_a_target") == ("cpp",)
+    assert codegen_artifact("sequential", "cpp", "f") == "libf.so"
+    assert codegen_artifact("sequential", "numpy", "f") == "f.py"
+    with pytest.raises(ValueError, match="does not support codegen 'numpy'"):
+        codegen_artifact("openmp", "numpy", "f")

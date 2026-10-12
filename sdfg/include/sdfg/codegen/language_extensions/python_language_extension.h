@@ -49,7 +49,7 @@ public:
         return ImplementationType_Python.value();
     }
 
-    /// Vectorization schedules are hints; their loops run sequentially.
+    /// Vectorization hints and serializable schedules run as sequential loops.
     std::string loop_schedule(const structured_control_flow::ScheduleType& schedule) const override;
 
     const std::string language() const override {

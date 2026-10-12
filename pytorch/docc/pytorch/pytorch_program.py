@@ -14,6 +14,7 @@ import contextlib
 from typing import Any, Callable, Optional
 
 from docc.compiler import DoccProgram, DoccOptions, CompiledSDFG
+from docc.compiler.codegens import codegen_artifact
 from docc.sdfg import StructuredSDFG, DoccMetrics
 
 from docc.pytorch.graph_parser import GraphParser
@@ -297,10 +298,7 @@ class PyTorchProgram(DoccProgram):
             shutil.rmtree(output_folder_path)
 
         if docc_reuse_binaries:
-            if self.options.codegen == "numpy":
-                lib_path = f"{output_folder_path}/__docc_{self.name}.py"
-            else:
-                lib_path = f"{output_folder_path}/lib__docc_{self.name}.so"
+            lib_path = f"{output_folder_path}/{codegen_artifact(self.options.target, self.options.codegen, f'__docc_{self.name}')}"
             if not os.path.exists(lib_path):
                 raise ValueError(
                     f"Tried reusing binary '{lib_path}' but does not exist"
@@ -446,6 +444,7 @@ class PyTorchProgram(DoccProgram):
             device_backend=self._device_backend,
             target=self.options.target,
             sort_output_args=False,
+            codegen=self.options.codegen,
         )
 
         # Cache

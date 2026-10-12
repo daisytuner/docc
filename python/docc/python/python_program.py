@@ -25,6 +25,7 @@ from docc.sdfg import (
 )
 from docc.compiler.docc_program import DoccProgram, DoccOptions
 from docc.compiler.compiled_sdfg import CompiledSDFG
+from docc.compiler.codegens import codegen_artifact
 from docc.python.ast_parser import ASTParser
 from docc.python.type_system import element_type_from_sdfg_type, scalar_type_for_dtype
 
@@ -301,6 +302,7 @@ class PythonProgram(DoccProgram):
             device_resident=self._device_resident,
             device_backend=self._device_backend,
             target=self.options.target,
+            codegen=self.options.codegen,
         )
 
         # Cache if using default output folder
@@ -362,10 +364,10 @@ class PythonProgram(DoccProgram):
             return None
 
         sdfg_name = f"{self.name}_sdfg"
-        if self.options.codegen == "numpy":
-            lib_path = os.path.join(output_folder, f"{sdfg_name}.py")
-        else:
-            lib_path = os.path.join(output_folder, f"lib{sdfg_name}.so")
+        lib_path = os.path.join(
+            output_folder,
+            codegen_artifact(self.options.target, self.options.codegen, sdfg_name),
+        )
         json_path = os.path.join(output_folder, f"{sdfg_name}.py5.post_sched.json")
         if not os.path.exists(lib_path):
             raise ValueError(f"Tried reusing binary '{lib_path}' but does not exist")
@@ -410,6 +412,7 @@ class PythonProgram(DoccProgram):
             device_resident=self._device_resident,
             device_backend=self._device_backend,
             target=self.options.target,
+            codegen=self.options.codegen,
         )
 
     def to_sdfg(self, *args: Any) -> StructuredSDFG:
