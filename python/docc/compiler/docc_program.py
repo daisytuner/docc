@@ -23,6 +23,7 @@ from docc.compiler.target_registry import (
     get_target_schedule_fn,
     get_target_compile_fn,
     get_target_expand_fn,
+    get_target_codegens,
     register_target_overrides,
 )
 
@@ -60,7 +61,7 @@ class DoccOptions:
     """Compile options for a :class:`DoccProgram`.
 
     Precedence (lowest to highest): field default < environment variable
-    (``DOCC_CI``, ``DOCC_DEBUG``) < explicit constructor argument.
+    (``DOCC_CI``, ``DOCC_DEBUG``, ``DOCC_CODEGEN``) < explicit constructor argument.
 
     Env-settable fields default to ``None`` ("unset") so an explicit value is
     distinguishable from the default and wins over the environment. Everything
@@ -71,6 +72,10 @@ class DoccOptions:
     target: Optional[str] = None
     category: Optional[str] = None
     remote_tuning: Optional[bool] = None
+
+    # Code generation (settable via DOCC_CODEGEN): "cpp" builds a shared
+    # library, "numpy" a Python module. Must be supported by the target.
+    codegen: Optional[str] = None
 
     # Debug (settable via DOCC_DEBUG)
     debug_dump: Optional[bool] = None
@@ -117,6 +122,10 @@ class DoccOptions:
             self.category = "server"
         if self.remote_tuning is None:
             self.remote_tuning = False
+
+        # Code generation
+        if self.codegen is None:
+            self.codegen = os.environ.get("DOCC_CODEGEN") or "cpp"
 
         # Debug
         if self.debug_dump is None:
@@ -319,6 +328,12 @@ class DoccProgram(ABC):
 
         start_time = time.perf_counter()
 
+        if self.options.codegen not in get_target_codegens(self.options.target):
+            raise ValueError(
+                f"Target '{self.options.target}' does not support codegen "
+                f"'{self.options.codegen}'"
+            )
+
         if not reuse_sources and output_folder:
             if self.options.debug_dump:
                 sdfg.dump(output_folder, "py0.parsed", dump_dot=True)
@@ -443,6 +458,7 @@ class DoccProgram(ABC):
                 {
                     "debug_build": self.options.debug_build,
                     "threads": self.options.build_thread_count,
+                    "codegen": self.options.codegen,
                 },
             )
         else:
@@ -454,6 +470,7 @@ class DoccProgram(ABC):
                 debug_build=self.options.debug_build,
                 threads=self.options.build_thread_count,
                 reuse_sources=reuse_sources,
+                codegen=self.options.codegen,
             )
 
         bin_build_time = time.perf_counter() - compile_end_time

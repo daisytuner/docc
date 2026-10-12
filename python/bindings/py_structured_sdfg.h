@@ -112,7 +112,8 @@ public:
      * @param capture_args
      * @param debug_build build with debug info
      * @param threads number of threads to use for the compile. 0 or negative means auto (max. hardware threads)
-     * @return
+     * @param codegen "cpp" builds a shared library; "numpy" writes a Python module instead
+     * @return path of the shared library or Python module
      */
     std::string compile(
         const std::string& output_folder,
@@ -121,7 +122,8 @@ public:
         bool capture_args = false,
         bool debug_build = false,
         int threads = 0,
-        bool reuse_sources = false
+        bool reuse_sources = false,
+        const std::string& codegen = "cpp"
     ) const;
 
     std::string metadata(const std::string& key) const;
@@ -135,4 +137,7 @@ public:
     std::string to_dot() const;
 
     std::string to_cpp() const;
+
+    /// Generates the NumPy module, expanding library nodes that have no Python implementation.
+    std::string to_python() const;
 };

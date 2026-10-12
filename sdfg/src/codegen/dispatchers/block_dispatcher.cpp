@@ -52,11 +52,13 @@ void AssignmentDispatcher::dispatch_node(
     if (!assignments.empty()) {
         auto scope = language_extension_.begin_scope(main_stream);
         for (auto assign : assignments) {
-            main_stream
-                << language_extension_.assignment(
-                       language_extension_.expression(assign.first), language_extension_.expression(assign.second)
-                   )
-                << std::endl;
+            auto lhs = language_extension_.expression(assign.first);
+            auto rhs = language_extension_.expression(assign.second);
+            if (auto scalar = dynamic_cast<const types::Scalar*>(&sdfg_.type(assign.first->get_name()))) {
+                main_stream << language_extension_.converting_assignment(lhs, *scalar, rhs) << std::endl;
+            } else {
+                main_stream << language_extension_.assignment(lhs, rhs) << std::endl;
+            }
         }
         language_extension_.end(main_stream, scope);
     }
@@ -112,12 +114,11 @@ void DataFlowDispatcher::dispatch_ref(PrettyPrinter& stream, const data_flow::Me
     if (dynamic_cast<const data_flow::ConstantNode*>(&src)) {
         value = src_name + this->language_extension_.subset(base_type, subset);
     } else if (base_type.type_id() == types::TypeID::Pointer && !subset.empty()) {
-        value = this->language_extension_.address_of(
-            "(" + this->language_extension_.type_cast(src_name, base_type) + ")" +
-            this->language_extension_.subset(base_type, subset)
-        );
+        value =
+            this->language_extension_
+                .element_address("(" + this->language_extension_.type_cast(src_name, base_type) + ")", base_type, subset);
     } else {
-        value = this->language_extension_.address_of(src_name + this->language_extension_.subset(base_type, subset));
+        value = this->language_extension_.element_address(src_name, base_type, subset);
     }
     stream << this->language_extension_.assignment(this->language_extension_.access_node(dst), value) << std::endl;
 
@@ -301,11 +302,7 @@ void DataFlowDispatcher::dispatch_library_node(
     CodeSnippetFactory& library_snippet_factory,
     const data_flow::LibraryNode& libnode
 ) {
-    auto implementation = this->language_extension_.library_node_implementation();
-    if (implementation.empty()) {
-        implementation = libnode.implementation_type().value();
-    }
-    auto dispatcher_id = libnode.code().value() + "::" + implementation;
+    auto dispatcher_id = libnode.code().value() + "::" + this->language_extension_.library_node_implementation(libnode);
     auto dispatcher_fn = LibraryNodeDispatcherRegistry::instance().get_library_node_dispatcher(dispatcher_id);
     if (dispatcher_fn) {
         auto dispatcher = dispatcher_fn(this->language_extension_, this->function_, this->data_flow_graph_, libnode);
