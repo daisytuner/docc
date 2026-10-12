@@ -8,6 +8,7 @@
 
 #include "sdfg/data_flow/data_flow_graph.h"
 #include "sdfg/exceptions.h"
+#include "sdfg/symbolic/utils.h"
 
 namespace sdfg::gpu {
 
@@ -74,6 +75,48 @@ std::string GpuMmaFragmentStoreNode::toStr() const {
     ss << ", " << implementation_type_.value();
     ss << ")";
     return ss.str();
+}
+
+data_flow::PointerAccessType GpuMmaFragmentStoreNode::pointer_access_type(int input_idx) const {
+    if (input_idx == FRAG_INPUT_IDX) {
+        return data_flow::PointerAccessMeta::create_read_only(SymEngine::mul(block_size_.get_shape(fragment_type_)), true);
+    } else if (input_idx == PTR_INPUT_IDX) {
+        auto t_layout = layout_.to_tensor_layout(block_size_, fragment_type_);
+        data_flow::MemoryAccessPatternType pattern;
+        if (t_layout) {
+            pattern = data_flow::ConvexAccessPattern::create(symbolic::__nullptr__(), false);
+        } else {
+            pattern = data_flow::TensorLayoutPattern::create(t_layout.value(), true);
+        }
+        return data_flow::PointerAccessMeta::
+            create_generic(data_flow::NoAccessPattern::instance(), std::move(pattern), true);
+    }
+    return LibraryNode::pointer_access_type(input_idx);
+}
+
+bool GpuMmaFragmentStoreNode::can_relocalize_operand(int input_idx, const math::tensor::TensorLayout& packed) const {
+    if (input_idx == PTR_INPUT_IDX) {
+        if (!symbolic::vectors_of_expressions_match(packed.shape(), block_size_.get_shape(fragment_type_))) {
+            return false;
+        }
+        if (auto new_layout = GpuMmaFromMemoryLayout::from_tensor_layout(packed)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool GpuMmaFragmentStoreNode::relocalize_operand(int input_idx, const math::tensor::TensorLayout& packed) {
+    if (input_idx == PTR_INPUT_IDX) {
+        if (!symbolic::vectors_of_expressions_match(packed.shape(), block_size_.get_shape(fragment_type_))) {
+            return false;
+        }
+        if (auto new_layout = GpuMmaFromMemoryLayout::from_tensor_layout(packed)) {
+            layout_ = new_layout.value();
+            return true;
+        }
+    }
+    return false;
 }
 
 nlohmann::json GpuMmaFragmentStoreNodeSerializer::serialize(const data_flow::LibraryNode& library_node) {

@@ -44,6 +44,10 @@ public:
 
     bool valid_block_counts(uint16_t block_base, int m_blocks, int n_blocks, int k_blocks) const override;
     bool supported_types(types::PrimitiveType input_type, types::PrimitiveType output_type) const override;
+    types::PrimitiveType get_accumulator_type(
+        types::PrimitiveType output_type, types::PrimitiveType input_type, types::PrimitiveType desired_acc_type
+    ) const override;
+
     std::optional<data_flow::ImplementationType>
     get_matmul_impl_type(const GpuArch& arch, const GpuMmaTiling& tiling) const override;
     data_flow::ImplementationType get_mma_impl_type() const override;

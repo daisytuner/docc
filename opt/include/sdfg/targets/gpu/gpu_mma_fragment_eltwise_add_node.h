@@ -62,6 +62,8 @@ public:
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const override;
 
     std::string toStr() const override;
+
+    data_flow::PointerAccessType pointer_access_type(int input_idx) const override;
 };
 
 class GpuMmaFragmentEltwiseAddNodeSerializer : public serializer::LibraryNodeSerializer {

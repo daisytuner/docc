@@ -14,6 +14,7 @@ set(TEST_FILES
     tiles/tile_analysis_test.cpp
     tiles/reduction_analysis_test.cpp
     tiles/locality_test.cpp
+    tiles/bank_conflicts_test.cpp
     tiles/buffer_layout_test.cpp
     tiles/library_nodes/pipeline_node_test.cpp
     tiles/library_nodes/tile_copy_node_test.cpp
@@ -84,6 +85,7 @@ set(TEST_FILES
     targets/cuda/cuda_language_extension_test.cpp
     targets/cuda/cuda_lib_dispatcher_test.cpp
     targets/omp/codegen/omp_map_dispatcher_test.cpp
+    targets/gpu/wave_map_test.cpp
     targets/omp/schedule_test.cpp
     transformations/collapse_to_depth_test.cpp
     transformations/omp_transform_test.cpp

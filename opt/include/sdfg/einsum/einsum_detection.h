@@ -54,13 +54,17 @@ struct EinsumIndexing {
     size_t covered = 0;
 
     /**
-     * When a index is applied to a linearized subset, it can make additional contributions to the stride in the amount
-     * of factor.
-     * @param idx the index of the dimension in the contributions vector
-     * @param shape a list of the shapes of the underlying type onto which subset we apply
-     * @return will calculate the stride based on how many inner dimensions of shape are below the current contribution
+     * Compute all strides for `shape`, given this indexing's contributions reordered so that
+     * ordered_contributions[d] corresponds to shape dimension d (outer -> inner).
+     *
+     * Walks the subset positions from innermost outward (like TensorLayout::linear_strides):
+     * dimensions sharing a subset position are linearized, so their relative stride comes from the
+     * contribution factor; crossing into an outer subset position advances by that position's extent.
      */
-    symbolic::Expression get_stride_including_subsets(int idx, const std::vector<symbolic::Expression>& shape) const;
+    std::vector<symbolic::Expression> get_strides(
+        const std::vector<EinsumIndexContribution>& ordered_contributions,
+        const std::vector<symbolic::Expression>& shape
+    ) const;
 };
 
 /**

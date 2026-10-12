@@ -37,6 +37,25 @@ ReductionOperation reduction_operation_from_string(const std::string& value) {
     throw InvalidSDFGException("Reduce: unknown reduction operation '" + value + "'");
 }
 
+std::string rescale_base_to_string(RescaleBase base) {
+    switch (base) {
+        case RescaleBase::E:
+            return "e";
+        case RescaleBase::Two:
+            return "2";
+    }
+    throw InvalidSDFGException("Reduce: unknown rescale base");
+}
+
+RescaleBase rescale_base_from_string(const std::string& value) {
+    if (value == "e") {
+        return RescaleBase::E;
+    } else if (value == "2") {
+        return RescaleBase::Two;
+    }
+    throw InvalidSDFGException("Reduce: unknown rescale base '" + value + "'");
+}
+
 Reduce::Reduce(
     size_t element_id,
     const DebugInfo& debug_info,
@@ -57,6 +76,39 @@ bool Reduce::accept(visitor::ActualStructuredSDFGVisitor& visitor) {
 
 void Reduce::validate(const Function& function) const {
     StructuredLoop::validate(function);
+    for (const auto& reduction : reductions_) {
+        if (reduction.rescale.empty()) {
+            continue;
+        }
+        if (reduction.operation != ReductionOperation::Add) {
+            throw InvalidSDFGException("Reduce: only an add reduction can be rescaled ('" + reduction.container + "')");
+        }
+        const ReductionInfo* anchor = nullptr;
+        for (const auto& other : reductions_) {
+            if (other.container == reduction.rescale) {
+                anchor = &other;
+            }
+        }
+        if (anchor == nullptr || anchor == &reduction) {
+            throw InvalidSDFGException(
+                "Reduce: rescale anchor '" + reduction.rescale + "' of '" + reduction.container +
+                "' is not another reduction of this loop"
+            );
+        }
+        if (anchor->operation != ReductionOperation::Max) {
+            throw InvalidSDFGException("Reduce: rescale anchor '" + reduction.rescale + "' must be a max reduction");
+        }
+        if (!anchor->rescale.empty()) {
+            throw InvalidSDFGException("Reduce: rescale anchor '" + reduction.rescale + "' is itself rescaled");
+        }
+        for (const auto& other : reductions_) {
+            if (other.rescale == reduction.rescale && other.rescale_base != reduction.rescale_base) {
+                throw InvalidSDFGException(
+                    "Reduce: reductions rescaled by '" + reduction.rescale + "' use different bases"
+                );
+            }
+        }
+    }
     for (const auto& reduction : reductions_) {
         if (reduction.original_index.is_null()) {
             continue;
@@ -91,6 +143,9 @@ void Reduce::replace(const symbolic::Expression old_expression, const symbolic::
             if (reduction.container == old_name) {
                 reduction.container = new_name;
             }
+            if (reduction.rescale == old_name) {
+                reduction.rescale = new_name;
+            }
         }
     }
 }
@@ -105,6 +160,12 @@ void Reduce::replace(const symbolic::ExpressionMapping& replacements) {
         auto it = replacements.find(symbolic::symbol(reduction.container));
         if (it != replacements.end() && SymEngine::is_a<SymEngine::Symbol>(*it->second)) {
             reduction.container = SymEngine::rcp_static_cast<const SymEngine::Symbol>(it->second)->get_name();
+        }
+        if (!reduction.rescale.empty()) {
+            auto anchor = replacements.find(symbolic::symbol(reduction.rescale));
+            if (anchor != replacements.end() && SymEngine::is_a<SymEngine::Symbol>(*anchor->second)) {
+                reduction.rescale = SymEngine::rcp_static_cast<const SymEngine::Symbol>(anchor->second)->get_name();
+            }
         }
     }
 }
@@ -130,6 +191,9 @@ void Reduce::replace_reduction_container(const std::string& old_name, const std:
     for (auto& reduction : this->reductions_) {
         if (reduction.container == old_name) {
             reduction.container = new_name;
+        }
+        if (reduction.rescale == old_name) {
+            reduction.rescale = new_name;
         }
     }
 };

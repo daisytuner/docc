@@ -583,4 +583,60 @@ TEST(GPUOffloadNestedLoopTest, BlockProductExceedsLimitRejected) {
     EXPECT_FALSE(transformation.can_be_applied(builder, analysis_manager));
 }
 
+namespace {
+
+// Grid map over rows with a sequential reduce carrying the online-softmax pair (m, d).
+bool can_offload_rescale_group(gpu::TargetLevel level, int64_t parallel_size) {
+    builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+    auto& root = builder.subject().root();
+    types::Scalar int_desc(types::PrimitiveType::Int32);
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Pointer pointer_type(base_desc);
+    builder.add_container("i", int_desc);
+    builder.add_container("k", int_desc);
+    builder.add_container("__daisy_cuda_m", pointer_type);
+    builder.add_container("__daisy_cuda_d", pointer_type);
+
+    auto& grid = builder.add_map(
+        root,
+        symbolic::symbol("i"),
+        lt("i", 128),
+        symbolic::zero(),
+        step("i"),
+        gpu_schedule(gpu::TargetLevel::X_GRID, 128)
+    );
+    auto& reduce = builder.add_reduce(
+        grid.root(),
+        symbolic::symbol("k"),
+        lt("k", 1024),
+        symbolic::zero(),
+        step("k"),
+        {{.operation = structured_control_flow::ReductionOperation::Max, .container = "__daisy_cuda_m"},
+         {.operation = structured_control_flow::ReductionOperation::Add,
+          .container = "__daisy_cuda_d",
+          .rescale = "__daisy_cuda_m"}},
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+    add_device_store(builder, reduce.root(), "__daisy_cuda_m", symbolic::symbol("i"));
+    add_device_store(builder, reduce.root(), "__daisy_cuda_d", symbolic::symbol("i"));
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    Transform transformation(reduce, level, symbolic::integer(parallel_size));
+    return transformation.can_be_applied(builder, analysis_manager);
+}
+
+} // namespace
+
+TEST(GPUOffloadNestedLoopTest, RescaleGroup_XBlockWarpMultipleApplies) {
+    EXPECT_TRUE(can_offload_rescale_group(gpu::TargetLevel::X_BLOCK, 256));
+}
+
+TEST(GPUOffloadNestedLoopTest, RescaleGroup_NonWarpTilingRejected) {
+    EXPECT_FALSE(can_offload_rescale_group(gpu::TargetLevel::X_BLOCK, 48));
+}
+
+TEST(GPUOffloadNestedLoopTest, RescaleGroup_WarpLevelRejected) {
+    EXPECT_FALSE(can_offload_rescale_group(gpu::TargetLevel::WARP, 32));
+}
+
 } // namespace sdfg

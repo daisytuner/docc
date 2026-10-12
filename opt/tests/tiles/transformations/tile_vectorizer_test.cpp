@@ -21,12 +21,12 @@ using namespace sdfg;
 using transformations::LocalStorage;
 using transformations::TileVectorizer;
 
-// A fully-covering 2D fp32 cooperative copy (a scalar TileCopyNode, as LocalStorage
-// emits it) is widened by TileVectorizer to a 16-byte VectorSync float4: the inner
-// tile coord is unit-stride in source and buffer, and the flat coverage (128) / row
-// (32) are multiples of 4.
-TEST(TileVectorizerTest, WidensContiguousScalarCopyToFloat4) {
-    builder::StructuredSDFGBuilder builder("tv_f4", FunctionType_CPU);
+namespace {
+
+// A [4][32] fp32 tile of A staged cooperatively under a CUDA block map, as the scalar
+// TileCopyNode LocalStorage emits.
+std::pair<tiles::TileCopyNode*, structured_control_flow::Map*>
+stage_scalar_copy(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& am) {
     auto& seq = builder.subject().root();
     types::Scalar loop_var(types::PrimitiveType::Int32);
     types::Scalar elem(types::PrimitiveType::Float);
@@ -71,13 +71,10 @@ TEST(TileVectorizerTest, WidensContiguousScalarCopyToFloat4) {
         .add_computational_memlet(block, a_in, t, "_in2", {symbolic::add(symbolic::mul(i, symbolic::integer(32)), k)}, ptr);
     builder.add_computational_memlet(block, t, "_out", c_out, {b}, ptr);
 
-    analysis::AnalysisManager am(builder.subject());
-    // Stage A cooperatively as a scalar TileCopyNode (LocalStorage no longer vectorizes).
     LocalStorage ls(loop_i, a_in);
-    ASSERT_TRUE(ls.can_be_applied(builder, am));
+    EXPECT_TRUE(ls.can_be_applied(builder, am));
     ls.apply(builder, am);
 
-    // Find the staged copy node; it starts scalar.
     tiles::TileCopyNode* copy = nullptr;
     std::function<void(structured_control_flow::ControlFlowNode&)> find =
         [&](structured_control_flow::ControlFlowNode& n) {
@@ -102,13 +99,47 @@ TEST(TileVectorizerTest, WidensContiguousScalarCopyToFloat4) {
             }
         };
     find(map_b.root());
+    return {copy, &map_b};
+}
+
+} // namespace
+
+// A fully-covering 2D fp32 cooperative copy (a scalar TileCopyNode, as LocalStorage
+// emits it) is widened by TileVectorizer to a 16-byte VectorSync float4: the inner
+// tile coord is unit-stride in source and buffer, and the flat coverage (128) / row
+// (32) are multiples of 4.
+TEST(TileVectorizerTest, WidensContiguousScalarCopyToFloat4) {
+    builder::StructuredSDFGBuilder builder("tv_f4", FunctionType_CPU);
+    analysis::AnalysisManager am(builder.subject());
+    auto [copy, map_b] = stage_scalar_copy(builder, am);
     ASSERT_NE(copy, nullptr) << "LocalStorage must emit a TileCopyNode for the cooperative tile";
     EXPECT_EQ(copy->atom(), tiles::CopyAtom::ScalarSync) << "LocalStorage must emit a scalar copy";
 
-    TileVectorizer tv(map_b);
+    TileVectorizer tv(*map_b);
     ASSERT_TRUE(tv.can_be_applied(builder, am));
     tv.apply(builder, am);
 
     EXPECT_EQ(copy->atom(), tiles::CopyAtom::VectorSync) << "contiguous fp32 cooperative copy must widen";
     EXPECT_EQ(copy->bytes(), 16u) << "fp32 coalesces to a 16-byte float4 transfer";
+}
+
+// Buffer rows padded to 34 floats start 8- but not 16-byte aligned: a synchronous copy keeps
+// 16-byte global transfers (the buffer side is split at emission), an async copy drops to 8.
+TEST(TileVectorizerTest, PaddedBufferRowsLimitOnlyAsyncWidth) {
+    for (auto atom : {tiles::CopyAtom::ScalarSync, tiles::CopyAtom::CpAsync}) {
+        builder::StructuredSDFGBuilder builder("tv_pad", FunctionType_CPU);
+        analysis::AnalysisManager am(builder.subject());
+        auto [copy, map_b] = stage_scalar_copy(builder, am);
+        ASSERT_NE(copy, nullptr);
+        auto plan = copy->plan();
+        plan.dst = tiles::Layout(plan.dst.shape(), {symbolic::integer(34), symbolic::one()}, plan.dst.offset());
+        copy->set_plan(plan);
+        copy->set_atom(atom);
+
+        TileVectorizer tv(*map_b);
+        ASSERT_TRUE(tv.can_be_applied(builder, am));
+        tv.apply(builder, am);
+
+        EXPECT_EQ(copy->bytes(), atom == tiles::CopyAtom::CpAsync ? 8u : 16u);
+    }
 }

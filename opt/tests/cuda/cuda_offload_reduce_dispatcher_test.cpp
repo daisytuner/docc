@@ -6,6 +6,7 @@
 
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/codegen/language_extensions/c_language_extension.h"
+#include "sdfg/data_flow/library_nodes/math/cmath/cmath_node.h"
 #include "sdfg/data_flow/tasklet.h"
 #include "sdfg/passes/offloading/reduction_shared_memory_delinearization.h"
 #include "sdfg/serializer/json_serializer.h"
@@ -303,7 +304,10 @@ TEST(CUDAOffloadReduceDispatcherTest, BlockLevelDefaultsToSharedTree) {
 
     ASSERT_FALSE(info.shared_buffer.empty());
     EXPECT_NE(kernel.find("__shared__ float " + info.shared_buffer + "[32]"), std::string::npos);
-    EXPECT_NE(kernel.find("__syncthreads()"), std::string::npos);
+    // A single-warp block combines entirely by shuffles: no halving tree, no barrier.
+    EXPECT_NE(kernel.find("__shfl_xor_sync"), std::string::npos);
+    EXPECT_EQ(kernel.find("__daisy_reduce_m_acc"), std::string::npos);
+    EXPECT_EQ(kernel.find("__syncthreads()"), std::string::npos);
     // The block result is assigned (single owner), not atomically merged.
     EXPECT_EQ(kernel.find("atomicAdd"), std::string::npos);
 }
@@ -354,16 +358,9 @@ TEST(CUDAOffloadReduceDispatcherTest, PlacedPartialContainerRenamesBuffer) {
 
     EXPECT_EQ(kernel.find("__daisy_reduce_smem_acc"), std::string::npos);
     EXPECT_NE(kernel.find("__shared__ float __daisy_reduce_myBuf[32]"), std::string::npos);
-    // Declared exactly once (no clash with a scope-variable declaration path), and
-    // referenced again by init + tree.
+    // Declared exactly once (no clash with a scope-variable declaration path).
     size_t first_decl = kernel.find("__shared__ float __daisy_reduce_myBuf[32]");
     EXPECT_EQ(kernel.find("__shared__ float __daisy_reduce_myBuf[32]", first_decl + 1), std::string::npos);
-    size_t count = 0;
-    for (size_t p = kernel.find("__daisy_reduce_myBuf"); p != std::string::npos;
-         p = kernel.find("__daisy_reduce_myBuf", p + 1)) {
-        count++;
-    }
-    EXPECT_GE(count, 3u); // declaration + identity init + halving tree
 }
 
 // A metadata-only placed name (no declared container) still just renames the buffer.
@@ -430,6 +427,171 @@ TEST(CUDAOffloadReduceDispatcherTest, PlacedPartialContainerWrongStorageThrows) 
     codegen::PrettyPrinter main_stream, globals_stream;
     codegen::CodeSnippetFactory library_snippet_factory;
     EXPECT_THROW(dispatcher.dispatch_node(main_stream, globals_stream, library_snippet_factory), InvalidSDFGException);
+}
+
+namespace {
+
+void add_accumulate(
+    builder::StructuredSDFGBuilder& builder,
+    structured_control_flow::Sequence& scope,
+    const std::string& acc,
+    const symbolic::Expression& acc_index,
+    const types::IType& pointer_type
+) {
+    auto& block = builder.add_block(scope);
+    auto& a_access = builder.add_access(block, "A");
+    auto& acc_in = builder.add_access(block, acc);
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::fp_add, "_out", {"_in0", "_in1"});
+    auto& acc_out = builder.add_access(block, acc);
+    builder.add_computational_memlet(block, acc_in, tasklet, "_in0", {acc_index}, pointer_type);
+    builder.add_computational_memlet(block, a_access, tasklet, "_in1", {symbolic::symbol("i")}, pointer_type);
+    builder.add_computational_memlet(block, tasklet, "_out", acc_out, {acc_index}, pointer_type);
+}
+
+// Block-level reduce carrying the max anchor `m[0]` and `d[0]` rescaled by exp(m); with
+// @p indexed, also an `o[j]` (j < 8) dependent like a FlashAttention output row. With
+// @p body_exp, the body also evaluates a CMath exp with that approximate flag.
+std::string dispatch_rescale_reduce(
+    int64_t block_threads,
+    bool indexed,
+    gpu::TargetLevel level = gpu::TargetLevel::X_BLOCK,
+    std::optional<bool> body_exp = std::nullopt
+) {
+    builder::StructuredSDFGBuilder builder("rescale", FunctionType_CPU);
+    auto& root = builder.subject().root();
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Pointer pointer_type(types::StorageType::NV_Generic(), 0, "", base_desc);
+    builder.add_container("i", types::Scalar(types::PrimitiveType::Int32));
+    builder.add_container("j", types::Scalar(types::PrimitiveType::Int32));
+    builder.add_container("t", base_desc);
+    for (const auto* name : {"A", "m", "d", "o"}) {
+        builder.add_container(name, pointer_type);
+    }
+
+    std::vector<structured_control_flow::ReductionInfo> reductions{
+        {.operation = structured_control_flow::ReductionOperation::Max, .container = "m"},
+        {.operation = structured_control_flow::ReductionOperation::Add, .container = "d", .rescale = "m"},
+    };
+    if (indexed) {
+        reductions
+            .push_back({.operation = structured_control_flow::ReductionOperation::Add, .container = "o", .rescale = "m"});
+    }
+    auto& reduce = builder.add_reduce(
+        root,
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::symbol("i"), symbolic::integer(1024)),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
+        reductions,
+        gpu::ScheduleType_GPU_Offload::create<ScheduleType_CUDA_Offload>(level, symbolic::integer(block_threads))
+    );
+    add_accumulate(builder, reduce.root(), "m", symbolic::zero(), pointer_type);
+    add_accumulate(builder, reduce.root(), "d", symbolic::zero(), pointer_type);
+    if (body_exp.has_value()) {
+        auto& block = builder.add_block(reduce.root());
+        auto& exp_node = static_cast<math::cmath::CMathNode&>(builder.add_library_node<math::cmath::CMathNode>(
+            block, DebugInfo(), math::cmath::CMathFunction::exp, types::PrimitiveType::Float
+        ));
+        exp_node.approximate(*body_exp);
+        builder.add_computational_memlet(
+            block, builder.add_access(block, "A"), exp_node, "_in1", {symbolic::symbol("i")}, pointer_type
+        );
+        builder.add_computational_memlet(block, exp_node, "_out", builder.add_access(block, "t"), {}, base_desc);
+    }
+    if (indexed) {
+        auto j = symbolic::symbol("j");
+        auto& map = builder.add_map(
+            reduce.root(),
+            j,
+            symbolic::Lt(j, symbolic::integer(8)),
+            symbolic::zero(),
+            symbolic::add(j, symbolic::one()),
+            structured_control_flow::ScheduleType_Sequential::create()
+        );
+        add_accumulate(builder, map.root(), "o", j, pointer_type);
+    }
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    passes::ReductionSharedMemoryDelinearization reduction_buffers;
+    reduction_buffers.run(builder, analysis_manager);
+    builder.subject().validate();
+
+    codegen::CLanguageExtension language_extension(builder.subject());
+    auto instrumentation = codegen::InstrumentationPlan::none(builder.subject());
+    auto arg_capture = codegen::ArgCapturePlan::none(builder.subject());
+    gpu::GPUOffloadReduceDispatcher dispatcher(
+        language_extension,
+        builder.subject(),
+        analysis_manager,
+        reduce,
+        *instrumentation,
+        *arg_capture,
+        std::make_unique<CUDAOffloadDispatcherStrategy>(builder.subject())
+    );
+    codegen::PrettyPrinter main_stream, globals_stream;
+    codegen::CodeSnippetFactory library_snippet_factory;
+    dispatcher.dispatch_node(main_stream, globals_stream, library_snippet_factory);
+    for (auto& [key, snippet] : library_snippet_factory.snippets()) {
+        if (snippet.extension() == "cu") {
+            return snippet.stream().str();
+        }
+    }
+    return "";
+}
+
+size_t count(const std::string& text, const std::string& needle) {
+    size_t n = 0;
+    for (size_t p = text.find(needle); p != std::string::npos; p = text.find(needle, p + 1)) {
+        ++n;
+    }
+    return n;
+}
+
+} // namespace
+
+// Online-softmax pair: the group is shuffled jointly, folded across the two warps of the
+// row, and committed by rescaling against the live-in (m, d).
+TEST(CUDAOffloadReduceDispatcherTest, RescaleGroup_SharedCombine) {
+    std::string kernel = dispatch_rescale_reduce(64, false);
+    ASSERT_FALSE(kernel.empty());
+    // 1024 iterations over 64 threads: whole waves, so the body is unguarded.
+    EXPECT_EQ(kernel.find("if (i < 1024)"), std::string::npos);
+    EXPECT_NE(kernel.find("__shfl_xor_sync"), std::string::npos);
+    EXPECT_NE(kernel.find("__daisy_rescale_nm_m"), std::string::npos);
+    EXPECT_NE(kernel.find("expf("), std::string::npos);
+    // Two warps per row: one cross-warp fold.
+    EXPECT_NE(kernel.find("__daisy_reduce_group_m"), std::string::npos);
+    // No per-container tree or separate max/add combine for the group members.
+    EXPECT_EQ(kernel.find("__daisy_reduce_m_m"), std::string::npos);
+    EXPECT_EQ(kernel.find("__daisy_reduce_m_d"), std::string::npos);
+    EXPECT_EQ(kernel.find("__daisy_reduce_shfl_d"), std::string::npos);
+    // The identity guard avoids exp(-inf - -inf).
+    EXPECT_NE(kernel.find("== (__daisy_rescale_nm_m) ?"), std::string::npos);
+}
+
+TEST(CUDAOffloadReduceDispatcherTest, RescaleGroup_IndexedDependent) {
+    std::string kernel = dispatch_rescale_reduce(32, true);
+    ASSERT_FALSE(kernel.empty());
+    // The indexed dependent is combined per slot, both in the shuffle and at commit.
+    EXPECT_GE(count(kernel, "for (int __daisy_reduce_slot_o = 0; __daisy_reduce_slot_o < 8;"), 2u);
+    EXPECT_NE(kernel.find("__daisy_rescale_od_o"), std::string::npos);
+    // Single warp: no cross-warp fold and no barrier in the combine.
+    EXPECT_EQ(kernel.find("__daisy_reduce_group_m"), std::string::npos);
+}
+
+TEST(CUDAOffloadReduceDispatcherTest, RescaleGroup_RequiresWarpShuffleWidth) {
+    // 48 threads: lane groups of 32 do not tile the row.
+    EXPECT_THROW(dispatch_rescale_reduce(48, false), InvalidSDFGException);
+}
+
+// The combine's exp follows the precision the body's exp was compiled with.
+TEST(CUDAOffloadReduceDispatcherTest, RescaleGroup_ExpFollowsApproximateFlag) {
+    std::string precise = dispatch_rescale_reduce(32, false, gpu::TargetLevel::X_BLOCK, false);
+    EXPECT_NE(precise.find("expf((float)((__daisy_rescale"), std::string::npos);
+    EXPECT_EQ(precise.find("__expf"), std::string::npos);
+
+    std::string approximate = dispatch_rescale_reduce(32, false, gpu::TargetLevel::X_BLOCK, true);
+    EXPECT_NE(approximate.find("__expf((float)((__daisy_rescale"), std::string::npos);
 }
 
 } // namespace sdfg::cuda

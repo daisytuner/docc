@@ -67,6 +67,8 @@ public:
 
     void einsum();
 
+    void approximate_math();
+
     /** @deprecated give targetOptions **/
     void expand();
     void expand(const std::string& target, const std::string& category);

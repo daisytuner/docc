@@ -239,8 +239,19 @@ UNARY = (
     ),
     _unary(
         "elu",
-        lambda b, t, p: b.add_elu("X", t["X"], "1.0", _scalar(p["dtype"]), "Y", t["Y"]),
-        lambda x: np.where(x > 0, x, np.exp(x) - 1),
+        lambda b, t, p: b.add_elu(
+            "X",
+            t["X"],
+            "1.0",
+            _scalar(p["dtype"]),
+            "1.0",
+            _scalar(p["dtype"]),
+            "1.0",
+            _scalar(p["dtype"]),
+            "Y",
+            t["Y"],
+        ),
+        lambda x: np.where(x > 0, x, np.expm1(x)),
         FLOAT_CASES,
         rtol=1e-4,
     ),
@@ -1152,7 +1163,6 @@ NODES = (
 
 DISABLED = {
     "hard_sigmoid": "node semantics do not match PyTorch's definition",
-    "leaky_relu": "node semantics do not match PyTorch's definition",
 }
 
 

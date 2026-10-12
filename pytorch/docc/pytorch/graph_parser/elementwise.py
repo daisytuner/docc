@@ -159,6 +159,50 @@ register_module("aten.cos.default", UnaryCMathTensorOpParser(CMathFunction.cos))
 register_module("aten.sin.default", UnaryCMathTensorOpParser(CMathFunction.sin))
 
 
+class ErfParser(GraphParserModule):
+    def parse(
+        self,
+        node: torch.fx.Node,
+        builder: StructuredSDFGBuilder,
+        metadata: TensorMetadata,
+    ) -> None:
+        if len(node.args) != 1:
+            raise GraphParserError(
+                self,
+                node,
+                "Expected exactly one argument but got " + str(len(node.args)),
+            )
+        if len(node.kwargs) != 0:
+            raise GraphParserError(
+                self, node, "Unsupported kwargs: " + str(node.kwargs)
+            )
+        self_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 0)
+        self_prim = self_info.element_type().primitive_type
+        if not primitive_type_is_floating_point(self_prim):
+            raise GraphParserError(
+                self, node, "Expected a floating point input but got " + str(self_prim)
+            )
+        result_info: TensorInfo = self.get_result_tensor_info(node, builder, metadata)
+        result_prim = result_info.element_type().primitive_type
+        if self_prim != result_prim:
+            raise GraphParserError(
+                self,
+                node,
+                f"Expected matching input and result types but got {self_prim} and {result_prim}",
+            )
+        debug_info: DebugInfo = self.get_debug_info(node)
+        builder.add_erf(
+            self_info.container(),
+            self_info.sdfg_tensor_type(),
+            result_info.container(),
+            result_info.sdfg_tensor_type(),
+            debug_info,
+        )
+
+
+register_module("aten.erf.default", ErfParser())
+
+
 class ElementwiseTensorOpParser(GraphParserModule):
     op_type: str
 

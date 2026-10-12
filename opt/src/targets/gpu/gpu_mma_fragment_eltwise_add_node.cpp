@@ -76,6 +76,16 @@ std::string GpuMmaFragmentEltwiseAddNode::toStr() const {
     return ss.str();
 }
 
+data_flow::PointerAccessType GpuMmaFragmentEltwiseAddNode::pointer_access_type(int input_idx) const {
+    auto frag_elems = SymEngine::mul(block_size_.get_shape(MmaFragmentType::C));
+    if (input_idx == FRAG_D_INPUT_IDX) {
+        return data_flow::PointerAccessMeta::create_full_write_only(frag_elems, true);
+    } else if (input_idx == FRAG_C_INPUT_IDX || input_idx == FRAG_ACC_INPUT_IDX) {
+        return data_flow::PointerAccessMeta::create_read_only(frag_elems, true);
+    }
+    return LibraryNode::pointer_access_type(input_idx);
+}
+
 nlohmann::json GpuMmaFragmentEltwiseAddNodeSerializer::serialize(const data_flow::LibraryNode& library_node) {
     const auto& node = static_cast<const GpuMmaFragmentEltwiseAddNode&>(library_node);
     nlohmann::json j;

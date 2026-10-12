@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -157,12 +158,13 @@ private:
         std::vector<int> coop_axes;
         tiles::TileGuard guard;
         symbolic::Expression coop_threads; ///< symbolic cooperating thread count (null = unknown)
+        size_t coop_lanes = 1; ///< lanes of a wave-granular slot axis that join the copy
     };
 
     /// Build the complete movement plan for the staged tile from its geometry.
-    /// The buffer kind selects the placement — dense whole-block (MultiDim),
-    /// per-thread-slot (Padded/Swizzle, with the swizzle riding on the plan), or
-    /// lane-contiguous flat (Linearized) — so this is the single place the copy's
+    /// The buffer placement selects the copy — dense whole-block (no slots),
+    /// per-thread-slot (slots, the swizzle riding on the plan), or lane-contiguous
+    /// flat (@ref tiles::Placement::Flat) — so this is the single place the copy's
     /// data-movement logic lives; callers only choose placement, direction, and
     /// barriers. @p guard_scope supplies the assumptions that discharge the guard.
     BuiltCopy build_tiled_copy(
@@ -209,6 +211,21 @@ private:
         const tiles::PackedBuffer& buffer,
         const types::IType& buffer_type,
         const std::vector<symbolic::Expression>& slot_indices
+    );
+
+    /// A library-node operand's own view of @p buffer: its shape, the buffer's tile
+    /// strides, and the buffer offset of its origin (slot + position within the tile).
+    std::optional<math::tensor::TensorLayout> operand_view(
+        const analysis::MemoryTile& access,
+        const tiles::PackedBuffer& buffer,
+        const std::vector<symbolic::Expression>& slot_indices
+    ) const;
+
+    /// Choose the bank-conflict policy of @p buffer staged in banked memory: pad per-thread
+    /// slots for the cooperative stores, or pad rows for the subgroup reads library nodes
+    /// declare on their operands.
+    void choose_conflict_policy(
+        analysis::AnalysisManager& analysis_manager, tiles::PackedBuffer& buffer, types::PrimitiveType element_type
     );
 
 public:

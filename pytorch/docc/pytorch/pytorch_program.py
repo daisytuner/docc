@@ -98,6 +98,9 @@ def _disable_export_guards():
 
 
 class PyTorchProgram(DoccProgram):
+    # Match torch.compile (Triton), which lowers exp & co. to fast approximations.
+    default_approximate_math = True
+
     def __init__(
         self,
         gm: torch.fx.GraphModule,
@@ -246,7 +249,7 @@ class PyTorchProgram(DoccProgram):
                     pass
 
             hash_input: bytes = (
-                f"{self.name}|{self.options.target}|{self.options.category}|{cache_key}|{model_code}|{self.options.capture_args}|{self.options.instrumentation_mode}|{self.options.remote_tuning}".encode(
+                f"{self.name}|{self.options.target}|{self.options.category}|{cache_key}|{model_code}|{self.options.capture_args}|{self.options.instrumentation_mode}|{self.options.remote_tuning}|{self.options.approximate_math}".encode(
                     "utf-8"
                 )
             )

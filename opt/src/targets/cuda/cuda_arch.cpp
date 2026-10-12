@@ -108,6 +108,20 @@ bool CudaMmaSupport::supported_types(types::PrimitiveType input_type, types::Pri
     }
 }
 
+types::PrimitiveType CudaMmaSupport::get_accumulator_type(
+    types::PrimitiveType output_type, types::PrimitiveType input_type, types::PrimitiveType desired_acc_type
+) const {
+    if (types::is_floating_point(input_type) && types::bit_width(input_type) <= 32) {
+        return types::PrimitiveType::Float;
+    } else if (input_type == types::PrimitiveType::Double) {
+        return types::PrimitiveType::Double;
+    } else if (types::is_integer(input_type)) {
+        return types::PrimitiveType::Int32;
+    } else {
+        throw std::runtime_error("Unsupported MMA input type: " + std::string(types::primitive_type_to_string(input_type)));
+    }
+}
+
 std::optional<data_flow::ImplementationType> CudaMmaSupport::
     get_matmul_impl_type(const GpuArch& arch, const GpuMmaTiling& tiling) const {
     return std::nullopt;
