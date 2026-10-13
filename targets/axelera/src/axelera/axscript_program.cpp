@@ -85,6 +85,20 @@ int64_t coefficient(const symbolic::Expression& term) {
     return 1;
 }
 
+/// True if every additive term of @p expr has an integer coefficient, as a PWORD index must.
+bool is_integral(const symbolic::Expression& expr) {
+    for (auto& term : terms(expr)) {
+        symbolic::Expression factor = term;
+        if (SymEngine::is_a<SymEngine::Mul>(*term)) {
+            factor = SymEngine::down_cast<const SymEngine::Mul&>(*term).get_coef();
+        }
+        if (SymEngine::is_a_Number(*factor) && !SymEngine::is_a<SymEngine::Integer>(*factor)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 /// Folds integer divisions and remainders of multiples of the divisor, as tile loops produce them, e.g.
 /// `idiv(32*t + 32, 32)` to `t + 1` and `imod(idiv(0, 32), 2)` to 0.
 symbolic::Expression fold_divisions(symbolic::Expression expr) {
@@ -247,8 +261,14 @@ ProgramEmitter::ProgramEmitter(
 }
 
 std::string ProgramEmitter::name(const std::string& container) const {
+    auto storage = sdfg_.type(container).storage_type();
+    // The module declares DDR buffers by their container names; the program declares L1 and IMC buffers per core.
+    if (storage != StorageType_L1() && storage != StorageType_IMC()) {
+        return container;
+    }
     auto start = container.find_first_not_of('_');
-    return start == std::string::npos || start == 0 ? container : container.substr(start);
+    auto stripped = start == std::string::npos || start == 0 ? container : container.substr(start);
+    return stripped + core_suffix_;
 }
 
 std::string ProgramEmitter::expression(const symbolic::Expression& expr) const {
@@ -260,17 +280,21 @@ std::string ProgramEmitter::scope(const std::string& container) const {
     return storage == StorageType_L1() ? "A.L1" : storage == StorageType_IMC() ? "A.IMC" : "A.DDR";
 }
 
-std::string ProgramEmitter::predicate() const {
+std::string ProgramEmitter::predicate(const symbolic::Condition& extra) const {
+    auto conditions = predicates_;
+    if (!extra.is_null()) {
+        conditions.push_back(extra);
+    }
     std::string conjunction;
-    for (auto& condition : predicates_) {
+    for (auto& condition : conditions) {
         auto term = lang_.expression(fold_divisions(symbolic::subs(condition, counters_)));
         conjunction = conjunction.empty() ? term : "A.And(" + conjunction + ", " + term + ")";
     }
     return conjunction;
 }
 
-std::string ProgramEmitter::where() const {
-    auto condition = predicate();
+std::string ProgramEmitter::where(const symbolic::Condition& extra) const {
+    auto condition = predicate(extra);
     return condition.empty() ? "" : ", where=" + condition;
 }
 
@@ -285,7 +309,7 @@ std::string ProgramEmitter::region(
     if (layout.dims() != 2 || !symbolic::eq(layout.get_stride(1), symbolic::one()) ||
         (!symbolic::eq(layout.get_dim(0), symbolic::one()) &&
          !symbolic::eq(layout.get_stride(0), symbolic::integer(shape.row_length)))) {
-        unsupported("the access " + layout.toStr() + " to " + container + ", which is not whole rows,");
+        unsupported("the access " + layout.toStr() + " to " + container + ", which is not along its rows,");
     }
     if (rows.is_null()) {
         rows = layout.get_dim(0);
@@ -300,12 +324,15 @@ std::string ProgramEmitter::region(
     strides.push_back(1);
     auto index = indices(fold_divisions(symbolic::expand(symbolic::subs(layout.offset(), counters_))), strides);
     auto first_row = index[shape.slots.size()];
-    if (!symbolic::eq(index.back(), symbolic::zero()) ||
-        as_int(layout.get_dim(1), "the row extent") != shape.row_length) {
-        unsupported("the access " + layout.toStr() + " to part of the rows of " + container);
+    auto columns = as_int(layout.get_dim(1), "the row extent");
+    auto lanes = static_cast<int64_t>(PWORD_LANES);
+    auto first_block = symbolic::expand(SymEngine::div(index.back(), symbolic::integer(lanes)));
+    if (columns % lanes != 0 || !is_integral(first_block)) {
+        unsupported("the access " + layout.toStr() + " to " + container + ", which is not whole PWORDs of its rows,");
     }
     if (shape.slots.empty() && symbolic::eq(first_row, symbolic::zero()) &&
-        symbolic::eq(rows, symbolic::integer(shape.rows))) {
+        symbolic::eq(rows, symbolic::integer(shape.rows)) && symbolic::eq(first_block, symbolic::zero()) &&
+        columns == shape.row_length) {
         return name(container);
     }
     // A predicated access is still evaluated when its predicate is false, so keep it within the buffer.
@@ -316,9 +343,8 @@ std::string ProgramEmitter::region(
     for (size_t d = 0; d < shape.slots.size(); ++d) {
         result += lang_.expression(index[d]) + ", ";
     }
-    auto pwords = shape.row_length / static_cast<int64_t>(PWORD_LANES);
-    return result + "A.Ramp(" + lang_.expression(first_row) + ", 1, " + lang_.expression(rows) + "), A.Ramp(0, 1, " +
-           std::to_string(pwords) + ")]";
+    return result + "A.Ramp(" + lang_.expression(first_row) + ", 1, " + lang_.expression(rows) + "), A.Ramp(" +
+           lang_.expression(first_block) + ", 1, " + std::to_string(columns / lanes) + ")]";
 }
 
 void ProgramEmitter::emit_allocations() {
@@ -347,16 +373,29 @@ void ProgramEmitter::emit_allocations() {
 
 void ProgramEmitter::emit_cores(structured_control_flow::Map& cores) {
     auto count = ScheduleType_Axelera::num_cores(cores.schedule_type());
-    if (count != 1 || !symbolic::eq(cores.init(), symbolic::zero())) {
-        unsupported("explicit memory management on " + std::to_string(count) + " cores");
+    if (!symbolic::eq(cores.init(), symbolic::zero()) || !symbolic::eq(cores.stride(), symbolic::one()) ||
+        !symbolic::eq(cores.num_iterations(), symbolic::integer(count))) {
+        unsupported("an AI-core loop that is not one iteration per core");
     }
-    out_ << "with A.AICore(core=0):" << std::endl;
-    out_.changeIndent(+4);
-    counters_[cores.indvar()] = symbolic::zero();
-    emit_allocations();
-    emit_sequence(cores.root());
-    wait_all();
-    out_.changeIndent(-4);
+    std::string barrier;
+    for (int64_t c = 0; c < count; ++c) {
+        barrier += (c > 0 ? ", " : "") + std::to_string(c);
+    }
+    for (int64_t c = 0; c < count; ++c) {
+        out_ << "with A.AICore(core=" << c << "):" << std::endl;
+        out_.changeIndent(+4);
+        counters_[cores.indvar()] = symbolic::integer(c);
+        core_suffix_ = count > 1 ? "_c" + std::to_string(c) : "";
+        emit_allocations();
+        emit_sequence(cores.root());
+        wait_all();
+        // Later datapaths read what every core stored.
+        if (count > 1) {
+            out_ << "A.barrier(" << barrier << ")" << std::endl;
+        }
+        out_.changeIndent(-4);
+    }
+    core_suffix_.clear();
 }
 
 void ProgramEmitter::emit_sequence(structured_control_flow::Sequence& sequence) {
@@ -418,11 +457,19 @@ void ProgramEmitter::emit_loop(structured_control_flow::StructuredLoop& loop) {
             unsupported("a matmul whose weights are not resident in the IMC");
         }
         bool predicated = !predicates_.empty();
-        out_ << "atomic.matmul(matrix_ifd="
-             << region(operand(block, *matmul, "A"), matmul->layout_a(), count, predicated)
-             << ", matrix_imc=" << name(imc)
-             << ", output=" << region(operand(block, *matmul, "Y"), matmul->layout_y(), count, predicated) << where()
-             << ")" << std::endl;
+        auto output = region(operand(block, *matmul, "Y"), matmul->layout_y(), count, predicated);
+        auto call = "atomic.matmul(matrix_ifd=" +
+                    region(operand(block, *matmul, "A"), matmul->layout_a(), count, predicated) +
+                    ", matrix_imc=" + name(imc) + ", output=" + output;
+        auto accumulate = matmul->accumulate();
+        if (!symbolic::is_true(accumulate)) {
+            auto overwrite = symbolic::is_false(accumulate) ? symbolic::Condition() : symbolic::Not(accumulate);
+            out_ << call << where(overwrite) << ")" << std::endl;
+        }
+        if (!symbolic::is_false(accumulate)) {
+            auto condition = symbolic::is_true(accumulate) ? symbolic::Condition() : accumulate;
+            out_ << call << ", partial=" << output << where(condition) << ")" << std::endl;
+        }
         counters_.erase(loop.indvar());
         return;
     }
@@ -489,15 +536,15 @@ void ProgramEmitter::emit_block(structured_control_flow::Block& block) {
 }
 
 void ProgramEmitter::emit_waits(const std::vector<Transfer>& transfers) {
-    std::vector<std::pair<std::string, std::string>> waits; // predicate, quoted ids
+    std::vector<std::pair<std::string, std::vector<std::string>>> waits; // predicate, ids
     for (auto& transfer : transfers) {
         auto it = std::find_if(waits.begin(), waits.end(), [&](auto& wait) {
             return wait.first == transfer.predicate;
         });
         if (it == waits.end()) {
-            waits.push_back({transfer.predicate, quoted(transfer.id)});
+            waits.push_back({transfer.predicate, {transfer.id}});
         } else {
-            it->second += ", " + quoted(transfer.id);
+            it->second.push_back(transfer.id);
         }
     }
     for (auto& [condition, ids] : waits) {
@@ -505,7 +552,10 @@ void ProgramEmitter::emit_waits(const std::vector<Transfer>& transfers) {
             out_ << "if " << condition << ":" << std::endl;
             out_.changeIndent(+4);
         }
-        out_ << "A.waits(" << ids << ")" << std::endl;
+        // One wait per copy: a wait naming several copies on one DMA consumes only one of their tokens.
+        for (auto& id : ids) {
+            out_ << "A.waits(" << quoted(id) << ")" << std::endl;
+        }
         if (!condition.empty()) {
             out_.changeIndent(-4);
         }

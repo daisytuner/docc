@@ -82,6 +82,10 @@ def _relu(x):
     return np.maximum(x, 0.0)
 
 
+def _matmul(a, b):
+    return a @ b
+
+
 # Each op reads "a" in [-1, 1) and/or "b" in [0.5, 1.5), the domain of division, sqrt and the logarithms.
 _ELEMENTWISE = {
     "div": (_div, np.divide, ("a", "b")),
@@ -179,6 +183,22 @@ def test_axelera_elementwise_op_runs_as_numpy(op):
     args = _op_inputs(names)
     np.testing.assert_allclose(
         _axelera("numpy", 1, fn)(*args), reference(*args), rtol=1e-5, atol=1e-6
+    )
+
+
+@requires_alto
+@pytest.mark.parametrize("cores", [1, 2])
+def test_axscript_matmul(cores):
+    rng = np.random.default_rng(0)
+    a = rng.random((128, 128), dtype=np.float32) * 2 - 1
+    b = rng.random((128, 128), dtype=np.float32) * 2 - 1
+
+    compiled = _axelera(cores=cores, fn=_matmul).compile(a, b)
+    assert compiled.lib_path.endswith(".axs.py")
+    # The MVM multiplies a and b quantized to int8 with one scale per matrix.
+    expected = a @ b
+    np.testing.assert_allclose(
+        compiled(a, b), expected, rtol=0, atol=0.03 * np.abs(expected).max()
     )
 
 

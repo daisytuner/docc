@@ -108,18 +108,31 @@ bool zero_fills(
     return symbolic::eq(symbolic::expand(symbolic::sub(store->subset().at(0), expected)), symbolic::zero());
 }
 
+/// All of @p k if the IMC holds it, otherwise the most whole PWORDs dividing @p k that it does.
+int64_t largest_panel(int64_t k) {
+    if (k <= MAX_MVM_REDUCTION) {
+        return k;
+    }
+    for (auto panel = MAX_MVM_REDUCTION; panel > 0; panel -= static_cast<int64_t>(PWORD_LANES)) {
+        if (k % panel == 0) {
+            return panel;
+        }
+    }
+    return k;
+}
+
 /// A float matmul as einsum detection finds it in a loop nest, with the nest zero-initializing its result.
 struct MvmMatch {
     std::unique_ptr<einsum::EinsumDetection> detection;
     const einsum::EinsumCluster* cluster = nullptr;
     einsum::Einsum2MatMul::MatMulAnalysis analysis;
-    int64_t m = 0, n = 0, k = 0;
+    int64_t m = 0, n = 0, k = 0, k_panel = 0, cores = 1;
     structured_control_flow::ControlFlowNode* zero_init = nullptr;
 };
 
-std::optional<MvmMatch> match_mvm(structured_control_flow::StructuredLoop& loop) {
+std::optional<MvmMatch> match_mvm(structured_control_flow::StructuredLoop& loop, int64_t k_panel, int64_t cores) {
     auto parent = dynamic_cast<structured_control_flow::Sequence*>(loop.get_parent());
-    if (!parent || parent->index(loop) < 1) {
+    if (!parent || parent->index(loop) < 1 || cores < 1) {
         return std::nullopt;
     }
     MvmMatch match;
@@ -137,9 +150,13 @@ std::optional<MvmMatch> match_mvm(structured_control_flow::StructuredLoop& loop)
         auto m = constant(analysis.m);
         auto n = constant(analysis.n);
         auto k = constant(analysis.k);
+        if (!m || !n || !k) {
+            continue;
+        }
+        auto panel = k_panel == 0 ? largest_panel(*k) : k_panel;
         // The MVM works on whole PWORDs of the reduction and the result rows.
-        if (!m || !n || !k || *n % PWORD_LANES != 0 || *k % PWORD_LANES != 0 || *k > MAX_MVM_REDUCTION ||
-            !is_dense(*analysis.layout_a, *m, *k) || !is_dense(*analysis.layout_b, *k, *n) ||
+        if (*n % PWORD_LANES != 0 || panel % PWORD_LANES != 0 || panel > MAX_MVM_REDUCTION || *k % panel != 0 ||
+            *m % cores != 0 || !is_dense(*analysis.layout_a, *m, *k) || !is_dense(*analysis.layout_b, *k, *n) ||
             !is_dense(*analysis.layout_y, *m, *n)) {
             continue;
         }
@@ -152,6 +169,8 @@ std::optional<MvmMatch> match_mvm(structured_control_flow::StructuredLoop& loop)
         match.m = *m;
         match.n = *n;
         match.k = *k;
+        match.k_panel = panel;
+        match.cores = cores;
         match.zero_init = &before;
         return std::optional<MvmMatch>(std::move(match));
     }
@@ -336,24 +355,43 @@ class QuantizedMvmBuilder {
         return quantized;
     }
 
-    /// `T[i, :] = A[i, :] @ B` on the MVM for every row i in one AI core.
+    /// `T[i, :] = A[i, :] @ B` on the MVM, each AI core multiplying a block of rows, in panels of the reduction.
     structured_control_flow::StructuredLoop&
     multiply(const std::string& a, const std::string& b, const std::string& products) {
         auto core = loop_variable("mvm_core");
         auto& cores = builder_.add_map(
             sequence_,
             core,
-            symbolic::Lt(core, symbolic::one()),
+            symbolic::Lt(core, symbolic::integer(match_.cores)),
             symbolic::zero(),
             symbolic::add(core, symbolic::one()),
-            ScheduleType_Axelera::create(AxeleraLevel::Core, 1),
+            ScheduleType_Axelera::create(AxeleraLevel::Core, match_.cores),
             debug_info_
         );
+        auto* scope = &cores.root();
+        symbolic::Expression first = symbolic::zero();
+        symbolic::Condition accumulate = symbolic::__false__();
+        auto panels = match_.k / match_.k_panel;
+        if (panels > 1) {
+            auto panel = loop_variable("mvm_panel");
+            auto& loop = builder_.add_for(
+                *scope,
+                panel,
+                symbolic::Lt(panel, symbolic::integer(panels)),
+                symbolic::zero(),
+                symbolic::add(panel, symbolic::one()),
+                debug_info_
+            );
+            scope = &loop.root();
+            first = symbolic::mul(panel, symbolic::integer(match_.k_panel));
+            accumulate = symbolic::Lt(symbolic::zero(), panel);
+        }
+        auto rows_per_core = match_.m / match_.cores;
         auto row = loop_variable("mvm_row");
         auto& rows = builder_.add_for(
-            cores.root(),
+            *scope,
             row,
-            symbolic::Lt(row, symbolic::integer(match_.m)),
+            symbolic::Lt(row, symbolic::integer(rows_per_core)),
             symbolic::zero(),
             symbolic::add(row, symbolic::one()),
             debug_info_
@@ -362,10 +400,13 @@ class QuantizedMvmBuilder {
         auto one = symbolic::one();
         auto n = symbolic::integer(match_.n);
         auto k = symbolic::integer(match_.k);
-        math::tensor::TensorLayout layout_a({one, k}, {k, one}, symbolic::mul(row, k));
-        math::tensor::TensorLayout layout_b({k, n}, {n, one}, symbolic::zero());
-        math::tensor::TensorLayout layout_y({one, n}, {n, one}, symbolic::mul(row, n));
-        auto& node = builder_.add_library_node<AxeleraMatMulNode>(block, debug_info_, layout_a, layout_b, layout_y);
+        auto k_panel = symbolic::integer(match_.k_panel);
+        auto i = symbolic::add(symbolic::mul(core, symbolic::integer(rows_per_core)), row);
+        math::tensor::TensorLayout layout_a({one, k_panel}, {k, one}, symbolic::add(symbolic::mul(i, k), first));
+        math::tensor::TensorLayout layout_b({k_panel, n}, {n, one}, symbolic::mul(first, n));
+        math::tensor::TensorLayout layout_y({one, n}, {n, one}, symbolic::mul(i, n));
+        auto& node =
+            builder_.add_library_node<AxeleraMatMulNode>(block, debug_info_, layout_a, layout_b, layout_y, accumulate);
         types::Pointer i8_pointer(i8_);
         types::Pointer f32_pointer(f32_);
         builder_.add_computational_memlet(block, scalar(block, products), node, "Y", {}, f32_pointer, debug_info_);
@@ -474,11 +515,11 @@ public:
 
 bool MvmEinsumTransform::
     can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
-    return match_mvm(loop_).has_value();
+    return match_mvm(loop_, k_panel_, cores_).has_value();
 }
 
 void MvmEinsumTransform::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
-    auto match = match_mvm(loop_);
+    auto match = match_mvm(loop_, k_panel_, cores_);
     if (!match) {
         throw transformations::InvalidTransformationException(
             "AxeleraMvmEinsumTransform: no dense float matmul into a zero-initialized result"
@@ -502,6 +543,8 @@ void MvmEinsumTransform::apply(builder::StructuredSDFGBuilder& builder, analysis
 void MvmEinsumTransform::to_json(nlohmann::json& j) const {
     j["transformation_type"] = name();
     j["loop_element_id"] = loop_element_id_;
+    j["k_panel"] = k_panel_;
+    j["cores"] = cores_;
 }
 
 namespace {

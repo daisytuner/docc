@@ -69,6 +69,8 @@ class ProgramEmitter {
     std::set<size_t> waited_;
     size_t groups_ = 0;
     size_t transfers_ = 0;
+    /// Appended to local buffer names in the region of one of several cores.
+    std::string core_suffix_;
 
     std::string name(const std::string& container) const;
     std::string expression(const symbolic::Expression& expr) const;
@@ -79,8 +81,9 @@ class ProgramEmitter {
         bool clamp = false
     ) const;
     std::string scope(const std::string& container) const;
-    std::string predicate() const;
-    std::string where() const;
+    /// Conjunction of the enclosing branch conditions and @p extra, if any.
+    std::string predicate(const symbolic::Condition& extra = SymEngine::null) const;
+    std::string where(const symbolic::Condition& extra = SymEngine::null) const;
 
     void emit_allocations();
     void emit_sequence(structured_control_flow::Sequence& sequence);

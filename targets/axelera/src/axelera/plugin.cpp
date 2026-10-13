@@ -4,6 +4,7 @@
 
 #include "docc/target/axelera/axelera_scheduler.h"
 #include "docc/target/axelera/datapath_dispatcher.h"
+#include "docc/target/axelera/matmul_mapping.h"
 #include "docc/target/axelera/schedule.h"
 #include "docc/target/axelera/tile_target.h"
 
@@ -15,7 +16,12 @@ DoccTarget axelera_target = {
     .short_name = "axelera",
     .apply_additional_compile_options = nullptr,
     .apply_expand_time_mapping = nullptr,
-    .apply_sched_time_mapping = nullptr,
+    .apply_sched_time_mapping =
+        [](sdfg::builder::StructuredSDFGBuilder& builder,
+           sdfg::analysis::AnalysisManager& analysis_manager,
+           const TargetOptions& options) {
+            return sdfg::axelera::map_matmuls(builder, analysis_manager);
+        },
     .get_target_loop_schedulers =
         [](const TargetOptions& options) -> std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> {
         return {std::make_shared<sdfg::passes::scheduler::AxeleraScheduler>()};

@@ -1,6 +1,7 @@
 #include "docc/target/axelera/matmul_node.h"
 
 #include <sdfg/data_flow/data_flow_graph.h>
+#include <sdfg/data_flow/pointer_metadata.h>
 #include <sdfg/exceptions.h>
 
 namespace sdfg {
@@ -36,7 +37,8 @@ AxeleraMatMulNode::AxeleraMatMulNode(
     data_flow::DataFlowGraph& parent,
     const math::tensor::TensorLayout& layout_a,
     const math::tensor::TensorLayout& layout_b,
-    const math::tensor::TensorLayout& layout_y
+    const math::tensor::TensorLayout& layout_y,
+    const symbolic::Condition& accumulate
 )
     : LibraryNode(
           element_id,
@@ -49,7 +51,7 @@ AxeleraMatMulNode::AxeleraMatMulNode(
           false,
           data_flow::ImplementationType_NONE
       ),
-      layout_a_(layout_a), layout_b_(layout_b), layout_y_(layout_y) {
+      layout_a_(layout_a), layout_b_(layout_b), layout_y_(layout_y), accumulate_(accumulate) {
     if (layout_a.dims() != 2 || layout_b.dims() != 2 || layout_y.dims() != 2) {
         throw std::invalid_argument("AxeleraMatMulNode: operands must be 2-dimensional");
     }
@@ -71,6 +73,9 @@ symbolic::SymbolSet AxeleraMatMulNode::symbols() const {
     layout_a_.collect_symbols(symbols);
     layout_b_.collect_symbols(symbols);
     layout_y_.collect_symbols(symbols);
+    for (auto& symbol : symbolic::atoms(accumulate_)) {
+        symbols.insert(symbol);
+    }
     return symbols;
 }
 
@@ -78,27 +83,38 @@ void AxeleraMatMulNode::replace(const symbolic::Expression old_expression, const
     layout_a_.replace_symbols(old_expression, new_expression);
     layout_b_.replace_symbols(old_expression, new_expression);
     layout_y_.replace_symbols(old_expression, new_expression);
+    accumulate_ = symbolic::subs(accumulate_, old_expression, new_expression);
 }
 
 void AxeleraMatMulNode::replace(const symbolic::ExpressionMapping& replacements) {
     layout_a_.replace_symbols(replacements);
     layout_b_.replace_symbols(replacements);
     layout_y_.replace_symbols(replacements);
+    accumulate_ = symbolic::subs(accumulate_, replacements);
 }
 
 std::unique_ptr<data_flow::DataFlowNode> AxeleraMatMulNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
-    return std::make_unique<AxeleraMatMulNode>(element_id, debug_info(), vertex, parent, layout_a_, layout_b_, layout_y_);
+    return std::make_unique<
+        AxeleraMatMulNode>(element_id, debug_info(), vertex, parent, layout_a_, layout_b_, layout_y_, accumulate_);
 }
 
 std::string AxeleraMatMulNode::toStr() const {
-    return "AxeleraMatMul(A: " + layout_a_.toStr() + ", B: " + layout_b_.toStr() + ", Y: " + layout_y_.toStr() + ")";
+    return "AxeleraMatMul(A: " + layout_a_.toStr() + ", B: " + layout_b_.toStr() + ", Y: " + layout_y_.toStr() +
+           ", accumulate: " + accumulate_->__str__() + ")";
 }
 
 data_flow::PointerAccessType AxeleraMatMulNode::pointer_access_type(int input_idx) const {
     switch (input_idx) {
         case Y_INPUT_IDX:
-            return data_flow::PointerAccessMeta::create_full_write_only(layout_y_.total_elements(), true, layout_y_);
+            if (symbolic::is_false(accumulate_)) {
+                return data_flow::PointerAccessMeta::create_full_write_only(layout_y_.total_elements(), true, layout_y_);
+            }
+            return data_flow::PointerAccessMeta::create_generic(
+                data_flow::TensorLayoutPattern::create(layout_y_, true),
+                data_flow::TensorLayoutPattern::create(layout_y_, true),
+                true
+            );
         case A_INPUT_IDX:
             return data_flow::PointerAccessMeta::create_read_only(layout_a_.total_elements(), true, layout_a_);
         case B_INPUT_IDX:

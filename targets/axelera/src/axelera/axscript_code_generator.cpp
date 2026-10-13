@@ -1,16 +1,20 @@
 #include "docc/target/axelera/axscript_code_generator.h"
 
 #include <fstream>
+#include <optional>
 #include <ranges>
 #include <unordered_set>
 
 #include <sdfg/analysis/arguments_analysis.h>
 #include <sdfg/codegen/dispatchers/node_dispatcher_registry.h>
+#include <sdfg/data_flow/library_nodes/stdlib/free.h>
+#include <sdfg/data_flow/library_nodes/stdlib/malloc.h>
 #include <sdfg/structured_control_flow/block.h>
 #include <sdfg/structured_control_flow/map.h>
 #include <sdfg/structured_control_flow/reduce.h>
 #include <sdfg/structured_control_flow/return.h>
 #include <sdfg/types/array.h>
+#include <sdfg/types/utils.h>
 
 #include "docc/target/axelera/axelera_scheduler.h"
 #include "docc/target/axelera/axscript_program.h"
@@ -33,6 +37,51 @@ std::string join(const std::vector<std::string>& parts) {
         result += (i > 0 ? ", " : "") + parts[i];
     }
     return result;
+}
+
+/// True if @p block only allocates or frees transients, which the module allocates as buffers itself.
+bool manages_transients(const StructuredSDFG& sdfg, structured_control_flow::Block& block) {
+    auto& dataflow = block.dataflow();
+    if (dataflow.library_nodes().empty()) {
+        return false;
+    }
+    for (auto& node : dataflow.nodes()) {
+        if (dynamic_cast<const stdlib::MallocNode*>(&node) || dynamic_cast<const stdlib::FreeNode*>(&node)) {
+            continue;
+        }
+        auto access = dynamic_cast<const data_flow::AccessNode*>(&node);
+        if (!access || dynamic_cast<const data_flow::ConstantNode*>(access) || !sdfg.is_transient(access->data())) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/// Elements of @p element type that a top-level malloc into @p name allocates, if one does.
+std::optional<int64_t> allocated_elements(StructuredSDFG& sdfg, const std::string& name, const types::Scalar& element) {
+    auto& root = sdfg.root();
+    for (size_t i = 0; i < root.size(); ++i) {
+        auto block = dynamic_cast<structured_control_flow::Block*>(&root.at(i));
+        if (!block) {
+            continue;
+        }
+        for (auto* node : block->dataflow().library_nodes()) {
+            auto malloc = dynamic_cast<stdlib::MallocNode*>(node);
+            if (!malloc) {
+                continue;
+            }
+            for (auto& memlet : block->dataflow().out_edges(*malloc)) {
+                if (static_cast<const data_flow::AccessNode&>(memlet.dst()).data() != name) {
+                    continue;
+                }
+                auto elements = symbolic::expand(symbolic::div(malloc->size(), types::get_type_size(element, false)));
+                if (SymEngine::is_a<SymEngine::Integer>(*elements)) {
+                    return SymEngine::down_cast<const SymEngine::Integer&>(*elements).as_int();
+                }
+            }
+        }
+    }
+    return std::nullopt;
 }
 
 } // namespace
@@ -99,7 +148,7 @@ void AxScriptCodeGenerator::collect_datapaths() {
             continue;
         }
         if (auto block = dynamic_cast<structured_control_flow::Block*>(&child);
-            block && std::ranges::empty(block->dataflow().nodes())) {
+            block && (std::ranges::empty(block->dataflow().nodes()) || manages_transients(sdfg_, *block))) {
             continue;
         }
         if (auto assignments = dynamic_cast<structured_control_flow::AssignmentBlock*>(&child);
@@ -181,10 +230,14 @@ void AxScriptCodeGenerator::collect_buffers() {
         } else if (auto pointer = dynamic_cast<const types::Pointer*>(&type)) {
             element = pointer->has_pointee_type() ? dynamic_cast<const types::Scalar*>(&pointer->pointee_type())
                                                   : nullptr;
-            if (!element || matrix == matrices.end()) {
-                unsupported("local pointer " + name + ", whose extent no tile copy determines,");
+            std::optional<int64_t> allocated;
+            if (element && matrix == matrices.end()) {
+                allocated = allocated_elements(sdfg_, name, *element);
             }
-            count = matrix->second.elements;
+            if (!element || (matrix == matrices.end() && !allocated)) {
+                unsupported("local pointer " + name + ", whose extent neither a tile copy nor a malloc determines,");
+            }
+            count = allocated ? *allocated : matrix->second.elements;
         } else {
             continue;
         }

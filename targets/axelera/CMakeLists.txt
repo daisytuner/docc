@@ -5,6 +5,7 @@ set(SOURCE_FILES
     src/axelera/axscript_program.cpp
     src/axelera/datapath.cpp
     src/axelera/datapath_dispatcher.cpp
+    src/axelera/matmul_mapping.cpp
     src/axelera/matmul_node.cpp
     src/axelera/matmul_transforms.cpp
     src/axelera/plugin.cpp

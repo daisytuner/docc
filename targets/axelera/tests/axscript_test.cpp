@@ -174,6 +174,46 @@ std::unique_ptr<StructuredSDFG> narrowing(int64_t n, bool round) {
     return builder.move();
 }
 
+/// out = a + b for row-major @p rows x @p columns matrices over a nest of maps, as the Python frontend emits it;
+/// b is read transposed if @p transposed.
+std::unique_ptr<StructuredSDFG> matrix_add(int64_t rows, int64_t columns, bool transposed) {
+    builder::StructuredSDFGBuilder builder("madd", FunctionType_CPU);
+    types::Pointer ptr{types::Scalar(types::PrimitiveType::Float)};
+    for (auto name : {"a", "b", "out"}) {
+        builder.add_container(name, ptr, true);
+    }
+    std::vector<symbolic::Symbol> indvars;
+    auto* scope = &builder.subject().root();
+    for (auto [name, count] : {std::pair{"i", rows}, std::pair{"j", columns}}) {
+        builder.add_container(name, types::Scalar(types::PrimitiveType::Int64));
+        auto indvar = symbolic::symbol(name);
+        auto& map = builder.add_map(
+            *scope,
+            indvar,
+            symbolic::Lt(indvar, symbolic::integer(count)),
+            symbolic::zero(),
+            symbolic::add(indvar, symbolic::one()),
+            structured_control_flow::ScheduleType_Sequential::create()
+        );
+        indvars.push_back(indvar);
+        scope = &map.root();
+    }
+    auto i = indvars[0];
+    auto j = indvars[1];
+    auto element = symbolic::add(symbolic::mul(i, symbolic::integer(columns)), j);
+    auto transposed_element = symbolic::add(symbolic::mul(j, symbolic::integer(rows)), i);
+
+    auto& block = builder.add_block(*scope);
+    auto& add = builder.add_tasklet(block, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
+    builder.add_computational_memlet(block, builder.add_access(block, "a"), add, "_in1", {element}, ptr);
+    builder.add_computational_memlet(
+        block, builder.add_access(block, "b"), add, "_in2", {transposed ? transposed_element : element}, ptr
+    );
+    builder.add_computational_memlet(block, add, "_out", builder.add_access(block, "out"), {element}, ptr);
+    builder.add_return(builder.subject().root(), "");
+    return builder.move();
+}
+
 void schedule_for_axelera(StructuredSDFG& sdfg, int64_t cores = 1) {
     builder::StructuredSDFGBuilder builder(sdfg);
     Options options;
@@ -285,6 +325,23 @@ TEST(AxScriptTest, SchedulerSplitsPwordsOverCores) {
     EXPECT_TRUE(axelera::ScheduleType_Axelera::is(grid.schedule_type(), axelera::AxeleraLevel::Stream));
     auto& lanes = dynamic_cast<structured_control_flow::Map&>(grid.root().at(0));
     EXPECT_TRUE(axelera::ScheduleType_Axelera::is(lanes.schedule_type(), axelera::AxeleraLevel::Lane));
+}
+
+TEST(AxScriptTest, SchedulerFlattensDenseMatrixMaps) {
+    auto sdfg = matrix_add(4, 128, false);
+    schedule_for_axelera(*sdfg);
+
+    auto& grid = dynamic_cast<structured_control_flow::Map&>(sdfg->root().at(0));
+    EXPECT_TRUE(axelera::ScheduleType_Axelera::is(grid.schedule_type(), axelera::AxeleraLevel::Stream));
+    EXPECT_EQ(grid.num_iterations()->__str__(), "8");
+    auto code = generate_axscript(*sdfg);
+    EXPECT_NE(code.find("                    out[i_flat0_tile0] = s0_out.pop()\n"), std::string::npos) << code;
+}
+
+TEST(AxScriptTest, TransposedMatrixAccessIsNotFlattened) {
+    auto sdfg = matrix_add(128, 128, true);
+    schedule_for_axelera(*sdfg);
+    EXPECT_NE(error_of(*sdfg).find("it contains loops"), std::string::npos);
 }
 
 TEST(AxScriptTest, VectorAddOnTwoCores) {

@@ -1,6 +1,10 @@
 #include "docc/target/axelera/axelera_scheduler.h"
 
+#include <algorithm>
+#include <vector>
+
 #include <sdfg/analysis/loop_analysis.h>
+#include <sdfg/structured_control_flow/block.h>
 #include <sdfg/structured_control_flow/map.h>
 #include <sdfg/structured_control_flow/reduce.h>
 #include <sdfg/transformations/loop_tiling.h>
@@ -21,6 +25,95 @@ std::optional<int64_t> constant(const symbolic::Expression& expr) {
 }
 
 } // namespace
+
+structured_control_flow::Map* flatten_dense_nest(
+    builder::StructuredSDFGBuilder& builder,
+    analysis::AnalysisManager& analysis_manager,
+    structured_control_flow::Map& outer
+) {
+    std::vector<structured_control_flow::Map*> maps{&outer};
+    while (maps.back()->root().size() == 1) {
+        auto inner = dynamic_cast<structured_control_flow::Map*>(&maps.back()->root().at(0));
+        if (!inner) {
+            break;
+        }
+        maps.push_back(inner);
+    }
+    if (maps.size() < 2) {
+        return nullptr;
+    }
+
+    std::vector<symbolic::Symbol> indvars;
+    std::vector<int64_t> counts;
+    for (auto* map : maps) {
+        auto count = constant(map->num_iterations());
+        if (constant(map->init()) != 0 || constant(map->stride()) != 1 || !count || *count <= 0) {
+            return nullptr;
+        }
+        indvars.push_back(map->indvar());
+        counts.push_back(*count);
+    }
+    symbolic::Expression linear = symbolic::zero();
+    int64_t total = 1;
+    for (size_t d = maps.size(); d-- > 0;) {
+        linear = symbolic::add(linear, symbolic::mul(indvars[d], symbolic::integer(total)));
+        total *= counts[d];
+    }
+    symbolic::ExpressionMapping origin, unit, relabel;
+    for (auto& indvar : indvars) {
+        origin[indvar] = symbolic::zero();
+        unit[indvar] = symbolic::zero();
+        relabel[indvar] = symbolic::zero();
+    }
+    unit[indvars.back()] = symbolic::one();
+
+    // Only memlets may use the indvars, each index as an offset plus a multiple of the linear index.
+    auto& body = maps.back()->root();
+    for (size_t i = 0; i < body.size(); ++i) {
+        auto block = dynamic_cast<structured_control_flow::Block*>(&body.at(i));
+        if (!block || !block->dataflow().library_nodes().empty()) {
+            return nullptr;
+        }
+        for (auto& node : block->dataflow().nodes()) {
+            auto access = dynamic_cast<const data_flow::AccessNode*>(&node);
+            if (access && std::ranges::any_of(indvars, [&](auto& indvar) {
+                    return access->data() == indvar->get_name();
+                })) {
+                return nullptr;
+            }
+        }
+        for (auto& memlet : block->dataflow().edges()) {
+            for (auto& index : memlet.subset()) {
+                auto step = symbolic::expand(symbolic::sub(index, symbolic::subs(index, origin)));
+                auto multiple = symbolic::mul(symbolic::subs(step, unit), linear);
+                if (!symbolic::eq(symbolic::expand(symbolic::sub(step, multiple)), symbolic::zero())) {
+                    return nullptr;
+                }
+            }
+        }
+    }
+
+    auto& parent = static_cast<structured_control_flow::Sequence&>(*outer.get_parent());
+    auto name = builder.find_new_name(outer.indvar()->get_name() + "_flat");
+    builder.add_container(name, builder.subject().type(outer.indvar()->get_name()));
+    auto index = symbolic::symbol(name);
+    auto& flat = builder.add_map_before(
+        parent,
+        outer,
+        index,
+        symbolic::Lt(index, symbolic::integer(total)),
+        symbolic::zero(),
+        symbolic::add(index, symbolic::one()),
+        outer.schedule_type(),
+        outer.debug_info()
+    );
+    builder.move_children(body, flat.root());
+    relabel[indvars.back()] = index;
+    flat.root().replace(relabel);
+    builder.remove_child(parent, parent.index(outer));
+    analysis_manager.invalidate_all();
+    return &flat;
+}
 
 std::string datapath_obstacle(
     const StructuredSDFG& sdfg,
@@ -101,6 +194,20 @@ SchedulerAction AxeleraScheduler::find(
     bool offload_unknown_sizes
 ) {
     return NEXT;
+}
+
+void AxeleraScheduler::pre_schedule(
+    builder::StructuredSDFGBuilder& builder,
+    analysis::AnalysisManager& analysis_manager,
+    std::vector<structured_control_flow::StructuredLoop*>& applicable_loops
+) {
+    for (auto& loop : applicable_loops) {
+        if (auto map = dynamic_cast<structured_control_flow::Map*>(loop)) {
+            if (auto flat = axelera::flatten_dense_nest(builder, analysis_manager, *map)) {
+                loop = flat;
+            }
+        }
+    }
 }
 
 bool AxeleraScheduler::can_apply_schedule(

@@ -11,13 +11,15 @@ inline data_flow::LibraryNodeCode LibraryNodeType_AxeleraImcLoad("axelera.ImcLoa
 
 /**
  * `Y = A @ B` on the MVM of an AI core: A (M x K) and B (K x N) are int8, Y (M x N) is float32 and the products
- * accumulate exactly in int32. Every operand is a bare pointer addressed through its layout (shape outermost first),
- * so the tile transformations can repoint it at a staged buffer.
+ * accumulate exactly in int32. Where @ref accumulate holds, the products add to Y instead (`Y += A @ B`), as the
+ * panels of a split reduction do. Every operand is a bare pointer addressed through its layout (shape outermost
+ * first), so the tile transformations can repoint it at a staged buffer.
  */
 class AxeleraMatMulNode : public data_flow::LibraryNode {
     math::tensor::TensorLayout layout_a_;
     math::tensor::TensorLayout layout_b_;
     math::tensor::TensorLayout layout_y_;
+    symbolic::Condition accumulate_;
 
 public:
     static constexpr int Y_INPUT_IDX = 0;
@@ -31,7 +33,8 @@ public:
         data_flow::DataFlowGraph& parent,
         const math::tensor::TensorLayout& layout_a,
         const math::tensor::TensorLayout& layout_b,
-        const math::tensor::TensorLayout& layout_y
+        const math::tensor::TensorLayout& layout_y,
+        const symbolic::Condition& accumulate = symbolic::__false__()
     );
 
     const math::tensor::TensorLayout& layout_a() const {
@@ -42,6 +45,9 @@ public:
     }
     const math::tensor::TensorLayout& layout_y() const {
         return layout_y_;
+    }
+    const symbolic::Condition& accumulate() const {
+        return accumulate_;
     }
 
     void validate(const Function& function) const override;
