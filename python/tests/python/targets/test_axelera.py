@@ -15,14 +15,29 @@ def _vadd(a, b):
     return a + b
 
 
+def _sum(a):
+    return np.sum(a)
+
+
+def _max(a):
+    return np.max(a)
+
+
+def _min(a):
+    return np.min(a)
+
+
+_REDUCTIONS = {"sum": (_sum, np.sum), "max": (_max, np.max), "min": (_min, np.min)}
+
+
 def _inputs(n=512):
     rng = np.random.default_rng(0)
     return rng.random(n, dtype=np.float32), rng.random(n, dtype=np.float32)
 
 
-def _axelera(codegen="axscript", cores=1):
+def _axelera(codegen="axscript", cores=1, fn=_vadd):
     return native(
-        _vadd,
+        fn,
         target="axelera",
         codegen=codegen,
         symbolic_shapes=False,
@@ -49,6 +64,26 @@ def test_axscript_vector_add(cores):
 def test_axelera_schedule_runs_as_numpy(cores):
     a, b = _inputs()
     np.testing.assert_allclose(_axelera("numpy", cores)(a, b), a + b, rtol=1e-6)
+
+
+@requires_alto
+@pytest.mark.parametrize("cores", [1, 2])
+@pytest.mark.parametrize("reduction", sorted(_REDUCTIONS))
+def test_axscript_reduction(reduction, cores):
+    fn, reference = _REDUCTIONS[reduction]
+    a, _ = _inputs()
+
+    compiled = _axelera(cores=cores, fn=fn).compile(a)
+    assert compiled.lib_path.endswith(".axs.py")
+    np.testing.assert_allclose(compiled(a), reference(a), rtol=1e-2)
+
+
+@pytest.mark.parametrize("cores", [1, 2, 4])
+@pytest.mark.parametrize("reduction", sorted(_REDUCTIONS))
+def test_axelera_reduction_runs_as_numpy(reduction, cores):
+    fn, reference = _REDUCTIONS[reduction]
+    a, _ = _inputs()
+    np.testing.assert_allclose(_axelera("numpy", cores, fn)(a), reference(a), rtol=1e-5)
 
 
 def test_axscript_requires_alto(monkeypatch):

@@ -2,6 +2,8 @@
 
 #include <sdfg/codegen/language_extensions/python_language_extension.h>
 
+#include "docc/target/axelera/datapath.h"
+
 namespace sdfg {
 namespace axelera {
 
@@ -28,8 +30,11 @@ public:
     /// dtype of the DPU registers, which compute at reduced precision.
     static std::string dpu_type();
 
-    /// DPU expression applying @p code to register expressions @p operands.
-    std::string dpu_operation(data_flow::TaskletCode code, const std::vector<std::string>& operands) const;
+    /// DPU expression applying @p op to register expressions @p operands.
+    std::string dpu_operation(DpuOp op, const std::vector<std::string>& operands) const;
+
+    /// DPU expression reducing the lanes of register @p value with @p op, broadcast back to all lanes.
+    std::string lane_reduction(DpuOp op, const std::string& value) const;
 
     /// Distinguishes the stream and register names of each datapath in a module.
     size_t next_datapath() {

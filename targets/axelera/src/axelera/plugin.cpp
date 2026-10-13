@@ -40,6 +40,19 @@ void register_plugin(sdfg::plugins::Context& context) {
             );
         }
     );
+    context.reduce_dispatcher_registry.register_reduce_dispatcher(
+        sdfg::axelera::ScheduleType_Axelera::value(),
+        [](sdfg::codegen::LanguageExtension& language_extension,
+           sdfg::StructuredSDFG& sdfg,
+           sdfg::analysis::AnalysisManager& analysis_manager,
+           sdfg::structured_control_flow::Reduce& node,
+           sdfg::codegen::InstrumentationPlan& instrumentation_plan,
+           sdfg::codegen::ArgCapturePlan& arg_capture_plan) {
+            return std::make_unique<sdfg::axelera::AxeleraReduceDispatcher>(
+                language_extension, sdfg, analysis_manager, node, instrumentation_plan, arg_capture_plan
+            );
+        }
+    );
     context.scheduler_registry.register_loop_scheduler<
         sdfg::passes::scheduler::AxeleraScheduler>(sdfg::passes::scheduler::AxeleraScheduler::target());
     context.add_target(&axelera_target);

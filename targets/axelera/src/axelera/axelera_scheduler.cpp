@@ -2,6 +2,7 @@
 
 #include <sdfg/analysis/loop_analysis.h>
 #include <sdfg/structured_control_flow/map.h>
+#include <sdfg/structured_control_flow/reduce.h>
 #include <sdfg/transformations/loop_tiling.h>
 
 #include "docc/target/axelera/datapath.h"
@@ -24,14 +25,18 @@ std::optional<int64_t> constant(const symbolic::Expression& expr) {
 std::string datapath_obstacle(
     const StructuredSDFG& sdfg,
     analysis::AnalysisManager& analysis_manager,
-    structured_control_flow::Map& map,
+    structured_control_flow::StructuredLoop& loop,
     int64_t cores
 ) {
-    if (!analysis_manager.get<analysis::LoopAnalysis>().children(&map).empty()) {
+    auto reduce = dynamic_cast<structured_control_flow::Reduce*>(&loop);
+    if (!dynamic_cast<structured_control_flow::Map*>(&loop) && !reduce) {
+        return "it is neither a map nor a reduction";
+    }
+    if (!analysis_manager.get<analysis::LoopAnalysis>().children(&loop).empty()) {
         return "it contains loops";
     }
-    auto count = constant(map.num_iterations());
-    if (constant(map.init()) != 0 || constant(map.stride()) != 1 || !count || *count <= 0) {
+    auto count = constant(loop.num_iterations());
+    if (constant(loop.init()) != 0 || constant(loop.stride()) != 1 || !count || *count <= 0) {
         return "it does not count from zero in unit steps for a fixed number of iterations";
     }
     if (*count % PWORD_LANES != 0) {
@@ -45,11 +50,23 @@ std::string datapath_obstacle(
     }
 
     try {
-        auto plan = plan_datapath(sdfg, map.root(), map.indvar());
+        std::string accumulator;
+        std::optional<DpuOp> combine;
+        if (reduce) {
+            auto kernel = match_reduction(sdfg, analysis_manager, *reduce);
+            accumulator = kernel.accumulator;
+            combine = kernel.combine;
+        }
+        auto plan = plan_datapath(sdfg, loop.root(), loop.indvar(), accumulator);
+        if (plan.combine != combine) {
+            return "its accumulator update does not match the reduction operation";
+        }
         auto streams = plan.inputs;
-        streams.push_back(plan.output);
+        if (plan.output) {
+            streams.push_back(*plan.output);
+        }
         for (auto& stream : streams) {
-            auto first = constant(symbolic::expand(symbolic::subs(stream.index, map.indvar(), symbolic::zero())));
+            auto first = constant(symbolic::expand(symbolic::subs(stream.index, loop.indvar(), symbolic::zero())));
             if (!first || *first % static_cast<int64_t>(PWORD_LANES) != 0) {
                 return "its access to " + stream.container + " is not PWORD-aligned";
             }
@@ -71,7 +88,7 @@ SchedulerAction AxeleraScheduler::find(
     structured_control_flow::StructuredLoop& loop,
     bool offload_unknown_sizes
 ) {
-    if (dyn_cast<structured_control_flow::Map*>(&loop)) {
+    if (dyn_cast<structured_control_flow::Map*>(&loop) || dyn_cast<structured_control_flow::Reduce*>(&loop)) {
         return APPLY;
     }
     return CHILDREN;
@@ -92,9 +109,8 @@ bool AxeleraScheduler::can_apply_schedule(
     structured_control_flow::StructuredLoop& loop,
     bool offload_unknown_sizes
 ) {
-    auto map = dyn_cast<structured_control_flow::Map*>(&loop);
     auto cores = analysis_manager.options().get(axelera::NUM_CORES, int64_t{1});
-    if (!map || !axelera::datapath_obstacle(builder.subject(), analysis_manager, *map, cores).empty()) {
+    if (!axelera::datapath_obstacle(builder.subject(), analysis_manager, loop, cores).empty()) {
         return false;
     }
     transformations::LoopTiling tiling(loop, axelera::PWORD_LANES);

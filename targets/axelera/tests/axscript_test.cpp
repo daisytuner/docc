@@ -2,9 +2,11 @@
 
 #include <sdfg/builder/structured_sdfg_builder.h>
 #include <sdfg/codegen/dispatchers/node_dispatcher_registry.h>
+#include <sdfg/data_flow/library_nodes/math/cmath/cmath_node.h>
 #include <sdfg/passes/scheduler/loop_scheduling_pass.h>
 #include <sdfg/serializer/json_serializer.h>
 #include <sdfg/structured_control_flow/map.h>
+#include <sdfg/structured_control_flow/reduce.h>
 
 #include "docc/target/axelera/axelera_scheduler.h"
 #include "docc/target/axelera/axscript_code_generator.h"
@@ -55,6 +57,57 @@ std::unique_ptr<StructuredSDFG> elementwise(
     return builder.move();
 }
 
+/// out[0] = reduction of a[k] for k < n starting from @p start, as the Python frontend emits np.sum/max/min.
+std::unique_ptr<StructuredSDFG>
+reduction(int64_t n, structured_control_flow::ReductionOperation operation, const std::string& start) {
+    using structured_control_flow::ReductionOperation;
+    builder::StructuredSDFGBuilder builder("red", FunctionType_CPU);
+    types::Scalar f32(types::PrimitiveType::Float);
+    types::Pointer ptr(f32);
+    builder.add_container("a", ptr, true);
+    builder.add_container("out", ptr, true);
+    builder.add_container("acc", f32);
+    builder.add_container("k", types::Scalar(types::PrimitiveType::Int64));
+    auto& root = builder.subject().root();
+
+    auto& init = builder.add_block(root);
+    auto& set = builder.add_tasklet(init, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(init, builder.add_constant(init, start, f32), set, "_in", {}, f32);
+    builder.add_computational_memlet(init, set, "_out", builder.add_access(init, "acc"), {}, f32);
+
+    auto k = symbolic::symbol("k");
+    auto& loop = builder.add_reduce(
+        root,
+        k,
+        symbolic::Lt(k, symbolic::integer(n)),
+        symbolic::integer(0),
+        symbolic::add(k, symbolic::integer(1)),
+        {{operation, "acc"}},
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+    auto& body = builder.add_block(loop.root());
+    data_flow::CodeNode* combine;
+    if (operation == ReductionOperation::Add) {
+        combine = &builder.add_tasklet(body, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
+    } else {
+        auto function = operation == ReductionOperation::Max ? math::cmath::CMathFunction::fmax
+                                                             : math::cmath::CMathFunction::fmin;
+        combine =
+            &builder.add_library_node<math::cmath::CMathNode>(body, DebugInfo(), function, types::PrimitiveType::Float);
+    }
+    builder.add_computational_memlet(body, builder.add_access(body, "a"), *combine, "_in1", {k}, ptr);
+    builder.add_computational_memlet(body, builder.add_access(body, "acc"), *combine, "_in2", {}, f32);
+    builder.add_computational_memlet(body, *combine, "_out", builder.add_access(body, "acc"), {}, f32);
+
+    auto& writeback = builder.add_block(root);
+    auto& store = builder.add_tasklet(writeback, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(writeback, builder.add_access(writeback, "acc"), store, "_in", {}, f32);
+    builder
+        .add_computational_memlet(writeback, store, "_out", builder.add_access(writeback, "out"), {symbolic::zero()}, ptr);
+    builder.add_return(root, "");
+    return builder.move();
+}
+
 void schedule_for_axelera(StructuredSDFG& sdfg, int64_t cores = 1) {
     builder::StructuredSDFGBuilder builder(sdfg);
     Options options;
@@ -95,8 +148,8 @@ TEST(AxScriptTest, VectorAdd) {
         generate_axscript(*sdfg),
         R"(import axelera.compiler.alto.script as A
 
-# docc: SDFG arguments in order ("out" buffers are returned through A.output) and AI cores used.
-_docc_arguments = [("a", "in"), ("b", "in"), ("out", "out")]
+# docc: SDFG arguments in order with their element counts ("out" buffers are returned through A.output) and AI cores used.
+_docc_arguments = [("a", "in", 512), ("b", "in", 512), ("out", "out", 512)]
 _docc_num_cores = 1
 
 
@@ -115,7 +168,7 @@ class ew:
                 with A.IFD(num=1):
                     s0_1.push(b[i_tile0])
                 with A.DPU():
-                    r0 = A.array("float18x64")
+                    r0 = A.array("float18x64", size=3)
                     r0[0] = A.cast(s0_0.pop(), "float18x64")
                     r0[1] = A.cast(s0_1.pop(), "float18x64")
                     r0[2] = r0[0] + r0[1]
@@ -171,7 +224,7 @@ TEST(AxScriptTest, VectorAddOnTwoCores) {
                id + "_1.push(b[" + offset + R"(i_tile1])
                     with A.DPU():
                         r)" +
-               id + R"( = A.array("float18x64")
+               id + R"( = A.array("float18x64", size=3)
                         r)" +
                id + "[0] = A.cast(s" + id + R"(_0.pop(), "float18x64")
                         r)" +
@@ -189,8 +242,8 @@ TEST(AxScriptTest, VectorAddOnTwoCores) {
         generate_axscript(*sdfg),
         R"(import axelera.compiler.alto.script as A
 
-# docc: SDFG arguments in order ("out" buffers are returned through A.output) and AI cores used.
-_docc_arguments = [("a", "in"), ("b", "in"), ("out", "out")]
+# docc: SDFG arguments in order with their element counts ("out" buffers are returned through A.output) and AI cores used.
+_docc_arguments = [("a", "in", 512), ("b", "in", 512), ("out", "out", 512)]
 _docc_num_cores = 2
 
 
@@ -247,6 +300,100 @@ TEST(AxScriptTest, ThirdInputStreamIsRejected) {
     schedule_for_axelera(*sdfg);
 
     EXPECT_NE(error_of(*sdfg).find("third input stream"), std::string::npos) << error_of(*sdfg);
+}
+
+TEST(AxScriptTest, SumReduction) {
+    auto sdfg = reduction(512, structured_control_flow::ReductionOperation::Add, "0.0");
+    schedule_for_axelera(*sdfg);
+
+    EXPECT_EQ(
+        generate_axscript(*sdfg),
+        R"(import axelera.compiler.alto.script as A
+
+# docc: SDFG arguments in order with their element counts ("out" buffers are returned through A.output) and AI cores used.
+_docc_arguments = [("a", "in", 512), ("out", "out", 1)]
+_docc_num_cores = 1
+
+
+@A.ir_module
+class red:
+    @A.prim_func
+    def main(a: A.Buffer((8,), "float32x64", scope=A.DDR)):
+        out = A.alloc_buffer((1,), "float32x64", scope=A.DDR)
+        with A.Datapath():
+            s0_0 = A.decl_stream("float32x64")
+            s0_out = A.decl_stream("float32x64")
+            with A.IFD(num=0):
+                for k_tile0 in A.serial(8):
+                    s0_0.push(a[k_tile0])
+            with A.DPU():
+                r0 = A.array("float18x64", size=2)
+                r0[0] = A.cast(s0_0.pop(), "float18x64")
+                r0[1] = r0[0]
+                for k_tile0 in A.serial(7):
+                    r0[0] = A.cast(s0_0.pop(), "float18x64")
+                    r0[1] = r0[1] + r0[0]
+                r0[1] = A.dpu.ops.add_reduce(r0[1])
+                s0_out.push(r0[1])
+            with A.ODR():
+                out[0] = s0_out.pop()
+        A.output(out)
+)"
+    );
+}
+
+TEST(AxScriptTest, MaxReductionOnTwoCores) {
+    auto sdfg = reduction(512, structured_control_flow::ReductionOperation::Max, "-inf");
+    schedule_for_axelera(*sdfg, 2);
+
+    auto& cores = dynamic_cast<structured_control_flow::Reduce&>(sdfg->root().at(1));
+    EXPECT_TRUE(axelera::ScheduleType_Axelera::is(cores.schedule_type(), axelera::AxeleraLevel::Core));
+
+    auto code = generate_axscript(*sdfg);
+    std::vector<std::string> in_order = {
+        "_docc_num_cores = 2",
+        "        acc_partials = A.alloc_buffer((2,), \"float32x64\", scope=A.L2)\n"
+        "        with A.AICore(core=0):\n",
+        "                    for k_tile1 in A.serial(4):\n"
+        "                        s0_0.push(a[k_tile1])\n",
+        "                        r0[1] = A.max(r0[1], r0[0])\n",
+        "                    s0_out.push(r0[1])\n"
+        "                with A.ODR():\n"
+        "                    acc_partials[0] = s0_out.pop()\n"
+        "            A.barrier(0, 1)\n"
+        "        with A.AICore(core=1):\n",
+        "                        s1_0.push(a[4 + k_tile1])\n",
+        "                    acc_partials[1] = s1_out.pop()\n"
+        "            A.barrier(0, 1)\n"
+        "            with A.Datapath():\n",
+        "                        s2_0.push(acc_partials[c2])\n",
+        "                    r2[0] = A.dpu.ops.max_reduce(r2[0])\n",
+        "                    out[0] = s2_out.pop()\n"
+        "        A.output(out)\n",
+    };
+    size_t position = 0;
+    for (auto& part : in_order) {
+        auto found = code.find(part, position);
+        ASSERT_NE(found, std::string::npos) << "missing in order: " << part << "\n" << code;
+        position = found + part.size();
+    }
+    EXPECT_EQ(code.find("max_reduce"), code.rfind("max_reduce")) << "only the combine reduces lanes\n" << code;
+}
+
+TEST(AxScriptTest, MinReductionUsesMin) {
+    auto sdfg = reduction(128, structured_control_flow::ReductionOperation::Min, "inf");
+    schedule_for_axelera(*sdfg);
+
+    auto code = generate_axscript(*sdfg);
+    EXPECT_NE(code.find("r0[1] = A.min(r0[1], r0[0])"), std::string::npos) << code;
+    EXPECT_NE(code.find("r0[1] = A.dpu.ops.min_reduce(r0[1])"), std::string::npos) << code;
+}
+
+TEST(AxScriptTest, NonIdentityStartIsRejected) {
+    auto sdfg = reduction(512, structured_control_flow::ReductionOperation::Add, "1.0");
+    schedule_for_axelera(*sdfg);
+
+    EXPECT_NE(error_of(*sdfg).find("not the reduction's identity"), std::string::npos) << error_of(*sdfg);
 }
 
 int main(int argc, char** argv) {

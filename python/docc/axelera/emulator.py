@@ -62,16 +62,42 @@ def grid(*extents):
     return itertools.product(*(range(extent) for extent in extents))
 
 
+serial = grid
+
+
 def decl_stream(dtype):
     return _Stream()
 
 
-def array(dtype):
+def array(dtype, size=None):
     return {}
 
 
 def cast(value, dtype):
     return np.asarray(value).astype(_element_type(dtype)[0])
+
+
+# Lane-wise binary DPU operations; these shadow the builtins only inside this module.
+def max(a, b):  # noqa: A001
+    return np.maximum(a, b)
+
+
+def min(a, b):  # noqa: A001
+    return np.minimum(a, b)
+
+
+def _lane_reduction(reduce):
+    return lambda value: np.full_like(value, reduce(value))
+
+
+# Cross-lane reductions broadcast their result back to every lane.
+dpu = types.SimpleNamespace(
+    ops=types.SimpleNamespace(
+        add_reduce=_lane_reduction(np.sum),
+        max_reduce=_lane_reduction(np.max),
+        min_reduce=_lane_reduction(np.min),
+    )
+)
 
 
 def output(*buffers):
@@ -86,7 +112,8 @@ def _unit(**kwargs):
     return contextlib.nullcontext()
 
 
-# Core regions run one after another; datapaths on different cores touch disjoint chunks.
+# Core regions run one after another and barriers are no-ops: datapaths on different cores touch disjoint chunks,
+# and the generated code reads other cores' results only on the last core.
 Datapath = IFD = DPU = ODR = AICore = _unit
 
 
@@ -119,14 +146,21 @@ def load(path: str, name: str, lanes: int = 64):
     with _as_axscript():
         spec.loader.exec_module(module)
     kernel = getattr(module, name).main
-    directions = [direction for _, direction in module._docc_arguments]
+    arguments = [(direction, count) for _, direction, count in module._docc_arguments]
+
+    def pwords(arg, count):
+        padded = np.zeros(-(-count // lanes) * lanes, arg.dtype)
+        padded[:count] = arg.reshape(-1)[:count]
+        return padded.reshape(-1, lanes)
 
     def run(*args):
         inputs = [
-            arg.reshape(-1, lanes) for arg, d in zip(args, directions) if d == "in"
+            pwords(arg, count) for arg, (d, count) in zip(args, arguments) if d == "in"
         ]
-        outputs = [arg for arg, d in zip(args, directions) if d == "out"]
-        for arg, result in zip(outputs, kernel(*inputs)):
-            np.copyto(arg, result.reshape(-1))
+        outputs = [
+            (arg, count) for arg, (d, count) in zip(args, arguments) if d == "out"
+        ]
+        for (arg, count), result in zip(outputs, kernel(*inputs)):
+            np.copyto(arg.reshape(-1)[:count], result.reshape(-1)[:count])
 
     return run

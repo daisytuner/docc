@@ -1,7 +1,7 @@
 #pragma once
 
 #include <sdfg/codegen/code_generator.h>
-#include <sdfg/structured_control_flow/map.h>
+#include <sdfg/structured_control_flow/structured_loop.h>
 
 #include "docc/target/axelera/axscript_language_extension.h"
 
@@ -16,16 +16,18 @@ class AxScriptCodeGenerator : public codegen::CodeGenerator {
 private:
     struct Buffer {
         std::string name;
-        int64_t pwords;
+        int64_t elements;
         bool is_output;
+
+        int64_t pwords() const;
     };
 
     AxScriptLanguageExtension language_extension_;
-    std::vector<structured_control_flow::Map*> datapaths_;
+    std::vector<structured_control_flow::StructuredLoop*> datapaths_;
     std::vector<Buffer> buffers_;
     int64_t num_cores_ = 1;
 
-    /// Checks that the function body consists of datapath loops only.
+    /// Checks that the function body consists of datapath loops only, with reductions' init and store blocks.
     void collect_datapaths();
 
     void collect_buffers();

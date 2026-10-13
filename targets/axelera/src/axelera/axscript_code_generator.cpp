@@ -2,14 +2,17 @@
 
 #include <fstream>
 #include <ranges>
+#include <unordered_set>
 
 #include <sdfg/analysis/arguments_analysis.h>
 #include <sdfg/codegen/dispatchers/node_dispatcher_registry.h>
 #include <sdfg/structured_control_flow/block.h>
 #include <sdfg/structured_control_flow/map.h>
+#include <sdfg/structured_control_flow/reduce.h>
 #include <sdfg/structured_control_flow/return.h>
 
 #include "docc/target/axelera/axelera_scheduler.h"
+#include "docc/target/axelera/datapath.h"
 #include "docc/target/axelera/schedule.h"
 
 namespace sdfg {
@@ -55,27 +58,39 @@ AxScriptCodeGenerator::AxScriptCodeGenerator(
 
 void AxScriptCodeGenerator::collect_datapaths() {
     auto& root = sdfg_.root();
+    auto cores = analysis_manager_.options().get(NUM_CORES, int64_t{1});
+    std::unordered_set<size_t> fused;
     for (size_t i = 0; i < root.size(); ++i) {
-        auto& child = root.at(i);
-        if (auto map = dynamic_cast<structured_control_flow::Map*>(&child)) {
-            auto& schedule = map->schedule_type();
-            if (ScheduleType_Axelera::is(schedule, AxeleraLevel::Core)) {
-                num_cores_ = std::max(num_cores_, ScheduleType_Axelera::num_cores(schedule));
-                datapaths_.push_back(map);
-                continue;
-            }
-            if (ScheduleType_Axelera::is(schedule, AxeleraLevel::Stream)) {
-                datapaths_.push_back(map);
-                continue;
-            }
-            auto cores = analysis_manager_.options().get(NUM_CORES, int64_t{1});
-            auto reason = datapath_obstacle(sdfg_, analysis_manager_, *map, cores);
+        auto loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&root.at(i));
+        if (!loop) {
+            continue;
+        }
+        auto& schedule = loop->schedule_type();
+        if (!ScheduleType_Axelera::is(schedule, AxeleraLevel::Core) &&
+            !ScheduleType_Axelera::is(schedule, AxeleraLevel::Stream)) {
+            auto reason = datapath_obstacle(sdfg_, analysis_manager_, *loop, cores);
             if (reason.empty()) {
                 reason = "it was not scheduled for Axelera";
             }
             throw std::runtime_error(
-                "AxScript codegen: the loop over " + map->indvar()->get_name() + " cannot run on Axelera: " + reason
+                "AxScript codegen: the loop over " + loop->indvar()->get_name() + " cannot run on Axelera: " + reason
             );
+        }
+        if (ScheduleType_Axelera::is(schedule, AxeleraLevel::Core)) {
+            num_cores_ = std::max(num_cores_, ScheduleType_Axelera::num_cores(schedule));
+        }
+        if (auto reduce = dynamic_cast<structured_control_flow::Reduce*>(loop)) {
+            auto kernel = match_reduction(sdfg_, analysis_manager_, *reduce);
+            fused.insert(kernel.init);
+            fused.insert(kernel.writeback);
+        }
+        datapaths_.push_back(loop);
+    }
+
+    for (size_t i = 0; i < root.size(); ++i) {
+        auto& child = root.at(i);
+        if (fused.contains(i) || dynamic_cast<structured_control_flow::StructuredLoop*>(&child)) {
+            continue;
         }
         if (auto block = dynamic_cast<structured_control_flow::Block*>(&child);
             block && std::ranges::empty(block->dataflow().nodes())) {
@@ -124,19 +139,21 @@ void AxScriptCodeGenerator::collect_buffers() {
             unsupported("argument " + name + " of dynamic size " + elements->__str__());
         }
         auto count = SymEngine::down_cast<const SymEngine::Integer&>(*elements).as_int();
-        if (count % PWORD_LANES != 0) {
-            unsupported("argument " + name + " with " + std::to_string(count) + " elements (not whole PWORDs)");
-        }
         language_extension_.vector_type(element->primitive_type());
-        buffers_.push_back({name, static_cast<int64_t>(count / PWORD_LANES), written});
+        buffers_.push_back({name, count, written});
     }
+}
+
+int64_t AxScriptCodeGenerator::Buffer::pwords() const {
+    auto lanes = static_cast<int64_t>(PWORD_LANES);
+    return (elements + lanes - 1) / lanes;
 }
 
 std::string AxScriptCodeGenerator::buffer_type(const Buffer& buffer) const {
     auto& pointer = static_cast<const types::Pointer&>(sdfg_.type(buffer.name));
     auto& element = static_cast<const types::Scalar&>(pointer.pointee_type());
-    return "(" + std::to_string(buffer.pwords) + ",), \"" + language_extension_.vector_type(element.primitive_type()) +
-           "\", scope=A.DDR";
+    return "(" + std::to_string(buffer.pwords()) + ",), \"" +
+           language_extension_.vector_type(element.primitive_type()) + "\", scope=A.DDR";
 }
 
 bool AxScriptCodeGenerator::generate() {
@@ -184,10 +201,14 @@ bool AxScriptCodeGenerator::emit_header(codegen::PrettyPrinter& out) {
 bool AxScriptCodeGenerator::emit_main_source(std::ostream& out, const std::filesystem::path& header_path) {
     std::vector<std::string> arguments;
     for (auto& buffer : buffers_) {
-        arguments.push_back("(\"" + buffer.name + "\", \"" + (buffer.is_output ? "out" : "in") + "\")");
+        arguments.push_back(
+            "(\"" + buffer.name + "\", \"" + (buffer.is_output ? "out" : "in") + "\", " +
+            std::to_string(buffer.elements) + ")"
+        );
     }
     out << "import axelera.compiler.alto.script as A" << std::endl << std::endl;
-    out << "# docc: SDFG arguments in order (\"out\" buffers are returned through A.output) and AI cores used."
+    out << "# docc: SDFG arguments in order with their element counts (\"out\" buffers are returned through "
+           "A.output) and AI cores used."
         << std::endl;
     out << "_docc_arguments = [" << join(arguments) << "]" << std::endl;
     out << "_docc_num_cores = " << num_cores_ << std::endl;

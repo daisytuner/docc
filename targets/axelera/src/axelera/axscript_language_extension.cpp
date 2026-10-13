@@ -20,22 +20,34 @@ std::string AxScriptLanguageExtension::dpu_type() {
     return "float18x" + std::to_string(PWORD_LANES);
 }
 
-std::string AxScriptLanguageExtension::
-    dpu_operation(data_flow::TaskletCode code, const std::vector<std::string>& operands) const {
-    switch (code) {
-        case data_flow::TaskletCode::assign:
+std::string AxScriptLanguageExtension::dpu_operation(DpuOp op, const std::vector<std::string>& operands) const {
+    switch (op) {
+        case DpuOp::Copy:
             return operands.at(0);
-        case data_flow::TaskletCode::fp_add:
+        case DpuOp::Add:
             return operands.at(0) + " + " + operands.at(1);
-        case data_flow::TaskletCode::fp_sub:
+        case DpuOp::Sub:
             return operands.at(0) + " - " + operands.at(1);
-        case data_flow::TaskletCode::fp_mul:
+        case DpuOp::Mul:
             return operands.at(0) + " * " + operands.at(1);
+        case DpuOp::Max:
+            return "A.max(" + operands.at(0) + ", " + operands.at(1) + ")";
+        case DpuOp::Min:
+            return "A.min(" + operands.at(0) + ", " + operands.at(1) + ")";
+    }
+    throw std::invalid_argument("Invalid DpuOp");
+}
+
+std::string AxScriptLanguageExtension::lane_reduction(DpuOp op, const std::string& value) const {
+    switch (op) {
+        case DpuOp::Add:
+            return "A.dpu.ops.add_reduce(" + value + ")";
+        case DpuOp::Max:
+            return "A.dpu.ops.max_reduce(" + value + ")";
+        case DpuOp::Min:
+            return "A.dpu.ops.min_reduce(" + value + ")";
         default:
-            throw std::runtime_error(
-                "AxScript codegen: tasklet code " + std::to_string(static_cast<int>(code)) +
-                " on the DPU is not supported"
-            );
+            throw std::runtime_error("AxScript codegen: reducing lanes by this operation is not supported");
     }
 }
 
