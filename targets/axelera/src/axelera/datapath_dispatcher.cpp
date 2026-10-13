@@ -125,6 +125,8 @@ void emit_program(
         std::string value;
         if (instruction.input_stream) {
             value = "A.cast(" + names.input(*instruction.input_stream) + ".pop(), " + dpu_dtype + ")";
+        } else if (instruction.constant) {
+            value = "A.cast(" + lang.constant_buffer(*instruction.constant) + "[0], " + dpu_dtype + ")";
         } else {
             std::vector<std::string> operands;
             for (auto operand : instruction.operands) {

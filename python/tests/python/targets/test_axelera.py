@@ -62,7 +62,27 @@ def _exp2(x):
     return np.exp2(x)
 
 
-# Each op reads "a" in [-1, 1) and/or "b" in [0.5, 1.5), the domain of division, sqrt and log2.
+def _exp(x):
+    return np.exp(x)
+
+
+def _log(x):
+    return np.log(x)
+
+
+def _scale(x):
+    return x * 2.0
+
+
+def _one_minus(x):
+    return 1.0 - x
+
+
+def _relu(x):
+    return np.maximum(x, 0.0)
+
+
+# Each op reads "a" in [-1, 1) and/or "b" in [0.5, 1.5), the domain of division, sqrt and the logarithms.
 _ELEMENTWISE = {
     "div": (_div, np.divide, ("a", "b")),
     "neg": (_neg, np.negative, ("a",)),
@@ -72,6 +92,11 @@ _ELEMENTWISE = {
     "cos": (_cos, np.cos, ("a",)),
     "log2": (_log2, np.log2, ("b",)),
     "exp2": (_exp2, np.exp2, ("a",)),
+    "exp": (_exp, np.exp, ("a",)),
+    "log": (_log, np.log, ("b",)),
+    "scale": (_scale, lambda x: x * 2.0, ("a",)),
+    "one_minus": (_one_minus, lambda x: 1.0 - x, ("a",)),
+    "relu": (_relu, lambda x: np.maximum(x, 0.0), ("a",)),
 }
 
 

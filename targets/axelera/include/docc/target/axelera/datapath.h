@@ -23,10 +23,12 @@ struct DatapathStream {
     symbolic::Expression index;
 };
 
-/// DPU register assignment: either the next value popped from an input stream or an operation on registers.
+/// DPU register assignment: the next value popped from an input stream, a constant in every lane, or an operation on
+/// registers.
 struct DpuInstruction {
     size_t destination;
     std::optional<size_t> input_stream;
+    std::optional<double> constant;
     DpuOp op = DpuOp::Copy;
     std::vector<size_t> operands;
 };

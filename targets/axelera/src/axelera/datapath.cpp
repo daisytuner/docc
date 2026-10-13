@@ -1,8 +1,11 @@
 #include "docc/target/axelera/datapath.h"
 
+#include <bit>
 #include <cmath>
+#include <cstdlib>
 #include <functional>
 #include <limits>
+#include <numbers>
 #include <ranges>
 #include <stdexcept>
 #include <unordered_map>
@@ -54,9 +57,11 @@ std::optional<DpuOp> combine_op(const data_flow::CodeNode& node) {
 }
 
 using Emit = std::function<size_t(DpuOp, std::vector<size_t>)>;
+using Constant = std::function<size_t(double)>;
 
 /// Emits the DPU statements computing @p node from registers @p x; returns the result register, if supported.
-std::optional<size_t> lower(const data_flow::CodeNode& node, const std::vector<size_t>& x, const Emit& emit) {
+std::optional<size_t>
+lower(const data_flow::CodeNode& node, const std::vector<size_t>& x, const Emit& emit, const Constant& constant) {
     if (auto tasklet = dynamic_cast<const data_flow::Tasklet*>(&node)) {
         switch (tasklet->code()) {
             case data_flow::TaskletCode::assign:
@@ -98,9 +103,25 @@ std::optional<size_t> lower(const data_flow::CodeNode& node, const std::vector<s
             return emit(DpuOp::Log2, {x.at(0)});
         case math::cmath::CMathFunction::exp2:
             return emit(DpuOp::Exp2, {x.at(0)});
+        case math::cmath::CMathFunction::exp:
+            return emit(DpuOp::Exp2, {emit(DpuOp::Mul, {x.at(0), constant(std::numbers::log2e)})});
+        case math::cmath::CMathFunction::log:
+            return emit(DpuOp::Mul, {emit(DpuOp::Log2, {x.at(0)}), constant(std::numbers::ln2)});
         default:
             return std::nullopt;
     }
+}
+
+/// The value of a numeric constant such as "2.0", "-inf" or "1.5f".
+std::optional<double> constant_value(const data_flow::ConstantNode& node) {
+    const char* begin = node.data().c_str();
+    char* end = nullptr;
+    double value = std::strtod(begin, &end);
+    std::string_view rest(end);
+    if (end == begin || !(rest.empty() || rest == "f" || rest == "F")) {
+        return std::nullopt;
+    }
+    return value;
 }
 
 /// `0 - x`, which the frontend emits for `-x` on arrays.
@@ -110,14 +131,7 @@ bool is_negation(const data_flow::CodeNode& node, const std::vector<const data_f
         return false;
     }
     auto zero = dynamic_cast<const data_flow::ConstantNode*>(&inputs.at(0)->src());
-    if (!zero) {
-        return false;
-    }
-    try {
-        return std::stod(zero->data()) == 0.0;
-    } catch (const std::exception&) {
-        return false;
-    }
+    return zero && constant_value(*zero) == 0.0;
 }
 
 std::string describe(const data_flow::CodeNode& node) {
@@ -212,8 +226,21 @@ DatapathPlan plan_datapath(
         }
         plan.inputs.push_back(stream);
         size_t reg = plan.num_registers++;
-        plan.program.push_back({reg, plan.inputs.size() - 1});
+        plan.program.push_back({.destination = reg, .input_stream = plan.inputs.size() - 1});
         popped.push_back(reg);
+        return reg;
+    };
+
+    std::vector<std::pair<double, size_t>> loaded;
+    auto constant_register = [&](double value) {
+        for (auto& [known, reg] : loaded) {
+            if (std::bit_cast<uint64_t>(known) == std::bit_cast<uint64_t>(value)) {
+                return reg;
+            }
+        }
+        size_t reg = plan.num_registers++;
+        plan.program.push_back({.destination = reg, .constant = value});
+        loaded.emplace_back(value, reg);
         return reg;
     };
 
@@ -237,11 +264,16 @@ DatapathPlan plan_datapath(
             auto inputs = dataflow.in_edges_by_connector(code_node);
             bool negation = is_negation(code_node, inputs);
             for (auto* iedge : inputs) {
-                if (dynamic_cast<const data_flow::ConstantNode*>(&iedge->src())) {
+                if (auto constant = dynamic_cast<const data_flow::ConstantNode*>(&iedge->src())) {
                     if (negation && iedge == inputs.front()) {
                         continue;
                     }
-                    unsupported("constants");
+                    auto value = constant_value(*constant);
+                    if (!value) {
+                        unsupported("the constant " + constant->data());
+                    }
+                    operands.push_back(constant_register(*value));
+                    continue;
                 }
                 auto& src = static_cast<const data_flow::AccessNode&>(iedge->src());
                 auto& type = sdfg.type(src.data());
@@ -276,11 +308,11 @@ DatapathPlan plan_datapath(
 
             auto emit = [&](DpuOp op, std::vector<size_t> args) {
                 size_t reg = plan.num_registers++;
-                plan.program.push_back({reg, std::nullopt, op, std::move(args)});
+                plan.program.push_back({.destination = reg, .op = op, .operands = std::move(args)});
                 return reg;
             };
             auto lowered = negation ? std::optional(emit(DpuOp::Neg, {operands.at(0)}))
-                                    : lower(code_node, operands, emit);
+                                    : lower(code_node, operands, emit, constant_register);
             if (!lowered) {
                 unsupported(describe(code_node) + " on the DPU");
             }
@@ -360,14 +392,12 @@ ReductionKernel match_reduction(
     if (!constant || init_dst.data() != kernel.accumulator) {
         unsupported("initializing " + kernel.accumulator + " from anything but a constant");
     }
-    double value;
-    try {
-        value = std::stod(constant->data());
-    } catch (const std::exception&) {
+    auto value = constant_value(*constant);
+    if (!value) {
         unsupported("the accumulator start value " + constant->data());
     }
     // The datapath seeds the accumulator with the first value, which only matches starting at the identity.
-    if (value != identity(kernel.combine)) {
+    if (*value != identity(kernel.combine)) {
         unsupported("the accumulator start value " + constant->data() + ", which is not the reduction's identity,");
     }
 

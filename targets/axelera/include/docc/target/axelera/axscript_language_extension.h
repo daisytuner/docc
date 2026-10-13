@@ -11,6 +11,7 @@ namespace axelera {
 class AxScriptLanguageExtension : public codegen::PythonLanguageExtension {
 private:
     size_t datapaths_ = 0;
+    std::vector<double> constants_;
 
 public:
     using PythonLanguageExtension::PythonLanguageExtension;
@@ -40,6 +41,19 @@ public:
     size_t next_datapath() {
         return datapaths_++;
     }
+
+    /// Name of the module's constant buffer holding @p value in every lane, registering it on first use.
+    std::string constant_buffer(double value);
+
+    /// Values of the registered constant buffers; buffer k is named `constant_name(k)`.
+    const std::vector<double>& constants() const {
+        return constants_;
+    }
+
+    static std::string constant_name(size_t k);
+
+    /// Python literal for @p value, spelling non-finite values as `float("inf")` etc.
+    static std::string float_literal(double value);
 };
 
 } // namespace axelera

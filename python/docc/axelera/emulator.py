@@ -56,6 +56,11 @@ def alloc_buffer(shape, dtype, scope=DDR):
     return np.zeros((*shape, lanes), element)
 
 
+def alloc_constant(values, dtype, scope=DDR):
+    element, lanes = _element_type(dtype)
+    return np.asarray(values, element).reshape(-1, lanes)
+
+
 def grid(*extents):
     if len(extents) == 1:
         return iter(range(extents[0]))

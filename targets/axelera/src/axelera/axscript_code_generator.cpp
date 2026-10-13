@@ -172,12 +172,24 @@ bool AxScriptCodeGenerator::generate() {
         unsupported("a kernel without outputs");
     }
 
+    // Datapaths register the constants they read, which must be allocated before them.
+    codegen::PrettyPrinter datapaths(this->main_stream_.indent());
     for (auto* datapath : datapaths_) {
         auto dispatcher = codegen::create_dispatcher(
             language_extension_, sdfg_, analysis_manager_, *datapath, instrumentation_plan_, arg_capture_plan_
         );
-        dispatcher->dispatch(this->main_stream_, this->globals_stream_, *this->library_snippet_factory_);
+        dispatcher->dispatch(datapaths, this->globals_stream_, *this->library_snippet_factory_);
     }
+    auto lanes = "\"" + language_extension_.vector_type(types::PrimitiveType::Float) + "\"";
+    for (size_t k = 0; k < language_extension_.constants().size(); ++k) {
+        auto name = AxScriptLanguageExtension::constant_name(k);
+        this->main_stream_ << name << " = A.alloc_constant(" << name << "_lanes, " << lanes << ", scope=A.DDR)"
+                           << std::endl;
+    }
+    auto indent = this->main_stream_.indent();
+    this->main_stream_.setIndent(0);
+    this->main_stream_ << datapaths.str();
+    this->main_stream_.setIndent(indent);
 
     this->main_stream_ << "A.output(" << join(outputs) << ")" << std::endl;
     this->main_stream_.changeIndent(-8);
@@ -212,6 +224,11 @@ bool AxScriptCodeGenerator::emit_main_source(std::ostream& out, const std::files
         << std::endl;
     out << "_docc_arguments = [" << join(arguments) << "]" << std::endl;
     out << "_docc_num_cores = " << num_cores_ << std::endl;
+    auto& constants = language_extension_.constants();
+    for (size_t k = 0; k < constants.size(); ++k) {
+        out << AxScriptLanguageExtension::constant_name(k) << "_lanes = ["
+            << AxScriptLanguageExtension::float_literal(constants[k]) << "] * " << PWORD_LANES << std::endl;
+    }
     append_function_source(out);
     return true;
 }

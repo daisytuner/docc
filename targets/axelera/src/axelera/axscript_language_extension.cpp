@@ -1,5 +1,8 @@
 #include "docc/target/axelera/axscript_language_extension.h"
 
+#include <bit>
+#include <charconv>
+#include <cmath>
 #include <stdexcept>
 
 #include "docc/target/axelera/schedule.h"
@@ -65,6 +68,36 @@ std::string AxScriptLanguageExtension::lane_reduction(DpuOp op, const std::strin
         default:
             throw std::runtime_error("AxScript codegen: reducing lanes by this operation is not supported");
     }
+}
+
+std::string AxScriptLanguageExtension::constant_buffer(double value) {
+    for (size_t k = 0; k < constants_.size(); ++k) {
+        if (std::bit_cast<uint64_t>(constants_[k]) == std::bit_cast<uint64_t>(value)) {
+            return constant_name(k);
+        }
+    }
+    constants_.push_back(value);
+    return constant_name(constants_.size() - 1);
+}
+
+std::string AxScriptLanguageExtension::constant_name(size_t k) {
+    return "_docc_c" + std::to_string(k);
+}
+
+std::string AxScriptLanguageExtension::float_literal(double value) {
+    if (std::isnan(value)) {
+        return "float(\"nan\")";
+    }
+    if (std::isinf(value)) {
+        return value > 0 ? "float(\"inf\")" : "float(\"-inf\")";
+    }
+    char buffer[32];
+    auto result = std::to_chars(buffer, buffer + sizeof(buffer), value);
+    std::string text(buffer, result.ptr);
+    if (text.find_first_of(".e") == std::string::npos) {
+        text += ".0";
+    }
+    return text;
 }
 
 } // namespace axelera

@@ -22,11 +22,11 @@ namespace {
 using MakeNode = std::function<data_flow::CodeNode&(builder::StructuredSDFGBuilder&, structured_control_flow::Block&)>;
 
 bool is_literal(const std::string& input) {
-    return std::isdigit(static_cast<unsigned char>(input.front()));
+    return std::isdigit(static_cast<unsigned char>(input.front())) || input.front() == '-';
 }
 
 /// out[i] = node(inputs[0][i], ...) for i < n, as the Python frontend emits elementwise array operations.
-/// Inputs starting with a digit are float constants.
+/// Inputs starting with a digit or a minus sign are float constants.
 std::unique_ptr<StructuredSDFG> elementwise(int64_t n, const MakeNode& make_node, const std::vector<std::string>& inputs) {
     builder::StructuredSDFGBuilder builder("ew", FunctionType_CPU);
     types::Scalar f32(types::PrimitiveType::Float);
@@ -164,6 +164,19 @@ std::string error_of(StructuredSDFG& sdfg) {
         return e.what();
     }
     return "";
+}
+
+/// Checks that the single-core datapath for @p sdfg runs @p program on the DPU and stores its last register.
+void expect_dpu_program(StructuredSDFG& sdfg, const std::vector<std::string>& program) {
+    schedule_for_axelera(sdfg);
+    auto code = generate_axscript(sdfg);
+    std::string expected;
+    for (auto& statement : program) {
+        expected += "                    " + statement + "\n";
+    }
+    auto last = program.back().substr(0, program.back().find(" = "));
+    expected += "                    s0_out.push(" + last + ")\n";
+    EXPECT_NE(code.find(expected), std::string::npos) << code;
 }
 
 } // namespace
@@ -309,11 +322,63 @@ TEST(AxScriptTest, UnevenCoreSplitIsRejected) {
     }
 }
 
-TEST(AxScriptTest, ConstantsAreRejected) {
+TEST(AxScriptTest, ScaleByConstant) {
     auto sdfg = elementwise(512, data_flow::TaskletCode::fp_mul, {"a", "2.0"});
     schedule_for_axelera(*sdfg);
 
-    EXPECT_NE(error_of(*sdfg).find("constants is not supported"), std::string::npos) << error_of(*sdfg);
+    EXPECT_EQ(
+        generate_axscript(*sdfg),
+        R"(import axelera.compiler.alto.script as A
+
+# docc: SDFG arguments in order with their element counts ("out" buffers are returned through A.output) and AI cores used.
+_docc_arguments = [("a", "in", 512), ("out", "out", 512)]
+_docc_num_cores = 1
+_docc_c0_lanes = [2.0] * 64
+
+
+@A.ir_module
+class ew:
+    @A.prim_func
+    def main(a: A.Buffer((8,), "float32x64", scope=A.DDR)):
+        out = A.alloc_buffer((8,), "float32x64", scope=A.DDR)
+        _docc_c0 = A.alloc_constant(_docc_c0_lanes, "float32x64", scope=A.DDR)
+        for i_tile0 in A.grid(8):
+            with A.Datapath():
+                s0_0 = A.decl_stream("float32x64")
+                s0_out = A.decl_stream("float32x64")
+                with A.IFD(num=0):
+                    s0_0.push(a[i_tile0])
+                with A.DPU():
+                    r0 = A.array("float18x64", size=3)
+                    r0[0] = A.cast(s0_0.pop(), "float18x64")
+                    r0[1] = A.cast(_docc_c0[0], "float18x64")
+                    r0[2] = r0[0] * r0[1]
+                    s0_out.push(r0[2])
+                with A.ODR():
+                    out[i_tile0] = s0_out.pop()
+        A.output(out)
+)"
+    );
+}
+
+TEST(AxScriptTest, RepeatedConstantIsLoadedOnce) {
+    auto sdfg = elementwise(512, data_flow::TaskletCode::fp_fma, {"a", "0.5", "0.5"});
+    expect_dpu_program(
+        *sdfg,
+        {"r0[0] = A.cast(s0_0.pop(), \"float18x64\")",
+         "r0[1] = A.cast(_docc_c0[0], \"float18x64\")",
+         "r0[2] = A.dpu.ops.fma(r0[0], r0[1], r0[1])"}
+    );
+    EXPECT_EQ(generate_axscript(*sdfg).find("_docc_c1"), std::string::npos);
+}
+
+TEST(AxScriptTest, ConstantLiterals) {
+    auto sdfg = elementwise(512, data_flow::TaskletCode::fp_fma, {"a", "1.5f", "-inf"});
+    schedule_for_axelera(*sdfg);
+
+    auto code = generate_axscript(*sdfg);
+    EXPECT_NE(code.find("_docc_c0_lanes = [1.5] * 64\n"), std::string::npos) << code;
+    EXPECT_NE(code.find("_docc_c1_lanes = [float(\"-inf\")] * 64\n"), std::string::npos) << code;
 }
 
 TEST(AxScriptTest, PartialPwordsAreRejected) {
@@ -328,19 +393,6 @@ TEST(AxScriptTest, ThirdInputStreamIsRejected) {
     schedule_for_axelera(*sdfg);
 
     EXPECT_NE(error_of(*sdfg).find("third input stream"), std::string::npos) << error_of(*sdfg);
-}
-
-/// Checks that the single-core datapath for @p sdfg runs @p program on the DPU and stores its last register.
-void expect_dpu_program(StructuredSDFG& sdfg, const std::vector<std::string>& program) {
-    schedule_for_axelera(sdfg);
-    auto code = generate_axscript(sdfg);
-    std::string expected;
-    for (auto& statement : program) {
-        expected += "                    " + statement + "\n";
-    }
-    auto last = program.back().substr(0, program.back().find(" = "));
-    expected += "                    s0_out.push(" + last + ")\n";
-    EXPECT_NE(code.find(expected), std::string::npos) << code;
 }
 
 TEST(AxScriptTest, DivisionMultipliesByReciprocal) {
@@ -374,11 +426,14 @@ TEST(AxScriptTest, SubtractionFromZeroIsNegation) {
     expect_dpu_program(*sdfg, {"r0[0] = A.cast(s0_0.pop(), \"float18x64\")", "r0[1] = A.dpu.ops.neg(r0[0])"});
 }
 
-TEST(AxScriptTest, SubtractionFromNonzeroConstantIsRejected) {
+TEST(AxScriptTest, SubtractionFromConstant) {
     auto sdfg = elementwise(512, data_flow::TaskletCode::fp_sub, {"1.0", "a"});
-    schedule_for_axelera(*sdfg);
-
-    EXPECT_NE(error_of(*sdfg).find("constants is not supported"), std::string::npos) << error_of(*sdfg);
+    expect_dpu_program(
+        *sdfg,
+        {"r0[0] = A.cast(_docc_c0[0], \"float18x64\")",
+         "r0[1] = A.cast(s0_0.pop(), \"float18x64\")",
+         "r0[2] = r0[0] - r0[1]"}
+    );
 }
 
 TEST(AxScriptTest, AbsoluteValue) {
@@ -405,11 +460,35 @@ TEST(AxScriptTest, UnaryMathFunctions) {
     }
 }
 
-TEST(AxScriptTest, UnsupportedMathFunctionIsRejected) {
+TEST(AxScriptTest, ExpScalesIntoExp2) {
     auto sdfg = elementwise(512, math::cmath::CMathFunction::exp, "a");
+    expect_dpu_program(
+        *sdfg,
+        {"r0[0] = A.cast(s0_0.pop(), \"float18x64\")",
+         "r0[1] = A.cast(_docc_c0[0], \"float18x64\")",
+         "r0[2] = r0[0] * r0[1]",
+         "r0[3] = A.dpu.ops.exp2(r0[2])"}
+    );
+    EXPECT_NE(generate_axscript(*sdfg).find("_docc_c0_lanes = [1.4426950408889634] * 64\n"), std::string::npos);
+}
+
+TEST(AxScriptTest, LogScalesLog2) {
+    auto sdfg = elementwise(512, math::cmath::CMathFunction::log, "a");
+    expect_dpu_program(
+        *sdfg,
+        {"r0[0] = A.cast(s0_0.pop(), \"float18x64\")",
+         "r0[1] = A.dpu.ops.log2(r0[0])",
+         "r0[2] = A.cast(_docc_c0[0], \"float18x64\")",
+         "r0[3] = r0[1] * r0[2]"}
+    );
+    EXPECT_NE(generate_axscript(*sdfg).find("_docc_c0_lanes = [0.6931471805599453] * 64\n"), std::string::npos);
+}
+
+TEST(AxScriptTest, UnsupportedMathFunctionIsRejected) {
+    auto sdfg = elementwise(512, math::cmath::CMathFunction::tanh, "a");
     schedule_for_axelera(*sdfg);
 
-    EXPECT_NE(error_of(*sdfg).find("math function expf on Float on the DPU"), std::string::npos) << error_of(*sdfg);
+    EXPECT_NE(error_of(*sdfg).find("math function tanhf on Float on the DPU"), std::string::npos) << error_of(*sdfg);
 }
 
 TEST(AxScriptTest, SumReduction) {
