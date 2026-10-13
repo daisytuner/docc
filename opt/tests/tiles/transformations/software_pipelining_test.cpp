@@ -19,6 +19,7 @@
 #include "sdfg/targets/cuda/cuda.h"
 #include "sdfg/tiles/library_nodes/pipeline_node.h"
 #include "sdfg/tiles/library_nodes/tile_copy_node.h"
+#include "sdfg/tiles/tile_target_registry.h"
 #include "sdfg/transformations/recorder.h"
 #include "sdfg/transformations/replayer.h"
 #include "sdfg/types/array.h"
@@ -685,4 +686,137 @@ TEST(SoftwarePipeliningTest, PaddedBufferStageBiasUsesBufferStride) {
             << "stage bias used the logical tile size (" << logical << "), not the padded stride: " << s;
     }
     EXPECT_TRUE(found_padded_stride) << "no stage offset used the padded per-stage buffer stride";
+}
+
+namespace {
+
+const std::string PRIVATE_SCHEDULE = "SP_PRIVATE_SCRATCHPAD";
+const types::StorageType PRIVATE_LOCAL("SP_PRIVATE_LOCAL");
+const data_flow::ImplementationType PRIVATE_IMPL{"SP_PRIVATE"};
+
+// A scratchpad target whose loops never cooperate on a tile: every tile is staged privately in local
+// memory, which it can fill asynchronously without barriers.
+class PrivateScratchpadTarget : public tiles::TileTarget {
+public:
+    std::optional<tiles::AxisSchedule> classify(const structured_control_flow::ScheduleType&) const override {
+        return std::nullopt;
+    }
+    tiles::Space space(tiles::Level level) const override {
+        return level == tiles::Level::Device ? tiles::Space::Global : tiles::Space::Shared;
+    }
+    bool supports_cooperative_staging(const structured_control_flow::ScheduleType&) const override {
+        return false;
+    }
+    types::StorageType storage_type(tiles::Space space) const override {
+        return space == tiles::Space::Register ? PRIVATE_LOCAL : types::StorageType::CPU_Heap();
+    }
+    unsigned lane_width() const override {
+        return 1;
+    }
+    data_flow::ImplementationType implementation_type() const override {
+        return PRIVATE_IMPL;
+    }
+    bool supports_async_staging(const types::StorageType& storage) const override {
+        return storage == PRIVATE_LOCAL;
+    }
+};
+
+// map(PRIVATE_SCHEDULE) over i { for k in [0,K) { stage A -> buf; out = buf } }, with `out` also local but written
+// by the compute rather than a copy. Returns the panel loop.
+structured_control_flow::For&
+build_private(builder::StructuredSDFGBuilder& builder, int K, const types::StorageType& local) {
+    tiles::TileTargetRegistry::instance().register_target(PRIVATE_SCHEDULE, std::make_shared<PrivateScratchpadTarget>());
+    types::Scalar f(types::PrimitiveType::Float);
+    types::Pointer aptr(f);
+    types::Array buf_type(local, 0, "", f, symbolic::integer(TILE));
+    builder.add_container("A", aptr, true);
+    builder.add_container("buf", buf_type);
+    builder.add_container("out", buf_type);
+    builder.add_container("i", types::Scalar(types::PrimitiveType::UInt64));
+    builder.add_container("k", types::Scalar(types::PrimitiveType::UInt64));
+
+    auto i = symbolic::symbol("i");
+    auto& map = builder.add_map(
+        builder.subject().root(),
+        i,
+        symbolic::Lt(i, symbolic::integer(4)),
+        symbolic::integer(0),
+        symbolic::add(i, symbolic::integer(1)),
+        structured_control_flow::ScheduleType(PRIVATE_SCHEDULE, structured_control_flow::ScheduleTypeCategory::Offloader)
+    );
+    auto k = symbolic::symbol("k");
+    auto& kloop = builder.add_for(
+        map.root(),
+        k,
+        symbolic::Lt(k, symbolic::integer(K)),
+        symbolic::integer(0),
+        symbolic::add(k, symbolic::integer(1))
+    );
+    add_copy(builder, kloop.root(), "A", "buf", aptr);
+    auto& b = builder.add_block(kloop.root());
+    auto& tk = builder.add_tasklet(b, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(b, builder.add_access(b, "buf"), tk, "_in", {symbolic::integer(0)}, buf_type);
+    builder.add_computational_memlet(b, tk, "_out", builder.add_access(b, "out"), {symbolic::integer(0)}, buf_type);
+    return kloop;
+}
+
+} // namespace
+
+// A target supporting asynchronous private staging pipelines its local copy-in buffers without
+// cooperative barriers; buffers written by the compute stay single-buffered.
+TEST(SoftwarePipeliningTest, PrivateScratchpadTargetStagesCopiedInBuffers) {
+    builder::StructuredSDFGBuilder builder("sp_private", FunctionType_CPU);
+    auto& kloop = build_private(builder, /*K=*/4, PRIVATE_LOCAL);
+    auto& sdfg = builder.subject();
+    analysis::AnalysisManager am(sdfg);
+    transformations::SoftwarePipelining sp(kloop, 2);
+    ASSERT_TRUE(sp.can_be_applied(builder, am));
+    sp.apply(builder, am);
+
+    auto* outer = dynamic_cast<const types::Array*>(&sdfg.type("buf"));
+    ASSERT_NE(outer, nullptr);
+    EXPECT_TRUE(symbolic::eq(outer->num_elements(), symbolic::integer(2)));
+    EXPECT_EQ(outer->storage_type(), PRIVATE_LOCAL);
+    auto* out = dynamic_cast<const types::Array*>(&sdfg.type("out"));
+    ASSERT_NE(out, nullptr);
+    EXPECT_TRUE(symbolic::eq(out->num_elements(), symbolic::integer(TILE)));
+
+    // Prologue and in-loop prefetch both copy asynchronously; pipeline nodes carry the target's implementation.
+    auto& map_body = static_cast<structured_control_flow::Sequence&>(*kloop.get_parent());
+    EXPECT_EQ(count_cp_async(map_body), 2u);
+    size_t pipeline_nodes = 0;
+    std::function<void(structured_control_flow::ControlFlowNode&)> scan =
+        [&](structured_control_flow::ControlFlowNode& n) {
+            if (auto* b = dynamic_cast<structured_control_flow::Block*>(&n)) {
+                for (auto& node : b->dataflow().nodes()) {
+                    auto* lib = dynamic_cast<data_flow::LibraryNode*>(&node);
+                    if (dynamic_cast<tiles::PipelineCommitNode*>(&node) ||
+                        dynamic_cast<tiles::PipelineWaitNode*>(&node)) {
+                        EXPECT_EQ(lib->implementation_type(), PRIVATE_IMPL);
+                        pipeline_nodes++;
+                    }
+                }
+            } else if (auto* ie = dynamic_cast<structured_control_flow::IfElse*>(&n)) {
+                for (size_t c = 0; c < ie->size(); c++) {
+                    scan(ie->at(c).first);
+                }
+            } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&n)) {
+                for (size_t c = 0; c < seq->size(); c++) {
+                    scan(seq->at(c));
+                }
+            } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&n)) {
+                scan(loop->root());
+            }
+        };
+    scan(map_body);
+    // prologue commit, in-loop commit + wait, tail drain wait
+    EXPECT_EQ(pipeline_nodes, 4u);
+}
+
+TEST(SoftwarePipeliningTest, PrivateScratchpadTargetRejectsUnsupportedStorage) {
+    builder::StructuredSDFGBuilder builder("sp_private_heap", FunctionType_CPU);
+    auto& kloop = build_private(builder, /*K=*/4, types::StorageType::CPU_Heap());
+    analysis::AnalysisManager am(builder.subject());
+    transformations::SoftwarePipelining sp(kloop, 2);
+    EXPECT_FALSE(sp.can_be_applied(builder, am));
 }

@@ -39,13 +39,32 @@ namespace transformations {
 
 namespace {
 
-// A container is a block-shared buffer if its declared storage is NV_Shared.
-bool is_shared_container(const Function& sdfg, const std::string& name) {
-    try {
-        return sdfg.type(name).storage_type().is_nv_shared();
-    } catch (...) {
-        return false;
+// The tile target owning the innermost enclosing map's schedule, if any.
+const tiles::TileTarget* enclosing_tile_target(structured_control_flow::StructuredLoop& loop) {
+    for (auto* node : structured_control_flow::ControlFlowNode::parent_chain(loop)) {
+        auto* map = dynamic_cast<structured_control_flow::Map*>(node);
+        if (map == nullptr) {
+            continue;
+        }
+        if (auto* target = tiles::TileTargetRegistry::instance().get(map->schedule_type().value())) {
+            return target;
+        }
     }
+    return nullptr;
+}
+
+// Containers whose storage @p target can multi-buffer for asynchronous staging.
+std::set<std::string> staging_containers(const Function& sdfg, const tiles::TileTarget* target) {
+    std::set<std::string> staged;
+    if (target == nullptr) {
+        return staged;
+    }
+    for (auto& name : sdfg.containers()) {
+        if (target->supports_async_staging(sdfg.type(name).storage_type())) {
+            staged.insert(name);
+        }
+    }
+    return staged;
 }
 
 // The TileCopyNode in @p block, or nullptr.
@@ -84,51 +103,6 @@ symbolic::Expression buffer_element_count(const types::IType& type) {
         cur = &arr->element_type();
     }
     return prod;
-}
-
-// True if any access node in the block writes to a shared container.
-bool block_writes_shared(const Function& sdfg, structured_control_flow::Block& block) {
-    auto& df = block.dataflow();
-    for (auto& node : df.nodes()) {
-        auto* acc = dynamic_cast<data_flow::AccessNode*>(&node);
-        if (acc == nullptr || !is_shared_container(sdfg, acc->data())) {
-            continue;
-        }
-        if (access_is_written(df, *acc)) {
-            return true;
-        }
-    }
-    return false;
-}
-
-// Recursively: does this subtree write to a shared container?
-bool subtree_writes_shared(const Function& sdfg, structured_control_flow::ControlFlowNode& node) {
-    if (auto* block = dynamic_cast<structured_control_flow::Block*>(&node)) {
-        return block_writes_shared(sdfg, *block);
-    }
-    if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&node)) {
-        for (size_t i = 0; i < seq->size(); i++) {
-            if (subtree_writes_shared(sdfg, seq->at(i))) {
-                return true;
-            }
-        }
-        return false;
-    }
-    if (auto* map = dynamic_cast<structured_control_flow::Map*>(&node)) {
-        return subtree_writes_shared(sdfg, map->root());
-    }
-    if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&node)) {
-        return subtree_writes_shared(sdfg, loop->root());
-    }
-    if (auto* if_else = dynamic_cast<structured_control_flow::IfElse*>(&node)) {
-        for (size_t i = 0; i < if_else->size(); i++) {
-            if (subtree_writes_shared(sdfg, if_else->at(i).first)) {
-                return true;
-            }
-        }
-        return false;
-    }
-    return false;
 }
 
 // True if the block writes to one of the named containers.
@@ -219,12 +193,12 @@ int library_input_index(const data_flow::LibraryNode& lib, const data_flow::Meml
 
 // Library-node consumers address a staged buffer through their own operand layout
 // (a bare-pointer memlet), so stage selection must be expressible as an offset bias.
-bool library_consumers_relocalizable(structured_control_flow::ControlFlowNode& root, const Function& sdfg) {
+bool library_consumers_relocalizable(structured_control_flow::ControlFlowNode& root, const std::set<std::string>& staged) {
     bool ok = true;
     visitor::for_each_block(root, [&](structured_control_flow::Block& b) {
         auto& dfg = b.dataflow();
         for (auto* acc : dfg.data_nodes()) {
-            if (!is_shared_container(sdfg, acc->data())) {
+            if (staged.count(acc->data()) == 0) {
                 continue;
             }
             for (auto& m : dfg.out_edges(*acc)) {
@@ -252,8 +226,8 @@ bool is_barrier_block(structured_control_flow::ControlFlowNode& node) {
     return libs.size() == 1 && dynamic_cast<const data_flow::BarrierLocalNode*>(*libs.begin()) != nullptr;
 }
 
-// A block holding one full copy-in TileCopyNode that writes a shared container.
-tiles::TileCopyNode* staging_copy(const Function& sdfg, structured_control_flow::ControlFlowNode& node) {
+// A block holding one full copy-in TileCopyNode that writes a staged container.
+tiles::TileCopyNode* staging_copy(const std::set<std::string>& staged, structured_control_flow::ControlFlowNode& node) {
     auto* block = dynamic_cast<structured_control_flow::Block*>(&node);
     if (block == nullptr) {
         return nullptr;
@@ -264,11 +238,33 @@ tiles::TileCopyNode* staging_copy(const Function& sdfg, structured_control_flow:
     }
     for (auto& m : block->dataflow().in_edges(*tc)) {
         auto* acc = dynamic_cast<const data_flow::AccessNode*>(&m.src());
-        if (m.dst_conn() == "_dst" && acc != nullptr && is_shared_container(sdfg, acc->data())) {
+        if (m.dst_conn() == "_dst" && acc != nullptr && staged.count(acc->data()) > 0) {
             return tc;
         }
     }
     return nullptr;
+}
+
+// The staged containers that copy-in TileCopyNodes under @p root fill: the buffers to multi-buffer.
+std::set<std::string>
+copied_in_buffers(structured_control_flow::ControlFlowNode& root, const std::set<std::string>& staged) {
+    std::set<std::string> buffers;
+    visitor::for_each_block(root, [&](structured_control_flow::Block& b) {
+        auto& dfg = b.dataflow();
+        for (auto& node : dfg.nodes()) {
+            auto* tc = dynamic_cast<tiles::TileCopyNode*>(&node);
+            if (tc == nullptr || tc->direction() != tiles::CopyDirection::In) {
+                continue;
+            }
+            for (auto& m : dfg.in_edges(*tc)) {
+                auto* acc = dynamic_cast<const data_flow::AccessNode*>(&m.src());
+                if (m.dst_conn() == "_dst" && acc != nullptr && staged.count(acc->data()) > 0) {
+                    buffers.insert(acc->data());
+                }
+            }
+        }
+    });
+    return buffers;
 }
 
 /// `[barrier; staging copies...; barrier]` in @p body: indices of the leading barrier and
@@ -278,16 +274,17 @@ struct StagingGroup {
     size_t trail;
 };
 
-std::optional<StagingGroup> find_staging_group(const Function& sdfg, structured_control_flow::Sequence& body) {
+std::optional<StagingGroup>
+find_staging_group(const std::set<std::string>& staged, structured_control_flow::Sequence& body) {
     for (size_t i = 1; i < body.size(); ++i) {
-        if (staging_copy(sdfg, body.at(i)) == nullptr) {
+        if (staging_copy(staged, body.at(i)) == nullptr) {
             continue;
         }
         if (!is_barrier_block(body.at(i - 1))) {
             return std::nullopt;
         }
         size_t j = i;
-        while (j + 1 < body.size() && staging_copy(sdfg, body.at(j + 1)) != nullptr) {
+        while (j + 1 < body.size() && staging_copy(staged, body.at(j + 1)) != nullptr) {
             ++j;
         }
         if (j + 1 >= body.size() || !is_barrier_block(body.at(j + 1))) {
@@ -352,11 +349,11 @@ structured_control_flow::Sequence& loop_body(structured_control_flow::Structured
 static void apply_register_staged(
     builder::StructuredSDFGBuilder& builder,
     structured_control_flow::StructuredLoop& loop,
+    const std::set<std::string>& staged_containers,
     const types::StorageType& register_storage
 ) {
-    auto& sdfg = builder.subject();
     auto& body = loop_body(loop);
-    auto group = find_staging_group(sdfg, body).value();
+    auto group = find_staging_group(staged_containers, body).value();
     auto* parent = dynamic_cast<structured_control_flow::Sequence*>(loop.get_parent());
     if (parent == nullptr) {
         throw InvalidTransformationException("SoftwarePipelining: panel loop must sit in a sequence");
@@ -377,7 +374,7 @@ static void apply_register_staged(
         if (i == group.lead || i == group.trail) {
             continue;
         }
-        Staged s{staging_copy(sdfg, body.at(i))};
+        Staged s{staging_copy(staged_containers, body.at(i))};
         for (auto& m : s.copy->get_parent().in_edges(*s.copy)) {
             auto& acc = static_cast<const data_flow::AccessNode&>(m.src());
             if (m.dst_conn() == "_dst") {
@@ -477,19 +474,12 @@ bool SoftwarePipelining::
         return false;
     }
 
-    // cp.async is a GPU primitive; require a GPU-offloaded ancestor (the block
-    // context that also owns the __syncthreads the pipeline fences against).
-    bool gpu_ancestor = false;
-    for (auto* node : structured_control_flow::ControlFlowNode::parent_chain(loop_)) {
-        auto* map = dynamic_cast<structured_control_flow::Map*>(node);
-        if (map != nullptr && tiles::AxisSchedule::classify_level(map->schedule_type()).has_value()) {
-            gpu_ancestor = true;
-            break;
-        }
-    }
-    if (!gpu_ancestor) {
+    // Asynchronous staging needs a tile target that can multi-buffer the staged buffers.
+    auto* target = enclosing_tile_target(loop_);
+    if (target == nullptr) {
         return false;
     }
+    auto staged = staging_containers(sdfg, target);
 
     // The panel count must be a compile-time constant >= stages (a partial pipe
     // over a runtime count would need dynamic guards on every stage). Use the
@@ -507,33 +497,33 @@ bool SoftwarePipelining::
         return false;
     }
 
-    // The body must cooperatively stage a shared tile (a copy that writes shared)
-    // and then consume it — i.e. at least one shared-writing sub-scope exists.
-    if (!subtree_writes_shared(sdfg, loop_.root())) {
+    // The body must stage a tile (a copy-in that fills a staged buffer) and then
+    // consume it.
+    if (copied_in_buffers(loop_.root(), staged).empty()) {
         return false;
     }
     if (register_staged_) {
         // One staging group, nothing else writes shared, and every staged copy has a
         // constant per-thread share to hold in registers.
         auto& body = loop_body(loop_);
-        auto group = find_staging_group(sdfg, body);
+        auto group = find_staging_group(staged, body);
         if (!group) {
             return false;
         }
         for (size_t i = 0; i < body.size(); ++i) {
             if (i > group->lead && i < group->trail) {
-                auto* tc = staging_copy(sdfg, body.at(i));
+                auto* tc = staging_copy(staged, body.at(i));
                 if (!tc->guard().trivial() || tc->atom() == tiles::CopyAtom::CpAsync ||
                     !stage_words(*tc, staged_element_bytes(*tc))) {
                     return false;
                 }
-            } else if (i != group->lead && i != group->trail && subtree_writes_shared(sdfg, body.at(i))) {
+            } else if (i != group->lead && i != group->trail && subtree_writes_any(body.at(i), staged)) {
                 return false;
             }
         }
         return true;
     }
-    if (!library_consumers_relocalizable(loop_.root(), sdfg)) {
+    if (!library_consumers_relocalizable(loop_.root(), staged)) {
         return false;
     }
 
@@ -543,24 +533,17 @@ bool SoftwarePipelining::
 void SoftwarePipelining::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     auto& sdfg = builder.subject();
 
-    // The pipeline/copy nodes are stamped with the enclosing GPU tile target's
-    // implementation type (CUDA/ROCm) so codegen picks that backend's dispatcher.
-    data_flow::ImplementationType impl = data_flow::ImplementationType_NONE;
-    const tiles::TileTarget* target = nullptr;
-    for (auto* node : structured_control_flow::ControlFlowNode::parent_chain(loop_)) {
-        auto* map = dynamic_cast<structured_control_flow::Map*>(node);
-        if (map != nullptr && tiles::AxisSchedule::classify_level(map->schedule_type()).has_value()) {
-            impl = tiles::TileTargetRegistry::instance().implementation_type(map->schedule_type().value());
-            target = tiles::TileTargetRegistry::instance().get(map->schedule_type().value());
-            break;
-        }
+    // The pipeline/copy nodes are stamped with the enclosing tile target's
+    // implementation type so codegen picks that backend's dispatcher.
+    const tiles::TileTarget* target = enclosing_tile_target(loop_);
+    if (target == nullptr) {
+        throw InvalidTransformationException("SoftwarePipelining: no tile target encloses the loop");
     }
+    data_flow::ImplementationType impl = target->implementation_type();
+    auto staged = staging_containers(sdfg, target);
 
     if (register_staged_) {
-        if (target == nullptr) {
-            throw InvalidTransformationException("SoftwarePipelining: no tile target for register staging");
-        }
-        apply_register_staged(builder, loop_, target->storage_type(tiles::Space::Register));
+        apply_register_staged(builder, loop_, staged, target->storage_type(tiles::Space::Register));
         analysis_manager.invalidate_all();
         return;
     }
@@ -569,15 +552,8 @@ void SoftwarePipelining::apply(builder::StructuredSDFGBuilder& builder, analysis
     auto panel = symbolic::div(symbolic::sub(loop_.indvar(), loop_.init()), loop_.stride());
     auto stage_idx = symbolic::mod(panel, symbolic::integer(stages_));
 
-    // Collect the shared buffers the loop cooperatively stages.
-    std::set<std::string> buffers;
-    visitor::for_each_block(loop_.root(), [&](structured_control_flow::Block& b) {
-        for (auto* acc : b.dataflow().data_nodes()) {
-            if (is_shared_container(sdfg, acc->data()) && access_is_written(b.dataflow(), *acc)) {
-                buffers.insert(acc->data());
-            }
-        }
-    });
+    // The staged buffers the loop's copy-ins fill.
+    std::set<std::string> buffers = copied_in_buffers(loop_.root(), staged);
 
     // Double-buffer each: prepend a [stages] axis to the type and index it by
     // stage_idx on every memlet that touches the buffer inside the loop.
