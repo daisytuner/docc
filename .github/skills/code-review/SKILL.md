@@ -75,7 +75,7 @@ For each finding, leave an inline comment on the relevant line containing:
 
 ### Review summary
 
-Provide a summary comment with the following sections. Omit sections whose analysis was skipped and state that it was skipped and why.
+Provide a summary comment with the following sections. For each analysis that was skipped, retain its section and state why it was skipped.
 
 #### Change Overview
 
