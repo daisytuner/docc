@@ -393,8 +393,8 @@ def test_miniAMR2():
     verifier = SDFGVerification(
         verification={
             "sdfgs": 48,
-            "CUDAOffloading": 0,
-            "MAP": 2,
+            "CUDAOffloading": 226,
+            "MAP": 77,
             "CUDA": 0,
             "FOR": 21,
             "SEQUENTIAL": 23,
