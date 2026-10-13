@@ -14,7 +14,7 @@ namespace sdfg {
 namespace axelera {
 
 /// Operations of a DPU register program; each statement applies one.
-enum class DpuOp { Copy, Add, Sub, Mul, Max, Min };
+enum class DpuOp { Copy, Add, Sub, Mul, Max, Min, Fma, Neg, Recip, Sqrt, Sin, Cos, Log2, Exp2 };
 
 /// Elements of a pointer container read or written at consecutive indices across the lanes.
 struct DatapathStream {

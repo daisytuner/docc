@@ -96,6 +96,14 @@ dpu = types.SimpleNamespace(
         add_reduce=_lane_reduction(np.sum),
         max_reduce=_lane_reduction(np.max),
         min_reduce=_lane_reduction(np.min),
+        fma=lambda a, b, c: a * b + c,
+        neg=np.negative,
+        recip=np.reciprocal,
+        sqrt=np.sqrt,
+        sin=np.sin,
+        cos=np.cos,
+        log2=np.log2,
+        exp2=np.exp2,
     )
 )
 

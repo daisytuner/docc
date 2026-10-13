@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <functional>
+
 #include <sdfg/builder/structured_sdfg_builder.h>
 #include <sdfg/codegen/dispatchers/node_dispatcher_registry.h>
 #include <sdfg/data_flow/library_nodes/math/cmath/cmath_node.h>
@@ -17,15 +19,22 @@ using namespace sdfg;
 
 namespace {
 
-/// out[i] = combine(a[i], b[i]) for i < n, as the Python frontend emits elementwise array operations.
-std::unique_ptr<StructuredSDFG> elementwise(
-    int64_t n, data_flow::TaskletCode code, const std::vector<std::string>& inputs, bool constant_operand = false
-) {
+using MakeNode = std::function<data_flow::CodeNode&(builder::StructuredSDFGBuilder&, structured_control_flow::Block&)>;
+
+bool is_literal(const std::string& input) {
+    return std::isdigit(static_cast<unsigned char>(input.front()));
+}
+
+/// out[i] = node(inputs[0][i], ...) for i < n, as the Python frontend emits elementwise array operations.
+/// Inputs starting with a digit are float constants.
+std::unique_ptr<StructuredSDFG> elementwise(int64_t n, const MakeNode& make_node, const std::vector<std::string>& inputs) {
     builder::StructuredSDFGBuilder builder("ew", FunctionType_CPU);
     types::Scalar f32(types::PrimitiveType::Float);
     types::Pointer ptr(f32);
     for (auto& input : inputs) {
-        builder.add_container(input, ptr, true);
+        if (!is_literal(input) && !builder.subject().exists(input)) {
+            builder.add_container(input, ptr, true);
+        }
     }
     builder.add_container("out", ptr, true);
     builder.add_container("i", types::Scalar(types::PrimitiveType::Int64));
@@ -40,21 +49,40 @@ std::unique_ptr<StructuredSDFG> elementwise(
         structured_control_flow::ScheduleType_Sequential::create()
     );
     auto& block = builder.add_block(map.root());
-    std::vector<std::string> connectors;
-    for (size_t k = 0; k < inputs.size() + (constant_operand ? 1 : 0); ++k) {
-        connectors.push_back("_in" + std::to_string(k + 1));
-    }
-    auto& tasklet = builder.add_tasklet(block, code, "_out", connectors);
+    auto& node = make_node(builder, block);
     for (size_t k = 0; k < inputs.size(); ++k) {
-        builder.add_computational_memlet(block, builder.add_access(block, inputs[k]), tasklet, connectors[k], {i}, ptr);
+        auto connector = "_in" + std::to_string(k + 1);
+        if (is_literal(inputs[k])) {
+            builder
+                .add_computational_memlet(block, builder.add_constant(block, inputs[k], f32), node, connector, {}, f32);
+        } else {
+            builder.add_computational_memlet(block, builder.add_access(block, inputs[k]), node, connector, {i}, ptr);
+        }
     }
-    if (constant_operand) {
-        builder
-            .add_computational_memlet(block, builder.add_constant(block, "2.0", f32), tasklet, connectors.back(), {}, f32);
-    }
-    builder.add_computational_memlet(block, tasklet, "_out", builder.add_access(block, "out"), {i}, ptr);
+    builder.add_computational_memlet(block, node, "_out", builder.add_access(block, "out"), {i}, ptr);
     builder.add_return(builder.subject().root(), "");
     return builder.move();
+}
+
+std::unique_ptr<StructuredSDFG> elementwise(int64_t n, data_flow::TaskletCode code, const std::vector<std::string>& inputs) {
+    auto make_tasklet = [&](builder::StructuredSDFGBuilder& builder,
+                            structured_control_flow::Block& block) -> data_flow::CodeNode& {
+        std::vector<std::string> connectors;
+        for (size_t k = 0; k < inputs.size(); ++k) {
+            connectors.push_back("_in" + std::to_string(k + 1));
+        }
+        return builder.add_tasklet(block, code, "_out", connectors);
+    };
+    return elementwise(n, make_tasklet, inputs);
+}
+
+std::unique_ptr<StructuredSDFG> elementwise(int64_t n, math::cmath::CMathFunction function, const std::string& input) {
+    auto make_cmath = [&](builder::StructuredSDFGBuilder& builder,
+                          structured_control_flow::Block& block) -> data_flow::CodeNode& {
+        return builder
+            .add_library_node<math::cmath::CMathNode>(block, DebugInfo(), function, types::PrimitiveType::Float);
+    };
+    return elementwise(n, make_cmath, {input});
 }
 
 /// out[0] = reduction of a[k] for k < n starting from @p start, as the Python frontend emits np.sum/max/min.
@@ -282,7 +310,7 @@ TEST(AxScriptTest, UnevenCoreSplitIsRejected) {
 }
 
 TEST(AxScriptTest, ConstantsAreRejected) {
-    auto sdfg = elementwise(512, data_flow::TaskletCode::fp_mul, {"a"}, true);
+    auto sdfg = elementwise(512, data_flow::TaskletCode::fp_mul, {"a", "2.0"});
     schedule_for_axelera(*sdfg);
 
     EXPECT_NE(error_of(*sdfg).find("constants is not supported"), std::string::npos) << error_of(*sdfg);
@@ -300,6 +328,88 @@ TEST(AxScriptTest, ThirdInputStreamIsRejected) {
     schedule_for_axelera(*sdfg);
 
     EXPECT_NE(error_of(*sdfg).find("third input stream"), std::string::npos) << error_of(*sdfg);
+}
+
+/// Checks that the single-core datapath for @p sdfg runs @p program on the DPU and stores its last register.
+void expect_dpu_program(StructuredSDFG& sdfg, const std::vector<std::string>& program) {
+    schedule_for_axelera(sdfg);
+    auto code = generate_axscript(sdfg);
+    std::string expected;
+    for (auto& statement : program) {
+        expected += "                    " + statement + "\n";
+    }
+    auto last = program.back().substr(0, program.back().find(" = "));
+    expected += "                    s0_out.push(" + last + ")\n";
+    EXPECT_NE(code.find(expected), std::string::npos) << code;
+}
+
+TEST(AxScriptTest, DivisionMultipliesByReciprocal) {
+    auto sdfg = elementwise(512, data_flow::TaskletCode::fp_div, {"a", "b"});
+    expect_dpu_program(
+        *sdfg,
+        {"r0[0] = A.cast(s0_0.pop(), \"float18x64\")",
+         "r0[1] = A.cast(s0_1.pop(), \"float18x64\")",
+         "r0[2] = A.dpu.ops.recip(r0[1])",
+         "r0[3] = r0[0] * r0[2]"}
+    );
+}
+
+TEST(AxScriptTest, FusedMultiplyAdd) {
+    auto sdfg = elementwise(512, data_flow::TaskletCode::fp_fma, {"a", "b", "a"});
+    expect_dpu_program(
+        *sdfg,
+        {"r0[0] = A.cast(s0_0.pop(), \"float18x64\")",
+         "r0[1] = A.cast(s0_1.pop(), \"float18x64\")",
+         "r0[2] = A.dpu.ops.fma(r0[0], r0[1], r0[0])"}
+    );
+}
+
+TEST(AxScriptTest, Negation) {
+    auto sdfg = elementwise(512, data_flow::TaskletCode::fp_neg, {"a"});
+    expect_dpu_program(*sdfg, {"r0[0] = A.cast(s0_0.pop(), \"float18x64\")", "r0[1] = A.dpu.ops.neg(r0[0])"});
+}
+
+TEST(AxScriptTest, SubtractionFromZeroIsNegation) {
+    auto sdfg = elementwise(512, data_flow::TaskletCode::fp_sub, {"0", "a"});
+    expect_dpu_program(*sdfg, {"r0[0] = A.cast(s0_0.pop(), \"float18x64\")", "r0[1] = A.dpu.ops.neg(r0[0])"});
+}
+
+TEST(AxScriptTest, SubtractionFromNonzeroConstantIsRejected) {
+    auto sdfg = elementwise(512, data_flow::TaskletCode::fp_sub, {"1.0", "a"});
+    schedule_for_axelera(*sdfg);
+
+    EXPECT_NE(error_of(*sdfg).find("constants is not supported"), std::string::npos) << error_of(*sdfg);
+}
+
+TEST(AxScriptTest, AbsoluteValue) {
+    auto sdfg = elementwise(512, math::cmath::CMathFunction::fabs, "a");
+    expect_dpu_program(
+        *sdfg,
+        {"r0[0] = A.cast(s0_0.pop(), \"float18x64\")", "r0[1] = A.dpu.ops.neg(r0[0])", "r0[2] = A.max(r0[0], r0[1])"}
+    );
+}
+
+TEST(AxScriptTest, UnaryMathFunctions) {
+    using math::cmath::CMathFunction;
+    std::vector<std::pair<CMathFunction, std::string>> functions = {
+        {CMathFunction::sqrt, "sqrt"},
+        {CMathFunction::sin, "sin"},
+        {CMathFunction::cos, "cos"},
+        {CMathFunction::log2, "log2"},
+        {CMathFunction::exp2, "exp2"},
+    };
+    for (auto& [function, name] : functions) {
+        SCOPED_TRACE(name);
+        auto sdfg = elementwise(512, function, "a");
+        expect_dpu_program(*sdfg, {"r0[0] = A.cast(s0_0.pop(), \"float18x64\")", "r0[1] = A.dpu.ops." + name + "(r0[0])"});
+    }
+}
+
+TEST(AxScriptTest, UnsupportedMathFunctionIsRejected) {
+    auto sdfg = elementwise(512, math::cmath::CMathFunction::exp, "a");
+    schedule_for_axelera(*sdfg);
+
+    EXPECT_NE(error_of(*sdfg).find("math function expf on Float on the DPU"), std::string::npos) << error_of(*sdfg);
 }
 
 TEST(AxScriptTest, SumReduction) {

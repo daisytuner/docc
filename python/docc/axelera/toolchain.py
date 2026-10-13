@@ -23,7 +23,7 @@ sys.modules[spec.name] = module
 spec.loader.exec_module(module)
 config = AltoConfig(
     output_dir=Path(output_dir),
-    generation=HardwareGeneration.OMEGA,
+    generation=HardwareGeneration.EUROPA,
     target=Target.AICORE_SIM,
     num_cores=module._docc_num_cores,
     enable_tiling_injection=True,
@@ -35,7 +35,7 @@ alto_compile(getattr(module, name), config)
 
 
 def build(module_path: str, name: str) -> str:
-    """Compile the ir_module ``name`` of ``module_path`` for Metis; returns alto's output directory."""
+    """Compile the ir_module ``name`` of ``module_path`` for Europa; returns alto's output directory."""
     python = os.environ.get("DOCC_AXELERA_PYTHON")
     if not python:
         raise RuntimeError(

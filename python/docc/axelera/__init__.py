@@ -1,1 +1,1 @@
-"""Axelera (Metis/Europa) support for the axscript codegen."""
+"""Axelera (Europa and later) support for the axscript codegen."""

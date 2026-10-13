@@ -1,6 +1,7 @@
 #include "docc/target/axelera/datapath.h"
 
 #include <cmath>
+#include <functional>
 #include <limits>
 #include <ranges>
 #include <stdexcept>
@@ -33,20 +34,10 @@ bool is_float_pointer(const types::IType& type) {
     return pointer && pointer->has_pointee_type() && is_float_scalar(pointer->pointee_type());
 }
 
-std::optional<DpuOp> dpu_op(const data_flow::CodeNode& node) {
+/// The operation a reduction body folds into its accumulator.
+std::optional<DpuOp> combine_op(const data_flow::CodeNode& node) {
     if (auto tasklet = dynamic_cast<const data_flow::Tasklet*>(&node)) {
-        switch (tasklet->code()) {
-            case data_flow::TaskletCode::assign:
-                return DpuOp::Copy;
-            case data_flow::TaskletCode::fp_add:
-                return DpuOp::Add;
-            case data_flow::TaskletCode::fp_sub:
-                return DpuOp::Sub;
-            case data_flow::TaskletCode::fp_mul:
-                return DpuOp::Mul;
-            default:
-                return std::nullopt;
-        }
+        return tasklet->code() == data_flow::TaskletCode::fp_add ? std::optional(DpuOp::Add) : std::nullopt;
     }
     if (auto cmath = dynamic_cast<const math::cmath::CMathNode*>(&node);
         cmath && cmath->primitive_type() == types::PrimitiveType::Float) {
@@ -62,9 +53,79 @@ std::optional<DpuOp> dpu_op(const data_flow::CodeNode& node) {
     return std::nullopt;
 }
 
+using Emit = std::function<size_t(DpuOp, std::vector<size_t>)>;
+
+/// Emits the DPU statements computing @p node from registers @p x; returns the result register, if supported.
+std::optional<size_t> lower(const data_flow::CodeNode& node, const std::vector<size_t>& x, const Emit& emit) {
+    if (auto tasklet = dynamic_cast<const data_flow::Tasklet*>(&node)) {
+        switch (tasklet->code()) {
+            case data_flow::TaskletCode::assign:
+                return emit(DpuOp::Copy, {x.at(0)});
+            case data_flow::TaskletCode::fp_neg:
+                return emit(DpuOp::Neg, {x.at(0)});
+            case data_flow::TaskletCode::fp_add:
+                return emit(DpuOp::Add, {x.at(0), x.at(1)});
+            case data_flow::TaskletCode::fp_sub:
+                return emit(DpuOp::Sub, {x.at(0), x.at(1)});
+            case data_flow::TaskletCode::fp_mul:
+                return emit(DpuOp::Mul, {x.at(0), x.at(1)});
+            case data_flow::TaskletCode::fp_div:
+                return emit(DpuOp::Mul, {x.at(0), emit(DpuOp::Recip, {x.at(1)})});
+            case data_flow::TaskletCode::fp_fma:
+                return emit(DpuOp::Fma, {x.at(0), x.at(1), x.at(2)});
+            default:
+                return std::nullopt;
+        }
+    }
+    auto cmath = dynamic_cast<const math::cmath::CMathNode*>(&node);
+    if (!cmath || cmath->primitive_type() != types::PrimitiveType::Float) {
+        return std::nullopt;
+    }
+    switch (cmath->function()) {
+        case math::cmath::CMathFunction::fmax:
+            return emit(DpuOp::Max, {x.at(0), x.at(1)});
+        case math::cmath::CMathFunction::fmin:
+            return emit(DpuOp::Min, {x.at(0), x.at(1)});
+        case math::cmath::CMathFunction::fabs:
+            return emit(DpuOp::Max, {x.at(0), emit(DpuOp::Neg, {x.at(0)})});
+        case math::cmath::CMathFunction::sqrt:
+            return emit(DpuOp::Sqrt, {x.at(0)});
+        case math::cmath::CMathFunction::sin:
+            return emit(DpuOp::Sin, {x.at(0)});
+        case math::cmath::CMathFunction::cos:
+            return emit(DpuOp::Cos, {x.at(0)});
+        case math::cmath::CMathFunction::log2:
+            return emit(DpuOp::Log2, {x.at(0)});
+        case math::cmath::CMathFunction::exp2:
+            return emit(DpuOp::Exp2, {x.at(0)});
+        default:
+            return std::nullopt;
+    }
+}
+
+/// `0 - x`, which the frontend emits for `-x` on arrays.
+bool is_negation(const data_flow::CodeNode& node, const std::vector<const data_flow::Memlet*>& inputs) {
+    auto tasklet = dynamic_cast<const data_flow::Tasklet*>(&node);
+    if (!tasklet || tasklet->code() != data_flow::TaskletCode::fp_sub) {
+        return false;
+    }
+    auto zero = dynamic_cast<const data_flow::ConstantNode*>(&inputs.at(0)->src());
+    if (!zero) {
+        return false;
+    }
+    try {
+        return std::stod(zero->data()) == 0.0;
+    } catch (const std::exception&) {
+        return false;
+    }
+}
+
 std::string describe(const data_flow::CodeNode& node) {
     if (auto tasklet = dynamic_cast<const data_flow::Tasklet*>(&node)) {
         return "tasklet code " + std::to_string(static_cast<int>(tasklet->code()));
+    }
+    if (auto cmath = dynamic_cast<const math::cmath::CMathNode*>(&node)) {
+        return "math function " + cmath->name() + " on " + types::primitive_type_to_string(cmath->primitive_type());
     }
     if (auto library_node = dynamic_cast<const data_flow::LibraryNode*>(&node)) {
         return "library node " + library_node->code().value();
@@ -163,9 +224,6 @@ DatapathPlan plan_datapath(
         }
         const auto& dataflow = block->dataflow();
         for (auto* node : dataflow.topological_sort()) {
-            if (dynamic_cast<const data_flow::ConstantNode*>(node)) {
-                unsupported("constants");
-            }
             if (dynamic_cast<const data_flow::AccessNode*>(node)) {
                 continue;
             }
@@ -176,7 +234,15 @@ DatapathPlan plan_datapath(
 
             std::vector<size_t> operands;
             bool reads_accumulator = false;
-            for (auto* iedge : dataflow.in_edges_by_connector(code_node)) {
+            auto inputs = dataflow.in_edges_by_connector(code_node);
+            bool negation = is_negation(code_node, inputs);
+            for (auto* iedge : inputs) {
+                if (dynamic_cast<const data_flow::ConstantNode*>(&iedge->src())) {
+                    if (negation && iedge == inputs.front()) {
+                        continue;
+                    }
+                    unsupported("constants");
+                }
                 auto& src = static_cast<const data_flow::AccessNode&>(iedge->src());
                 auto& type = sdfg.type(src.data());
                 if (!accumulator.empty() && src.data() == accumulator) {
@@ -193,18 +259,14 @@ DatapathPlan plan_datapath(
                     unsupported("operands of type " + type.print());
                 }
             }
-            auto op = dpu_op(code_node);
-            if (!op) {
-                unsupported(describe(code_node) + " on the DPU");
-            }
 
             auto& oedge = *dataflow.out_edges(code_node).begin();
             auto& dst = static_cast<const data_flow::AccessNode&>(oedge.dst());
             auto& dst_type = sdfg.type(dst.data());
             bool writes_accumulator = !accumulator.empty() && dst.data() == accumulator;
             if (reads_accumulator || writes_accumulator) {
-                if (!reads_accumulator || !writes_accumulator || operands.size() != 1 ||
-                    (*op != DpuOp::Add && *op != DpuOp::Max && *op != DpuOp::Min)) {
+                auto op = combine_op(code_node);
+                if (!reads_accumulator || !writes_accumulator || operands.size() != 1 || !op) {
                     unsupported("using the accumulator " + accumulator + " other than to add to, max or min into it");
                 }
                 plan.combine = op;
@@ -212,8 +274,17 @@ DatapathPlan plan_datapath(
                 continue;
             }
 
-            size_t reg = plan.num_registers++;
-            plan.program.push_back({reg, std::nullopt, *op, operands});
+            auto emit = [&](DpuOp op, std::vector<size_t> args) {
+                size_t reg = plan.num_registers++;
+                plan.program.push_back({reg, std::nullopt, op, std::move(args)});
+                return reg;
+            };
+            auto lowered = negation ? std::optional(emit(DpuOp::Neg, {operands.at(0)}))
+                                    : lower(code_node, operands, emit);
+            if (!lowered) {
+                unsupported(describe(code_node) + " on the DPU");
+            }
+            size_t reg = *lowered;
             if (dynamic_cast<const types::Pointer*>(&dst_type)) {
                 if (!accumulator.empty()) {
                     unsupported("storing to memory inside a reduction");

@@ -30,6 +30,57 @@ def _min(a):
 _REDUCTIONS = {"sum": (_sum, np.sum), "max": (_max, np.max), "min": (_min, np.min)}
 
 
+def _div(a, b):
+    return a / b
+
+
+def _neg(x):
+    return -x
+
+
+def _abs(x):
+    return np.abs(x)
+
+
+def _sqrt(x):
+    return np.sqrt(x)
+
+
+def _sin(x):
+    return np.sin(x)
+
+
+def _cos(x):
+    return np.cos(x)
+
+
+def _log2(x):
+    return np.log2(x)
+
+
+def _exp2(x):
+    return np.exp2(x)
+
+
+# Each op reads "a" in [-1, 1) and/or "b" in [0.5, 1.5), the domain of division, sqrt and log2.
+_ELEMENTWISE = {
+    "div": (_div, np.divide, ("a", "b")),
+    "neg": (_neg, np.negative, ("a",)),
+    "abs": (_abs, np.abs, ("a",)),
+    "sqrt": (_sqrt, np.sqrt, ("b",)),
+    "sin": (_sin, np.sin, ("a",)),
+    "cos": (_cos, np.cos, ("a",)),
+    "log2": (_log2, np.log2, ("b",)),
+    "exp2": (_exp2, np.exp2, ("a",)),
+}
+
+
+def _op_inputs(names):
+    a, b = _inputs()
+    values = {"a": a * 2 - 1, "b": b + 0.5}
+    return [values[name] for name in names]
+
+
 def _inputs(n=512):
     rng = np.random.default_rng(0)
     return rng.random(n, dtype=np.float32), rng.random(n, dtype=np.float32)
@@ -84,6 +135,26 @@ def test_axelera_reduction_runs_as_numpy(reduction, cores):
     fn, reference = _REDUCTIONS[reduction]
     a, _ = _inputs()
     np.testing.assert_allclose(_axelera("numpy", cores, fn)(a), reference(a), rtol=1e-5)
+
+
+@requires_alto
+@pytest.mark.parametrize("op", sorted(_ELEMENTWISE))
+def test_axscript_elementwise_op(op):
+    fn, reference, names = _ELEMENTWISE[op]
+    args = _op_inputs(names)
+
+    compiled = _axelera(fn=fn).compile(*args)
+    assert compiled.lib_path.endswith(".axs.py")
+    np.testing.assert_allclose(compiled(*args), reference(*args), rtol=1e-2, atol=1e-5)
+
+
+@pytest.mark.parametrize("op", sorted(_ELEMENTWISE))
+def test_axelera_elementwise_op_runs_as_numpy(op):
+    fn, reference, names = _ELEMENTWISE[op]
+    args = _op_inputs(names)
+    np.testing.assert_allclose(
+        _axelera("numpy", 1, fn)(*args), reference(*args), rtol=1e-5, atol=1e-6
+    )
 
 
 def test_axscript_requires_alto(monkeypatch):

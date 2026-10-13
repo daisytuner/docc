@@ -34,6 +34,22 @@ std::string AxScriptLanguageExtension::dpu_operation(DpuOp op, const std::vector
             return "A.max(" + operands.at(0) + ", " + operands.at(1) + ")";
         case DpuOp::Min:
             return "A.min(" + operands.at(0) + ", " + operands.at(1) + ")";
+        case DpuOp::Fma:
+            return "A.dpu.ops.fma(" + operands.at(0) + ", " + operands.at(1) + ", " + operands.at(2) + ")";
+        case DpuOp::Neg:
+            return "A.dpu.ops.neg(" + operands.at(0) + ")";
+        case DpuOp::Recip:
+            return "A.dpu.ops.recip(" + operands.at(0) + ")";
+        case DpuOp::Sqrt:
+            return "A.dpu.ops.sqrt(" + operands.at(0) + ")";
+        case DpuOp::Sin:
+            return "A.dpu.ops.sin(" + operands.at(0) + ")";
+        case DpuOp::Cos:
+            return "A.dpu.ops.cos(" + operands.at(0) + ")";
+        case DpuOp::Log2:
+            return "A.dpu.ops.log2(" + operands.at(0) + ")";
+        case DpuOp::Exp2:
+            return "A.dpu.ops.exp2(" + operands.at(0) + ")";
     }
     throw std::invalid_argument("Invalid DpuOp");
 }
