@@ -1,7 +1,6 @@
 #pragma once
 
 #include <string>
-#include <vector>
 
 #include "sdfg/data_flow/library_node.h"
 #include "sdfg/passes/pass.h"
@@ -44,13 +43,6 @@ template<typename Traits>
 class GPUControlFlowOffloadPass : public Pass {
 private:
     bool allow_dynamic_sizes_;
-
-    // Wraps `nodes` (consecutive root children) into a 1-iteration map and offloads it; restores them on failure.
-    bool try_offload(
-        builder::StructuredSDFGBuilder& builder,
-        analysis::AnalysisManager& analysis_manager,
-        const std::vector<structured_control_flow::ControlFlowNode*>& nodes
-    );
 
 public:
     explicit GPUControlFlowOffloadPass(bool allow_dynamic_sizes = false);
