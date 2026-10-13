@@ -89,6 +89,13 @@ void register_code_node(py::module& m) {
             "Get the implementation type"
         )
         .def_property_readonly("side_effect", &LibraryNode::side_effect, "Check if this node has side effects")
+        .def(
+            "to_str",
+            [](const LibraryNode& node) -> std::string {
+                return node.toStr();
+            },
+            "Human-readable description of the library node (e.g. 'GpuMma(32x32x8: ROCM_MMA)')"
+        )
         .def("__repr__", [](const LibraryNode& node) {
             std::ostringstream oss;
             oss << "<LibraryNode code='" << node.code().value() << "' id=" << node.element_id() << ">";

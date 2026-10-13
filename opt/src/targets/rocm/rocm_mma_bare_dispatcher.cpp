@@ -1,7 +1,5 @@
-#include "sdfg/targets/rocm/rocm_mfma_dispatcher.h"
+#include "sdfg/targets/rocm/rocm_mma_bare_dispatcher.h"
 
-#include "sdfg/targets/gpu/gpu_mma_fragment_load_node.h"
-#include "sdfg/targets/gpu/gpu_mma_fragment_store_node.h"
 #include "sdfg/types/pointer.h"
 #include "sdfg/types/scalar.h"
 
@@ -43,34 +41,28 @@ bool affine_multiple_of(const symbolic::Expression& expr, long long n) {
 
 } // namespace
 
-void RocmMfmaBaseDispatcher::emit_frag_zero_init(
-    codegen::CodegenOutput& out, const std::string& frag_name, types::PrimitiveType scalar_type
-) const {
-    out.stream << frag_name << " = static_cast<" << language_extension_.primitive_type(scalar_type) << ">(0.0);"
+void RocmMmaBareStrategy::
+    emit_fill(codegen::CodegenOutput& out, const std::string& acc_frag, types::PrimitiveType fill_type) const {
+    out.stream << acc_frag << " = static_cast<" << out.language_extension.primitive_type(fill_type) << ">(0.0);"
                << std::endl;
 }
 
-void RocmMfmaBaseDispatcher::emit_mma_compute(
+void RocmMmaBareStrategy::emit_mma(
     codegen::CodegenOutput& out,
-    const std::string& frag_d_out,
+    const std::string& frag_d,
     const std::string& frag_a,
     const std::string& frag_b,
-    const std::string& frag_c_in
+    const std::string& frag_c
 ) const {
-    out.stream << frag_d_out << " = __builtin_amdgcn_mfma_f32_32x32x8f16(" << frag_a << ", " << frag_b << ", "
-               << frag_c_in << ", 0, 0, 0);" << std::endl;
+    out.stream << frag_d << " = __builtin_amdgcn_mfma_f32_32x32x8f16(" << frag_a << ", " << frag_b << ", " << frag_c
+               << ", 0, 0, 0);" << std::endl;
 }
 
-void RocmMfmaBaseDispatcher::emit_eltwise_compute(
+void RocmMmaBareStrategy::emit_eltwise(
     codegen::CodegenOutput& out,
     const std::string& main_frag,
     const std::vector<std::string>& additional_frags,
-    const std::function<void(
-        codegen::CodegenOutput&,
-        const std::string& main_frag_elem,
-        const std::string& idx,
-        const std::vector<std::string>& other_frag_elems
-    )>& compute
+    const EltwiseCompute& compute
 ) const {
     out.stream << "for (int _ei = 0; _ei < static_cast<int>(sizeof(" << main_frag << ") / sizeof(" << main_frag
                << "[0])); ++_ei) {" << std::endl;
@@ -84,11 +76,7 @@ void RocmMfmaBaseDispatcher::emit_eltwise_compute(
     out.stream << "}" << std::endl;
 }
 
-void RocmMfmaBaseDispatcher::emit_needed_declarations(codegen::CodegenOutput& out) const {
-    GpuMmaMatmulDispatcher::emit_needed_declarations(out);
-}
-
-void RocmMfmaBaseDispatcher::emit_fragment_transfer(
+void RocmMmaBareStrategy::emit_fragment_transfer(
     codegen::CodegenOutput& out,
     bool load,
     MmaFragmentType type,
@@ -101,10 +89,10 @@ void RocmMfmaBaseDispatcher::emit_fragment_transfer(
         throw std::runtime_error("MFMA: only accumulator fragments can be stored");
     }
     const bool row_major = layout.layout == MmaFragmentLayout::MMA_LAYOUT_ROW_MAJOR;
-    const std::string ld = "(" + language_extension_.expression(layout.ldstride) + ")";
+    const std::string ld = "(" + out.language_extension.expression(layout.ldstride) + ")";
     const std::string off = layout.offset.is_null() ? std::string("0")
-                                                    : "(" + language_extension_.expression(layout.offset) + ")";
-    const std::string ptr = language_extension_.type_cast(base, types::Pointer(types::Scalar(element_type)));
+                                                    : "(" + out.language_extension.expression(layout.offset) + ")";
+    const std::string ptr = out.language_extension.type_cast(base, types::Pointer(types::Scalar(element_type)));
     const std::string lane = kLane;
     const std::string lo = "(" + lane + " % 32)";
     const std::string kq = "(4 * (" + lane + " / 32))";
@@ -147,40 +135,27 @@ void RocmMfmaBaseDispatcher::emit_fragment_transfer(
     out.stream << "}" << std::endl;
 }
 
-void RocmMfmaFragmentLoadDispatcher::dispatch_code_with_edges(
+void RocmMmaBareStrategy::emit_fragment_load(
     codegen::CodegenOutput& out,
-    std::vector<codegen::DispatchInput>& inputs,
-    std::vector<codegen::DispatchOutput>& outputs
-) {
-    auto& node = static_cast<const GpuMmaFragmentLoadNode&>(node_);
-    emit_needed_declarations(out);
-    emit_fragment_transfer(
-        out,
-        true,
-        node.fragment_type(),
-        node.layout(),
-        node.element_type(),
-        inputs.at(GpuMmaFragmentLoadNode::FRAG_INPUT_IDX).expr,
-        inputs.at(GpuMmaFragmentLoadNode::PTR_INPUT_IDX).expr
-    );
+    const std::string& frag,
+    const std::string& base,
+    const GpuMmaFromMemoryLayout& layout,
+    MmaFragmentType frag_type,
+    types::PrimitiveType element_type,
+    MmaFragmentLayout /*fragment_layout*/
+) const {
+    emit_fragment_transfer(out, true, frag_type, layout, element_type, frag, base);
 }
 
-void RocmMfmaFragmentStoreDispatcher::dispatch_code_with_edges(
+void RocmMmaBareStrategy::emit_fragment_store(
     codegen::CodegenOutput& out,
-    std::vector<codegen::DispatchInput>& inputs,
-    std::vector<codegen::DispatchOutput>& outputs
-) {
-    auto& node = static_cast<const GpuMmaFragmentStoreNode&>(node_);
-    emit_needed_declarations(out);
-    emit_fragment_transfer(
-        out,
-        false,
-        node.fragment_type(),
-        node.layout(),
-        node.element_type(),
-        inputs.at(GpuMmaFragmentStoreNode::FRAG_INPUT_IDX).expr,
-        inputs.at(GpuMmaFragmentStoreNode::PTR_INPUT_IDX).expr
-    );
+    const std::string& frag,
+    const std::string& base,
+    const GpuMmaFromMemoryLayout& layout,
+    MmaFragmentType frag_type,
+    types::PrimitiveType element_type
+) const {
+    emit_fragment_transfer(out, false, frag_type, layout, element_type, frag, base);
 }
 
 } // namespace sdfg::gpu::rocm

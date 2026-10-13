@@ -631,19 +631,68 @@ void register_transformations(py::module& m) {
         });
 
     py::class_<sdfg::gpu::GpuMmaEinsumTransform, Transformation>(m, "GpuMmaEinsumTransform")
+        // NOTE: register the modern hint-based constructor FIRST. pybind11 tries
+        // overloads in registration order, so calls that pass no hints (just the
+        // loop, or loop + arch) bind here instead of falling into the legacy
+        // overload below (whose scalar args now have defaults too). The legacy
+        // overload is only reached when its int/str arguments are supplied.
         .def(
-            py::init<StructuredLoop&, const sdfg::gpu::GpuArch*, int, int, const std::string&>(),
+            py::init<
+                StructuredLoop&,
+                const sdfg::gpu::GpuArch*,
+                const sdfg::gpu::MmaBlockSize*,
+                const sdfg::gpu::BlockCounts*>(),
+            py::arg("outermost_mma_loop"),
+            py::arg("arch") = nullptr,
+            py::arg("block_size_hint") = nullptr,
+            py::arg("wave_tiling_hint") = nullptr,
+            py::keep_alive<1, 2>(),
+            py::keep_alive<1, 3>(),
+            py::keep_alive<1, 4>(),
+            py::keep_alive<1, 5>(),
+            "Transform Einsum to MMA implementation if possible.\n\n"
+            "Args:\n"
+            "    outermost_mma_loop (StructuredLoop): The outermost loop of the supposed MMA block.\n"
+            "    arch (GpuArch): The GPU architecture. Infer from surrounding scopes architecture if null\n"
+            "    block_size_hint (MmaBlockSize): Required MMA block size (e.g. MmaBlockSize.parse('32x32x8')). "
+            "Defaults to arch-specific heuristic if null.\n"
+            "    wave_tiling_hint (BlockCounts): Required wave tiling (MMA blocks per wave). Defaults to arch-specific "
+            "heuristic if null.\n"
+        )
+        .def(
+            py::init([](StructuredLoop& loop,
+                        const sdfg::gpu::GpuArch* arch,
+                        int wave_tile_m,
+                        int wave_tile_n,
+                        const std::string& mma_shape) {
+                // Synthesise the hints from the legacy scalar arguments and hand
+                // them to the owning constructor, which copies them internally.
+                // No keep_alive is needed for the hints: the C++ object owns
+                // them. An empty mma_shape means "use the arch default"; a
+                // non-positive wave tile means "use the arch heuristic", so an
+                // all-default legacy call behaves like the hint-based overload.
+                std::optional<sdfg::gpu::MmaBlockSize> block_hint;
+                if (!mma_shape.empty()) {
+                    block_hint = sdfg::gpu::MmaBlockSize::parse_block_size(mma_shape);
+                }
+                std::optional<sdfg::gpu::BlockCounts> wave_tiling;
+                if (wave_tile_m > 0 && wave_tile_n > 0) {
+                    wave_tiling = sdfg::gpu::BlockCounts{.blocks_m = wave_tile_m, .blocks_n = wave_tile_n};
+                }
+                return new sdfg::gpu::GpuMmaEinsumTransform(loop, arch, block_hint, wave_tiling);
+            }),
             py::arg("outermost_mma_loop"),
             py::arg("arch") = nullptr,
             py::arg("wave_tile_m") = 1,
             py::arg("wave_tile_n") = 1,
             py::arg("mma_shape") = "",
-            "Transform will try to match up the loop-nest given as Matmul of 1 or multiple MMA blocks using Einsum "
-            "detection.\n\n"
+            py::keep_alive<1, 2>(),
+            "Transform with legacy parameters\n\n"
             "Args:\n"
             "    outermost_mma_loop (StructuredLoop): The outermost loop of the supposed MMA block.\n"
             "    arch (GpuArch): The GPU architecture. If none, infer.\n"
-            "    wave_tile_m, wave_tile_n (int): MMA blocks per wave (register blocking); must divide the block tile.\n"
+            "    wave_tile_m, wave_tile_n (int): MMA blocks per wave (register blocking); must divide the block tile. "
+            "Non-positive uses the arch heuristic.\n"
             "    mma_shape (str): MMA atom, e.g. \"32x32x8\" (raw MFMA on CDNA); empty uses the arch default.\n"
         )
         .def_property_readonly(

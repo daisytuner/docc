@@ -12,16 +12,17 @@ namespace sdfg::gpu {
 class GpuMmaExpander : public passes::CodeLibNodeExpander<math::tensor::MatMulNode> {
 protected:
     const GpuArch* arch_;
-    const GpuMmaSupport* mma_; ///< explicit MMA atom; null = the arch default
-
-    const GpuMmaSupport* mma() const {
-        return mma_ ? mma_ : arch_->mma_support();
-    }
+    const MmaBlockSize* block_size_hint_ = nullptr;
+    const BlockCounts* wave_tile_hint_ = nullptr;
 
 public:
-    GpuMmaExpander(const GpuArch* arch, const GpuMmaSupport* mma = nullptr)
-        : arch_(arch), mma_(mma), CodeLibNodeExpander(math::tensor::LibraryNodeType_MatMul) {
+    GpuMmaExpander(
+        const GpuArch* arch, const MmaBlockSize* block_size_hint = nullptr, const BlockCounts* wave_tile_hint = nullptr
+    )
+        : arch_(arch), CodeLibNodeExpander(math::tensor::LibraryNodeType_MatMul), block_size_hint_(block_size_hint),
+          wave_tile_hint_(wave_tile_hint) {
     }
+
     virtual ~GpuMmaExpander() = default;
     const LibNodeExpander* for_lib_node(const data_flow::LibraryNode& node) const override;
 
@@ -79,13 +80,10 @@ public:
         const math::tensor::TensorLayout& layout_b,
         const math::tensor::TensorLayout& layout_y,
         types::PrimitiveType input_type,
-        types::PrimitiveType acc_type,
         types::PrimitiveType output_type,
-        const data_flow::ImplementationType& impl_type,
         bool include_c_add,
         const DebugInfo& org_debug_info,
-        const std::array<int, 3>& args_order, // indices of inputs in order of {y, a, b}
-        const GpuMmaSupport* mma = nullptr // the MMA atom; null = the arch default
+        const std::array<int, 3>& args_order // indices of inputs in order of {y, a, b}
     );
 
     static void create_fragment_mma(
@@ -95,7 +93,6 @@ public:
         types::PrimitiveType input_type,
         const std::string& frag_a,
         const std::string& frag_b,
-        types::PrimitiveType acc_type,
         const std::string& frag_acc,
         const data_flow::ImplementationType& impl_type,
         const DebugInfo& org_debug_info,
@@ -105,7 +102,6 @@ public:
 
 protected:
     virtual bool matches_possible_mma_pattern(const math::tensor::MatMulNode& node) const;
-    virtual GpuMmaTiling get_mma_tiling(const symbolic::MultiExpression& res_shape) const;
 };
 
 } // namespace sdfg::gpu

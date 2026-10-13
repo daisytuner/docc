@@ -84,9 +84,9 @@ data_flow::PointerAccessType GpuMmaFragmentStoreNode::pointer_access_type(int in
         auto t_layout = layout_.to_tensor_layout(block_size_, fragment_type_);
         data_flow::MemoryAccessPatternType pattern;
         if (t_layout) {
-            pattern = data_flow::ConvexAccessPattern::create(symbolic::__nullptr__(), false);
-        } else {
             pattern = data_flow::TensorLayoutPattern::create(t_layout.value(), true);
+        } else {
+            pattern = data_flow::ConvexAccessPattern::create(symbolic::__nullptr__(), false);
         }
         return data_flow::PointerAccessMeta::
             create_generic(data_flow::NoAccessPattern::instance(), std::move(pattern), true);

@@ -1,8 +1,48 @@
 #include "py_gpu_arch.h"
 #include <sdfg/targets/cuda/cuda_arch.h>
+#include <sdfg/targets/gpu/gpu_mma_fragment.h>
 #include <sdfg/targets/rocm/rocm_arch.h>
 
 void register_gpu_arch(py::module& m, sdfg::plugins::Context& context) {
+    // MmaBlockSize: an MxNxK tensor-core block size (e.g. 32x32x8).
+    py::class_<sdfg::gpu::MmaBlockSize>(m, "MmaBlockSize")
+        .def(
+            py::init([](int block_m, int block_n, int block_k) {
+                return sdfg::gpu::MmaBlockSize{block_m, block_n, block_k};
+            }),
+            py::arg("m"),
+            py::arg("n"),
+            py::arg("k"),
+            "Create an MMA block size from its M, N and K dimensions."
+        )
+        .def_static(
+            "parse",
+            &sdfg::gpu::MmaBlockSize::parse_block_size,
+            py::arg("block_size"),
+            "Parse an MxNxK block size string (e.g. '32x32x8')."
+        )
+        .def_readwrite("m", &sdfg::gpu::MmaBlockSize::m)
+        .def_readwrite("n", &sdfg::gpu::MmaBlockSize::n)
+        .def_readwrite("k", &sdfg::gpu::MmaBlockSize::k)
+        .def("__repr__", [](const sdfg::gpu::MmaBlockSize& self) {
+            return "<MmaBlockSize '" + self.toStr() + "'>";
+        });
+
+    py::class_<sdfg::gpu::BlockCounts>(m, "BlockCounts")
+        .def(
+            py::init([](int blocks_m, int blocks_n) {
+                return sdfg::gpu::BlockCounts{blocks_m, blocks_n};
+            }),
+            py::arg("blocks_m"),
+            py::arg("blocks_n"),
+            "Create a BlockCounts object from its M and N block counts."
+        )
+        .def_readwrite("blocks_m", &sdfg::gpu::BlockCounts::blocks_m)
+        .def_readwrite("blocks_n", &sdfg::gpu::BlockCounts::blocks_n)
+        .def("__repr__", [](const sdfg::gpu::BlockCounts& self) {
+            return "<BlockCounts '" + std::to_string(self.blocks_m) + "x" + std::to_string(self.blocks_n) + "'>";
+        });
+
     py::class_<sdfg::gpu::GpuArch>(m, "GpuArch")
         .def_property_readonly("name", &sdfg::gpu::GpuArch::name, "Get the GPU architecture name")
         .def_static(

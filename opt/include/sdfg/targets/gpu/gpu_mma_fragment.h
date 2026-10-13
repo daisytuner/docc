@@ -23,17 +23,56 @@ struct MmaBlockSize {
     std::string dim_str(MmaFragmentType for_type) const;
 
     symbolic::MultiExpression get_shape(MmaFragmentType frag) const;
+
+    static MmaBlockSize parse_block_size(const std::string& block_size_str);
 };
 
 std::ostream& operator<<(std::ostream& os, const MmaBlockSize& block_size);
 
+/**
+ * Grouping of MMA blocks.
+ */
+struct BlockCounts {
+    int blocks_m;
+    int blocks_n;
+
+    int total_blocks() const {
+        return blocks_m * blocks_n;
+    }
+};
+
 struct GpuMmaTiling {
+    /// The MMA block size (m, n, k) in elements. While every underlying storage will only use 2 dimensions of this,
+    /// this qualifies all the possible operations on it
     MmaBlockSize mma_block_size;
-    int wave_tile_blocks_m = 0;
-    int wave_tile_blocks_n = 0;
-    int threads_per_mma_block_m = 0;
-    int macro_blocks_m = 0;
-    int macro_blocks_n = 0;
+    /// How many threads will work together on 1 MMA block
+    int threads_per_mma_wavefront = 0;
+    /// How many MMA blocks will be grouped together in a single wavefront / warp. MMA BlockSize * wave_tiling !=
+    /// macro_tiling
+    BlockCounts wave_tiling;
+    /// How many MMA blocks will be grouped together in a macro block / on a SM or CU
+    /// This controls how much data one block needs to handle and will typically need to be stored in block-shared
+    /// memory
+    BlockCounts macro_tiling;
+    /// The type used by the MMA hardware to accumulate the results of the MMA operation. This may be different from the
+    /// input and output types, e.g. for FP16 inputs and FP32 outputs. For a MatmulNode this would not be externally
+    /// visible other in the precision of the results
+    types::PrimitiveType acc_type;
+
+    /// implementation-specific details, e.g. for ROCm MFMA variant selection
+    int impl_details = 0;
+
+    /**
+     * Check that we can use the given wave tiling for the given macro block tiling, i.e. that the wave tiling divides
+     * the macro block tiling and that the number of threads per wave does not exceed 1024.
+     * @param wave_tiling
+     * @param macro_block
+     * @return
+     */
+    static bool wave_tile_divides(const BlockCounts& wave_tiling, const BlockCounts& macro_block);
+
+    int get_mma_blocks_m_per_wavefront() const;
+    int get_mma_blocks_n_per_wavefront() const;
 };
 
 enum MmaFragmentLayout {
@@ -56,38 +95,41 @@ constexpr const char* mma_fragment_layout_to_string(MmaFragmentLayout layout) {
 }
 
 struct GpuMmaSupport {
-    MmaBlockSize mma_block_size;
-    const uint16_t threads_per_mma_block;
-
     virtual ~GpuMmaSupport() = default;
 
     virtual types::PrimitiveType get_accumulator_type(
-        types::PrimitiveType output_type, types::PrimitiveType input_type, types::PrimitiveType desired_acc_type
+        types::PrimitiveType input_type, types::PrimitiveType output_type, types::PrimitiveType desired_acc_type
     ) const = 0;
-    types::PrimitiveType get_accumulator_type(types::PrimitiveType output_type, types::PrimitiveType input_type) const {
-        return get_accumulator_type(output_type, input_type, types::PrimitiveType::Void);
+    types::PrimitiveType get_accumulator_type(types::PrimitiveType input_type, types::PrimitiveType output_type) const {
+        return get_accumulator_type(input_type, output_type, types::PrimitiveType::Void);
     }
 
-    GpuMmaSupport(uint16_t block_m, uint16_t block_n, uint16_t block_k, uint16_t threads_per_mma_block)
-        : mma_block_size{block_m, block_n, block_k}, threads_per_mma_block(threads_per_mma_block) {
-    }
-    virtual bool valid_block_counts(uint16_t block_base, int m_blocks, int n_blocks, int k_blocks) const = 0;
+    GpuMmaSupport() = default;
 
-    [[deprecated("only for Tensor Matmul. Use get_mma_impl_type() for everything new")]]
-    virtual std::optional<
-        data_flow::ImplementationType> get_matmul_impl_type(const GpuArch& arch, const GpuMmaTiling& tiling) const = 0;
+    virtual bool is_valid_block_size(
+        const MmaBlockSize& block_size, types::PrimitiveType input_type, types::PrimitiveType acc_type
+    ) const = 0;
 
-    virtual data_flow::ImplementationType get_mma_impl_type() const = 0;
+    virtual data_flow::ImplementationType get_mma_impl_type(const GpuMmaTiling& tiling) const = 0;
 
     static int get_integer_block_count(const symbolic::Expression& size, uint16_t block_size);
 
     virtual bool supported_types(types::PrimitiveType input_type, types::PrimitiveType output_type) const = 0;
 
-    virtual GpuMmaTiling get_mma_tiling(const symbolic::MultiExpression& res_shape) const = 0;
+    virtual std::optional<GpuMmaTiling> get_mma_tiling(
+        const symbolic::MultiExpression& res_shape,
+        types::PrimitiveType input_type,
+        types::PrimitiveType acc_type,
+        const MmaBlockSize* block_size_hint,
+        const BlockCounts* wave_tile_hint
+    ) const = 0;
 
     virtual void set_mma_fragment_storage_type(
-        types::StorageType& storage_type, const MmaBlockSize& size, MmaFragmentType type, MmaFragmentLayout layout
+        types::StorageType& storage_type, const GpuMmaTiling& tiling, MmaFragmentType type, MmaFragmentLayout layout
     ) const = 0;
+
+    virtual std::vector<MmaBlockSize>
+    get_supported_block_sizes(types::PrimitiveType input_type, types::PrimitiveType acc_type) const = 0;
 
 protected:
     static int get_storage_type_arg_as_int(const types::StorageType& storage, int idx);

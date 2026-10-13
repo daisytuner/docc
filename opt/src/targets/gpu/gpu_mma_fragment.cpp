@@ -1,6 +1,7 @@
 #include "sdfg/targets/gpu/gpu_mma_fragment.h"
 
 #include <nlohmann/json.hpp>
+#include <sstream>
 
 namespace sdfg::gpu {
 
@@ -76,6 +77,37 @@ symbolic::MultiExpression MmaBlockSize::get_shape(MmaFragmentType frag) const {
         default:
             throw std::invalid_argument("Invalid MMA fragment type");
     }
+}
+
+MmaBlockSize MmaBlockSize::parse_block_size(const std::string& block_size_str) {
+    MmaBlockSize block_size{};
+    char sep1 = 0, sep2 = 0, extra = 0;
+    std::istringstream ss(block_size_str);
+    ss >> block_size.m >> sep1 >> block_size.n >> sep2 >> block_size.k;
+    if (ss.fail() || (sep1 != 'x' && sep1 != 'X') || (sep2 != 'x' && sep2 != 'X') || (ss >> extra)) {
+        throw std::invalid_argument("Invalid MMA block size: '" + block_size_str + "' (expected format MxNxK)");
+    }
+    return block_size;
+}
+
+bool GpuMmaTiling::wave_tile_divides(const BlockCounts& wave_tiling, const BlockCounts& macro_block) {
+    if (wave_tiling.blocks_m < 1 || wave_tiling.blocks_n < 1) {
+        return false;
+    }
+    if (macro_block.blocks_m % wave_tiling.blocks_m != 0 || macro_block.blocks_n % wave_tiling.blocks_n != 0) {
+        return false;
+    }
+    return true;
+}
+
+int GpuMmaTiling::get_mma_blocks_m_per_wavefront() const {
+    assert(wave_tiling.blocks_m > 0 && (macro_tiling.blocks_m % wave_tiling.blocks_m == 0));
+    return macro_tiling.blocks_m / wave_tiling.blocks_m;
+}
+
+int GpuMmaTiling::get_mma_blocks_n_per_wavefront() const {
+    assert(wave_tiling.blocks_n > 0 && (macro_tiling.blocks_n % wave_tiling.blocks_n == 0));
+    return macro_tiling.blocks_n / wave_tiling.blocks_n;
 }
 
 int GpuMmaSupport::get_storage_type_arg_as_int(const types::StorageType& storage, int idx) {

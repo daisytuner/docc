@@ -9,14 +9,13 @@ namespace sdfg::gpu {
 
 class GpuMmaEinsumReplacer : public einsum::Einsum2MatMul {
     const GpuArch* arch_;
-    int wave_tile_m_;
-    int wave_tile_n_;
-    std::string mma_shape_;
+    const BlockCounts* wave_tile_hint_ = nullptr;
+    const MmaBlockSize* block_size_hint_ = nullptr;
 
 public:
-    /// @p wave_tile_m x @p wave_tile_n MMA blocks per wave (register blocking); @p mma_shape selects the
-    /// MMA atom (e.g. "32x32x8"), empty for the arch default.
-    GpuMmaEinsumReplacer(const GpuArch* arch, int wave_tile_m = 1, int wave_tile_n = 1, const std::string& mma_shape = "");
+    GpuMmaEinsumReplacer(
+        const GpuArch* arch, const MmaBlockSize* block_size_hint = nullptr, const BlockCounts* wave_tile_hint = nullptr
+    );
 
     struct EinsumMmaAnalysis : public MatMulAnalysis {};
 
@@ -29,18 +28,15 @@ public:
 
 protected:
     bool matches_possible_mma_pattern(const MatMulAnalysis& analysis) const;
-    bool wave_tile_divides(const MatMulAnalysis& analysis) const;
-    /// The selected MMA atom, or null if the arch does not offer it.
-    const GpuMmaSupport* mma_support() const;
 };
 
 class GpuMmaEinsumTransform : public transformations::Transformation {
     bool matched_ = false;
     StructuredLoop& outermost_mma_loop_;
     const gpu::GpuArch* arch_;
-    int wave_tile_m_;
-    int wave_tile_n_;
-    std::string mma_shape_;
+
+    std::optional<MmaBlockSize> block_size_hint_;
+    std::optional<BlockCounts> wave_tiling_hint_;
 
 protected:
     /// the einsum parts modify the SDFG in place, so WILL ALWAYS CHANGE IT. We need to revert the changes if we did not
@@ -53,9 +49,19 @@ public:
     GpuMmaEinsumTransform(
         StructuredLoop& outermoost_mma_loop,
         const gpu::GpuArch* arch = nullptr,
-        int wave_tile_m = 1,
-        int wave_tile_n = 1,
-        const std::string& mma_shape = ""
+        const MmaBlockSize* block_size_hint = nullptr,
+        const BlockCounts* wave_tiling_hint = nullptr
+    );
+
+    /// Owning overload: takes the hints by value and stores them internally, so
+    /// the caller does not have to keep separate hint objects alive. Intended
+    /// for the backwards-compatible Python constructor, which synthesises the
+    /// hints from scalar arguments. An empty optional means "no hint".
+    GpuMmaEinsumTransform(
+        StructuredLoop& outermoost_mma_loop,
+        const gpu::GpuArch* arch,
+        std::optional<MmaBlockSize> block_size_hint,
+        std::optional<BlockCounts> wave_tile_hint
     );
 
     std::string name() const override {

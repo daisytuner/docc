@@ -14,8 +14,8 @@
 #include "sdfg/targets/gpu/gpu_offload_reduce_dispatcher.h"
 #include "sdfg/targets/gpu/gpu_tile_target.h"
 #include "sdfg/targets/rocm/rocm.h"
-#include "sdfg/targets/rocm/rocm_mfma_dispatcher.h"
-#include "sdfg/targets/rocm/rocm_mma_dispatcher.h"
+#include "sdfg/targets/rocm/rocm_mma_bare_dispatcher.h"
+#include "sdfg/targets/rocm/rocm_mma_fragment_dispatcher.h"
 #include "sdfg/targets/rocm/rocm_offload_dispatcher_strategy.h"
 #include "sdfg/targets/rocm/rocm_reduce_dispatcher.h"
 #include "sdfg/targets/rocm/tiles/pipeline_node.h"
@@ -299,108 +299,144 @@ void register_rocm_plugin(plugins::Context& context) {
     // MMA
     libNodeDispatcherRegistry.register_library_node_dispatcher(
         gpu::LibraryNodeType_GpuMmaMatmul,
-        gpu::rocm::ImplementationType_ROCM_MMA,
+        gpu::rocm::ImplementationType_ROCM_MMA_FRAGMENT,
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
            const data_flow::LibraryNode& node) {
-            return std::make_unique<
-                gpu::rocm::RocmMmaMatmulDispatcher>(language_extension, function, data_flow_graph, node);
+            return std::make_unique<gpu::GpuMmaMatmulDispatcher>(
+                language_extension,
+                function,
+                data_flow_graph,
+                node,
+                std::make_unique<gpu::rocm::RocmMmaFragmentStrategy>()
+            );
+        }
+    );
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
+        gpu::LibraryNodeType_GpuMmaMatmul,
+        gpu::rocm::ImplementationType_ROCM_MMA_BARE,
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<gpu::GpuMmaMatmulDispatcher>(
+                language_extension, function, data_flow_graph, node, std::make_unique<gpu::rocm::RocmMmaBareStrategy>()
+            );
         }
     );
     libNodeDispatcherRegistry.register_library_node_dispatcher(
         gpu::LibraryNodeType_GpuMmaFill,
-        gpu::rocm::ImplementationType_ROCM_MMA,
+        gpu::rocm::ImplementationType_ROCM_MMA_FRAGMENT,
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
            const data_flow::LibraryNode& node) {
-            return std::make_unique<
-                gpu::rocm::RocmMmaFillDispatcher>(language_extension, function, data_flow_graph, node);
+            return std::make_unique<gpu::GpuMmaFillDispatcher>(
+                language_extension,
+                function,
+                data_flow_graph,
+                node,
+                std::make_unique<gpu::rocm::RocmMmaFragmentStrategy>()
+            );
+        }
+    );
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
+        gpu::LibraryNodeType_GpuMmaFill,
+        gpu::rocm::ImplementationType_ROCM_MMA_BARE,
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<gpu::GpuMmaFillDispatcher>(
+                language_extension, function, data_flow_graph, node, std::make_unique<gpu::rocm::RocmMmaBareStrategy>()
+            );
         }
     );
     libNodeDispatcherRegistry.register_library_node_dispatcher(
         gpu::LibraryNodeType_GpuMmaFragmentLoad,
-        gpu::rocm::ImplementationType_ROCM_MMA,
+        gpu::rocm::ImplementationType_ROCM_MMA_FRAGMENT,
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
            const data_flow::LibraryNode& node) {
-            return std::make_unique<
-                gpu::rocm::RocmMmaFragmentLoadDispatcher>(language_extension, function, data_flow_graph, node);
+            return std::make_unique<gpu::GpuMmaFragmentLoadDispatcher>(
+                language_extension,
+                function,
+                data_flow_graph,
+                node,
+                std::make_unique<gpu::rocm::RocmMmaFragmentStrategy>()
+            );
+        }
+    );
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
+        gpu::LibraryNodeType_GpuMmaFragmentLoad,
+        gpu::rocm::ImplementationType_ROCM_MMA_BARE,
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<gpu::GpuMmaFragmentLoadDispatcher>(
+                language_extension, function, data_flow_graph, node, std::make_unique<gpu::rocm::RocmMmaBareStrategy>()
+            );
         }
     );
     libNodeDispatcherRegistry.register_library_node_dispatcher(
         gpu::LibraryNodeType_GpuMmaFragmentStore,
-        gpu::rocm::ImplementationType_ROCM_MMA,
+        gpu::rocm::ImplementationType_ROCM_MMA_FRAGMENT,
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
            const data_flow::LibraryNode& node) {
-            return std::make_unique<
-                gpu::rocm::RocmMmaFragmentStoreDispatcher>(language_extension, function, data_flow_graph, node);
+            return std::make_unique<gpu::GpuMmaFragmentStoreDispatcher>(
+                language_extension,
+                function,
+                data_flow_graph,
+                node,
+                std::make_unique<gpu::rocm::RocmMmaFragmentStrategy>()
+            );
+        }
+    );
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
+        gpu::LibraryNodeType_GpuMmaFragmentStore,
+        gpu::rocm::ImplementationType_ROCM_MMA_BARE,
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<gpu::GpuMmaFragmentStoreDispatcher>(
+                language_extension, function, data_flow_graph, node, std::make_unique<gpu::rocm::RocmMmaBareStrategy>()
+            );
         }
     );
     libNodeDispatcherRegistry.register_library_node_dispatcher(
         gpu::LibraryNodeType_GpuMmaFragmentEltwiseAdd,
-        gpu::rocm::ImplementationType_ROCM_MMA,
+        gpu::rocm::ImplementationType_ROCM_MMA_FRAGMENT,
         [](codegen::LanguageExtension& language_extension,
            const Function& function,
            const data_flow::DataFlowGraph& data_flow_graph,
            const data_flow::LibraryNode& node) {
-            return std::make_unique<
-                gpu::rocm::RocmMmaEltwiseAddDispatcher>(language_extension, function, data_flow_graph, node);
+            return std::make_unique<gpu::GpuMmaEltwiseAddDispatcher>(
+                language_extension,
+                function,
+                data_flow_graph,
+                node,
+                std::make_unique<gpu::rocm::RocmMmaFragmentStrategy>()
+            );
         }
     );
-
-    // Raw 32x32x8 MFMA atom
-    auto register_mfma = [&](const data_flow::LibraryNodeCode& code, auto make) {
-        libNodeDispatcherRegistry.register_library_node_dispatcher(
-            code,
-            gpu::rocm::ImplementationType_ROCM_MFMA,
-            [make](
-                codegen::LanguageExtension& language_extension,
-                const Function& function,
-                const data_flow::DataFlowGraph& data_flow_graph,
-                const data_flow::LibraryNode& node
-            ) -> std::unique_ptr<codegen::LibraryNodeDispatcher> {
-                return make(language_extension, function, data_flow_graph, node);
-            }
-        );
-    };
-    register_mfma(gpu::LibraryNodeType_GpuMmaMatmul, [](auto& le, auto& f, auto& g, auto& n) {
-        return std::make_unique<gpu::rocm::RocmMfmaMatmulDispatcher>(le, f, g, n);
-    });
-    register_mfma(gpu::LibraryNodeType_GpuMmaFill, [](auto& le, auto& f, auto& g, auto& n) {
-        return std::make_unique<gpu::rocm::RocmMfmaFillDispatcher>(le, f, g, n);
-    });
-    register_mfma(gpu::LibraryNodeType_GpuMmaFragmentLoad, [](auto& le, auto& f, auto& g, auto& n) {
-        return std::make_unique<gpu::rocm::RocmMfmaFragmentLoadDispatcher>(le, f, g, n);
-    });
-    register_mfma(gpu::LibraryNodeType_GpuMmaFragmentStore, [](auto& le, auto& f, auto& g, auto& n) {
-        return std::make_unique<gpu::rocm::RocmMfmaFragmentStoreDispatcher>(le, f, g, n);
-    });
-    register_mfma(gpu::LibraryNodeType_GpuMmaFragmentEltwiseAdd, [](auto& le, auto& f, auto& g, auto& n) {
-        return std::make_unique<gpu::rocm::RocmMfmaEltwiseAddDispatcher>(le, f, g, n);
-    });
-
-    // legacy standalone MMA node based on Matmul. Does not know the enough details about the underlying hardware, so we
-    // register it for specific ROCm MMA implementations as a workaround
-    for (const auto& mma_impl :
-         {gpu::rocm::ImplementationType_ROCM_MMA_GFX1201, gpu::rocm::ImplementationType_ROCM_MMA_GFX90A}) {
-        libNodeDispatcherRegistry.register_library_node_dispatcher(
-            math::tensor::LibraryNodeType_MatMul,
-            mma_impl,
-            [](codegen::LanguageExtension& language_extension,
-               const Function& function,
-               const data_flow::DataFlowGraph& data_flow_graph,
-               const data_flow::LibraryNode& node) {
-                return std::make_unique<gpu::rocm::RocmMmaBaseDispatcher>(
-                    language_extension, function, data_flow_graph, dynamic_cast<const math::tensor::MatMulNode&>(node)
-                );
-            }
-        );
-    }
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
+        gpu::LibraryNodeType_GpuMmaFragmentEltwiseAdd,
+        gpu::rocm::ImplementationType_ROCM_MMA_BARE,
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<gpu::GpuMmaEltwiseAddDispatcher>(
+                language_extension, function, data_flow_graph, node, std::make_unique<gpu::rocm::RocmMmaBareStrategy>()
+            );
+        }
+    );
 
     // Async copy / pipeline primitives (software pipelining)
     libNodeDispatcherRegistry.register_library_node_dispatcher(

@@ -101,39 +101,29 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
     const math::tensor::TensorLayout& layout_b,
     const math::tensor::TensorLayout& layout_y,
     types::PrimitiveType input_type,
-    types::PrimitiveType acc_type,
     types::PrimitiveType output_type,
-    const data_flow::ImplementationType& impl_type,
     bool include_c_add,
     const DebugInfo& org_debug_info,
-    const std::array<int, 3>& args_order, // {y, a, b}
-    const GpuMmaSupport* mma
+    const std::array<int, 3>& args_order // {y, a, b}
 ) {
-    auto* mma_arch = mma ? mma : arch.mma_support();
-    auto mma_impl_type = mma_arch->get_mma_impl_type();
+    auto* mma_arch = arch.mma_support();
 
     auto& m_dim = layout_a.get_dim(0);
     auto& k_dim = layout_b.get_dim(0);
 
+    auto impl_type = mma_arch->get_mma_impl_type(mma_tiling);
+
     auto& builder = standalone.builder();
-    const int wt_m = std::max(1, mma_tiling.wave_tile_blocks_m);
-    const int wt_n = std::max(1, mma_tiling.wave_tile_blocks_n);
-    if (mma_tiling.macro_blocks_m % wt_m != 0 || mma_tiling.macro_blocks_n % wt_n != 0) {
-        throw std::runtime_error("MMA expansion: wave tile does not divide the block tile");
-    }
     auto wave_row = symbolic::symbol(builder.find_new_name("wave_row"));
-    auto waves_m = symbolic::integer(mma_tiling.macro_blocks_m / wt_m);
+    auto waves_m = symbolic::integer(mma_tiling.get_mma_blocks_m_per_wavefront());
     builder.add_container(wave_row->get_name(), types::Scalar(types::get_primitive_type_to_hold_upper_bound(waves_m)));
 
     std::vector<std::string> acc_frag_names; // row-major over the wave's wt_m x wt_n blocks
-    for (int f = 0; f < wt_m * wt_n; ++f) {
+    for (int f = 0; f < mma_tiling.wave_tiling.total_blocks(); ++f) {
         auto acc_frag_name = builder.find_new_name("mma_acc");
-        types::Pointer acc_frag_type{types::Scalar(acc_type)};
+        types::Pointer acc_frag_type{types::Scalar(mma_tiling.acc_type)};
         mma_arch->set_mma_fragment_storage_type(
-            acc_frag_type.storage_type(),
-            mma_tiling.mma_block_size,
-            MmaFragmentType::C,
-            MmaFragmentLayout::MMA_LAYOUT_UNSPECIFIED
+            acc_frag_type.storage_type(), mma_tiling, MmaFragmentType::C, MmaFragmentLayout::MMA_LAYOUT_UNSPECIFIED
         );
         builder.add_container(acc_frag_name, acc_frag_type);
         acc_frag_names.push_back(acc_frag_name);
@@ -143,12 +133,11 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
     MmaFragmentLayout a_frag_layout = a_col_major ? MmaFragmentLayout::MMA_LAYOUT_COL_MAJOR
                                                   : MmaFragmentLayout::MMA_LAYOUT_ROW_MAJOR;
     std::vector<std::string> a_frag_names;
-    for (int i = 0; i < wt_m; ++i) {
+    for (int i = 0; i < mma_tiling.wave_tiling.blocks_m; ++i) {
         types::Pointer a_frag_type{types::Scalar(input_type)};
         auto a_frag_name = builder.find_new_name("mma_a");
-        mma_arch->set_mma_fragment_storage_type(
-            a_frag_type.storage_type(), mma_tiling.mma_block_size, MmaFragmentType::A, a_frag_layout
-        );
+        mma_arch
+            ->set_mma_fragment_storage_type(a_frag_type.storage_type(), mma_tiling, MmaFragmentType::A, a_frag_layout);
         builder.add_container(a_frag_name, a_frag_type);
         a_frag_names.push_back(a_frag_name);
     }
@@ -157,21 +146,20 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
     MmaFragmentLayout b_frag_layout = b_col_major ? MmaFragmentLayout::MMA_LAYOUT_COL_MAJOR
                                                   : MmaFragmentLayout::MMA_LAYOUT_ROW_MAJOR;
     std::vector<std::string> b_frag_names;
-    for (int j = 0; j < wt_n; ++j) {
+    for (int j = 0; j < mma_tiling.wave_tiling.blocks_n; ++j) {
         types::Pointer b_frag_type{types::Scalar(input_type)};
         auto b_frag_name = builder.find_new_name("mma_b");
-        mma_arch->set_mma_fragment_storage_type(
-            b_frag_type.storage_type(), mma_tiling.mma_block_size, MmaFragmentType::B, b_frag_layout
-        );
+        mma_arch
+            ->set_mma_fragment_storage_type(b_frag_type.storage_type(), mma_tiling, MmaFragmentType::B, b_frag_layout);
         builder.add_container(b_frag_name, b_frag_type);
         b_frag_names.push_back(b_frag_name);
     }
     auto y_col_major = layout_y.is_2d_col_or_row_major() == math::tensor::TensorLayout::LAYOUT_COL_MAJOR;
 
-    auto waves_n = symbolic::integer(mma_tiling.macro_blocks_n / wt_n);
+    auto waves_n = symbolic::integer(mma_tiling.get_mma_blocks_n_per_wavefront());
     // Each wave_row iteration is one whole wave: the MMA nodes below are wave-collective.
     auto wave_row_sched = ScheduleType_GPU_Offload::create(arch, TargetLevel::X_BLOCK, waves_m);
-    ScheduleType_GPU_Offload::lanes(wave_row_sched, symbolic::integer(mma_tiling.threads_per_mma_block_m));
+    ScheduleType_GPU_Offload::lanes(wave_row_sched, symbolic::integer(mma_tiling.threads_per_mma_wavefront));
     auto& col_map = standalone.replace_with_structured_loop(
         AccessNodeExpand::LoopType::Map,
         wave_row,
@@ -211,10 +199,12 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
     auto block_n = symbolic::integer(mma_tiling.mma_block_size.n);
     // M block index of fragment i of this wave, N block index of fragment j.
     auto brow = [&](int i) {
-        return symbolic::add(symbolic::mul(brow_in_tile, symbolic::integer(wt_m)), symbolic::integer(i));
+        return symbolic::
+            add(symbolic::mul(brow_in_tile, symbolic::integer(mma_tiling.wave_tiling.blocks_m)), symbolic::integer(i));
     };
     auto bcol = [&](int j) {
-        return symbolic::add(symbolic::mul(bcol_in_tile, symbolic::integer(wt_n)), symbolic::integer(j));
+        return symbolic::
+            add(symbolic::mul(bcol_in_tile, symbolic::integer(mma_tiling.wave_tiling.blocks_n)), symbolic::integer(j));
     };
     auto a_offset = [&](int i) {
         return SymEngine::add({
@@ -242,11 +232,17 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
 
     auto& per_wavefront_block = builder.add_block(row_map.root());
     for (const auto& acc_frag_name : acc_frag_names) {
-        auto& fill_node = builder.add_library_node<
-            GpuMmaFillNode>(per_wavefront_block, org_debug_info, mma_tiling.mma_block_size, acc_type, impl_type);
+        auto& fill_node = builder.add_library_node<GpuMmaFillNode>(
+            per_wavefront_block, org_debug_info, mma_tiling.mma_block_size, mma_tiling.acc_type, impl_type
+        );
         auto& acc_frag_ptr = builder.add_access(per_wavefront_block, acc_frag_name);
         builder.add_computational_memlet(
-            per_wavefront_block, acc_frag_ptr, fill_node, fill_node.input(0), {}, types::Pointer(types::Scalar(acc_type))
+            per_wavefront_block,
+            acc_frag_ptr,
+            fill_node,
+            fill_node.input(0),
+            {},
+            types::Pointer(types::Scalar(mma_tiling.acc_type))
         );
     }
 
@@ -259,7 +255,7 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
     );
 
     auto& load_block = builder.add_block(k_sweep.root());
-    for (int i = 0; i < wt_m; ++i) {
+    for (int i = 0; i < mma_tiling.wave_tiling.blocks_m; ++i) {
         create_fragment_load(
             standalone,
             input_type,
@@ -274,7 +270,7 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
             load_block
         );
     }
-    for (int j = 0; j < wt_n; ++j) {
+    for (int j = 0; j < mma_tiling.wave_tiling.blocks_n; ++j) {
         create_fragment_load(
             standalone,
             input_type,
@@ -291,8 +287,8 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
     }
 
     auto& inner_block = builder.add_block(k_sweep.root());
-    for (int i = 0; i < wt_m; ++i) {
-        for (int j = 0; j < wt_n; ++j) {
+    for (int i = 0; i < mma_tiling.wave_tiling.blocks_m; ++i) {
+        for (int j = 0; j < mma_tiling.wave_tiling.blocks_n; ++j) {
             create_fragment_mma(
                 standalone,
                 arch,
@@ -300,8 +296,7 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
                 input_type,
                 a_frag_names[i],
                 b_frag_names[j],
-                acc_type,
-                acc_frag_names[i * wt_n + j],
+                acc_frag_names[i * mma_tiling.wave_tiling.blocks_n + j],
                 impl_type,
                 org_debug_info,
                 builder,
@@ -317,28 +312,22 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
         c_frag_name = builder.find_new_name("mma_c");
         types::Pointer c_type{types::Scalar(output_type)};
         mma_arch->set_mma_fragment_storage_type(
-            c_type.storage_type(),
-            mma_tiling.mma_block_size,
-            MmaFragmentType::C,
-            MmaFragmentLayout::MMA_LAYOUT_UNSPECIFIED
+            c_type.storage_type(), mma_tiling, MmaFragmentType::C, MmaFragmentLayout::MMA_LAYOUT_UNSPECIFIED
         );
         builder.add_container(c_frag_name, c_type);
         d_frag_name = builder.find_new_name("mma_d");
         types::Pointer d_type{types::Scalar(output_type)};
         mma_arch->set_mma_fragment_storage_type(
-            d_type.storage_type(),
-            mma_tiling.mma_block_size,
-            MmaFragmentType::C,
-            MmaFragmentLayout::MMA_LAYOUT_UNSPECIFIED
+            d_type.storage_type(), mma_tiling, MmaFragmentType::C, MmaFragmentLayout::MMA_LAYOUT_UNSPECIFIED
         );
         builder.add_container(d_frag_name, d_type);
     } else {
-        assert(output_type == acc_type && "Output and Accumulate type must be identical if we do not add C");
+        assert(output_type == mma_tiling.acc_type && "Output and Accumulate type must be identical if we do not add C");
     }
 
-    for (int i = 0; i < wt_m; ++i) {
-        for (int j = 0; j < wt_n; ++j) {
-            const auto& acc_frag_name = acc_frag_names[i * wt_n + j];
+    for (int i = 0; i < mma_tiling.wave_tiling.blocks_m; ++i) {
+        for (int j = 0; j < mma_tiling.wave_tiling.blocks_n; ++j) {
+            const auto& acc_frag_name = acc_frag_names[i * mma_tiling.wave_tiling.blocks_n + j];
             GpuMmaFromMemoryLayout y_mem{.offset = y_offset(i, j), .ldstride = ldc, .layout = y_layout};
             std::string store_frag_name = acc_frag_name;
             if (include_c_add) {
@@ -360,7 +349,7 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
                 create_eltwise_add_block(
                     standalone,
                     mma_tiling.mma_block_size,
-                    acc_type,
+                    mma_tiling.acc_type,
                     output_type,
                     impl_type,
                     org_debug_info,
@@ -399,7 +388,6 @@ void GpuMmaExpander::create_fragment_mma(
     types::PrimitiveType input_type,
     const std::string& frag_a,
     const std::string& frag_b,
-    types::PrimitiveType acc_type,
     const std::string& frag_acc,
     const data_flow::ImplementationType& impl_type,
     const DebugInfo& org_debug_info,
@@ -407,10 +395,10 @@ void GpuMmaExpander::create_fragment_mma(
     structured_control_flow::Block& block
 ) {
     auto& inner_node = builder.add_library_node<
-        GpuMmaMatmulNode>(block, org_debug_info, mma_tiling.mma_block_size, input_type, acc_type, impl_type);
+        GpuMmaMatmulNode>(block, org_debug_info, mma_tiling.mma_block_size, input_type, mma_tiling.acc_type, impl_type);
 
     types::Scalar input_scalar_type(input_type);
-    types::Scalar acc_scalar_type(acc_type);
+    types::Scalar acc_scalar_type(mma_tiling.acc_type);
     types::Pointer ptr_type(input_scalar_type);
 
     auto& acc_access = builder.add_access(block, frag_acc);
@@ -448,13 +436,19 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::handle_expand(
     auto result_layout = node.layout_y();
     auto k_dim = node.layout_a().get_dim(1);
 
-    auto mma_tiling = get_mma_tiling({result_layout.get_dim(0), result_layout.get_dim(1), k_dim});
-
     auto input_type = node.uniform_quantization(node.get_parent()).value();
     auto output_type = input_type;
 
-    auto mma_arch = mma();
-    auto new_impl_type = mma_arch->get_mma_impl_type();
+    auto mma_arch = arch_->mma_support();
+    auto acc_type = mma_arch->get_accumulator_type(input_type, output_type, types::PrimitiveType::Void);
+
+    auto mma_tiling = mma_arch->get_mma_tiling(
+        {result_layout.get_dim(0), result_layout.get_dim(1), k_dim},
+        input_type,
+        acc_type,
+        block_size_hint_,
+        wave_tile_hint_
+    );
 
     auto standalone = context.replacement_requires_access_nodes({InputUse::Scalar, InputUse::Scalar, InputUse::Scalar});
 
@@ -462,18 +456,15 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::handle_expand(
         return expand_mma_standalone(
             *standalone,
             *arch_,
-            mma_tiling,
+            mma_tiling.value(),
             node.layout_a(),
             node.layout_b(),
             result_layout,
             input_type,
-            mma_arch->get_accumulator_type(output_type, input_type),
             output_type,
-            new_impl_type.value(),
             true,
             node.debug_info(),
-            {0, 1, 2}, // {y, a, b}: MatMulNode access nodes are already ordered Y, A, B
-            mma()
+            {0, 1, 2} // {y, a, b}: MatMulNode access nodes are already ordered Y, A, B
         );
     } else {
         return context.unable();
@@ -528,12 +519,8 @@ void GpuMmaExpander::create_eltwise_add_block(
 }
 
 bool GpuMmaExpander::matches_possible_mma_pattern(const math::tensor::MatMulNode& node) const {
-    auto* mma_arch = mma();
+    auto* mma_arch = arch_->mma_support();
     if (!mma_arch) {
-        return false;
-    }
-    GpuMmaTiling dummy_tiling;
-    if (!mma_ && !mma_arch->get_matmul_impl_type(*arch_, dummy_tiling).has_value()) {
         return false;
     }
 
@@ -561,18 +548,6 @@ bool GpuMmaExpander::matches_possible_mma_pattern(const math::tensor::MatMulNode
     auto& n = dims_b.get_dim(1);
     auto& k = dims_a.get_dim(1);
 
-    auto m_blocks = GpuMmaSupport::get_integer_block_count(m, mma_arch->mma_block_size.m);
-    auto n_blocks = GpuMmaSupport::get_integer_block_count(n, mma_arch->mma_block_size.n);
-    auto k_blocks = GpuMmaSupport::get_integer_block_count(k, mma_arch->mma_block_size.k);
-
-    if (!m_blocks || !n_blocks || !k_blocks) {
-        return false;
-    }
-
-    if (!mma_arch->valid_block_counts(mma_arch->mma_block_size.m, m_blocks, n_blocks, k_blocks)) {
-        return false;
-    }
-
     auto input_type = node.uniform_quantization(node.get_parent());
     auto output_type = input_type;
 
@@ -581,16 +556,15 @@ bool GpuMmaExpander::matches_possible_mma_pattern(const math::tensor::MatMulNode
         return false;
     }
 
-    return mma_arch->supported_types(input_type.value(), output_type.value());
-}
-
-GpuMmaTiling GpuMmaExpander::get_mma_tiling(const symbolic::MultiExpression& res_shape) const {
-    auto* mma_arch = mma();
-    if (!mma_arch) {
-        throw std::runtime_error("No MMA architecture available for this GPU target.");
+    if (!mma_arch->supported_types(input_type.value(), output_type.value())) {
+        return false;
     }
 
-    return mma_arch->get_mma_tiling(res_shape);
+    auto acc_type = mma_arch->get_accumulator_type(input_type.value(), output_type.value(), types::PrimitiveType::Void);
+
+    auto tiling = mma_arch->get_mma_tiling({m, n, k}, input_type.value(), acc_type, block_size_hint_, wave_tile_hint_);
+
+    return tiling.has_value();
 }
 
 } // namespace sdfg::gpu

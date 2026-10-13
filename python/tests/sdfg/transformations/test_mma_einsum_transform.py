@@ -28,6 +28,8 @@ from docc.sdfg import (
     IfElse,
     LocalStorage,
     LoopTiling,
+    MmaBlockSize,
+    BlockCounts,
     Pointer,
     PrimitiveType,
     RocmArch,
@@ -227,6 +229,31 @@ def test_mma_einsum_expand_applies(arch_name, M, N, K, tile_m, tile_n):
     sdfg.validate()
 
 
+def _iter_library_nodes(seq):
+    """Yield every LibraryNode under a Sequence, recursing into loops/sequences/ifs."""
+    for i in range(len(seq)):
+        child = seq[i]
+        if isinstance(child, Block):
+            yield from child.dataflow.library_nodes
+        elif isinstance(child, StructuredLoop):
+            yield from _iter_library_nodes(child.body)
+        elif isinstance(child, Sequence):
+            yield from _iter_library_nodes(child)
+        elif isinstance(child, IfElse):
+            for case_idx in range(child.size):
+                yield from _iter_library_nodes(child.case(case_idx))
+
+
+def _applied_mma_block_size(sdfg):
+    """The 'MxNxK' block the single emitted GpuMmaMatmul node uses (its to_str()
+    reads e.g. 'GpuMma(32x32x8: ROCM_MMA)')."""
+    for node in _iter_library_nodes(sdfg.root):
+        if node.code == "gpu::GpuMmaMatmul":
+            text = node.to_str()
+            return text[text.index("(") + 1 : text.index(":")].strip()
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Execution: only on the matching GPU (DOCC_ROCM_ARCH names the arch under test).
 # ---------------------------------------------------------------------------
@@ -268,11 +295,22 @@ def _build_executable_einsum_mma(M, N, K, tile_m, tile_n, swap_operands=False):
     return builder, loop_i1
 
 
+# Block sizes only available on CDNA (gfx90a); ignored (and so skipped) elsewhere.
+_CDNA_ONLY_BLOCKS = {"32x32x8"}
+
+# (M, N, K, tile_m, tile_n, block_size): block_size is an optional 'MxNxK' hint;
+# when set, the expansion must emit that exact MMA block.
 EXEC_CASES = [
-    (32, 32, 32, 16, 16),
-    (64, 64, 32, 16, 16),
-    (32, 32, 32, 32, 32),
+    (32, 32, 32, 16, 16, None),
+    (64, 64, 32, 16, 16, None),
+    (32, 32, 32, 32, 32, None),
+    (64, 64, 32, 64, 64, "32x32x8"),
 ]
+
+
+def _exec_case_id(case):
+    m, n, k, tm, tn, bs = case
+    return f"{m}x{n}x{k}_{tm}x{tn}" + (f"_{bs}" if bs else "")
 
 
 def _assert_matmul_close(C, ref):
@@ -285,18 +323,22 @@ def _assert_matmul_close(C, ref):
 @pytest.mark.parametrize("swap_operands", [False, True], ids=["ab", "ba"])
 @pytest.mark.parametrize("arch_name", ARCHES)
 @pytest.mark.parametrize(
-    "M,N,K,tile_m,tile_n",
+    "M,N,K,tile_m,tile_n,block_size",
     EXEC_CASES,
-    ids=[f"{m}x{n}x{k}_{tm}x{tn}" for (m, n, k, tm, tn) in EXEC_CASES],
+    ids=[_exec_case_id(c) for c in EXEC_CASES],
 )
-def test_mma_einsum_expand_executes(arch_name, M, N, K, tile_m, tile_n, swap_operands):
+def test_mma_einsum_expand_executes(
+    arch_name, M, N, K, tile_m, tile_n, block_size, swap_operands
+):
     if RocmArch.current_name() != arch_name:
         pytest.skip(f"DOCC_ROCM_ARCH ({RocmArch.current_name()}) != {arch_name}")
+    if block_size in _CDNA_ONLY_BLOCKS and arch_name != "gfx90a":
+        pytest.skip(f"{block_size} MMA block is CDNA-only; not on {arch_name}")
     arch = RocmArch.get_current()
 
     output_dir = (
         PYTEST_OUTPUT_DIR
-        / f"mma_einsum_{arch_name}_{M}x{N}x{K}_{tile_m}x{tile_n}_{swap_operands}_executes"
+        / f"mma_einsum_{arch_name}_{M}x{N}x{K}_{tile_m}x{tile_n}_{block_size}_{swap_operands}_executes"
     )
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -306,7 +348,8 @@ def test_mma_einsum_expand_executes(arch_name, M, N, K, tile_m, tile_n, swap_ope
     builder.dump(output_dir, "init", True, True)
 
     am = AnalysisManager(builder)
-    xform = GpuMmaEinsumTransform(loop_i1, arch)
+    hint = MmaBlockSize.parse(block_size) if block_size else None
+    xform = GpuMmaEinsumTransform(loop_i1, arch, hint)
     assert xform.can_be_applied(builder, am)
     xform.apply(builder, am)
     assert xform.matched
@@ -314,6 +357,8 @@ def test_mma_einsum_expand_executes(arch_name, M, N, K, tile_m, tile_n, swap_ope
 
     sdfg.dump(output_dir, "expanded", True, True)
     sdfg.validate()
+    if block_size:
+        assert _applied_mma_block_size(sdfg) == block_size
 
     lib_path = sdfg._compile(str(output_dir), "rocm")
     compiled = CompiledSDFG(lib_path, sdfg)
@@ -359,25 +404,30 @@ def test_mma_einsum_local_storage_applies(arch_name, M, N, K, tile_m, tile_n):
 @pytest.mark.rocm()
 @pytest.mark.parametrize("arch_name", ARCHES)
 @pytest.mark.parametrize(
-    "M,N,K,tile_m,tile_n",
+    "M,N,K,tile_m,tile_n,block_size",
     EXEC_CASES,
-    ids=[f"{m}x{n}x{k}_{tm}x{tn}" for (m, n, k, tm, tn) in EXEC_CASES],
+    ids=[_exec_case_id(c) for c in EXEC_CASES],
 )
-def test_mma_einsum_local_storage_executes(arch_name, M, N, K, tile_m, tile_n):
+def test_mma_einsum_local_storage_executes(
+    arch_name, M, N, K, tile_m, tile_n, block_size
+):
     if RocmArch.current_name() != arch_name:
         pytest.skip(f"DOCC_ROCM_ARCH ({RocmArch.current_name()}) != {arch_name}")
+    if block_size in _CDNA_ONLY_BLOCKS and arch_name != "gfx90a":
+        pytest.skip(f"{block_size} MMA block is CDNA-only; not on {arch_name}")
     arch = RocmArch.get_current()
 
     output_dir = (
         PYTEST_OUTPUT_DIR
-        / f"mma_einsum_ls_{arch_name}_{M}x{N}x{K}_{tile_m}x{tile_n}_executes"
+        / f"mma_einsum_ls_{arch_name}_{M}x{N}x{K}_{tile_m}x{tile_n}_{block_size}_executes"
     )
     output_dir.mkdir(parents=True, exist_ok=True)
 
     builder, loop_i1 = _build_executable_einsum_mma(M, N, K, tile_m, tile_n)
 
     am = AnalysisManager(builder)
-    xform = GpuMmaEinsumTransform(loop_i1, arch)
+    hint = MmaBlockSize.parse(block_size) if block_size else None
+    xform = GpuMmaEinsumTransform(loop_i1, arch, hint)
     assert xform.can_be_applied(builder, am)
     xform.apply(builder, am)
     assert xform.matched
@@ -389,6 +439,8 @@ def test_mma_einsum_local_storage_executes(arch_name, M, N, K, tile_m, tile_n):
     builder.dump(output_dir, "localized", True, True)
     sdfg = builder.move()
     sdfg.validate()
+    if block_size:
+        assert _applied_mma_block_size(sdfg) == block_size
 
     lib_path = sdfg._compile(str(output_dir), "rocm")
     compiled = CompiledSDFG(lib_path, sdfg)
@@ -409,11 +461,17 @@ def test_mma_einsum_local_storage_executes(arch_name, M, N, K, tile_m, tile_n):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("wave_tile", [(3, 1), (1, 3), (0, 1)])
+@pytest.mark.parametrize(
+    "wave_tile", [(3, 1), (1, 3), (0, 1)], ids=["3x1", "1x3", "0x1"]
+)
 def test_mma_einsum_wave_tile_must_divide(wave_tile):
     builder, loop_i1 = _build_offloaded_einsum_mma(1024, 1024, 1024, 64, 64)
     am = AnalysisManager(builder)
-    xform = GpuMmaEinsumTransform(loop_i1, RocmArch.get_from_name("gfx90a"), *wave_tile)
+    xform = GpuMmaEinsumTransform(
+        loop_i1,
+        RocmArch.get_from_name("gfx90a"),
+        wave_tiling_hint=BlockCounts(*wave_tile),
+    )
     assert not xform.can_be_applied(builder, am)
 
 
@@ -438,7 +496,9 @@ def test_mma_einsum_wave_tile_executes(wave_tile, localize):
 
     builder, loop_i1 = _build_executable_einsum_mma(M, N, K, tile, tile)
     am = AnalysisManager(builder)
-    xform = GpuMmaEinsumTransform(loop_i1, RocmArch.get_current(), *wave_tile)
+    xform = GpuMmaEinsumTransform(
+        loop_i1, RocmArch.get_current(), wave_tiling_hint=BlockCounts(*wave_tile)
+    )
     assert xform.can_be_applied(builder, am)
     xform.apply(builder, am)
     assert xform.matched
@@ -495,8 +555,12 @@ def test_mma_einsum_mfma32_executes(tile, wave_tile, staging):
 
     builder, loop_i1 = _build_executable_einsum_mma(M, N, K, tile, tile)
     am = AnalysisManager(builder)
+    block_hint = MmaBlockSize.parse("32x32x8")
     xform = GpuMmaEinsumTransform(
-        loop_i1, RocmArch.get_current(), *wave_tile, mma_shape="32x32x8"
+        loop_i1,
+        RocmArch.get_current(),
+        wave_tiling_hint=BlockCounts(*wave_tile),
+        block_size_hint=block_hint,
     )
     assert xform.can_be_applied(builder, am)
     xform.apply(builder, am)

@@ -89,7 +89,7 @@ void add_contribution(
         indexing.contributions.begin(),
         indexing.contributions.end(),
         [](const EinsumIndexContribution& a, const EinsumIndexContribution& b) {
-            auto outer = a.index - b.index;
+            auto outer = static_cast<int>(a.index) - static_cast<int>(b.index);
             if (outer == 0) {
                 return a.factor > b.factor;
             }
