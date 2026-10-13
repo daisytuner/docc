@@ -57,7 +57,7 @@ jobs:
       - name: Run architecture and dependency review
         env:
           # Fine-grained PAT with the "Copilot Requests" permission and read access to the org repositories.
-          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+          COPILOT_GITHUB_TOKEN: ${{ secrets.DOCC_CI_TOKEN }}
           BASE_SHA: ${{ steps.pr.outputs.base_sha }}
           HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
         run: |
