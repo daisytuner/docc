@@ -46,6 +46,10 @@ class NumPyHandler:
             "absolute": self._handle_numpy_unary_op,
             "sqrt": self._handle_numpy_unary_op,
             "tanh": self._handle_numpy_unary_op,
+            "sin": self._handle_numpy_unary_op,
+            "cos": self._handle_numpy_unary_op,
+            "log2": self._handle_numpy_unary_op,
+            "exp2": self._handle_numpy_unary_op,
             "cbrt": self._handle_numpy_cbrt,
             "sum": self._handle_numpy_reduce,
             "max": self._handle_numpy_reduce,
@@ -1346,6 +1350,14 @@ class NumPyHandler:
         else:
             tensor = Tensor(dtype, [])
 
+        # Ufuncs without a dedicated tensor node map elementwise onto their C math function.
+        cmath_only = {
+            "sin": CMathFunction.sin,
+            "cos": CMathFunction.cos,
+            "log2": CMathFunction.log2,
+            "exp2": CMathFunction.exp2,
+        }
+
         if len(tensor.shape) == 0:
             tmp_name = self._create_array_temp([], dtype)
 
@@ -1356,6 +1368,7 @@ class NumPyHandler:
                 "exp": CMathFunction.exp,
                 "tanh": CMathFunction.tanh,
                 "cbrt": CMathFunction.cbrt,
+                **cmath_only,
             }
 
             block = self.builder.add_block()
@@ -1375,6 +1388,11 @@ class NumPyHandler:
         )
         tmp_name = self._create_array_temp(tensor.shape, dtype, strides=output_strides)
         tmp_tensor = self.tensor_table[tmp_name]
+        if op_type in cmath_only:
+            self.builder.add_elementwise_unary_cmath_op(
+                cmath_only[op_type], operand, tensor, tmp_name, tmp_tensor
+            )
+            return tmp_name
         self.builder.add_elementwise_unary_op(
             op_type, operand, tensor, tmp_name, tmp_tensor
         )
