@@ -55,3 +55,17 @@ def test_caching_behavior():
 
     assert c1 is not c2
     print("Recompilation confirmed for different shape structure.")
+
+
+def test_array_layout_does_not_alias():
+    @native
+    def root(a):
+        return np.sqrt(a)
+
+    a = np.linspace(1.0, 4.0, 12).reshape(2, 6)
+    layouts = [a, np.asfortranarray(a), a[:, ::2], a[:, 1::2]]
+    for x in layouts:
+        assert np.allclose(root(x), np.sqrt(x))
+
+    compiled = {id(root.compile(x)) for x in layouts[:3]}
+    assert len(compiled) == 3

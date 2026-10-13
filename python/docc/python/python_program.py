@@ -153,6 +153,7 @@ class PythonProgram(DoccProgram):
 
         # 1. Analyze arguments and shapes
         arg_types = []
+        layouts = []
         shape_values = []  # List of unique shape values found
         shape_sources = []  # List of (arg_idx, dim_idx) for each unique shape value
 
@@ -176,6 +177,13 @@ class PythonProgram(DoccProgram):
             arg_types.append(t)
 
             if isinstance(arg, np.ndarray):
+                # _build_sdfg bakes the layout into the SDFG, so it must be part of the cache key.
+                if arg.flags["C_CONTIGUOUS"]:
+                    layouts.append((i, "C"))
+                elif arg.flags["F_CONTIGUOUS"]:
+                    layouts.append((i, "F"))
+                else:
+                    layouts.append((i, tuple(s // arg.itemsize for s in arg.strides)))
                 for dim_idx, dim_val in enumerate(arg.shape):
                     # Check if we've seen this value
                     if dim_val in shape_values:
@@ -192,7 +200,7 @@ class PythonProgram(DoccProgram):
         # 2. Signature - include scalar-shape equivalences for correct caching
         mapping_sig = sorted(arg_shape_mapping.items())
         type_sig = ", ".join(self._type_to_str(t) for t in arg_types)
-        signature = f"{type_sig}|{mapping_sig}"
+        signature = f"{type_sig}|{mapping_sig}|{layouts}"
 
         # With concrete (non-symbolic) shapes the SDFG bakes in the actual sizes,
         # so identically typed calls with different shapes must not alias in the
