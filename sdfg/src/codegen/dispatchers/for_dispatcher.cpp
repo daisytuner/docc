@@ -23,30 +23,13 @@ ForDispatcher::ForDispatcher(
 void ForDispatcher::dispatch_node(
     PrettyPrinter& main_stream, PrettyPrinter& globals_stream, CodeSnippetFactory& library_snippet_factory
 ) {
-    if (structured_control_flow::ScheduleType_Unroll::is_set(node_.schedule_type())) {
-        main_stream << "#pragma clang loop unroll(full)" << std::endl;
-    }
-    main_stream << "for";
-    main_stream << "(";
-    main_stream << node_.indvar()->get_name();
-    main_stream << " = ";
-    main_stream << language_extension_.expression(node_.init());
-    main_stream << ";";
-    main_stream << language_extension_.expression(node_.condition());
-    main_stream << ";";
-    main_stream << node_.indvar()->get_name();
-    main_stream << " = ";
-    main_stream << language_extension_.expression(node_.update());
-    main_stream << ")" << std::endl;
-    main_stream << "{" << std::endl;
-
-    main_stream.setIndent(main_stream.indent() + 4);
+    LoopHints hints;
+    hints.unroll = structured_control_flow::ScheduleType_Unroll::is_set(node_.schedule_type());
+    auto body = language_extension_.begin_for(main_stream, node_, hints);
     SequenceDispatcher
         dispatcher(language_extension_, sdfg_, analysis_manager_, node_.root(), instrumentation_plan_, arg_capture_plan_);
     dispatcher.dispatch(main_stream, globals_stream, library_snippet_factory);
-    main_stream.setIndent(main_stream.indent() - 4);
-
-    main_stream << "}" << std::endl;
+    language_extension_.end(main_stream, body);
 };
 
 InstrumentationInfo ForDispatcher::instrumentation_info() const {

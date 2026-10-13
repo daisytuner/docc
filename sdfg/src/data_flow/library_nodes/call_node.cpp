@@ -206,11 +206,7 @@ void CallNodeDispatcher::dispatch_code_with_edges(
         }
         func_ptr_type += ")";
 
-        if (this->language_extension_.language() == "C") {
-            out.stream << "((" << func_ptr_type << ") " << node.callee_name() << ")" << "(";
-        } else if (this->language_extension_.language() == "C++") {
-            out.stream << "reinterpret_cast<" << func_ptr_type << ">(" << node.callee_name() << ")" << "(";
-        }
+        out.stream << this->language_extension_.reinterpret_cast_expr(node.callee_name(), func_ptr_type) << "(";
     } else {
         out.stream << this->language_extension_.external_prefix() << node.callee_name() << "(";
     }

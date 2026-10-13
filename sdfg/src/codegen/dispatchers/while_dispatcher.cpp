@@ -19,16 +19,11 @@ WhileDispatcher::WhileDispatcher(
 void WhileDispatcher::dispatch_node(
     PrettyPrinter& main_stream, PrettyPrinter& globals_stream, CodeSnippetFactory& library_snippet_factory
 ) {
-    main_stream << "while (1)" << std::endl;
-    main_stream << "{" << std::endl;
-
-    main_stream.setIndent(main_stream.indent() + 4);
+    auto body = language_extension_.begin_while(main_stream);
     SequenceDispatcher
         dispatcher(language_extension_, sdfg_, analysis_manager_, node_.root(), instrumentation_plan_, arg_capture_plan_);
     dispatcher.dispatch(main_stream, globals_stream, library_snippet_factory);
-    main_stream.setIndent(main_stream.indent() - 4);
-
-    main_stream << "}" << std::endl;
+    language_extension_.end(main_stream, body);
 };
 
 InstrumentationInfo WhileDispatcher::instrumentation_info() const {
@@ -56,7 +51,7 @@ BreakDispatcher::BreakDispatcher(
 void BreakDispatcher::dispatch_node(
     PrettyPrinter& main_stream, PrettyPrinter& globals_stream, CodeSnippetFactory& library_snippet_factory
 ) {
-    main_stream << "break;" << std::endl;
+    main_stream << language_extension_.break_statement() << std::endl;
 };
 
 ContinueDispatcher::ContinueDispatcher(
@@ -75,7 +70,7 @@ ContinueDispatcher::ContinueDispatcher(
 void ContinueDispatcher::dispatch_node(
     PrettyPrinter& main_stream, PrettyPrinter& globals_stream, CodeSnippetFactory& library_snippet_factory
 ) {
-    main_stream << "continue;" << std::endl;
+    main_stream << language_extension_.continue_statement() << std::endl;
 };
 
 ReturnDispatcher::ReturnDispatcher(
@@ -104,17 +99,7 @@ void ReturnDispatcher::dispatch_node(
         if (sdfg_.is_external(container)) {
             continue;
         }
-        auto& type = sdfg_.type(container);
-
-        // Free if needed
-        if (type.storage_type().deallocation() == types::StorageType::AllocationType::Managed) {
-            if (type.storage_type().is_cpu_heap()) {
-                main_stream << language_extension_.external_prefix() << "free(" << container << ");" << std::endl;
-            } else if (type.storage_type().is_nv_generic()) {
-                main_stream << "cudaSetDevice(0);" << std::endl;
-                main_stream << "cudaFree(" << container << ");" << std::endl;
-            }
-        }
+        language_extension_.deallocation(main_stream, container, sdfg_.type(container));
     }
 
     instrumentation_plan_.leaving_instrumentation_function(main_stream, language_extension_);
@@ -122,18 +107,14 @@ void ReturnDispatcher::dispatch_node(
     if (node_.is_data()) {
         std::string return_str = node_.data();
         if (sdfg_.is_external(node_.data())) {
-            return_str = "&" + this->language_extension_.external_prefix() + return_str;
+            return_str = this->language_extension_.address_of(this->language_extension_.external_prefix() + return_str);
         }
-        main_stream << "return " << return_str << ";" << std::endl;
+        main_stream << language_extension_.return_statement(return_str) << std::endl;
     } else if (node_.is_constant()) {
         if (symbolic::is_nullptr(node_.data())) {
-            if (this->language_extension_.language() == "C") {
-                main_stream << "return NULL;" << std::endl;
-            } else {
-                main_stream << "return nullptr;" << std::endl;
-            }
+            main_stream << language_extension_.return_statement(language_extension_.null_literal()) << std::endl;
         } else {
-            main_stream << "return " << node_.data() << ";" << std::endl;
+            main_stream << language_extension_.return_statement(node_.data()) << std::endl;
         }
     }
 };

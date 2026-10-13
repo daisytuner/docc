@@ -50,14 +50,15 @@ void AssignmentDispatcher::dispatch_node(
 ) {
     auto& assignments = node_.assignments();
     if (!assignments.empty()) {
-        main_stream << "{" << std::endl;
-        main_stream.changeIndent(+4);
+        auto scope = language_extension_.begin_scope(main_stream);
         for (auto assign : assignments) {
-            main_stream << language_extension_.expression(assign.first) << " = "
-                        << language_extension_.expression(assign.second) << ";" << std::endl;
+            main_stream
+                << language_extension_.assignment(
+                       language_extension_.expression(assign.first), language_extension_.expression(assign.second)
+                   )
+                << std::endl;
         }
-        main_stream.changeIndent(-4);
-        main_stream << "}" << std::endl;
+        language_extension_.end(main_stream, scope);
     }
 }
 
@@ -98,8 +99,7 @@ void DataFlowDispatcher::
 };
 
 void DataFlowDispatcher::dispatch_ref(PrettyPrinter& stream, const data_flow::Memlet& memlet) {
-    stream << "{" << std::endl;
-    stream.setIndent(stream.indent() + 4);
+    auto scope = this->language_extension_.begin_scope(stream);
 
     auto& src = dynamic_cast<const data_flow::AccessNode&>(memlet.src());
     auto& dst = dynamic_cast<const data_flow::AccessNode&>(memlet.dst());
@@ -107,65 +107,52 @@ void DataFlowDispatcher::dispatch_ref(PrettyPrinter& stream, const data_flow::Me
     auto& subset = memlet.subset();
     auto& base_type = memlet.base_type();
 
-    stream << this->language_extension_.access_node(dst);
-    stream << " = ";
-
     std::string src_name = this->language_extension_.access_node(src);
+    std::string value;
     if (dynamic_cast<const data_flow::ConstantNode*>(&src)) {
-        stream << src_name;
-        stream << this->language_extension_.subset(base_type, subset);
+        value = src_name + this->language_extension_.subset(base_type, subset);
+    } else if (base_type.type_id() == types::TypeID::Pointer && !subset.empty()) {
+        value = this->language_extension_.address_of(
+            "(" + this->language_extension_.type_cast(src_name, base_type) + ")" +
+            this->language_extension_.subset(base_type, subset)
+        );
     } else {
-        if (base_type.type_id() == types::TypeID::Pointer && !subset.empty()) {
-            stream << "&";
-            stream << "(" + this->language_extension_.type_cast(src_name, base_type) + ")";
-            stream << this->language_extension_.subset(base_type, subset);
-        } else {
-            stream << "&";
-            stream << src_name;
-            stream << this->language_extension_.subset(base_type, subset);
-        }
+        value = this->language_extension_.address_of(src_name + this->language_extension_.subset(base_type, subset));
     }
+    stream << this->language_extension_.assignment(this->language_extension_.access_node(dst), value) << std::endl;
 
-    stream << ";";
-    stream << std::endl;
-
-    stream.setIndent(stream.indent() - 4);
-    stream << "}" << std::endl;
+    this->language_extension_.end(stream, scope);
 };
 
 void DataFlowDispatcher::dispatch_deref_src(PrettyPrinter& stream, const data_flow::Memlet& memlet) {
-    stream << "{" << std::endl;
-    stream.setIndent(stream.indent() + 4);
+    auto scope = this->language_extension_.begin_scope(stream);
 
     auto& src = dynamic_cast<const data_flow::AccessNode&>(memlet.src());
     auto& dst = dynamic_cast<const data_flow::AccessNode&>(memlet.dst());
     auto& dst_type = this->function_.type(dst.data());
     auto& base_type = static_cast<const types::Pointer&>(memlet.base_type());
 
+    std::string dst_name = this->language_extension_.access_node(dst);
+    std::string src_name = this->language_extension_.access_node(src);
     switch (dst_type.type_id()) {
         // first-class values
         case types::TypeID::Scalar:
         case types::TypeID::Pointer: {
-            stream << this->language_extension_.access_node(dst);
-            stream << " = ";
-            stream << "*";
-
-            std::string src_name = this->language_extension_.access_node(src);
-            stream << "(" << this->language_extension_.type_cast(src_name, base_type) << ")";
+            stream << this->language_extension_.assignment(
+                dst_name,
+                this->language_extension_
+                    .dereference("(" + this->language_extension_.type_cast(src_name, base_type) + ")")
+            );
             break;
         }
         // composite values
         case types::TypeID::Array:
         case types::TypeID::Structure: {
-            // Memcpy
-            std::string dst_name = this->language_extension_.access_node(dst);
-            std::string src_name = this->language_extension_.access_node(src);
-            stream << "memcpy(" << "&" << dst_name;
-            stream << ", ";
-            stream << "(" << src_name << ")";
-            stream << ", ";
-            stream << "sizeof " << dst_name;
-            stream << ")";
+            stream << this->language_extension_.copy_bytes(
+                this->language_extension_.address_of(dst_name),
+                "(" + src_name + ")",
+                this->language_extension_.size_of(dst_name)
+            );
             break;
         }
         case types::TypeID::Reference:
@@ -179,15 +166,13 @@ void DataFlowDispatcher::dispatch_deref_src(PrettyPrinter& stream, const data_fl
             );
         }
     }
-    stream << ";" << std::endl;
+    stream << std::endl;
 
-    stream.setIndent(stream.indent() - 4);
-    stream << "}" << std::endl;
+    this->language_extension_.end(stream, scope);
 };
 
 void DataFlowDispatcher::dispatch_deref_dst(PrettyPrinter& stream, const data_flow::Memlet& memlet) {
-    stream << "{" << std::endl;
-    stream.setIndent(stream.indent() + 4);
+    auto scope = this->language_extension_.begin_scope(stream);
 
     auto& src = dynamic_cast<const data_flow::AccessNode&>(memlet.src());
     auto& dst = dynamic_cast<const data_flow::AccessNode&>(memlet.dst());
@@ -199,31 +184,27 @@ void DataFlowDispatcher::dispatch_deref_dst(PrettyPrinter& stream, const data_fl
     }
     auto& base_type = static_cast<const types::Pointer&>(memlet.base_type());
 
+    std::string src_name = this->language_extension_.access_node(src);
+    std::string dst_name = this->language_extension_.access_node(dst);
     switch (src_type->type_id()) {
         // first-class values
         case types::TypeID::Scalar:
         case types::TypeID::Pointer: {
-            stream << "*";
-            std::string dst_name = this->language_extension_.access_node(dst);
-            stream << "(" << this->language_extension_.type_cast(dst_name, base_type) << ")";
-            stream << " = ";
-
-            stream << this->language_extension_.access_node(src);
+            stream << this->language_extension_.assignment(
+                this->language_extension_
+                    .dereference("(" + this->language_extension_.type_cast(dst_name, base_type) + ")"),
+                src_name
+            );
             break;
         }
         // composite values
         case types::TypeID::Array:
         case types::TypeID::Structure: {
-            // Memcpy
-            std::string src_name = this->language_extension_.access_node(src);
-            std::string dst_name = this->language_extension_.access_node(dst);
-            stream << "memcpy(";
-            stream << "(" << dst_name << ")";
-            stream << ", ";
-            stream << "&" << src_name;
-            stream << ", ";
-            stream << "sizeof " << src_name;
-            stream << ")";
+            stream << this->language_extension_.copy_bytes(
+                "(" + dst_name + ")",
+                this->language_extension_.address_of(src_name),
+                this->language_extension_.size_of(src_name)
+            );
             break;
         }
         case types::TypeID::Function:
@@ -237,15 +218,13 @@ void DataFlowDispatcher::dispatch_deref_dst(PrettyPrinter& stream, const data_fl
             );
         }
     }
-    stream << ";" << std::endl;
+    stream << std::endl;
 
-    stream.setIndent(stream.indent() - 4);
-    stream << "}" << std::endl;
+    this->language_extension_.end(stream, scope);
 };
 
 void DataFlowDispatcher::dispatch_tasklet(PrettyPrinter& stream, const data_flow::Tasklet& tasklet) {
-    stream << "{" << std::endl;
-    stream.setIndent(stream.indent() + 4);
+    auto scope = this->language_extension_.begin_scope(stream);
 
     bool is_unsigned = data_flow::is_unsigned(tasklet.code());
 
@@ -256,43 +235,42 @@ void DataFlowDispatcher::dispatch_tasklet(PrettyPrinter& stream, const data_flow
         std::string conn = iedge->dst_conn();
         auto conn_type = iedge->result_type(this->function_);
         auto& conn_type_scalar = dynamic_cast<const types::Scalar&>(*conn_type);
-        if (is_unsigned) {
-            types::Scalar conn_type_unsigned(types::as_unsigned(conn_type_scalar.primitive_type()));
-            stream << this->language_extension_.declaration(conn, conn_type_unsigned);
-            stream << " = ";
-        } else {
-            stream << this->language_extension_.declaration(conn, conn_type_scalar);
-            stream << " = ";
-        }
 
         // Reinterpret cast for opaque pointers
+        std::string value;
         if (iedge->base_type().type_id() == types::TypeID::Pointer) {
-            stream << "(" << this->language_extension_.type_cast(src_name, iedge->base_type()) << ")";
+            value = "(" + this->language_extension_.type_cast(src_name, iedge->base_type()) + ")";
         } else {
-            stream << src_name;
+            value = src_name;
         }
+        value += this->language_extension_.subset(iedge->base_type(), iedge->subset());
 
-        stream << this->language_extension_.subset(iedge->base_type(), iedge->subset()) << ";";
-        stream << std::endl;
+        if (is_unsigned) {
+            types::Scalar conn_type_unsigned(types::as_unsigned(conn_type_scalar.primitive_type()));
+            stream << this->language_extension_.local_declaration(conn, conn_type_unsigned, value) << std::endl;
+        } else {
+            stream << this->language_extension_.local_declaration(conn, conn_type_scalar, value) << std::endl;
+        }
     }
 
     auto& oedge = *this->data_flow_graph_.out_edges(tasklet).begin();
     std::string out_conn = oedge.src_conn();
     auto out_conn_type = oedge.result_type(this->function_);
     auto& out_conn_type_scalar = dynamic_cast<const types::Scalar&>(*out_conn_type);
+    std::string out_decl;
     if (is_unsigned) {
         types::Scalar out_conn_type_unsigned(types::as_unsigned(out_conn_type_scalar.primitive_type()));
-        stream << this->language_extension_.declaration(out_conn, out_conn_type_unsigned);
-        stream << ";" << std::endl;
+        out_decl = this->language_extension_.local_declaration(out_conn, out_conn_type_unsigned);
     } else {
-        stream << this->language_extension_.declaration(out_conn, out_conn_type_scalar);
-        stream << ";" << std::endl;
+        out_decl = this->language_extension_.local_declaration(out_conn, out_conn_type_scalar);
+    }
+    if (!out_decl.empty()) {
+        stream << out_decl << std::endl;
     }
 
 
     stream << std::endl;
-    stream << out_conn << " = ";
-    stream << this->language_extension_.tasklet(tasklet) << ";" << std::endl;
+    stream << this->language_extension_.assignment(out_conn, this->language_extension_.tasklet(tasklet)) << std::endl;
     stream << std::endl;
 
     // Write back
@@ -302,19 +280,18 @@ void DataFlowDispatcher::dispatch_tasklet(PrettyPrinter& stream, const data_flow
         std::string dst_name = this->language_extension_.access_node(dst);
 
         // Reinterpret cast for opaque pointers
+        std::string target;
         if (oedge->base_type().type_id() == types::TypeID::Pointer) {
-            stream << "(" << this->language_extension_.type_cast(dst_name, oedge->base_type()) << ")";
+            target = "(" + this->language_extension_.type_cast(dst_name, oedge->base_type()) + ")";
         } else {
-            stream << dst_name;
+            target = dst_name;
         }
+        target += this->language_extension_.subset(oedge->base_type(), oedge->subset());
 
-        stream << this->language_extension_.subset(oedge->base_type(), oedge->subset()) << " = ";
-        stream << oedge->src_conn();
-        stream << ";" << std::endl;
+        stream << this->language_extension_.assignment(target, oedge->src_conn()) << std::endl;
     }
 
-    stream.setIndent(stream.indent() - 4);
-    stream << "}" << std::endl;
+    this->language_extension_.end(stream, scope);
 };
 
 void DataFlowDispatcher::dispatch_library_node(
@@ -388,8 +365,7 @@ void LibraryNodeDispatcher::
     dispatch(PrettyPrinter& stream, PrettyPrinter& globals_stream, CodeSnippetFactory& library_snippet_factory) {
     auto& graph = this->node_.get_parent();
 
-    stream << "{" << std::endl;
-    stream.setIndent(stream.indent() + 4);
+    auto scope = language_extension_.begin_scope(stream);
 
     std::vector<DispatchInput> inputs;
     auto input_count = node_.inputs().size();
@@ -456,8 +432,7 @@ void LibraryNodeDispatcher::
         }
     }
 
-    stream.setIndent(stream.indent() - 4);
-    stream << "}" << std::endl;
+    language_extension_.end(stream, scope);
 }
 
 void LibraryNodeDispatcher::require_locally_modifiable_var(CodegenOutput& out, DispatchInput& input) const {
@@ -470,25 +445,27 @@ void LibraryNodeDispatcher::require_locally_modifiable_var(CodegenOutput& out, D
     auto& iedge = input.edge;
     std::string conn = iedge.dst_conn();
     auto conn_type = iedge.result_type(this->function_);
-
-    out.stream << out.language_extension.declaration(conn, *conn_type);
+    auto& lang = out.language_extension;
 
     if (conn_type->type_id() == types::TypeID::Array ||
         (conn_type->type_id() == types::TypeID::Structure &&
          !static_cast<const types::Structure&>(*conn_type).is_pointer_like())) {
         // Handle array and structure types
-
-        out.stream << ";" << std::endl;
-        out.stream << "memcpy(" << "&" << conn << ", " << "&" << input.expr << ", sizeof " << conn << ");" << std::endl;
+        out.stream << lang.local_declaration(conn, *conn_type) << std::endl;
+        out.stream << lang.copy_bytes(lang.address_of(conn), lang.address_of(input.expr), lang.size_of(conn))
+                   << std::endl;
     } else {
-        out.stream << " = " << input.expr << ";" << std::endl;
+        out.stream << lang.local_declaration(conn, *conn_type, input.expr) << std::endl;
     }
     input.is_locally_modifiable = true;
 }
 
 void LibraryNodeDispatcher::
     pre_allocate_output(CodegenOutput& out, DispatchOutput& output, const std::string& var_name) const {
-    out.stream << out.language_extension.declaration(var_name, *output.out_type) << ";" << std::endl;
+    auto decl = out.language_extension.local_declaration(var_name, *output.out_type);
+    if (!decl.empty()) {
+        out.stream << decl << std::endl;
+    }
     output.local_name = &var_name;
 }
 
@@ -522,11 +499,14 @@ void LibraryNodeDispatcher::
         (conn_type->type_id() == types::TypeID::Structure &&
          !static_cast<const types::Structure&>(*conn_type).is_pointer_like())) {
         // Handle array and structure types
-        out.stream << "memcpy(" << "&" << expr << ", " << "&" << *output.local_name << ", sizeof " << conn
-
-                   << ");" << std::endl;
+        out.stream << out.language_extension.copy_bytes(
+                          out.language_extension.address_of(expr),
+                          out.language_extension.address_of(*conn),
+                          out.language_extension.size_of(*conn)
+                      )
+                   << std::endl;
     } else {
-        out.stream << expr << " = " << *output.local_name << ";" << std::endl;
+        out.stream << out.language_extension.assignment(expr, *conn) << std::endl;
     }
 }
 

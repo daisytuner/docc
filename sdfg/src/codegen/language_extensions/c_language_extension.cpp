@@ -359,6 +359,14 @@ std::string CLanguageExtension::zero(const types::PrimitiveType prim_type) {
     }
 }
 
+std::string CLanguageExtension::null_literal() {
+    return "NULL";
+}
+
+std::string CLanguageExtension::reinterpret_cast_expr(const std::string& expr, const std::string& type) {
+    return "((" + type + ") " + expr + ")";
+}
+
 void CSymbolicPrinter::bvisit(const SymEngine::Infty& x) {
     if (x.is_negative_infinity()) {
         str_ = "-INFINITY";

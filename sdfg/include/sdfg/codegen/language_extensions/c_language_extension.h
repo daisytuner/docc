@@ -2,17 +2,17 @@
 
 #include <symengine/printers/codegen.h>
 
-#include "sdfg/codegen/language_extension.h"
+#include "sdfg/codegen/language_extensions/c_style_language_extension.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/types/type.h"
 
 namespace sdfg {
 namespace codegen {
 
-class CLanguageExtension : public LanguageExtension {
+class CLanguageExtension : public CStyleLanguageExtension {
 public:
     CLanguageExtension(sdfg::Function& function, const std::string& external_prefix = "")
-        : LanguageExtension(function, external_prefix) {
+        : CStyleLanguageExtension(function, external_prefix) {
     }
 
     const std::string language() const override {
@@ -36,6 +36,10 @@ public:
     std::string tasklet(const data_flow::Tasklet& tasklet) override;
 
     std::string zero(const types::PrimitiveType prim_type) override;
+
+    std::string null_literal() override;
+
+    std::string reinterpret_cast_expr(const std::string& expr, const std::string& type) override;
 };
 
 class CSymbolicPrinter : public SymEngine::BaseVisitor<CSymbolicPrinter, SymEngine::CodePrinter> {
