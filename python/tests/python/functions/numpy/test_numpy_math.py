@@ -331,6 +331,47 @@ def test_numpy_exp():
     assert np.allclose(result, expected)
 
 
+def _sin(a):
+    return np.sin(a)
+
+
+def _cos(a):
+    return np.cos(a)
+
+
+def _log2(a):
+    return np.log2(a)
+
+
+def _exp2(a):
+    return np.exp2(a)
+
+
+def _log(a):
+    return np.log(a)
+
+
+@pytest.mark.parametrize(
+    "fn, reference",
+    [
+        (_sin, np.sin),
+        (_cos, np.cos),
+        (_log2, np.log2),
+        (_exp2, np.exp2),
+        (_log, np.log),
+    ],
+    ids=["sin", "cos", "log2", "exp2", "log"],
+)
+@pytest.mark.parametrize("dtype", [np.float32, np.float64])
+def test_numpy_cmath_ufunc(fn, reference, dtype):
+    a_full = np.linspace(0.25, 4.0, 12, dtype=dtype).reshape(2, 6)
+    for a in (a_full[0], a_full, a_full[:, ::2]):
+        result = native(fn)(a)
+        assert result.shape == a.shape
+        assert result.dtype == dtype
+        assert np.allclose(result, reference(a), rtol=1e-5)
+
+
 def test_numpy_minimum():
     """Test np.minimum with shape/stride preservation"""
 
