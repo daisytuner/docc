@@ -93,22 +93,31 @@ public:
     }
 };
 
-// Consecutive root children wrapped into a single-iteration map.
-struct WrappedRun {
-    std::vector<structured_control_flow::ControlFlowNode*> nodes;
+// Single-iteration map wrapping consecutive children of a sequence.
+struct Wrapper {
     structured_control_flow::Map* map;
     std::string indvar;
 };
 
-WrappedRun wrap(builder::StructuredSDFGBuilder& builder, std::vector<structured_control_flow::ControlFlowNode*> nodes) {
-    auto& root = builder.subject().root();
+// A run of root children. Multi-node runs nest one wrapper per node inside the run's wrapper, so the
+// fused run and its single-node fallbacks are checked against the same analyses.
+struct Candidate {
+    Wrapper run;
+    std::vector<Wrapper> nodes;
+};
+
+Wrapper wrap(
+    builder::StructuredSDFGBuilder& builder,
+    structured_control_flow::Sequence& parent,
+    const std::vector<structured_control_flow::ControlFlowNode*>& nodes
+) {
     auto& first = *nodes.front();
 
     auto indvar_name = builder.find_new_name("__daisy_cf_offload_");
     builder.add_container(indvar_name, types::Scalar(types::PrimitiveType::Int64));
     auto indvar = symbolic::symbol(indvar_name);
     auto& map = builder.add_map_before(
-        root,
+        parent,
         first,
         indvar,
         symbolic::Lt(indvar, symbolic::one()),
@@ -118,16 +127,16 @@ WrappedRun wrap(builder::StructuredSDFGBuilder& builder, std::vector<structured_
         first.debug_info()
     );
     for (auto* node : nodes) {
-        builder.move_child(root, root.index(*node), map.root());
+        builder.move_child(parent, parent.index(*node), map.root());
     }
-    return {std::move(nodes), &map, indvar_name};
+    return {&map, indvar_name};
 }
 
-void unwrap(builder::StructuredSDFGBuilder& builder, const WrappedRun& run) {
-    auto& root = builder.subject().root();
-    builder.move_children(run.map->root(), root, root.index(*run.map));
-    builder.remove_child(root, root.index(*run.map));
-    builder.remove_container(run.indvar);
+// Moves the map's children into its parent and removes the map; its indvar container is kept.
+void dissolve(builder::StructuredSDFGBuilder& builder, structured_control_flow::Map& map) {
+    auto& parent = *static_cast<structured_control_flow::Sequence*>(map.get_parent());
+    builder.move_children(map.root(), parent, parent.index(map));
+    builder.remove_child(parent, parent.index(map));
 }
 
 } // namespace
@@ -154,68 +163,81 @@ bool GPUControlFlowOffloadPass<
     Traits>::run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     auto& root = builder.subject().root();
 
-    std::vector<std::vector<structured_control_flow::ControlFlowNode*>> pending(1);
+    std::vector<std::vector<structured_control_flow::ControlFlowNode*>> runs(1);
     for (size_t i = 0; i < root.size(); ++i) {
         auto& child = root.at(i);
         ControlFlowOffloadScanner<Traits> scanner(builder.subject(), analysis_manager, child);
         if (!scanner.visit()) {
-            pending.back().push_back(&child);
-        } else if (!pending.back().empty()) {
-            pending.emplace_back();
+            runs.back().push_back(&child);
+        } else if (!runs.back().empty()) {
+            runs.emplace_back();
         }
     }
-    if (pending.back().empty()) {
-        pending.pop_back();
+    if (runs.back().empty()) {
+        runs.pop_back();
     }
-
-    // Collect: wrap all pending runs, then check them against one set of analyses. Rejected runs are
-    // unwrapped and split into single nodes; rounds repeat until the last check saw the final structure.
-    std::vector<WrappedRun> wrapped;
-    while (!pending.empty() || !wrapped.empty()) {
-        for (auto& nodes : pending) {
-            wrapped.push_back(wrap(builder, std::move(nodes)));
-        }
-        pending.clear();
-        analysis_manager.invalidate_all();
-
-        std::vector<WrappedRun> accepted;
-        std::vector<WrappedRun> rejected;
-        for (auto& run : wrapped) {
-            typename Traits::OffloadTransform
-                transform(*run.map, symbolic::one(), gpu::TargetLevel::X_GRID, allow_dynamic_sizes_);
-            if (transform.can_be_applied(builder, analysis_manager)) {
-                accepted.push_back(std::move(run));
-            } else {
-                rejected.push_back(std::move(run));
-            }
-        }
-        wrapped = std::move(accepted);
-        if (rejected.empty()) {
-            break;
-        }
-
-        for (auto& run : rejected) {
-            unwrap(builder, run);
-            if (run.nodes.size() > 1) {
-                for (auto* node : run.nodes) {
-                    pending.push_back({node});
-                }
-            }
-        }
-    }
-    if (wrapped.empty()) {
-        analysis_manager.invalidate_all();
+    if (runs.empty()) {
         return false;
     }
 
-    // Sweep: apply all offloads on the analyses of the last check without invalidating in between.
-    for (auto& run : wrapped) {
-        typename Traits::OffloadTransform
-            transform(*run.map, symbolic::one(), gpu::TargetLevel::X_GRID, allow_dynamic_sizes_);
-        transform.apply(builder, analysis_manager);
+    std::vector<Candidate> candidates;
+    for (auto& nodes : runs) {
+        Candidate candidate{wrap(builder, root, nodes), {}};
+        if (nodes.size() > 1) {
+            for (auto* node : nodes) {
+                candidate.nodes.push_back(wrap(builder, candidate.run.map->root(), {node}));
+            }
+        }
+        candidates.push_back(std::move(candidate));
     }
     analysis_manager.invalidate_all();
-    return true;
+
+    // Collect: decide every wrapper before the SDFG is mutated again.
+    auto can_offload = [&](const Wrapper& wrapper) {
+        typename Traits::OffloadTransform
+            transform(*wrapper.map, symbolic::one(), gpu::TargetLevel::X_GRID, allow_dynamic_sizes_);
+        return transform.can_be_applied(builder, analysis_manager);
+    };
+    std::vector<structured_control_flow::Map*> offloaded;
+    std::vector<structured_control_flow::Map*> dissolved;
+    std::vector<std::string> unused_indvars;
+    auto drop = [&](const Wrapper& wrapper) {
+        dissolved.push_back(wrapper.map);
+        unused_indvars.push_back(wrapper.indvar);
+    };
+    for (auto& candidate : candidates) {
+        if (can_offload(candidate.run)) {
+            offloaded.push_back(candidate.run.map);
+            for (auto& node : candidate.nodes) {
+                drop(node);
+            }
+            continue;
+        }
+        drop(candidate.run);
+        for (auto& node : candidate.nodes) {
+            if (can_offload(node)) {
+                offloaded.push_back(node.map);
+            } else {
+                drop(node);
+            }
+        }
+    }
+
+    // Sweep: offloading only reads the per-map analyses cached above, so nothing is invalidated in between.
+    for (auto* map : dissolved) {
+        dissolve(builder, *map);
+    }
+    for (auto* map : offloaded) {
+        typename Traits::OffloadTransform
+            transform(*map, symbolic::one(), gpu::TargetLevel::X_GRID, allow_dynamic_sizes_);
+        transform.apply(builder, analysis_manager);
+    }
+    for (auto& indvar : unused_indvars) {
+        builder.remove_container(indvar);
+    }
+
+    analysis_manager.invalidate_all();
+    return !offloaded.empty();
 }
 
 template class GPUControlFlowOffloadPass<CUDAControlFlowOffloadTraits>;
