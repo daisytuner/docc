@@ -50,6 +50,7 @@ class NumPyHandler:
             "cos": self._handle_numpy_unary_op,
             "log2": self._handle_numpy_unary_op,
             "exp2": self._handle_numpy_unary_op,
+            "log": self._handle_numpy_unary_op,
             "cbrt": self._handle_numpy_cbrt,
             "sum": self._handle_numpy_reduce,
             "max": self._handle_numpy_reduce,
@@ -1356,6 +1357,7 @@ class NumPyHandler:
             "cos": CMathFunction.cos,
             "log2": CMathFunction.log2,
             "exp2": CMathFunction.exp2,
+            "log": CMathFunction.log,
         }
 
         if len(tensor.shape) == 0:
