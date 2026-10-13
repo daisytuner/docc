@@ -23,6 +23,7 @@ private:
     AxScriptLanguageExtension language_extension_;
     std::vector<structured_control_flow::Map*> datapaths_;
     std::vector<Buffer> buffers_;
+    int64_t num_cores_ = 1;
 
     /// Checks that the function body consists of datapath loops only.
     void collect_datapaths();

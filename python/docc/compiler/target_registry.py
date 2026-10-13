@@ -9,13 +9,13 @@ TargetExpandFn = Callable[[StructuredSDFG, str, Dict[str, Any]], None]
 _target_expand_registry: dict[str, TargetExpandFn] = {}
 _target_schedule_registry: dict[str, TargetScheduleFn] = {}
 _target_compile_registry: dict[str, TargetCompileFn] = {}
-_target_codegen_registry: dict[str, frozenset[str]] = {}
+_target_codegen_registry: dict[str, tuple[str, ...]] = {}
 
-# Codegens of the built-in targets; any other target supports only "cpp" unless it registers more.
-_BUILTIN_TARGET_CODEGENS: dict[str, frozenset[str]] = {
-    "none": frozenset({"cpp", "numpy"}),
-    "sequential": frozenset({"cpp", "numpy"}),
-    "axelera": frozenset({"axscript"}),
+# Codegens of the built-in targets, default first; any other target supports only "cpp" unless it registers more.
+_BUILTIN_TARGET_CODEGENS: dict[str, tuple[str, ...]] = {
+    "none": ("cpp", "numpy"),
+    "sequential": ("cpp", "numpy"),
+    "axelera": ("axscript", "numpy"),
 }
 
 
@@ -47,7 +47,7 @@ def register_target_overrides(
         schedule_fn: Function that performs scheduling transformations
         compile_fn: Function that performs compile step; receives the selected codegen as options["codegen"]
         expand_fn: Function that performs the expand step
-        codegens: Codegens the target supports (e.g. {"cpp", "numpy"})
+        codegens: Codegens the target supports, default first (e.g. ["cpp", "numpy"])
     """
     if schedule_fn is not None:
         _target_schedule_registry[name] = schedule_fn  # type: ignore
@@ -59,7 +59,7 @@ def register_target_overrides(
         _target_expand_registry[name] = expand_fn
 
     if codegens is not None:
-        _target_codegen_registry[name] = frozenset(codegens)
+        _target_codegen_registry[name] = tuple(codegens)
 
 
 def unregister_target(name: str) -> None:
@@ -85,23 +85,16 @@ def get_target_expand_fn(name: str) -> Optional[TargetExpandFn]:
     return _target_expand_registry.get(name)
 
 
-def get_target_codegens(name: str) -> frozenset[str]:
-    """Codegens the target supports."""
+def get_target_codegens(name: str) -> tuple[str, ...]:
+    """Codegens the target supports, default first."""
     if name in _target_codegen_registry:
         return _target_codegen_registry[name]
-    return _BUILTIN_TARGET_CODEGENS.get(name, frozenset({"cpp"}))
+    return _BUILTIN_TARGET_CODEGENS.get(name, ("cpp",))
 
 
 def get_target_default_codegen(name: str) -> str:
-    """Codegen used when none is selected: "cpp" if supported, else the target's only codegen."""
-    codegens = get_target_codegens(name)
-    if "cpp" in codegens:
-        return "cpp"
-    if len(codegens) == 1:
-        return next(iter(codegens))
-    raise ValueError(
-        f"Target '{name}' supports the codegens {sorted(codegens)}; select one with codegen="
-    )
+    """Codegen used when none is selected."""
+    return get_target_codegens(name)[0]
 
 
 def reset_target_registry() -> None:

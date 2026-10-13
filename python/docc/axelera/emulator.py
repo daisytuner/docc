@@ -78,11 +78,16 @@ def output(*buffers):
     _outputs.extend(buffers)
 
 
+def barrier(*cores):
+    pass
+
+
 def _unit(**kwargs):
     return contextlib.nullcontext()
 
 
-Datapath = IFD = DPU = ODR = _unit
+# Core regions run one after another; datapaths on different cores touch disjoint chunks.
+Datapath = IFD = DPU = ODR = AICore = _unit
 
 
 @contextlib.contextmanager

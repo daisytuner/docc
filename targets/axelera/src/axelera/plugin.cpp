@@ -24,15 +24,18 @@ DoccTarget axelera_target = {
 } // namespace
 
 void register_plugin(sdfg::plugins::Context& context) {
+    context.option_registry().register_option(
+        sdfg::axelera::NUM_CORES.spec(1, "AI cores each Axelera datapath loop is split across in contiguous chunks")
+    );
     context.map_dispatcher_registry.register_map_dispatcher(
-        sdfg::axelera::ScheduleType_Axelera_Datapath::value(),
+        sdfg::axelera::ScheduleType_Axelera::value(),
         [](sdfg::codegen::LanguageExtension& language_extension,
            sdfg::StructuredSDFG& sdfg,
            sdfg::analysis::AnalysisManager& analysis_manager,
            sdfg::structured_control_flow::Map& node,
            sdfg::codegen::InstrumentationPlan& instrumentation_plan,
            sdfg::codegen::ArgCapturePlan& arg_capture_plan) {
-            return std::make_unique<sdfg::axelera::DatapathDispatcher>(
+            return std::make_unique<sdfg::axelera::AxeleraMapDispatcher>(
                 language_extension, sdfg, analysis_manager, node, instrumentation_plan, arg_capture_plan
             );
         }

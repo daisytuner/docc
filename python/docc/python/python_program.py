@@ -216,7 +216,8 @@ class PythonProgram(DoccProgram):
 
         if output_folder is None:
             source_path = inspect.getsourcefile(self.func)
-            hash_input = f"{source_path}|{self.name}|{self.options.target}|{self.options.codegen}|{self.options.category}|{self.options.capture_args}|{self.options.instrumentation_mode}|{self.options.remote_tuning}|{self.options.approximate_math}|{signature}".encode(
+            pass_options = sorted(self.options.pass_options.items())
+            hash_input = f"{source_path}|{self.name}|{self.options.target}|{self.options.codegen}|{self.options.category}|{self.options.capture_args}|{self.options.instrumentation_mode}|{self.options.remote_tuning}|{self.options.approximate_math}|{pass_options}|{signature}".encode(
                 "utf-8"
             )
             stable_id = hashlib.sha256(hash_input).hexdigest()[:16]

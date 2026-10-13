@@ -382,7 +382,8 @@ std::string PythonLanguageExtension::identifier(const std::string& name) const {
 }
 
 std::string PythonLanguageExtension::loop_schedule(const structured_control_flow::ScheduleType& schedule) const {
-    if (schedule.category() == structured_control_flow::ScheduleTypeCategory::Vectorizer) {
+    if (schedule.category() == structured_control_flow::ScheduleTypeCategory::Vectorizer ||
+        structured_control_flow::ScheduleType_Serializable::is_set(schedule)) {
         return structured_control_flow::ScheduleType_Sequential::value();
     }
     return schedule.value();

@@ -6,13 +6,28 @@
 namespace sdfg {
 namespace axelera {
 
-/// Emits an `A.grid` loop around one `A.Datapath` for a datapath loop whose body is a lane loop.
-class DatapathDispatcher : public codegen::NodeDispatcher {
+class AxScriptLanguageExtension;
+
+/**
+ * Emits AXELERA loops as AxScript: a Core loop becomes one `A.AICore` region per core, a Stream loop an `A.grid`
+ * loop around one `A.Datapath`, whose Lane loop is absorbed into the PWORD dtypes.
+ */
+class AxeleraMapDispatcher : public codegen::NodeDispatcher {
 private:
     structured_control_flow::Map& map_;
 
+    void dispatch_cores(AxScriptLanguageExtension& lang, codegen::PrettyPrinter& stream);
+
+    /// @param first_element Element offset of the first PWORD, with any enclosing core index substituted.
+    void dispatch_stream(
+        AxScriptLanguageExtension& lang,
+        codegen::PrettyPrinter& stream,
+        structured_control_flow::Map& stream_loop,
+        const symbolic::Expression& first_element
+    );
+
 public:
-    DatapathDispatcher(
+    AxeleraMapDispatcher(
         codegen::LanguageExtension& language_extension,
         StructuredSDFG& sdfg,
         analysis::AnalysisManager& analysis_manager,

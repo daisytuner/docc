@@ -17,6 +17,11 @@ public:
         return "AxScript";
     }
 
+    /// AXELERA loops have their own dispatcher, so no schedule falls back to a sequential loop.
+    std::string loop_schedule(const structured_control_flow::ScheduleType& schedule) const override {
+        return schedule.value();
+    }
+
     /// dtype of a PWORD stream of @p prim elements, e.g. "float32x64".
     std::string vector_type(types::PrimitiveType prim) const;
 

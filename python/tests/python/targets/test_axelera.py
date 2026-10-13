@@ -20,9 +20,20 @@ def _inputs(n=512):
     return rng.random(n, dtype=np.float32), rng.random(n, dtype=np.float32)
 
 
+def _axelera(codegen="axscript", cores=1):
+    return native(
+        _vadd,
+        target="axelera",
+        codegen=codegen,
+        symbolic_shapes=False,
+        **{"axelera.num_cores": cores},
+    )
+
+
 @requires_alto
-def test_axscript_vector_add():
-    program = native(_vadd, target="axelera", symbolic_shapes=False)
+@pytest.mark.parametrize("cores", [1, 2])
+def test_axscript_vector_add(cores):
+    program = _axelera(cores=cores)
     a, b = _inputs()
 
     compiled = program.compile(a, b)
@@ -34,17 +45,26 @@ def test_axscript_vector_add():
     np.testing.assert_allclose(compiled(a, b), a + b, rtol=1e-2)
 
 
+@pytest.mark.parametrize("cores", [1, 2, 4])
+def test_axelera_schedule_runs_as_numpy(cores):
+    a, b = _inputs()
+    np.testing.assert_allclose(_axelera("numpy", cores)(a, b), a + b, rtol=1e-6)
+
+
 def test_axscript_requires_alto(monkeypatch):
     monkeypatch.delenv("DOCC_AXELERA_PYTHON", raising=False)
-    program = native(_vadd, target="axelera", symbolic_shapes=False)
     with pytest.raises(RuntimeError, match="DOCC_AXELERA_PYTHON"):
-        program.compile(*_inputs())
+        _axelera().compile(*_inputs())
 
 
 def test_axscript_rejects_partial_pwords():
-    program = native(_vadd, target="axelera", symbolic_shapes=False)
-    with pytest.raises(RuntimeError, match="cannot run on Axelera"):
-        program.compile(*_inputs(100))
+    with pytest.raises(RuntimeError, match="not whole PWORDs"):
+        _axelera().compile(*_inputs(100))
+
+
+def test_axscript_rejects_uneven_core_split():
+    with pytest.raises(RuntimeError, match="do not split"):
+        _axelera(cores=3).compile(*_inputs())
 
 
 def test_axelera_rejects_cpp_codegen():

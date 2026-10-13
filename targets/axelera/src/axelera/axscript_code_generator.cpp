@@ -9,7 +9,7 @@
 #include <sdfg/structured_control_flow/map.h>
 #include <sdfg/structured_control_flow/return.h>
 
-#include "docc/target/axelera/datapath.h"
+#include "docc/target/axelera/axelera_scheduler.h"
 #include "docc/target/axelera/schedule.h"
 
 namespace sdfg {
@@ -58,15 +58,20 @@ void AxScriptCodeGenerator::collect_datapaths() {
     for (size_t i = 0; i < root.size(); ++i) {
         auto& child = root.at(i);
         if (auto map = dynamic_cast<structured_control_flow::Map*>(&child)) {
-            if (map->schedule_type().value() == ScheduleType_Axelera_Datapath::value()) {
+            auto& schedule = map->schedule_type();
+            if (ScheduleType_Axelera::is(schedule, AxeleraLevel::Core)) {
+                num_cores_ = std::max(num_cores_, ScheduleType_Axelera::num_cores(schedule));
                 datapaths_.push_back(map);
                 continue;
             }
-            std::string reason = "it was not scheduled for Axelera";
-            try {
-                plan_datapath(sdfg_, map->root(), map->indvar());
-            } catch (const std::runtime_error& e) {
-                reason = e.what();
+            if (ScheduleType_Axelera::is(schedule, AxeleraLevel::Stream)) {
+                datapaths_.push_back(map);
+                continue;
+            }
+            auto cores = analysis_manager_.options().get(NUM_CORES, int64_t{1});
+            auto reason = datapath_obstacle(sdfg_, analysis_manager_, *map, cores);
+            if (reason.empty()) {
+                reason = "it was not scheduled for Axelera";
             }
             throw std::runtime_error(
                 "AxScript codegen: the loop over " + map->indvar()->get_name() + " cannot run on Axelera: " + reason
@@ -182,8 +187,10 @@ bool AxScriptCodeGenerator::emit_main_source(std::ostream& out, const std::files
         arguments.push_back("(\"" + buffer.name + "\", \"" + (buffer.is_output ? "out" : "in") + "\")");
     }
     out << "import axelera.compiler.alto.script as A" << std::endl << std::endl;
-    out << "# docc: SDFG arguments in order; \"out\" buffers are returned through A.output." << std::endl;
+    out << "# docc: SDFG arguments in order (\"out\" buffers are returned through A.output) and AI cores used."
+        << std::endl;
     out << "_docc_arguments = [" << join(arguments) << "]" << std::endl;
+    out << "_docc_num_cores = " << num_cores_ << std::endl;
     append_function_source(out);
     return true;
 }
