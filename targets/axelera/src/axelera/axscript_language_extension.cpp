@@ -10,13 +10,91 @@
 namespace sdfg {
 namespace axelera {
 
-std::string AxScriptLanguageExtension::vector_type(types::PrimitiveType prim) const {
-    if (prim != types::PrimitiveType::Float) {
-        throw std::runtime_error(
-            std::string("AxScript codegen: streams of ") + types::primitive_type_to_string(prim) + " are not supported"
-        );
+namespace {
+
+/// TIR expressions as AxScript spells them. Integer division and remainder become floor division and modulo, which
+/// agree with C on the non-negative indices of tiles and pipeline stages.
+class AxScriptSymbolicPrinter : public SymEngine::BaseVisitor<AxScriptSymbolicPrinter, SymEngine::CodePrinter> {
+    /// `fn` applied to the operands pairwise, as the TIR intrinsics take two.
+    template<typename Operands>
+    std::string pairwise(const std::string& fn, const Operands& operands) {
+        std::string result;
+        for (auto& operand : operands) {
+            result = result.empty() ? apply(operand) : fn + "(" + result + ", " + apply(operand) + ")";
+        }
+        return result;
     }
-    return "float32x" + std::to_string(PWORD_LANES);
+
+public:
+    using SymEngine::CodePrinter::apply;
+    using SymEngine::CodePrinter::bvisit;
+    using SymEngine::CodePrinter::str_;
+
+    void bvisit(const SymEngine::And& x) {
+        str_ = pairwise("A.And", x.get_container());
+    }
+
+    void bvisit(const SymEngine::Or& x) {
+        str_ = pairwise("A.Or", x.get_container());
+    }
+
+    void bvisit(const SymEngine::Not& x) {
+        str_ = "A.Not(" + apply(x.get_arg()) + ")";
+    }
+
+    void bvisit(const SymEngine::Equality& x) {
+        str_ = parenthesize(apply(x.get_args()[0]) + " == " + apply(x.get_args()[1]));
+    }
+
+    void bvisit(const SymEngine::Unequality& x) {
+        str_ = parenthesize(apply(x.get_args()[0]) + " != " + apply(x.get_args()[1]));
+    }
+
+    void bvisit(const SymEngine::Min& x) {
+        str_ = pairwise("A.min", x.get_args());
+    }
+
+    void bvisit(const SymEngine::Max& x) {
+        str_ = pairwise("A.max", x.get_args());
+    }
+
+    void bvisit(const SymEngine::FunctionSymbol& x) {
+        auto args = x.get_args();
+        auto operand = [&](const symbolic::Expression& arg) {
+            bool atomic = SymEngine::is_a<SymEngine::Symbol>(*arg) ||
+                          (SymEngine::is_a<SymEngine::Integer>(*arg) &&
+                           !SymEngine::down_cast<const SymEngine::Integer&>(*arg).is_negative());
+            return atomic ? apply(arg) : "(" + apply(arg) + ")";
+        };
+        if (x.get_name() == "idiv") {
+            str_ = parenthesize(operand(args[0]) + " // " + operand(args[1]));
+        } else if (x.get_name() == "imod") {
+            str_ = parenthesize(operand(args[0]) + " % " + operand(args[1]));
+        } else {
+            throw std::runtime_error("AxScript codegen: function symbol " + x.get_name() + " is not supported");
+        }
+    }
+};
+
+} // namespace
+
+std::string AxScriptLanguageExtension::expression(const symbolic::Expression expr) {
+    AxScriptSymbolicPrinter printer;
+    return printer.apply(expr);
+}
+
+std::string AxScriptLanguageExtension::vector_type(types::PrimitiveType prim) const {
+    switch (prim) {
+        case types::PrimitiveType::Float:
+            return "float32x" + std::to_string(PWORD_LANES);
+        case types::PrimitiveType::Int8:
+            return "int8x" + std::to_string(PWORD_LANES);
+        default:
+            throw std::runtime_error(
+                std::string("AxScript codegen: buffers of ") + types::primitive_type_to_string(prim) +
+                " are not supported"
+            );
+    }
 }
 
 std::string AxScriptLanguageExtension::dpu_type() {

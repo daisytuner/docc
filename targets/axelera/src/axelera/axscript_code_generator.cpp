@@ -10,10 +10,13 @@
 #include <sdfg/structured_control_flow/map.h>
 #include <sdfg/structured_control_flow/reduce.h>
 #include <sdfg/structured_control_flow/return.h>
+#include <sdfg/types/array.h>
 
 #include "docc/target/axelera/axelera_scheduler.h"
+#include "docc/target/axelera/axscript_program.h"
 #include "docc/target/axelera/datapath.h"
 #include "docc/target/axelera/schedule.h"
+#include "docc/target/axelera/tile_target.h"
 
 namespace sdfg {
 namespace axelera {
@@ -83,6 +86,9 @@ void AxScriptCodeGenerator::collect_datapaths() {
             auto kernel = match_reduction(sdfg_, analysis_manager_, *reduce);
             fused.insert(kernel.init);
             fused.insert(kernel.writeback);
+            if (dynamic_cast<const types::Scalar*>(&sdfg_.type(kernel.output.container))) {
+                reduction_results_.insert(kernel.output.container);
+            }
         }
         datapaths_.push_back(loop);
     }
@@ -112,8 +118,9 @@ void AxScriptCodeGenerator::collect_datapaths() {
 void AxScriptCodeGenerator::collect_buffers() {
     auto& arguments_analysis = analysis_manager_.get<analysis::ArgumentsAnalysis>();
     auto& arguments = arguments_analysis.arguments(analysis_manager_, sdfg_.root());
-    auto& sizes = arguments_analysis.argument_sizes(analysis_manager_, sdfg_.root(), false);
-    auto& element_sizes = arguments_analysis.argument_element_sizes(analysis_manager_, sdfg_.root(), false);
+    auto matrices = matrix_arguments(sdfg_);
+    // Tile copies address their operands through bare pointers, which the analysis cannot size.
+    bool sized = arguments_analysis.argument_size_known(analysis_manager_, sdfg_.root(), false);
 
     for (auto& name : sdfg_.arguments()) {
         auto& type = sdfg_.type(name);
@@ -133,14 +140,70 @@ void AxScriptCodeGenerator::collect_buffers() {
         if (read && written) {
             unsupported("argument " + name + ", which is both read and written,");
         }
+        language_extension_.vector_type(element->primitive_type());
 
+        if (auto matrix = matrices.find(name); matrix != matrices.end()) {
+            auto [row_length, count] = matrix->second;
+            buffers_.push_back({name, count, written, row_length, element->primitive_type()});
+            continue;
+        }
+        if (!sized) {
+            unsupported("argument " + name + " of unknown size");
+        }
+        auto& sizes = arguments_analysis.argument_sizes(analysis_manager_, sdfg_.root(), false);
+        auto& element_sizes = arguments_analysis.argument_element_sizes(analysis_manager_, sdfg_.root(), false);
         auto elements = symbolic::expand(symbolic::div(sizes.at(name), element_sizes.at(name)));
         if (!SymEngine::is_a<SymEngine::Integer>(*elements)) {
             unsupported("argument " + name + " of dynamic size " + elements->__str__());
         }
         auto count = SymEngine::down_cast<const SymEngine::Integer&>(*elements).as_int();
+        buffers_.push_back({name, count, written, 0, element->primitive_type()});
+    }
+
+    // Arrays and pointers datapaths and programs hand each other; local buffers of programs are allocated by the
+    // program. A pointer takes its extent from the tile copies addressing it as a matrix.
+    for (auto& name : sdfg_.containers()) {
+        auto& type = sdfg_.type(name);
+        if (!sdfg_.is_transient(name) || type.storage_type() == StorageType_L1() ||
+            type.storage_type() == StorageType_L2() || type.storage_type() == StorageType_IMC()) {
+            continue;
+        }
+        auto matrix = matrices.find(name);
+        int64_t row_length = matrix == matrices.end() ? 0 : matrix->second.row_length;
+        const types::Scalar* element = nullptr;
+        int64_t count = 0;
+        if (auto array = dynamic_cast<const types::Array*>(&type)) {
+            element = dynamic_cast<const types::Scalar*>(&array->element_type());
+            if (!element || !SymEngine::is_a<SymEngine::Integer>(*array->num_elements())) {
+                unsupported("local array " + name + " of type " + type.print());
+            }
+            count = SymEngine::down_cast<const SymEngine::Integer&>(*array->num_elements()).as_int();
+        } else if (auto pointer = dynamic_cast<const types::Pointer*>(&type)) {
+            element = pointer->has_pointee_type() ? dynamic_cast<const types::Scalar*>(&pointer->pointee_type())
+                                                  : nullptr;
+            if (!element || matrix == matrices.end()) {
+                unsupported("local pointer " + name + ", whose extent no tile copy determines,");
+            }
+            count = matrix->second.elements;
+        } else {
+            continue;
+        }
         language_extension_.vector_type(element->primitive_type());
-        buffers_.push_back({name, count, written});
+        buffers_.push_back({name, count, false, row_length, element->primitive_type(), true});
+    }
+    for (auto& name : reduction_results_) {
+        buffers_.push_back({name, 1, false, 0, types::PrimitiveType::Float, true});
+        language_extension_.add_uniform(name);
+    }
+
+    for (auto& buffer : buffers_) {
+        if (buffer.row_length == 0) {
+            continue;
+        }
+        if (buffer.row_length % static_cast<int64_t>(PWORD_LANES) != 0 || buffer.elements % buffer.row_length != 0) {
+            unsupported("buffer " + buffer.name + " with rows of " + std::to_string(buffer.row_length) + " elements");
+        }
+        language_extension_.set_matrix(buffer.name, buffer.row_length / static_cast<int64_t>(PWORD_LANES));
     }
 }
 
@@ -149,11 +212,16 @@ int64_t AxScriptCodeGenerator::Buffer::pwords() const {
     return (elements + lanes - 1) / lanes;
 }
 
+std::string AxScriptCodeGenerator::Buffer::shape() const {
+    if (row_length == 0) {
+        return "(" + std::to_string(pwords()) + ",)";
+    }
+    return "(" + std::to_string(elements / row_length) + ", " +
+           std::to_string(row_length / static_cast<int64_t>(PWORD_LANES)) + ")";
+}
+
 std::string AxScriptCodeGenerator::buffer_type(const Buffer& buffer) const {
-    auto& pointer = static_cast<const types::Pointer&>(sdfg_.type(buffer.name));
-    auto& element = static_cast<const types::Scalar&>(pointer.pointee_type());
-    return "(" + std::to_string(buffer.pwords()) + ",), \"" +
-           language_extension_.vector_type(element.primitive_type()) + "\", scope=A.DDR";
+    return buffer.shape() + ", \"" + language_extension_.vector_type(buffer.element) + "\", scope=A.DDR";
 }
 
 bool AxScriptCodeGenerator::generate() {
@@ -164,8 +232,10 @@ bool AxScriptCodeGenerator::generate() {
     std::vector<std::string> outputs;
     for (auto& buffer : buffers_) {
         if (buffer.is_output) {
-            this->main_stream_ << buffer.name << " = A.alloc_buffer(" << buffer_type(buffer) << ")" << std::endl;
             outputs.push_back(buffer.name);
+        }
+        if (buffer.is_output || buffer.transient) {
+            this->main_stream_ << buffer.name << " = A.alloc_buffer(" << buffer_type(buffer) << ")" << std::endl;
         }
     }
     if (outputs.empty()) {
@@ -175,6 +245,21 @@ bool AxScriptCodeGenerator::generate() {
     // Datapaths register the constants they read, which must be allocated before them.
     codegen::PrettyPrinter datapaths(this->main_stream_.indent());
     for (auto* datapath : datapaths_) {
+        if (is_program(*datapath)) {
+            auto cores = dynamic_cast<structured_control_flow::Map*>(datapath);
+            if (!cores) {
+                unsupported("explicit memory management outside an AI-core loop");
+            }
+            std::map<std::string, BufferShape> shapes;
+            for (auto& buffer : buffers_) {
+                if (buffer.row_length != 0) {
+                    shapes[buffer.name] = {buffer.element, buffer.elements / buffer.row_length, buffer.row_length};
+                }
+            }
+            ProgramEmitter(sdfg_, language_extension_, datapaths, std::move(shapes)).emit_cores(*cores);
+            uses_operators_ = true;
+            continue;
+        }
         auto dispatcher = codegen::create_dispatcher(
             language_extension_, sdfg_, analysis_manager_, *datapath, instrumentation_plan_, arg_capture_plan_
         );
@@ -199,7 +284,7 @@ bool AxScriptCodeGenerator::generate() {
 std::string AxScriptCodeGenerator::function_definition() {
     std::vector<std::string> parameters;
     for (auto& buffer : buffers_) {
-        if (!buffer.is_output) {
+        if (!buffer.is_output && !buffer.transient) {
             parameters.push_back(buffer.name + ": A.Buffer(" + buffer_type(buffer) + ")");
         }
     }
@@ -213,17 +298,28 @@ bool AxScriptCodeGenerator::emit_header(codegen::PrettyPrinter& out) {
 bool AxScriptCodeGenerator::emit_main_source(std::ostream& out, const std::filesystem::path& header_path) {
     std::vector<std::string> arguments;
     for (auto& buffer : buffers_) {
+        if (buffer.transient) {
+            continue;
+        }
         arguments.push_back(
             "(\"" + buffer.name + "\", \"" + (buffer.is_output ? "out" : "in") + "\", " +
-            std::to_string(buffer.elements) + ")"
+            std::to_string(buffer.elements) + ", " + buffer.shape() + ")"
         );
     }
-    out << "import axelera.compiler.alto.script as A" << std::endl << std::endl;
-    out << "# docc: SDFG arguments in order with their element counts (\"out\" buffers are returned through "
-           "A.output) and AI cores used."
+    out << "import axelera.compiler.alto.script as A" << std::endl;
+    if (uses_operators_) {
+        out << "from axelera.compiler.alto.axol import atomic" << std::endl;
+    }
+    out << std::endl;
+    out << "# docc: SDFG arguments in order with their element counts and PWORD buffer shapes (\"out\" buffers are "
+           "returned through A.output) and AI cores used."
         << std::endl;
     out << "_docc_arguments = [" << join(arguments) << "]" << std::endl;
     out << "_docc_num_cores = " << num_cores_ << std::endl;
+    if (uses_operators_) {
+        out << "# docc: the module manages local memory itself, which alto's tiling injection would redo." << std::endl;
+        out << "_docc_tiling_injection = False" << std::endl;
+    }
     auto& constants = language_extension_.constants();
     for (size_t k = 0; k < constants.size(); ++k) {
         out << AxScriptLanguageExtension::constant_name(k) << "_lanes = ["

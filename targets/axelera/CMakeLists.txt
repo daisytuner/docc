@@ -2,8 +2,11 @@ set(SOURCE_FILES
     src/axelera/axelera_scheduler.cpp
     src/axelera/axscript_code_generator.cpp
     src/axelera/axscript_language_extension.cpp
+    src/axelera/axscript_program.cpp
     src/axelera/datapath.cpp
     src/axelera/datapath_dispatcher.cpp
+    src/axelera/matmul_node.cpp
+    src/axelera/matmul_transforms.cpp
     src/axelera/plugin.cpp
 )
 

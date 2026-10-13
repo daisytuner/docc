@@ -5,6 +5,7 @@
 #include "docc/target/axelera/axelera_scheduler.h"
 #include "docc/target/axelera/datapath_dispatcher.h"
 #include "docc/target/axelera/schedule.h"
+#include "docc/target/axelera/tile_target.h"
 
 namespace docc::target::axelera {
 
@@ -55,6 +56,9 @@ void register_plugin(sdfg::plugins::Context& context) {
     );
     context.scheduler_registry.register_loop_scheduler<
         sdfg::passes::scheduler::AxeleraScheduler>(sdfg::passes::scheduler::AxeleraScheduler::target());
+    context.get_tile_target_registry().register_target(
+        sdfg::axelera::ScheduleType_Axelera::value(), std::make_shared<sdfg::axelera::AxeleraTileTarget>()
+    );
     context.add_target(&axelera_target);
 }
 

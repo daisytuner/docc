@@ -1,5 +1,8 @@
 #pragma once
 
+#include <map>
+#include <set>
+
 #include <sdfg/codegen/language_extensions/python_language_extension.h>
 
 #include "docc/target/axelera/datapath.h"
@@ -24,6 +27,9 @@ public:
     std::string loop_schedule(const structured_control_flow::ScheduleType& schedule) const override {
         return schedule.value();
     }
+
+    /// TIR expression: `A.min`/`A.max`, `A.And`/`A.Or`/`A.Not`, and `//`/`%` for integer division and remainder.
+    std::string expression(const symbolic::Expression expr) override;
 
     /// dtype of a PWORD stream of @p prim elements, e.g. "float32x64".
     std::string vector_type(types::PrimitiveType prim) const;
@@ -54,6 +60,30 @@ public:
 
     /// Python literal for @p value, spelling non-finite values as `float("inf")` etc.
     static std::string float_literal(double value);
+
+    /// Declares @p container a matrix buffer of rows of @p row_pwords PWORDs rather than a flat PWORD array.
+    void set_matrix(const std::string& container, int64_t row_pwords) {
+        matrices_[container] = row_pwords;
+    }
+
+    /// PWORDs per row of a matrix buffer, 0 for a flat one.
+    int64_t matrix_pwords(const std::string& container) const {
+        auto it = matrices_.find(container);
+        return it == matrices_.end() ? 0 : it->second;
+    }
+
+    /// Declares the float scalar @p container stored to memory, one PWORD with the value in every lane.
+    void add_uniform(const std::string& container) {
+        uniforms_.insert(container);
+    }
+
+    bool is_uniform(const std::string& container) const {
+        return uniforms_.contains(container);
+    }
+
+private:
+    std::map<std::string, int64_t> matrices_;
+    std::set<std::string> uniforms_;
 };
 
 } // namespace axelera

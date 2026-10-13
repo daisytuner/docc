@@ -9,12 +9,14 @@
 #include <ranges>
 #include <stdexcept>
 #include <unordered_map>
+#include <unordered_set>
 
 #include <sdfg/analysis/users.h>
 #include <sdfg/data_flow/access_node.h>
 #include <sdfg/data_flow/library_nodes/math/cmath/cmath_node.h>
 #include <sdfg/data_flow/tasklet.h>
 #include <sdfg/structured_control_flow/block.h>
+#include <sdfg/types/array.h>
 #include <sdfg/types/pointer.h>
 #include <sdfg/types/scalar.h>
 
@@ -35,6 +37,27 @@ bool is_float_scalar(const types::IType& type) {
 bool is_float_pointer(const types::IType& type) {
     auto pointer = dynamic_cast<const types::Pointer*>(&type);
     return pointer && pointer->has_pointee_type() && is_float_scalar(pointer->pointee_type());
+}
+
+/// Element type of a pointer or one-dimensional array of scalars, which a stream walks through.
+std::optional<types::PrimitiveType> streamed_element(const types::IType& type) {
+    const types::IType* element = nullptr;
+    if (auto pointer = dynamic_cast<const types::Pointer*>(&type); pointer && pointer->has_pointee_type()) {
+        element = &pointer->pointee_type();
+    } else if (auto array = dynamic_cast<const types::Array*>(&type)) {
+        element = &array->element_type();
+    }
+    if (!dynamic_cast<const types::Scalar*>(element)) {
+        return std::nullopt;
+    }
+    return element->primitive_type();
+}
+
+bool is_rounding(const data_flow::CodeNode& node) {
+    auto cmath = dynamic_cast<const math::cmath::CMathNode*>(&node);
+    return cmath && cmath->primitive_type() == types::PrimitiveType::Float &&
+           (cmath->function() == math::cmath::CMathFunction::rint ||
+            cmath->function() == math::cmath::CMathFunction::nearbyint);
 }
 
 /// The operation a reduction body folds into its accumulator.
@@ -87,6 +110,9 @@ lower(const data_flow::CodeNode& node, const std::vector<size_t>& x, const Emit&
         return std::nullopt;
     }
     switch (cmath->function()) {
+        case math::cmath::CMathFunction::rint:
+        case math::cmath::CMathFunction::nearbyint:
+            return emit(DpuOp::Copy, {x.at(0)});
         case math::cmath::CMathFunction::fmax:
             return emit(DpuOp::Max, {x.at(0), x.at(1)});
         case math::cmath::CMathFunction::fmin:
@@ -151,11 +177,14 @@ DatapathStream stream_of(
     const StructuredSDFG& sdfg,
     const data_flow::AccessNode& access,
     const data_flow::Memlet& memlet,
-    const symbolic::Symbol& lane
+    const symbolic::Symbol& lane,
+    bool output
 ) {
     auto& type = sdfg.type(access.data());
-    if (!is_float_pointer(type)) {
-        unsupported("streaming " + access.data() + " of type " + type.print());
+    auto element = streamed_element(type);
+    bool supported = element == types::PrimitiveType::Float || (output && element == types::PrimitiveType::Int8);
+    if (!supported) {
+        unsupported((output ? "storing to " : "streaming ") + access.data() + " of type " + type.print());
     }
     if (memlet.subset().size() != 1) {
         unsupported("multi-dimensional access to " + access.data());
@@ -164,7 +193,7 @@ DatapathStream stream_of(
     if (symbolic::uses(symbolic::expand(symbolic::sub(index, lane)), lane)) {
         unsupported("non-contiguous access " + access.data() + "[" + index->__str__() + "]");
     }
-    return {access.data(), index};
+    return {access.data(), index, *element};
 }
 
 /// The single assignment `dst = src` a block holds, as (source node, memlet into the destination).
@@ -244,6 +273,25 @@ DatapathPlan plan_datapath(
         return reg;
     };
 
+    auto uniform_register = [&](const std::string& scalar) {
+        size_t reg = plan.num_registers++;
+        plan.program.push_back({.destination = reg, .uniform = scalar});
+        scalars[scalar] = reg;
+        return reg;
+    };
+
+    std::unordered_set<std::string> written;
+    for (size_t i = 0; i < body.size(); ++i) {
+        if (auto block = dynamic_cast<structured_control_flow::Block*>(&body.at(i))) {
+            for (auto* access : block->dataflow().data_nodes()) {
+                if (block->dataflow().in_degree(*access) > 0) {
+                    written.insert(access->data());
+                }
+            }
+        }
+    }
+    std::unordered_set<size_t> rounded;
+
     for (size_t i = 0; i < body.size(); ++i) {
         auto block = dynamic_cast<structured_control_flow::Block*>(&body.at(i));
         if (!block) {
@@ -279,14 +327,17 @@ DatapathPlan plan_datapath(
                 auto& type = sdfg.type(src.data());
                 if (!accumulator.empty() && src.data() == accumulator) {
                     reads_accumulator = true;
-                } else if (dynamic_cast<const types::Pointer*>(&type)) {
-                    operands.push_back(input_register(stream_of(sdfg, src, *iedge, lane)));
+                } else if (dynamic_cast<const types::Pointer*>(&type) || dynamic_cast<const types::Array*>(&type)) {
+                    operands.push_back(input_register(stream_of(sdfg, src, *iedge, lane, false)));
                 } else if (is_float_scalar(type)) {
                     auto it = scalars.find(src.data());
-                    if (it == scalars.end()) {
+                    if (it != scalars.end()) {
+                        operands.push_back(it->second);
+                    } else if (written.contains(src.data())) {
                         unsupported("reading " + src.data() + " before the datapath computes it");
+                    } else {
+                        operands.push_back(uniform_register(src.data()));
                     }
-                    operands.push_back(it->second);
                 } else {
                     unsupported("operands of type " + type.print());
                 }
@@ -317,14 +368,23 @@ DatapathPlan plan_datapath(
                 unsupported(describe(code_node) + " on the DPU");
             }
             size_t reg = *lowered;
-            if (dynamic_cast<const types::Pointer*>(&dst_type)) {
+            auto tasklet = dynamic_cast<const data_flow::Tasklet*>(&code_node);
+            if (is_rounding(code_node) ||
+                (tasklet && tasklet->code() == data_flow::TaskletCode::assign && rounded.contains(operands.at(0)))) {
+                rounded.insert(reg);
+            }
+            if (dynamic_cast<const types::Pointer*>(&dst_type) || dynamic_cast<const types::Array*>(&dst_type)) {
                 if (!accumulator.empty()) {
                     unsupported("storing to memory inside a reduction");
                 }
                 if (plan.output) {
                     unsupported("a second output");
                 }
-                plan.output = stream_of(sdfg, dst, oedge, lane);
+                plan.output = stream_of(sdfg, dst, oedge, lane, true);
+                // C truncates where the DPU rounds, so only already rounded values may be narrowed.
+                if (plan.output->element == types::PrimitiveType::Int8 && !rounded.contains(reg)) {
+                    unsupported("storing floats to int8 " + dst.data() + " without rounding them with rint");
+                }
                 plan.result = reg;
             } else if (is_float_scalar(dst_type)) {
                 scalars[dst.data()] = reg;
@@ -404,15 +464,18 @@ ReductionKernel match_reduction(
     auto [result, store] = single_assignment(*writeback, "a reduction result store");
     auto result_access = dynamic_cast<const data_flow::AccessNode*>(result);
     auto& out = static_cast<const data_flow::AccessNode&>(store->dst());
-    if (!result_access || result_access->data() != kernel.accumulator || !is_float_pointer(sdfg.type(out.data())) ||
-        store->subset().size() != 1 || !symbolic::eq(store->subset().at(0), symbolic::zero())) {
-        unsupported("storing the reduction result other than to element 0 of a float array");
+    auto& out_type = sdfg.type(out.data());
+    bool to_array = is_float_pointer(out_type) && store->subset().size() == 1 &&
+                    symbolic::eq(store->subset().at(0), symbolic::zero());
+    bool to_scalar = is_float_scalar(out_type) && sdfg.is_transient(out.data());
+    if (!result_access || result_access->data() != kernel.accumulator || (!to_array && !to_scalar)) {
+        unsupported("storing the reduction result other than to element 0 of a float array or a local float");
     }
     // The ODR stores a whole PWORD, so nothing else may write the lanes next to the result.
     if (analysis_manager.get<analysis::Users>().writes(out.data()).size() != 1) {
         unsupported("storing the reduction result into " + out.data() + ", which is also written elsewhere,");
     }
-    kernel.output = {out.data(), store->subset().at(0)};
+    kernel.output = {out.data(), symbolic::zero()};
     return kernel;
 }
 

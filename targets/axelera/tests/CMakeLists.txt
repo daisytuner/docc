@@ -6,7 +6,7 @@ FetchContent_Declare(
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
-add_executable(docc-target-axelera_test axscript_test.cpp)
+add_executable(docc-target-axelera_test axscript_test.cpp matmul_test.cpp)
 target_link_libraries(docc-target-axelera_test gtest docc::target::axelera)
 
 include(GoogleTest)

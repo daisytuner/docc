@@ -16,19 +16,21 @@ namespace axelera {
 /// Operations of a DPU register program; each statement applies one.
 enum class DpuOp { Copy, Add, Sub, Mul, Max, Min, Fma, Neg, Recip, Sqrt, Sin, Cos, Log2, Exp2 };
 
-/// Elements of a pointer container read or written at consecutive indices across the lanes.
+/// Elements of a pointer or array container read or written at consecutive indices across the lanes.
 struct DatapathStream {
     std::string container;
     /// Element index as a function of the lane variable.
     symbolic::Expression index;
+    types::PrimitiveType element = types::PrimitiveType::Float;
 };
 
-/// DPU register assignment: the next value popped from an input stream, a constant in every lane, or an operation on
-/// registers.
+/// DPU register assignment: the next value popped from an input stream, a constant in every lane, a scalar an earlier
+/// datapath left in memory (`uniform`), or an operation on registers.
 struct DpuInstruction {
     size_t destination;
     std::optional<size_t> input_stream;
     std::optional<double> constant;
+    std::optional<std::string> uniform;
     DpuOp op = DpuOp::Copy;
     std::vector<size_t> operands;
 };
@@ -49,7 +51,9 @@ struct DatapathPlan {
 
 /**
  * Maps the body of a loop over @p lane onto a datapath. With an @p accumulator, the body must end by combining a
- * value into that scalar instead of storing to memory.
+ * value into that scalar instead of storing to memory. Float scalars the body reads but never writes are uniform
+ * across lanes and loaded from memory. Floats are stored to int8 only after `rint`, as the DPU rounds when it
+ * narrows.
  * @throws std::runtime_error naming the first construct a datapath cannot express
  */
 DatapathPlan plan_datapath(
@@ -59,7 +63,8 @@ DatapathPlan plan_datapath(
     const std::string& accumulator = ""
 );
 
-/// A Reduce loop whose accumulator is set to the reduction's identity right before it and stored right after it.
+/// A Reduce loop whose accumulator is set to the reduction's identity right before it and stored right after it,
+/// to element 0 of a float array or to a float scalar.
 struct ReductionKernel {
     DpuOp combine;
     std::string accumulator;

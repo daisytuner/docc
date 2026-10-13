@@ -26,7 +26,7 @@ config = AltoConfig(
     generation=HardwareGeneration.EUROPA,
     target=Target.AICORE_SIM,
     num_cores=module._docc_num_cores,
-    enable_tiling_injection=True,
+    enable_tiling_injection=getattr(module, "_docc_tiling_injection", True),
     unpack_axm_archive=True,
     clean_output_dir=True,
 )

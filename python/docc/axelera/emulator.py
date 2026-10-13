@@ -17,6 +17,7 @@ import numpy as np
 DDR = "DDR"
 L1 = "L1"
 L2 = "L2"
+IMC = "IMC"
 
 _outputs: list = []
 
@@ -61,6 +62,61 @@ def alloc_constant(values, dtype, scope=DDR):
     return np.asarray(values, element).reshape(-1, lanes)
 
 
+def alloc_imc(blocks):
+    """The resident weight matrix, unpacked: (rows, columns) int8 for (row, column) blocks of 64x64."""
+    return np.zeros((blocks[0] * 64, blocks[1] * 64), np.int8)
+
+
+def Ramp(base, stride, lanes):
+    return slice(base, base + stride * lanes, stride)
+
+
+# Atomics run synchronously, so ids and waits only order what already is in order; `where=False` skips them.
+def _copy(source, scope=None, output=None, where=True, **kwargs):
+    if where:
+        np.copyto(output, source.astype(output.dtype))
+
+
+def _load_imc(buffer=None, imc=None, where=True, **kwargs):
+    if where:
+        np.copyto(imc, buffer.reshape(buffer.shape[0], -1))
+
+
+def _matmul(
+    matrix_ifd=None, matrix_imc=None, output=None, partial=None, where=True, **kwargs
+):
+    if not where:
+        return
+    rows = matrix_ifd.shape[0]
+    product = matrix_ifd.reshape(rows, -1).astype(np.int32) @ matrix_imc.astype(
+        np.int32
+    )
+    result = product.astype(np.float32)
+    if partial is not None:
+        result += partial.reshape(rows, -1)
+    np.copyto(output, result.reshape(output.shape).astype(output.dtype))
+
+
+# The axol operators docc emits, as `from axelera.compiler.alto.axol import atomic` sees them.
+atomic = types.SimpleNamespace(copy=_copy, load_imc=_load_imc, matmul=_matmul)
+
+
+def waits(*ids):
+    pass
+
+
+def And(a, b):  # noqa: N802
+    return a and b
+
+
+def Or(a, b):  # noqa: N802
+    return a or b
+
+
+def Not(a):  # noqa: N802
+    return not a
+
+
 def grid(*extents):
     if len(extents) == 1:
         return iter(range(extents[0]))
@@ -79,7 +135,15 @@ def array(dtype, size=None):
 
 
 def cast(value, dtype):
-    return np.asarray(value).astype(_element_type(dtype)[0])
+    element = _element_type(dtype)[0]
+    value = np.asarray(value)
+    # The DPU rounds to nearest and saturates when it narrows to integers.
+    if np.issubdtype(element, np.integer) and not np.issubdtype(
+        value.dtype, np.integer
+    ):
+        limits = np.iinfo(element)
+        value = np.clip(np.rint(value), limits.min, limits.max)
+    return value.astype(element)
 
 
 # Lane-wise binary DPU operations; these shadow the builtins only inside this module.
@@ -136,11 +200,13 @@ def _as_axscript():
         "axelera",
         "axelera.compiler",
         "axelera.compiler.alto",
+        "axelera.compiler.alto.axol",
         "axelera.compiler.alto.script",
     ]
     saved = {name: sys.modules.get(name) for name in names}
     for name in names[:-1]:
         sys.modules[name] = types.ModuleType(name)
+    sys.modules["axelera.compiler.alto.axol"].atomic = atomic
     sys.modules[names[-1]] = sys.modules[__name__]
     try:
         yield
@@ -159,19 +225,24 @@ def load(path: str, name: str, lanes: int = 64):
     with _as_axscript():
         spec.loader.exec_module(module)
     kernel = getattr(module, name).main
-    arguments = [(direction, count) for _, direction, count in module._docc_arguments]
+    arguments = [
+        (direction, count, shape)
+        for _, direction, count, shape in module._docc_arguments
+    ]
 
-    def pwords(arg, count):
-        padded = np.zeros(-(-count // lanes) * lanes, arg.dtype)
+    def pwords(arg, count, shape):
+        padded = np.zeros(int(np.prod(shape)) * lanes, arg.dtype)
         padded[:count] = arg.reshape(-1)[:count]
-        return padded.reshape(-1, lanes)
+        return padded.reshape(*shape, lanes)
 
     def run(*args):
         inputs = [
-            pwords(arg, count) for arg, (d, count) in zip(args, arguments) if d == "in"
+            pwords(arg, count, shape)
+            for arg, (d, count, shape) in zip(args, arguments)
+            if d == "in"
         ]
         outputs = [
-            (arg, count) for arg, (d, count) in zip(args, arguments) if d == "out"
+            (arg, count) for arg, (d, count, _) in zip(args, arguments) if d == "out"
         ]
         for (arg, count), result in zip(outputs, kernel(*inputs)):
             np.copyto(arg.reshape(-1)[:count], result.reshape(-1)[:count])

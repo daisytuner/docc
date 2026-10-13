@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <cstdlib>
+#include <fstream>
 #include <functional>
 
 #include <sdfg/builder/structured_sdfg_builder.h>
@@ -136,6 +138,42 @@ reduction(int64_t n, structured_control_flow::ReductionOperation operation, cons
     return builder.move();
 }
 
+/// q[i] = a[i] as int8 for i < n, rounded by rint first if @p round, as quantization emits it.
+std::unique_ptr<StructuredSDFG> narrowing(int64_t n, bool round) {
+    builder::StructuredSDFGBuilder builder("narrow", FunctionType_CPU);
+    types::Scalar f32(types::PrimitiveType::Float);
+    types::Pointer f32_pointer(f32);
+    types::Pointer i8_pointer{types::Scalar(types::PrimitiveType::Int8)};
+    builder.add_container("a", f32_pointer, true);
+    builder.add_container("q", i8_pointer, true);
+    builder.add_container("i", types::Scalar(types::PrimitiveType::Int64));
+    builder.add_container("t", f32);
+    auto i = symbolic::symbol("i");
+    auto& map = builder.add_map(
+        builder.subject().root(),
+        i,
+        symbolic::Lt(i, symbolic::integer(n)),
+        symbolic::integer(0),
+        symbolic::add(i, symbolic::integer(1)),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+    auto& block = builder.add_block(map.root());
+    auto& store = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    if (round) {
+        auto& rint = builder.add_library_node<
+            math::cmath::CMathNode>(block, DebugInfo(), math::cmath::CMathFunction::rint, types::PrimitiveType::Float);
+        builder.add_computational_memlet(block, builder.add_access(block, "a"), rint, "_in1", {i}, f32_pointer);
+        auto& t = builder.add_access(block, "t");
+        builder.add_computational_memlet(block, rint, "_out", t, {}, f32);
+        builder.add_computational_memlet(block, t, store, "_in", {}, f32);
+    } else {
+        builder.add_computational_memlet(block, builder.add_access(block, "a"), store, "_in", {i}, f32_pointer);
+    }
+    builder.add_computational_memlet(block, store, "_out", builder.add_access(block, "q"), {i}, i8_pointer);
+    builder.add_return(builder.subject().root(), "");
+    return builder.move();
+}
+
 void schedule_for_axelera(StructuredSDFG& sdfg, int64_t cores = 1) {
     builder::StructuredSDFGBuilder builder(sdfg);
     Options options;
@@ -154,6 +192,11 @@ std::string generate_axscript(StructuredSDFG& sdfg) {
     generator.generate();
     std::ostringstream out;
     generator.emit_main_source(out, "");
+    // Lets alto check the generated modules outside the test.
+    if (auto directory = std::getenv("DOCC_AXSCRIPT_DUMP")) {
+        auto test = testing::UnitTest::GetInstance()->current_test_info()->name();
+        std::ofstream(std::string(directory) + "/" + test + ".py") << out.str();
+    }
     return out.str();
 }
 
@@ -189,8 +232,8 @@ TEST(AxScriptTest, VectorAdd) {
         generate_axscript(*sdfg),
         R"(import axelera.compiler.alto.script as A
 
-# docc: SDFG arguments in order with their element counts ("out" buffers are returned through A.output) and AI cores used.
-_docc_arguments = [("a", "in", 512), ("b", "in", 512), ("out", "out", 512)]
+# docc: SDFG arguments in order with their element counts and PWORD buffer shapes ("out" buffers are returned through A.output) and AI cores used.
+_docc_arguments = [("a", "in", 512, (8,)), ("b", "in", 512, (8,)), ("out", "out", 512, (8,))]
 _docc_num_cores = 1
 
 
@@ -283,8 +326,8 @@ TEST(AxScriptTest, VectorAddOnTwoCores) {
         generate_axscript(*sdfg),
         R"(import axelera.compiler.alto.script as A
 
-# docc: SDFG arguments in order with their element counts ("out" buffers are returned through A.output) and AI cores used.
-_docc_arguments = [("a", "in", 512), ("b", "in", 512), ("out", "out", 512)]
+# docc: SDFG arguments in order with their element counts and PWORD buffer shapes ("out" buffers are returned through A.output) and AI cores used.
+_docc_arguments = [("a", "in", 512, (8,)), ("b", "in", 512, (8,)), ("out", "out", 512, (8,))]
 _docc_num_cores = 2
 
 
@@ -330,8 +373,8 @@ TEST(AxScriptTest, ScaleByConstant) {
         generate_axscript(*sdfg),
         R"(import axelera.compiler.alto.script as A
 
-# docc: SDFG arguments in order with their element counts ("out" buffers are returned through A.output) and AI cores used.
-_docc_arguments = [("a", "in", 512), ("out", "out", 512)]
+# docc: SDFG arguments in order with their element counts and PWORD buffer shapes ("out" buffers are returned through A.output) and AI cores used.
+_docc_arguments = [("a", "in", 512, (8,)), ("out", "out", 512, (8,))]
 _docc_num_cores = 1
 _docc_c0_lanes = [2.0] * 64
 
@@ -499,8 +542,8 @@ TEST(AxScriptTest, SumReduction) {
         generate_axscript(*sdfg),
         R"(import axelera.compiler.alto.script as A
 
-# docc: SDFG arguments in order with their element counts ("out" buffers are returned through A.output) and AI cores used.
-_docc_arguments = [("a", "in", 512), ("out", "out", 1)]
+# docc: SDFG arguments in order with their element counts and PWORD buffer shapes ("out" buffers are returned through A.output) and AI cores used.
+_docc_arguments = [("a", "in", 512, (8,)), ("out", "out", 1, (1,))]
 _docc_num_cores = 1
 
 
@@ -583,6 +626,47 @@ TEST(AxScriptTest, NonIdentityStartIsRejected) {
     schedule_for_axelera(*sdfg);
 
     EXPECT_NE(error_of(*sdfg).find("not the reduction's identity"), std::string::npos) << error_of(*sdfg);
+}
+
+TEST(AxScriptTest, LongReductionFoldsChunksIntoPartials) {
+    auto sdfg = reduction(256 * 64, structured_control_flow::ReductionOperation::Add, "0.0");
+    schedule_for_axelera(*sdfg);
+
+    // alto cannot fit DPU loops over many more PWORDs, so each datapath folds 64 PWORDs into a partial.
+    auto code = generate_axscript(*sdfg);
+    std::vector<std::string> in_order = {
+        "        acc_partials = A.alloc_buffer((4,), \"float32x64\", scope=A.L2)\n"
+        "        for k_tile0_chunk in A.grid(4):\n",
+        "                    for k_tile0 in A.serial(64):\n"
+        "                        s0_0.push(a[k_tile0 + 64*k_tile0_chunk])\n",
+        "                    acc_partials[k_tile0_chunk] = s0_out.pop()\n",
+        "                    s1_0.push(acc_partials[c1])\n",
+        "                r1[0] = A.dpu.ops.add_reduce(r1[0])\n",
+        "                out[0] = s1_out.pop()\n",
+    };
+    size_t position = 0;
+    for (auto& part : in_order) {
+        auto found = code.find(part, position);
+        ASSERT_NE(found, std::string::npos) << "missing in order: " << part << "\n" << code;
+        position = found + part.size();
+    }
+    EXPECT_EQ(code.find("add_reduce"), code.rfind("add_reduce")) << "only the combine reduces lanes\n" << code;
+}
+
+TEST(AxScriptTest, RoundedValuesNarrowToInt8) {
+    auto sdfg = narrowing(512, true);
+    schedule_for_axelera(*sdfg);
+
+    auto code = generate_axscript(*sdfg);
+    EXPECT_NE(code.find("s0_out = A.decl_stream(\"int8x64\")"), std::string::npos) << code;
+    EXPECT_NE(code.find("s0_out.push(A.cast(r0[2], \"int8x64\"))"), std::string::npos) << code;
+}
+
+TEST(AxScriptTest, TruncatingToInt8IsRejected) {
+    auto sdfg = narrowing(512, false);
+    schedule_for_axelera(*sdfg);
+
+    EXPECT_NE(error_of(*sdfg).find("without rounding them with rint"), std::string::npos) << error_of(*sdfg);
 }
 
 int main(int argc, char** argv) {

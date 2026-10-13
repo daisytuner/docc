@@ -1,5 +1,7 @@
 #pragma once
 
+#include <set>
+
 #include <sdfg/codegen/code_generator.h>
 #include <sdfg/structured_control_flow/structured_loop.h>
 
@@ -10,7 +12,8 @@ namespace axelera {
 
 /**
  * Generates an AxScript module: an `@A.ir_module` class named after the SDFG whose `main` takes the read buffers
- * and returns the written ones through `A.output`. Only scheduled datapath loops may appear at the top level.
+ * and returns the written ones through `A.output`. Only scheduled datapath loops may appear at the top level; the
+ * arrays and reduction results they pass each other live in DDR buffers of the module.
  */
 class AxScriptCodeGenerator : public codegen::CodeGenerator {
 private:
@@ -18,14 +21,23 @@ private:
         std::string name;
         int64_t elements;
         bool is_output;
+        /// Elements per row of a matrix buffer; 0 for a flat one.
+        int64_t row_length = 0;
+        types::PrimitiveType element = types::PrimitiveType::Float;
+        /// Allocated by the module rather than passed in or returned.
+        bool transient = false;
 
         int64_t pwords() const;
+        /// The PWORD shape AxScript declares, e.g. "(8,)" or "(128, 2)".
+        std::string shape() const;
     };
 
     AxScriptLanguageExtension language_extension_;
     std::vector<structured_control_flow::StructuredLoop*> datapaths_;
     std::vector<Buffer> buffers_;
+    std::set<std::string> reduction_results_;
     int64_t num_cores_ = 1;
+    bool uses_operators_ = false;
 
     /// Checks that the function body consists of datapath loops only, with reductions' init and store blocks.
     void collect_datapaths();

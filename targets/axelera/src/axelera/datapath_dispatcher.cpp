@@ -1,5 +1,7 @@
 #include "docc/target/axelera/datapath_dispatcher.h"
 
+#include <algorithm>
+
 #include "docc/target/axelera/axscript_language_extension.h"
 #include "docc/target/axelera/datapath.h"
 #include "docc/target/axelera/schedule.h"
@@ -69,8 +71,28 @@ PwordLoop pword_loop(structured_control_flow::StructuredLoop& stream_loop, const
     return {block, as_int(count), first_element, lanes};
 }
 
-/// `container[pword]` for the PWORD a stream accesses in the iteration of the loop's block variable.
-std::string pword_access(AxScriptLanguageExtension& lang, const PwordLoop& loop, const DatapathStream& access) {
+/// Sum of integer multiples of symbols plus an integer, as PWORD indices must be.
+bool is_integer_affine(const symbolic::Expression& expr) {
+    auto terms = SymEngine::is_a<SymEngine::Add>(*expr) ? expr->get_args() : SymEngine::vec_basic{expr};
+    for (auto& term : terms) {
+        if (is_integer(term) || SymEngine::is_a<SymEngine::Symbol>(*term)) {
+            continue;
+        }
+        if (!SymEngine::is_a<SymEngine::Mul>(*term)) {
+            return false;
+        }
+        auto& mul = SymEngine::down_cast<const SymEngine::Mul&>(*term);
+        if (!is_integer(mul.get_coef()) || mul.get_dict().size() != 1 ||
+            !SymEngine::is_a<SymEngine::Symbol>(*mul.get_dict().begin()->first) ||
+            !is_integer(mul.get_dict().begin()->second, 1)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/// The PWORD a stream accesses as `step * block + offset` in the iteration of the loop's block variable.
+std::pair<int64_t, symbolic::Expression> pword_index(const PwordLoop& loop, const DatapathStream& access) {
     auto pwords = symbolic::integer(PWORD_LANES);
     auto element_offset = symbolic::add(loop.first_element, symbolic::mul(pwords, loop.block));
     auto first =
@@ -78,11 +100,75 @@ std::string pword_access(AxScriptLanguageExtension& lang, const PwordLoop& loop,
     auto index = symbolic::expand(SymEngine::div(first, pwords));
     auto offset = symbolic::expand(symbolic::subs(index, loop.block, symbolic::zero()));
     auto step = symbolic::expand(symbolic::sub(symbolic::subs(index, loop.block, symbolic::one()), offset));
-    if (!is_integer(offset) || !is_integer(step) ||
+    if (!is_integer_affine(offset) || !is_integer(step) ||
         !symbolic::eq(index, symbolic::expand(symbolic::add(symbolic::mul(step, loop.block), offset)))) {
         unsupported("access " + access.container + "[" + access.index->__str__() + "], which is not PWORD-aligned,");
     }
-    return access.container + "[" + lang.expression(index) + "]";
+    return {as_int(step), offset};
+}
+
+/// The PWORDs of a datapath loop as AxScript iterates them: one flat grid, or rows of a matrix buffer's PWORDs when
+/// the datapath touches one, since matrix buffers take a (row, PWORD) index.
+struct PwordGrid {
+    const PwordLoop& loop;
+    int64_t row_pwords = 0;
+
+    std::string row() const {
+        return loop.block->get_name() + "_row";
+    }
+
+    std::string column() const {
+        return loop.block->get_name() + "_col";
+    }
+
+    std::string header(const std::string& kind) const {
+        if (row_pwords == 0) {
+            return "for " + loop.block->get_name() + " in A." + kind + "(" + std::to_string(loop.count) + "):";
+        }
+        return "for " + row() + ", " + column() + " in A." + kind + "(" + std::to_string(loop.count / row_pwords) +
+               ", " + std::to_string(row_pwords) + "):";
+    }
+
+    std::string access(AxScriptLanguageExtension& lang, const DatapathStream& stream) const {
+        auto [step, offset] = pword_index(loop, stream);
+        auto matrix = lang.matrix_pwords(stream.container);
+        if (row_pwords == 0) {
+            return stream.container + "[" +
+                   lang.expression(symbolic::add(symbolic::mul(symbolic::integer(step), loop.block), offset)) + "]";
+        }
+        auto row_symbol = symbolic::symbol(row());
+        auto column_symbol = symbolic::symbol(column());
+        if (matrix == 0) {
+            auto block = symbolic::add(symbolic::mul(symbolic::integer(row_pwords), row_symbol), column_symbol);
+            return stream.container + "[" +
+                   lang.expression(symbolic::expand(symbolic::add(symbolic::mul(symbolic::integer(step), block), offset))) +
+                   "]";
+        }
+        auto first_row = symbolic::expand(SymEngine::div(offset, symbolic::integer(matrix)));
+        if (step != 1 || !is_integer_affine(first_row)) {
+            unsupported("access to " + stream.container + " other than along whole rows");
+        }
+        return stream.container + "[" + lang.expression(symbolic::add(first_row, row_symbol)) + ", " + column() + "]";
+    }
+};
+
+PwordGrid pword_grid(AxScriptLanguageExtension& lang, const PwordLoop& loop, const DatapathPlan& plan) {
+    PwordGrid grid{loop};
+    auto streams = plan.inputs;
+    if (plan.output) {
+        streams.push_back(*plan.output);
+    }
+    for (auto& stream : streams) {
+        auto matrix = lang.matrix_pwords(stream.container);
+        if (matrix == 0) {
+            continue;
+        }
+        if ((grid.row_pwords != 0 && grid.row_pwords != matrix) || loop.count % matrix != 0) {
+            unsupported("a datapath over matrices of different row lengths or partial rows");
+        }
+        grid.row_pwords = matrix;
+    }
+    return grid;
 }
 
 /// Names of one datapath's streams and register file.
@@ -108,13 +194,17 @@ std::string quoted(const std::string& text) {
 }
 
 void declare_streams(
-    AxScriptLanguageExtension& lang, codegen::PrettyPrinter& out, const DatapathNames& names, size_t inputs
+    AxScriptLanguageExtension& lang,
+    codegen::PrettyPrinter& out,
+    const DatapathNames& names,
+    size_t inputs,
+    types::PrimitiveType output = types::PrimitiveType::Float
 ) {
     auto dtype = quoted(lang.vector_type(types::PrimitiveType::Float));
     for (size_t k = 0; k < inputs; ++k) {
         out << names.input(k) << " = A.decl_stream(" << dtype << ")" << std::endl;
     }
-    out << names.output() << " = A.decl_stream(" << dtype << ")" << std::endl;
+    out << names.output() << " = A.decl_stream(" << quoted(lang.vector_type(output)) << ")" << std::endl;
 }
 
 void emit_program(
@@ -127,6 +217,11 @@ void emit_program(
             value = "A.cast(" + names.input(*instruction.input_stream) + ".pop(), " + dpu_dtype + ")";
         } else if (instruction.constant) {
             value = "A.cast(" + lang.constant_buffer(*instruction.constant) + "[0], " + dpu_dtype + ")";
+        } else if (instruction.uniform) {
+            if (!lang.is_uniform(*instruction.uniform)) {
+                unsupported("reading " + *instruction.uniform + ", which no reduction stores,");
+            }
+            value = "A.cast(" + *instruction.uniform + "[0], " + dpu_dtype + ")";
         } else {
             std::vector<std::string> operands;
             for (auto operand : instruction.operands) {
@@ -147,17 +242,18 @@ void emit_map_datapath(
 ) {
     auto loop = pword_loop(stream_loop, first_element);
     auto plan = plan_datapath(sdfg, loop.lanes->root(), loop.lanes->indvar());
+    auto grid = pword_grid(lang, loop, plan);
     DatapathNames names{std::to_string(lang.next_datapath())};
 
-    out << "for " << loop.block->get_name() << " in A.grid(" << loop.count << "):" << std::endl;
+    out << grid.header("grid") << std::endl;
     out.changeIndent(+4);
     out << "with A.Datapath():" << std::endl;
     out.changeIndent(+4);
-    declare_streams(lang, out, names, plan.inputs.size());
+    declare_streams(lang, out, names, plan.inputs.size(), plan.output->element);
     for (size_t k = 0; k < plan.inputs.size(); ++k) {
         out << "with A.IFD(num=" << k << "):" << std::endl;
         out.changeIndent(+4);
-        out << names.input(k) << ".push(" << pword_access(lang, loop, plan.inputs[k]) << ")" << std::endl;
+        out << names.input(k) << ".push(" << grid.access(lang, plan.inputs[k]) << ")" << std::endl;
         out.changeIndent(-4);
     }
     out << "with A.DPU():" << std::endl;
@@ -165,27 +261,36 @@ void emit_map_datapath(
     out << names.registers() << " = A.array(" << quoted(AxScriptLanguageExtension::dpu_type())
         << ", size=" << plan.num_registers << ")" << std::endl;
     emit_program(lang, out, names, plan);
-    out << names.output() << ".push(" << names.reg(plan.result) << ")" << std::endl;
+    auto result = names.reg(plan.result);
+    if (plan.output->element != types::PrimitiveType::Float) {
+        result = "A.cast(" + result + ", " + quoted(lang.vector_type(plan.output->element)) + ")";
+    }
+    out << names.output() << ".push(" << result << ")" << std::endl;
     out.changeIndent(-4);
     out << "with A.ODR():" << std::endl;
     out.changeIndent(+4);
-    out << pword_access(lang, loop, *plan.output) << " = " << names.output() << ".pop()" << std::endl;
+    out << grid.access(lang, *plan.output) << " = " << names.output() << ".pop()" << std::endl;
     out.changeIndent(-12);
 }
+
+/// PWORDs one reduction datapath folds; alto cannot fit the DPU loops of much longer ones.
+constexpr int64_t REDUCTION_CHUNK = 64;
 
 /// One datapath folding all PWORDs of the loop into a DPU register, optionally reducing its lanes, stored to @p store.
 void emit_reduction_datapath(
     AxScriptLanguageExtension& lang,
     codegen::PrettyPrinter& out,
     const StructuredSDFG& sdfg,
-    structured_control_flow::StructuredLoop& stream_loop,
-    const symbolic::Expression& first_element,
+    const PwordLoop& loop,
     const ReductionKernel& kernel,
     bool reduce_lanes,
     const std::string& store
 ) {
-    auto loop = pword_loop(stream_loop, first_element);
     auto plan = plan_datapath(sdfg, loop.lanes->root(), loop.lanes->indvar(), kernel.accumulator);
+    if (pword_grid(lang, loop, plan).row_pwords != 0) {
+        unsupported("reducing a matrix buffer");
+    }
+    PwordGrid grid{loop};
     DatapathNames names{std::to_string(lang.next_datapath())};
     auto accumulator = plan.num_registers;
     auto block = loop.block->get_name();
@@ -197,7 +302,7 @@ void emit_reduction_datapath(
         out << "with A.IFD(num=" << k << "):" << std::endl;
         out.changeIndent(+4);
         out << "for " << block << " in A.serial(" << loop.count << "):" << std::endl;
-        out << "    " << names.input(k) << ".push(" << pword_access(lang, loop, plan.inputs[k]) << ")" << std::endl;
+        out << "    " << names.input(k) << ".push(" << grid.access(lang, plan.inputs[k]) << ")" << std::endl;
         out.changeIndent(-4);
     }
 
@@ -229,12 +334,12 @@ void emit_reduction_datapath(
     out.changeIndent(-8);
 }
 
-/// One datapath folding the @p cores partial PWORDs and reducing their lanes, stored to @p store.
+/// One datapath folding the @p count partial PWORDs and reducing their lanes, stored to @p store.
 void emit_combine_datapath(
     AxScriptLanguageExtension& lang,
     codegen::PrettyPrinter& out,
     const std::string& partials,
-    int64_t cores,
+    int64_t count,
     const ReductionKernel& kernel,
     const std::string& store
 ) {
@@ -247,13 +352,13 @@ void emit_combine_datapath(
     out.changeIndent(+4);
     declare_streams(lang, out, names, 1);
     out << "with A.IFD(num=0):" << std::endl;
-    out << "    for " << core << " in A.serial(" << cores << "):" << std::endl;
+    out << "    for " << core << " in A.serial(" << count << "):" << std::endl;
     out << "        " << names.input(0) << ".push(" << partials << "[" << core << "])" << std::endl;
     out << "with A.DPU():" << std::endl;
     out.changeIndent(+4);
     out << names.registers() << " = A.array(" << dpu_dtype << ", size=2)" << std::endl;
     out << names.reg(0) << " = " << pop << std::endl;
-    out << "for " << core << " in A.serial(" << cores - 1 << "):" << std::endl;
+    out << "for " << core << " in A.serial(" << count - 1 << "):" << std::endl;
     out << "    " << names.reg(1) << " = " << pop << std::endl;
     out << "    " << names.reg(0) << " = " << lang.dpu_operation(kernel.combine, {names.reg(0), names.reg(1)})
         << std::endl;
@@ -262,6 +367,42 @@ void emit_combine_datapath(
     out.changeIndent(-4);
     out << "with A.ODR():" << std::endl;
     out << "    " << store << " = " << names.output() << ".pop()" << std::endl;
+    out.changeIndent(-4);
+}
+
+/// Datapaths a reduction over @p count PWORDs is split into.
+int64_t reduction_chunks(int64_t count) {
+    int64_t chunk = std::min(count, REDUCTION_CHUNK);
+    while (count % chunk != 0) {
+        --chunk;
+    }
+    return count / chunk;
+}
+
+/// Folds the PWORDs of @p loop into @p chunks partial PWORDs, `partials[first + c]` for chunk c.
+void emit_partial_reductions(
+    AxScriptLanguageExtension& lang,
+    codegen::PrettyPrinter& out,
+    const StructuredSDFG& sdfg,
+    const PwordLoop& loop,
+    int64_t chunks,
+    const ReductionKernel& kernel,
+    const std::string& partials,
+    int64_t first
+) {
+    if (chunks == 1) {
+        emit_reduction_datapath(lang, out, sdfg, loop, kernel, false, partials + "[" + std::to_string(first) + "]");
+        return;
+    }
+    auto chunk = loop.block->get_name() + "_chunk";
+    PwordLoop part = loop;
+    part.count = loop.count / chunks;
+    part.first_element = symbolic::
+        add(loop.first_element, symbolic::mul(symbolic::integer(part.count * PWORD_LANES), symbolic::symbol(chunk)));
+    out << "for " << chunk << " in A.grid(" << chunks << "):" << std::endl;
+    out.changeIndent(+4);
+    auto index = first == 0 ? chunk : std::to_string(first) + " + " + chunk;
+    emit_reduction_datapath(lang, out, sdfg, part, kernel, false, partials + "[" + index + "]");
     out.changeIndent(-4);
 }
 
@@ -342,9 +483,22 @@ void AxeleraReduceDispatcher::dispatch_node(
     auto& lang = axscript(language_extension_);
     auto kernel = match_reduction(sdfg_, analysis_manager_, reduce_);
     auto store = kernel.output.container + "[0]";
+    auto partials = kernel.accumulator + "_partials";
+    auto allocate_partials = [&](int64_t count) {
+        main_stream << partials << " = A.alloc_buffer((" << count << ",), "
+                    << quoted(lang.vector_type(types::PrimitiveType::Float)) << ", scope=A.L2)" << std::endl;
+    };
     auto& schedule = reduce_.schedule_type();
     if (ScheduleType_Axelera::is(schedule, AxeleraLevel::Stream)) {
-        emit_reduction_datapath(lang, main_stream, sdfg_, reduce_, reduce_.init(), kernel, true, store);
+        auto loop = pword_loop(reduce_, reduce_.init());
+        auto chunks = reduction_chunks(loop.count);
+        if (chunks == 1) {
+            emit_reduction_datapath(lang, main_stream, sdfg_, loop, kernel, true, store);
+            return;
+        }
+        allocate_partials(chunks);
+        emit_partial_reductions(lang, main_stream, sdfg_, loop, chunks, kernel, partials, 0);
+        emit_combine_datapath(lang, main_stream, partials, chunks, kernel, store);
         return;
     }
     if (!ScheduleType_Axelera::is(schedule, AxeleraLevel::Core)) {
@@ -353,21 +507,18 @@ void AxeleraReduceDispatcher::dispatch_node(
 
     auto cores = ScheduleType_Axelera::num_cores(schedule);
     auto& stream_loop = core_chunks(reduce_, cores);
-    auto partials = kernel.accumulator + "_partials";
-    main_stream << partials << " = A.alloc_buffer((" << cores << ",), "
-                << quoted(lang.vector_type(types::PrimitiveType::Float)) << ", scope=A.L2)" << std::endl;
+    auto chunks = reduction_chunks(pword_loop(stream_loop, stream_loop.init()).count);
+    allocate_partials(cores * chunks);
     for (int64_t c = 0; c < cores; ++c) {
         main_stream << "with A.AICore(core=" << c << "):" << std::endl;
         main_stream.changeIndent(+4);
-        auto partial = partials + "[" + std::to_string(c) + "]";
-        emit_reduction_datapath(
-            lang, main_stream, sdfg_, stream_loop, chunk_start(reduce_, stream_loop, c), kernel, false, partial
-        );
+        auto loop = pword_loop(stream_loop, chunk_start(reduce_, stream_loop, c));
+        emit_partial_reductions(lang, main_stream, sdfg_, loop, chunks, kernel, partials, c * chunks);
         main_stream << "A.barrier(" << join_cores(cores) << ")" << std::endl;
         // Any core could combine after the barrier; taking the last one keeps the partials written before they
         // are read even when the core regions run one after another, as in the CPU emulator.
         if (c + 1 == cores) {
-            emit_combine_datapath(lang, main_stream, partials, cores, kernel, store);
+            emit_combine_datapath(lang, main_stream, partials, cores * chunks, kernel, store);
         }
         main_stream.changeIndent(-4);
     }
