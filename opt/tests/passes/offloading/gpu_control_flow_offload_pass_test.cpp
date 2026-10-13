@@ -232,16 +232,20 @@ TYPED_TEST(GPUControlFlowOffloadPassTest, IgnoresControlFlowNestedInLoops) {
     EXPECT_EQ(block.get_parent(), &branch);
 }
 
-TYPED_TEST(GPUControlFlowOffloadPassTest, SkipsNodesWithoutComputation) {
+TYPED_TEST(GPUControlFlowOffloadPassTest, OffloadsNodesWithoutComputation) {
     auto& empty_block = this->builder_.add_block(this->root());
     auto& if_else = this->builder_.add_if_else(this->root());
     this->builder_.add_case(if_else, this->n_lt(10));
 
-    EXPECT_FALSE(this->run_pass());
+    EXPECT_TRUE(this->run_pass());
 
-    ASSERT_EQ(this->root().size(), 2);
-    EXPECT_EQ(&this->root().at(0), &empty_block);
-    EXPECT_EQ(&this->root().at(1), &if_else);
+    auto maps = this->offloaded_root_maps();
+    ASSERT_EQ(maps.size(), 1);
+    auto& map = *maps.front();
+    this->expect_trivial_offload_map(map);
+    ASSERT_EQ(map.root().size(), 2);
+    EXPECT_EQ(&map.root().at(0), &empty_block);
+    EXPECT_EQ(&map.root().at(1), &if_else);
 }
 
 // ---- Wrapping of eligible node types ---------------------------------------
