@@ -115,6 +115,14 @@ ExpressionSet generate_constraints(SymbolSet& syms, const Assumptions& assums, S
 std::string constraint_to_isl_str(const Expression con);
 
 /**
+ * @brief Converts an index or bound expression to ISL syntax
+ *
+ * Integer divisions and remainders by literals (`idiv`, `imod`), `min` and `max` become quasi-affine ISL
+ * expressions; anything ISL cannot represent prints as-is and fails to parse.
+ */
+std::string expression_to_isl_str(const Expression expr);
+
+/**
  * @brief Canonicalizes dimension names in an ISL map
  * @param map ISL map to modify
  * @param in_prefix Prefix for input dimensions (e.g., "i")
