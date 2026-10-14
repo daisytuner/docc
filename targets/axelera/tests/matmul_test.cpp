@@ -769,3 +769,12 @@ TEST(AxeleraMatMulTest, LeavesMatMulsIntoUninitializedResults) {
     analysis::AnalysisManager analysis_manager(*nest.sdfg);
     EXPECT_FALSE(axelera::map_matmuls(builder, analysis_manager));
 }
+
+TEST(AxeleraMatMulTest, StagedMatMulRoundTripsThroughJson) {
+    auto nest = float_matmul(128, 128, 256);
+    stage_matmul(nest, 32, 128);
+    auto json = serializer::JSONSerializer().serialize(*nest.sdfg);
+    auto copy = serializer::JSONSerializer().deserialize(json);
+    copy->validate();
+    EXPECT_EQ(axscript_of(*copy), axscript_of(*nest.sdfg));
+}

@@ -2,6 +2,7 @@
 
 #include <sdfg/data_flow/library_node.h>
 #include <sdfg/data_flow/library_nodes/math/tensor/tensor_layout.h>
+#include <sdfg/serializer/json_serializer.h>
 
 namespace sdfg {
 namespace axelera {
@@ -92,6 +93,22 @@ public:
     std::string toStr() const override;
 
     data_flow::PointerAccessType pointer_access_type(int input_idx) const override;
+};
+
+class AxeleraMatMulNodeSerializer : public serializer::LibraryNodeSerializer {
+public:
+    nlohmann::json serialize(const data_flow::LibraryNode& library_node) override;
+    data_flow::LibraryNode& deserialize(
+        const nlohmann::json& j, builder::StructuredSDFGBuilder& builder, structured_control_flow::Block& parent
+    ) override;
+};
+
+class AxeleraImcLoadNodeSerializer : public serializer::LibraryNodeSerializer {
+public:
+    nlohmann::json serialize(const data_flow::LibraryNode& library_node) override;
+    data_flow::LibraryNode& deserialize(
+        const nlohmann::json& j, builder::StructuredSDFGBuilder& builder, structured_control_flow::Block& parent
+    ) override;
 };
 
 } // namespace axelera

@@ -11,6 +11,7 @@
 #include <sdfg/serializer/json_serializer.h>
 #include <sdfg/structured_control_flow/map.h>
 #include <sdfg/structured_control_flow/reduce.h>
+#include <sdfg/tiles/plugin.h>
 
 #include "docc/target/axelera/axelera_scheduler.h"
 #include "docc/target/axelera/axscript_code_generator.h"
@@ -174,15 +175,8 @@ std::unique_ptr<StructuredSDFG> narrowing(int64_t n, bool round) {
     return builder.move();
 }
 
-/// out = a + b for row-major @p rows x @p columns matrices over a nest of maps, as the Python frontend emits it;
-/// b is read transposed if @p transposed.
-std::unique_ptr<StructuredSDFG> matrix_add(int64_t rows, int64_t columns, bool transposed) {
-    builder::StructuredSDFGBuilder builder("madd", FunctionType_CPU);
-    types::Pointer ptr{types::Scalar(types::PrimitiveType::Float)};
-    for (auto name : {"a", "b", "out"}) {
-        builder.add_container(name, ptr, true);
-    }
-    std::vector<symbolic::Symbol> indvars;
+/// The block of a nest of maps over i < @p rows and j < @p columns, as the Python frontend emits matrix operations.
+structured_control_flow::Block& matrix_nest(builder::StructuredSDFGBuilder& builder, int64_t rows, int64_t columns) {
     auto* scope = &builder.subject().root();
     for (auto [name, count] : {std::pair{"i", rows}, std::pair{"j", columns}}) {
         builder.add_container(name, types::Scalar(types::PrimitiveType::Int64));
@@ -195,21 +189,51 @@ std::unique_ptr<StructuredSDFG> matrix_add(int64_t rows, int64_t columns, bool t
             symbolic::add(indvar, symbolic::one()),
             structured_control_flow::ScheduleType_Sequential::create()
         );
-        indvars.push_back(indvar);
         scope = &map.root();
     }
-    auto i = indvars[0];
-    auto j = indvars[1];
+    return builder.add_block(*scope);
+}
+
+/// out = a + b for row-major @p rows x @p columns matrices; b is read transposed if @p transposed.
+std::unique_ptr<StructuredSDFG> matrix_add(int64_t rows, int64_t columns, bool transposed) {
+    builder::StructuredSDFGBuilder builder("madd", FunctionType_CPU);
+    types::Pointer ptr{types::Scalar(types::PrimitiveType::Float)};
+    for (auto name : {"a", "b", "out"}) {
+        builder.add_container(name, ptr, true);
+    }
+    auto& block = matrix_nest(builder, rows, columns);
+    auto i = symbolic::symbol("i");
+    auto j = symbolic::symbol("j");
     auto element = symbolic::add(symbolic::mul(i, symbolic::integer(columns)), j);
     auto transposed_element = symbolic::add(symbolic::mul(j, symbolic::integer(rows)), i);
 
-    auto& block = builder.add_block(*scope);
     auto& add = builder.add_tasklet(block, data_flow::TaskletCode::fp_add, "_out", {"_in1", "_in2"});
     builder.add_computational_memlet(block, builder.add_access(block, "a"), add, "_in1", {element}, ptr);
     builder.add_computational_memlet(
         block, builder.add_access(block, "b"), add, "_in2", {transposed ? transposed_element : element}, ptr
     );
     builder.add_computational_memlet(block, add, "_out", builder.add_access(block, "out"), {element}, ptr);
+    builder.add_return(builder.subject().root(), "");
+    return builder.move();
+}
+
+/// out = max(a, 0) for a row-major @p rows x @p columns matrix, as np.maximum emits it.
+std::unique_ptr<StructuredSDFG> matrix_relu(int64_t rows, int64_t columns) {
+    builder::StructuredSDFGBuilder builder("mrelu", FunctionType_CPU);
+    types::Scalar f32(types::PrimitiveType::Float);
+    types::Pointer ptr(f32);
+    for (auto name : {"a", "out"}) {
+        builder.add_container(name, ptr, true);
+    }
+    auto& block = matrix_nest(builder, rows, columns);
+    auto element =
+        symbolic::add(symbolic::mul(symbolic::symbol("i"), symbolic::integer(columns)), symbolic::symbol("j"));
+
+    auto& max = builder.add_library_node<
+        math::cmath::CMathNode>(block, DebugInfo(), math::cmath::CMathFunction::fmax, types::PrimitiveType::Float);
+    builder.add_computational_memlet(block, builder.add_access(block, "a"), max, "_in1", {element}, ptr);
+    builder.add_computational_memlet(block, builder.add_constant(block, "0.0", f32), max, "_in2", {}, f32);
+    builder.add_computational_memlet(block, max, "_out", builder.add_access(block, "out"), {element}, ptr);
     builder.add_return(builder.subject().root(), "");
     return builder.move();
 }
@@ -342,6 +366,15 @@ TEST(AxScriptTest, TransposedMatrixAccessIsNotFlattened) {
     auto sdfg = matrix_add(128, 128, true);
     schedule_for_axelera(*sdfg);
     EXPECT_NE(error_of(*sdfg).find("it contains loops"), std::string::npos);
+}
+
+TEST(AxScriptTest, SchedulerFlattensMatrixMapsWithMathFunctions) {
+    auto sdfg = matrix_relu(4, 128);
+    schedule_for_axelera(*sdfg);
+
+    auto& grid = dynamic_cast<structured_control_flow::Map&>(sdfg->root().at(0));
+    EXPECT_TRUE(axelera::ScheduleType_Axelera::is(grid.schedule_type(), axelera::AxeleraLevel::Stream));
+    EXPECT_EQ(grid.num_iterations()->__str__(), "8");
 }
 
 TEST(AxScriptTest, VectorAddOnTwoCores) {
@@ -731,6 +764,7 @@ int main(int argc, char** argv) {
     auto context = plugins::Context::global_context();
     codegen::register_default_dispatchers();
     serializer::register_default_serializers();
+    tiles::register_tiles_plugin(context);
     docc::target::axelera::register_plugin(context);
     return RUN_ALL_TESTS();
 }

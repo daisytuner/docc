@@ -199,5 +199,62 @@ data_flow::PointerAccessType AxeleraImcLoadNode::pointer_access_type(int input_i
     }
 }
 
+namespace {
+
+nlohmann::json layout_to_json(const math::tensor::TensorLayout& layout) {
+    nlohmann::json j;
+    layout.serialize_to_json(j);
+    return j;
+}
+
+} // namespace
+
+nlohmann::json AxeleraMatMulNodeSerializer::serialize(const data_flow::LibraryNode& library_node) {
+    auto& node = static_cast<const AxeleraMatMulNode&>(library_node);
+    nlohmann::json j;
+    j["code"] = std::string(node.code().value());
+    j["layout_a"] = layout_to_json(node.layout_a());
+    j["layout_b"] = layout_to_json(node.layout_b());
+    j["layout_y"] = layout_to_json(node.layout_y());
+    j["accumulate"] = serializer::JSONSerializer::expression(node.accumulate());
+    return j;
+}
+
+data_flow::LibraryNode& AxeleraMatMulNodeSerializer::deserialize(
+    const nlohmann::json& j, builder::StructuredSDFGBuilder& builder, structured_control_flow::Block& parent
+) {
+    auto accumulate =
+        SymEngine::rcp_dynamic_cast<const SymEngine::Boolean>(symbolic::parse(j.at("accumulate").get<std::string>()));
+    if (accumulate.is_null()) {
+        throw InvalidSDFGException("AxeleraMatMulNode: accumulate is not a condition");
+    }
+    return builder.add_library_node<AxeleraMatMulNode>(
+        parent,
+        serializer::JSONSerializer().json_to_debug_info(j.at("debug_info")),
+        math::tensor::TensorLayout::deserialize_from_json(j.at("layout_a")),
+        math::tensor::TensorLayout::deserialize_from_json(j.at("layout_b")),
+        math::tensor::TensorLayout::deserialize_from_json(j.at("layout_y")),
+        accumulate
+    );
+}
+
+nlohmann::json AxeleraImcLoadNodeSerializer::serialize(const data_flow::LibraryNode& library_node) {
+    auto& node = static_cast<const AxeleraImcLoadNode&>(library_node);
+    nlohmann::json j;
+    j["code"] = std::string(node.code().value());
+    j["layout"] = layout_to_json(node.layout());
+    return j;
+}
+
+data_flow::LibraryNode& AxeleraImcLoadNodeSerializer::deserialize(
+    const nlohmann::json& j, builder::StructuredSDFGBuilder& builder, structured_control_flow::Block& parent
+) {
+    return builder.add_library_node<AxeleraImcLoadNode>(
+        parent,
+        serializer::JSONSerializer().json_to_debug_info(j.at("debug_info")),
+        math::tensor::TensorLayout::deserialize_from_json(j.at("layout"))
+    );
+}
+
 } // namespace axelera
 } // namespace sdfg

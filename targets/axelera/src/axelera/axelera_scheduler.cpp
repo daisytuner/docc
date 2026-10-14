@@ -69,16 +69,26 @@ structured_control_flow::Map* flatten_dense_nest(
 
     // Only memlets may use the indvars, each index as an offset plus a multiple of the linear index.
     auto& body = maps.back()->root();
+    auto uses_indvar = [&](const std::string& name) {
+        return std::ranges::any_of(indvars, [&](auto& indvar) {
+            return name == indvar->get_name();
+        });
+    };
     for (size_t i = 0; i < body.size(); ++i) {
         auto block = dynamic_cast<structured_control_flow::Block*>(&body.at(i));
-        if (!block || !block->dataflow().library_nodes().empty()) {
+        if (!block) {
             return nullptr;
+        }
+        for (auto* library_node : block->dataflow().library_nodes()) {
+            for (auto& symbol : library_node->symbols()) {
+                if (uses_indvar(symbol->get_name())) {
+                    return nullptr;
+                }
+            }
         }
         for (auto& node : block->dataflow().nodes()) {
             auto access = dynamic_cast<const data_flow::AccessNode*>(&node);
-            if (access && std::ranges::any_of(indvars, [&](auto& indvar) {
-                    return access->data() == indvar->get_name();
-                })) {
+            if (access && uses_indvar(access->data())) {
                 return nullptr;
             }
         }

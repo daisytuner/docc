@@ -86,6 +86,10 @@ def _matmul(a, b):
     return a @ b
 
 
+def _mlp(x, w1, w2):
+    return np.maximum(x @ w1, 0.0) @ w2
+
+
 # Each op reads "a" in [-1, 1) and/or "b" in [0.5, 1.5), the domain of division, sqrt and the logarithms.
 _ELEMENTWISE = {
     "div": (_div, np.divide, ("a", "b")),
@@ -199,6 +203,22 @@ def test_axscript_matmul(cores):
     expected = a @ b
     np.testing.assert_allclose(
         compiled(a, b), expected, rtol=0, atol=0.03 * np.abs(expected).max()
+    )
+
+
+@requires_alto
+def test_axscript_mlp():
+    rng = np.random.default_rng(0)
+    x = rng.standard_normal((128, 128), dtype=np.float32)
+    w1 = rng.standard_normal((128, 128), dtype=np.float32) / np.sqrt(128)
+    w2 = rng.standard_normal((128, 128), dtype=np.float32) / np.sqrt(128)
+
+    expected = _mlp(x, w1, w2)
+    np.testing.assert_allclose(
+        _axelera(cores=2, fn=_mlp)(x, w1, w2),
+        expected,
+        rtol=0,
+        atol=0.05 * np.abs(expected).max(),
     )
 
 

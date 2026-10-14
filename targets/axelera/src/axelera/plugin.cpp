@@ -5,6 +5,7 @@
 #include "docc/target/axelera/axelera_scheduler.h"
 #include "docc/target/axelera/datapath_dispatcher.h"
 #include "docc/target/axelera/matmul_mapping.h"
+#include "docc/target/axelera/matmul_node.h"
 #include "docc/target/axelera/schedule.h"
 #include "docc/target/axelera/tile_target.h"
 
@@ -65,6 +66,13 @@ void register_plugin(sdfg::plugins::Context& context) {
     context.get_tile_target_registry().register_target(
         sdfg::axelera::ScheduleType_Axelera::value(), std::make_shared<sdfg::axelera::AxeleraTileTarget>()
     );
+    auto& serializers = context.get_library_node_serializer_registry();
+    serializers.register_library_node_serializer(sdfg::axelera::LibraryNodeType_AxeleraMatMul.value(), []() {
+        return std::make_unique<sdfg::axelera::AxeleraMatMulNodeSerializer>();
+    });
+    serializers.register_library_node_serializer(sdfg::axelera::LibraryNodeType_AxeleraImcLoad.value(), []() {
+        return std::make_unique<sdfg::axelera::AxeleraImcLoadNodeSerializer>();
+    });
     context.add_target(&axelera_target);
 }
 
