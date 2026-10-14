@@ -86,6 +86,13 @@ public:
         return std::nullopt;
     }
 
+    /// Whether staging buffers of @p storage can be multi-buffered so that a loop prefetches its
+    /// next tile asynchronously while computing on the current one (SoftwarePipelining). Defaults
+    /// to the on-chip shared tier of a scratchpad target.
+    virtual bool supports_async_staging(const types::StorageType& storage) const {
+        return has_scratchpad() && storage == storage_type(Space::Shared);
+    }
+
     /// The implementation selector this target stamps onto its tile codegen library
     /// nodes (cp.async / vector copy / pipeline commit+wait) so the owning target's
     /// dispatcher is chosen at codegen. CUDA returns `"CUDA"`, ROCm `"ROCM"`; a

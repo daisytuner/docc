@@ -20,13 +20,14 @@ namespace transformations {
  *       wait_prior(stages-1); barrier
  *       compute from buf[p % stages]
  *
- * The shared buffer gains a leading `[stages]` axis indexed by `p % stages`.
- * The cooperative copy's @ref tiles::TileCopyNode has its atom flipped to cp.async
+ * The staged buffer gains a leading `[stages]` axis indexed by `p % stages`.
+ * The staging copy's @ref tiles::TileCopyNode has its atom flipped to cp.async
  * (its plan offset biased per stage) and gains a PipelineCommitNode; a
- * PipelineWaitNode fences each panel's reads. Only fires on CUDA (ROCm has no
- * portable cp.async), a compile-time-constant panel count >= @p stages, and a
- * genuinely block-cooperative shared tile — otherwise the extra buffer wastes
- * shared memory without overlap.
+ * PipelineWaitNode fences each panel's reads. Only fires inside a map whose tile
+ * target supports asynchronous staging of the copied-in buffers
+ * (@ref tiles::TileTarget::supports_async_staging; on GPUs the shared tier), on a
+ * compile-time-constant panel count >= @p stages; buffers written by the compute
+ * stay single-buffered.
  */
 class SoftwarePipelining : public Transformation {
     structured_control_flow::StructuredLoop& loop_;
