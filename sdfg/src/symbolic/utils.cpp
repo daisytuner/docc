@@ -1482,6 +1482,10 @@ ExpressionSet generate_constraints(SymbolSet& syms, const Assumptions& assums, S
     return constraints;
 }
 
+std::string expression_to_isl_str(const Expression expr) {
+    return isl_printer.apply(expr);
+}
+
 std::string constraint_to_isl_str(const Expression con) {
     if (SymEngine::is_a<SymEngine::StrictLessThan>(*con)) {
         auto le = SymEngine::rcp_static_cast<const SymEngine::StrictLessThan>(con);
