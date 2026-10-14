@@ -53,6 +53,7 @@ set(TEST_FILES
     passes/offloading/code_motion/block_sorting_test.cpp
     passes/offloading/data_transfer_minimization_pass_test.cpp
     passes/offloading/device_buffer_reuse_pass_test.cpp
+    passes/offloading/gpu_control_flow_offload_pass_test.cpp
     passes/offloading/gpu_nested_offload_pass_test.cpp
     analysis/data_dependency_tile_copy_test.cpp
     passes/tiling_pass_test.cpp

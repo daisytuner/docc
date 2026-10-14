@@ -42,23 +42,25 @@ struct ROCMTraits {
     }
 };
 
-template<typename S, typename T>
+template<typename S, typename T, bool OffloadsControlFlow>
 struct SchedulerCase {
     using Scheduler = S;
     using Traits = T;
+    static constexpr bool offloads_control_flow = OffloadsControlFlow;
 };
 
 using SchedulerCases = ::testing::Types<
-    SchedulerCase<passes::scheduler::CUDAScheduler, CUDATraits>,
-    SchedulerCase<passes::scheduler::CUDAOffloadScheduler, CUDATraits>,
-    SchedulerCase<passes::scheduler::ROCMScheduler, ROCMTraits>,
-    SchedulerCase<passes::scheduler::ROCMOffloadScheduler, ROCMTraits>>;
+    SchedulerCase<passes::scheduler::CUDAScheduler, CUDATraits, false>,
+    SchedulerCase<passes::scheduler::CUDAOffloadScheduler, CUDATraits, true>,
+    SchedulerCase<passes::scheduler::ROCMScheduler, ROCMTraits, false>,
+    SchedulerCase<passes::scheduler::ROCMOffloadScheduler, ROCMTraits, true>>;
 
 template<typename Case>
 class GPUPostScheduleTest : public ::testing::Test {
 protected:
     using Scheduler = typename Case::Scheduler;
     using Traits = typename Case::Traits;
+    static constexpr bool offloads_control_flow = Case::offloads_control_flow;
 
     builder::StructuredSDFGBuilder builder_{"post_schedule_test", FunctionType_CPU};
     Scheduler scheduler_;
@@ -136,7 +138,7 @@ TYPED_TEST(GPUPostScheduleTest, ExtractsLibraryNodeTransfersWithoutLoops) {
     EXPECT_EQ(this->builder_.subject().root().size(), 3);
 }
 
-TYPED_TEST(GPUPostScheduleTest, NoChangesWithoutLoopsOrLibraryNodes) {
+TYPED_TEST(GPUPostScheduleTest, RootBlockWithoutLoopsOrLibraryNodes) {
     auto& sdfg = this->builder_.subject();
     this->builder_.add_container("x", this->float_);
     this->builder_.add_container("y", this->float_);
@@ -147,8 +149,20 @@ TYPED_TEST(GPUPostScheduleTest, NoChangesWithoutLoopsOrLibraryNodes) {
     this->builder_.add_computational_memlet(block, x, tasklet, "_in", {}, this->float_);
     this->builder_.add_computational_memlet(block, tasklet, "_out", y, {}, this->float_);
 
-    EXPECT_FALSE(this->run_scheduling());
-    EXPECT_EQ(sdfg.root().size(), 1);
+    if constexpr (TestFixture::offloads_control_flow) {
+        // x and y are kernel locals, so the block is offloaded without transfers.
+        EXPECT_TRUE(this->run_scheduling());
+        ASSERT_EQ(sdfg.root().size(), 1);
+        auto* map = dynamic_cast<structured_control_flow::Map*>(&sdfg.root().at(0));
+        ASSERT_NE(map, nullptr);
+        EXPECT_EQ(map->schedule_type().category(), structured_control_flow::ScheduleTypeCategory::Offloader);
+        EXPECT_TRUE(symbolic::eq(map->num_iterations(), symbolic::one()));
+        ASSERT_EQ(map->root().size(), 1);
+        EXPECT_EQ(&map->root().at(0), &block);
+    } else {
+        EXPECT_FALSE(this->run_scheduling());
+        EXPECT_EQ(sdfg.root().size(), 1);
+    }
 }
 
 TYPED_TEST(GPUPostScheduleTest, ExtractsLibraryNodeTransfersWithOnlySkippedLoops) {

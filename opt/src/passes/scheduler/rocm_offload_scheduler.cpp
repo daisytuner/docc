@@ -2,6 +2,7 @@
 
 #include "sdfg/passes/dataflow/dead_data_elimination.h"
 #include "sdfg/passes/dataflow/memlet_simplification.h"
+#include "sdfg/passes/offloading/gpu_control_flow_offload_pass.h"
 #include "sdfg/passes/offloading/gpu_nested_offload_pass.h"
 #include "sdfg/passes/offloading/gpu_nested_parallelization_pass.h"
 #include "sdfg/passes/offloading/rocm_library_node_transfer_extraction_pass.h"
@@ -162,6 +163,10 @@ bool ROCMOffloadScheduler::post_schedule(
 
     rocm::RocmLibraryNodeTransferExtractionPass transfer_extraction_pass;
     changed |= transfer_extraction_pass.run(builder, analysis_manager);
+    analysis_manager.invalidate_all();
+
+    ROCMControlFlowOffloadPass control_flow_offload_pass;
+    changed |= control_flow_offload_pass.run(builder, analysis_manager);
     analysis_manager.invalidate_all();
     return changed;
 }

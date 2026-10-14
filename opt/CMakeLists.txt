@@ -74,6 +74,7 @@ set(SOURCE_FILES
     src/passes/offloading/data_transfer_minimization_pass.cpp
     src/passes/offloading/device_buffer_reuse_pass.cpp
     src/passes/offloading/device_resident_arg_promotion_pass.cpp
+    src/passes/offloading/gpu_control_flow_offload_pass.cpp
     src/passes/offloading/gpu_loop_reordering_pass.cpp
     src/passes/offloading/gpu_nested_offload_pass.cpp
     src/passes/offloading/reduction_shared_memory_delinearization.cpp
