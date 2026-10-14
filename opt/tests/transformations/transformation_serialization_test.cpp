@@ -29,6 +29,10 @@
 #include <sdfg/transformations/offloading/gpu_loop_reordering.h>
 #include <sdfg/transformations/omp_transform.h>
 
+#include <sdfg/targets/gpu/gpu_mma_einsum_transform.h>
+#include <sdfg/targets/gpu/gpu_mma_fragment.h>
+#include <sdfg/targets/rocm/rocm_arch.h>
+
 #ifdef DOCC_HAS_TARGET_TENSTORRENT
 #include <docc/target/tenstorrent/tenstorrent_transform.h>
 #endif
@@ -238,6 +242,36 @@ TEST(TransformationSerializationTest, OtherScheduleTransformationsShape) {
     auto tt_t2 = tenstorrent::TenstorrentTransform::from_json(f.builder, analysis_manager, jtt);
     ASSERT_EQ(tt_t2.name(), tt_t.name());
 #endif
+}
+
+TEST(TransformationSerializationTest, GpuMmaEinsumTransformRoundTripsAllProperties) {
+    LoopFixture f;
+
+    gpu::MmaBlockSize block_size{16, 16, 16};
+    gpu::BlockCounts wave_tile{2, 1};
+    gpu::GpuMmaEinsumTransform mma(*f.outer_map, &gpu::rocm::ROCM_ARCH_GFX1201, &block_size, &wave_tile);
+
+    nlohmann::json j;
+    mma.to_json(j);
+    ValidateSerialization(j, 1);
+
+    // Every hint must be captured in the serialized form.
+    EXPECT_EQ(j["transformation_type"], "GpuMmaEinsumTransform");
+    EXPECT_EQ(j["parameters"]["arch"], gpu::rocm::ROCM_ARCH_GFX1201.unique_id());
+    EXPECT_EQ(j["parameters"]["block_size"]["m"], block_size.m);
+    EXPECT_EQ(j["parameters"]["block_size"]["n"], block_size.n);
+    EXPECT_EQ(j["parameters"]["block_size"]["k"], block_size.k);
+    EXPECT_EQ(j["parameters"]["wave_tile"]["blocks_m"], wave_tile.blocks_m);
+    EXPECT_EQ(j["parameters"]["wave_tile"]["blocks_n"], wave_tile.blocks_n);
+
+    // Re-serializing the deserialized transform must reproduce byte-identical JSON, proving the
+    // round trip preserves the arch, block size, wave tiling and the anchored loop.
+    auto mma2 = gpu::GpuMmaEinsumTransform::from_json(f.builder, j);
+    ASSERT_EQ(mma2.name(), mma.name());
+
+    nlohmann::json j2;
+    mma2.to_json(j2);
+    EXPECT_EQ(j, j2);
 }
 
 } // namespace

@@ -17,7 +17,9 @@ public:
         const GpuArch* arch, const MmaBlockSize* block_size_hint = nullptr, const BlockCounts* wave_tile_hint = nullptr
     );
 
-    struct EinsumMmaAnalysis : public MatMulAnalysis {};
+    struct EinsumMmaAnalysis : public MatMulAnalysis {
+        types::PrimitiveType acc_type;
+    };
 
     bool analyze(const einsum::EinsumCluster& cluster, EinsumMmaAnalysis& result) const;
 
@@ -27,7 +29,7 @@ public:
     bool can_be_applied(const einsum::EinsumCluster& cluster) const override;
 
 protected:
-    bool matches_possible_mma_pattern(const MatMulAnalysis& analysis) const;
+    bool matches_possible_mma_pattern(EinsumMmaAnalysis& analysis) const;
 };
 
 class GpuMmaEinsumTransform : public transformations::Transformation {
@@ -73,6 +75,8 @@ public:
     void apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
 
     void to_json(nlohmann::json& j) const override;
+
+    static GpuMmaEinsumTransform from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& j);
 
     bool matched() const {
         return matched_;
