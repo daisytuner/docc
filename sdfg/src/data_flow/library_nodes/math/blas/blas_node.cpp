@@ -1,5 +1,8 @@
 #include "sdfg/data_flow/library_nodes/math/blas/blas_node.h"
 
+#include "sdfg/data_flow/access_node.h"
+#include "sdfg/data_flow/data_flow_graph.h"
+
 namespace sdfg::math::blas {
 
 BLASNode::BLASNode(
@@ -33,6 +36,19 @@ types::PrimitiveType BLASNode::scalar_primitive() const {
 BLAS_Precision BLASNode::precision() const {
     return this->precision_;
 };
+
+std::optional<double> BLASNode::constant_input(const std::string& conn) const {
+    auto* edge = this->get_parent().in_edge_for_connector(*this, conn);
+    auto* constant = edge ? dynamic_cast<const data_flow::ConstantNode*>(&edge->src()) : nullptr;
+    if (!constant) {
+        return std::nullopt;
+    }
+    try {
+        return std::stod(constant->data());
+    } catch (const std::exception&) {
+        return std::nullopt;
+    }
+}
 
 
 } // namespace sdfg::math::blas
