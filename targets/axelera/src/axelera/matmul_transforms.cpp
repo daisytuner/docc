@@ -9,6 +9,7 @@
 #include <sdfg/builder/structured_sdfg_builder.h>
 #include <sdfg/data_flow/access_node.h>
 #include <sdfg/data_flow/library_nodes/math/cmath/cmath_node.h>
+#include <sdfg/data_flow/library_nodes/math/tensor/copy_node.h>
 #include <sdfg/data_flow/tasklet.h>
 #include <sdfg/einsum/einsum_detection.h>
 #include <sdfg/einsum/einsum_replacer.h>
@@ -58,6 +59,13 @@ bool is_zero_constant(const data_flow::DataFlowNode& node) {
 bool is_dense(const math::tensor::TensorLayout& layout, int64_t rows, int64_t columns) {
     return layout.dims() == 2 && constant(layout.get_dim(0)) == rows && constant(layout.get_dim(1)) == columns &&
            constant(layout.get_stride(0)) == columns && constant(layout.get_stride(1)) == 1 &&
+           symbolic::eq(layout.offset(), symbolic::zero());
+}
+
+/// A @p rows x @p columns matrix stored transposed, as a dense row-major @p columns x @p rows matrix.
+bool is_dense_transposed(const math::tensor::TensorLayout& layout, int64_t rows, int64_t columns) {
+    return layout.dims() == 2 && constant(layout.get_dim(0)) == rows && constant(layout.get_dim(1)) == columns &&
+           constant(layout.get_stride(0)) == 1 && constant(layout.get_stride(1)) == rows &&
            symbolic::eq(layout.offset(), symbolic::zero());
 }
 
@@ -127,6 +135,7 @@ struct MvmMatch {
     const einsum::EinsumCluster* cluster = nullptr;
     einsum::Einsum2MatMul::MatMulAnalysis analysis;
     int64_t m = 0, n = 0, k = 0, k_panel = 0, cores = 1;
+    bool b_transposed = false;
     structured_control_flow::ControlFlowNode* zero_init = nullptr;
 };
 
@@ -154,10 +163,11 @@ std::optional<MvmMatch> match_mvm(structured_control_flow::StructuredLoop& loop,
             continue;
         }
         auto panel = k_panel == 0 ? largest_panel(*k) : k_panel;
+        bool b_transposed = is_dense_transposed(*analysis.layout_b, *k, *n);
         // The MVM works on whole PWORDs of the reduction and the result rows.
         if (*n % PWORD_LANES != 0 || panel % PWORD_LANES != 0 || panel > MAX_MVM_REDUCTION || *k % panel != 0 ||
-            *m % cores != 0 || !is_dense(*analysis.layout_a, *m, *k) || !is_dense(*analysis.layout_b, *k, *n) ||
-            !is_dense(*analysis.layout_y, *m, *n)) {
+            *m % cores != 0 || !is_dense(*analysis.layout_a, *m, *k) ||
+            !(b_transposed || is_dense(*analysis.layout_b, *k, *n)) || !is_dense(*analysis.layout_y, *m, *n)) {
             continue;
         }
         auto& before = parent->at(parent->index(loop) - 1);
@@ -171,6 +181,7 @@ std::optional<MvmMatch> match_mvm(structured_control_flow::StructuredLoop& loop,
         match.k = *k;
         match.k_panel = panel;
         match.cores = cores;
+        match.b_transposed = b_transposed;
         match.zero_init = &before;
         return std::optional<MvmMatch>(std::move(match));
     }
@@ -355,6 +366,21 @@ class QuantizedMvmBuilder {
         return quantized;
     }
 
+    /// Copies the int8 @p rows x @p columns matrix that @p source stores transposed into row-major order.
+    std::string transpose(const std::string& source, int64_t rows, int64_t columns) {
+        auto target = container(source + "_t", types::Pointer(i8_));
+        auto r = symbolic::integer(rows);
+        auto c = symbolic::integer(columns);
+        math::tensor::TensorLayout layout_x({r, c}, {symbolic::one(), r}, symbolic::zero());
+        math::tensor::TensorLayout layout_y({r, c}, {c, symbolic::one()}, symbolic::zero());
+        auto& block = builder_.add_block(sequence_, {}, debug_info_);
+        auto& copy = builder_.add_library_node<math::tensor::TensorCopyNode>(block, debug_info_, layout_x, layout_y);
+        types::Pointer i8_pointer(i8_);
+        builder_.add_computational_memlet(block, scalar(block, source), copy, "X", {}, i8_pointer, debug_info_);
+        builder_.add_computational_memlet(block, scalar(block, target), copy, "Y", {}, i8_pointer, debug_info_);
+        return target;
+    }
+
     /// `T[i, :] = A[i, :] @ B` on the MVM, each AI core multiplying a block of rows, in panels of the reduction.
     structured_control_flow::StructuredLoop&
     multiply(const std::string& a, const std::string& b, const std::string& products) {
@@ -468,6 +494,9 @@ public:
         auto a_int8 = quantize(a, absmax_a, match_.m * match_.k);
         auto absmax_b = absmax(b, match_.k * match_.n);
         auto b_int8 = quantize(b, absmax_b, match_.k * match_.n);
+        if (match_.b_transposed) {
+            b_int8 = transpose(b_int8, match_.k, match_.n);
+        }
         auto products = container(operand_name(c) + "_products", types::Pointer(f32_));
         auto& rows = multiply(a_int8, b_int8, products);
         dequantize(products, absmax_a, absmax_b, c);

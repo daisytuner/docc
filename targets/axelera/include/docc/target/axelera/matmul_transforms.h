@@ -10,7 +10,8 @@ namespace axelera {
  * Runs the float matmul C = A @ B that einsum detection finds in the loop nest @p loop on the MVM, which multiplies
  * int8 matrices: absmax reductions scale A and B per tensor, maps quantize them to int8, one AI core multiplies each
  * row of A with B (an @ref AxeleraMatMulNode per row), and a map scales the products back into C. A, B and C must
- * be dense row-major and C zero-initialized by the loop nest right before @p loop, as GEMM and MatMul expand.
+ * be dense row-major and C zero-initialized by the loop nest right before @p loop, as GEMM and MatMul expand. B may
+ * also be stored transposed, as nn.Linear's weights are; a tensor copy then transposes its int8 form for the MVM.
  * With a @p k_panel smaller than K, the reduction runs in panels of that many rows of B, each loaded into the IMC in
  * turn; the first panel's products overwrite, the later ones accumulate. With several @p cores, each multiplies a
  * contiguous block of rows of A against its own IMC copy of B. Tiling and staging the row loop are left to further

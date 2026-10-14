@@ -222,6 +222,32 @@ def test_axscript_mlp():
     )
 
 
+@requires_alto
+def test_axscript_torch_linear_mlp():
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("docc.pytorch")
+    torch.manual_seed(0)
+    # nn.Linear stores its weights (out, in); the MVM gets them transposed.
+    model = torch.nn.Sequential(
+        torch.nn.Linear(128, 128, bias=False),
+        torch.nn.ReLU(),
+        torch.nn.Linear(128, 128, bias=False),
+    ).eval()
+    x = torch.randn(128, 128)
+    options = {
+        "target": "axelera",
+        "codegen": "axscript",
+        "symbolic_shapes": False,
+        "axelera.num_cores": 2,
+    }
+    with torch.no_grad():
+        out = torch.compile(model, backend="docc", options=options)(x)
+        expected = model(x)
+    np.testing.assert_allclose(
+        out.numpy(), expected.numpy(), rtol=0, atol=0.05 * expected.abs().max().item()
+    )
+
+
 def test_axscript_requires_alto(monkeypatch):
     monkeypatch.delenv("DOCC_AXELERA_PYTHON", raising=False)
     with pytest.raises(RuntimeError, match="DOCC_AXELERA_PYTHON"):

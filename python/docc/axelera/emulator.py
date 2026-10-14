@@ -97,8 +97,17 @@ def _matmul(
     np.copyto(output, result.reshape(output.shape).astype(output.dtype))
 
 
+def _vector_transpose(input, dim0=0, dim1=1, output=None, **kwargs):  # noqa: A002
+    if (dim0, dim1) != (0, 1):
+        raise NotImplementedError("vector_transpose of dimensions other than (0, 1)")
+    matrix = input.reshape(input.shape[0], -1)
+    np.copyto(output, matrix.T.reshape(output.shape))
+
+
 # The axol operators docc emits, as `from axelera.compiler.alto.axol import atomic` sees them.
-atomic = types.SimpleNamespace(copy=_copy, load_imc=_load_imc, matmul=_matmul)
+atomic = types.SimpleNamespace(
+    copy=_copy, load_imc=_load_imc, matmul=_matmul, vector_transpose=_vector_transpose
+)
 
 
 def waits(*ids):

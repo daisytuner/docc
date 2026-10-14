@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <optional>
 #include <set>
 #include <vector>
 
@@ -33,6 +34,18 @@ struct MatrixArgument {
 
 /// Pointer arguments that tile copies address as matrices, with the extent the copies reach over all iterations.
 std::map<std::string, MatrixArgument> matrix_arguments(StructuredSDFG& sdfg);
+
+/// A @ref math::tensor::TensorCopyNode writing the `rows x columns` matrix that @ref source stores transposed
+/// (`columns x rows`, row-major) into @ref target in row-major order.
+struct Transpose {
+    std::string source;
+    std::string target;
+    int64_t rows;
+    int64_t columns;
+};
+
+/// The transpose @p block consists of, if it is one.
+std::optional<Transpose> transpose_of(structured_control_flow::Block& block);
 
 /**
  * Emits an AI-core region holding explicit memory management: L1 and IMC allocations, serial tile loops, DMA copies

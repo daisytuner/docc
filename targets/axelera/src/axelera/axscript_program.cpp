@@ -4,6 +4,7 @@
 #include <iterator>
 
 #include <sdfg/data_flow/access_node.h>
+#include <sdfg/data_flow/library_nodes/math/tensor/copy_node.h>
 #include <sdfg/structured_control_flow/block.h>
 #include <sdfg/tiles/library_nodes/pipeline_node.h>
 #include <sdfg/tiles/library_nodes/tile_copy_node.h>
@@ -173,6 +174,12 @@ bool is_program(structured_control_flow::StructuredLoop& loop) {
 std::map<std::string, MatrixArgument> matrix_arguments(StructuredSDFG& sdfg) {
     std::map<std::string, MatrixArgument> matrices;
     visitor::for_each_block(sdfg.root(), [&](structured_control_flow::Block& block) {
+        if (auto transpose = transpose_of(block)) {
+            auto elements = transpose->rows * transpose->columns;
+            matrices[transpose->source] = {transpose->rows, elements};
+            matrices[transpose->target] = {transpose->columns, elements};
+            return;
+        }
         for (auto* node : block.dataflow().library_nodes()) {
             auto copy = dynamic_cast<const tiles::TileCopyNode*>(node);
             if (!copy) {
@@ -230,6 +237,31 @@ std::map<std::string, MatrixArgument> matrix_arguments(StructuredSDFG& sdfg) {
         }
     });
     return matrices;
+}
+
+std::optional<Transpose> transpose_of(structured_control_flow::Block& block) {
+    auto nodes = block.dataflow().library_nodes();
+    auto copy = nodes.size() == 1 ? dynamic_cast<const math::tensor::TensorCopyNode*>(*nodes.begin()) : nullptr;
+    if (!copy) {
+        return std::nullopt;
+    }
+    auto& x = copy->layout_x();
+    auto& y = copy->layout_y();
+    auto is = [](const symbolic::Expression& expr, const symbolic::Expression& value) {
+        return symbolic::eq(expr, value);
+    };
+    if (x.dims() != 2 || y.dims() != 2 || !is(x.get_dim(0), y.get_dim(0)) || !is(x.get_dim(1), y.get_dim(1)) ||
+        !is(x.get_stride(0), symbolic::one()) || !is(x.get_stride(1), x.get_dim(0)) ||
+        !is(y.get_stride(0), y.get_dim(1)) || !is(y.get_stride(1), symbolic::one()) ||
+        !is(x.offset(), symbolic::zero()) || !is(y.offset(), symbolic::zero())) {
+        return std::nullopt;
+    }
+    return Transpose{
+        operand(block, *copy, "X"),
+        operand(block, *copy, "Y"),
+        as_int(x.get_dim(0), "the transposed rows"),
+        as_int(x.get_dim(1), "the transposed columns")
+    };
 }
 
 ProgramEmitter::ProgramEmitter(

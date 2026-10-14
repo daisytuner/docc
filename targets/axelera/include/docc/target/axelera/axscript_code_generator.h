@@ -33,7 +33,8 @@ private:
     };
 
     AxScriptLanguageExtension language_extension_;
-    std::vector<structured_control_flow::StructuredLoop*> datapaths_;
+    /// Datapath loops, AI-core programs and transposing copies, in program order.
+    std::vector<structured_control_flow::ControlFlowNode*> datapaths_;
     std::vector<Buffer> buffers_;
     std::set<std::string> reduction_results_;
     int64_t num_cores_ = 1;
@@ -43,6 +44,9 @@ private:
     void collect_datapaths();
 
     void collect_buffers();
+
+    /// A transposing tensor copy as a DWPU vector transpose, split over the AI cores.
+    void emit_transpose(codegen::PrettyPrinter& out, structured_control_flow::Block& block) const;
 
     std::string buffer_type(const Buffer& buffer) const;
 

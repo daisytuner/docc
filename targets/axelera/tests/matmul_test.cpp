@@ -5,6 +5,7 @@
 
 #include <sdfg/builder/structured_sdfg_builder.h>
 #include <sdfg/data_flow/library_nodes/math/blas/gemm_node.h>
+#include <sdfg/data_flow/library_nodes/math/tensor/copy_node.h>
 #include <sdfg/data_flow/library_nodes/stdlib/free.h>
 #include <sdfg/data_flow/library_nodes/stdlib/malloc.h>
 #include <sdfg/data_flow/tasklet.h>
@@ -38,7 +39,8 @@ struct MatMulNest {
     structured_control_flow::StructuredLoop* tiles = nullptr;
 };
 
-/// A GEMM node in @p block computing @p c = a @ b + beta * @p c for float a (m x k), b (k x n).
+/// A GEMM node in @p block computing @p c = a @ b + beta * @p c for float a (m x k), b (k x n); b is stored as its
+/// transpose (n x k) if @p b_transposed, as nn.Linear stores its weights.
 data_flow::LibraryNode& add_gemm(
     builder::StructuredSDFGBuilder& builder,
     structured_control_flow::Block& block,
@@ -46,7 +48,8 @@ data_flow::LibraryNode& add_gemm(
     int64_t n,
     int64_t k,
     const std::string& c,
-    const std::string& beta
+    const std::string& beta,
+    bool b_transposed = false
 ) {
     types::Scalar f32(types::PrimitiveType::Float);
     types::Pointer f32_pointer(f32);
@@ -57,12 +60,12 @@ data_flow::LibraryNode& add_gemm(
         math::blas::BLAS_Precision::s,
         math::blas::BLAS_Layout::RowMajor,
         math::blas::BLAS_Transpose::No,
-        math::blas::BLAS_Transpose::No,
+        b_transposed ? math::blas::BLAS_Transpose::Trans : math::blas::BLAS_Transpose::No,
         symbolic::integer(m),
         symbolic::integer(n),
         symbolic::integer(k),
         symbolic::integer(k),
-        symbolic::integer(n),
+        symbolic::integer(b_transposed ? k : n),
         symbolic::integer(n)
     );
     builder.add_computational_memlet(block, builder.add_access(block, "a"), gemm, "__A", {}, f32_pointer);
@@ -75,14 +78,14 @@ data_flow::LibraryNode& add_gemm(
 
 /// c = a @ b for float a (m x k), b (k x n), as the Python frontend's `@` emits it: a GEMM node, expanded into a
 /// zero-initialization nest and an accumulation nest.
-MatMulNest float_matmul(int64_t m, int64_t n, int64_t k, const std::string& beta = "0.0") {
+MatMulNest float_matmul(int64_t m, int64_t n, int64_t k, const std::string& beta = "0.0", bool b_transposed = false) {
     builder::StructuredSDFGBuilder builder("mm", FunctionType_CPU);
     types::Pointer f32_pointer{types::Scalar(types::PrimitiveType::Float)};
     for (auto name : {"a", "b", "c"}) {
         builder.add_container(name, f32_pointer, true);
     }
     auto& block = builder.add_block(builder.subject().root());
-    auto& gemm = add_gemm(builder, block, m, n, k, "c", beta);
+    auto& gemm = add_gemm(builder, block, m, n, k, "c", beta, b_transposed);
     builder.add_return(builder.subject().root(), "");
 
     EXPECT_TRUE(passes::expansion::expand_single_math_node(builder, block, gemm).expanded);
@@ -298,6 +301,37 @@ TEST(AxeleraMatMulTest, RequiresZeroInitializedResult) {
     analysis::AnalysisManager analysis_manager(*nest.sdfg);
     axelera::MvmEinsumTransform mvm(accumulation(*nest.sdfg));
     EXPECT_FALSE(mvm.can_be_applied(builder, analysis_manager));
+}
+
+TEST(AxeleraMatMulTest, TransposesWeightsStoredTransposed) {
+    auto nest = float_matmul(128, 192, 128, "0.0", true);
+    lower_to_mvm(nest);
+    auto& sdfg = *nest.sdfg;
+    sdfg.validate();
+
+    // b (192 x 128) quantizes in its storage order; a tensor copy reads it as its 128 x 192 transpose.
+    const math::tensor::TensorCopyNode* copy = nullptr;
+    std::string source, target;
+    visitor::for_each_block(sdfg.root(), [&](structured_control_flow::Block& block) {
+        for (auto* node : block.dataflow().library_nodes()) {
+            if (auto found = dynamic_cast<const math::tensor::TensorCopyNode*>(node)) {
+                copy = found;
+                for (auto& memlet : block.dataflow().in_edges(*node)) {
+                    auto& name = static_cast<const data_flow::AccessNode&>(memlet.src()).data();
+                    (memlet.dst_conn() == "X" ? source : target) = name;
+                }
+            }
+        }
+    });
+    ASSERT_NE(copy, nullptr);
+    EXPECT_EQ(source, "b_int80");
+    EXPECT_EQ(target, mvm_operand(*nest.rows, "B").data());
+    auto layout = [](const math::tensor::TensorLayout& layout) {
+        return layout.get_dim(0)->__str__() + "x" + layout.get_dim(1)->__str__() + " strides " +
+               layout.get_stride(0)->__str__() + "," + layout.get_stride(1)->__str__();
+    };
+    EXPECT_EQ(layout(copy->layout_x()), "128x192 strides 1,128");
+    EXPECT_EQ(layout(copy->layout_y()), "128x192 strides 192,1");
 }
 
 TEST(AxeleraMatMulTest, SplitsTheReductionIntoPanels) {
@@ -777,4 +811,31 @@ TEST(AxeleraMatMulTest, StagedMatMulRoundTripsThroughJson) {
     auto copy = serializer::JSONSerializer().deserialize(json);
     copy->validate();
     EXPECT_EQ(axscript_of(*copy), axscript_of(*nest.sdfg));
+}
+
+TEST(AxeleraMatMulTest, GeneratesTransposeOfWeightsStoredTransposed) {
+    auto nest = float_matmul(128, 192, 128, "0.0", true);
+    stage_matmul(nest, 32);
+    auto code = axscript_of(*nest.sdfg);
+    for (auto expected : {
+             "        b_int80 = A.alloc_buffer((192, 2), \"int8x64\", scope=A.DDR)\n",
+             "        b_int80_t0 = A.alloc_buffer((128, 3), \"int8x64\", scope=A.DDR)\n",
+             "        atomic.vector_transpose(b_int80, dim0=0, dim1=1, output=b_int80_t0)\n",
+         }) {
+        EXPECT_NE(code.find(expected), std::string::npos) << expected << code;
+    }
+}
+
+TEST(AxeleraMatMulTest, SplitsTheTransposeOverCores) {
+    auto nest = float_matmul(128, 192, 128, "0.0", true);
+    stage_matmul(nest, 32, 0, 2);
+    auto code = axscript_of(*nest.sdfg, 2);
+    // Each core turns one PWORD column of the stored weights into 64 rows of the transposed ones.
+    EXPECT_NE(
+        code.find(R"(        with A.AICore(core=1):
+            atomic.vector_transpose(b_int80[A.Ramp(0, 1, 192), A.Ramp(1, 1, 1)], dim0=0, dim1=1, output=b_int80_t0[A.Ramp(64, 1, 64), A.Ramp(0, 1, 3)])
+            A.barrier(0, 1)
+)"),
+        std::string::npos
+    ) << code;
 }

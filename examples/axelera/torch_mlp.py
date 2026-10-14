@@ -1,8 +1,8 @@
 """A two-layer MLP in PyTorch, compiled for Axelera Europa through torch.compile.
 
-The docc backend exports the model, runs both matmuls on the MVM and the ReLU on DPU datapaths, compiles the
-generated AxScript with alto, and runs it on docc's AxScript emulator. The weights are stored (in, out) and applied
-as `x @ w`, since the transposed weights of nn.Linear do not map onto the MVM yet.
+The docc backend exports the model, runs both linear layers on the MVM (their (out, in) weights transposed by the
+DWPU after quantization) and the ReLU on DPU datapaths, compiles the generated AxScript with alto, and runs it on
+docc's AxScript emulator. The layers have no bias, since adding a bias row does not map onto datapaths yet.
 
     DOCC_AXELERA_PYTHON=/path/to/axelera-sdk/bin/python python examples/axelera/torch_mlp.py
 """
@@ -15,14 +15,12 @@ import torch
 import docc.pytorch  # noqa: F401 (registers the "docc" backend)
 
 
-class MLP(torch.nn.Module):
-    def __init__(self, features):
-        super().__init__()
-        self.w1 = torch.nn.Parameter(torch.randn(features, features) / features**0.5)
-        self.w2 = torch.nn.Parameter(torch.randn(features, features) / features**0.5)
-
-    def forward(self, x):
-        return torch.relu(x @ self.w1) @ self.w2
+def mlp(features):
+    return torch.nn.Sequential(
+        torch.nn.Linear(features, features, bias=False),
+        torch.nn.ReLU(),
+        torch.nn.Linear(features, features, bias=False),
+    )
 
 
 def main(cores=2, size=128):
@@ -32,7 +30,7 @@ def main(cores=2, size=128):
         )
 
     torch.manual_seed(0)
-    model = MLP(size).eval()
+    model = mlp(size).eval()
     x = torch.randn(size, size)
 
     options = {

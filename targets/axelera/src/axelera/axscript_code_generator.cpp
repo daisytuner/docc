@@ -113,6 +113,10 @@ void AxScriptCodeGenerator::collect_datapaths() {
     auto cores = analysis_manager_.options().get(NUM_CORES, int64_t{1});
     std::unordered_set<size_t> fused;
     for (size_t i = 0; i < root.size(); ++i) {
+        if (auto block = dynamic_cast<structured_control_flow::Block*>(&root.at(i)); block && transpose_of(*block)) {
+            datapaths_.push_back(block);
+            continue;
+        }
         auto loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&root.at(i));
         if (!loop) {
             continue;
@@ -148,7 +152,8 @@ void AxScriptCodeGenerator::collect_datapaths() {
             continue;
         }
         if (auto block = dynamic_cast<structured_control_flow::Block*>(&child);
-            block && (std::ranges::empty(block->dataflow().nodes()) || manages_transients(sdfg_, *block))) {
+            block && (std::ranges::empty(block->dataflow().nodes()) || manages_transients(sdfg_, *block) ||
+                      transpose_of(*block))) {
             continue;
         }
         if (auto assignments = dynamic_cast<structured_control_flow::AssignmentBlock*>(&child);
@@ -297,7 +302,13 @@ bool AxScriptCodeGenerator::generate() {
 
     // Datapaths register the constants they read, which must be allocated before them.
     codegen::PrettyPrinter datapaths(this->main_stream_.indent());
-    for (auto* datapath : datapaths_) {
+    for (auto* step : datapaths_) {
+        if (auto block = dynamic_cast<structured_control_flow::Block*>(step)) {
+            emit_transpose(datapaths, *block);
+            uses_operators_ = true;
+            continue;
+        }
+        auto datapath = static_cast<structured_control_flow::StructuredLoop*>(step);
         if (is_program(*datapath)) {
             auto cores = dynamic_cast<structured_control_flow::Map*>(datapath);
             if (!cores) {
@@ -332,6 +343,49 @@ bool AxScriptCodeGenerator::generate() {
     this->main_stream_ << "A.output(" << join(outputs) << ")" << std::endl;
     this->main_stream_.changeIndent(-8);
     return true;
+}
+
+void AxScriptCodeGenerator::emit_transpose(codegen::PrettyPrinter& out, structured_control_flow::Block& block) const {
+    auto transpose = *transpose_of(block);
+    auto lanes = static_cast<int64_t>(PWORD_LANES);
+    auto pointer = dynamic_cast<const types::Pointer*>(&sdfg_.type(transpose.source));
+    if (!pointer || !pointer->has_pointee_type() ||
+        pointer->pointee_type().primitive_type() != types::PrimitiveType::Int8 || transpose.rows % lanes != 0 ||
+        transpose.columns % lanes != 0) {
+        unsupported("transposing " + transpose.source + " other than as an int8 matrix of whole PWORDs");
+    }
+    auto call = [&](const std::string& source, const std::string& target) {
+        out << "atomic.vector_transpose(" << source << ", dim0=0, dim1=1, output=" << target << ")" << std::endl;
+    };
+    if (num_cores_ == 1) {
+        call(transpose.source, transpose.target);
+        return;
+    }
+    // Each core turns a block of the source's PWORD columns into rows of the target, or core 0 does all of them.
+    auto pwords = transpose.rows / lanes;
+    auto share = pwords % num_cores_ == 0 ? pwords / num_cores_ : 0;
+    std::vector<std::string> cores;
+    for (int64_t core = 0; core < num_cores_; ++core) {
+        cores.push_back(std::to_string(core));
+    }
+    auto ramp = [](int64_t base, int64_t count) {
+        return "A.Ramp(" + std::to_string(base) + ", 1, " + std::to_string(count) + ")";
+    };
+    for (int64_t core = 0; core < num_cores_; ++core) {
+        out << "with A.AICore(core=" << core << "):" << std::endl;
+        out.changeIndent(+4);
+        if (share != 0) {
+            call(
+                transpose.source + "[" + ramp(0, transpose.columns) + ", " + ramp(core * share, share) + "]",
+                transpose.target + "[" + ramp(core * share * lanes, share * lanes) + ", " +
+                    ramp(0, transpose.columns / lanes) + "]"
+            );
+        } else if (core == 0) {
+            call(transpose.source, transpose.target);
+        }
+        out << "A.barrier(" << join(cores) << ")" << std::endl;
+        out.changeIndent(-4);
+    }
 }
 
 std::string AxScriptCodeGenerator::function_definition() {
