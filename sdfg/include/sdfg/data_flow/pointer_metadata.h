@@ -218,7 +218,8 @@ public:
     static PointerAccessType create_read_only(
         const symbolic::Expression& size,
         bool no_capture,
-        std::optional<math::tensor::TensorLayout> layout = std::nullopt
+        std::optional<math::tensor::TensorLayout> layout = std::nullopt,
+        bool every_element_read = false
     );
     static PointerAccessType create_invalidate();
     static PointerAccessType create_full_write_only(

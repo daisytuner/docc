@@ -77,11 +77,14 @@ PointerAccessType PointerAccessMeta::ref() const {
 }
 
 PointerAccessType PointerAccessMeta::create_read_only(
-    const symbolic::Expression& size, bool no_capture, std::optional<math::tensor::TensorLayout> layout
+    const symbolic::Expression& size,
+    bool no_capture,
+    std::optional<math::tensor::TensorLayout> layout,
+    bool every_element_read
 ) {
     return std::unique_ptr<
         PointerAccessMeta,
-        PtrAccessDeleter>(new PointerReadOnly(build_pattern(size, std::move(layout), false), no_capture));
+        PtrAccessDeleter>(new PointerReadOnly(build_pattern(size, std::move(layout), every_element_read), no_capture));
 }
 
 PointerAccessType PointerAccessMeta::create_invalidate() {

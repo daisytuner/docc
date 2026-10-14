@@ -870,4 +870,64 @@ TEST(BlasTest, GemmNode_ConsumedLayout) {
     EXPECT_TRUE(symbolic::eq(a_t_read->layout()->get_stride(1), symbolic::integer(lda)));
 }
 
+// BLAS references A and B only if alpha is not 0, and reads C only if beta is not 0.
+TEST(BlasTest, GemmNode_ScalarsDecideWhichOperandsAreRead) {
+    builder::StructuredSDFGBuilder builder("gemm_scalars", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    types::Scalar f32(types::PrimitiveType::Float);
+    types::Pointer f32_pointer(f32);
+    for (auto name : {"a", "b", "c"}) {
+        builder.add_container(name, f32_pointer, true);
+    }
+    builder.add_container("beta", f32, true);
+
+    auto gemm = [&](const std::string& alpha, const std::string& beta) -> math::blas::GEMMNode& {
+        auto& block = builder.add_block(sdfg.root());
+        auto& node = static_cast<math::blas::GEMMNode&>(builder.add_library_node<math::blas::GEMMNode>(
+            block,
+            DebugInfo(),
+            data_flow::ImplementationType_NONE,
+            math::blas::BLAS_Precision::s,
+            math::blas::BLAS_Layout::RowMajor,
+            math::blas::BLAS_Transpose::No,
+            math::blas::BLAS_Transpose::No,
+            symbolic::integer(4),
+            symbolic::integer(6),
+            symbolic::integer(8),
+            symbolic::integer(8),
+            symbolic::integer(6),
+            symbolic::integer(6)
+        ));
+        builder.add_computational_memlet(block, builder.add_access(block, "a"), node, "__A", {}, f32_pointer);
+        builder.add_computational_memlet(block, builder.add_access(block, "b"), node, "__B", {}, f32_pointer);
+        builder.add_computational_memlet(block, builder.add_access(block, "c"), node, "__C", {}, f32_pointer);
+        builder.add_computational_memlet(block, builder.add_constant(block, alpha, f32), node, "__alpha", {}, f32);
+        data_flow::AccessNode& beta_node = beta == "beta" ? builder.add_access(block, beta)
+                                                          : builder.add_constant(block, beta, f32);
+        builder.add_computational_memlet(block, beta_node, node, "__beta", {}, f32);
+        return node;
+    };
+
+    auto& overwrite = gemm("1.0", "0.0");
+    auto a = overwrite.pointer_access_type(math::blas::GEMMNode::A_INPUT_IDX);
+    EXPECT_TRUE(a->access_read_pattern()->every_element_accessed());
+    auto c = overwrite.pointer_access_type(math::blas::GEMMNode::C_INPUT_IDX);
+    EXPECT_FALSE(c->may_contain_reads());
+    EXPECT_TRUE(c->access_write_pattern()->every_element_accessed());
+
+    auto& accumulate = gemm("1.0", "1.0");
+    c = accumulate.pointer_access_type(math::blas::GEMMNode::C_INPUT_IDX);
+    ASSERT_TRUE(c->may_contain_reads());
+    EXPECT_TRUE(c->access_read_pattern()->every_element_accessed());
+    EXPECT_TRUE(c->access_write_pattern()->every_element_accessed());
+
+    auto& unknown = gemm("0.0", "beta");
+    a = unknown.pointer_access_type(math::blas::GEMMNode::A_INPUT_IDX);
+    EXPECT_FALSE(a->access_read_pattern()->every_element_accessed());
+    c = unknown.pointer_access_type(math::blas::GEMMNode::C_INPUT_IDX);
+    ASSERT_TRUE(c->may_contain_reads());
+    EXPECT_FALSE(c->access_read_pattern()->every_element_accessed());
+    EXPECT_TRUE(c->access_write_pattern()->every_element_accessed());
+}
+
 } // namespace
