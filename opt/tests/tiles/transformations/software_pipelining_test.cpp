@@ -354,6 +354,58 @@ TEST(SoftwarePipeliningTest, VectorizeRejectsNonContiguousSource) {
     EXPECT_EQ(count_bytes(map_body, 4), 2u);
 }
 
+// CUDA cp.async moves at least 4 bytes: a 2-byte copy goes async only if TileVectorizer can widen
+// it. Each async load counts as one per-lane load in the wait, even below a word.
+TEST(SoftwarePipeliningTest, NarrowCopyGoesAsyncOnlyIfWidenable) {
+    for (long src_stride : {1L, 2L}) {
+        builder::StructuredSDFGBuilder builder("sp", FunctionType_CPU);
+        auto& kloop = build(builder, /*K=*/4, /*shared=*/true, src_stride);
+        tiles::TileCopyNode* copy = nullptr;
+        for (auto& dn : static_cast<structured_control_flow::Block&>(kloop.root().at(0)).dataflow().nodes()) {
+            if (auto* tc = dynamic_cast<tiles::TileCopyNode*>(&dn)) {
+                copy = tc;
+            }
+        }
+        ASSERT_NE(copy, nullptr);
+        copy->set_bytes(2);
+
+        auto& sdfg = builder.subject();
+        analysis::AnalysisManager am(sdfg);
+        transformations::SoftwarePipelining sp(kloop, 2, /*single_operand=*/false);
+        ASSERT_TRUE(sp.can_be_applied(builder, am));
+        sp.apply(builder, am);
+
+        auto& map_body = static_cast<structured_control_flow::Sequence&>(*kloop.get_parent());
+        EXPECT_EQ(count_cp_async(map_body), src_stride == 1 ? 2u : 0u) << "src_stride=" << src_stride;
+        if (src_stride == 1) {
+            size_t waits = 0;
+            std::function<void(structured_control_flow::ControlFlowNode&)> scan =
+                [&](structured_control_flow::ControlFlowNode& node) {
+                    if (auto* b = dynamic_cast<structured_control_flow::Block*>(&node)) {
+                        for (auto& dn : b->dataflow().nodes()) {
+                            if (auto* w = dynamic_cast<tiles::PipelineWaitNode*>(&dn)) {
+                                ++waits;
+                                EXPECT_EQ(w->loads_per_group(), 1u);
+                            }
+                        }
+                    } else if (auto* ie = dynamic_cast<structured_control_flow::IfElse*>(&node)) {
+                        for (size_t i = 0; i < ie->size(); i++) {
+                            scan(ie->at(i).first);
+                        }
+                    } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&node)) {
+                        for (size_t i = 0; i < seq->size(); i++) {
+                            scan(seq->at(i));
+                        }
+                    } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&node)) {
+                        scan(loop->root());
+                    }
+                };
+            scan(map_body);
+            EXPECT_EQ(waits, 2u);
+        }
+    }
+}
+
 TEST(SoftwarePipeliningTest, CanBeApplied) {
     builder::StructuredSDFGBuilder builder("sp", FunctionType_CPU);
     auto& kloop = build(builder, /*K=*/4);

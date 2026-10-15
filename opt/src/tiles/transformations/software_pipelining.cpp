@@ -313,7 +313,7 @@ std::optional<size_t> stage_words(const tiles::TileCopyNode& tc, size_t elem_byt
     };
     const long long scalar = ceil_div(n, t);
     const long long vec = 4 * ceil_div(n * static_cast<long long>(elem_bytes), 16 * t);
-    const long long transpose = 8 * ceil_div(n, 16 * t);
+    const long long transpose = 4 * static_cast<long long>(elem_bytes) * ceil_div(n, 16 * t);
     return static_cast<size_t>(std::max({scalar, vec, transpose}));
 }
 
@@ -719,7 +719,16 @@ void SoftwarePipelining::apply(builder::StructuredSDFGBuilder& builder, analysis
     visitor::for_each_block(body, collect);
     for (auto* b : copy_blocks) {
         if (auto* tc = tile_copy_node_in(*b)) {
-            tc->set_atom(tiles::CopyAtom::CpAsync);
+            // An async transfer cannot transpose. A narrow copy goes async only if TileVectorizer can
+            // later widen it (unit-stride inner dim on both sides, unswizzled); otherwise it stays sync.
+            const auto& plan = tc->plan();
+            const bool widenable = plan.src.dims() > 0 && plan.dst_swizzle.is_identity() &&
+                                   symbolic::eq(plan.src.strides().back(), symbolic::one()) &&
+                                   symbolic::eq(plan.dst.strides().back(), symbolic::one());
+            if (tc->atom() != tiles::CopyAtom::TransposeSync &&
+                (tc->bytes() >= target->min_async_bytes() || widenable)) {
+                tc->set_atom(tiles::CopyAtom::CpAsync);
+            }
         }
     }
 
@@ -735,7 +744,7 @@ void SoftwarePipelining::apply(builder::StructuredSDFGBuilder& builder, analysis
         for (auto& node : b.dataflow().nodes()) {
             if (auto* tc = dynamic_cast<tiles::TileCopyNode*>(&node)) {
                 if (tc->atom() == tiles::CopyAtom::CpAsync) {
-                    loads_per_group += tc->bytes() / 4;
+                    loads_per_group += (tc->bytes() + 3) / 4;
                 }
             }
         }

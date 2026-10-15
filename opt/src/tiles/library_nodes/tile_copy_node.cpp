@@ -351,9 +351,10 @@ const char* int_type(size_t bytes) {
 }
 
 // TransposeSync body: the 2-D tile [R][C] (source unit-stride along C, buffer along R) is
-// split into 4x4 blocks; each lane loads four 8-byte source rows, transposes them in
-// registers and stores four 8-byte buffer rows. When the block grid allows, 16-lane groups
-// cover 4x4 blocks, so a wave reads whole 128-byte source rows and writes distinct banks.
+// split into 4x4 blocks; each lane loads four source rows (8 bytes for 16-bit, 16 bytes for
+// 32-bit elements), transposes them in registers and stores four buffer rows of the same width.
+// When the block grid allows, 16-lane groups cover 4x4 blocks, so a wave reads whole source
+// rows and writes distinct banks.
 void emit_transpose_copy_blocks(
     codegen::LanguageExtension& language_extension,
     codegen::PrettyPrinter& stream,
@@ -404,35 +405,49 @@ void emit_transpose_copy_blocks(
 
     auto r4 = symbolic::mul(symbolic::integer(4), symbolic::symbol("__tc_r4"));
     auto c4 = symbolic::mul(symbolic::integer(4), symbolic::symbol("__tc_c4"));
+    // 32-bit words per 4-element row: 2 for 16-bit, 4 for 32-bit elements.
+    const int row_words = static_cast<int>(types::bit_width(elem) / 8);
+    const std::string row_t = row_words == 4 ? "uint4" : "uint2";
+    const char* fields[4] = {"x", "y", "z", "w"};
     // Word w of source row q: a local in a full copy, the register array in a staged phase.
     auto x = [&](int q, int w) {
         if (phase == CopyPhase::Full) {
             return "__tc_x[" + std::to_string(q) + "][" + std::to_string(w) + "]";
         }
-        return "(" + regs + ")[8 * __tc_i + " + std::to_string(2 * q + w) + "]";
+        return "(" + regs + ")[" + std::to_string(4 * row_words) + " * __tc_i + " + std::to_string(row_words * q + w) +
+               "]";
     };
     if (phase == CopyPhase::Full) {
-        stream << "unsigned __tc_x[4][2];" << std::endl;
+        stream << "unsigned __tc_x[4][" << row_words << "];" << std::endl;
     }
     for (int q = 0; q < 4 && phase != CopyPhase::StoreRegs; ++q) {
         auto off = plan.src.resolve_element({symbolic::add(r4, symbolic::integer(q)), c4}, false);
-        stream << "{ const uint2 __tc_v = *reinterpret_cast<const uint2*>(&(" << scast << ")["
-               << language_extension.expression(off) << "]); " << x(q, 0) << " = __tc_v.x; " << x(q, 1)
-               << " = __tc_v.y; }" << std::endl;
+        stream << "{ const " << row_t << " __tc_v = *reinterpret_cast<const " << row_t << "*>(&(" << scast << ")["
+               << language_extension.expression(off) << "]);";
+        for (int w = 0; w < row_words; ++w) {
+            stream << " " << x(q, w) << " = __tc_v." << fields[w] << ";";
+        }
+        stream << " }" << std::endl;
     }
-    // Buffer row c = source column c of the block: even columns are the low halves of a
-    // source word, odd columns the high halves.
+    // Buffer row c = source column c of the block. 32-bit: column c is word c of each source
+    // row. 16-bit: even columns are the low halves of a source word, odd columns the high halves.
     for (int c = 0; c < 4 && phase != CopyPhase::LoadRegs; ++c) {
-        const int w = c / 2;
-        auto pick = [&](int lo_row, int hi_row) {
-            const std::string lo = x(lo_row, w);
-            const std::string hi = x(hi_row, w);
-            return c % 2 == 0 ? "((" + lo + " & 0xffffu) | (" + hi + " << 16))"
-                              : "((" + lo + " >> 16) | (" + hi + " & 0xffff0000u))";
-        };
+        std::string value;
+        if (row_words == 4) {
+            value = "make_uint4(" + x(0, c) + ", " + x(1, c) + ", " + x(2, c) + ", " + x(3, c) + ")";
+        } else {
+            const int w = c / 2;
+            auto pick = [&](int lo_row, int hi_row) {
+                const std::string lo = x(lo_row, w);
+                const std::string hi = x(hi_row, w);
+                return c % 2 == 0 ? "((" + lo + " & 0xffffu) | (" + hi + " << 16))"
+                                  : "((" + lo + " >> 16) | (" + hi + " & 0xffff0000u))";
+            };
+            value = "make_uint2(" + pick(0, 1) + ", " + pick(2, 3) + ")";
+        }
         auto off = plan.dst.resolve_element({r4, symbolic::add(c4, symbolic::integer(c))}, false);
-        stream << "*reinterpret_cast<uint2*>(&(" << dcast << ")[" << language_extension.expression(off)
-               << "]) = make_uint2(" << pick(0, 1) << ", " << pick(2, 3) << ");" << std::endl;
+        stream << "*reinterpret_cast<" << row_t << "*>(&(" << dcast << ")[" << language_extension.expression(off)
+               << "]) = " << value << ";" << std::endl;
     }
     if (known && blocks % SymEngine::rcp_static_cast<const SymEngine::Integer>(ct)->as_int() != 0) {
         stream << "}" << std::endl;

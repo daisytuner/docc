@@ -102,13 +102,15 @@ bool widen_tile_copy_node(tiles::TileCopyNode& node) {
     return false;
 }
 
-// A 2-D 16-bit copy-in whose source is unit-stride along dim 1 and whose buffer is
+// A 2-D 16- or 32-bit copy-in whose source is unit-stride along dim 1 and whose buffer is
 // unit-stride along dim 0 (a transposed placement) moves 4x4 blocks with a register
 // transpose. Needs 4-multiple extents and 4-element-aligned rows on both sides.
 bool transpose_tile_copy_node(tiles::TileCopyNode& node) {
     const auto& plan = node.plan();
+    const size_t elem_bytes = node.bytes();
     if (node.atom() != tiles::CopyAtom::ScalarSync || node.direction() != tiles::CopyDirection::In ||
-        node.bytes() != 2 || plan.src.dims() != 2 || !plan.dst_swizzle.is_identity() || !node.guard().trivial()) {
+        (elem_bytes != 2 && elem_bytes != 4) || plan.src.dims() != 2 || !plan.dst_swizzle.is_identity() ||
+        !node.guard().trivial()) {
         return false;
     }
     if (!symbolic::eq(plan.src.strides()[1], symbolic::integer(1)) ||
@@ -124,7 +126,7 @@ bool transpose_tile_copy_node(tiles::TileCopyNode& node) {
         return false;
     }
     node.set_atom(tiles::CopyAtom::TransposeSync);
-    node.set_bytes(8);
+    node.set_bytes(4 * elem_bytes);
     return true;
 }
 
@@ -144,7 +146,7 @@ structured_control_flow::StructuredLoop* enclosing_panel_loop(ControlFlowNode& f
     return nullptr;
 }
 
-// Sum the cp.async transfer words (bytes / 4) over @p scope's TileCopyNodes.
+// Sum the per-lane cp.async loads (ceil(bytes / 4)) over @p scope's TileCopyNodes.
 size_t sum_cp_async_words(ControlFlowNode& scope) {
     size_t words = 0;
     std::function<void(ControlFlowNode&)> walk = [&](ControlFlowNode& n) {
@@ -152,7 +154,7 @@ size_t sum_cp_async_words(ControlFlowNode& scope) {
             for (auto& node : block->dataflow().nodes()) {
                 if (auto* tc = dynamic_cast<tiles::TileCopyNode*>(&node)) {
                     if (tc->atom() == tiles::CopyAtom::CpAsync) {
-                        words += tc->bytes() / 4;
+                        words += (tc->bytes() + 3) / 4;
                     }
                 }
             }

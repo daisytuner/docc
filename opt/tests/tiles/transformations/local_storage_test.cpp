@@ -3592,6 +3592,17 @@ TEST(LocalStorageTest, Apply_GEMMColMajorOperand_Packed) {
     ASSERT_NE(outer, nullptr);
     EXPECT_TRUE(symbolic::eq(outer->num_elements(), symbolic::integer(k)));
 
+    // The copy sweeps the column-major operand's unit-stride (m) dim innermost.
+    const tiles::TileCopyNode* copy = nullptr;
+    for (auto& n : static_cast<structured_control_flow::Block&>(root.at(0)).dataflow().nodes()) {
+        if (auto* tc = dynamic_cast<const tiles::TileCopyNode*>(&n)) {
+            copy = tc;
+        }
+    }
+    ASSERT_NE(copy, nullptr);
+    EXPECT_TRUE(symbolic::eq(copy->plan().src.strides().back(), symbolic::one())) << copy->toStr();
+    EXPECT_TRUE(symbolic::eq(copy->plan().dst.strides().back(), symbolic::one())) << copy->toStr();
+
     ASSERT_NO_THROW(builder.subject().validate());
 }
 
