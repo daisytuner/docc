@@ -7,6 +7,7 @@
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/access_node.h"
+#include "sdfg/data_flow/library_nodes/stdlib/memset.h"
 #include "sdfg/data_flow/tasklet.h"
 #include "sdfg/function.h"
 #include "sdfg/structured_control_flow/block.h"
@@ -5559,4 +5560,56 @@ TEST(LoopFusionPassTest, PreventFusingInplaceOverride) {
 
     ASSERT_NO_THROW(sdfg.validate());
     dump_sdfg(sdfg, "1.after");
+}
+
+TEST(LoopFusionPassTest, ProducerWritingThroughLibraryNodePointer_NotFused) {
+    // Map 1 over i < 2: memset(T, 0, 32)
+    // Map 2 over j < 8: B[j] = T[j] * 2.0
+    // Map 1 hands T to a library node, so its write subset is unknown and it cannot be inlined into map 2.
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar float_desc(types::PrimitiveType::Float);
+    types::Pointer pointer_desc(float_desc);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
+    builder.add_container("i", sym_desc);
+    builder.add_container("j", sym_desc);
+    builder.add_container("T", pointer_desc);
+    builder.add_container("B", pointer_desc, true);
+
+    auto i = symbolic::symbol("i");
+    auto& map1 = builder.add_map(
+        root,
+        i,
+        symbolic::Lt(i, symbolic::integer(2)),
+        symbolic::zero(),
+        symbolic::add(i, symbolic::one()),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+    auto& block1 = builder.add_block(map1.root());
+    auto& memset =
+        builder.add_library_node<stdlib::MemsetNode>(block1, DebugInfo(), symbolic::zero(), symbolic::integer(32));
+    builder.add_computational_memlet(block1, builder.add_access(block1, "T"), memset, "_ptr", {}, pointer_desc);
+
+    auto j = symbolic::symbol("j");
+    auto& map2 = builder.add_map(
+        root,
+        j,
+        symbolic::Lt(j, symbolic::integer(8)),
+        symbolic::zero(),
+        symbolic::add(j, symbolic::one()),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+    auto& block2 = builder.add_block(map2.root());
+    auto& mul = builder.add_tasklet(block2, data_flow::TaskletCode::fp_mul, "_out", {"_in1", "_in2"});
+    builder.add_computational_memlet(block2, builder.add_access(block2, "T"), mul, "_in1", {j}, pointer_desc);
+    builder.add_computational_memlet(block2, builder.add_constant(block2, "2.0", float_desc), mul, "_in2", {});
+    builder.add_computational_memlet(block2, mul, "_out", builder.add_access(block2, "B"), {j}, pointer_desc);
+    ASSERT_NO_THROW(sdfg.validate());
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    passes::loop_fusion::LoopFusionPass loop_fusion_pass;
+    EXPECT_FALSE(loop_fusion_pass.run(builder, analysis_manager));
+    EXPECT_EQ(sdfg.root().size(), 2);
 }
