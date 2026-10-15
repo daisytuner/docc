@@ -102,7 +102,8 @@ static std::tuple<Block&, math::tensor::MatMulNode&> build_offloaded_mma_structu
     int tile_m,
     int tile_n,
     int tile_k,
-    const gpu::GpuArch& arch
+    const gpu::GpuArch& arch,
+    bool b_k_major = false
 ) {
     auto& sdfg = builder.subject();
     auto& root = sdfg.root();
@@ -169,8 +170,17 @@ static std::tuple<Block&, math::tensor::MatMulNode&> build_offloaded_mma_structu
         {symbolic::integer(K), symbolic::integer(1)},
         symbolic::mul(row, symbolic::integer(K))
     );
-    math::tensor::TensorLayout
-        b_layout({symbolic::integer(K), symbolic::integer(tile_n)}, {symbolic::integer(N), symbolic::integer(1)}, col);
+    // K-major B (C = A @ W^T with W[N][K] row-major): column-major [K, TILE] slice at row j of W.
+    math::tensor::TensorLayout b_layout = b_k_major ? math::tensor::TensorLayout(
+                                                          {symbolic::integer(K), symbolic::integer(tile_n)},
+                                                          {symbolic::integer(1), symbolic::integer(K)},
+                                                          symbolic::mul(col, symbolic::integer(K))
+                                                      )
+                                                    : math::tensor::TensorLayout(
+                                                          {symbolic::integer(K), symbolic::integer(tile_n)},
+                                                          {symbolic::integer(N), symbolic::integer(1)},
+                                                          col
+                                                      );
     math::tensor::TensorLayout c_layout(
         {symbolic::integer(tile_m), symbolic::integer(tile_n)},
         {symbolic::integer(N), symbolic::integer(1)},
@@ -1074,6 +1084,51 @@ TEST(ROCMMMATest, RawMfma32x32x8_128x96Tile_LaunchBounds) {
     }
     // 4 x 3 waves of 64 lanes.
     EXPECT_NE(kernels.find("__global__ void __launch_bounds__(768) kernel_"), std::string::npos) << kernels;
+}
+
+// K-major B (C = A @ W^T): the B tile is [k][n] with global strides [1, K]. The copy must sweep the
+// unit-stride k fastest across lanes and widen like A; sweeping n fastest reads 2 KB apart per lane.
+TEST(ROCMMMATest, LocalStorageKMajorBCopyIsCoalesced_gfx90a) {
+    auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
+    sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+    auto [block, matmul_node] =
+        build_offloaded_mma_structure(builder, 1024, 1024, 1024, 32, 32, 16, arch, /*b_k_major=*/true);
+    passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch));
+    strip_mine_k(builder, 2);
+    localize(builder, "tile_k0");
+    EXPECT_NO_THROW(builder.subject().validate());
+
+    auto* b = find_local_load(builder.subject().root(), "B");
+    ASSERT_NE(b, nullptr);
+    EXPECT_EQ(b->layout().layout, gpu::MMA_LAYOUT_COL_MAJOR);
+
+    {
+        analysis::AnalysisManager am(builder.subject());
+        transformations::TileVectorizer tv(*find_loop(am, "tile_k0_tile0"));
+        ASSERT_TRUE(tv.can_be_applied(builder, am));
+        tv.apply(builder, am);
+    }
+    auto* copy_a = find_copy_from(builder.subject().root(), "A");
+    ASSERT_NE(copy_a, nullptr);
+    EXPECT_EQ(copy_a->atom(), tiles::CopyAtom::VectorSync) << copy_a->toStr();
+    EXPECT_EQ(copy_a->bytes(), 16u) << copy_a->toStr();
+
+    auto* copy_b = find_copy_from(builder.subject().root(), "B");
+    ASSERT_NE(copy_b, nullptr);
+    // emit_cooperative_copy_loop delinearizes the lane index row-major: the last dim is lane-fastest.
+    EXPECT_TRUE(symbolic::eq(copy_b->plan().src.strides().back(), symbolic::one())) << copy_b->toStr();
+    EXPECT_EQ(copy_b->atom(), tiles::CopyAtom::VectorSync) << copy_b->toStr();
+    EXPECT_EQ(copy_b->bytes(), 16u) << copy_b->toStr();
+
+    auto out = test::utils::test_codegen(builder.subject(), "kmajor_b_global", true);
+    std::string kernels;
+    for (auto& [name, snippet] : out.snippets) {
+        kernels += snippet.content;
+    }
+    EXPECT_EQ(
+        kernels.find("(B))[1024*block_col + 16*tile_k0_tile0 + ((__tc_c) / (32)) + 1024*((__tc_c) % (32))]"),
+        std::string::npos
+    ) << kernels;
 }
 
 } // namespace sdfg::rocm
