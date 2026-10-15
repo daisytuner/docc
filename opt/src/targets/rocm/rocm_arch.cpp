@@ -322,7 +322,14 @@ std::optional<GpuMmaTiling> RocmMmaSupport::get_mma_tiling(
         }
         return try_get_mma_tiling(*block_size_hint, wave_tile_hint, res_shape, acc_type);
     } else {
-        return try_get_mma_tiling(DEFAULT_BLOCK_SIZE, wave_tile_hint, res_shape, acc_type);
+        auto default_valid = try_get_mma_tiling(DEFAULT_BLOCK_SIZE, wave_tile_hint, res_shape, acc_type);
+        if (default_valid.has_value()) {
+            return default_valid;
+        } else if (f32_support) {
+            return try_get_mma_tiling(CDNA_BLOCK_SIZE, wave_tile_hint, res_shape, acc_type);
+        } else {
+            return std::nullopt;
+        }
     }
 }
 

@@ -10,6 +10,7 @@
 #include "sdfg/einsum/replacers/einsum2matmul.h"
 #include "sdfg/einsum/transformations/einsum_lift.h"
 #include "sdfg/passes/expansion/library_node_expansion_pass.h"
+#include "sdfg/serializer/json_serializer.h"
 #include "sdfg/targets/gpu/gpu_mma_expander.h"
 #include "sdfg/visitor/structured_sdfg_walker.h"
 
@@ -20,7 +21,7 @@ GpuMmaEinsumReplacer::
     : arch_(arch), block_size_hint_(block_size_hint), wave_tile_hint_(wave_tile_hint) {
 }
 
-bool GpuMmaEinsumReplacer::matches_possible_mma_pattern(const MatMulAnalysis& analysis) const {
+bool GpuMmaEinsumReplacer::matches_possible_mma_pattern(EinsumMmaAnalysis& analysis) const {
     if (!arch_) {
         return false;
     }
@@ -62,6 +63,7 @@ bool GpuMmaEinsumReplacer::matches_possible_mma_pattern(const MatMulAnalysis& an
     }
 
     auto acc_type = mma_arch->get_accumulator_type(input_type, output_type, types::PrimitiveType::Void);
+    analysis.acc_type = acc_type;
 
     auto tiling = mma_arch->get_mma_tiling({m, n, k}, input_type, acc_type, block_size_hint_, wave_tile_hint_);
 
@@ -224,7 +226,51 @@ void GpuMmaEinsumTransform::to_json(nlohmann::json& j) const {
         j["parameters"]["wave_tile"]["blocks_m"] = wave_tiling_hint_->blocks_m;
         j["parameters"]["wave_tile"]["blocks_n"] = wave_tiling_hint_->blocks_n;
     }
+
+    serializer::JSONSerializer serializer(false);
     j["subgraph"] = nlohmann::json::object();
+    j["subgraph"]["0"] = nlohmann::json::object();
+    serializer.serialize_node(j["subgraph"]["0"], outermost_mma_loop_);
+}
+
+GpuMmaEinsumTransform GpuMmaEinsumTransform::from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& j) {
+    auto loop_id = j.at("subgraph").at("0").at("element_id").get<size_t>();
+    auto* element = builder.find_element_by_id(loop_id);
+    if (!element) {
+        throw transformations::
+            InvalidTransformationDescriptionException("Element with ID " + std::to_string(loop_id) + " not found.");
+    }
+    auto* loop = dyn_cast<StructuredLoop*>(element);
+    if (!loop) {
+        throw transformations::InvalidTransformationDescriptionException(
+            "Element with ID " + std::to_string(loop_id) + " is not a StructuredLoop."
+        );
+    }
+
+    const auto& params = j.value("parameters", nlohmann::json::object());
+
+    const GpuArch* arch = nullptr;
+    if (params.contains("arch")) {
+        std::string arch_name = params.at("arch").get<std::string>();
+        arch = GpuArch::parse_from_name(arch_name);
+        if (!arch) {
+            throw transformations::InvalidTransformationDescriptionException("Unsupported GPU architecture: " + arch_name);
+        }
+    }
+
+    std::optional<MmaBlockSize> block_size;
+    if (params.contains("block_size")) {
+        const auto& bs = params.at("block_size");
+        block_size = MmaBlockSize{bs.at("m").get<int>(), bs.at("n").get<int>(), bs.at("k").get<int>()};
+    }
+
+    std::optional<BlockCounts> wave_tile;
+    if (params.contains("wave_tile")) {
+        const auto& wt = params.at("wave_tile");
+        wave_tile = BlockCounts{wt.at("blocks_m").get<int>(), wt.at("blocks_n").get<int>()};
+    }
+
+    return GpuMmaEinsumTransform(*loop, arch, block_size, wave_tile);
 }
 
 } // namespace sdfg::gpu
