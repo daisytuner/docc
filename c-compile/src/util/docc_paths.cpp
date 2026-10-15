@@ -28,7 +28,7 @@ std::unique_ptr<DefaultDoccPaths> DefaultDoccPaths::from_lib_location(std::optio
 ) {
     if (lib_location) {
         auto str = lib_location->string();
-        std::regex pip_matcher(".*/python3\\.[0-9]+/site-packages/.*");
+        std::regex pip_matcher(".*/python3\\.[0-9]+/(site|dist)-packages/.*");
         if (std::regex_match(str, pip_matcher)) {
             auto parent = lib_location->parent_path();
             while (!parent.empty() && parent.has_parent_path() && parent.stem().string() != "docc") {
