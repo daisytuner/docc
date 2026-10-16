@@ -360,6 +360,7 @@ TEST(SoftwarePipeliningTest, NarrowCopyGoesAsyncOnlyAtLegalWidth) {
     struct Case {
         symbolic::MultiExpression shape, src_strides, dst_strides;
         size_t bytes; // 0: stays synchronous
+        int src_shift = 0;
     };
     auto s = [](int v) {
         return symbolic::integer(v);
@@ -370,6 +371,9 @@ TEST(SoftwarePipeliningTest, NarrowCopyGoesAsyncOnlyAtLegalWidth) {
         {{s(4), s(2)}, {s(2), s(1)}, {s(2), s(1)}, 4},
         // An odd source row stride misaligns every multi-element run.
         {{s(4), s(2)}, {s(3), s(1)}, {s(2), s(1)}, 0},
+        // A source offset of 2 (mod 8) elements only aligns 4-byte runs, an odd one none.
+        {{s(8)}, {s(1)}, {s(1)}, 4, 2},
+        {{s(8)}, {s(1)}, {s(1)}, 0, 1},
     };
     for (const auto& c : cases) {
         builder::StructuredSDFGBuilder builder("sp", FunctionType_CPU);
@@ -382,7 +386,7 @@ TEST(SoftwarePipeliningTest, NarrowCopyGoesAsyncOnlyAtLegalWidth) {
         }
         ASSERT_NE(copy, nullptr);
         auto plan = copy->plan();
-        plan.src = tiles::Layout(c.shape, c.src_strides, plan.src.offset());
+        plan.src = tiles::Layout(c.shape, c.src_strides, symbolic::add(plan.src.offset(), s(c.src_shift)));
         plan.dst = tiles::Layout(c.shape, c.dst_strides, plan.dst.offset());
         copy->set_plan(plan);
         copy->set_bytes(2);

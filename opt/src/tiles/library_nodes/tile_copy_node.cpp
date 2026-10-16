@@ -1,6 +1,10 @@
 #include "sdfg/tiles/library_nodes/tile_copy_node.h"
 
+#include <symengine/add.h>
+#include <symengine/mul.h>
+
 #include "sdfg/data_flow/pointer_metadata.h"
+#include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/types/pointer.h"
 #include "sdfg/types/scalar.h"
@@ -264,6 +268,42 @@ data_flow::LibraryNode& TileCopyNodeSerializer::deserialize(
 
 // ---- Reference dispatcher ------------------------------------------------
 
+bool provably_multiple_of(symbolic::Expression e, long long m, const TileCopyNode& node) {
+    const auto* scope = dynamic_cast<const structured_control_flow::ControlFlowNode*>(node.get_parent().get_parent());
+    for (const auto* n = scope; n != nullptr; n = n->get_parent()) {
+        const auto* loop = dynamic_cast<const structured_control_flow::StructuredLoop*>(n);
+        if (loop == nullptr) {
+            continue;
+        }
+        auto stride = loop->stride();
+        if (stride.is_null()) {
+            continue;
+        }
+        auto t = symbolic::symbol("__tc_iter_" + loop->indvar()->get_name());
+        e = symbolic::subs(e, loop->indvar(), symbolic::add(loop->init(), symbolic::mul(stride, t)));
+    }
+    e = symbolic::expand(e);
+    std::vector<symbolic::Expression> terms;
+    if (SymEngine::is_a<SymEngine::Add>(*e)) {
+        for (const auto& term : e->get_args()) {
+            terms.push_back(term);
+        }
+    } else {
+        terms.push_back(e);
+    }
+    for (const auto& term : terms) {
+        symbolic::Expression coef = term;
+        if (SymEngine::is_a<SymEngine::Mul>(*term)) {
+            coef = SymEngine::rcp_static_cast<const SymEngine::Mul>(term)->get_coef();
+        }
+        auto* c = dynamic_cast<const SymEngine::Integer*>(coef.get());
+        if (c == nullptr || c->as_int() % m != 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
 size_t widest_legal_transfer(const TileCopyNode& node, CopyAtom atom, const std::vector<size_t>& widths) {
     const auto& plan = node.plan();
     const size_t elem_bytes = node.bytes();
@@ -302,11 +342,13 @@ size_t widest_legal_transfer(const TileCopyNode& node, CopyAtom atom, const std:
             continue;
         }
         // Synchronous copies split buffer-side accesses to the row alignment at emission;
-        // an async copy writes the buffer directly, so its rows must hold the full width.
+        // an async copy writes the buffer directly, so its rows and both offsets must hold the full width.
         bool outer_ok = true;
         std::vector<const symbolic::MultiExpression*> sides = {&plan.src.strides()};
         if (atom == CopyAtom::CpAsync) {
             sides.push_back(&plan.dst.strides());
+            outer_ok = provably_multiple_of(plan.src.offset(), factor, node) &&
+                       provably_multiple_of(plan.dst.offset(), factor, node);
         }
         for (const auto* strides : sides) {
             for (size_t d = 0; outer_ok && d + 1 < strides->size(); ++d) {

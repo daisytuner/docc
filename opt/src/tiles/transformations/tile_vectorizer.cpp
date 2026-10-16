@@ -54,7 +54,7 @@ bool widen_tile_copy_node(tiles::TileCopyNode& node) {
 
 // A 2-D 16- or 32-bit copy-in whose source is unit-stride along dim 1 and whose buffer is
 // unit-stride along dim 0 (a transposed placement) moves 4x4 blocks with a register
-// transpose. Needs 4-multiple extents and 4-element-aligned rows on both sides.
+// transpose. Needs 4-multiple extents and 4-element-aligned rows and offsets on both sides.
 bool transpose_tile_copy_node(tiles::TileCopyNode& node) {
     const auto& plan = node.plan();
     const size_t elem_bytes = node.bytes();
@@ -73,6 +73,10 @@ bool transpose_tile_copy_node(tiles::TileCopyNode& node) {
     };
     if (!multiple_of_4(plan.src.shape()[0]) || !multiple_of_4(plan.src.shape()[1]) ||
         !multiple_of_4(plan.src.strides()[0]) || !multiple_of_4(plan.dst.strides()[1])) {
+        return false;
+    }
+    if (!tiles::provably_multiple_of(plan.src.offset(), 4, node) ||
+        !tiles::provably_multiple_of(plan.dst.offset(), 4, node)) {
         return false;
     }
     node.set_atom(tiles::CopyAtom::TransposeSync);
