@@ -289,7 +289,7 @@ class TorchProgram(DoccProgram):
                 except Exception:
                     pass
 
-            hash_input = f"{self.name}|{self.options.target}|{self.options.category}|{cache_key}|{model_code}|{self.options.capture_args}|{self.options.instrumentation_mode}|{self.options.remote_tuning}|{self.options.approximate_math}".encode(
+            hash_input = f"{self.name}|{self.options.target}|{self.options.category}|{cache_key}|{model_code}|{self.options.capture_args}|{self.options.instrumentation_mode}|{self.options.remote_tuning}|{self.options.approximate_math}|{self.options.fp_contract}".encode(
                 "utf-8"
             )
             stable_id = hashlib.sha256(hash_input).hexdigest()[:16]

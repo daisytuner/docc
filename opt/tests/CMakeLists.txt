@@ -36,6 +36,9 @@ set(TEST_FILES
     einsum/transformations/einsum_extend_test.cpp
     einsum/transformations/einsum_lift_test.cpp
     einsum/transformations/einsum_promotion_test.cpp
+    fp_math/passes/fp_contraction_test.cpp
+    fp_math/transformations/fuse_fma_test.cpp
+    fp_math/transformations/unfuse_fma_test.cpp
     parallelization/analysis/loop_carried_dependency_analysis_test.cpp
     parallelization/passes/auto_parallelization_test.cpp
     parallelization/transformations/loop_parallelization_test.cpp

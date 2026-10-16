@@ -288,6 +288,7 @@ PYBIND11_MODULE(_sdfg, m) {
         .def_readwrite<>("already_normalized", &docc::target::TargetOptions::already_normalized)
         .def_readwrite<>("enable_fusion_in_normalize", &docc::target::TargetOptions::enable_fusion_in_normalize)
         .def_readwrite<>("use_new_fusion_in_simplify", &docc::target::TargetOptions::use_new_fusion_in_simplify)
+        .def_readwrite<>("fp_contract", &docc::target::TargetOptions::fp_contract)
         .def_readwrite<>("options", &docc::target::TargetOptions::options);
 
     // Register SDFG class

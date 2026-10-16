@@ -19,6 +19,7 @@
 #include <sdfg/codegen/instrumentation/instrumentation_plan.h>
 #include <sdfg/codegen/loop_report.h>
 #include <sdfg/einsum/einsum.h>
+#include <sdfg/fp_math/passes/fp_contraction.h>
 #include <sdfg/parallelization/passes/auto_parallelization.h>
 #include <sdfg/passes/dataflow/approximate_math.h>
 #include <sdfg/passes/dataflow/dead_data_elimination.h>
@@ -393,6 +394,12 @@ void PyStructuredSDFG::simplify(const docc::target::TargetOptions& options) {
     // normalize() map-fusion run so loop distribution and fusion do not fight)
     auto map_fusion = sdfg::passes::normalization::map_fusion(false, false);
     map_fusion.run(builder_opt, analysis_manager);
+
+    // Contract multiplications feeding additions into FMAs (-ffp-contract=fast)
+    if (options.fp_contract) {
+        sdfg::fp_math::FPContractionPass fp_contraction_pass;
+        fp_contraction_pass.run(builder_opt, analysis_manager);
+    }
 
     sdfg::passes::CompileStatistics::exit_stage_if_enabled();
 }
