@@ -86,6 +86,7 @@ set(SOURCE_FILES
     src/passes/opt_pipeline.cpp
     src/passes/readonly_transfer_hoisting_pass.cpp
     src/passes/redundant_load_elimination_pass.cpp
+    src/passes/scalar_promotion_pass.cpp
     src/passes/scheduler/cuda_scheduler.cpp
     src/passes/scheduler/cuda_offload_scheduler.cpp
     src/passes/scheduler/loop_scheduling_pass.cpp

@@ -71,6 +71,7 @@ set(TEST_FILES
     transformations/offloading/gpu_tensor_allocation_size_offload_test.cpp
     optimizations/parallelogram_tiling_test.cpp
     passes/redundant_load_elimination_pass_test.cpp
+    passes/scalar_promotion_pass_test.cpp
     passes/offloading/cuda_library_node_transfer_extraction_pass_test.cpp
     passes/offloading/cuda_library_node_expand_tests.cpp
     passes/offloading/gpu_embedding_expansion_test.cpp
