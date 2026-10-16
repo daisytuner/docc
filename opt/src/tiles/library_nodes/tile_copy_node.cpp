@@ -264,6 +264,63 @@ data_flow::LibraryNode& TileCopyNodeSerializer::deserialize(
 
 // ---- Reference dispatcher ------------------------------------------------
 
+size_t widest_legal_transfer(const TileCopyNode& node, CopyAtom atom, const std::vector<size_t>& widths) {
+    const auto& plan = node.plan();
+    const size_t elem_bytes = node.bytes();
+    if (plan.src.dims() == 0 || elem_bytes == 0) {
+        return 0;
+    }
+    // A swizzled buffer XORs the inner offset, so consecutive tile coords are not consecutive in it.
+    if (!plan.dst_swizzle.is_identity()) {
+        return 0;
+    }
+    if (!symbolic::eq(plan.src.strides().back(), symbolic::one()) ||
+        !symbolic::eq(plan.dst.strides().back(), symbolic::one())) {
+        return 0;
+    }
+    // The guard is checked once per transfer at its first element; only outer-axis bounds hold for the whole run.
+    const size_t inner_axis = static_cast<size_t>(plan.src.dims() - 1);
+    for (const auto& d : node.guard().dims) {
+        if (d.axis == inner_axis) {
+            return 0;
+        }
+    }
+    auto* inner_i = dynamic_cast<const SymEngine::Integer*>(plan.src.shape().back().get());
+    auto total = plan.src.total_elements();
+    auto* total_i = dynamic_cast<const SymEngine::Integer*>(total.get());
+    if (inner_i == nullptr || total_i == nullptr) {
+        return 0;
+    }
+    const long long inner_n = inner_i->as_int();
+    const long long total_n = total_i->as_int();
+    for (size_t width : widths) {
+        if (width <= elem_bytes || width % elem_bytes != 0) {
+            continue;
+        }
+        const long long factor = static_cast<long long>(width / elem_bytes);
+        if (inner_n % factor != 0 || total_n % factor != 0) {
+            continue;
+        }
+        // Synchronous copies split buffer-side accesses to the row alignment at emission;
+        // an async copy writes the buffer directly, so its rows must hold the full width.
+        bool outer_ok = true;
+        std::vector<const symbolic::MultiExpression*> sides = {&plan.src.strides()};
+        if (atom == CopyAtom::CpAsync) {
+            sides.push_back(&plan.dst.strides());
+        }
+        for (const auto* strides : sides) {
+            for (size_t d = 0; outer_ok && d + 1 < strides->size(); ++d) {
+                auto* s = dynamic_cast<const SymEngine::Integer*>((*strides)[d].get());
+                outer_ok = s != nullptr && s->as_int() % factor == 0;
+            }
+        }
+        if (outer_ok) {
+            return width;
+        }
+    }
+    return 0;
+}
+
 std::string emit_tile_copy_stmt(
     codegen::LanguageExtension& language_extension,
     const TileCopyNode& node,

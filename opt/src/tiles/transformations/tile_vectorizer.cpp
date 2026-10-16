@@ -34,79 +34,22 @@ tiles::TileCopyNode* tile_copy_node_in(Block& block) {
     return nullptr;
 }
 
-// Widen a scalar/async TileCopyNode to the widest legal vector transfer, deriving
-// contiguity/alignment from the plan layouts: the inner (fastest) tile dim must be
-// unit-stride on both sides, the inner extent and total must be a multiple of the
-// coalescing factor, and the outer source strides (plus buffer strides for an async
-// copy) must keep each inner run factor-aligned. A ScalarSync copy becomes VectorSync; a (pipelined) CpAsync copy
-// keeps its atom and only widens the transfer. Mutates atom/bytes; true if widened.
+// Widen a scalar/async TileCopyNode to the widest legal 16/8-byte transfer (see
+// tiles::widest_legal_transfer). A ScalarSync copy becomes VectorSync; a (pipelined) CpAsync
+// copy keeps its atom and only widens the transfer. Mutates atom/bytes; true if widened.
 bool widen_tile_copy_node(tiles::TileCopyNode& node) {
     if (node.atom() != tiles::CopyAtom::ScalarSync && node.atom() != tiles::CopyAtom::CpAsync) {
         return false;
     }
-    const auto& plan = node.plan();
-    if (plan.src.dims() == 0) {
+    const size_t width = tiles::widest_legal_transfer(node, node.atom(), {16, 8});
+    if (width == 0) {
         return false;
     }
-    // A swizzled buffer XORs the inner offset, so consecutive tile coords are not
-    // consecutive in the buffer: a widened vector/async move would scatter.
-    if (!plan.dst_swizzle.is_identity()) {
-        return false;
+    node.set_bytes(width);
+    if (node.atom() == tiles::CopyAtom::ScalarSync) {
+        node.set_atom(tiles::CopyAtom::VectorSync);
     }
-    if (!symbolic::eq(plan.src.strides().back(), symbolic::integer(1)) ||
-        !symbolic::eq(plan.dst.strides().back(), symbolic::integer(1))) {
-        return false;
-    }
-    // The guard is checked once per transfer at its first element; only outer-axis bounds hold for the whole run.
-    const size_t inner_axis = static_cast<size_t>(plan.src.dims() - 1);
-    for (const auto& d : node.guard().dims) {
-        if (d.axis == inner_axis) {
-            return false;
-        }
-    }
-    auto* inner_i = dynamic_cast<const SymEngine::Integer*>(plan.src.shape().back().get());
-    auto total = plan.src.total_elements();
-    auto* total_i = dynamic_cast<const SymEngine::Integer*>(total.get());
-    if (inner_i == nullptr || total_i == nullptr) {
-        return false;
-    }
-    const long long inner_n = inner_i->as_int();
-    const long long total_n = total_i->as_int();
-    const size_t elem_bytes = node.bytes();
-    if (elem_bytes == 0) {
-        return false;
-    }
-    for (size_t width : {size_t{16}, size_t{8}}) {
-        if (width <= elem_bytes || width % elem_bytes != 0) {
-            continue;
-        }
-        const long long factor = static_cast<long long>(width / elem_bytes);
-        if (inner_n % factor != 0 || total_n % factor != 0) {
-            continue;
-        }
-        // Synchronous copies split buffer-side accesses to the row alignment at emission;
-        // an async copy writes the buffer directly, so its rows must hold the full width.
-        bool outer_ok = true;
-        std::vector<const symbolic::MultiExpression*> sides = {&plan.src.strides()};
-        if (node.atom() == tiles::CopyAtom::CpAsync) {
-            sides.push_back(&plan.dst.strides());
-        }
-        for (const auto* strides : sides) {
-            for (size_t d = 0; outer_ok && d + 1 < strides->size(); ++d) {
-                auto* s = dynamic_cast<const SymEngine::Integer*>((*strides)[d].get());
-                outer_ok = s != nullptr && s->as_int() % factor == 0;
-            }
-        }
-        if (!outer_ok) {
-            continue;
-        }
-        node.set_bytes(width);
-        if (node.atom() == tiles::CopyAtom::ScalarSync) {
-            node.set_atom(tiles::CopyAtom::VectorSync);
-        }
-        return true;
-    }
-    return false;
+    return true;
 }
 
 // A 2-D 16- or 32-bit copy-in whose source is unit-stride along dim 1 and whose buffer is

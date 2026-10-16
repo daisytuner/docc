@@ -718,18 +718,25 @@ void SoftwarePipelining::apply(builder::StructuredSDFGBuilder& builder, analysis
     visitor::for_each_block(prologue, collect);
     visitor::for_each_block(body, collect);
     for (auto* b : copy_blocks) {
-        if (auto* tc = tile_copy_node_in(*b)) {
-            // An async transfer cannot transpose. A narrow copy goes async only if TileVectorizer can
-            // later widen it (unit-stride inner dim on both sides, unswizzled); otherwise it stays sync.
-            const auto& plan = tc->plan();
-            const bool widenable = plan.src.dims() > 0 && plan.dst_swizzle.is_identity() &&
-                                   symbolic::eq(plan.src.strides().back(), symbolic::one()) &&
-                                   symbolic::eq(plan.dst.strides().back(), symbolic::one());
-            if (tc->atom() != tiles::CopyAtom::TransposeSync &&
-                (tc->bytes() >= target->min_async_bytes() || widenable)) {
-                tc->set_atom(tiles::CopyAtom::CpAsync);
-            }
+        auto* tc = tile_copy_node_in(*b);
+        // An async transfer cannot transpose.
+        if (tc == nullptr || tc->atom() == tiles::CopyAtom::TransposeSync) {
+            continue;
         }
+        if (tc->bytes() < target->min_async_bytes()) {
+            std::vector<size_t> widths;
+            for (size_t w : {16, 8, 4, 2}) {
+                if (w >= target->min_async_bytes()) {
+                    widths.push_back(w);
+                }
+            }
+            const size_t width = tiles::widest_legal_transfer(*tc, tiles::CopyAtom::CpAsync, widths);
+            if (width == 0) {
+                continue;
+            }
+            tc->set_bytes(width);
+        }
+        tc->set_atom(tiles::CopyAtom::CpAsync);
     }
 
     // CUDA counts commit groups, but CDNA waits on the flat vmcnt counter, where

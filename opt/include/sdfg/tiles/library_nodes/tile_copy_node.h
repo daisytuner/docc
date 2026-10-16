@@ -154,6 +154,10 @@ public:
     ) override;
 };
 
+/// The first of @p widths (bytes, widest first) at which each lane of @p node can move one
+/// contiguous multi-element run under @p atom, or 0. `node.bytes()` is taken as the element width.
+size_t widest_legal_transfer(const TileCopyNode& node, CopyAtom atom, const std::vector<size_t>& widths);
+
 /// The single-element copy statement `dst[dst_geo(index)] = src[src_geo(index)];`
 /// for the tile coordinate @p index, addressing both bare-pointer sides as flat
 /// @p elem pointers via the plan's layouts. Shared by every @ref TileCopyNode
