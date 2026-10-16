@@ -318,17 +318,27 @@ class NumPyHandler:
 
         def extract_factor(node):
             if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mult):
+                operand = None
                 if self.is_gemm(node.left):
-                    return node.left, self._ev.visit(node.right)
-                if self.is_gemm(node.right):
-                    return node.right, self._ev.visit(node.left)
-
-                res = self.parse_arg(node.left)
-                if res[0]:
-                    return node.left, self._ev.visit(node.right)
-                res = self.parse_arg(node.right)
-                if res[0]:
-                    return node.right, self._ev.visit(node.left)
+                    operand, other = node.left, node.right
+                elif self.is_gemm(node.right):
+                    operand, other = node.right, node.left
+                elif self.parse_arg(node.left)[0]:
+                    operand, other = node.left, node.right
+                elif self.parse_arg(node.right)[0]:
+                    operand, other = node.right, node.left
+                if operand is not None:
+                    factor = self._ev.visit(other)
+                    if (
+                        factor not in self.tensor_table
+                        or not self.tensor_table[factor].shape
+                    ):
+                        return operand, factor
+                    # An array factor multiplies elementwise rather than as alpha.
+                    product = self.handle_array_binary_op(
+                        "mul", self._ev.visit(operand), factor
+                    )
+                    return ast.Name(id=product), "1.0"
             return node, "1.0"
 
         def parse_term(node):
@@ -371,36 +381,46 @@ class NumPyHandler:
 
             return None, None, None
 
+        def is_product(node):
+            """Whether parse_term finds a matrix product in node."""
+            if isinstance(node, ast.BinOp) and isinstance(node.op, ast.MatMult):
+                return True
+            if isinstance(node, ast.Call) and len(node.args) == 2:
+                func = node.func
+                if isinstance(func, ast.Attribute):
+                    return func.attr in ["dot", "matmul"]
+                return isinstance(func, ast.Name) and func.id in ["dot", "matmul"]
+            if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mult):
+                return is_product(node.left) or is_product(node.right)
+            return False
+
+        def target_term(node):
+            """Whether node is the target or a multiple of it, and that multiple's factor (None for 1)."""
+            if self._is_target(node, target_name):
+                return True, None
+            if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mult):
+                if self._is_target(node.left, target_name):
+                    return True, node.right
+                if self._is_target(node.right, target_name):
+                    return True, node.left
+            return False, None
+
         if isinstance(value_node, ast.BinOp) and isinstance(value_node.op, ast.Add):
-            l, r, a = parse_term(value_node.left)
-            if l:
-                A = l
-                B = r
-                alpha = a
-                if isinstance(value_node.right, ast.BinOp) and isinstance(
-                    value_node.right.op, ast.Mult
-                ):
-                    if self._is_target(value_node.right.left, target_name):
-                        beta = self._ev.visit(value_node.right.right)
-                    elif self._is_target(value_node.right.right, target_name):
-                        beta = self._ev.visit(value_node.right.left)
-                elif self._is_target(value_node.right, target_name):
-                    beta = "1.0"
-            else:
-                l, r, a = parse_term(value_node.right)
+            # Only a product plus a multiple of the target is a GEMM; any other sum adds its terms elementwise.
+            for term, other in (
+                (value_node.left, value_node.right),
+                (value_node.right, value_node.left),
+            ):
+                is_target, factor = target_term(other)
+                if not is_target or not is_product(term):
+                    continue
+                l, r, a = parse_term(term)
                 if l:
                     A = l
                     B = r
                     alpha = a
-                    if isinstance(value_node.left, ast.BinOp) and isinstance(
-                        value_node.left.op, ast.Mult
-                    ):
-                        if self._is_target(value_node.left.left, target_name):
-                            beta = self._ev.visit(value_node.left.right)
-                        elif self._is_target(value_node.left.right, target_name):
-                            beta = self._ev.visit(value_node.left.left)
-                    elif self._is_target(value_node.left, target_name):
-                        beta = "1.0"
+                    beta = "1.0" if factor is None else self._ev.visit(factor)
+                    break
         else:
             l, r, a = parse_term(value_node)
             if l:
@@ -435,6 +455,27 @@ class NumPyHandler:
 
         A_name, subset_a, shape_a, indices_a = res_a
         B_name, subset_b, shape_b, indices_b = res_b
+
+        def transposed_view(name, subset, shape):
+            """Whether a whole 2-D operand is a view whose strides transpose row-major storage, like `x.T`."""
+            if subset or len(shape) != 2 or name not in self.tensor_table:
+                return False
+            strides = getattr(self.tensor_table[name], "strides", None)
+            return bool(strides) and (
+                not self._strides_equal(strides, self._compute_strides(shape, "C"))
+                and self._strides_equal(strides, self._compute_strides(shape, "F"))
+            )
+
+        # The GEMM reads such a view as its row-major storage, transposed.
+        stored_ld = {}
+        if transposed_view(A_name, subset_a, shape_a):
+            trans_a = not trans_a
+            shape_a = list(reversed(shape_a))
+            stored_ld[A_name] = str(shape_a[-1])
+        if transposed_view(B_name, subset_b, shape_b):
+            trans_b = not trans_b
+            shape_b = list(reversed(shape_b))
+            stored_ld[B_name] = str(shape_b[-1])
 
         flat_subset_a = self.flatten_subset(A_name, subset_a)
         flat_subset_b = self.flatten_subset(B_name, subset_b)
@@ -478,6 +519,8 @@ class NumPyHandler:
                 trans_b = False
 
         def get_ld(name):
+            if name in stored_ld:
+                return stored_ld[name]
             if name not in self.tensor_table:
                 return ""
             shapes = self.tensor_table[name].shape
