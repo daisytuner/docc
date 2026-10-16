@@ -1,5 +1,7 @@
 #include "sdfg/fp_math/passes/fp_contraction.h"
 
+#include <vector>
+
 #include "sdfg/fp_math/transformations/fuse_fma.h"
 
 namespace sdfg {
@@ -9,18 +11,27 @@ FPContraction::FPContraction(builder::StructuredSDFGBuilder& builder, analysis::
     : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager) {
 }
 
+bool FPContraction::visit() {
+    bool applied = visitor::NonStoppingStructuredSDFGVisitor::visit();
+    if (applied) {
+        analysis_manager_.invalidate_all();
+    }
+    return applied;
+}
+
 bool FPContraction::accept(structured_control_flow::Block& block) {
     bool applied = false;
-    bool changed = true;
-    while (changed) {
-        changed = false;
-        for (auto* tasklet : block.dataflow().tasklets()) {
-            FuseFMA transformation(*tasklet);
-            if (transformation.try_apply(builder_, analysis_manager_)) {
-                changed = true;
-                applied = true;
-                break;
-            }
+    auto tasklets = block.dataflow().tasklets();
+    std::vector<data_flow::Tasklet*> additions;
+    for (auto* tasklet : tasklets) {
+        if (tasklet->code() == data_flow::TaskletCode::fp_add) {
+            additions.push_back(tasklet);
+        }
+    }
+    for (auto* addition : additions) {
+        FuseFMA transformation(*addition, false);
+        if (transformation.try_apply(builder_, analysis_manager_)) {
+            applied = true;
         }
     }
     return applied;

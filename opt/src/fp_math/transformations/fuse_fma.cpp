@@ -25,7 +25,8 @@ types::PrimitiveType scalar_fp_type(const data_flow::Memlet& memlet, const Funct
 
 } // namespace
 
-FuseFMA::FuseFMA(data_flow::Tasklet& add) : add_(add) {
+FuseFMA::FuseFMA(data_flow::Tasklet& add, bool invalidate_analysis)
+    : add_(add), invalidate_analysis_(invalidate_analysis) {
 }
 
 std::string FuseFMA::name() const {
@@ -153,7 +154,9 @@ void FuseFMA::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisM
     builder.remove_container(product);
 
     fma_ = &fma;
-    analysis_manager.invalidate_all();
+    if (invalidate_analysis_) {
+        analysis_manager.invalidate_all();
+    }
 }
 
 void FuseFMA::to_json(nlohmann::json& j) const {

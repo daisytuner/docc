@@ -259,7 +259,10 @@ class TorchProgram(DoccProgram):
         # options, so repeated in-process compiles with different
         # instrumentation/arg-capture/remote-tuning do not alias to the first
         # built binary (the on-disk hash already accounts for these options).
-        mem_cache_key = f"{cache_key}|{self.options.capture_args}|{self.options.instrumentation_mode}|{self.options.remote_tuning}"
+        mem_cache_key = (
+            f"{cache_key}|{self.options.capture_args}|{self.options.instrumentation_mode}|"
+            f"{self.options.remote_tuning}|{self.options.fp_contract}"
+        )
 
         cached_available = mem_cache_key in self.cache
 

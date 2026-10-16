@@ -220,7 +220,8 @@ class PyTorchProgram(DoccProgram):
         # instrumentation/arg-capture/remote-tuning do not alias to the first
         # built binary (the on-disk hash already accounts for these options).
         mem_cache_key: str = (
-            f"{cache_key}|{self.options.capture_args}|{self.options.instrumentation_mode}|{self.options.remote_tuning}"
+            f"{cache_key}|{self.options.capture_args}|{self.options.instrumentation_mode}|"
+            f"{self.options.remote_tuning}|{self.options.fp_contract}"
         )
 
         cached_available: bool = mem_cache_key in self.cache

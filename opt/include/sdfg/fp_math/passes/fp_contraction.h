@@ -23,6 +23,8 @@ public:
         return "FPContraction";
     }
 
+    virtual bool visit() override;
+
     virtual bool accept(structured_control_flow::Block& block) override;
 };
 

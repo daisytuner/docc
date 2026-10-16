@@ -30,6 +30,7 @@ class FuseFMA : public transformations::Transformation {
 private:
     data_flow::Tasklet& add_;
     data_flow::Tasklet* fma_ = nullptr;
+    bool invalidate_analysis_;
 
     struct Match {
         data_flow::Tasklet* multiply = nullptr;
@@ -41,7 +42,7 @@ private:
     bool match(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager, Match& out);
 
 public:
-    explicit FuseFMA(data_flow::Tasklet& add);
+    explicit FuseFMA(data_flow::Tasklet& add, bool invalidate_analysis = true);
 
     virtual std::string name() const override;
 

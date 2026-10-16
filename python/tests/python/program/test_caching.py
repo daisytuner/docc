@@ -69,3 +69,22 @@ def test_array_layout_does_not_alias():
 
     compiled = {id(root.compile(x)) for x in layouts[:3]}
     assert len(compiled) == 3
+
+
+def test_compile_options_do_not_alias_in_memory_cache():
+    @native
+    def simple_add(A, B):
+        return A + B
+
+    A = np.random.rand(16)
+    B = np.random.rand(16)
+
+    compiled = simple_add.compile(A, B)
+
+    simple_add.options.fp_contract = not simple_add.options.fp_contract
+    contracted = simple_add.compile(A, B)
+    assert contracted is not compiled
+
+    simple_add.options.pass_options["library_node_expansion.force_expand"] = True
+    expanded = simple_add.compile(A, B)
+    assert expanded is not contracted
