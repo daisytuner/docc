@@ -298,6 +298,7 @@ class PyTorchProgram(DoccProgram):
             shutil.rmtree(output_folder_path)
 
         if docc_reuse_binaries:
+            assert self.options.target is not None  # set in __post_init__
             assert self.options.codegen is not None  # set in __post_init__
             lib_path = f"{output_folder_path}/{codegen_artifact(self.options.target, self.options.codegen, f'__docc_{self.name}')}"
             if not os.path.exists(lib_path):
