@@ -103,11 +103,42 @@ const TensorLayout& MatMulNode::layout_y() const {
 }
 
 TensorLayout MatMulNode::get_linear_result_layout(const TensorLayout& layout_a, const TensorLayout& layout_b) {
-    // The result layout is derived from the last two dimensions of A and B
+    // The trailing two dimensions follow the standard matmul rule:
+    //   [..., M, K] x [..., K, N] -> [..., M, N]
     auto m = layout_a.get_dim_innermost(1);
     auto n = layout_b.get_dim_innermost(0);
-    // Assuming row-major layout for the result
-    return TensorLayout({m, n}); // always in row-major, linear strides, no padding
+
+    // Batch dimensions are everything but the trailing two matrix dimensions. A and B may
+    // have different batch ranks and/or size-1 batch dims that broadcast, so the result's
+    // batch shape is the element-wise broadcast of A's and B's right-aligned batch dims.
+    const size_t batch_a = layout_a.dims() - 2;
+    const size_t batch_b = layout_b.dims() - 2;
+    const size_t out_batch = std::max(batch_a, batch_b);
+
+    symbolic::MultiExpression shape;
+    shape.reserve(out_batch + 2);
+    for (size_t p = 0; p < out_batch; ++p) {
+        // Walk batch dims outermost-to-innermost. Innermost indices are 0 = N, 1 = M,
+        // 2.. = batch (inner-to-outer), so this output batch dim sits at innermost index:
+        const size_t inner = out_batch + 1 - p;
+        const bool has_a = (inner - 2) < batch_a;
+        const bool has_b = (inner - 2) < batch_b;
+
+        if (has_a && has_b) {
+            auto a_dim = layout_a.get_dim_innermost(inner);
+            auto b_dim = layout_b.get_dim_innermost(inner);
+            // Broadcast: a size-1 dimension takes the other operand's extent.
+            shape.push_back(symbolic::eq(a_dim, symbolic::one()) ? b_dim : a_dim);
+        } else if (has_a) {
+            shape.push_back(layout_a.get_dim_innermost(inner));
+        } else {
+            shape.push_back(layout_b.get_dim_innermost(inner));
+        }
+    }
+    shape.push_back(m);
+    shape.push_back(n);
+
+    return TensorLayout(shape); // always in row-major, linear strides, no padding
 }
 
 void MatMulNode::validate(const Function& function) const {
@@ -367,6 +398,7 @@ nlohmann::json MatMulNodeSerializer::serialize(const data_flow::LibraryNode& lib
 
     matmul_node.layout_a().serialize_to_json(j["layout_a"]);
     matmul_node.layout_b().serialize_to_json(j["layout_b"]);
+    matmul_node.layout_y().serialize_to_json(j["layout_y"]);
 
     j["result_quant"] = matmul_node.fixed_quantization();
 
@@ -430,12 +462,21 @@ data_flow::LibraryNode& MatMulNodeSerializer::deserialize(
         layout_b = TensorLayout(shape_b, strides_b, offset_b);
     }
 
+    auto layout_y_it = j.find("layout_y");
+    std::optional<TensorLayout> layout_y;
+    if (layout_y_it != j.end()) {
+        layout_y = TensorLayout::deserialize_from_json(*layout_y_it);
+    }
+
     auto quantization = deserialize_quantization(j, "result_quant", QUANTIZATION_MATCH_INPUTS);
 
     sdfg::serializer::JSONSerializer serializer;
     DebugInfo debug_info = serializer.json_to_debug_info(j["debug_info"]);
 
-    return builder.add_library_node<MatMulNode>(parent, debug_info, layout_a.value(), layout_b.value(), quantization);
+    auto* layout_y_ptr = layout_y.has_value() ? &*layout_y : nullptr;
+
+    return builder.add_library_node<
+        MatMulNode>(parent, debug_info, layout_a.value(), layout_b.value(), quantization, layout_y_ptr);
 }
 
 using Dir = passes::LibNodeExpander::InputUse;
