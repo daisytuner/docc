@@ -19,12 +19,6 @@ from docc.sdfg._sdfg import (
     _statistics_report,
 )
 from docc.compiler.compiled_sdfg import CompiledSDFG
-from docc.compiler.target_registry import (
-    get_target_schedule_fn,
-    get_target_compile_fn,
-    get_target_expand_fn,
-    register_target_overrides,
-)
 
 
 @lru_cache(maxsize=1)
@@ -341,6 +335,7 @@ class DoccProgram(ABC):
             target_options.target = self.options.target
             target_options.category = self.options.category
             target_options.remote_tuning = self.options.remote_tuning
+            target_options.options = sdfg.options
             metrics.add_target_options(target_options)
 
             # Einsum detection
@@ -350,11 +345,7 @@ class DoccProgram(ABC):
                     sdfg.dump(output_folder, "py1.einsum", dump_dot=True)
 
             # Tensor targets keep tensor nodes
-            custom_expand_fn = get_target_expand_fn(self.options.target)
-            if custom_expand_fn is not None:
-                custom_expand_fn(sdfg, self.options.category, {})
-            else:
-                sdfg.expand(target_options)
+            sdfg.expand(target_options)
             if self.options.debug_dump:
                 sdfg.dump(output_folder, "py2.expanded", dump_dot=True)
 
@@ -375,18 +366,10 @@ class DoccProgram(ABC):
                 )
 
             # Schedule if target is specified
-            custom_schedule_fn = get_target_schedule_fn(self.options.target)
-            if custom_schedule_fn is not None:
-                custom_schedule_fn(
-                    sdfg,
-                    self.options.category,
-                    {"remote_tuning": self.options.remote_tuning},
-                )
-            else:
-                sdfg.schedule(
-                    target_options,
-                    not self.options.capture_args,
-                )
+            sdfg.schedule(
+                target_options,
+                not self.options.capture_args,
+            )
 
             # CMath nodes exist only after expansion.
             if self.options.approximate_math:
@@ -433,28 +416,15 @@ class DoccProgram(ABC):
                 "sdfg_compile_time_ms", round(sdfg_opt_time * 1000), "compile_times"
             )
 
-        custom_compile_fn = get_target_compile_fn(self.options.target)
-        if custom_compile_fn is not None:
-            lib_path = custom_compile_fn(
-                sdfg,
-                output_folder,
-                self.options.instrumentation_mode,
-                self.options.capture_args,
-                {
-                    "debug_build": self.options.debug_build,
-                    "threads": self.options.build_thread_count,
-                },
-            )
-        else:
-            lib_path = sdfg._compile(
-                output_folder=output_folder,
-                target=self.options.target,
-                instrumentation_mode=self.options.instrumentation_mode,
-                capture_args=self.options.capture_args,
-                debug_build=self.options.debug_build,
-                threads=self.options.build_thread_count,
-                reuse_sources=reuse_sources,
-            )
+        lib_path = sdfg._compile(
+            output_folder=output_folder,
+            target=self.options.target,
+            instrumentation_mode=self.options.instrumentation_mode,
+            capture_args=self.options.capture_args,
+            debug_build=self.options.debug_build,
+            threads=self.options.build_thread_count,
+            reuse_sources=reuse_sources,
+        )
 
         bin_build_time = time.perf_counter() - compile_end_time
         if metrics is not None:

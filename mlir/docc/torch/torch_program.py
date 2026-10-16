@@ -8,7 +8,6 @@ import time
 import numpy as np
 
 from docc.compiler import CompiledSDFG, DoccProgram, DoccOptions
-from docc.compiler.target_registry import reset_target_registry
 from docc.sdfg import StructuredSDFG, DoccMetrics
 from docc.mlir import MLIRModule
 

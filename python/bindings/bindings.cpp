@@ -254,6 +254,25 @@ PYBIND11_MODULE(_sdfg, m) {
         .def_property_readonly("end_line", &sdfg::DebugInfo::end_line)
         .def_property_readonly("end_column", &sdfg::DebugInfo::end_column);
 
+    py::class_<sdfg::Options>(m, "Options")
+        .def("has", &sdfg::Options::has, py::arg("key"), "Check whether a value is set for the given option")
+        .def(
+            "set",
+            &sdfg::Options::set,
+            py::arg("key"),
+            py::arg("value"),
+            "Set a raw option value without registry validation"
+        )
+        .def(
+            "set_option",
+            [&](sdfg::Options& self, const std::string& key, sdfg::OptionValue value) {
+                self.set_option(docc_context.option_registry(), key, value);
+            },
+            py::arg("key"),
+            py::arg("value"),
+            "Validate the key against the option registry and set a type-coerced value"
+        );
+
     py::class_<docc::target::TargetOptions>(m, "TargetOptions")
         .def(py::init<>())
         .def(
@@ -268,7 +287,8 @@ PYBIND11_MODULE(_sdfg, m) {
         .def_readwrite<>("remote_tuning", &docc::target::TargetOptions::remote_tuning)
         .def_readwrite<>("already_normalized", &docc::target::TargetOptions::already_normalized)
         .def_readwrite<>("enable_fusion_in_normalize", &docc::target::TargetOptions::enable_fusion_in_normalize)
-        .def_readwrite<>("use_new_fusion_in_simplify", &docc::target::TargetOptions::use_new_fusion_in_simplify);
+        .def_readwrite<>("use_new_fusion_in_simplify", &docc::target::TargetOptions::use_new_fusion_in_simplify)
+        .def_readwrite<>("options", &docc::target::TargetOptions::options);
 
     // Register SDFG class
     py::class_<PyStructuredSDFG>(m, "StructuredSDFG")
@@ -295,6 +315,14 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("key"),
             py::arg("value"),
             "Override a registered option for this SDFG"
+        )
+        .def_property_readonly(
+            "options",
+            [](PyStructuredSDFG& self) -> sdfg::Options& {
+                return self.options();
+            },
+            py::return_value_policy::reference_internal,
+            "Access the option bag owned by this SDFG"
         )
         .def_property_readonly(
             "_ptr",

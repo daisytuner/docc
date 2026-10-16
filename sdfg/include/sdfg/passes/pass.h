@@ -43,19 +43,34 @@ protected:
     }
 
 private:
+    // VisitorPass forwards these options into T's constructor when supported.
+    template<typename T>
+    friend class VisitorPass;
+
     // Options this pass was constructed for (non-owning).
     const Options* options_ = &Options::empty();
 };
 
 template<typename T>
 class VisitorPass : public Pass {
+public:
+    VisitorPass(const Options& options = Options::empty()) : Pass(options) {
+    }
+
     std::string name() override {
         return T::name();
     };
 
     bool run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override {
-        T visitor(builder, analysis_manager);
-        return visitor.visit();
+        // Forward the pass options as a third constructor argument when T supports it,
+        // otherwise fall back to the two-argument form.
+        if constexpr (requires { T(builder, analysis_manager, *this->options_); }) {
+            T visitor(builder, analysis_manager, *this->options_);
+            return visitor.visit();
+        } else {
+            T visitor(builder, analysis_manager);
+            return visitor.visit();
+        }
     };
 };
 

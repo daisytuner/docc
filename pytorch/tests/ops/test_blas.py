@@ -307,6 +307,19 @@ def test_bmm_simple(target: str) -> None:
     )
 
 
+def test_bmm_force_expand(target: str) -> None:
+    class BMMSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor, mat2: torch.Tensor) -> torch.Tensor:
+            return torch.bmm(input, mat2)
+
+    check(
+        BMMSimpleNet(),
+        *(torch.randn(10, 3, 4), torch.randn(10, 4, 5)),
+        target=target,
+        options={"library_node_expansion.force_expand": True},
+    )
+
+
 # --- mm ---
 
 

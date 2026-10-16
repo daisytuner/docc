@@ -5,7 +5,9 @@
 
 #include "docc/compile/src_file_compiler_builder.h"
 #include "docc/util/cuda_query_compute_capability.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/matmul_node.h"
 #include "sdfg/passes/expansion/library_node_expansion_pass.h"
+#include "sdfg/passes/expansion/switch_expander.h"
 #include "sdfg/passes/offloading/cuda_library_node_expansion_pass.h"
 #include "sdfg/passes/offloading/cuda_library_node_rewriter_pass.h"
 #include "sdfg/passes/offloading/rocm_library_node_expansion_pass.h"
@@ -71,8 +73,14 @@ static DoccTarget cuda_target = {
     .apply_expand_time_mapping = [](sdfg::builder::StructuredSDFGBuilder& builder,
                                     sdfg::analysis::AnalysisManager& analysis_manager,
                                     const TargetOptions& options) -> bool {
-        sdfg::passes::CudaExpansionPass cuda_expansion_pass;
-        return cuda_expansion_pass.run(builder, analysis_manager);
+        sdfg::passes::CudaExpansionPass cuda_expansion_pass(*options.options);
+        bool changed = cuda_expansion_pass.run(builder, analysis_manager);
+
+        sdfg::passes::LibraryNodeExpansionPass
+            exp_pass(std::make_shared<sdfg::math::tensor::MatMulBlasExpander>(), *options.options);
+        changed |= exp_pass.run_pass(builder, analysis_manager);
+
+        return changed;
     },
     .apply_sched_time_mapping = [](sdfg::builder::StructuredSDFGBuilder& builder,
                                    sdfg::analysis::AnalysisManager& analysis_manager,
@@ -145,8 +153,14 @@ static DoccTarget rocm_target = {
     .apply_expand_time_mapping = [](sdfg::builder::StructuredSDFGBuilder& builder,
                                     sdfg::analysis::AnalysisManager& analysis_manager,
                                     const TargetOptions& options) -> bool {
-        sdfg::passes::RocmExpansionPass rocm_expansion_pass;
-        return rocm_expansion_pass.run(builder, analysis_manager);
+        sdfg::passes::RocmExpansionPass rocm_expansion_pass(*options.options);
+        bool changed = rocm_expansion_pass.run(builder, analysis_manager);
+
+        sdfg::passes::LibraryNodeExpansionPass
+            exp_pass(std::make_shared<sdfg::math::tensor::MatMulBlasExpander>(), *options.options);
+        changed |= exp_pass.run_pass(builder, analysis_manager);
+
+        return changed;
     },
     .apply_sched_time_mapping = [](sdfg::builder::StructuredSDFGBuilder& builder,
                                    sdfg::analysis::AnalysisManager& analysis_manager,
@@ -167,8 +181,10 @@ static DoccTarget sequential_target = {
     .apply_expand_time_mapping = [](sdfg::builder::StructuredSDFGBuilder& builder,
                                     sdfg::analysis::AnalysisManager& analysis_manager,
                                     const TargetOptions& options) -> bool {
-        auto conv_expander = std::make_shared<sdfg::omp::OMPConvExpander>();
-        sdfg::passes::LibraryNodeExpansionPass libnode_expansion_pass(conv_expander);
+        auto expander = std::make_shared<sdfg::passes::SwitchExpander>(
+            std::make_shared<sdfg::omp::OMPConvExpander>(), std::make_shared<sdfg::math::tensor::MatMulBlasExpander>()
+        );
+        sdfg::passes::LibraryNodeExpansionPass libnode_expansion_pass(expander, *options.options);
         return libnode_expansion_pass.run(builder, analysis_manager);
     },
     .get_target_loop_schedulers =
@@ -195,8 +211,10 @@ static DoccTarget openmp_target = {
     .apply_expand_time_mapping = [](sdfg::builder::StructuredSDFGBuilder& builder,
                                     sdfg::analysis::AnalysisManager& analysis_manager,
                                     const TargetOptions& options) -> bool {
-        auto conv_expander = std::make_shared<sdfg::omp::OMPConvExpander>();
-        sdfg::passes::LibraryNodeExpansionPass libnode_expansion_pass(conv_expander);
+        auto expander = std::make_shared<sdfg::passes::SwitchExpander>(
+            std::make_shared<sdfg::omp::OMPConvExpander>(), std::make_shared<sdfg::math::tensor::MatMulBlasExpander>()
+        );
+        sdfg::passes::LibraryNodeExpansionPass libnode_expansion_pass(expander, *options.options);
         return libnode_expansion_pass.run(builder, analysis_manager);
     },
     .get_target_loop_schedulers =
