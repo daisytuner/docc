@@ -53,9 +53,9 @@ bool widen_tile_copy_node(tiles::TileCopyNode& node) {
 }
 
 // A 2-D 16- or 32-bit copy-in whose source is unit-stride along dim 1 and whose buffer is
-// unit-stride along dim 0 (a transposed placement) moves 4x4 blocks with a register
-// transpose. Needs 4-multiple extents and 4-element-aligned rows and offsets on both sides.
-bool transpose_tile_copy_node(tiles::TileCopyNode& node) {
+// unit-stride along dim 0 (a column-major placement) moves 4x4 blocks regrouped in registers,
+// keeping both sides wide. Needs 4-multiple extents and 4-element-aligned rows and offsets.
+bool coalesce_tile_copy_node(tiles::TileCopyNode& node) {
     const auto& plan = node.plan();
     const size_t elem_bytes = node.bytes();
     if (node.atom() != tiles::CopyAtom::ScalarSync || node.direction() != tiles::CopyDirection::In ||
@@ -79,7 +79,7 @@ bool transpose_tile_copy_node(tiles::TileCopyNode& node) {
         !tiles::provably_multiple_of(plan.dst.offset(), 4, node)) {
         return false;
     }
-    node.set_atom(tiles::CopyAtom::TransposeSync);
+    node.set_atom(tiles::CopyAtom::CoalesceSync);
     node.set_bytes(4 * elem_bytes);
     return true;
 }
@@ -201,7 +201,7 @@ void TileVectorizer::apply(builder::StructuredSDFGBuilder& builder, analysis::An
 
     for (auto* tc : tile_copies) {
         if (!widen_tile_copy_node(*tc)) {
-            transpose_tile_copy_node(*tc);
+            coalesce_tile_copy_node(*tc);
         }
     }
 

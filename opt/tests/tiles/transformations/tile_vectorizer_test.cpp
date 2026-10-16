@@ -209,14 +209,14 @@ TEST(TileVectorizerTest, InnerAxisGuardBlocksWidening) {
     }
 }
 
-// The fp32 4x4 transposing copy issues 16-byte row loads/stores, so both plan offsets must be
+// The fp32 4x4 coalesced block copy issues 16-byte row loads/stores, so both plan offsets must be
 // provably 4-element aligned, using the enclosing map's stride for its indvar.
-TEST(TileVectorizerTest, TransposeRequiresAlignedOffsets) {
+TEST(TileVectorizerTest, CoalescedBlockCopyRequiresAlignedOffsets) {
     auto b = symbolic::symbol("b");
     struct Case {
         symbolic::Expression src_offset;
         long map_stride;
-        bool transposed;
+        bool coalesced;
     };
     const std::vector<Case> cases = {
         {symbolic::integer(1), 1, false},
@@ -226,7 +226,7 @@ TEST(TileVectorizerTest, TransposeRequiresAlignedOffsets) {
         {symbolic::add(b, symbolic::integer(2)), 4, false},
     };
     for (const auto& c : cases) {
-        builder::StructuredSDFGBuilder builder("tv_transpose_align", FunctionType_CPU);
+        builder::StructuredSDFGBuilder builder("tv_coalesce_align", FunctionType_CPU);
         types::Scalar loop_var(types::PrimitiveType::Int32);
         types::Scalar elem(types::PrimitiveType::Float);
         types::Pointer ptr(elem);
@@ -264,8 +264,8 @@ TEST(TileVectorizerTest, TransposeRequiresAlignedOffsets) {
         ASSERT_TRUE(tv.can_be_applied(builder, am));
         tv.apply(builder, am);
 
-        if (c.transposed) {
-            EXPECT_EQ(copy.atom(), tiles::CopyAtom::TransposeSync) << copy.toStr();
+        if (c.coalesced) {
+            EXPECT_EQ(copy.atom(), tiles::CopyAtom::CoalesceSync) << copy.toStr();
             EXPECT_EQ(copy.bytes(), 16u);
         } else {
             EXPECT_EQ(copy.atom(), tiles::CopyAtom::ScalarSync) << copy.toStr();

@@ -23,8 +23,8 @@ const char* atom_to_string(CopyAtom atom) {
             return "vector_sync";
         case CopyAtom::CpAsync:
             return "cp_async";
-        case CopyAtom::TransposeSync:
-            return "transpose_sync";
+        case CopyAtom::CoalesceSync:
+            return "coalesce_sync";
     }
     return "scalar_sync";
 }
@@ -36,8 +36,9 @@ CopyAtom atom_from_string(const std::string& s) {
     if (s == "cp_async") {
         return CopyAtom::CpAsync;
     }
-    if (s == "transpose_sync") {
-        return CopyAtom::TransposeSync;
+    // "transpose_sync" is the pre-rename name in serialized SDFGs.
+    if (s == "coalesce_sync" || s == "transpose_sync") {
+        return CopyAtom::CoalesceSync;
     }
     return CopyAtom::ScalarSync;
 }
@@ -449,12 +450,12 @@ const char* int_type(size_t bytes) {
     }
 }
 
-// TransposeSync body: the 2-D tile [R][C] (source unit-stride along C, buffer along R) is
+// CoalesceSync body: the 2-D tile [R][C] (source unit-stride along C, buffer along R) is
 // split into 4x4 blocks; each lane loads four source rows (8 bytes for 16-bit, 16 bytes for
-// 32-bit elements), transposes them in registers and stores four buffer rows of the same width.
+// 32-bit elements), regroups them in registers and stores four buffer rows of the same width.
 // When the block grid allows, 16-lane groups cover 4x4 blocks, so a wave reads whole source
 // rows and writes distinct banks.
-void emit_transpose_copy_blocks(
+void emit_coalesce_copy_blocks(
     codegen::LanguageExtension& language_extension,
     codegen::PrettyPrinter& stream,
     const TileCopyNode& node,
@@ -606,8 +607,8 @@ void emit_cooperative_copy_loop(
     stream << "{" << std::endl;
     stream << "int __tc_tid = " << tid << ";" << std::endl;
 
-    if (node.atom() == CopyAtom::TransposeSync) {
-        emit_transpose_copy_blocks(language_extension, stream, node, dst_expr, src_expr, elem, n);
+    if (node.atom() == CopyAtom::CoalesceSync) {
+        emit_coalesce_copy_blocks(language_extension, stream, node, dst_expr, src_expr, elem, n);
         stream << "}" << std::endl;
         return;
     }

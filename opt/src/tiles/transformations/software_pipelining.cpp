@@ -296,7 +296,7 @@ find_staging_group(const std::set<std::string>& staged, structured_control_flow:
 }
 
 // Per-thread 32-bit words a staged copy's register array needs, covering the scalar
-// (one word per element), 16-byte vector and 4x4-transposing lowerings of its plan.
+// (one word per element), 16-byte vector and 4x4 coalesced-block lowerings of its plan.
 std::optional<size_t> stage_words(const tiles::TileCopyNode& tc, size_t elem_bytes) {
     auto total = tc.plan().src.total_elements();
     const auto& ct = tc.coop_threads();
@@ -313,8 +313,8 @@ std::optional<size_t> stage_words(const tiles::TileCopyNode& tc, size_t elem_byt
     };
     const long long scalar = ceil_div(n, t);
     const long long vec = 4 * ceil_div(n * static_cast<long long>(elem_bytes), 16 * t);
-    const long long transpose = 4 * static_cast<long long>(elem_bytes) * ceil_div(n, 16 * t);
-    return static_cast<size_t>(std::max({scalar, vec, transpose}));
+    const long long coalesce = 4 * static_cast<long long>(elem_bytes) * ceil_div(n, 16 * t);
+    return static_cast<size_t>(std::max({scalar, vec, coalesce}));
 }
 
 /// Element width of a staged copy, from its source pointer (the transfer width may
@@ -719,8 +719,8 @@ void SoftwarePipelining::apply(builder::StructuredSDFGBuilder& builder, analysis
     visitor::for_each_block(body, collect);
     for (auto* b : copy_blocks) {
         auto* tc = tile_copy_node_in(*b);
-        // An async transfer cannot transpose.
-        if (tc == nullptr || tc->atom() == tiles::CopyAtom::TransposeSync) {
+        // An async transfer moves bytes unchanged, so a CoalesceSync block copy stays synchronous.
+        if (tc == nullptr || tc->atom() == tiles::CopyAtom::CoalesceSync) {
             continue;
         }
         if (tc->bytes() < target->min_async_bytes()) {
