@@ -11,6 +11,10 @@ TrivialArrayElimination::TrivialArrayElimination()
 
       };
 
+TrivialArrayElimination::TrivialArrayElimination(std::unordered_set<std::string> containers)
+    : Pass(), containers_(std::move(containers)) {
+}
+
 std::string TrivialArrayElimination::name() {
     return "TrivialArrayElimination";
 };
@@ -24,6 +28,9 @@ bool TrivialArrayElimination::
     for (auto& name : sdfg.containers()) {
         // Criterion: Only transients
         if (!sdfg.is_transient(name)) {
+            continue;
+        }
+        if (!containers_.empty() && !containers_.contains(name)) {
             continue;
         }
         if (users.num_moves(name) > 0 || users.num_views(name) > 0) {
