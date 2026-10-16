@@ -83,6 +83,7 @@ def check(
     target: str = "none",
     category: str = "server",
     remote_tuning: bool = False,
+    options: dict[str, Any] = {},
 ) -> None:
     model_ref = copy.deepcopy(model)
     if hasattr(model, "is_docc") != hasattr(model_ref, "is_docc"):
@@ -107,6 +108,7 @@ def check(
             "target": target,
             "category": category,
             "remote_tuning": remote_tuning,
+            **options,
         },
     )
     with torch.no_grad():

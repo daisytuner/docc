@@ -69,7 +69,8 @@ TEST(MatMulTest, MatMul_2D_SimpleMatrix) {
 
     // Test expansion
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto outcome = passes::expansion::expand_single_math_node(builder, block, matmul_node);
+    auto outcome =
+        passes::expansion::expand_single_node(builder, block, matmul_node, math::tensor::MatMulBlasExpander());
     EXPECT_TRUE(outcome.expanded);
     EXPECT_TRUE(outcome.block_removed);
 
@@ -163,7 +164,8 @@ TEST(MatMulTest, MatMul_3D_Batched) {
 
     // Test expansion
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto outcome = passes::expansion::expand_single_math_node(builder, block, matmul_node);
+    auto outcome =
+        passes::expansion::expand_single_node(builder, block, matmul_node, math::tensor::MatMulBlasExpander());
 
     dump_sdfg(sdfg, "1.expanded");
     EXPECT_TRUE(outcome.expanded);
@@ -241,7 +243,8 @@ TEST(MatMulTest, MatMul_WithSymbolicDimensions) {
 
     // Test expansion
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto outcome = passes::expansion::expand_single_math_node(builder, block, matmul_node);
+    auto outcome =
+        passes::expansion::expand_single_node(builder, block, matmul_node, math::tensor::MatMulBlasExpander());
     EXPECT_TRUE(outcome.expanded);
     EXPECT_TRUE(outcome.block_removed);
 
@@ -303,7 +306,8 @@ TEST(MatMulTest, MatMul_IntegerType_ReturnsFailure) {
 
     // Test expansion - should fail for integer types
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto outcome = passes::expansion::expand_single_math_node(builder, block, matmul_node);
+    auto outcome =
+        passes::expansion::expand_single_node(builder, block, matmul_node, math::tensor::MatMulBlasExpander());
     EXPECT_FALSE(outcome.expanded);
     EXPECT_FALSE(outcome.block_removed);
 }
@@ -359,7 +363,8 @@ TEST(MatMulTest, MatMul_NoCopyForDefaultStrides) {
 
     // Test expansion
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto outcome = passes::expansion::expand_single_math_node(builder, block, matmul_node);
+    auto outcome =
+        passes::expansion::expand_single_node(builder, block, matmul_node, math::tensor::MatMulBlasExpander());
     EXPECT_TRUE(outcome.expanded);
     EXPECT_TRUE(outcome.block_removed);
 

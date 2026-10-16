@@ -39,6 +39,14 @@ public:
 
     void set_option(const std::string& key, pybind11::object value);
 
+    /// Access the per-SDFG option bag owned by this object.
+    sdfg::Options& options() {
+        return options_;
+    }
+    const sdfg::Options& options() const {
+        return options_;
+    }
+
     sdfg::plugins::Context& docc_context() const;
 
     sdfg::StructuredSDFG& sdfg() {

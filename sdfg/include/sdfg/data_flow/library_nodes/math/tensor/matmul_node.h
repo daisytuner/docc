@@ -234,6 +234,27 @@ public:
     ) override;
 };
 
+class MatMulNaiveExpander : public passes::CodeLibNodeExpander<MatMulNode> {
+public:
+    MatMulNaiveExpander() : passes::CodeLibNodeExpander<MatMulNode>(LibraryNodeType_MatMul) {
+    }
+
+    passes::LibNodeExpander::ExpandOutcome handle_expand(
+        passes::LibNodeExpander::ExpandContext& context, structured_control_flow::Block& block, MatMulNode& node
+    ) const override;
+};
+
+class MatMulBlasExpander : public passes::CodeLibNodeExpander<MatMulNode> {
+public:
+    MatMulBlasExpander() : passes::CodeLibNodeExpander<MatMulNode>(LibraryNodeType_MatMul) {
+    }
+
+
+    passes::LibNodeExpander::ExpandOutcome handle_expand(
+        passes::LibNodeExpander::ExpandContext& context, structured_control_flow::Block& block, MatMulNode& node
+    ) const override;
+};
+
 } // namespace tensor
 } // namespace math
 } // namespace sdfg

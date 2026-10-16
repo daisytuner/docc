@@ -92,24 +92,8 @@ PyStructuredSDFG::PyStructuredSDFG(sdfg::plugins::Context& ctx, std::unique_ptr<
 }
 
 void PyStructuredSDFG::set_option(const std::string& key, pybind11::object value) {
-    const auto* spec = docc_context_.option_registry().find_option(key);
-    if (spec == nullptr) {
-        throw std::runtime_error("Unknown option: " + key);
-    }
-    switch (spec->type) {
-        case sdfg::OptionType::Bool:
-            options_.set(key, sdfg::OptionValue{value.cast<bool>()});
-            break;
-        case sdfg::OptionType::Int:
-            options_.set(key, sdfg::OptionValue{value.cast<int64_t>()});
-            break;
-        case sdfg::OptionType::Double:
-            options_.set(key, sdfg::OptionValue{value.cast<double>()});
-            break;
-        case sdfg::OptionType::String:
-            options_.set(key, sdfg::OptionValue{value.cast<std::string>()});
-            break;
-    }
+    // The registry-validated, type-coercing logic now lives on sdfg::Options.
+    options_.set_option(docc_context_.option_registry(), key, value.cast<sdfg::OptionValue>());
 }
 
 PyStructuredSDFG PyStructuredSDFG::parse(sdfg::plugins::Context& ctx, const std::string& sdfg_text) {
@@ -157,7 +141,6 @@ const sdfg::types::IType& PyStructuredSDFG::return_type() const {
 const sdfg::types::IType& PyStructuredSDFG::type(const std::string& name) const {
     return sdfg_->type(name);
 }
-
 bool PyStructuredSDFG::exists(const std::string& name) const {
     return sdfg_->exists(name);
 }

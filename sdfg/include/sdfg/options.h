@@ -48,6 +48,9 @@ struct OptionKey {
     }
 };
 
+// Defined below; referenced by Options::set_option for registry-validated sets.
+class OptionRegistry;
+
 // A per-run bag of option values, keyed by option name. Shared by passes,
 // analyses, and any helper that is handed one; not tied to passes.
 class Options {
@@ -55,6 +58,11 @@ public:
     void set(std::string key, OptionValue value) {
         values_.insert_or_assign(std::move(key), std::move(value));
     }
+
+    // Validate `key` against `registry` and store `value`, coercing it to the
+    // option's declared type (e.g. an integer literal supplied for a Double
+    // option). Throws if the key is unknown or the value type is incompatible.
+    void set_option(const OptionRegistry& registry, const std::string& key, const OptionValue& value);
 
     bool has(std::string_view key) const {
         return values_.find(std::string(key)) != values_.end();
@@ -104,5 +112,46 @@ public:
 private:
     std::unordered_map<std::string, OptionSpec> options_;
 };
+
+inline void Options::set_option(const OptionRegistry& registry, const std::string& key, const OptionValue& value) {
+    const OptionSpec* spec = registry.find_option(key);
+    if (spec == nullptr) {
+        throw std::runtime_error("Unknown option: " + key);
+    }
+    switch (spec->type) {
+        case OptionType::Bool:
+            if (const auto* b = std::get_if<bool>(&value)) {
+                set(key, OptionValue{*b});
+            } else {
+                throw std::runtime_error("Option '" + key + "' expects a bool value");
+            }
+            break;
+        case OptionType::Int:
+            if (const auto* i = std::get_if<int64_t>(&value)) {
+                set(key, OptionValue{*i});
+            } else if (const auto* b = std::get_if<bool>(&value)) {
+                set(key, OptionValue{static_cast<int64_t>(*b)});
+            } else {
+                throw std::runtime_error("Option '" + key + "' expects an int value");
+            }
+            break;
+        case OptionType::Double:
+            if (const auto* d = std::get_if<double>(&value)) {
+                set(key, OptionValue{*d});
+            } else if (const auto* i = std::get_if<int64_t>(&value)) {
+                set(key, OptionValue{static_cast<double>(*i)});
+            } else {
+                throw std::runtime_error("Option '" + key + "' expects a double value");
+            }
+            break;
+        case OptionType::String:
+            if (const auto* s = std::get_if<std::string>(&value)) {
+                set(key, OptionValue{*s});
+            } else {
+                throw std::runtime_error("Option '" + key + "' expects a string value");
+            }
+            break;
+    }
+}
 
 } // namespace sdfg

@@ -13,8 +13,11 @@
 namespace sdfg {
 namespace passes {
 
-CudaExpansion::CudaExpansion(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager)
-    : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager) {
+CudaExpansion::CudaExpansion(
+    builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager, const Options& options
+)
+    : visitor::NonStoppingStructuredSDFGVisitor(builder, analysis_manager),
+      force_expand_(options.get(LibraryNodeExpansionPass<>::FORCE_EXPAND, false)) {
 }
 
 bool CudaExpansion::accept(structured_control_flow::Block& node) {
@@ -33,7 +36,7 @@ bool CudaExpansion::accept(structured_control_flow::Block& node) {
             offloading::GPUConvExpander conv_expander;
             auto outcome = expansion::expand_single_node(builder_, node, *library_node, conv_expander);
             made_changes |= outcome.expanded;
-        } else if (lib_node_code == math::tensor::LibraryNodeType_MatMul) {
+        } else if (!force_expand_ && lib_node_code == math::tensor::LibraryNodeType_MatMul) {
             auto& matmul_node = static_cast<math::tensor::MatMulNode&>(*library_node);
             sdfg::offloading::CudaBatchedMatMulExpander expander(matmul_node);
             made_changes |= expander.expand(builder_, analysis_manager_);

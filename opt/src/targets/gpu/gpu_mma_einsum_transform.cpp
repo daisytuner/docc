@@ -92,11 +92,7 @@ einsum::ReplaceOutcome GpuMmaEinsumReplacer::
     }
 
     auto mma_tiling = mma_arch->get_mma_tiling(
-        {analysis.m, analysis.n, analysis.k},
-        analysis.input_type,
-        mma_arch->get_accumulator_type(analysis.input_type, analysis.output_type, types::PrimitiveType::Void),
-        block_size_hint_,
-        wave_tile_hint_
+        {analysis.m, analysis.n, analysis.k}, analysis.input_type, analysis.acc_type, block_size_hint_, wave_tile_hint_
     );
 
     if (!mma_tiling) {

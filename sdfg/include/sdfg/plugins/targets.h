@@ -18,6 +18,10 @@ struct TargetOptions {
     bool already_normalized = false;
     bool enable_fusion_in_normalize = true;
     bool use_new_fusion_in_simplify = true;
+    // Non-owning reference to the caller's option bag (typically owned by the
+    // front-end / PyStructuredSDFG). Stored as a pointer so it can be reseated
+    // after default construction (e.g. filled field-by-field from Python).
+    const sdfg::Options* options = &sdfg::Options::empty();
 };
 
 struct DoccTarget {

@@ -271,7 +271,8 @@ public:
     explicit LibraryNodeExpansionPass(const Options& options)
         : Pass(options), holder_options_(std::make_shared<MathNodeExpander>()) {
     }
-    LibraryNodeExpansionPass(Holder::StorageType options) : holder_options_(std::move(options)) {
+    LibraryNodeExpansionPass(Holder::StorageType holder, const Options& options = Options::empty())
+        : Pass(options), holder_options_(std::move(holder)) {
     }
 
     std::string name() override {
