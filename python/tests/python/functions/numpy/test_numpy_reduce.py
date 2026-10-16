@@ -381,7 +381,7 @@ def test_mean_3d():
 
 
 def test_mean_dtypes():
-    """Test np.mean always returns float64 regardless of input dtype"""
+    """Test np.mean returns float64 for integer input and keeps the precision of float input"""
 
     @native
     def mean_int64(a):
@@ -415,8 +415,8 @@ def test_mean_dtypes():
     result = mean_float32(a)
     expected = np.mean(a, axis=0)
     assert result.shape == (3,)
-    assert result.strides == (8,)
-    assert result.dtype == np.float64  # mean always returns float64
+    assert result.strides == (4,)
+    assert result.dtype == np.float32
     assert np.allclose(result, expected)
 
 
@@ -543,7 +543,7 @@ def test_std_3d():
 
 
 def test_std_dtypes():
-    """Test np.std always returns float64 regardless of input dtype"""
+    """Test np.std returns float64 for integer input and keeps the precision of float input"""
 
     @native
     def std_int64(a):
@@ -577,8 +577,8 @@ def test_std_dtypes():
     result = std_float32(a)
     expected = np.std(a, axis=0)
     assert result.shape == (3,)
-    assert result.strides == (8,)
-    assert result.dtype == np.float64  # std always returns float64
+    assert result.strides == (4,)
+    assert result.dtype == np.float32
     assert np.allclose(result, expected)
 
 
