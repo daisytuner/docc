@@ -136,6 +136,14 @@ def test_arctanh_simple(target: str) -> None:
     )
 
 
+def test_tanh_simple(target: str) -> None:
+    class PointwiseCMathTanhSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.tanh(input)
+
+    check(PointwiseCMathTanhSimpleNet(), torch.randn(4), target=target)
+
+
 def test_atan2_simple(target: str) -> None:
     class PointwiseCMathAtan2SimpleNet(nn.Module):
         def forward(self, input: torch.Tensor, other: torch.Tensor) -> torch.Tensor:
