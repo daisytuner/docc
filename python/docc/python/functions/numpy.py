@@ -9,6 +9,7 @@ from docc.sdfg import (
     Tensor,
 )
 from docc.python.type_system import (
+    FLOAT_PRIMITIVE_TYPES,
     element_type_from_ast_node,
 )
 from docc.python.ast_utils import get_debug_info
@@ -2734,11 +2735,12 @@ class NumPyHandler:
         if array_name not in self.tensor_table:
             raise ValueError(f"Reduction input must be an array, got {array_name}")
 
-        # For mean and std, we need float64 input and output (NumPy behavior)
-        # Cast input to float64 if needed
+        # NumPy computes mean and std of integer and boolean arrays in float64, of float arrays in their own precision
         if func_name in ("mean", "std"):
-            float64_type = Scalar(PrimitiveType.Double)
-            array_name = self._cast_array(array_name, float64_type)
+            element_type = self._ev._element_type(array_name)
+            if element_type.primitive_type not in FLOAT_PRIMITIVE_TYPES:
+                float64_type = Scalar(PrimitiveType.Double)
+                array_name = self._cast_array(array_name, float64_type)
 
         input_tensor = self.tensor_table[array_name]
         input_shape = input_tensor.shape
