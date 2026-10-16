@@ -57,6 +57,13 @@ bool widen_tile_copy_node(tiles::TileCopyNode& node) {
         !symbolic::eq(plan.dst.strides().back(), symbolic::integer(1))) {
         return false;
     }
+    // The guard is checked once per transfer at its first element; only outer-axis bounds hold for the whole run.
+    const size_t inner_axis = static_cast<size_t>(plan.src.dims() - 1);
+    for (const auto& d : node.guard().dims) {
+        if (d.axis == inner_axis) {
+            return false;
+        }
+    }
     auto* inner_i = dynamic_cast<const SymEngine::Integer*>(plan.src.shape().back().get());
     auto total = plan.src.total_elements();
     auto* total_i = dynamic_cast<const SymEngine::Integer*>(total.get());
