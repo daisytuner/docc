@@ -565,7 +565,9 @@ bool LocalStorage::prepare(builder::StructuredSDFGBuilder& builder, analysis::An
     if (count.is_null()) {
         return false;
     }
-    auto budget = symbolic::integer(static_cast<int64_t>(max_tile_elements()));
+    auto* enclosing = enclosing_tile_target(loop_);
+    auto budget =
+        symbolic::integer(static_cast<int64_t>(enclosing ? enclosing->max_tile_elements() : max_tile_elements()));
     if (!symbolic::is_true(symbolic::Le(count, budget))) {
         return false;
     }
