@@ -95,11 +95,12 @@ void fill(std::vector<T>& a, std::vector<T>& b) {
     }
 }
 
-/// Largest error of @p transform's result, relative to sum_k |A[i, k] B[k, j]|.
+/// Largest error of @p transform's result, relative to sum_k |A[i, k] B[k, j]|, with A scaled by @p a_scale.
 template<typename T>
 double relative_error(
     const std::string& name,
-    const std::function<void(data_flow::LibraryNode&, builder::StructuredSDFGBuilder&)>& transform
+    const std::function<void(data_flow::LibraryNode&, builder::StructuredSDFGBuilder&)>& transform,
+    double a_scale = 1.0
 ) {
     auto type = std::is_same_v<T, float> ? PrimitiveType::Float : PrimitiveType::Double;
     builder::StructuredSDFGBuilder builder(name, FunctionType_CPU);
@@ -109,6 +110,9 @@ double relative_error(
 
     std::vector<T> a, b, y(M * N, T(-7));
     fill(a, b);
+    for (auto& x : a) {
+        x = static_cast<T>(x * a_scale);
+    }
     function(a.data(), b.data(), y.data());
 
     double worst = 0;
@@ -208,6 +212,16 @@ TEST(QuantizeContractionTest, Rejects) {
 TEST(QuantizeContractionTest, Float_WithinQuantizationError) {
     // Each product errs by at most ~1/127 of its row's and column's largest magnitudes; measured 3.6e-3.
     EXPECT_LT(relative_error<float>("quantize_float", applying<fp_math::QuantizeContraction>()), 1e-2);
+}
+
+TEST(QuantizeContractionTest, Double_WithinQuantizationError) {
+    EXPECT_LT(relative_error<double>("quantize_double", applying<fp_math::QuantizeContraction>()), 1e-2);
+}
+
+TEST(QuantizeContractionTest, TinyRowsDoNotOverflow) {
+    // Rows whose largest magnitude lies below q / max_finite, where the factor q / s would overflow to infinity.
+    EXPECT_LT(relative_error<double>("quantize_double_tiny", applying<fp_math::QuantizeContraction>(), 1e-303), 1e-2);
+    EXPECT_LT(relative_error<float>("quantize_float_tiny", applying<fp_math::QuantizeContraction>(), 1e-34), 1e-2);
 }
 
 TEST(QuantizeContractionTest, JsonRoundTrip) {

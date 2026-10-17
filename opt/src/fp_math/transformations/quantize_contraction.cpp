@@ -42,10 +42,11 @@ void QuantizeContraction::apply(builder::StructuredSDFGBuilder& builder, analysi
         auto scales_a = detail::absmax(kb, "_q_scale_a", read_a, m, k, tiny, type);
         auto scales_b = detail::absmax(kb, "_q_scale_b", read_b_t, n, k, tiny, type);
 
-        // X_q = rint(x * q / s), with |x| <= s, lies in [-q, q].
+        // X_q = rint(x / s * q), with |x| <= s, lies in [-q, q]; dividing first never overflows, unlike q / s for
+        // small s.
         auto quantize = [&](BlockBuilder& block, const KernelValue& x, const KernelValue& scale) {
-            auto factor = block.op(TaskletCode::fp_div, {block.constant(q, type), scale}, type);
-            auto scaled = block.op(TaskletCode::fp_mul, {block.convert(x, type), factor}, type);
+            auto ratio = block.op(TaskletCode::fp_div, {block.convert(x, type), scale}, type);
+            auto scaled = block.op(TaskletCode::fp_mul, {ratio, block.constant(q, type)}, type);
             return block.cmath(CMathFunction::rint, {scaled}, type);
         };
         // Each operand is quantized in its storage order, its inner loop running along memory, and the Int8 matmul
