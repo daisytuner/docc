@@ -19,6 +19,7 @@
 #include <sdfg/codegen/instrumentation/instrumentation_plan.h>
 #include <sdfg/codegen/loop_report.h>
 #include <sdfg/einsum/einsum.h>
+#include <sdfg/fp_math/passes/contraction_precision.h>
 #include <sdfg/fp_math/passes/fp_contraction.h>
 #include <sdfg/parallelization/passes/auto_parallelization.h>
 #include <sdfg/passes/dataflow/approximate_math.h>
@@ -218,6 +219,13 @@ void PyStructuredSDFG::expand(const docc::target::TargetOptions& options) {
     // Tensor layouts are lost on expansion, so record buffer sizes for offloading first
     sdfg::passes::TensorAllocationSizeInference tensor_allocation_size_inference;
     tensor_allocation_size_inference.run(builder_opt, analysis_manager);
+
+    // Before the targets map matmuls, e.g. to BLAS; they map the Int8 matmuls the emulation leaves instead.
+    if (options.contraction_precision != "native") {
+        sdfg::fp_math::ContractionPrecisionPass
+            contraction_precision_pass(sdfg::fp_math::ContractionPrecision::parse(options.contraction_precision));
+        contraction_precision_pass.run(builder_opt, analysis_manager);
+    }
 
     if (auto* target = docc_context_.get_target_handler(options.target)) {
         if (auto target_expand = target->safe_apply_expand_time_mapping_fn_get()) {

@@ -48,3 +48,17 @@ Where they pay off:
 
 Requirements: a 2-D MatMul whose inputs, accumulator and output share the Float or Double type, or a row-major Float or Double GEMM, and a constant K for which the Int32 accumulation is exact (K ≤ 133143 for Int8 values up to ±127).
 The splitting and reconstruction run in Double; inputs of magnitude 2^1023 or above are not supported.
+
+### Selecting the precision
+
+`ContractionPrecisionPass` applies one of these transformations to every MatMul and GEMM it can; the others stay native.
+The Python frontends select it with `DoccOptions(contraction_precision=...)` (`TargetOptions::contraction_precision`), applied at the start of `expand`, before the targets map matmuls (e.g. to BLAS), so they map the Int8 matmuls instead:
+
+| `contraction_precision` | Computation |
+|---|---|
+| `native` (default) | unchanged |
+| `int8`, `int2` ... `int7` | `QuantizeContraction` with that many bits (lossy) |
+| `ozaki` | `OzakiContraction`, modular, which needs the fewest Int8 matmuls |
+| `ozaki1[:s]` / `ozaki2[:L]` | `OzakiContraction`, slicing with s slices / modular with L moduli (default: by precision) |
+
+With the frontend's default symbolic shapes K is not a constant, so pass `symbolic_shapes=False` for the transformations to apply.

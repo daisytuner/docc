@@ -11,6 +11,7 @@
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/library_nodes/math/blas/gemm_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/matmul_node.h"
+#include "sdfg/fp_math/passes/contraction_precision.h"
 #include "sdfg/fp_math/transformations/ozaki_contraction.h"
 #include "sdfg/fp_math/transformations/quantize_contraction.h"
 #include "sdfg/transformations/transformation_registry.h"
@@ -389,4 +390,65 @@ TEST(OzakiContractionTest, Gemm_BetaZeroIgnoresC) {
 
 TEST(QuantizeContractionTest, Gemm_AlphaBetaTransposed) {
     EXPECT_LT(gemm_relative_error("quantize_gemm", -1.5, 1.0, applying<fp_math::QuantizeContraction>()), 1e-2);
+}
+
+TEST(ContractionPrecisionTest, Parse) {
+    using fp_math::ContractionPrecision;
+    for (auto spec : {"native", "int8", "int4", "ozaki1", "ozaki2", "ozaki1:6", "ozaki2:12"}) {
+        EXPECT_EQ(ContractionPrecision::parse(spec).str(), spec);
+    }
+    auto ozaki = ContractionPrecision::parse("ozaki");
+    EXPECT_EQ(ozaki.kind, ContractionPrecision::Kind::Ozaki);
+    EXPECT_EQ(ozaki.variant, fp_math::OzakiVariant::Modular);
+    EXPECT_EQ(ozaki.parameter, 0);
+    auto slicing = ContractionPrecision::parse("ozaki1:6");
+    EXPECT_EQ(slicing.variant, fp_math::OzakiVariant::Slicing);
+    EXPECT_EQ(slicing.parameter, 6);
+    for (auto spec : {"", "int9", "int1", "ozaki3", "ozaki1:", "ozaki:4", "ozaki2:0", "fp16"}) {
+        EXPECT_THROW(ContractionPrecision::parse(spec), std::invalid_argument) << spec;
+    }
+}
+
+TEST(ContractionPrecisionTest, PassReplacesSupportedContractions) {
+    builder::StructuredSDFGBuilder builder("precision_pass", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    add_gemm(builder, "1.0", "0.0");
+    // A second, integer matmul that no precision applies to.
+    types::Pointer int_pointer{types::Scalar(PrimitiveType::Int32)};
+    builder.add_container("x", int_pointer, true);
+    builder.add_container("w", int_pointer, true);
+    builder.add_container("z", int_pointer, true);
+    auto& block = builder.add_block(sdfg.root());
+    auto& integer = builder.add_library_node<MatMulNode>(
+        block,
+        DebugInfo(),
+        math::tensor::TensorLayout({symbolic::integer(M), symbolic::integer(K)}),
+        math::tensor::TensorLayout({symbolic::integer(K), symbolic::integer(N)})
+    );
+    builder.add_computational_memlet(block, builder.add_access(block, "x"), integer, "A", {}, int_pointer);
+    builder.add_computational_memlet(block, builder.add_access(block, "w"), integer, "B", {}, int_pointer);
+    builder.add_computational_memlet(block, builder.add_access(block, "z"), integer, "Y", {}, int_pointer);
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    fp_math::ContractionPrecisionPass pass(fp_math::ContractionPrecision::parse("ozaki2:4"));
+    EXPECT_TRUE(pass.run(builder, analysis_manager));
+    EXPECT_NO_THROW(sdfg.validate());
+
+    // The GEMM became 4 Int8 matmuls; the integer matmul stays.
+    auto found = matmuls(sdfg.root());
+    ASSERT_EQ(found.size(), 5);
+    int int8 = 0;
+    for (auto* matmul : found) {
+        int8 += matmul->input_type() == PrimitiveType::Int8;
+    }
+    EXPECT_EQ(int8, 4);
+    EXPECT_FALSE(pass.run(builder, analysis_manager));
+}
+
+TEST(ContractionPrecisionTest, NativeChangesNothing) {
+    builder::StructuredSDFGBuilder builder("precision_native", FunctionType_CPU);
+    add_gemm(builder, "1.0", "0.0");
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    fp_math::ContractionPrecisionPass pass(fp_math::ContractionPrecision::parse("native"));
+    EXPECT_FALSE(pass.run(builder, analysis_manager));
 }

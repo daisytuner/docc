@@ -37,6 +37,7 @@ set(SOURCE_FILES
     src/einsum/transformations/einsum2gemm.cpp
     src/fp_math/contractions/contraction_kernels.cpp
     src/fp_math/contractions/kernel_builder.cpp
+    src/fp_math/passes/contraction_precision.cpp
     src/fp_math/passes/fp_contraction.cpp
     src/fp_math/transformations/ozaki_contraction.cpp
     src/fp_math/transformations/quantize_contraction.cpp
