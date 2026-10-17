@@ -8,6 +8,7 @@ import time
 import numpy as np
 
 from docc.compiler import CompiledSDFG, DoccProgram, DoccOptions
+from docc.compiler.codegens import codegen_artifact
 from docc.sdfg import StructuredSDFG, DoccMetrics
 from docc.mlir import MLIRModule
 
@@ -260,7 +261,7 @@ class TorchProgram(DoccProgram):
         # instrumentation/arg-capture/remote-tuning do not alias to the first
         # built binary (the on-disk hash already accounts for these options).
         mem_cache_key = (
-            f"{cache_key}|{self.options.capture_args}|{self.options.instrumentation_mode}|"
+            f"{cache_key}|{self.options.codegen}|{self.options.capture_args}|{self.options.instrumentation_mode}|"
             f"{self.options.remote_tuning}|{self.options.fp_contract}"
         )
 
@@ -292,7 +293,7 @@ class TorchProgram(DoccProgram):
                 except Exception:
                     pass
 
-            hash_input = f"{self.name}|{self.options.target}|{self.options.category}|{cache_key}|{model_code}|{self.options.capture_args}|{self.options.instrumentation_mode}|{self.options.remote_tuning}|{self.options.approximate_math}|{self.options.fp_contract}".encode(
+            hash_input = f"{self.name}|{self.options.target}|{self.options.codegen}|{self.options.category}|{cache_key}|{model_code}|{self.options.capture_args}|{self.options.instrumentation_mode}|{self.options.remote_tuning}|{self.options.approximate_math}|{self.options.fp_contract}".encode(
                 "utf-8"
             )
             stable_id = hashlib.sha256(hash_input).hexdigest()[:16]
@@ -354,7 +355,7 @@ class TorchProgram(DoccProgram):
                 self._input_info.append({})
 
         if docc_reuse_binaries:
-            lib_path = f"{output_folder}/lib__docc_{self.name}.so"
+            lib_path = f"{output_folder}/{codegen_artifact(self.options.target, self.options.codegen, f'__docc_{self.name}')}"
             if not os.path.exists(lib_path):
                 raise ValueError(
                     f"Tried reusing binary '{lib_path}' but does not exist"
@@ -450,6 +451,7 @@ class TorchProgram(DoccProgram):
             device_resident=self._device_resident,
             device_backend=self._device_backend,
             target=self.options.target,
+            codegen=self.options.codegen,
         )
 
         # Cache
@@ -669,12 +671,16 @@ def compile_torch(
     category: str = "server",
     remote_tuning: bool = False,
     force_rebuild: bool = False,
+    codegen: Optional[str] = None,
 ) -> CompiledSDFG:
     return TorchProgram(
         model,
         example_input=example_input,
         options=DoccOptions(
-            target=target, category=category, remote_tuning=remote_tuning
+            target=target,
+            category=category,
+            remote_tuning=remote_tuning,
+            codegen=codegen,
         ),
         force_rebuild=force_rebuild,
     )

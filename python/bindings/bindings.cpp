@@ -333,6 +333,13 @@ PYBIND11_MODULE(_sdfg, m) {
             "Get native pointer to StructuredSDFG for external plugin use"
         )
         .def_property_readonly(
+            "_options_ptr",
+            [](PyStructuredSDFG& self) {
+                return reinterpret_cast<uintptr_t>(&self.options());
+            },
+            "Get native pointer to the SDFG's sdfg::Options for external plugin use"
+        )
+        .def_property_readonly(
             "root",
             [](PyStructuredSDFG& self) -> sdfg::structured_control_flow::Sequence& {
                 return self.root();
@@ -423,7 +430,8 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("capture_args") = false,
             py::arg("debug_build") = false,
             py::arg("threads") = 0, // means hardware-threads
-            py::arg("reuse_sources") = false
+            py::arg("reuse_sources") = false,
+            py::arg("codegen") = "cpp"
         )
         .def("metadata", &PyStructuredSDFG::metadata, py::arg("key"), "Get metadata value")
         .def("add_metadata", &PyStructuredSDFG::add_metadata, py::arg("key"), py::arg("value"), "Set metadata value")
@@ -440,7 +448,8 @@ PYBIND11_MODULE(_sdfg, m) {
         .def("loop_report", &PyStructuredSDFG::loop_report, "Get loop statistics from the SDFG")
         .def("to_json", &PyStructuredSDFG::to_json, "Serialize the SDFG to a JSON string")
         .def("to_dot", &PyStructuredSDFG::to_dot, "Serialize the SDFG to a DOT graph string")
-        .def("to_cpp", &PyStructuredSDFG::to_cpp, "Generate C++ code from the SDFG");
+        .def("to_cpp", &PyStructuredSDFG::to_cpp, "Generate C++ code from the SDFG")
+        .def("to_python", &PyStructuredSDFG::to_python, "Generate a NumPy module from the SDFG");
 
     // Register StructuredSDFGBuilder class
     py::class_<PyStructuredSDFGBuilder>(m, "StructuredSDFGBuilder")
@@ -1367,6 +1376,26 @@ PYBIND11_MODULE(_sdfg, m) {
             return reinterpret_cast<uintptr_t>(&docc_context);
         },
         "Get native pointer to the global plugin context"
+    );
+
+    m.def(
+        "target_codegens",
+        [](const std::string& target) {
+            py::list result;
+            for (auto& codegen : docc::target::target_codegens(docc_context.get_target_handler(target))) {
+                py::dict entry;
+                entry["name"] = codegen.name;
+                entry["artifact"] = codegen.artifact;
+                entry["kind"] = codegen.kind == docc::target::ArtifactKind::PythonModule ? "python_module"
+                                                                                         : "shared_library";
+                entry["loader"] = codegen.loader;
+                entry["build"] = codegen.build;
+                result.append(entry);
+            }
+            return result;
+        },
+        py::arg("target"),
+        "Codegens the target supports, default first, as dicts of name, artifact, kind, loader and build"
     );
 
     // Statistics

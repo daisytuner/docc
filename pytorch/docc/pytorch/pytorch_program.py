@@ -14,6 +14,7 @@ import contextlib
 from typing import Any, Callable, Optional
 
 from docc.compiler import DoccProgram, DoccOptions, CompiledSDFG
+from docc.compiler.codegens import codegen_artifact
 from docc.sdfg import StructuredSDFG, DoccMetrics
 
 from docc.pytorch.graph_parser import GraphParser
@@ -220,7 +221,7 @@ class PyTorchProgram(DoccProgram):
         # instrumentation/arg-capture/remote-tuning do not alias to the first
         # built binary (the on-disk hash already accounts for these options).
         mem_cache_key: str = (
-            f"{cache_key}|{self.options.capture_args}|{self.options.instrumentation_mode}|"
+            f"{cache_key}|{self.options.codegen}|{self.options.capture_args}|{self.options.instrumentation_mode}|"
             f"{self.options.remote_tuning}|{self.options.fp_contract}"
         )
 
@@ -250,7 +251,7 @@ class PyTorchProgram(DoccProgram):
                     pass
 
             hash_input: bytes = (
-                f"{self.name}|{self.options.target}|{self.options.category}|{cache_key}|{model_code}|{self.options.capture_args}|{self.options.instrumentation_mode}|{self.options.remote_tuning}|{self.options.approximate_math}|{self.options.fp_contract}".encode(
+                f"{self.name}|{self.options.target}|{self.options.codegen}|{self.options.category}|{cache_key}|{model_code}|{self.options.capture_args}|{self.options.instrumentation_mode}|{self.options.remote_tuning}|{self.options.approximate_math}|{self.options.fp_contract}".encode(
                     "utf-8"
                 )
             )
@@ -297,7 +298,9 @@ class PyTorchProgram(DoccProgram):
             shutil.rmtree(output_folder_path)
 
         if docc_reuse_binaries:
-            lib_path = f"{output_folder_path}/lib__docc_{self.name}.so"
+            assert self.options.target is not None  # set in __post_init__
+            assert self.options.codegen is not None  # set in __post_init__
+            lib_path = f"{output_folder_path}/{codegen_artifact(self.options.target, self.options.codegen, f'__docc_{self.name}')}"
             if not os.path.exists(lib_path):
                 raise ValueError(
                     f"Tried reusing binary '{lib_path}' but does not exist"
@@ -443,6 +446,7 @@ class PyTorchProgram(DoccProgram):
             device_backend=self._device_backend,
             target=self.options.target,
             sort_output_args=False,
+            codegen=self.options.codegen,
         )
 
         # Cache
