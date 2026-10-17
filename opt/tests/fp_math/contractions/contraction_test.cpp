@@ -341,7 +341,8 @@ TEST(OzakiContractionTest, JsonRoundTrip) {
 
 namespace {
 
-/// C = alpha A @ B^T + beta C over the argument pointers a[M, K], b[N, K], c[M, N] of Double, as a GEMM node.
+/// C = alpha A @ B^T + beta C over the argument pointers a[M, K], b[N, K], c[M, N] of Double, as a GEMM node; beta
+/// "runtime" reads beta from an argument instead of a constant.
 math::blas::GEMMNode& add_gemm(builder::StructuredSDFGBuilder& builder, const std::string& alpha, const std::string& beta) {
     auto& sdfg = builder.subject();
     types::Scalar element(PrimitiveType::Double);
@@ -369,7 +370,12 @@ math::blas::GEMMNode& add_gemm(builder::StructuredSDFGBuilder& builder, const st
     builder.add_computational_memlet(block, builder.add_access(block, "b"), gemm, "__B", {}, pointer);
     builder.add_computational_memlet(block, builder.add_access(block, "c"), gemm, "__C", {}, pointer);
     builder.add_computational_memlet(block, builder.add_constant(block, alpha, element), gemm, "__alpha", {}, element);
-    builder.add_computational_memlet(block, builder.add_constant(block, beta, element), gemm, "__beta", {}, element);
+    if (beta == "runtime") {
+        builder.add_container("beta", element, true);
+        builder.add_computational_memlet(block, builder.add_access(block, "beta"), gemm, "__beta", {}, element);
+    } else {
+        builder.add_computational_memlet(block, builder.add_constant(block, beta, element), gemm, "__beta", {}, element);
+    }
     return gemm;
 }
 
@@ -513,4 +519,20 @@ TEST(ContractionPrecisionTest, NativeChangesNothing) {
     analysis::AnalysisManager analysis_manager(builder.subject());
     fp_math::ContractionPrecisionPass pass(fp_math::ContractionPrecision::parse("native"));
     EXPECT_FALSE(pass.run(builder, analysis_manager));
+}
+
+TEST(OzakiContractionTest, Gemm_RequiresConstantCoefficients) {
+    // BLAS skips C for beta = 0 and A @ B for alpha = 0, which only constants reveal.
+    auto applies = [](const std::string& alpha, const std::string& beta) {
+        builder::StructuredSDFGBuilder builder("gemm_coefficients", FunctionType_CPU);
+        auto& gemm = add_gemm(builder, alpha, beta);
+        analysis::AnalysisManager analysis_manager(builder.subject());
+        bool quantize = fp_math::QuantizeContraction(gemm).can_be_applied(builder, analysis_manager);
+        bool ozaki = fp_math::OzakiContraction(gemm).can_be_applied(builder, analysis_manager);
+        EXPECT_EQ(quantize, ozaki);
+        return ozaki;
+    };
+    EXPECT_TRUE(applies("2.0", "0.5"));
+    EXPECT_FALSE(applies("1.0", "runtime"));
+    EXPECT_FALSE(applies("0.0", "1.0"));
 }

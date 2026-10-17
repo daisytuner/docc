@@ -48,7 +48,8 @@ Where they pay off:
 
 On AMD GPUs the generated matrix-core path (`GpuMmaExpander`, `GpuMmaEinsumTransform`) maps the Int8 matmuls onto Int8 MFMA/WMMA with Int32 accumulators, using the full-rate 16x16x32 blocks on CDNA3 (gfx942) and 16x16x16 on CDNA2 and RDNA.
 
-Requirements: a 2-D MatMul whose inputs, accumulator and output share the Float or Double type, or a row-major Float or Double GEMM, and a constant K for which the Int32 accumulation is exact (K ≤ 133143 for Int8 values up to ±127).
+Requirements: a 2-D MatMul whose inputs, accumulator and output share the Float or Double type, or a row-major Float or Double GEMM with constant alpha ≠ 0 and beta, and a constant K for which the Int32 accumulation is exact (K ≤ 133143 for Int8 values up to ±127).
+Only constant coefficients keep BLAS semantics: C is not read if beta is 0, and A @ B is not computed if alpha is 0, even if they hold NaNs or products that overflow.
 The Ozaki splitting and reconstruction run in Double; inputs of magnitude 2^1023 or above are not supported.
 Quantization computes its scales and results in the contraction's own type, whose rounding is far below the quantization error, so targets without Double run it.
 

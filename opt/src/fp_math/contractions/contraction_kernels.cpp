@@ -79,6 +79,18 @@ std::string unsupported_gemm(const GEMMNode& node) {
     if (node.trans_a() == BLAS_Transpose::ConjTrans || node.trans_b() == BLAS_Transpose::ConjTrans) {
         return "conjugate transposes are not supported";
     }
+    // BLAS ignores C if beta is 0 and A @ B if alpha is 0, even NaNs or overflowing products. Only constants tell which
+    // operands the emulation may read.
+    auto& dataflow = node.get_parent();
+    auto* alpha = dataflow.in_edge_for_connector(node, node.input(GEMMNode::ALPHA_INPUT_IDX));
+    auto* beta = dataflow.in_edge_for_connector(node, node.input(GEMMNode::BETA_INPUT_IDX));
+    if (!dynamic_cast<const data_flow::ConstantNode*>(&alpha->src()) ||
+        !dynamic_cast<const data_flow::ConstantNode*>(&beta->src())) {
+        return "alpha and beta must be constants";
+    }
+    if (alpha->is_src_constant(0.0)) {
+        return "alpha = 0 leaves no product to compute";
+    }
     return "";
 }
 
