@@ -18,6 +18,23 @@ deserialize_quantization(const nlohmann::json& j, const std::string& field_name,
     return quantization;
 }
 
+void ContractionTypes::serialize_to_json(nlohmann::json& j) const {
+    j["input_type"] = input;
+    j["accumulator_type"] = accumulator;
+    j["output_type"] = output;
+}
+
+ContractionTypes ContractionTypes::deserialize_from_json(const nlohmann::json& j, const std::string& legacy_field) {
+    if (!j.contains("input_type")) {
+        return uniform(deserialize_quantization(j, legacy_field, QUANTIZATION_MATCH_INPUTS));
+    }
+    return {
+        j.at("input_type").get<types::PrimitiveType>(),
+        j.at("accumulator_type").get<types::PrimitiveType>(),
+        j.at("output_type").get<types::PrimitiveType>()
+    };
+}
+
 TensorNode::TensorNode(
     size_t element_id,
     const DebugInfo& debug_info,

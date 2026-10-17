@@ -26,6 +26,31 @@ class TensorLayout;
 typedef types::PrimitiveType QuantizationType;
 constexpr QuantizationType QUANTIZATION_MATCH_INPUTS = types::PrimitiveType::Void;
 
+/**
+ * @brief Element types of a contraction such as a matmul.
+ *
+ * The inputs are multiplied and the products summed in the accumulator type, which is then converted to the output
+ * type, e.g. Int8 inputs accumulated and stored as Int32, or Half inputs accumulated in Float. `Void` infers a type:
+ * input and output from the memlets, the accumulator as the output type.
+ */
+struct ContractionTypes {
+    types::PrimitiveType input = types::PrimitiveType::Void;
+    types::PrimitiveType accumulator = types::PrimitiveType::Void;
+    types::PrimitiveType output = types::PrimitiveType::Void;
+
+    /// The same type for inputs and output, accumulated in it; `Void` infers all of them.
+    static ContractionTypes uniform(types::PrimitiveType type) {
+        return {type, types::PrimitiveType::Void, type};
+    }
+
+    bool operator==(const ContractionTypes& other) const = default;
+
+    void serialize_to_json(nlohmann::json& j) const;
+
+    /// Reads the types written by serialize_to_json(), or a legacy single quantization @p legacy_field.
+    static ContractionTypes deserialize_from_json(const nlohmann::json& j, const std::string& legacy_field);
+};
+
 types::PrimitiveType deserialize_quantization(
     const nlohmann::json& j,
     const std::string& field_name,

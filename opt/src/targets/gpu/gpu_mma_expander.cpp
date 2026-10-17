@@ -436,11 +436,11 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::handle_expand(
     auto result_layout = node.layout_y();
     auto k_dim = node.layout_a().get_dim(1);
 
-    auto input_type = node.uniform_quantization(node.get_parent()).value();
-    auto output_type = input_type;
+    auto input_type = node.input_type();
+    auto output_type = node.output_type();
 
     auto mma_arch = arch_->mma_support();
-    auto acc_type = mma_arch->get_accumulator_type(input_type, output_type, types::PrimitiveType::Void);
+    auto acc_type = mma_arch->get_accumulator_type(input_type, output_type, node.types().accumulator);
 
     auto mma_tiling = mma_arch->get_mma_tiling(
         {result_layout.get_dim(0), result_layout.get_dim(1), k_dim},
@@ -548,21 +548,23 @@ bool GpuMmaExpander::matches_possible_mma_pattern(const math::tensor::MatMulNode
     auto& n = dims_b.get_dim(1);
     auto& k = dims_a.get_dim(1);
 
-    auto input_type = node.uniform_quantization(node.get_parent());
-    auto output_type = input_type;
+    auto input_type = node.input_type();
+    auto output_type = node.output_type();
 
-    if (!input_type || !output_type || input_type.value() == types::PrimitiveType::Void ||
-        output_type.value() == types::PrimitiveType::Void) {
+    if (input_type == types::PrimitiveType::Void || output_type == types::PrimitiveType::Void) {
         return false;
     }
 
-    if (!mma_arch->supported_types(input_type.value(), output_type.value())) {
+    if (!mma_arch->supported_types(input_type, output_type)) {
         return false;
     }
 
-    auto acc_type = mma_arch->get_accumulator_type(input_type.value(), output_type.value(), types::PrimitiveType::Void);
+    auto acc_type = mma_arch->get_accumulator_type(input_type, output_type, node.types().accumulator);
+    if (node.types().accumulator != types::PrimitiveType::Void && acc_type != node.types().accumulator) {
+        return false;
+    }
 
-    auto tiling = mma_arch->get_mma_tiling({m, n, k}, input_type.value(), acc_type, block_size_hint_, wave_tile_hint_);
+    auto tiling = mma_arch->get_mma_tiling({m, n, k}, input_type, acc_type, block_size_hint_, wave_tile_hint_);
 
     return tiling.has_value();
 }
