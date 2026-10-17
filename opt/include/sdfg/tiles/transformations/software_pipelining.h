@@ -1,8 +1,17 @@
 #pragma once
 
+#include <set>
+#include <string>
+#include <vector>
+
 #include "sdfg/transformations/transformation.h"
 
 namespace sdfg {
+class Function;
+namespace structured_control_flow {
+class ControlFlowNode;
+class StructuredLoop;
+} // namespace structured_control_flow
 namespace transformations {
 
 /**
@@ -54,6 +63,36 @@ public:
     );
 
     virtual std::string name() const override;
+
+    /**
+     * @brief The async-stageable buffers the copy-in nodes under @p root fill: the
+     *        containers a pipeline would multi-buffer. Empty when @p root stages
+     *        nothing (so it is not a pipelineable panel).
+     *
+     * A buffer qualifies when a cooperative @ref tiles::TileCopyNode copies into it
+     * (its `_dst` pointer) and the enclosing map's tile target can asynchronously
+     * multi-buffer its storage (@ref tiles::TileTarget::supports_async_staging; on
+     * GPUs the shared tier). This is the single source of truth for "which buffers
+     * get staged", shared by @ref can_be_applied, @ref apply, and search spaces.
+     */
+    static std::set<std::string>
+    copied_in_buffers(const Function& function, structured_control_flow::ControlFlowNode& root);
+
+    /**
+     * @brief The candidate panel loops under @p root this transformation can target.
+     *
+     * A panel is the nearest loop enclosing a cooperative copy-in (a
+     * @ref tiles::TileCopyNode that LocalStorage emits) that fills a buffer the
+     * loop's enclosing tile target can asynchronously multi-buffer
+     * (@ref tiles::TileTarget::supports_async_staging; on GPUs the shared tier).
+     * Only sequential loops qualify: a copy-in sitting directly in a parallel Map
+     * has no cross-iteration order to pipeline, so it nominates no panel. Returned
+     * in first-appearance order. This is the single source of truth for "what can be
+     * pipelined", so a search space can enumerate candidates without re-deriving the
+     * scan.
+     */
+    static std::vector<structured_control_flow::StructuredLoop*>
+    staging_panels(const Function& function, structured_control_flow::ControlFlowNode& root);
 
     virtual bool
     can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;

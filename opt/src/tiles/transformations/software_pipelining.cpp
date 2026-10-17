@@ -39,15 +39,25 @@ namespace transformations {
 
 namespace {
 
-// The tile target owning the innermost enclosing map's schedule, if any.
-const tiles::TileTarget* enclosing_tile_target(structured_control_flow::StructuredLoop& loop) {
-    for (auto* node : structured_control_flow::ControlFlowNode::parent_chain(loop)) {
-        auto* map = dynamic_cast<structured_control_flow::Map*>(node);
+// The tile target owning the innermost map enclosing @p node, if any.
+const tiles::TileTarget* enclosing_tile_target(structured_control_flow::ControlFlowNode& node) {
+    for (auto* parent : structured_control_flow::ControlFlowNode::parent_chain(node)) {
+        auto* map = dynamic_cast<structured_control_flow::Map*>(parent);
         if (map == nullptr) {
             continue;
         }
         if (auto* target = tiles::TileTargetRegistry::instance().get(map->schedule_type().value())) {
             return target;
+        }
+    }
+    return nullptr;
+}
+
+// The nearest loop (sequential or parallel) enclosing @p node, or nullptr.
+structured_control_flow::StructuredLoop* nearest_loop(structured_control_flow::ControlFlowNode& node) {
+    for (auto* parent : structured_control_flow::ControlFlowNode::parent_chain(node)) {
+        if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(parent)) {
+            return loop;
         }
     }
     return nullptr;
@@ -245,27 +255,52 @@ tiles::TileCopyNode* staging_copy(const std::set<std::string>& staged, structure
     return nullptr;
 }
 
-// The staged containers that copy-in TileCopyNodes under @p root fill: the buffers to multi-buffer.
-std::set<std::string>
-copied_in_buffers(structured_control_flow::ControlFlowNode& root, const std::set<std::string>& staged) {
+} // namespace
+
+std::set<std::string> SoftwarePipelining::
+    copied_in_buffers(const Function& function, structured_control_flow::ControlFlowNode& root) {
+    auto staged = staging_containers(function, enclosing_tile_target(root));
     std::set<std::string> buffers;
-    visitor::for_each_block(root, [&](structured_control_flow::Block& b) {
-        auto& dfg = b.dataflow();
-        for (auto& node : dfg.nodes()) {
-            auto* tc = dynamic_cast<tiles::TileCopyNode*>(&node);
-            if (tc == nullptr || tc->direction() != tiles::CopyDirection::In) {
+    visitor::for_each_block(root, [&](structured_control_flow::Block& block) {
+        auto& dataflow = block.dataflow();
+        for (auto& dataflow_node : dataflow.nodes()) {
+            auto* copy = dynamic_cast<tiles::TileCopyNode*>(&dataflow_node);
+            if (copy == nullptr || copy->direction() != tiles::CopyDirection::In) {
                 continue;
             }
-            for (auto& m : dfg.in_edges(*tc)) {
-                auto* acc = dynamic_cast<const data_flow::AccessNode*>(&m.src());
-                if (m.dst_conn() == "_dst" && acc != nullptr && staged.count(acc->data()) > 0) {
-                    buffers.insert(acc->data());
+            for (auto& dst_edge : dataflow.in_edges(*copy)) {
+                auto* source = dynamic_cast<const data_flow::AccessNode*>(&dst_edge.src());
+                if (dst_edge.dst_conn() == "_dst" && source != nullptr && staged.count(source->data()) > 0) {
+                    buffers.insert(source->data());
                 }
             }
         }
     });
     return buffers;
 }
+
+std::vector<structured_control_flow::StructuredLoop*> SoftwarePipelining::
+    staging_panels(const Function& function, structured_control_flow::ControlFlowNode& root) {
+    std::vector<structured_control_flow::StructuredLoop*> panels;
+    visitor::for_each_block(root, [&](structured_control_flow::Block& block) {
+        if (copied_in_buffers(function, block).empty()) {
+            return;
+        }
+        // The panel is the sequential loop whose iterations the pipeline overlaps. A copy-in
+        // sitting directly in a parallel Map (no sequential loop below it) has no cross-iteration
+        // order to pipeline, so it nominates no panel.
+        auto* panel = nearest_loop(block);
+        if (panel == nullptr || dynamic_cast<structured_control_flow::Map*>(panel) != nullptr) {
+            return;
+        }
+        if (std::find(panels.begin(), panels.end(), panel) == panels.end()) {
+            panels.push_back(panel);
+        }
+    });
+    return panels;
+}
+
+namespace {
 
 /// `[barrier; staging copies...; barrier]` in @p body: indices of the leading barrier and
 /// the trailing barrier (copies lie strictly between).
@@ -499,7 +534,7 @@ bool SoftwarePipelining::
 
     // The body must stage a tile (a copy-in that fills a staged buffer) and then
     // consume it.
-    if (copied_in_buffers(loop_.root(), staged).empty()) {
+    if (copied_in_buffers(sdfg, loop_.root()).empty()) {
         return false;
     }
     if (register_staged_) {
@@ -553,7 +588,7 @@ void SoftwarePipelining::apply(builder::StructuredSDFGBuilder& builder, analysis
     auto stage_idx = symbolic::mod(panel, symbolic::integer(stages_));
 
     // The staged buffers the loop's copy-ins fill.
-    std::set<std::string> buffers = copied_in_buffers(loop_.root(), staged);
+    std::set<std::string> buffers = copied_in_buffers(sdfg, loop_.root());
 
     // Double-buffer each: prepend a [stages] axis to the type and index it by
     // stage_idx on every memlet that touches the buffer inside the loop.
