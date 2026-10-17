@@ -46,6 +46,8 @@ Where they pay off:
 - **Ozaki** where the native precision is much slower than Int8: FP64 on GPUs without fast FP64 (consumer and inference GPUs), or FP32 on integer-only accelerators. With s(s+1)/2 or L matmuls it cannot beat a native unit only twice as slow as Int8.
 - **Quantization** for inference, where the error is acceptable, on large, compute-bound matmuls; the absmax and quantize passes cost O(MK + KN) memory traffic.
 
+On AMD GPUs the generated matrix-core path (`GpuMmaExpander`, `GpuMmaEinsumTransform`) maps the Int8 matmuls onto Int8 MFMA/WMMA with Int32 accumulators, using the full-rate 16x16x32 blocks on CDNA3 (gfx942) and 16x16x16 on CDNA2 and RDNA.
+
 Requirements: a 2-D MatMul whose inputs, accumulator and output share the Float or Double type, or a row-major Float or Double GEMM, and a constant K for which the Int32 accumulation is exact (K ≤ 133143 for Int8 values up to ±127).
 The splitting and reconstruction run in Double; inputs of magnitude 2^1023 or above are not supported.
 
