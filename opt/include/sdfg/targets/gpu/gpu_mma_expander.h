@@ -81,7 +81,7 @@ public:
         const math::tensor::TensorLayout& layout_y,
         types::PrimitiveType input_type,
         types::PrimitiveType output_type,
-        bool include_c_add,
+        bool include_c_add, // Y += A @ B with the loaded Y, rather than overwriting Y = A @ B
         const DebugInfo& org_debug_info,
         const std::array<int, 3>& args_order // indices of inputs in order of {y, a, b}
     );

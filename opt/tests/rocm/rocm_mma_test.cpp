@@ -459,12 +459,13 @@ TEST(ROCMMMATest, ExpansionEmitsWaveMap_gfx90a) {
             }
         }
     });
-    EXPECT_EQ(loads, 3u); // A, B, C
+    EXPECT_EQ(loads, 2u); // A, B: a MatMul overwrites C
 
     auto out = test::utils::test_codegen(builder.subject(), "wave_map", true);
     EXPECT_NE(out.main_function.find("dim3((int)(128), (int)(2), (int)(1))"), std::string::npos) << out.main_function;
 
-    // fp16 inputs accumulate in fp32 (native MFMA accumulator); C/D fragments stay fp16.
+    // fp16 inputs accumulate in fp32 (native MFMA accumulator); C/D fragments stay fp16, C zero-filled for the
+    // converting add since a MatMul overwrites its output.
     std::string kernels;
     for (auto& [name, snippet] : out.snippets) {
         kernels += snippet.content;
@@ -834,7 +835,12 @@ TEST(ROCMMMATest, FragmentLoadOverload_gfx90a) {
     };
     EXPECT_EQ(load_line("mma_a0").find("rocwmma::mem_"), std::string::npos) << kernels;
     EXPECT_EQ(load_line("mma_b0").find("rocwmma::mem_"), std::string::npos) << kernels;
-    EXPECT_NE(load_line("mma_c0").find("rocwmma::mem_row_major"), std::string::npos) << kernels;
+    // A MatMul overwrites C: it never loads it, and stores the accumulator with its memory layout.
+    EXPECT_EQ(kernels.find("load_matrix_sync(mma_c0"), std::string::npos) << kernels;
+    auto store = kernels.find("store_matrix_sync(");
+    ASSERT_NE(store, std::string::npos) << kernels;
+    EXPECT_NE(kernels.substr(store, kernels.find('\n', store) - store).find("rocwmma::mem_row_major"), std::string::npos)
+        << kernels;
 }
 
 // K-major B: the transposed block tile [32 n][32+4 k] is read column-major by the fragments,
@@ -1116,6 +1122,8 @@ TEST(ROCMMMATest, Int8_FullRateBlocks_gfx942) {
     EXPECT_NE(kernels.find("rocwmma::matrix_b, 16, 16, 32, int8_t"), std::string::npos) << kernels;
     EXPECT_NE(kernels.find("rocwmma::accumulator, 16, 16, 32, int32_t> mma_acc"), std::string::npos) << kernels;
     EXPECT_NE(kernels.find("rocwmma::mma_sync("), std::string::npos) << kernels;
+    // The Int32 accumulator is the output: C is neither loaded nor added, since a MatMul overwrites it.
+    EXPECT_EQ(kernels.find("mma_c"), std::string::npos) << kernels;
 }
 
 TEST(ROCMMMATest, Int8_NativeBlocks_gfx90a) {

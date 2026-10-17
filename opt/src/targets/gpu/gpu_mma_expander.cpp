@@ -308,7 +308,10 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
     auto y_layout = y_col_major ? MMA_LAYOUT_COL_MAJOR : MMA_LAYOUT_ROW_MAJOR;
     std::string c_frag_name;
     std::string d_frag_name;
-    if (include_c_add) {
+    // Converting the accumulator into a narrower output goes through the elementwise add, against C or, if Y is
+    // overwritten, against zeros.
+    const bool convert_output = include_c_add || output_type != mma_tiling.acc_type;
+    if (convert_output) {
         c_frag_name = builder.find_new_name("mma_c");
         types::Pointer c_type{types::Scalar(output_type)};
         mma_arch->set_mma_fragment_storage_type(
@@ -321,8 +324,6 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
             d_type.storage_type(), mma_tiling, MmaFragmentType::C, MmaFragmentLayout::MMA_LAYOUT_UNSPECIFIED
         );
         builder.add_container(d_frag_name, d_type);
-    } else {
-        assert(output_type == mma_tiling.acc_type && "Output and Accumulate type must be identical if we do not add C");
     }
 
     for (int i = 0; i < mma_tiling.wave_tiling.blocks_m; ++i) {
@@ -330,21 +331,34 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
             const auto& acc_frag_name = acc_frag_names[i * mma_tiling.wave_tiling.blocks_n + j];
             GpuMmaFromMemoryLayout y_mem{.offset = y_offset(i, j), .ldstride = ldc, .layout = y_layout};
             std::string store_frag_name = acc_frag_name;
-            if (include_c_add) {
+            if (convert_output) {
                 auto& load_c_block = builder.add_block(row_map.root());
-                create_fragment_load(
-                    standalone,
-                    output_type,
-                    impl_type,
-                    org_debug_info,
-                    builder,
-                    c_frag_name,
-                    mma_tiling.mma_block_size,
-                    MmaFragmentType::C,
-                    y_mem,
-                    args_order.at(0),
-                    load_c_block
-                );
+                if (include_c_add) {
+                    create_fragment_load(
+                        standalone,
+                        output_type,
+                        impl_type,
+                        org_debug_info,
+                        builder,
+                        c_frag_name,
+                        mma_tiling.mma_block_size,
+                        MmaFragmentType::C,
+                        y_mem,
+                        args_order.at(0),
+                        load_c_block
+                    );
+                } else {
+                    auto& fill_node = builder.add_library_node<
+                        GpuMmaFillNode>(load_c_block, org_debug_info, mma_tiling.mma_block_size, output_type, impl_type);
+                    builder.add_computational_memlet(
+                        load_c_block,
+                        builder.add_access(load_c_block, c_frag_name),
+                        fill_node,
+                        fill_node.input(0),
+                        {},
+                        types::Pointer(types::Scalar(output_type))
+                    );
+                }
                 auto& eltwise_add_block = builder.add_block(row_map.root());
                 create_eltwise_add_block(
                     standalone,
@@ -462,7 +476,7 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::handle_expand(
             result_layout,
             input_type,
             output_type,
-            true,
+            false, // MatMul overwrites Y
             node.debug_info(),
             {0, 1, 2} // {y, a, b}: MatMulNode access nodes are already ordered Y, A, B
         );
