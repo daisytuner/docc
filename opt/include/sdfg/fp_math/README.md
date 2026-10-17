@@ -26,3 +26,25 @@ Contraction is therefore legal only if the user opts into it; `-ffp-contract=fas
 It runs at the end of the Python frontend's `simplify` if `TargetOptions::fp_contract` (`DoccOptions(fp_contract=...)`) is set, which is the default, so the SDFG is consistent with frontends that already emit `fp_fma` (e.g. clang's default contraction); later passes (einsum detection, reduction recognition, targets) handle `fp_fma` like a multiply/add pair.
 With `fp_contract=False` no contraction is performed, while FMAs created explicitly by a frontend are kept.
 `UnfuseFMA` is used where a target prefers the split form, e.g. to hand the product on to a separate computation.
+
+## Low-precision contractions: matmuls on integer units
+
+Matrix units are far faster in Int8 than in Float or Double, e.g. 2x FP16 on AMD CDNA3 and ~30x FP64 on NVIDIA H100.
+The transformations below compute a Float or Double `MatMul` (`Y = A @ B`) or row-major `GEMM` (`C = alpha A @ B + beta C`, transposes allowed) from *exact* Int8 matmuls — `MatMul` library nodes with `ContractionTypes{Int8, Int32, Int32}` that the target maps, e.g. onto integer matrix units — plus elementwise maps that split the operands and combine the products.
+Every row of A and column of B is scaled by its own factor, so rows and columns of different magnitudes keep their precision.
+
+| Transformation | Result | Int8 matmuls | Accuracy |
+|---|---|---|---|
+| `QuantizeContraction(matmul, bits = 8)` | `Y ≈ (A_q @ B_q) · s_A[i] · s_B[j] / q²` with `A_q = rint(q · A / s_A)`, `q = 2^(bits-1) - 1`, `s` the absmax of the row or column | 1 | lossy: ~1/q of the largest magnitudes (3.6e-3 measured for 8 bits) |
+| `OzakiContraction(matmul, Slicing, s)` | Ozaki-I: `A / 2^e = Σ_t 2^-7t A_t` in Int8 slices; `Y = 2^(e_i+f_j) Σ_{t+u ≤ s+1} 2^-7(t+u) A_t @ B_u` | s(s+1)/2 | ~7s bits per row and column; default s = 4 (Float), 8 (Double) |
+| `OzakiContraction(matmul, Modular, L)` | Ozaki-II: integers `A' = trunc(2^q A / 2^e)`, their product modulo L coprime moduli (one matmul each), reconstructed with Garner's algorithm | L | q bits with `K 2^2q < Π m_l / 4`; default L reaches 26 (Float) or 55 (Double) bits |
+
+The Ozaki variants are as accurate as the native matmul — 1.7e-16 (Double) and 2.3e-8 (Float) measured against 1.7e-16 and 5.6e-8 natively, relative to `Σ_k |A[i,k] B[k,j]|` — but not bitwise equal to it.
+Like every Ozaki scheme they lose bits on elements much smaller than the largest of their row or column.
+
+Where they pay off:
+- **Ozaki** where the native precision is much slower than Int8: FP64 on GPUs without fast FP64 (consumer and inference GPUs), or FP32 on integer-only accelerators. With s(s+1)/2 or L matmuls it cannot beat a native unit only twice as slow as Int8.
+- **Quantization** for inference, where the error is acceptable, on large, compute-bound matmuls; the absmax and quantize passes cost O(MK + KN) memory traffic.
+
+Requirements: a 2-D MatMul whose inputs, accumulator and output share the Float or Double type, or a row-major Float or Double GEMM, and a constant K for which the Int32 accumulation is exact (K ≤ 133143 for Int8 values up to ±127).
+The splitting and reconstruction run in Double; inputs of magnitude 2^1023 or above are not supported.
