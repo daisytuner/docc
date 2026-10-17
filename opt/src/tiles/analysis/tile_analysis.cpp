@@ -68,6 +68,10 @@ class ContainerAccessVisitor : public analysis::BaseUserVisitor,
     ContainerAccessPolicy& policy_;
 
     void capture_check(const data_flow::Memlet& edge, const data_flow::DataFlowNode& other) {
+        // An element read or written through a subset, as by a math node, does not hand over the pointer.
+        if (edge.type() == data_flow::Computational && !edge.subset().empty()) {
+            return;
+        }
         if (auto* lib = dynamic_cast<const data_flow::LibraryNode*>(&other)) {
             auto access = lib->pointer_access_type(edge);
             if (!access || !access->no_capture()) {
