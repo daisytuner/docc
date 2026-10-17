@@ -107,9 +107,10 @@ bool OzakiContraction::can_be_applied(builder::StructuredSDFGBuilder&, analysis:
 
 namespace {
 
-/// Row scales of A and column scales of B: `P = 2^e`, `I = 2^-e` with every |x| of the row or column below 2^e.
+/// Row scales of A and column scales of B: exponents `E = e` and inverse powers `I = 2^-e` with every |x| of the row
+/// or column below 2^e.
 struct OperandScales {
-    std::string a_power, a_inverse, b_power, b_inverse;
+    std::string a_exponent, a_inverse, b_exponent, b_inverse;
 };
 
 OperandScales operand_scales(KernelBuilder& kb, detail::ContractionOperands& operands) {
@@ -122,9 +123,11 @@ OperandScales operand_scales(KernelBuilder& kb, detail::ContractionOperands& ope
     };
     auto magnitudes_a = detail::absmax(kb, "_oz_max_a", read_a, operands.m, operands.k, tiny, PrimitiveType::Double);
     auto magnitudes_b = detail::absmax(kb, "_oz_max_b", read_b_t, operands.n, operands.k, tiny, PrimitiveType::Double);
-    auto [a_power, a_inverse] = detail::power_of_two_scales(kb, "_oz_a", magnitudes_a, operands.m);
-    auto [b_power, b_inverse] = detail::power_of_two_scales(kb, "_oz_b", magnitudes_b, operands.n);
-    return {a_power, a_inverse, b_power, b_inverse};
+    auto [a_exponent, a_inverse] =
+        detail::power_of_two_scales(kb, "_oz_a", magnitudes_a, operands.m, PrimitiveType::Double);
+    auto [b_exponent, b_inverse] =
+        detail::power_of_two_scales(kb, "_oz_b", magnitudes_b, operands.n, PrimitiveType::Double);
+    return {a_exponent, a_inverse, b_exponent, b_inverse};
 }
 
 /// For every element x of A (or B) in [-1, 1) after scaling by its inverse power, @p emit derives Int8 values.
@@ -155,21 +158,28 @@ void split_operands(
     }
 }
 
-/// `Y[i, j] = value(i, j) * P_A[i] * P_B[j]`, undoing the power-of-two scaling.
+/// `Y[i, j] = value(i, j) * 2^(E_A[i] + E_B[j] + shift)`, undoing the power-of-two scaling in one step, so that no
+/// intermediate overflows where the result does not.
 void store_scaled(
     KernelBuilder& kb,
     detail::ContractionOperands& operands,
     const OperandScales& scales,
-    const std::function<KernelValue(BlockBuilder&, const symbolic::Expression&, const symbolic::Expression&)>& value
+    const std::function<KernelValue(BlockBuilder&, const symbolic::Expression&, const symbolic::Expression&)>& value,
+    int shift = 0
 ) {
     auto& rows = kb.map(kb.scope(), "_i", operands.m);
     auto& columns = kb.map(rows.root(), "_j", operands.n);
     auto i = rows.indvar(), j = columns.indvar();
     auto body = kb.block(columns.root());
-    auto row_scaled =
-        body.op(TaskletCode::fp_mul, {value(body, i, j), body.read(scales.a_power, {i})}, PrimitiveType::Double);
-    auto scaled = body.op(TaskletCode::fp_mul, {row_scaled, body.read(scales.b_power, {j})}, PrimitiveType::Double);
-    operands.store(body, scaled, i, j);
+    auto exponent = body
+                        .op(TaskletCode::fp_add,
+                            {body.read(scales.a_exponent, {i}), body.read(scales.b_exponent, {j})},
+                            PrimitiveType::Double);
+    if (shift != 0) {
+        exponent =
+            body.op(TaskletCode::fp_add, {exponent, body.constant(shift, PrimitiveType::Double)}, PrimitiveType::Double);
+    }
+    operands.store(body, detail::scale_by_power_of_two(body, value(body, i, j), exponent, PrimitiveType::Double), i, j);
 }
 
 void build_slicing(KernelBuilder& kb, detail::ContractionOperands& operands, int slices) {
@@ -272,38 +282,42 @@ void build_modular(KernelBuilder& kb, detail::ContractionOperands& operands, int
 
     // Garner: symmetric mixed-radix digits v_l of the product, y = v_1 + m_1 (v_2 + m_2 (v_3 + ...)), which covers
     // (-P/2, P/2) exactly; the Horner sum in Double is accurate to a few ulps.
-    store_scaled(kb, operands, scales, [&](BlockBuilder& body, auto& i, auto& j) {
-        auto index = flat(i, n, j);
-        std::vector<KernelValue> digits;
-        for (int l = 0; l < moduli_count; l++) {
-            auto digit = body.convert(body.read(residues.at(l), {index}), PrimitiveType::Int32);
-            for (int p = 0; p < l; p++) {
-                auto difference = body.op(TaskletCode::int_sub, {digit, digits.at(p)}, PrimitiveType::Int32);
-                auto scaled = body
-                                  .op(TaskletCode::int_mul,
-                                      {difference,
-                                       body.constant(inverse_mod(moduli.at(p), moduli.at(l)), PrimitiveType::Int32)},
-                                      PrimitiveType::Int32);
-                digit = detail::symmetric_mod(body, scaled, moduli.at(l), PrimitiveType::Int32);
+    store_scaled(
+        kb,
+        operands,
+        scales,
+        [&](BlockBuilder& body, auto& i, auto& j) {
+            auto index = flat(i, n, j);
+            std::vector<KernelValue> digits;
+            for (int l = 0; l < moduli_count; l++) {
+                auto digit = body.convert(body.read(residues.at(l), {index}), PrimitiveType::Int32);
+                for (int p = 0; p < l; p++) {
+                    auto difference = body.op(TaskletCode::int_sub, {digit, digits.at(p)}, PrimitiveType::Int32);
+                    auto scaled =
+                        body
+                            .op(TaskletCode::int_mul,
+                                {difference,
+                                 body.constant(inverse_mod(moduli.at(p), moduli.at(l)), PrimitiveType::Int32)},
+                                PrimitiveType::Int32);
+                    digit = detail::symmetric_mod(body, scaled, moduli.at(l), PrimitiveType::Int32);
+                }
+                digits.push_back(digit);
             }
-            digits.push_back(digit);
-        }
-        auto value = body.convert(digits.back(), PrimitiveType::Double);
-        for (int l = moduli_count - 2; l >= 0; l--) {
-            auto shifted = body
-                               .op(TaskletCode::fp_mul,
-                                   {value, body.constant(moduli.at(l), PrimitiveType::Double)},
-                                   PrimitiveType::Double);
-            value = body
-                        .op(TaskletCode::fp_add,
-                            {body.convert(digits.at(l), PrimitiveType::Double), shifted},
-                            PrimitiveType::Double);
-        }
-        return body
-            .op(TaskletCode::fp_mul,
-                {value, body.constant(std::ldexp(1.0, -2 * bits), PrimitiveType::Double)},
-                PrimitiveType::Double);
-    });
+            auto value = body.convert(digits.back(), PrimitiveType::Double);
+            for (int l = moduli_count - 2; l >= 0; l--) {
+                auto shifted = body
+                                   .op(TaskletCode::fp_mul,
+                                       {value, body.constant(moduli.at(l), PrimitiveType::Double)},
+                                       PrimitiveType::Double);
+                value = body
+                            .op(TaskletCode::fp_add,
+                                {body.convert(digits.at(l), PrimitiveType::Double), shifted},
+                                PrimitiveType::Double);
+            }
+            return value;
+        },
+        -2 * bits
+    );
 }
 
 } // namespace

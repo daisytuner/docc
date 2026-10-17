@@ -73,10 +73,20 @@ std::string absmax(
     types::PrimitiveType type
 );
 
-/// Powers of two around the magnitudes @p magnitudes: `P[o] = 2^e` and `I[o] = 2^-e` with
-/// `e = floor(log2(magnitudes[o])) + 1`, so that `|x| < P[o]` for every |x| <= magnitudes[o].
+/// Powers of two around the magnitudes @p magnitudes, in @p type: the exponents `E[o] = floor(log2(magnitudes[o])) +
+/// 1`, so that `|x| < 2^E[o]` for every |x| <= magnitudes[o], and the inverse powers `I[o] = 2^-E[o]`. Results are
+/// rescaled through the exponents, as scale_by_power_of_two(), since 2^E[o] itself may overflow.
 std::pair<std::string, std::string> power_of_two_scales(
-    KernelBuilder& kb, const std::string& prefix, const std::string& magnitudes, const symbolic::Expression& count
+    KernelBuilder& kb,
+    const std::string& prefix,
+    const std::string& magnitudes,
+    const symbolic::Expression& count,
+    types::PrimitiveType type
+);
+
+/// `value * 2^exponent` in @p type, finite whenever the result is representable.
+KernelValue scale_by_power_of_two(
+    BlockBuilder& block, const KernelValue& value, const KernelValue& exponent, types::PrimitiveType type
 );
 
 /// The representative of @p value modulo the odd @p modulus in [-(modulus-1)/2, (modulus-1)/2], computed in @p type.

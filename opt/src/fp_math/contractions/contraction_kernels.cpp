@@ -304,20 +304,36 @@ std::string absmax(
 }
 
 std::pair<std::string, std::string> power_of_two_scales(
-    KernelBuilder& kb, const std::string& prefix, const std::string& magnitudes, const symbolic::Expression& count
+    KernelBuilder& kb,
+    const std::string& prefix,
+    const std::string& magnitudes,
+    const symbolic::Expression& count,
+    PrimitiveType type
 ) {
-    auto powers = kb.buffer(prefix + "_pow", PrimitiveType::Double, count);
-    auto inverses = kb.buffer(prefix + "_inv", PrimitiveType::Double, count);
+    auto exponents = kb.buffer(prefix + "_exp", type, count);
+    auto inverses = kb.buffer(prefix + "_inv", type, count);
     auto& loop = kb.map(kb.scope(), "_o", count);
     auto body = kb.block(loop.root());
-    auto log = body.cmath(CMathFunction::log2, {body.read(magnitudes, {loop.indvar()})}, PrimitiveType::Double);
-    auto floor = body.cmath(CMathFunction::floor, {log}, PrimitiveType::Double);
-    auto exponent =
-        body.op(TaskletCode::fp_add, {floor, body.constant(1.0, PrimitiveType::Double)}, PrimitiveType::Double);
-    auto negated = body.op(TaskletCode::fp_neg, {exponent}, PrimitiveType::Double);
-    body.store(body.cmath(CMathFunction::exp2, {exponent}, PrimitiveType::Double), powers, {loop.indvar()});
-    body.store(body.cmath(CMathFunction::exp2, {negated}, PrimitiveType::Double), inverses, {loop.indvar()});
-    return {powers, inverses};
+    auto log = body.cmath(CMathFunction::log2, {body.read(magnitudes, {loop.indvar()})}, type);
+    auto floor = body.cmath(CMathFunction::floor, {log}, type);
+    auto exponent = body.op(TaskletCode::fp_add, {floor, body.constant(1.0, type)}, type);
+    auto negated = body.op(TaskletCode::fp_neg, {exponent}, type);
+    body.store(exponent, exponents, {loop.indvar()});
+    // 2^-e stays finite: magnitudes are at least the smallest normal value, so e > the smallest normal exponent.
+    body.store(body.cmath(CMathFunction::exp2, {negated}, type), inverses, {loop.indvar()});
+    return {exponents, inverses};
+}
+
+KernelValue
+scale_by_power_of_two(BlockBuilder& block, const KernelValue& value, const KernelValue& exponent, PrimitiveType type) {
+    // value * 2^e in two halves: each power stays representable for any e a representable result can have, and an
+    // intermediate lies between value and the result.
+    auto half = block.cmath(
+        CMathFunction::floor, {block.op(TaskletCode::fp_mul, {exponent, block.constant(0.5, type)}, type)}, type
+    );
+    auto rest = block.op(TaskletCode::fp_sub, {exponent, half}, type);
+    auto first = block.op(TaskletCode::fp_mul, {value, block.cmath(CMathFunction::exp2, {half}, type)}, type);
+    return block.op(TaskletCode::fp_mul, {first, block.cmath(CMathFunction::exp2, {rest}, type)}, type);
 }
 
 KernelValue symmetric_mod(BlockBuilder& block, const KernelValue& value, int64_t modulus, PrimitiveType type) {

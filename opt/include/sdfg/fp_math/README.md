@@ -50,7 +50,8 @@ On AMD GPUs the generated matrix-core path (`GpuMmaExpander`, `GpuMmaEinsumTrans
 
 Requirements: a 2-D MatMul whose inputs, accumulator and output share the Float or Double type, or a row-major Float or Double GEMM with constant alpha ≠ 0 and beta, and a constant K for which the Int32 accumulation is exact (K ≤ 133143 for Int8 values up to ±127).
 Only constant coefficients keep BLAS semantics: C is not read if beta is 0, and A @ B is not computed if alpha is 0, even if they hold NaNs or products that overflow.
-The Ozaki splitting and reconstruction run in Double; inputs of magnitude 2^1023 or above are not supported.
+The Ozaki splitting and reconstruction run in Double.
+Results are rescaled by the sum of their row's and column's power-of-two exponents in one step, so no intermediate overflows where the result does not.
 Quantization computes its scales and results in the contraction's own type, whose rounding is far below the quantization error, so targets without Double run it.
 
 The scales are Max reductions (`Reduce` loops), one per row of A and column of B.

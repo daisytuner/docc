@@ -76,6 +76,9 @@ void QuantizeContraction::apply(builder::StructuredSDFGBuilder& builder, analysi
         };
         auto b_q = quantize_operand("_q_b", k, n, operands.b_transposed, read_b, scales_b, false);
 
+        auto [exponents_a, inverses_a] = detail::power_of_two_scales(kb, "_q_a", scales_a, m, type);
+        auto [exponents_b, inverses_b] = detail::power_of_two_scales(kb, "_q_b", scales_b, n, type);
+
         auto products = kb.buffer("_q_p", PrimitiveType::Int32, symbolic::mul(m, n));
         detail::int8_matmul(kb, a_q, b_q, products, m, n, k, operands.a_transposed, operands.b_transposed);
 
@@ -83,13 +86,18 @@ void QuantizeContraction::apply(builder::StructuredSDFGBuilder& builder, analysi
         auto& columns = kb.map(rows.root(), "_j", n);
         auto i = rows.indvar(), j = columns.indvar();
         auto body = kb.block(columns.root());
+        // Y = P * (s_A / q) * (s_B / q) with s = m 2^e and m in [1/2, 1): the mantissas keep the product within
+        // K q^2, and the exponents apply in one step, so that no intermediate overflows where Y does not.
         auto p = body.convert(body.read(products, {symbolic::add(symbolic::mul(i, n), j)}), type);
         auto inverse_q = body.constant(1.0 / q, type);
-        auto row_scale = body.op(TaskletCode::fp_mul, {body.read(scales_a, {i}), inverse_q}, type);
-        auto column_scale = body.op(TaskletCode::fp_mul, {body.read(scales_b, {j}), inverse_q}, type);
-        auto scaled = body.op(TaskletCode::fp_mul, {p, row_scale}, type);
-        auto value = body.op(TaskletCode::fp_mul, {scaled, column_scale}, type);
-        operands.store(body, value, i, j);
+        auto mantissa = [&](const std::string& scales, const std::string& inverses, const symbolic::Expression& at) {
+            auto normalized = body.op(TaskletCode::fp_mul, {body.read(scales, {at}), body.read(inverses, {at})}, type);
+            return body.op(TaskletCode::fp_mul, {normalized, inverse_q}, type);
+        };
+        auto scaled = body.op(TaskletCode::fp_mul, {p, mantissa(scales_a, inverses_a, i)}, type);
+        auto value = body.op(TaskletCode::fp_mul, {scaled, mantissa(scales_b, inverses_b, j)}, type);
+        auto exponent = body.op(TaskletCode::fp_add, {body.read(exponents_a, {i}), body.read(exponents_b, {j})}, type);
+        operands.store(body, detail::scale_by_power_of_two(body, value, exponent, type), i, j);
     });
     analysis_manager.invalidate_all();
 }

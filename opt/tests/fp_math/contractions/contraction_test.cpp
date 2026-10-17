@@ -123,6 +123,8 @@ double relative_error(
                 exact += static_cast<long double>(a[i * K + k]) * b[k * N + j];
                 magnitude += std::fabs(static_cast<long double>(a[i * K + k]) * b[k * N + j]);
             }
+            // A NaN would slip through the maximum below.
+            EXPECT_TRUE(std::isfinite(y[i * N + j])) << "row " << i << ", column " << j;
             double error = std::fabs(static_cast<double>(y[i * N + j] - exact));
             if (magnitude == 0) {
                 EXPECT_EQ(y[i * N + j], T(0)) << "row " << i << ", column " << j;
@@ -420,7 +422,7 @@ double gemm_relative_error(
                 exact += beta * static_cast<long double>(initial[i * N + j]);
                 magnitude += std::fabs(beta * static_cast<long double>(initial[i * N + j]));
             }
-            EXPECT_FALSE(std::isnan(c[i * N + j])) << "row " << i << ", column " << j;
+            EXPECT_TRUE(std::isfinite(c[i * N + j])) << "row " << i << ", column " << j;
             if (magnitude > 0) {
                 worst = std::max(worst, static_cast<double>(std::fabs(c[i * N + j] - exact) / magnitude));
             }
@@ -535,4 +537,38 @@ TEST(OzakiContractionTest, Gemm_RequiresConstantCoefficients) {
     EXPECT_TRUE(applies("2.0", "0.5"));
     EXPECT_FALSE(applies("1.0", "runtime"));
     EXPECT_FALSE(applies("0.0", "1.0"));
+}
+
+namespace {
+
+/// Y = A @ B for A = 2^1022 and B = 2^-1022 everywhere: Y = K exactly, although 2^1022 * K overflows.
+void expect_extreme_exponents_exact(
+    const std::string& name,
+    const std::function<void(data_flow::LibraryNode&, builder::StructuredSDFGBuilder&)>& transform
+) {
+    builder::StructuredSDFGBuilder builder(name, FunctionType_CPU);
+    auto& matmul =
+        add_matmul(builder, PrimitiveType::Double, symbolic::integer(M), symbolic::integer(N), symbolic::integer(K));
+    transform(matmul, builder);
+    auto function = reinterpret_cast<void (*)(double*, double*, double*)>(test::compile_and_load(builder));
+    std::vector<double> a(M * K, std::ldexp(1.0, 1022)), b(K * N, std::ldexp(1.0, -1022)), y(M * N, -1.0);
+    function(a.data(), b.data(), y.data());
+    for (auto value : y) {
+        EXPECT_EQ(value, static_cast<double>(K)) << name;
+    }
+}
+
+} // namespace
+
+TEST(OzakiContractionTest, ExtremeExponentsDoNotOverflow) {
+    expect_extreme_exponents_exact(
+        "ozaki_extreme_slicing", applying<fp_math::OzakiContraction>(fp_math::OzakiVariant::Slicing, 0)
+    );
+    expect_extreme_exponents_exact(
+        "ozaki_extreme_modular", applying<fp_math::OzakiContraction>(fp_math::OzakiVariant::Modular, 0)
+    );
+}
+
+TEST(QuantizeContractionTest, ExtremeExponentsDoNotOverflow) {
+    expect_extreme_exponents_exact("quantize_extreme", applying<fp_math::QuantizeContraction>());
 }
