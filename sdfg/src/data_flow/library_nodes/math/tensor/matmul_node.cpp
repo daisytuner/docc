@@ -717,12 +717,40 @@ passes::LibNodeExpander::ExpandOutcome MatMulNaiveExpander::handle_expand(
         auto& y_in = standalone->add_indirect_read_access(code_block, MatMulNode::Y_INPUT_IDX);
         auto& y_out = standalone->add_indirect_write_access(code_block, MatMulNode::Y_INPUT_IDX);
 
+        // An operand of another type than the accumulator is converted first: the backend multiplies in the
+        // operands' types, so e.g. Float inputs overflow even though they accumulate in Double.
+        struct Factor {
+            data_flow::AccessNode* node;
+            data_flow::Subset subset;
+            const types::IType* type;
+        };
+        auto factor = [&](data_flow::AccessNode& node,
+                          const data_flow::Subset& subset,
+                          const types::Pointer& pointer,
+                          const data_flow::Memlet& edge) -> Factor {
+            if (pointer.pointee_type().primitive_type() == y_prim) {
+                return {&node, subset, &pointer};
+            }
+            auto& convert =
+                builder.add_tasklet(code_block, data_flow::TaskletCode::assign, "_out", {"_in"}, block.debug_info());
+            builder.add_computational_memlet(code_block, node, convert, "_in", subset, pointer, edge.debug_info());
+            std::string converted = builder.find_new_name("_operand");
+            builder.add_container(converted, compute_scalar);
+            auto& converted_node = builder.add_access(code_block, converted, block.debug_info());
+            builder.add_computational_memlet(
+                code_block, convert, "_out", converted_node, {}, compute_scalar, block.debug_info()
+            );
+            return {&converted_node, {}, &compute_scalar};
+        };
+        auto a = factor(a_node, a_idx, a_pointer, *iedge_a);
+        auto b = factor(b_node, b_idx, b_pointer, *iedge_b);
+
         if (fp) {
             // Single fused multiply-add: Y[...] = A[...] * B[...] + Y[...].
             auto& fma =
                 builder.add_tasklet(code_block, data_flow::fp_fma, "_out", {"_in1", "_in2", "_in3"}, block.debug_info());
-            builder.add_computational_memlet(code_block, a_node, fma, "_in1", a_idx, a_pointer, iedge_a->debug_info());
-            builder.add_computational_memlet(code_block, b_node, fma, "_in2", b_idx, b_pointer, iedge_b->debug_info());
+            builder.add_computational_memlet(code_block, *a.node, fma, "_in1", a.subset, *a.type, iedge_a->debug_info());
+            builder.add_computational_memlet(code_block, *b.node, fma, "_in2", b.subset, *b.type, iedge_b->debug_info());
             builder.add_computational_memlet(code_block, y_in, fma, "_in3", y_idx, y_pointer, iedge_y->debug_info());
             builder.add_computational_memlet(code_block, fma, "_out", y_out, y_idx, y_pointer, iedge_y->debug_info());
         } else {
@@ -730,8 +758,10 @@ passes::LibNodeExpander::ExpandOutcome MatMulNaiveExpander::handle_expand(
             auto& mul_t = builder.add_tasklet(
                 code_block, data_flow::TaskletCode::int_mul, "_out", {"_in1", "_in2"}, block.debug_info()
             );
-            builder.add_computational_memlet(code_block, a_node, mul_t, "_in1", a_idx, a_pointer, iedge_a->debug_info());
-            builder.add_computational_memlet(code_block, b_node, mul_t, "_in2", b_idx, b_pointer, iedge_b->debug_info());
+            builder
+                .add_computational_memlet(code_block, *a.node, mul_t, "_in1", a.subset, *a.type, iedge_a->debug_info());
+            builder
+                .add_computational_memlet(code_block, *b.node, mul_t, "_in2", b.subset, *b.type, iedge_b->debug_info());
 
             std::string prod = builder.find_new_name("_prod");
             builder.add_container(prod, compute_scalar);
