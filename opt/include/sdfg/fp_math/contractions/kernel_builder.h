@@ -9,6 +9,7 @@
 #include "sdfg/data_flow/library_nodes/math/cmath/cmath_node.h"
 #include "sdfg/data_flow/tasklet.h"
 #include "sdfg/structured_control_flow/block.h"
+#include "sdfg/structured_control_flow/reduce.h"
 #include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/types/type.h"
@@ -113,6 +114,15 @@ public:
     /// A for loop counting from zero up to @p bound in @p scope.
     structured_control_flow::StructuredLoop&
     for_loop(structured_control_flow::Sequence& scope, const std::string& prefix, const symbolic::Expression& bound);
+
+    /// A reduction counting from zero up to @p bound in @p scope, combining into @p accumulator with @p operation.
+    structured_control_flow::StructuredLoop& reduce(
+        structured_control_flow::Sequence& scope,
+        const std::string& prefix,
+        const symbolic::Expression& bound,
+        structured_control_flow::ReductionOperation operation,
+        const std::string& accumulator
+    );
 
     BlockBuilder block(structured_control_flow::Sequence& scope);
 

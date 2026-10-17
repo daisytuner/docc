@@ -138,6 +138,9 @@ public:
         n = node.n();
         k = node.k();
         element = node.output_type();
+        using math::tensor::TensorLayout;
+        a_transposed = layout_a_.is_2d_col_or_row_major() == TensorLayout::LAYOUT_COL_MAJOR;
+        b_transposed = layout_b_.is_2d_col_or_row_major() == TensorLayout::LAYOUT_COL_MAJOR;
     }
 
     static std::vector<passes::LibNodeExpander::InputUse> uses() {
@@ -179,6 +182,8 @@ public:
         n = node.n();
         k = node.k();
         element = node.scalar_primitive();
+        a_transposed = node.trans_a() == BLAS_Transpose::Trans;
+        b_transposed = node.trans_b() == BLAS_Transpose::Trans;
         auto& dataflow = node.get_parent();
         auto edge = [&](int idx) {
             return dataflow.in_edge_for_connector(node, node.input(idx));
@@ -226,6 +231,7 @@ public:
         const symbolic::Expression& column
     ) override {
         auto index = symbolic::add(symbolic::mul(node_.ldc(), row), column);
+        auto type = value.base_type->primitive_type();
         auto result = value;
         if (!alpha_one_) {
             auto alpha = block.read(
@@ -233,10 +239,7 @@ public:
                 {},
                 types::Scalar(element)
             );
-            result = block
-                         .op(TaskletCode::fp_mul,
-                             {block.convert(alpha, PrimitiveType::Double), result},
-                             PrimitiveType::Double);
+            result = block.op(TaskletCode::fp_mul, {block.convert(alpha, type), result}, type);
         }
         if (!beta_zero_) {
             auto beta = block.read(
@@ -245,11 +248,8 @@ public:
             auto c =
                 block
                     .read(standalone_.add_indirect_read_access(block.block(), GEMMNode::C_INPUT_IDX), {index}, *c_type_);
-            auto scaled = block
-                              .op(TaskletCode::fp_mul,
-                                  {block.convert(beta, PrimitiveType::Double), block.convert(c, PrimitiveType::Double)},
-                                  PrimitiveType::Double);
-            result = block.op(TaskletCode::fp_add, {result, scaled}, PrimitiveType::Double);
+            auto scaled = block.op(TaskletCode::fp_mul, {block.convert(beta, type), block.convert(c, type)}, type);
+            result = block.op(TaskletCode::fp_add, {result, scaled}, type);
         }
         auto& access = standalone_.add_indirect_write_access(block.block(), GEMMNode::C_INPUT_IDX);
         block.store(block.convert(result, element), access, {index}, *c_type_);
@@ -264,23 +264,24 @@ std::string absmax(
     const MatrixRead& read,
     const symbolic::Expression& outer,
     const symbolic::Expression& inner,
-    double tiny
+    double tiny,
+    PrimitiveType type
 ) {
-    auto result = kb.buffer(prefix, PrimitiveType::Double, outer);
-    auto accumulator = kb.scalar(prefix + "_acc", PrimitiveType::Double);
+    auto result = kb.buffer(prefix, type, outer);
+    auto accumulator = kb.scalar(prefix + "_acc", type);
 
     auto& rows = kb.map(kb.scope(), "_o", outer);
     {
         // Starting from the smallest normal keeps all-zero rows from dividing by zero later.
         auto init = kb.block(rows.root());
-        init.store(init.constant(tiny, PrimitiveType::Double), accumulator);
+        init.store(init.constant(tiny, type), accumulator);
     }
-    auto& elements = kb.for_loop(rows.root(), "_e", inner);
+    auto& elements = kb.reduce(rows.root(), "_e", inner, structured_control_flow::ReductionOperation::Max, accumulator);
     {
         auto body = kb.block(elements.root());
-        auto x = body.convert(read(body, rows.indvar(), elements.indvar()), PrimitiveType::Double);
-        auto magnitude = body.cmath(CMathFunction::fabs, {x}, PrimitiveType::Double);
-        auto max = body.cmath(CMathFunction::fmax, {magnitude, body.read(accumulator)}, PrimitiveType::Double);
+        auto x = body.convert(read(body, rows.indvar(), elements.indvar()), type);
+        auto magnitude = body.cmath(CMathFunction::fabs, {x}, type);
+        auto max = body.cmath(CMathFunction::fmax, {magnitude, body.read(accumulator)}, type);
         body.store(max, accumulator);
     }
     {
@@ -323,7 +324,9 @@ void int8_matmul(
     const std::string& p,
     const symbolic::Expression& m,
     const symbolic::Expression& n,
-    const symbolic::Expression& k
+    const symbolic::Expression& k,
+    bool a_transposed,
+    bool b_transposed
 ) {
     auto& builder = kb.builder();
     auto& debug_info = kb.debug_info();
@@ -331,11 +334,13 @@ void int8_matmul(
     auto& a_access = builder.add_access(block, a, debug_info);
     auto& b_access = builder.add_access(block, b, debug_info);
     auto& p_access = builder.add_access(block, p, debug_info);
+    using math::tensor::TensorLayout;
+    auto one = symbolic::one();
     auto& matmul = builder.add_library_node<MatMulNode>(
         block,
         debug_info,
-        math::tensor::TensorLayout({m, k}),
-        math::tensor::TensorLayout({k, n}),
+        a_transposed ? TensorLayout({m, k}, {one, m}) : TensorLayout({m, k}),
+        b_transposed ? TensorLayout({k, n}, {one, k}) : TensorLayout({k, n}),
         math::tensor::ContractionTypes{PrimitiveType::Int8, PrimitiveType::Int32, PrimitiveType::Int32}
     );
     types::Pointer int8_pointer{types::Scalar(PrimitiveType::Int8)};

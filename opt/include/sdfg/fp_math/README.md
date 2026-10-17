@@ -49,7 +49,12 @@ Where they pay off:
 On AMD GPUs the generated matrix-core path (`GpuMmaExpander`, `GpuMmaEinsumTransform`) maps the Int8 matmuls onto Int8 MFMA/WMMA with Int32 accumulators, using the full-rate 16x16x32 blocks on CDNA3 (gfx942) and 16x16x16 on CDNA2 and RDNA.
 
 Requirements: a 2-D MatMul whose inputs, accumulator and output share the Float or Double type, or a row-major Float or Double GEMM, and a constant K for which the Int32 accumulation is exact (K ≤ 133143 for Int8 values up to ±127).
-The splitting and reconstruction run in Double; inputs of magnitude 2^1023 or above are not supported.
+The Ozaki splitting and reconstruction run in Double; inputs of magnitude 2^1023 or above are not supported.
+Quantization computes its scales and results in the contraction's own type, whose rounding is far below the quantization error, so targets without Double run it.
+
+The scales are Max reductions (`Reduce` loops), one per row of A and column of B.
+Quantization keeps each operand's storage order: an operand stored transposed, such as a GEMM's B with `trans_b` or a MatMul's column-major layout, is read along its rows and quantized into a buffer of the same order, which the Int8 MatMul then reads through a column-major layout.
+No operand is read across its rows, and a target that needs another order transposes the Int8 values, a quarter of the bytes of Float.
 
 ### Selecting the precision
 

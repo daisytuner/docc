@@ -120,8 +120,8 @@ OperandScales operand_scales(KernelBuilder& kb, detail::ContractionOperands& ope
     auto read_b_t = [&](BlockBuilder& block, auto& column, auto& row) {
         return operands.b(block, row, column);
     };
-    auto magnitudes_a = detail::absmax(kb, "_oz_max_a", read_a, operands.m, operands.k, tiny);
-    auto magnitudes_b = detail::absmax(kb, "_oz_max_b", read_b_t, operands.n, operands.k, tiny);
+    auto magnitudes_a = detail::absmax(kb, "_oz_max_a", read_a, operands.m, operands.k, tiny, PrimitiveType::Double);
+    auto magnitudes_b = detail::absmax(kb, "_oz_max_b", read_b_t, operands.n, operands.k, tiny, PrimitiveType::Double);
     auto [a_power, a_inverse] = detail::power_of_two_scales(kb, "_oz_a", magnitudes_a, operands.m);
     auto [b_power, b_inverse] = detail::power_of_two_scales(kb, "_oz_b", magnitudes_b, operands.n);
     return {a_power, a_inverse, b_power, b_inverse};

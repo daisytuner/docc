@@ -159,6 +159,26 @@ structured_control_flow::StructuredLoop& KernelBuilder::
     );
 }
 
+structured_control_flow::StructuredLoop& KernelBuilder::reduce(
+    structured_control_flow::Sequence& scope,
+    const std::string& prefix,
+    const symbolic::Expression& bound,
+    structured_control_flow::ReductionOperation operation,
+    const std::string& accumulator
+) {
+    auto indvar = symbolic::symbol(scalar(prefix, types::get_primitive_type_to_hold_upper_bound(bound)));
+    return builder_.add_reduce(
+        scope,
+        indvar,
+        symbolic::Lt(indvar, bound),
+        symbolic::zero(),
+        symbolic::add(indvar, symbolic::one()),
+        {{operation, accumulator}},
+        structured_control_flow::ScheduleType_Sequential::create(),
+        debug_info_
+    );
+}
+
 BlockBuilder KernelBuilder::block(structured_control_flow::Sequence& scope) {
     return BlockBuilder(builder_, builder_.add_block(scope, {}, debug_info_), debug_info_);
 }

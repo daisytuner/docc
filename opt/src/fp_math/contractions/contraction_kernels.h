@@ -43,11 +43,14 @@ public:
 
     symbolic::Expression m, n, k;
     types::PrimitiveType element;
+    /// Whether A (m x k) or B (k x n) is stored transposed, its rows along its columns' elements.
+    bool a_transposed = false, b_transposed = false;
 
     virtual KernelValue a(BlockBuilder& block, const symbolic::Expression& row, const symbolic::Expression& column) = 0;
     virtual KernelValue b(BlockBuilder& block, const symbolic::Expression& row, const symbolic::Expression& column) = 0;
 
-    /// Stores the product @p value (Double) of A and B at [row, column], e.g. as `alpha value + beta C` for a GEMM.
+    /// Stores the product @p value of A and B at [row, column], e.g. as `alpha value + beta C` for a GEMM, computed in
+    /// the type of @p value.
     virtual void store(
         BlockBuilder& block,
         const KernelValue& value,
@@ -58,14 +61,16 @@ public:
 
 using MatrixRead = std::function<KernelValue(BlockBuilder&, const symbolic::Expression&, const symbolic::Expression&)>;
 
-/// `S[o] = max(max_i |X(o, i)|, tiny)` in Double over @p outer x @p inner, where @p read gives X(o, i).
+/// `S[o] = max(max_i |X(o, i)|, tiny)` in @p type over @p outer x @p inner, where @p read gives X(o, i), as a map over
+/// o around a Max reduction over i.
 std::string absmax(
     KernelBuilder& kb,
     const std::string& prefix,
     const MatrixRead& read,
     const symbolic::Expression& outer,
     const symbolic::Expression& inner,
-    double tiny
+    double tiny,
+    types::PrimitiveType type
 );
 
 /// Powers of two around the magnitudes @p magnitudes: `P[o] = 2^e` and `I[o] = 2^-e` with
@@ -77,7 +82,8 @@ std::pair<std::string, std::string> power_of_two_scales(
 /// The representative of @p value modulo the odd @p modulus in [-(modulus-1)/2, (modulus-1)/2], computed in @p type.
 KernelValue symmetric_mod(BlockBuilder& block, const KernelValue& value, int64_t modulus, types::PrimitiveType type);
 
-/// `P = A @ B` for the row-major Int8 buffers A[m, k] and B[k, n] into the Int32 buffer P[m, n], as a MatMul node.
+/// `P = A @ B` for the Int8 buffers A[m, k] and B[k, n] into the row-major Int32 buffer P[m, n], as a MatMul node. A
+/// or B is stored transposed if @p a_transposed or @p b_transposed.
 void int8_matmul(
     KernelBuilder& kb,
     const std::string& a,
@@ -85,7 +91,9 @@ void int8_matmul(
     const std::string& p,
     const symbolic::Expression& m,
     const symbolic::Expression& n,
-    const symbolic::Expression& k
+    const symbolic::Expression& k,
+    bool a_transposed = false,
+    bool b_transposed = false
 );
 
 /// The MatMul or GEMM node a transformation description refers to as its subgraph node "0".

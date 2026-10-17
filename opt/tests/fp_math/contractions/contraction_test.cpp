@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <functional>
 #include <random>
 #include <sstream>
 #include <vector>
@@ -14,6 +15,7 @@
 #include "sdfg/fp_math/passes/contraction_precision.h"
 #include "sdfg/fp_math/transformations/ozaki_contraction.h"
 #include "sdfg/fp_math/transformations/quantize_contraction.h"
+#include "sdfg/structured_control_flow/reduce.h"
 #include "sdfg/transformations/transformation_registry.h"
 #include "sdfg/types/pointer.h"
 #include "sdfg/types/scalar.h"
@@ -156,6 +158,37 @@ TEST(QuantizeContractionTest, BuildsInt8MatMul) {
         found.front()->types(),
         (math::tensor::ContractionTypes{PrimitiveType::Int8, PrimitiveType::Int32, PrimitiveType::Int32})
     );
+}
+
+TEST(QuantizeContractionTest, ComputesInTheContractionsTypeWithMaxReductions) {
+    // A Float matmul quantizes and scales in Float, so targets without Double run it; its scales are Max reductions.
+    builder::StructuredSDFGBuilder builder("quantize_types", FunctionType_CPU);
+    auto& matmul =
+        add_matmul(builder, PrimitiveType::Float, symbolic::integer(M), symbolic::integer(N), symbolic::integer(K));
+    applying<fp_math::QuantizeContraction>()(matmul, builder);
+
+    auto& sdfg = builder.subject();
+    for (auto& name : sdfg.containers()) {
+        EXPECT_NE(sdfg.type(name).primitive_type(), PrimitiveType::Double) << name;
+    }
+    size_t reductions = 0;
+    std::function<void(structured_control_flow::ControlFlowNode&)> visit =
+        [&](structured_control_flow::ControlFlowNode& node) {
+            if (auto* reduce = dynamic_cast<structured_control_flow::Reduce*>(&node)) {
+                ASSERT_EQ(reduce->reductions().size(), 1);
+                EXPECT_EQ(reduce->reductions().front().operation, structured_control_flow::ReductionOperation::Max);
+                ++reductions;
+            }
+            if (auto* sequence = dynamic_cast<structured_control_flow::Sequence*>(&node)) {
+                for (size_t i = 0; i < sequence->size(); i++) {
+                    visit(sequence->at(i));
+                }
+            } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&node)) {
+                visit(loop->root());
+            }
+        };
+    visit(sdfg.root());
+    EXPECT_EQ(reductions, 2);
 }
 
 TEST(QuantizeContractionTest, Rejects) {
@@ -390,6 +423,21 @@ TEST(OzakiContractionTest, Gemm_BetaZeroIgnoresC) {
 
 TEST(QuantizeContractionTest, Gemm_AlphaBetaTransposed) {
     EXPECT_LT(gemm_relative_error("quantize_gemm", -1.5, 1.0, applying<fp_math::QuantizeContraction>()), 1e-2);
+}
+
+TEST(QuantizeContractionTest, Gemm_QuantizesInStorageOrder) {
+    // B is stored transposed (b[N, K]): its quantization reads along its rows and keeps it so, and the Int8 matmul
+    // takes B in that order.
+    builder::StructuredSDFGBuilder builder("quantize_storage", FunctionType_CPU);
+    auto& gemm = add_gemm(builder, "1.0", "0.0");
+    applying<fp_math::QuantizeContraction>()(gemm, builder);
+
+    auto found = matmuls(builder.subject().root());
+    ASSERT_EQ(found.size(), 1);
+    auto& layout_b = found.front()->layout_b();
+    EXPECT_EQ(layout_b.is_2d_col_or_row_major(), math::tensor::TensorLayout::LAYOUT_COL_MAJOR);
+    EXPECT_TRUE(symbolic::eq(layout_b.get_stride(1), symbolic::integer(K)));
+    EXPECT_EQ(found.front()->layout_a().is_2d_col_or_row_major(), math::tensor::TensorLayout::LAYOUT_ROW_MAJOR);
 }
 
 TEST(ContractionPrecisionTest, Parse) {
