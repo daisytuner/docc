@@ -590,6 +590,18 @@ passes::LibNodeExpander::ExpandOutcome MatMulNaiveExpander::handle_expand(
         return idx;
     };
 
+    // Address every operand through the node's layout as a pointer, whether its memlet is typed as a pointer or a
+    // (deprecated) tensor.
+    auto element_pointer = [](const data_flow::Memlet& edge) {
+        return types::Pointer(types::Scalar(edge.base_type().primitive_type()));
+    };
+    const auto a_pointer = element_pointer(*iedge_a);
+    const auto b_pointer = element_pointer(*iedge_b);
+    const auto y_pointer = element_pointer(*iedge_y);
+    auto linear = [](const TensorLayout& layout, const symbolic::MultiExpression& idx) {
+        return data_flow::Subset{layout.resolve_element(idx)};
+    };
+
     // ---- Initialization nest: for (batch, i, j) Y[...] = 0 ----
     {
         structured_control_flow::Sequence* scope = &new_sequence;
@@ -603,16 +615,14 @@ passes::LibNodeExpander::ExpandOutcome MatMulNaiveExpander::handle_expand(
         auto& j_loop = add_loop(i_loop.root(), n, "_j", true);
         auto& init_blk = builder.add_block(j_loop.root(), block.debug_info());
 
-        auto y_idx = build_y_idx(batch_vars, i_loop.indvar(), j_loop.indvar());
+        auto y_idx = linear(node.layout_y(), build_y_idx(batch_vars, i_loop.indvar(), j_loop.indvar()));
 
         auto& zero_node = builder.add_constant(init_blk, fp ? "0.0" : "0", compute_scalar, block.debug_info());
         auto& assign_t =
             builder.add_tasklet(init_blk, data_flow::TaskletCode::assign, "_out", {"_in"}, block.debug_info());
         auto& y_write = standalone->add_indirect_write_access(init_blk, MatMulNode::Y_INPUT_IDX);
         builder.add_computational_memlet(init_blk, zero_node, assign_t, "_in", {}, compute_scalar, block.debug_info());
-        builder.add_computational_memlet(
-            init_blk, assign_t, "_out", y_write, y_idx, iedge_y->base_type(), iedge_y->debug_info()
-        );
+        builder.add_computational_memlet(init_blk, assign_t, "_out", y_write, y_idx, y_pointer, iedge_y->debug_info());
     }
 
     // ---- Accumulation nest: for (batch, i, j) for k: Y[...] += A[...] * B[...] ----
@@ -633,9 +643,9 @@ passes::LibNodeExpander::ExpandOutcome MatMulNaiveExpander::handle_expand(
         const auto j_sym = j_loop.indvar();
         const auto k_sym = k_loop.indvar();
 
-        auto a_idx = build_operand_idx(batch_vars, a_shape, batch_a, i_sym, k_sym);
-        auto b_idx = build_operand_idx(batch_vars, b_shape, batch_b, k_sym, j_sym);
-        auto y_idx = build_y_idx(batch_vars, i_sym, j_sym);
+        auto a_idx = linear(node.layout_a(), build_operand_idx(batch_vars, a_shape, batch_a, i_sym, k_sym));
+        auto b_idx = linear(node.layout_b(), build_operand_idx(batch_vars, b_shape, batch_b, k_sym, j_sym));
+        auto y_idx = linear(node.layout_y(), build_y_idx(batch_vars, i_sym, j_sym));
 
         auto& a_node = standalone->add_indirect_read_access(code_block, MatMulNode::A_INPUT_IDX);
         auto& b_node = standalone->add_indirect_read_access(code_block, MatMulNode::B_INPUT_IDX);
@@ -646,29 +656,17 @@ passes::LibNodeExpander::ExpandOutcome MatMulNaiveExpander::handle_expand(
             // Single fused multiply-add: Y[...] = A[...] * B[...] + Y[...].
             auto& fma =
                 builder.add_tasklet(code_block, data_flow::fp_fma, "_out", {"_in1", "_in2", "_in3"}, block.debug_info());
-            builder.add_computational_memlet(
-                code_block, a_node, fma, "_in1", a_idx, iedge_a->base_type(), iedge_a->debug_info()
-            );
-            builder.add_computational_memlet(
-                code_block, b_node, fma, "_in2", b_idx, iedge_b->base_type(), iedge_b->debug_info()
-            );
-            builder.add_computational_memlet(
-                code_block, y_in, fma, "_in3", y_idx, iedge_y->base_type(), iedge_y->debug_info()
-            );
-            builder.add_computational_memlet(
-                code_block, fma, "_out", y_out, y_idx, iedge_y->base_type(), iedge_y->debug_info()
-            );
+            builder.add_computational_memlet(code_block, a_node, fma, "_in1", a_idx, a_pointer, iedge_a->debug_info());
+            builder.add_computational_memlet(code_block, b_node, fma, "_in2", b_idx, b_pointer, iedge_b->debug_info());
+            builder.add_computational_memlet(code_block, y_in, fma, "_in3", y_idx, y_pointer, iedge_y->debug_info());
+            builder.add_computational_memlet(code_block, fma, "_out", y_out, y_idx, y_pointer, iedge_y->debug_info());
         } else {
             // Integer path (no integer FMA): prod = A * B; Y = prod + Y.
             auto& mul_t = builder.add_tasklet(
                 code_block, data_flow::TaskletCode::int_mul, "_out", {"_in1", "_in2"}, block.debug_info()
             );
-            builder.add_computational_memlet(
-                code_block, a_node, mul_t, "_in1", a_idx, iedge_a->base_type(), iedge_a->debug_info()
-            );
-            builder.add_computational_memlet(
-                code_block, b_node, mul_t, "_in2", b_idx, iedge_b->base_type(), iedge_b->debug_info()
-            );
+            builder.add_computational_memlet(code_block, a_node, mul_t, "_in1", a_idx, a_pointer, iedge_a->debug_info());
+            builder.add_computational_memlet(code_block, b_node, mul_t, "_in2", b_idx, b_pointer, iedge_b->debug_info());
 
             std::string prod = builder.find_new_name("_prod");
             builder.add_container(prod, compute_scalar);
@@ -681,12 +679,8 @@ passes::LibNodeExpander::ExpandOutcome MatMulNaiveExpander::handle_expand(
             );
             builder
                 .add_computational_memlet(code_block, prod_node, add_t, "_in1", {}, compute_scalar, block.debug_info());
-            builder.add_computational_memlet(
-                code_block, y_in, add_t, "_in2", y_idx, iedge_y->base_type(), iedge_y->debug_info()
-            );
-            builder.add_computational_memlet(
-                code_block, add_t, "_out", y_out, y_idx, iedge_y->base_type(), iedge_y->debug_info()
-            );
+            builder.add_computational_memlet(code_block, y_in, add_t, "_in2", y_idx, y_pointer, iedge_y->debug_info());
+            builder.add_computational_memlet(code_block, add_t, "_out", y_out, y_idx, y_pointer, iedge_y->debug_info());
         }
     }
 

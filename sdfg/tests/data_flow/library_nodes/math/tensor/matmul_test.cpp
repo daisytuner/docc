@@ -438,3 +438,48 @@ TEST(MatMulTest, MatMul_ConsumedLayout) {
     EXPECT_TRUE(symbolic::eq(y_write->layout()->get_dim(0), symbolic::integer(4)));
     EXPECT_TRUE(symbolic::eq(y_write->layout()->get_dim(1), symbolic::integer(6)));
 }
+
+TEST(MatMulTest, MatMul_Naive_PointerMemletsUseLayouts) {
+    // Pointer memlets, as einsum detection creates them: the layouts address the operands, here B transposed.
+    builder::StructuredSDFGBuilder builder("sdfg_matmul_naive_pointer", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    types::Pointer pointer{types::Scalar(types::PrimitiveType::Int32)};
+    builder.add_container("a", pointer, true);
+    builder.add_container("b", pointer, true);
+    builder.add_container("y", pointer, true);
+    auto& block = builder.add_block(sdfg.root());
+    auto m = symbolic::integer(4), n = symbolic::integer(6), k = symbolic::integer(8);
+    math::tensor::TensorLayout layout_b_transposed({k, n}, {symbolic::one(), k}, symbolic::zero());
+    auto& matmul = static_cast<math::tensor::MatMulNode&>(builder.add_library_node<math::tensor::MatMulNode>(
+        block, DebugInfo(), math::tensor::TensorLayout({m, k}), layout_b_transposed
+    ));
+    builder.add_computational_memlet(block, builder.add_access(block, "a"), matmul, "A", {}, pointer);
+    builder.add_computational_memlet(block, builder.add_access(block, "b"), matmul, "B", {}, pointer);
+    builder.add_computational_memlet(block, builder.add_access(block, "y"), matmul, "Y", {}, pointer);
+    EXPECT_NO_THROW(sdfg.validate());
+
+    auto outcome = passes::expansion::expand_single_node(builder, block, matmul, math::tensor::MatMulNaiveExpander());
+    ASSERT_TRUE(outcome.expanded);
+    EXPECT_NO_THROW(sdfg.validate());
+
+    // Every access to b is linear, k + 8 j for the transposed layout.
+    std::function<void(structured_control_flow::ControlFlowNode&)> check = [&](auto& node) {
+        if (auto* inner = dynamic_cast<structured_control_flow::Block*>(&node)) {
+            for (auto& memlet : inner->dataflow().edges()) {
+                auto* source = dynamic_cast<const data_flow::AccessNode*>(&memlet.src());
+                if (source && source->data() == "b") {
+                    ASSERT_EQ(memlet.subset().size(), 1);
+                    EXPECT_NE(memlet.subset().at(0)->__str__().find("8*"), std::string::npos)
+                        << memlet.subset().at(0)->__str__();
+                }
+            }
+        } else if (auto* sequence = dynamic_cast<structured_control_flow::Sequence*>(&node)) {
+            for (size_t i = 0; i < sequence->size(); i++) {
+                check(sequence->at(i));
+            }
+        } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&node)) {
+            check(loop->root());
+        }
+    };
+    check(sdfg.root());
+}
