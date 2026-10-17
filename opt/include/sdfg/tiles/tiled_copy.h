@@ -25,9 +25,9 @@ enum class CopyAtom {
     ScalarSync, ///< one element per lane, synchronous store
     VectorSync, ///< a contiguous 4/8/16-byte vector per lane, synchronous
     CpAsync, ///< a contiguous 4/8/16-byte async global->shared cp.async
-    /// 2-D 16-bit copy into a buffer stored transposed: each lane moves a 4x4 block
-    /// (four 8-byte source rows, register transpose, four 8-byte buffer rows).
-    TransposeSync,
+    /// 2-D 16/32-bit copy into a column-major buffer that keeps global reads coalesced: each lane
+    /// loads four 8/16-byte source rows of a 4x4 block and regroups them into four buffer rows.
+    CoalesceSync,
 };
 
 /// Row-major delinearization of a flat index into per-dim coordinates (dim 0
@@ -90,6 +90,10 @@ struct TileGuard {
     /// returns true if any dim was discharged.
     bool discharge(const symbolic::SymbolSet& parameters, const symbolic::Assumptions& assumptions);
 };
+
+/// Move the source's unit-stride tile dim last (lane-fastest in the row-major sweep), permuting
+/// both plan sides and the guard axes alike. Returns true if the order changed.
+bool coalesce_sweep_order(TiledCopy& plan, TileGuard& guard);
 
 
 } // namespace tiles

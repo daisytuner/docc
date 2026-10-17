@@ -93,6 +93,11 @@ public:
         return has_scratchpad() && storage == storage_type(Space::Shared);
     }
 
+    /// The narrowest per-lane async (CpAsync) transfer in bytes; narrower copies stay synchronous.
+    virtual size_t min_async_bytes() const {
+        return 4;
+    }
+
     /// The implementation selector this target stamps onto its tile codegen library
     /// nodes (cp.async / vector copy / pipeline commit+wait) so the owning target's
     /// dispatcher is chosen at codegen. CUDA returns `"CUDA"`, ROCm `"ROCM"`; a

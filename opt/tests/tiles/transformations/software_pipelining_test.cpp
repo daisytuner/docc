@@ -354,6 +354,82 @@ TEST(SoftwarePipeliningTest, VectorizeRejectsNonContiguousSource) {
     EXPECT_EQ(count_bytes(map_body, 4), 2u);
 }
 
+// CUDA cp.async moves at least 4 bytes, so a 2-byte copy is widened to a legal async width when it
+// goes async, independent of a later TileVectorizer; with no legal width it stays synchronous.
+TEST(SoftwarePipeliningTest, NarrowCopyGoesAsyncOnlyAtLegalWidth) {
+    struct Case {
+        symbolic::MultiExpression shape, src_strides, dst_strides;
+        size_t bytes; // 0: stays synchronous
+        int src_shift = 0;
+    };
+    auto s = [](int v) {
+        return symbolic::integer(v);
+    };
+    const std::vector<Case> cases = {
+        {{s(8)}, {s(1)}, {s(1)}, 16},
+        // Inner extent 2 rules out 8 and 16 bytes; 4 bytes still is a legal cp.async.
+        {{s(4), s(2)}, {s(2), s(1)}, {s(2), s(1)}, 4},
+        // An odd source row stride misaligns every multi-element run.
+        {{s(4), s(2)}, {s(3), s(1)}, {s(2), s(1)}, 0},
+        // A source offset of 2 (mod 8) elements only aligns 4-byte runs, an odd one none.
+        {{s(8)}, {s(1)}, {s(1)}, 4, 2},
+        {{s(8)}, {s(1)}, {s(1)}, 0, 1},
+    };
+    for (const auto& c : cases) {
+        builder::StructuredSDFGBuilder builder("sp", FunctionType_CPU);
+        auto& kloop = build(builder, /*K=*/4);
+        tiles::TileCopyNode* copy = nullptr;
+        for (auto& dn : static_cast<structured_control_flow::Block&>(kloop.root().at(0)).dataflow().nodes()) {
+            if (auto* tc = dynamic_cast<tiles::TileCopyNode*>(&dn)) {
+                copy = tc;
+            }
+        }
+        ASSERT_NE(copy, nullptr);
+        auto plan = copy->plan();
+        plan.src = tiles::Layout(c.shape, c.src_strides, symbolic::add(plan.src.offset(), s(c.src_shift)));
+        plan.dst = tiles::Layout(c.shape, c.dst_strides, plan.dst.offset());
+        copy->set_plan(plan);
+        copy->set_bytes(2);
+
+        auto& sdfg = builder.subject();
+        analysis::AnalysisManager am(sdfg);
+        transformations::SoftwarePipelining sp(kloop, 2, /*single_operand=*/false);
+        ASSERT_TRUE(sp.can_be_applied(builder, am));
+        sp.apply(builder, am);
+
+        auto& map_body = static_cast<structured_control_flow::Sequence&>(*kloop.get_parent());
+        EXPECT_EQ(count_cp_async(map_body), c.bytes == 0 ? 0u : 2u) << "bytes=" << c.bytes;
+        EXPECT_EQ(count_bytes(map_body, 2), 0u) << "no 2-byte cp.async";
+        if (c.bytes != 0) {
+            EXPECT_EQ(count_bytes(map_body, c.bytes), 2u);
+        }
+        size_t waits = 0;
+        std::function<void(structured_control_flow::ControlFlowNode&)> scan =
+            [&](structured_control_flow::ControlFlowNode& node) {
+                if (auto* b = dynamic_cast<structured_control_flow::Block*>(&node)) {
+                    for (auto& dn : b->dataflow().nodes()) {
+                        if (auto* w = dynamic_cast<tiles::PipelineWaitNode*>(&dn)) {
+                            ++waits;
+                            EXPECT_EQ(w->loads_per_group(), c.bytes == 0 ? 1u : c.bytes / 4);
+                        }
+                    }
+                } else if (auto* ie = dynamic_cast<structured_control_flow::IfElse*>(&node)) {
+                    for (size_t i = 0; i < ie->size(); i++) {
+                        scan(ie->at(i).first);
+                    }
+                } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&node)) {
+                    for (size_t i = 0; i < seq->size(); i++) {
+                        scan(seq->at(i));
+                    }
+                } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&node)) {
+                    scan(loop->root());
+                }
+            };
+        scan(map_body);
+        EXPECT_EQ(waits, 2u);
+    }
+}
+
 TEST(SoftwarePipeliningTest, CanBeApplied) {
     builder::StructuredSDFGBuilder builder("sp", FunctionType_CPU);
     auto& kloop = build(builder, /*K=*/4);

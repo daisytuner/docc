@@ -254,6 +254,48 @@ TEST(TileCopyNodeTest, GuardSurvivesReplaceAndRoundTrip) {
     }
 }
 
+// A column-major [k=8][n=4] tile: k is unit-stride, so it becomes the last (lane-fastest) dim.
+TEST(TileCopyNodeTest, CoalesceSweepOrderMovesUnitStrideDimLast) {
+    auto s = [](int v) {
+        return symbolic::integer(v);
+    };
+    auto b = symbolic::symbol("b");
+    auto M = symbolic::symbol("M");
+    tiles::TiledCopy plan;
+    plan.src = tiles::Layout({s(8), s(4)}, {s(1), s(1024)}, symbolic::symbol("o"));
+    plan.dst = tiles::Layout({s(8), s(4)}, {s(1), s(12)}, s(0));
+    tiles::TileGuard guard;
+    guard.tile_sizes = {s(8), s(4)};
+    guard.dims.push_back({1, b, M});
+
+    auto element = [&](const symbolic::MultiExpression& c) {
+        return std::make_pair(plan.src.resolve_element(c, false), plan.dst.resolve_element(c, false));
+    };
+    auto before = element({s(5), s(3)});
+    auto pred_before = guard.predicate(symbolic::MultiExpression{s(5), s(3)});
+
+    ASSERT_TRUE(tiles::coalesce_sweep_order(plan, guard));
+    EXPECT_TRUE(symbolic::eq(plan.src.strides()[0], s(1024)));
+    EXPECT_TRUE(symbolic::eq(plan.src.strides()[1], s(1)));
+    EXPECT_TRUE(symbolic::eq(plan.dst.strides()[0], s(12)));
+    EXPECT_TRUE(symbolic::eq(plan.dst.strides()[1], s(1)));
+    EXPECT_TRUE(symbolic::eq(plan.src.shape()[0], s(4)));
+    EXPECT_TRUE(symbolic::eq(plan.src.shape()[1], s(8)));
+    EXPECT_TRUE(symbolic::eq(plan.src.offset(), symbolic::symbol("o")));
+    ASSERT_EQ(guard.dims.size(), 1u);
+    EXPECT_EQ(guard.dims[0].axis, 0u);
+    EXPECT_TRUE(symbolic::eq(guard.tile_sizes[0], s(4)));
+
+    // The same element maps to the same global/buffer addresses and the same guard.
+    auto after = element({s(3), s(5)});
+    EXPECT_TRUE(symbolic::eq(before.first, after.first));
+    EXPECT_TRUE(symbolic::eq(before.second, after.second));
+    EXPECT_TRUE(symbolic::eq(pred_before, guard.predicate(symbolic::MultiExpression{s(3), s(5)})));
+
+    // Already coalesced: a second call is a no-op.
+    EXPECT_FALSE(tiles::coalesce_sweep_order(plan, guard));
+}
+
 // A ragged boundary dim discharges once assumptions bound its worst case in range.
 TEST(TileCopyNodeTest, NormalizeGuardDischargesProvenFullDim) {
     auto builder = make_builder();

@@ -143,3 +143,133 @@ TEST(TileVectorizerTest, PaddedBufferRowsLimitOnlyAsyncWidth) {
         EXPECT_EQ(copy->bytes(), atom == tiles::CopyAtom::CpAsync ? 8u : 16u);
     }
 }
+
+// A column-major fp16 [8][4] tile with only rows 0..2 valid: after the sweep reorder the ragged
+// row axis is the inner (unit-stride) axis, so a 16-byte transfer would read all 8 rows past the
+// bound. Only an outer-axis guard, uniform over each transfer, may widen.
+TEST(TileVectorizerTest, InnerAxisGuardBlocksWidening) {
+    for (bool ragged_rows : {true, false}) {
+        builder::StructuredSDFGBuilder builder("tv_guard", FunctionType_CPU);
+        types::Scalar loop_var(types::PrimitiveType::Int32);
+        types::Scalar elem(types::PrimitiveType::Half);
+        types::Pointer ptr(elem);
+        builder.add_container("A", ptr, true);
+        builder.add_container("buf", types::Array(types::StorageType::NV_Shared(), 16, "", elem, symbolic::integer(48)));
+        builder.add_container("b", loop_var);
+        auto b = symbolic::symbol("b");
+        auto sched_b = gpu::ScheduleType_GPU_Offload::create<
+            cuda::ScheduleType_CUDA_Offload>(gpu::TargetLevel::X_BLOCK, symbolic::integer(32));
+        auto& map_b = builder.add_map(
+            builder.subject().root(),
+            b,
+            symbolic::Lt(b, symbolic::integer(32)),
+            symbolic::integer(0),
+            symbolic::add(b, symbolic::integer(1)),
+            sched_b
+        );
+        auto& block = builder.add_block(map_b.root());
+        auto& src = builder.add_access(block, "A");
+        auto& dst = builder.add_access(block, "buf");
+
+        tiles::TiledCopy plan;
+        plan.src = tiles::Layout(
+            {symbolic::integer(8), symbolic::integer(4)},
+            {symbolic::integer(1), symbolic::integer(16)},
+            symbolic::zero()
+        );
+        plan.dst = tiles::Layout(
+            {symbolic::integer(8), symbolic::integer(4)},
+            {symbolic::integer(1), symbolic::integer(12)},
+            symbolic::zero()
+        );
+        tiles::TileGuard guard;
+        guard.tile_sizes = {symbolic::integer(8), symbolic::integer(4)};
+        guard.dims.push_back({ragged_rows ? 0u : 1u, symbolic::zero(), symbolic::integer(2)});
+        ASSERT_TRUE(tiles::coalesce_sweep_order(plan, guard));
+        ASSERT_EQ(guard.dims.front().axis, ragged_rows ? 1u : 0u);
+
+        auto& copy = static_cast<tiles::TileCopyNode&>(builder.add_library_node<tiles::TileCopyNode>(
+            block, DebugInfo(), data_flow::ImplementationType_NONE, plan, tiles::CopyDirection::In, 2, guard
+        ));
+        builder.add_computational_memlet(block, dst, copy, "_dst", {}, ptr);
+        builder.add_computational_memlet(block, src, copy, "_src", {}, ptr);
+
+        analysis::AnalysisManager am(builder.subject());
+        TileVectorizer tv(map_b);
+        ASSERT_TRUE(tv.can_be_applied(builder, am));
+        tv.apply(builder, am);
+
+        if (ragged_rows) {
+            EXPECT_EQ(copy.atom(), tiles::CopyAtom::ScalarSync) << copy.toStr();
+            EXPECT_EQ(copy.bytes(), 2u);
+        } else {
+            EXPECT_EQ(copy.atom(), tiles::CopyAtom::VectorSync) << copy.toStr();
+            EXPECT_EQ(copy.bytes(), 16u);
+        }
+    }
+}
+
+// The fp32 4x4 coalesced block copy issues 16-byte row loads/stores, so both plan offsets must be
+// provably 4-element aligned, using the enclosing map's stride for its indvar.
+TEST(TileVectorizerTest, CoalescedBlockCopyRequiresAlignedOffsets) {
+    auto b = symbolic::symbol("b");
+    struct Case {
+        symbolic::Expression src_offset;
+        long map_stride;
+        bool coalesced;
+    };
+    const std::vector<Case> cases = {
+        {symbolic::integer(1), 1, false},
+        {b, 1, false},
+        {symbolic::mul(symbolic::integer(4), b), 1, true},
+        {b, 4, true},
+        {symbolic::add(b, symbolic::integer(2)), 4, false},
+    };
+    for (const auto& c : cases) {
+        builder::StructuredSDFGBuilder builder("tv_coalesce_align", FunctionType_CPU);
+        types::Scalar loop_var(types::PrimitiveType::Int32);
+        types::Scalar elem(types::PrimitiveType::Float);
+        types::Pointer ptr(elem);
+        builder.add_container("A", ptr, true);
+        builder.add_container("buf", types::Array(types::StorageType::NV_Shared(), 16, "", elem, symbolic::integer(16)));
+        builder.add_container("b", loop_var);
+        auto sched_b = gpu::ScheduleType_GPU_Offload::create<
+            cuda::ScheduleType_CUDA_Offload>(gpu::TargetLevel::X_BLOCK, symbolic::integer(32));
+        auto& map_b = builder.add_map(
+            builder.subject().root(),
+            b,
+            symbolic::Lt(b, symbolic::integer(128)),
+            symbolic::integer(0),
+            symbolic::add(b, symbolic::integer(c.map_stride)),
+            sched_b
+        );
+        auto& block = builder.add_block(map_b.root());
+        auto& src = builder.add_access(block, "A");
+        auto& dst = builder.add_access(block, "buf");
+
+        tiles::TiledCopy plan;
+        plan.src = tiles::
+            Layout({symbolic::integer(4), symbolic::integer(4)}, {symbolic::integer(4), symbolic::one()}, c.src_offset);
+        plan.dst = tiles::Layout(
+            {symbolic::integer(4), symbolic::integer(4)}, {symbolic::one(), symbolic::integer(4)}, symbolic::zero()
+        );
+        auto& copy = static_cast<tiles::TileCopyNode&>(builder.add_library_node<tiles::TileCopyNode>(
+            block, DebugInfo(), data_flow::ImplementationType_NONE, plan, tiles::CopyDirection::In, 4
+        ));
+        builder.add_computational_memlet(block, dst, copy, "_dst", {}, ptr);
+        builder.add_computational_memlet(block, src, copy, "_src", {}, ptr);
+
+        analysis::AnalysisManager am(builder.subject());
+        TileVectorizer tv(map_b);
+        ASSERT_TRUE(tv.can_be_applied(builder, am));
+        tv.apply(builder, am);
+
+        if (c.coalesced) {
+            EXPECT_EQ(copy.atom(), tiles::CopyAtom::CoalesceSync) << copy.toStr();
+            EXPECT_EQ(copy.bytes(), 16u);
+        } else {
+            EXPECT_EQ(copy.atom(), tiles::CopyAtom::ScalarSync) << copy.toStr();
+            EXPECT_EQ(copy.bytes(), 4u);
+        }
+    }
+}

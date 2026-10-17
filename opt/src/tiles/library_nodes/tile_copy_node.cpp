@@ -1,6 +1,10 @@
 #include "sdfg/tiles/library_nodes/tile_copy_node.h"
 
+#include <symengine/add.h>
+#include <symengine/mul.h>
+
 #include "sdfg/data_flow/pointer_metadata.h"
+#include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/types/pointer.h"
 #include "sdfg/types/scalar.h"
@@ -19,8 +23,8 @@ const char* atom_to_string(CopyAtom atom) {
             return "vector_sync";
         case CopyAtom::CpAsync:
             return "cp_async";
-        case CopyAtom::TransposeSync:
-            return "transpose_sync";
+        case CopyAtom::CoalesceSync:
+            return "coalesce_sync";
     }
     return "scalar_sync";
 }
@@ -32,8 +36,9 @@ CopyAtom atom_from_string(const std::string& s) {
     if (s == "cp_async") {
         return CopyAtom::CpAsync;
     }
-    if (s == "transpose_sync") {
-        return CopyAtom::TransposeSync;
+    // "transpose_sync" is the pre-rename name in serialized SDFGs.
+    if (s == "coalesce_sync" || s == "transpose_sync") {
+        return CopyAtom::CoalesceSync;
     }
     return CopyAtom::ScalarSync;
 }
@@ -264,6 +269,101 @@ data_flow::LibraryNode& TileCopyNodeSerializer::deserialize(
 
 // ---- Reference dispatcher ------------------------------------------------
 
+bool provably_multiple_of(symbolic::Expression e, long long m, const TileCopyNode& node) {
+    const auto* scope = dynamic_cast<const structured_control_flow::ControlFlowNode*>(node.get_parent().get_parent());
+    for (const auto* n = scope; n != nullptr; n = n->get_parent()) {
+        const auto* loop = dynamic_cast<const structured_control_flow::StructuredLoop*>(n);
+        if (loop == nullptr) {
+            continue;
+        }
+        auto stride = loop->stride();
+        if (stride.is_null()) {
+            continue;
+        }
+        auto t = symbolic::symbol("__tc_iter_" + loop->indvar()->get_name());
+        e = symbolic::subs(e, loop->indvar(), symbolic::add(loop->init(), symbolic::mul(stride, t)));
+    }
+    e = symbolic::expand(e);
+    std::vector<symbolic::Expression> terms;
+    if (SymEngine::is_a<SymEngine::Add>(*e)) {
+        for (const auto& term : e->get_args()) {
+            terms.push_back(term);
+        }
+    } else {
+        terms.push_back(e);
+    }
+    for (const auto& term : terms) {
+        symbolic::Expression coef = term;
+        if (SymEngine::is_a<SymEngine::Mul>(*term)) {
+            coef = SymEngine::rcp_static_cast<const SymEngine::Mul>(term)->get_coef();
+        }
+        auto* c = dynamic_cast<const SymEngine::Integer*>(coef.get());
+        if (c == nullptr || c->as_int() % m != 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+size_t widest_legal_transfer(const TileCopyNode& node, CopyAtom atom, const std::vector<size_t>& widths) {
+    const auto& plan = node.plan();
+    const size_t elem_bytes = node.bytes();
+    if (plan.src.dims() == 0 || elem_bytes == 0) {
+        return 0;
+    }
+    // A swizzled buffer XORs the inner offset, so consecutive tile coords are not consecutive in it.
+    if (!plan.dst_swizzle.is_identity()) {
+        return 0;
+    }
+    if (!symbolic::eq(plan.src.strides().back(), symbolic::one()) ||
+        !symbolic::eq(plan.dst.strides().back(), symbolic::one())) {
+        return 0;
+    }
+    // The guard is checked once per transfer at its first element; only outer-axis bounds hold for the whole run.
+    const size_t inner_axis = static_cast<size_t>(plan.src.dims() - 1);
+    for (const auto& d : node.guard().dims) {
+        if (d.axis == inner_axis) {
+            return 0;
+        }
+    }
+    auto* inner_i = dynamic_cast<const SymEngine::Integer*>(plan.src.shape().back().get());
+    auto total = plan.src.total_elements();
+    auto* total_i = dynamic_cast<const SymEngine::Integer*>(total.get());
+    if (inner_i == nullptr || total_i == nullptr) {
+        return 0;
+    }
+    const long long inner_n = inner_i->as_int();
+    const long long total_n = total_i->as_int();
+    for (size_t width : widths) {
+        if (width <= elem_bytes || width % elem_bytes != 0) {
+            continue;
+        }
+        const long long factor = static_cast<long long>(width / elem_bytes);
+        if (inner_n % factor != 0 || total_n % factor != 0) {
+            continue;
+        }
+        // Synchronous copies split buffer-side accesses to the row alignment at emission;
+        // an async copy writes the buffer directly, so its rows and both offsets must hold the full width.
+        bool outer_ok = true;
+        std::vector<const symbolic::MultiExpression*> sides = {&plan.src.strides()};
+        if (atom == CopyAtom::CpAsync) {
+            sides.push_back(&plan.dst.strides());
+            outer_ok = provably_multiple_of(plan.src.offset(), factor, node) &&
+                       provably_multiple_of(plan.dst.offset(), factor, node);
+        }
+        for (const auto* strides : sides) {
+            for (size_t d = 0; outer_ok && d + 1 < strides->size(); ++d) {
+                auto* s = dynamic_cast<const SymEngine::Integer*>((*strides)[d].get());
+                outer_ok = s != nullptr && s->as_int() % factor == 0;
+            }
+        }
+        if (outer_ok) {
+            return width;
+        }
+    }
+    return 0;
+}
+
 std::string emit_tile_copy_stmt(
     codegen::LanguageExtension& language_extension,
     const TileCopyNode& node,
@@ -350,11 +450,12 @@ const char* int_type(size_t bytes) {
     }
 }
 
-// TransposeSync body: the 2-D tile [R][C] (source unit-stride along C, buffer along R) is
-// split into 4x4 blocks; each lane loads four 8-byte source rows, transposes them in
-// registers and stores four 8-byte buffer rows. When the block grid allows, 16-lane groups
-// cover 4x4 blocks, so a wave reads whole 128-byte source rows and writes distinct banks.
-void emit_transpose_copy_blocks(
+// CoalesceSync body: the 2-D tile [R][C] (source unit-stride along C, buffer along R) is
+// split into 4x4 blocks; each lane loads four source rows (8 bytes for 16-bit, 16 bytes for
+// 32-bit elements), regroups them in registers and stores four buffer rows of the same width.
+// When the block grid allows, 16-lane groups cover 4x4 blocks, so a wave reads whole source
+// rows and writes distinct banks.
+void emit_coalesce_copy_blocks(
     codegen::LanguageExtension& language_extension,
     codegen::PrettyPrinter& stream,
     const TileCopyNode& node,
@@ -404,35 +505,49 @@ void emit_transpose_copy_blocks(
 
     auto r4 = symbolic::mul(symbolic::integer(4), symbolic::symbol("__tc_r4"));
     auto c4 = symbolic::mul(symbolic::integer(4), symbolic::symbol("__tc_c4"));
+    // 32-bit words per 4-element row: 2 for 16-bit, 4 for 32-bit elements.
+    const int row_words = static_cast<int>(types::bit_width(elem) / 8);
+    const std::string row_t = row_words == 4 ? "uint4" : "uint2";
+    const char* fields[4] = {"x", "y", "z", "w"};
     // Word w of source row q: a local in a full copy, the register array in a staged phase.
     auto x = [&](int q, int w) {
         if (phase == CopyPhase::Full) {
             return "__tc_x[" + std::to_string(q) + "][" + std::to_string(w) + "]";
         }
-        return "(" + regs + ")[8 * __tc_i + " + std::to_string(2 * q + w) + "]";
+        return "(" + regs + ")[" + std::to_string(4 * row_words) + " * __tc_i + " + std::to_string(row_words * q + w) +
+               "]";
     };
     if (phase == CopyPhase::Full) {
-        stream << "unsigned __tc_x[4][2];" << std::endl;
+        stream << "unsigned __tc_x[4][" << row_words << "];" << std::endl;
     }
     for (int q = 0; q < 4 && phase != CopyPhase::StoreRegs; ++q) {
         auto off = plan.src.resolve_element({symbolic::add(r4, symbolic::integer(q)), c4}, false);
-        stream << "{ const uint2 __tc_v = *reinterpret_cast<const uint2*>(&(" << scast << ")["
-               << language_extension.expression(off) << "]); " << x(q, 0) << " = __tc_v.x; " << x(q, 1)
-               << " = __tc_v.y; }" << std::endl;
+        stream << "{ const " << row_t << " __tc_v = *reinterpret_cast<const " << row_t << "*>(&(" << scast << ")["
+               << language_extension.expression(off) << "]);";
+        for (int w = 0; w < row_words; ++w) {
+            stream << " " << x(q, w) << " = __tc_v." << fields[w] << ";";
+        }
+        stream << " }" << std::endl;
     }
-    // Buffer row c = source column c of the block: even columns are the low halves of a
-    // source word, odd columns the high halves.
+    // Buffer row c = source column c of the block. 32-bit: column c is word c of each source
+    // row. 16-bit: even columns are the low halves of a source word, odd columns the high halves.
     for (int c = 0; c < 4 && phase != CopyPhase::LoadRegs; ++c) {
-        const int w = c / 2;
-        auto pick = [&](int lo_row, int hi_row) {
-            const std::string lo = x(lo_row, w);
-            const std::string hi = x(hi_row, w);
-            return c % 2 == 0 ? "((" + lo + " & 0xffffu) | (" + hi + " << 16))"
-                              : "((" + lo + " >> 16) | (" + hi + " & 0xffff0000u))";
-        };
+        std::string value;
+        if (row_words == 4) {
+            value = "make_uint4(" + x(0, c) + ", " + x(1, c) + ", " + x(2, c) + ", " + x(3, c) + ")";
+        } else {
+            const int w = c / 2;
+            auto pick = [&](int lo_row, int hi_row) {
+                const std::string lo = x(lo_row, w);
+                const std::string hi = x(hi_row, w);
+                return c % 2 == 0 ? "((" + lo + " & 0xffffu) | (" + hi + " << 16))"
+                                  : "((" + lo + " >> 16) | (" + hi + " & 0xffff0000u))";
+            };
+            value = "make_uint2(" + pick(0, 1) + ", " + pick(2, 3) + ")";
+        }
         auto off = plan.dst.resolve_element({r4, symbolic::add(c4, symbolic::integer(c))}, false);
-        stream << "*reinterpret_cast<uint2*>(&(" << dcast << ")[" << language_extension.expression(off)
-               << "]) = make_uint2(" << pick(0, 1) << ", " << pick(2, 3) << ");" << std::endl;
+        stream << "*reinterpret_cast<" << row_t << "*>(&(" << dcast << ")[" << language_extension.expression(off)
+               << "]) = " << value << ";" << std::endl;
     }
     if (known && blocks % SymEngine::rcp_static_cast<const SymEngine::Integer>(ct)->as_int() != 0) {
         stream << "}" << std::endl;
@@ -492,8 +607,8 @@ void emit_cooperative_copy_loop(
     stream << "{" << std::endl;
     stream << "int __tc_tid = " << tid << ";" << std::endl;
 
-    if (node.atom() == CopyAtom::TransposeSync) {
-        emit_transpose_copy_blocks(language_extension, stream, node, dst_expr, src_expr, elem, n);
+    if (node.atom() == CopyAtom::CoalesceSync) {
+        emit_coalesce_copy_blocks(language_extension, stream, node, dst_expr, src_expr, elem, n);
         stream << "}" << std::endl;
         return;
     }
