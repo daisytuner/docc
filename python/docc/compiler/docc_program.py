@@ -86,6 +86,9 @@ class DoccOptions:
     # Fast, approximate device math intrinsics (e.g. __expf). Unset resolves to the
     # frontend default (DoccProgram.default_approximate_math).
     approximate_math: Optional[bool] = None
+    # Mirrors -ffp-contract=fast: contract a multiplication feeding an addition
+    # into a fused multiply-add during simplify. Defaults to True.
+    fp_contract: Optional[bool] = None
 
     # Frontend: parse array shapes as symbolic sizes (``_s{i}`` arguments) when
     # True, or bake in the concrete integer sizes from the example inputs when
@@ -144,6 +147,8 @@ class DoccOptions:
             self.device_residency = self.target in ("cuda", "rocm")
         if self.symbolic_shapes is None:
             self.symbolic_shapes = True
+        if self.fp_contract is None:
+            self.fp_contract = True
 
         if self.pass_options is None:
             self.pass_options = {}
@@ -335,6 +340,7 @@ class DoccProgram(ABC):
             target_options.target = self.options.target
             target_options.category = self.options.category
             target_options.remote_tuning = self.options.remote_tuning
+            target_options.fp_contract = self.options.fp_contract
             target_options.options = sdfg.options
             metrics.add_target_options(target_options)
 
@@ -350,7 +356,7 @@ class DoccProgram(ABC):
                 sdfg.dump(output_folder, "py2.expanded", dump_dot=True)
 
             # Simplify pipelines
-            sdfg.simplify()
+            sdfg.simplify(target_options)
             if self.options.debug_dump:
                 sdfg.dump(output_folder, "py3.opt", dump_dot=True)
 

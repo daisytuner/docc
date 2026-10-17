@@ -35,6 +35,9 @@ set(SOURCE_FILES
     src/einsum/transformations/einsum_promotion.cpp
     src/einsum/transformations/einsum2dot.cpp
     src/einsum/transformations/einsum2gemm.cpp
+    src/fp_math/passes/fp_contraction.cpp
+    src/fp_math/transformations/fuse_fma.cpp
+    src/fp_math/transformations/unfuse_fma.cpp
     src/parallelization/analysis/loop_carried_dependency_analysis.cpp
     src/parallelization/passes/auto_parallelization.cpp
     src/parallelization/transformations/loop_parallelization.cpp

@@ -12,6 +12,8 @@
 #include <nlohmann/json.hpp>
 
 #include <sdfg/einsum/einsum.h>
+#include <sdfg/fp_math/transformations/fuse_fma.h>
+#include <sdfg/fp_math/transformations/unfuse_fma.h>
 #include <sdfg/parallelization/transformations/loop_parallelization.h>
 #include <sdfg/targets/gpu/gpu_mma_einsum_transform.h>
 #include <sdfg/tiles/transformations/local_storage.h>
@@ -183,6 +185,10 @@ dispatch_transformation(const std::string& transformation_name, const nlohmann::
         return detail::invoke_for<einsum::Einsum2Dot>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "Einsum2Gemm") {
         return detail::invoke_for<einsum::Einsum2Gemm>(std::forward<Visitor>(visitor));
+    } else if (transformation_name == "FuseFMA") {
+        return detail::invoke_for<fp_math::FuseFMA>(std::forward<Visitor>(visitor));
+    } else if (transformation_name == "UnfuseFMA") {
+        return detail::invoke_for<fp_math::UnfuseFMA>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "GpuMmaEinsumTransform") {
         return detail::invoke_for<gpu::GpuMmaEinsumTransform>(std::forward<Visitor>(visitor));
     } else {
