@@ -70,6 +70,7 @@ set(SOURCE_FILES
     src/passes/loop_fusion/loop_fusion_by_access.cpp
     src/passes/loop_fusion/loop_fusion_pass.cpp
     src/passes/normalization/loop_normal_form.cpp
+    src/passes/normalization/map_delinearization.cpp
     src/passes/normalization/map_fusion.cpp
     src/passes/normalization/normalize.cpp
     src/passes/normalization/perfect_loop_distribution.cpp
@@ -181,6 +182,7 @@ set(SOURCE_FILES
     src/transformations/loop_tiling.cpp
     src/transformations/loop_unit_stride.cpp
     src/transformations/map_collapse.cpp
+    src/transformations/map_delinearize.cpp
     src/transformations/map_fusion.cpp
     src/transformations/multi_level_tiling.cpp
     src/transformations/offloading/cublas_data_transfer_extraction.cpp

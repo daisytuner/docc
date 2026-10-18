@@ -30,6 +30,7 @@
 #include <sdfg/transformations/loop_split.h>
 #include <sdfg/transformations/loop_tiling.h>
 #include <sdfg/transformations/map_collapse.h>
+#include <sdfg/transformations/map_delinearize.h>
 #include <sdfg/transformations/multi_level_tiling.h>
 #include <sdfg/transformations/offloading/cuda_offload_transform.h>
 #include <sdfg/transformations/offloading/cuda_parallelize_nested_map.h>
@@ -116,6 +117,8 @@ dispatch_transformation(const std::string& transformation_name, const nlohmann::
         return detail::invoke_for<transformations::LoopTiling>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "MapCollapse") {
         return detail::invoke_for<transformations::MapCollapse>(std::forward<Visitor>(visitor));
+    } else if (transformation_name == "MapDelinearize") {
+        return detail::invoke_for<transformations::MapDelinearize>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "MultiLevelTiling") {
         return detail::invoke_for<transformations::MultiLevelTiling>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "LoopDistribute") {
