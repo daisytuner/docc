@@ -22,6 +22,7 @@
 #include <sdfg/tiles/transformations/software_pipelining.h>
 #include <sdfg/tiles/transformations/tile_fusion.h>
 #include <sdfg/tiles/transformations/tile_vectorizer.h>
+#include <sdfg/transformations/index_set_split.h>
 #include <sdfg/transformations/loop_distribute.h>
 #include <sdfg/transformations/loop_interchange.h>
 #include <sdfg/transformations/loop_peeling.h>
@@ -139,6 +140,8 @@ dispatch_transformation(const std::string& transformation_name, const nlohmann::
         return detail::invoke_for<transformations::LoopShift>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "LoopSplit") {
         return detail::invoke_for<transformations::LoopSplit>(std::forward<Visitor>(visitor));
+    } else if (transformation_name == "IndexSetSplit") {
+        return detail::invoke_for<transformations::IndexSetSplit>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "LoopParallelization") {
         return detail::invoke_for<transformations::LoopParallelization>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "OMPTransform") {

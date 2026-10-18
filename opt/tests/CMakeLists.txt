@@ -98,6 +98,7 @@ set(TEST_FILES
     transformations/omp_transform_test.cpp
     transformations/map_collapse_test.cpp
     transformations/map_delinearize_test.cpp
+    transformations/index_set_split_test.cpp
     transformations/loop_condition_normalize_test.cpp
     transformations/loop_distribute_test.cpp
     transformations/loop_indvar_finalize_test.cpp

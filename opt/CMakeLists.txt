@@ -172,6 +172,7 @@ set(SOURCE_FILES
     src/targets/rocm/stdlib/memset.cpp
     src/targets/vectorize/codegen/vectorize_dispatcher.cpp
     src/transformations/collapse_to_depth.cpp
+    src/transformations/index_set_split.cpp
     src/transformations/loop_condition_normalize.cpp
     src/transformations/loop_distribute.cpp
     src/transformations/loop_indvar_finalize.cpp
