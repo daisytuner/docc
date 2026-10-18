@@ -849,6 +849,10 @@ std::string PyStructuredSDFG::to_python() const {
     sdfg::passes::LibraryNodeExpansionPass<> expansion(expand_options);
     expansion.run(builder, analysis_manager);
 
+    // Expansions address tensors by coordinates, which the Python codegen indexes as flat pointers.
+    sdfg::passes::TensorToPointerConversionPass tensor_to_pointer_conversion;
+    tensor_to_pointer_conversion.run(builder, analysis_manager);
+
     auto instrumentation_plan = sdfg::codegen::InstrumentationPlan::none(*sdfg_);
     auto arg_capture_plan = sdfg::codegen::ArgCapturePlan::none(*sdfg_);
     sdfg::codegen::PythonCodeGenerator generator(*sdfg_, analysis_manager, *instrumentation_plan, *arg_capture_plan);
