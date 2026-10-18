@@ -11,7 +11,8 @@ using data_flow::TaskletCode;
 using math::cmath::CMathFunction;
 using types::PrimitiveType;
 
-QuantizeContraction::QuantizeContraction(data_flow::LibraryNode& node, int bits) : node_(node), bits_(bits) {
+QuantizeContraction::QuantizeContraction(data_flow::LibraryNode& node, int bits, Rescaling rescaling)
+    : node_(node), bits_(bits), rescaling_(rescaling) {
 }
 
 std::string QuantizeContraction::name() const {
@@ -76,10 +77,25 @@ void QuantizeContraction::apply(builder::StructuredSDFGBuilder& builder, analysi
         };
         auto b_q = quantize_operand("_q_b", k, n, operands.b_transposed, read_b, scales_b, false);
 
+        auto products = kb.buffer("_q_p", PrimitiveType::Int32, symbolic::mul(m, n));
+        if (rescaling_ == Rescaling::Direct) {
+            detail::int8_matmul(kb, a_q, b_q, products, m, n, k, operands.a_transposed, operands.b_transposed);
+            auto& rows = kb.map(kb.scope(), "_i", m);
+            auto& columns = kb.map(rows.root(), "_j", n);
+            auto i = rows.indvar(), j = columns.indvar();
+            auto body = kb.block(columns.root());
+            auto p = body.convert(body.read(products, {symbolic::add(symbolic::mul(i, n), j)}), type);
+            auto inverse_q = body.constant(1.0 / q, type);
+            auto row_scale = body.op(TaskletCode::fp_mul, {body.read(scales_a, {i}), inverse_q}, type);
+            auto column_scale = body.op(TaskletCode::fp_mul, {body.read(scales_b, {j}), inverse_q}, type);
+            auto scaled = body.op(TaskletCode::fp_mul, {p, row_scale}, type);
+            operands.store(body, body.op(TaskletCode::fp_mul, {scaled, column_scale}, type), i, j);
+            return;
+        }
+
         auto [exponents_a, inverses_a] = detail::power_of_two_scales(kb, "_q_a", scales_a, m, type);
         auto [exponents_b, inverses_b] = detail::power_of_two_scales(kb, "_q_b", scales_b, n, type);
 
-        auto products = kb.buffer("_q_p", PrimitiveType::Int32, symbolic::mul(m, n));
         detail::int8_matmul(kb, a_q, b_q, products, m, n, k, operands.a_transposed, operands.b_transposed);
 
         auto& rows = kb.map(kb.scope(), "_i", m);
@@ -105,12 +121,18 @@ void QuantizeContraction::apply(builder::StructuredSDFGBuilder& builder, analysi
 void QuantizeContraction::to_json(nlohmann::json& j) const {
     j["transformation_type"] = this->name();
     j["subgraph"] = {{"0", {{"element_id", node_.element_id()}, {"type", "library_node"}}}};
-    j["parameters"] = {{"bits", bits_}};
+    j["parameters"] = {{"bits", bits_}, {"rescaling", rescaling_ == Rescaling::Direct ? "direct" : "exponents"}};
 }
 
 QuantizeContraction QuantizeContraction::from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& j) {
-    int bits = j.contains("parameters") ? j["parameters"].value("bits", 8) : 8;
-    return QuantizeContraction(detail::contraction_from_json(builder, j), bits);
+    int bits = 8;
+    auto rescaling = Rescaling::Exponents;
+    if (j.contains("parameters")) {
+        bits = j["parameters"].value("bits", 8);
+        rescaling = j["parameters"].value("rescaling", "exponents") == "direct" ? Rescaling::Direct
+                                                                                : Rescaling::Exponents;
+    }
+    return QuantizeContraction(detail::contraction_from_json(builder, j), bits, rescaling);
 }
 
 } // namespace fp_math

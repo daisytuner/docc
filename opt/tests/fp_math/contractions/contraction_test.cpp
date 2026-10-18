@@ -11,6 +11,7 @@
 #include "compile_and_load.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/library_nodes/math/blas/gemm_node.h"
+#include "sdfg/data_flow/library_nodes/math/cmath/cmath_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/matmul_node.h"
 #include "sdfg/fp_math/passes/contraction_precision.h"
 #include "sdfg/fp_math/transformations/ozaki_contraction.h"
@@ -235,6 +236,42 @@ TEST(QuantizeContractionTest, JsonRoundTrip) {
     EXPECT_EQ(description["parameters"]["bits"], 6);
     std::string error;
     EXPECT_TRUE(transformations::verify_transformation_round_trip(builder, description, error)) << error;
+    nlohmann::json direct;
+    fp_math::QuantizeContraction(matmul, 8, fp_math::Rescaling::Direct).to_json(direct);
+    EXPECT_EQ(direct["parameters"]["rescaling"], "direct");
+    EXPECT_TRUE(transformations::verify_transformation_round_trip(builder, direct, error)) << error;
+}
+
+TEST(QuantizeContractionTest, Direct_MultipliesOnly) {
+    // Direct rescaling needs no floor and no powers of two, for units that compute neither exactly.
+    builder::StructuredSDFGBuilder builder("quantize_direct_structure", FunctionType_CPU);
+    auto& matmul =
+        add_matmul(builder, PrimitiveType::Float, symbolic::integer(M), symbolic::integer(N), symbolic::integer(K));
+    applying<fp_math::QuantizeContraction>(8, fp_math::Rescaling::Direct)(matmul, builder);
+    std::function<void(structured_control_flow::ControlFlowNode&)> visit =
+        [&](structured_control_flow::ControlFlowNode& node) {
+            if (auto* block = dynamic_cast<structured_control_flow::Block*>(&node)) {
+                for (auto* library_node : block->dataflow().library_nodes()) {
+                    auto* cmath = dynamic_cast<math::cmath::CMathNode*>(library_node);
+                    EXPECT_TRUE(
+                        !cmath || (cmath->function() != math::cmath::CMathFunction::floor &&
+                                   cmath->function() != math::cmath::CMathFunction::exp2)
+                    );
+                }
+            } else if (auto* sequence = dynamic_cast<structured_control_flow::Sequence*>(&node)) {
+                for (size_t i = 0; i < sequence->size(); i++) {
+                    visit(sequence->at(i));
+                }
+            } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&node)) {
+                visit(loop->root());
+            }
+        };
+    visit(builder.subject().root());
+}
+
+TEST(QuantizeContractionTest, Direct_WithinQuantizationError) {
+    auto direct = applying<fp_math::QuantizeContraction>(8, fp_math::Rescaling::Direct);
+    EXPECT_LT(relative_error<float>("quantize_float_direct", direct), 1e-2);
 }
 
 TEST(OzakiContractionTest, DefaultSplits) {
@@ -445,6 +482,8 @@ TEST(OzakiContractionTest, Gemm_BetaZeroIgnoresC) {
 
 TEST(QuantizeContractionTest, Gemm_AlphaBetaTransposed) {
     EXPECT_LT(gemm_relative_error("quantize_gemm", -1.5, 1.0, applying<fp_math::QuantizeContraction>()), 1e-2);
+    auto direct = applying<fp_math::QuantizeContraction>(8, fp_math::Rescaling::Direct);
+    EXPECT_LT(gemm_relative_error("quantize_gemm_direct", -1.5, 1.0, direct), 1e-2);
 }
 
 TEST(QuantizeContractionTest, Gemm_QuantizesInStorageOrder) {

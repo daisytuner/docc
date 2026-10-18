@@ -52,6 +52,7 @@ Requirements: a 2-D MatMul whose inputs, accumulator and output share the Float 
 Only constant coefficients keep BLAS semantics: C is not read if beta is 0, and A @ B is not computed if alpha is 0, even if they hold NaNs or products that overflow.
 The Ozaki splitting and reconstruction run in Double.
 Results are rescaled by the sum of their row's and column's power-of-two exponents in one step, so no intermediate overflows where the result does not.
+`QuantizeContraction(matmul, bits, Rescaling::Direct)` multiplies by the scales instead, for units without `floor` or exact powers of two; it overflows only for magnitudes within a factor `K q` of the type's largest value.
 Quantization computes its scales and results in the contraction's own type, whose rounding is far below the quantization error, so targets without Double run it.
 
 The scales are Max reductions (`Reduce` loops), one per row of A and column of B.

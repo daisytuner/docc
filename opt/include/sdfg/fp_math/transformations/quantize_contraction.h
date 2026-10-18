@@ -11,6 +11,16 @@
 namespace sdfg {
 namespace fp_math {
 
+/// How QuantizeContraction applies the scales of A's rows and B's columns to the Int32 products.
+enum class Rescaling {
+    /// Through the scales' power-of-two exponents in one step, so that no intermediate overflows where the result does
+    /// not (needs floor and exact powers of two).
+    Exponents,
+    /// Multiplied by `s_A[i] / q` and then `s_B[j] / q`, which needs nothing beyond multiplication but overflows for a
+    /// row whose magnitude lies within a factor K q of the type's largest value, about 10^33 for Float and K = 768.
+    Direct,
+};
+
 /**
  * @brief Computes a floating-point matmul (MatMul or GEMM node) on integers, quantized with a scale per row of A and
  * per column of B.
@@ -32,9 +42,10 @@ class QuantizeContraction : public transformations::Transformation {
 private:
     data_flow::LibraryNode& node_;
     int bits_;
+    Rescaling rescaling_;
 
 public:
-    explicit QuantizeContraction(data_flow::LibraryNode& node, int bits = 8);
+    explicit QuantizeContraction(data_flow::LibraryNode& node, int bits = 8, Rescaling rescaling = Rescaling::Exponents);
 
     virtual std::string name() const override;
 
@@ -49,6 +60,10 @@ public:
 
     int bits() const {
         return bits_;
+    }
+
+    Rescaling rescaling() const {
+        return rescaling_;
     }
 };
 
