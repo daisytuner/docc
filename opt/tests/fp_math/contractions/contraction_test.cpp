@@ -274,6 +274,116 @@ TEST(QuantizeContractionTest, Direct_WithinQuantizationError) {
     EXPECT_LT(relative_error<float>("quantize_float_direct", direct), 1e-2);
 }
 
+namespace {
+
+constexpr int64_t H = 3;
+
+/// Largest error of the quantized Y[h] = A[h] @ B[h] over H matrices relative to sum_k |A[h, i, k] B[h, k, j]|, where
+/// matrix h of A is scaled by 2^(20 h), so that scales shared across the batch would lose the smaller ones. B is stored
+/// transposed per matrix, as the keys of attention scores are, or is one matrix all of them share if @p shared_b.
+double batched_relative_error(fp_math::Rescaling rescaling, bool shared_b) {
+    builder::StructuredSDFGBuilder builder(shared_b ? "quantize_broadcast" : "quantize_batched", FunctionType_CPU);
+    types::Pointer pointer{types::Scalar(PrimitiveType::Float)};
+    for (auto name : {"a", "b", "y"}) {
+        builder.add_container(name, pointer, true);
+    }
+    auto& block = builder.add_block(builder.subject().root());
+    using math::tensor::TensorLayout;
+    auto i = [](int64_t value) {
+        return symbolic::integer(value);
+    };
+    TensorLayout layout_a({i(H), i(M), i(K)});
+    TensorLayout layout_b = shared_b ? TensorLayout({i(K), i(N)})
+                                     : TensorLayout({i(H), i(K), i(N)}, {i(K * N), i(1), i(K)});
+    TensorLayout layout_y({i(H), i(M), i(N)});
+    auto& matmul = static_cast<MatMulNode&>(builder.add_library_node<MatMulNode>(
+        block, DebugInfo(), layout_a, layout_b, math::tensor::QUANTIZATION_MATCH_INPUTS, &layout_y
+    ));
+    builder.add_computational_memlet(block, builder.add_access(block, "a"), matmul, "A", {}, pointer);
+    builder.add_computational_memlet(block, builder.add_access(block, "b"), matmul, "B", {}, pointer);
+    builder.add_computational_memlet(block, builder.add_access(block, "y"), matmul, "Y", {}, pointer);
+    applying<fp_math::QuantizeContraction>(8, rescaling)(matmul, builder);
+
+    auto found = matmuls(builder.subject().root());
+    EXPECT_EQ(found.size(), 1);
+    if (found.size() == 1) {
+        EXPECT_EQ(found.front()->layout_a().dims(), 3);
+        EXPECT_EQ(found.front()->layout_b().dims(), 3);
+    }
+    auto function = reinterpret_cast<void (*)(float*, float*, float*)>(test::compile_and_load(builder));
+
+    std::vector<float> a, b, y(H * M * N, -7.0f);
+    std::vector<float> a_matrix, b_matrix;
+    fill(a_matrix, b_matrix);
+    if (shared_b) {
+        b = b_matrix;
+    }
+    for (int64_t h = 0; h < H; h++) {
+        for (auto x : a_matrix) {
+            a.push_back(std::ldexp(x, static_cast<int>(20 * h)));
+        }
+        // Stored transposed: element [k, j] of matrix h at h K N + j K + k.
+        for (int64_t j = 0; j < N && !shared_b; j++) {
+            for (int64_t k = 0; k < K; k++) {
+                b.push_back(b_matrix[k * N + j] * static_cast<float>(h + 1));
+            }
+        }
+    }
+    function(a.data(), b.data(), y.data());
+
+    double worst = 0;
+    for (int64_t h = 0; h < H; h++) {
+        for (int64_t row = 0; row < M; row++) {
+            for (int64_t column = 0; column < N; column++) {
+                long double exact = 0, magnitude = 0;
+                for (int64_t k = 0; k < K; k++) {
+                    auto b_value = shared_b ? b[k * N + column] : b[h * K * N + column * K + k];
+                    auto product = static_cast<long double>(a[h * M * K + row * K + k]) * b_value;
+                    exact += product;
+                    magnitude += std::fabs(product);
+                }
+                auto value = y[h * M * N + row * N + column];
+                EXPECT_TRUE(std::isfinite(value)) << h << ", " << row << ", " << column;
+                if (magnitude != 0) {
+                    worst = std::max(worst, static_cast<double>(std::fabs(value - exact) / magnitude));
+                }
+            }
+        }
+    }
+    return worst;
+}
+
+} // namespace
+
+TEST(QuantizeContractionTest, Batched_ScalesEachMatrix) {
+    for (auto rescaling : {fp_math::Rescaling::Exponents, fp_math::Rescaling::Direct}) {
+        EXPECT_LT(batched_relative_error(rescaling, false), 1e-2);
+    }
+}
+
+TEST(QuantizeContractionTest, Batched_BroadcastsASharedOperand) {
+    EXPECT_LT(batched_relative_error(fp_math::Rescaling::Direct, true), 1e-2);
+}
+
+TEST(OzakiContractionTest, RejectsBatchedMatMuls) {
+    builder::StructuredSDFGBuilder builder("ozaki_batched", FunctionType_CPU);
+    types::Pointer pointer{types::Scalar(PrimitiveType::Double)};
+    for (auto name : {"a", "b", "y"}) {
+        builder.add_container(name, pointer, true);
+    }
+    auto& block = builder.add_block(builder.subject().root());
+    auto shape = [](int64_t rows, int64_t columns) {
+        return math::tensor::TensorLayout({symbolic::integer(H), symbolic::integer(rows), symbolic::integer(columns)});
+    };
+    auto& matmul = builder.add_library_node<MatMulNode>(block, DebugInfo(), shape(M, K), shape(K, N));
+    builder.add_computational_memlet(block, builder.add_access(block, "a"), matmul, "A", {}, pointer);
+    builder.add_computational_memlet(block, builder.add_access(block, "b"), matmul, "B", {}, pointer);
+    builder.add_computational_memlet(block, builder.add_access(block, "y"), matmul, "Y", {}, pointer);
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    EXPECT_FALSE(fp_math::OzakiContraction(matmul).can_be_applied(builder, analysis_manager));
+    EXPECT_TRUE(fp_math::QuantizeContraction(matmul).can_be_applied(builder, analysis_manager));
+}
+
 TEST(OzakiContractionTest, DefaultSplits) {
     builder::StructuredSDFGBuilder builder("ozaki_splits", FunctionType_CPU);
     auto& matmul =

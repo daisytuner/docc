@@ -56,12 +56,27 @@ types::PrimitiveType contraction_type(const data_flow::LibraryNode& node) {
 
 namespace {
 
-std::string unsupported_matmul(const MatMulNode& node) {
+std::string unsupported_matmul(const MatMulNode& node, bool batched) {
     if (node.get_parent().in_degree(node) != 3 || node.get_parent().out_degree(node) != 0) {
         return "the matmul is not connected to Y, A and B";
     }
-    if (node.layout_a().dims() != 2 || node.layout_b().dims() != 2 || node.layout_y().dims() != 2) {
+    auto& y = node.layout_y();
+    if (node.layout_a().dims() < 2 || node.layout_b().dims() < 2 || y.dims() < 2) {
+        return "the operands are not matrices";
+    }
+    if (!batched && (node.layout_a().dims() != 2 || node.layout_b().dims() != 2 || y.dims() != 2)) {
         return "batched matmuls are not supported";
+    }
+    for (auto* layout : {&node.layout_a(), &node.layout_b()}) {
+        int dims = layout->dims() - 2;
+        int result_dims = y.dims() - 2;
+        for (int d = 0; d < dims; ++d) {
+            auto& extent = layout->get_dim(d);
+            if (dims > result_dims ||
+                (!symbolic::eq(extent, symbolic::one()) && !symbolic::eq(extent, y.get_dim(result_dims - dims + d)))) {
+                return "the batch dimensions of the operands do not broadcast to those of the result";
+            }
+        }
     }
     if (node.input_type() != node.output_type() || node.accumulator_type() != node.output_type()) {
         return "inputs, accumulator and output must share their type";
@@ -96,13 +111,13 @@ std::string unsupported_gemm(const GEMMNode& node) {
 
 } // namespace
 
-std::string unsupported_contraction(const data_flow::LibraryNode& node, int64_t max_k) {
+std::string unsupported_contraction(const data_flow::LibraryNode& node, int64_t max_k, bool batched) {
     if (!dynamic_cast<const structured_control_flow::Block*>(node.get_parent().get_parent())) {
         return "the contraction is not in a block";
     }
     std::string why;
     if (auto* matmul = dynamic_cast<const MatMulNode*>(&node)) {
-        why = unsupported_matmul(*matmul);
+        why = unsupported_matmul(*matmul, batched);
     } else if (auto* gemm = dynamic_cast<const GEMMNode*>(&node)) {
         why = unsupported_gemm(*gemm);
     } else {
@@ -134,13 +149,72 @@ double smallest_normal(PrimitiveType type) {
     return type == PrimitiveType::Float ? std::numeric_limits<float>::min() : std::numeric_limits<double>::min();
 }
 
+symbolic::Expression Batch::count() const {
+    symbolic::Expression count = symbolic::one();
+    for (auto& extent : extents) {
+        count = symbolic::mul(count, extent);
+    }
+    return count;
+}
+
+symbolic::Expression Batch::position(const symbolic::MultiExpression& entry) const {
+    symbolic::Expression position = symbolic::zero();
+    for (size_t d = 0; d < extents.size(); ++d) {
+        position = symbolic::add(symbolic::mul(position, extents[d]), entry.at(d));
+    }
+    return position;
+}
+
+std::pair<structured_control_flow::Sequence*, symbolic::MultiExpression> Batch::
+    maps(KernelBuilder& kb, structured_control_flow::Sequence& scope) const {
+    auto* body = &scope;
+    symbolic::MultiExpression entry;
+    for (auto& extent : extents) {
+        auto& map = kb.map(*body, "_b", extent);
+        entry.push_back(map.indvar());
+        body = &map.root();
+    }
+    return {body, entry};
+}
+
 namespace {
+
+/// The index of the batch entry @p entry of the result into the batch dimensions of @p layout, which broadcast to the
+/// result's: dimensions of extent 1 stay at 0.
+symbolic::MultiExpression broadcast_entry(const math::tensor::TensorLayout& layout, const symbolic::MultiExpression& entry) {
+    auto dims = static_cast<size_t>(layout.dims() - 2);
+    symbolic::MultiExpression index;
+    for (size_t d = 0; d < dims; ++d) {
+        index.push_back(
+            symbolic::eq(layout.get_dim(d), symbolic::one()) ? symbolic::Expression(symbolic::zero())
+                                                             : entry.at(entry.size() - dims + d)
+        );
+    }
+    return index;
+}
+
+bool stored_transposed(const math::tensor::TensorLayout& layout) {
+    using math::tensor::TensorLayout;
+    return TensorLayout::is_last_dims_col_or_row_major(layout.strides()) == TensorLayout::LAYOUT_COL_MAJOR;
+}
 
 /// Addresses the operands through the node's layouts, which hold their shapes, strides and offsets.
 class MatMulOperands : public ContractionOperands {
     passes::LibNodeExpander::AccessNodeExpand& standalone_;
     math::tensor::TensorLayout layout_a_, layout_b_, layout_y_;
     types::Pointer pointer_;
+
+    static symbolic::Expression element_of(
+        const math::tensor::TensorLayout& layout,
+        const symbolic::MultiExpression& entry,
+        const symbolic::Expression& row,
+        const symbolic::Expression& column
+    ) {
+        auto index = broadcast_entry(layout, entry);
+        index.push_back(row);
+        index.push_back(column);
+        return layout.resolve_element(index);
+    }
 
 public:
     MatMulOperands(passes::LibNodeExpander::AccessNodeExpand& standalone, const MatMulNode& node)
@@ -150,9 +224,10 @@ public:
         n = node.n();
         k = node.k();
         element = node.output_type();
-        using math::tensor::TensorLayout;
-        a_transposed = layout_a_.is_2d_col_or_row_major() == TensorLayout::LAYOUT_COL_MAJOR;
-        b_transposed = layout_b_.is_2d_col_or_row_major() == TensorLayout::LAYOUT_COL_MAJOR;
+        a_transposed = stored_transposed(layout_a_);
+        b_transposed = stored_transposed(layout_b_);
+        auto& shape = layout_y_.shape();
+        batch.extents.assign(shape.begin(), shape.end() - 2);
     }
 
     static std::vector<passes::LibNodeExpander::InputUse> uses() {
@@ -160,24 +235,33 @@ public:
         return {Use::IndirectWrite, Use::IndirectRead, Use::IndirectRead};
     }
 
-    KernelValue a(BlockBuilder& block, const symbolic::Expression& row, const symbolic::Expression& column) override {
+    KernelValue
+    a(BlockBuilder& block,
+      const symbolic::MultiExpression& entry,
+      const symbolic::Expression& row,
+      const symbolic::Expression& column) override {
         auto& access = standalone_.add_indirect_read_access(block.block(), MatMulNode::A_INPUT_IDX);
-        return block.read(access, {layout_a_.resolve_element({row, column})}, pointer_);
+        return block.read(access, {element_of(layout_a_, entry, row, column)}, pointer_);
     }
 
-    KernelValue b(BlockBuilder& block, const symbolic::Expression& row, const symbolic::Expression& column) override {
+    KernelValue
+    b(BlockBuilder& block,
+      const symbolic::MultiExpression& entry,
+      const symbolic::Expression& row,
+      const symbolic::Expression& column) override {
         auto& access = standalone_.add_indirect_read_access(block.block(), MatMulNode::B_INPUT_IDX);
-        return block.read(access, {layout_b_.resolve_element({row, column})}, pointer_);
+        return block.read(access, {element_of(layout_b_, entry, row, column)}, pointer_);
     }
 
     void store(
         BlockBuilder& block,
         const KernelValue& value,
+        const symbolic::MultiExpression& entry,
         const symbolic::Expression& row,
         const symbolic::Expression& column
     ) override {
         auto& access = standalone_.add_indirect_write_access(block.block(), MatMulNode::Y_INPUT_IDX);
-        block.store(block.convert(value, element), access, {layout_y_.resolve_element({row, column})}, pointer_);
+        block.store(block.convert(value, element), access, {element_of(layout_y_, entry, row, column)}, pointer_);
     }
 };
 
@@ -222,14 +306,22 @@ public:
         };
     }
 
-    KernelValue a(BlockBuilder& block, const symbolic::Expression& row, const symbolic::Expression& column) override {
+    KernelValue
+    a(BlockBuilder& block,
+      const symbolic::MultiExpression&,
+      const symbolic::Expression& row,
+      const symbolic::Expression& column) override {
         auto index = node_.trans_a() == BLAS_Transpose::No ? symbolic::add(symbolic::mul(node_.lda(), row), column)
                                                            : symbolic::add(symbolic::mul(node_.lda(), column), row);
         auto& access = standalone_.add_indirect_read_access(block.block(), GEMMNode::A_INPUT_IDX);
         return block.read(access, {index}, *a_type_);
     }
 
-    KernelValue b(BlockBuilder& block, const symbolic::Expression& row, const symbolic::Expression& column) override {
+    KernelValue
+    b(BlockBuilder& block,
+      const symbolic::MultiExpression&,
+      const symbolic::Expression& row,
+      const symbolic::Expression& column) override {
         auto index = node_.trans_b() == BLAS_Transpose::No ? symbolic::add(symbolic::mul(node_.ldb(), row), column)
                                                            : symbolic::add(symbolic::mul(node_.ldb(), column), row);
         auto& access = standalone_.add_indirect_read_access(block.block(), GEMMNode::B_INPUT_IDX);
@@ -239,6 +331,7 @@ public:
     void store(
         BlockBuilder& block,
         const KernelValue& value,
+        const symbolic::MultiExpression&,
         const symbolic::Expression& row,
         const symbolic::Expression& column
     ) override {
@@ -277,12 +370,15 @@ std::string absmax(
     const symbolic::Expression& outer,
     const symbolic::Expression& inner,
     double tiny,
-    PrimitiveType type
+    PrimitiveType type,
+    const Batch& batch
 ) {
-    auto result = kb.buffer(prefix, type, outer);
+    auto result = kb.buffer(prefix, type, symbolic::mul(batch.count(), outer));
     auto accumulator = kb.scalar(prefix + "_acc", type);
 
-    auto& rows = kb.map(kb.scope(), "_o", outer);
+    auto [scope, entry] = batch.maps(kb, kb.scope());
+    auto first = symbolic::mul(batch.position(entry), outer);
+    auto& rows = kb.map(*scope, "_o", outer);
     {
         // Starting from the smallest normal keeps all-zero rows from dividing by zero later.
         auto init = kb.block(rows.root());
@@ -291,14 +387,14 @@ std::string absmax(
     auto& elements = kb.reduce(rows.root(), "_e", inner, structured_control_flow::ReductionOperation::Max, accumulator);
     {
         auto body = kb.block(elements.root());
-        auto x = body.convert(read(body, rows.indvar(), elements.indvar()), type);
+        auto x = body.convert(read(body, entry, rows.indvar(), elements.indvar()), type);
         auto magnitude = body.cmath(CMathFunction::fabs, {x}, type);
         auto max = body.cmath(CMathFunction::fmax, {magnitude, body.read(accumulator)}, type);
         body.store(max, accumulator);
     }
     {
         auto store = kb.block(rows.root());
-        store.store(store.read(accumulator), result, {rows.indvar()});
+        store.store(store.read(accumulator), result, {symbolic::add(first, rows.indvar())});
     }
     return result;
 }
@@ -308,19 +404,23 @@ std::pair<std::string, std::string> power_of_two_scales(
     const std::string& prefix,
     const std::string& magnitudes,
     const symbolic::Expression& count,
-    PrimitiveType type
+    PrimitiveType type,
+    const Batch& batch
 ) {
-    auto exponents = kb.buffer(prefix + "_exp", type, count);
-    auto inverses = kb.buffer(prefix + "_inv", type, count);
-    auto& loop = kb.map(kb.scope(), "_o", count);
+    auto total = symbolic::mul(batch.count(), count);
+    auto exponents = kb.buffer(prefix + "_exp", type, total);
+    auto inverses = kb.buffer(prefix + "_inv", type, total);
+    auto [scope, entry] = batch.maps(kb, kb.scope());
+    auto& loop = kb.map(*scope, "_o", count);
+    auto at = symbolic::add(symbolic::mul(batch.position(entry), count), loop.indvar());
     auto body = kb.block(loop.root());
-    auto log = body.cmath(CMathFunction::log2, {body.read(magnitudes, {loop.indvar()})}, type);
+    auto log = body.cmath(CMathFunction::log2, {body.read(magnitudes, {at})}, type);
     auto floor = body.cmath(CMathFunction::floor, {log}, type);
     auto exponent = body.op(TaskletCode::fp_add, {floor, body.constant(1.0, type)}, type);
     auto negated = body.op(TaskletCode::fp_neg, {exponent}, type);
-    body.store(exponent, exponents, {loop.indvar()});
+    body.store(exponent, exponents, {at});
     // 2^-e stays finite: magnitudes are at least the smallest normal value, so e > the smallest normal exponent.
-    body.store(body.cmath(CMathFunction::exp2, {negated}, type), inverses, {loop.indvar()});
+    body.store(body.cmath(CMathFunction::exp2, {negated}, type), inverses, {at});
     return {exponents, inverses};
 }
 
@@ -354,7 +454,8 @@ void int8_matmul(
     const symbolic::Expression& n,
     const symbolic::Expression& k,
     bool a_transposed,
-    bool b_transposed
+    bool b_transposed,
+    const Batch& batch
 ) {
     auto& builder = kb.builder();
     auto& debug_info = kb.debug_info();
@@ -362,13 +463,27 @@ void int8_matmul(
     auto& a_access = builder.add_access(block, a, debug_info);
     auto& b_access = builder.add_access(block, b, debug_info);
     auto& p_access = builder.add_access(block, p, debug_info);
-    using math::tensor::TensorLayout;
-    auto one = symbolic::one();
+    // One matrix after the other, each row-major or, transposed, column-major.
+    auto layout = [&](const symbolic::Expression& rows, const symbolic::Expression& columns, bool transposed) {
+        auto dims = batch.extents.size();
+        symbolic::MultiExpression shape(batch.extents.begin(), batch.extents.end());
+        symbolic::MultiExpression strides(dims);
+        symbolic::Expression stride = symbolic::mul(rows, columns);
+        for (size_t d = dims; d-- > 0;) {
+            strides[d] = stride;
+            stride = symbolic::mul(stride, batch.extents[d]);
+        }
+        shape.push_back(rows);
+        shape.push_back(columns);
+        strides.push_back(transposed ? symbolic::Expression(symbolic::one()) : columns);
+        strides.push_back(transposed ? rows : symbolic::Expression(symbolic::one()));
+        return math::tensor::TensorLayout(shape, strides);
+    };
     auto& matmul = builder.add_library_node<MatMulNode>(
         block,
         debug_info,
-        a_transposed ? TensorLayout({m, k}, {one, m}) : TensorLayout({m, k}),
-        b_transposed ? TensorLayout({k, n}, {one, k}) : TensorLayout({k, n}),
+        layout(m, k, a_transposed),
+        layout(k, n, b_transposed),
         math::tensor::ContractionTypes{PrimitiveType::Int8, PrimitiveType::Int32, PrimitiveType::Int32}
     );
     types::Pointer int8_pointer{types::Scalar(PrimitiveType::Int8)};

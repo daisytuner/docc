@@ -115,11 +115,11 @@ struct OperandScales {
 
 OperandScales operand_scales(KernelBuilder& kb, detail::ContractionOperands& operands) {
     auto tiny = detail::smallest_normal(operands.element);
-    auto read_a = [&](BlockBuilder& block, auto& row, auto& column) {
-        return operands.a(block, row, column);
+    auto read_a = [&](BlockBuilder& block, auto& entry, auto& row, auto& column) {
+        return operands.a(block, entry, row, column);
     };
-    auto read_b_t = [&](BlockBuilder& block, auto& column, auto& row) {
-        return operands.b(block, row, column);
+    auto read_b_t = [&](BlockBuilder& block, auto& entry, auto& column, auto& row) {
+        return operands.b(block, entry, row, column);
     };
     auto magnitudes_a = detail::absmax(kb, "_oz_max_a", read_a, operands.m, operands.k, tiny, PrimitiveType::Double);
     auto magnitudes_b = detail::absmax(kb, "_oz_max_b", read_b_t, operands.n, operands.k, tiny, PrimitiveType::Double);
@@ -143,7 +143,7 @@ void split_operands(
         auto& columns = kb.map(rows.root(), "_k", k);
         auto i = rows.indvar(), c = columns.indvar();
         auto body = kb.block(columns.root());
-        auto x = body.convert(operands.a(body, i, c), PrimitiveType::Double);
+        auto x = body.convert(operands.a(body, {}, i, c), PrimitiveType::Double);
         auto normalized = body.op(TaskletCode::fp_mul, {x, body.read(scales.a_inverse, {i})}, PrimitiveType::Double);
         emit(body, normalized, true, flat(i, k, c));
     }
@@ -152,7 +152,7 @@ void split_operands(
         auto& columns = kb.map(rows.root(), "_j", n);
         auto r = rows.indvar(), j = columns.indvar();
         auto body = kb.block(columns.root());
-        auto x = body.convert(operands.b(body, r, j), PrimitiveType::Double);
+        auto x = body.convert(operands.b(body, {}, r, j), PrimitiveType::Double);
         auto normalized = body.op(TaskletCode::fp_mul, {x, body.read(scales.b_inverse, {j})}, PrimitiveType::Double);
         emit(body, normalized, false, flat(r, n, j));
     }
@@ -179,7 +179,8 @@ void store_scaled(
         exponent =
             body.op(TaskletCode::fp_add, {exponent, body.constant(shift, PrimitiveType::Double)}, PrimitiveType::Double);
     }
-    operands.store(body, detail::scale_by_power_of_two(body, value(body, i, j), exponent, PrimitiveType::Double), i, j);
+    operands
+        .store(body, detail::scale_by_power_of_two(body, value(body, i, j), exponent, PrimitiveType::Double), {}, i, j);
 }
 
 void build_slicing(KernelBuilder& kb, detail::ContractionOperands& operands, int slices) {
