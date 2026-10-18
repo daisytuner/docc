@@ -13,6 +13,8 @@
 
 #include <sdfg/einsum/einsum.h>
 #include <sdfg/fp_math/transformations/fuse_fma.h>
+#include <sdfg/fp_math/transformations/ozaki_contraction.h>
+#include <sdfg/fp_math/transformations/quantize_contraction.h>
 #include <sdfg/fp_math/transformations/unfuse_fma.h>
 #include <sdfg/parallelization/transformations/loop_parallelization.h>
 #include <sdfg/targets/gpu/gpu_mma_einsum_transform.h>
@@ -189,6 +191,10 @@ dispatch_transformation(const std::string& transformation_name, const nlohmann::
         return detail::invoke_for<fp_math::FuseFMA>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "UnfuseFMA") {
         return detail::invoke_for<fp_math::UnfuseFMA>(std::forward<Visitor>(visitor));
+    } else if (transformation_name == "QuantizeContraction") {
+        return detail::invoke_for<fp_math::QuantizeContraction>(std::forward<Visitor>(visitor));
+    } else if (transformation_name == "OzakiContraction") {
+        return detail::invoke_for<fp_math::OzakiContraction>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "GpuMmaEinsumTransform") {
         return detail::invoke_for<gpu::GpuMmaEinsumTransform>(std::forward<Visitor>(visitor));
     } else {

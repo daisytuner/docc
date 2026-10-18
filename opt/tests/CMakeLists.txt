@@ -36,6 +36,7 @@ set(TEST_FILES
     einsum/transformations/einsum_extend_test.cpp
     einsum/transformations/einsum_lift_test.cpp
     einsum/transformations/einsum_promotion_test.cpp
+    fp_math/contractions/contraction_test.cpp
     fp_math/passes/fp_contraction_test.cpp
     fp_math/transformations/fuse_fma_test.cpp
     fp_math/transformations/unfuse_fma_test.cpp
@@ -46,6 +47,7 @@ set(TEST_FILES
     rocm/rocm_library_nodes_test.cpp
     rocm/rocm_mma_test.cpp
     rocm/rocm_reduce_dispatcher_test.cpp
+    passes/expansion/matmul_naive_expansion_test.cpp
     passes/loop_fusion/loop_fusion_by_domain_pass_test.cpp
     passes/loop_fusion/loop_fusion_pass_test.cpp
     passes/normalization/loop_normal_form_test.cpp
@@ -120,6 +122,12 @@ set(TEST_FILES
 add_executable(sdfgopt_test ${TEST_FILES})
 target_include_directories(sdfgopt_test PRIVATE ./)
 target_link_libraries(sdfgopt_test gtest_main sdfg::opt)
+# Numeric tests compile generated code with the project's compiler and load it.
+target_link_libraries(sdfgopt_test ${CMAKE_DL_LIBS})
+target_compile_definitions(sdfgopt_test PRIVATE
+    DOCC_TEST_CXX_COMPILER="${CMAKE_CXX_COMPILER}"
+    DOCC_TEST_RTL_INCLUDE="${CMAKE_CURRENT_SOURCE_DIR}/../../rtl/include"
+)
 if(DOCC_BUILD_TARGET_TENSTORRENT)
     target_link_libraries(sdfgopt_test docc::target::tenstorrent)
 endif()

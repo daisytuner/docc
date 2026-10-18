@@ -221,7 +221,7 @@ class PyTorchProgram(DoccProgram):
         # built binary (the on-disk hash already accounts for these options).
         mem_cache_key: str = (
             f"{cache_key}|{self.options.capture_args}|{self.options.instrumentation_mode}|"
-            f"{self.options.remote_tuning}|{self.options.fp_contract}"
+            f"{self.options.remote_tuning}|{self.options.fp_contract}|{self.options.contraction_precision}"
         )
 
         cached_available: bool = mem_cache_key in self.cache
@@ -250,7 +250,7 @@ class PyTorchProgram(DoccProgram):
                     pass
 
             hash_input: bytes = (
-                f"{self.name}|{self.options.target}|{self.options.category}|{cache_key}|{model_code}|{self.options.capture_args}|{self.options.instrumentation_mode}|{self.options.remote_tuning}|{self.options.approximate_math}|{self.options.fp_contract}".encode(
+                f"{self.name}|{self.options.target}|{self.options.category}|{cache_key}|{model_code}|{self.options.capture_args}|{self.options.instrumentation_mode}|{self.options.remote_tuning}|{self.options.approximate_math}|{self.options.fp_contract}|{self.options.contraction_precision}".encode(
                     "utf-8"
                 )
             )

@@ -49,6 +49,10 @@ def _coerce_pass_option(spec: dict, value: Any) -> Any:
     return str(value)
 
 
+# Mirrors fp_math::ContractionPrecision::parse.
+_CONTRACTION_PRECISION = re.compile(r"native|int[2-8]|ozaki|ozaki[12](:[1-9][0-9]*)?")
+
+
 @dataclass
 class DoccOptions:
     """Compile options for a :class:`DoccProgram`.
@@ -89,6 +93,11 @@ class DoccOptions:
     # Mirrors -ffp-contract=fast: contract a multiplication feeding an addition
     # into a fused multiply-add during simplify. Defaults to True.
     fp_contract: Optional[bool] = None
+    # How Float and Double matmuls compute: "native" (default); "int8" (or int2 ... int7)
+    # quantizes them with a scale per row and column, losing accuracy; "ozaki", "ozaki1[:s]"
+    # (slices) and "ozaki2[:L]" (moduli) emulate them on exact Int8 matmuls at the native
+    # precision. Pays off only where Int8 matrix units are much faster than the native type.
+    contraction_precision: Optional[str] = None
 
     # Frontend: parse array shapes as symbolic sizes (``_s{i}`` arguments) when
     # True, or bake in the concrete integer sizes from the example inputs when
@@ -149,6 +158,13 @@ class DoccOptions:
             self.symbolic_shapes = True
         if self.fp_contract is None:
             self.fp_contract = True
+        if self.contraction_precision is None:
+            self.contraction_precision = "native"
+        if not _CONTRACTION_PRECISION.fullmatch(self.contraction_precision):
+            raise ValueError(
+                f"Invalid contraction_precision {self.contraction_precision!r}: expected native, "
+                "int2 ... int8, ozaki, ozaki1[:s] or ozaki2[:L]"
+            )
 
         if self.pass_options is None:
             self.pass_options = {}
@@ -341,6 +357,7 @@ class DoccProgram(ABC):
             target_options.category = self.options.category
             target_options.remote_tuning = self.options.remote_tuning
             target_options.fp_contract = self.options.fp_contract
+            target_options.contraction_precision = self.options.contraction_precision
             target_options.options = sdfg.options
             metrics.add_target_options(target_options)
 

@@ -64,8 +64,32 @@ MatMulNode::MatMulNode(
     const TensorLayout* layout_y,
     const data_flow::ImplementationType& impl_type
 )
+    : MatMulNode(
+          element_id,
+          debug_info,
+          vertex,
+          parent,
+          layout_a,
+          layout_b,
+          ContractionTypes::uniform(quantization),
+          layout_y,
+          impl_type
+      ) {
+}
+
+MatMulNode::MatMulNode(
+    size_t element_id,
+    const DebugInfo& debug_info,
+    const graph::Vertex vertex,
+    data_flow::DataFlowGraph& parent,
+    const TensorLayout& layout_a,
+    const TensorLayout& layout_b,
+    const ContractionTypes& types,
+    const TensorLayout* layout_y,
+    const data_flow::ImplementationType& impl_type
+)
     : TensorNode(element_id, debug_info, vertex, parent, LibraryNodeType_MatMul, {}, {"Y", "A", "B"}, impl_type),
-      fixed_quantization_(quantization), layout_a_(layout_a), layout_b_(layout_b),
+      types_(types), layout_a_(layout_a), layout_b_(layout_b),
       layout_y_(layout_y ? *layout_y : get_linear_result_layout(layout_a, layout_b)) {
     if (layout_a.dims() < 2) {
         throw std::invalid_argument("MatMulNode: Input A must have at least 2 dimensions");
@@ -177,39 +201,35 @@ void MatMulNode::validate(const Function& function) const {
     }
 }
 
-void MatMulNode::verify_data_types(const data_flow::DataFlowGraph& graph) const {
-    if (fixed_quantization_ == QUANTIZATION_MATCH_INPUTS) {
-        TensorNode::verify_data_types(graph);
-        return;
-    }
+namespace {
 
-    auto result_quant = fixed_quantization_;
-    auto input_quant = fixed_quantization_;
+types::PrimitiveType edge_type(const data_flow::DataFlowGraph& graph, const MatMulNode& node, size_t input_idx) {
+    auto* edge = graph.in_edge_for_connector(node, node.input(input_idx));
+    return edge ? edge->base_type().primitive_type() : types::PrimitiveType::Void;
+}
 
-    auto* res_edge = graph.in_edge_for_connector(*this, inputs_.at(Y_INPUT_IDX));
-    auto res_prim_type = res_edge->base_type().primitive_type();
-    if (res_prim_type != result_quant && res_prim_type != types::PrimitiveType::Void) {
+void check_type(types::PrimitiveType expected, types::PrimitiveType actual, const std::string& operand) {
+    if (expected != types::PrimitiveType::Void && actual != types::PrimitiveType::Void && expected != actual) {
         throw InvalidSDFGException(
-            "MatMulNode: Output memlet type mismatch. Expected " +
-            std::string(types::primitive_type_to_string(result_quant)) + ", got " +
-            std::string(types::primitive_type_to_string(res_edge->base_type().primitive_type()))
+            "MatMulNode: " + operand + " memlet type mismatch. Expected " +
+            std::string(types::primitive_type_to_string(expected)) + ", got " +
+            std::string(types::primitive_type_to_string(actual))
         );
     }
+}
 
-    std::vector<const data_flow::Memlet*> input_edges = {
-        graph.in_edge_for_connector(*this, inputs_.at(A_INPUT_IDX)),
-        graph.in_edge_for_connector(*this, inputs_.at(B_INPUT_IDX))
-    };
-    for (auto& input_edge : input_edges) {
-        auto in_prim_type = input_edge->base_type().primitive_type();
-        if (in_prim_type != input_quant && in_prim_type != types::PrimitiveType::Void) {
-            throw InvalidSDFGException(
-                "MatMulNode: Input memlet type mismatch. Expected " +
-                std::string(types::primitive_type_to_string(input_quant)) + ", got " +
-                std::string(types::primitive_type_to_string(input_edge->base_type().primitive_type()))
-            );
-        }
-    }
+} // namespace
+
+void MatMulNode::verify_data_types(const data_flow::DataFlowGraph& graph) const {
+    auto a = edge_type(graph, *this, A_INPUT_IDX);
+    auto b = edge_type(graph, *this, B_INPUT_IDX);
+    auto y = edge_type(graph, *this, Y_INPUT_IDX);
+
+    // A and B always share a type, the configured one if any.
+    auto input = types_.input != types::PrimitiveType::Void ? types_.input : a;
+    check_type(input, a, "Input A");
+    check_type(input, b, "Input B");
+    check_type(types_.output, y, "Output");
 }
 
 symbolic::SymbolSet MatMulNode::symbols() const {
@@ -261,59 +281,96 @@ void MatMulNode::replace(const symbolic::ExpressionMapping& replacements) {
 std::unique_ptr<data_flow::DataFlowNode> MatMulNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
     return std::unique_ptr<data_flow::DataFlowNode>(new MatMulNode(
-        element_id, debug_info(), vertex, parent, layout_a_, layout_b_, fixed_quantization_, &layout_y_, implementation_type_
+        element_id, debug_info(), vertex, parent, layout_a_, layout_b_, types_, &layout_y_, implementation_type_
     ));
 }
 
-types::PrimitiveType MatMulNode::fixed_quantization() const {
-    return fixed_quantization_;
+const ContractionTypes& MatMulNode::types() const {
+    return types_;
 }
 
-void MatMulNode::set_fixed_quantization(const QuantizationType quant) {
-    fixed_quantization_ = quant;
+void MatMulNode::set_types(const ContractionTypes& types) {
+    types_ = types;
 }
 
-types::PrimitiveType MatMulNode::quantization(const data_flow::DataFlowGraph& data_flow_graph) const {
-    if (fixed_quantization_ != QUANTIZATION_MATCH_INPUTS) {
-        return fixed_quantization_;
-    } else {
-        return this->primitive_type(data_flow_graph);
+types::PrimitiveType MatMulNode::input_type() const {
+    if (types_.input != types::PrimitiveType::Void) {
+        return types_.input;
     }
+    auto a = edge_type(get_parent(), *this, A_INPUT_IDX);
+    auto b = edge_type(get_parent(), *this, B_INPUT_IDX);
+    if (a == types::PrimitiveType::Void) {
+        return b;
+    }
+    if (b != types::PrimitiveType::Void && a != b) {
+        return types::PrimitiveType::Void;
+    }
+    return a;
 }
 
-std::optional<types::PrimitiveType> MatMulNode::uniform_quantization(const data_flow::DataFlowGraph& data_flow_graph) const {
-    if (fixed_quantization_ != QUANTIZATION_MATCH_INPUTS) {
-        auto inferred = this->primitive_type(data_flow_graph);
-        if (inferred == fixed_quantization_ || inferred == types::PrimitiveType::Void) {
-            return fixed_quantization_;
-        } else {
+types::PrimitiveType MatMulNode::output_type() const {
+    if (types_.output != types::PrimitiveType::Void) {
+        return types_.output;
+    }
+    return edge_type(get_parent(), *this, Y_INPUT_IDX);
+}
+
+types::PrimitiveType MatMulNode::accumulator_type() const {
+    if (types_.accumulator != types::PrimitiveType::Void) {
+        return types_.accumulator;
+    }
+    return output_type();
+}
+
+std::optional<types::PrimitiveType> MatMulNode::uniform_quantization(const data_flow::DataFlowGraph&) const {
+    // Unknown (Void) types adopt the known ones; Void if none is known.
+    auto uniform = types::PrimitiveType::Void;
+    for (auto type : {input_type(), accumulator_type(), output_type()}) {
+        if (type == types::PrimitiveType::Void) {
+            continue;
+        }
+        if (uniform != types::PrimitiveType::Void && uniform != type) {
             return std::nullopt;
         }
-    } else {
-        return this->primitive_type(data_flow_graph);
+        uniform = type;
     }
+    return uniform;
+}
+
+types::PrimitiveType MatMulNode::quantization(const data_flow::DataFlowGraph& dataflow) const {
+    return uniform_quantization(dataflow).value_or(types::PrimitiveType::Void);
 }
 
 types::PrimitiveType MatMulNode::input_quantization() const {
-    if (fixed_quantization_ != QUANTIZATION_MATCH_INPUTS) {
-        return fixed_quantization_;
-    } else {
-        return this->primitive_type(get_parent());
-    }
+    return input_type();
 }
 
 types::PrimitiveType MatMulNode::output_quantization() const {
-    if (fixed_quantization_ != QUANTIZATION_MATCH_INPUTS) {
-        return fixed_quantization_;
-    } else {
-        return this->primitive_type(get_parent());
+    return output_type();
+}
+
+types::PrimitiveType MatMulNode::fixed_quantization() const {
+    if (types_.input == types_.output &&
+        (types_.accumulator == types::PrimitiveType::Void || types_.accumulator == types_.output)) {
+        return types_.output;
     }
+    return types::PrimitiveType::Void;
+}
+
+void MatMulNode::set_fixed_quantization(const QuantizationType quant) {
+    types_ = ContractionTypes::uniform(quant);
 }
 
 std::string MatMulNode::toStr() const {
     std::stringstream ss;
     ss << "MatMul(";
-    ss << types::primitive_type_to_string(fixed_quantization_) << ", ";
+    if (types_.input == types_.output && types_.accumulator == types::PrimitiveType::Void) {
+        ss << types::primitive_type_to_string(types_.output) << ", ";
+    } else {
+        ss << types::primitive_type_to_string(types_.input) << " -> "
+           << types::primitive_type_to_string(types_.accumulator) << " -> "
+           << types::primitive_type_to_string(types_.output) << ", ";
+    }
     ss << "A: " << layout_a_;
     ss << ", B: " << layout_b_;
     if (!layout_y_.has_linear_accesses()) {
@@ -400,7 +457,12 @@ nlohmann::json MatMulNodeSerializer::serialize(const data_flow::LibraryNode& lib
     matmul_node.layout_b().serialize_to_json(j["layout_b"]);
     matmul_node.layout_y().serialize_to_json(j["layout_y"]);
 
-    j["result_quant"] = matmul_node.fixed_quantization();
+    // Older readers only know a single type, Void if the types differ.
+    auto& types = matmul_node.types();
+    bool uniform = types.input == types.output &&
+                   (types.accumulator == types::PrimitiveType::Void || types.accumulator == types.output);
+    j["result_quant"] = uniform ? types.output : types::PrimitiveType::Void;
+    types.serialize_to_json(j);
 
     return j;
 }
@@ -468,15 +530,15 @@ data_flow::LibraryNode& MatMulNodeSerializer::deserialize(
         layout_y = TensorLayout::deserialize_from_json(*layout_y_it);
     }
 
-    auto quantization = deserialize_quantization(j, "result_quant", QUANTIZATION_MATCH_INPUTS);
+    auto types = ContractionTypes::deserialize_from_json(j, "result_quant");
 
     sdfg::serializer::JSONSerializer serializer;
     DebugInfo debug_info = serializer.json_to_debug_info(j["debug_info"]);
 
     auto* layout_y_ptr = layout_y.has_value() ? &*layout_y : nullptr;
 
-    return builder.add_library_node<
-        MatMulNode>(parent, debug_info, layout_a.value(), layout_b.value(), quantization, layout_y_ptr);
+    return builder
+        .add_library_node<MatMulNode>(parent, debug_info, layout_a.value(), layout_b.value(), types, layout_y_ptr);
 }
 
 using Dir = passes::LibNodeExpander::InputUse;
@@ -520,9 +582,12 @@ passes::LibNodeExpander::ExpandOutcome MatMulNaiveExpander::handle_expand(
     const auto n = node.n();
     const auto k = node.k();
 
-    // Accumulate in the output element type; the C/C++ backend inserts the
-    // implicit conversions for the (possibly differing) input element types.
-    const auto y_prim = node.output_quantization();
+    // Accumulate in place in the output, in its element type; the C/C++ backend inserts the implicit conversions
+    // for the (possibly differing) input element types. A wider accumulator would need a separate buffer.
+    const auto y_prim = node.output_type();
+    if (node.accumulator_type() != y_prim) {
+        return context.unable();
+    }
     const bool fp = types::is_floating_point(y_prim);
     types::Scalar compute_scalar(y_prim);
 
@@ -590,6 +655,18 @@ passes::LibNodeExpander::ExpandOutcome MatMulNaiveExpander::handle_expand(
         return idx;
     };
 
+    // Address every operand through the node's layout as a pointer, whether its memlet is typed as a pointer or a
+    // (deprecated) tensor.
+    auto element_pointer = [](const data_flow::Memlet& edge) {
+        return types::Pointer(types::Scalar(edge.base_type().primitive_type()));
+    };
+    const auto a_pointer = element_pointer(*iedge_a);
+    const auto b_pointer = element_pointer(*iedge_b);
+    const auto y_pointer = element_pointer(*iedge_y);
+    auto linear = [](const TensorLayout& layout, const symbolic::MultiExpression& idx) {
+        return data_flow::Subset{layout.resolve_element(idx)};
+    };
+
     // ---- Initialization nest: for (batch, i, j) Y[...] = 0 ----
     {
         structured_control_flow::Sequence* scope = &new_sequence;
@@ -603,16 +680,14 @@ passes::LibNodeExpander::ExpandOutcome MatMulNaiveExpander::handle_expand(
         auto& j_loop = add_loop(i_loop.root(), n, "_j", true);
         auto& init_blk = builder.add_block(j_loop.root(), block.debug_info());
 
-        auto y_idx = build_y_idx(batch_vars, i_loop.indvar(), j_loop.indvar());
+        auto y_idx = linear(node.layout_y(), build_y_idx(batch_vars, i_loop.indvar(), j_loop.indvar()));
 
         auto& zero_node = builder.add_constant(init_blk, fp ? "0.0" : "0", compute_scalar, block.debug_info());
         auto& assign_t =
             builder.add_tasklet(init_blk, data_flow::TaskletCode::assign, "_out", {"_in"}, block.debug_info());
         auto& y_write = standalone->add_indirect_write_access(init_blk, MatMulNode::Y_INPUT_IDX);
         builder.add_computational_memlet(init_blk, zero_node, assign_t, "_in", {}, compute_scalar, block.debug_info());
-        builder.add_computational_memlet(
-            init_blk, assign_t, "_out", y_write, y_idx, iedge_y->base_type(), iedge_y->debug_info()
-        );
+        builder.add_computational_memlet(init_blk, assign_t, "_out", y_write, y_idx, y_pointer, iedge_y->debug_info());
     }
 
     // ---- Accumulation nest: for (batch, i, j) for k: Y[...] += A[...] * B[...] ----
@@ -633,42 +708,60 @@ passes::LibNodeExpander::ExpandOutcome MatMulNaiveExpander::handle_expand(
         const auto j_sym = j_loop.indvar();
         const auto k_sym = k_loop.indvar();
 
-        auto a_idx = build_operand_idx(batch_vars, a_shape, batch_a, i_sym, k_sym);
-        auto b_idx = build_operand_idx(batch_vars, b_shape, batch_b, k_sym, j_sym);
-        auto y_idx = build_y_idx(batch_vars, i_sym, j_sym);
+        auto a_idx = linear(node.layout_a(), build_operand_idx(batch_vars, a_shape, batch_a, i_sym, k_sym));
+        auto b_idx = linear(node.layout_b(), build_operand_idx(batch_vars, b_shape, batch_b, k_sym, j_sym));
+        auto y_idx = linear(node.layout_y(), build_y_idx(batch_vars, i_sym, j_sym));
 
         auto& a_node = standalone->add_indirect_read_access(code_block, MatMulNode::A_INPUT_IDX);
         auto& b_node = standalone->add_indirect_read_access(code_block, MatMulNode::B_INPUT_IDX);
         auto& y_in = standalone->add_indirect_read_access(code_block, MatMulNode::Y_INPUT_IDX);
         auto& y_out = standalone->add_indirect_write_access(code_block, MatMulNode::Y_INPUT_IDX);
 
+        // An operand of another type than the accumulator is converted first: the backend multiplies in the
+        // operands' types, so e.g. Float inputs overflow even though they accumulate in Double.
+        struct Factor {
+            data_flow::AccessNode* node;
+            data_flow::Subset subset;
+            const types::IType* type;
+        };
+        auto factor = [&](data_flow::AccessNode& node,
+                          const data_flow::Subset& subset,
+                          const types::Pointer& pointer,
+                          const data_flow::Memlet& edge) -> Factor {
+            if (pointer.pointee_type().primitive_type() == y_prim) {
+                return {&node, subset, &pointer};
+            }
+            auto& convert =
+                builder.add_tasklet(code_block, data_flow::TaskletCode::assign, "_out", {"_in"}, block.debug_info());
+            builder.add_computational_memlet(code_block, node, convert, "_in", subset, pointer, edge.debug_info());
+            std::string converted = builder.find_new_name("_operand");
+            builder.add_container(converted, compute_scalar);
+            auto& converted_node = builder.add_access(code_block, converted, block.debug_info());
+            builder.add_computational_memlet(
+                code_block, convert, "_out", converted_node, {}, compute_scalar, block.debug_info()
+            );
+            return {&converted_node, {}, &compute_scalar};
+        };
+        auto a = factor(a_node, a_idx, a_pointer, *iedge_a);
+        auto b = factor(b_node, b_idx, b_pointer, *iedge_b);
+
         if (fp) {
             // Single fused multiply-add: Y[...] = A[...] * B[...] + Y[...].
             auto& fma =
                 builder.add_tasklet(code_block, data_flow::fp_fma, "_out", {"_in1", "_in2", "_in3"}, block.debug_info());
-            builder.add_computational_memlet(
-                code_block, a_node, fma, "_in1", a_idx, iedge_a->base_type(), iedge_a->debug_info()
-            );
-            builder.add_computational_memlet(
-                code_block, b_node, fma, "_in2", b_idx, iedge_b->base_type(), iedge_b->debug_info()
-            );
-            builder.add_computational_memlet(
-                code_block, y_in, fma, "_in3", y_idx, iedge_y->base_type(), iedge_y->debug_info()
-            );
-            builder.add_computational_memlet(
-                code_block, fma, "_out", y_out, y_idx, iedge_y->base_type(), iedge_y->debug_info()
-            );
+            builder.add_computational_memlet(code_block, *a.node, fma, "_in1", a.subset, *a.type, iedge_a->debug_info());
+            builder.add_computational_memlet(code_block, *b.node, fma, "_in2", b.subset, *b.type, iedge_b->debug_info());
+            builder.add_computational_memlet(code_block, y_in, fma, "_in3", y_idx, y_pointer, iedge_y->debug_info());
+            builder.add_computational_memlet(code_block, fma, "_out", y_out, y_idx, y_pointer, iedge_y->debug_info());
         } else {
             // Integer path (no integer FMA): prod = A * B; Y = prod + Y.
             auto& mul_t = builder.add_tasklet(
                 code_block, data_flow::TaskletCode::int_mul, "_out", {"_in1", "_in2"}, block.debug_info()
             );
-            builder.add_computational_memlet(
-                code_block, a_node, mul_t, "_in1", a_idx, iedge_a->base_type(), iedge_a->debug_info()
-            );
-            builder.add_computational_memlet(
-                code_block, b_node, mul_t, "_in2", b_idx, iedge_b->base_type(), iedge_b->debug_info()
-            );
+            builder
+                .add_computational_memlet(code_block, *a.node, mul_t, "_in1", a.subset, *a.type, iedge_a->debug_info());
+            builder
+                .add_computational_memlet(code_block, *b.node, mul_t, "_in2", b.subset, *b.type, iedge_b->debug_info());
 
             std::string prod = builder.find_new_name("_prod");
             builder.add_container(prod, compute_scalar);
@@ -681,12 +774,8 @@ passes::LibNodeExpander::ExpandOutcome MatMulNaiveExpander::handle_expand(
             );
             builder
                 .add_computational_memlet(code_block, prod_node, add_t, "_in1", {}, compute_scalar, block.debug_info());
-            builder.add_computational_memlet(
-                code_block, y_in, add_t, "_in2", y_idx, iedge_y->base_type(), iedge_y->debug_info()
-            );
-            builder.add_computational_memlet(
-                code_block, add_t, "_out", y_out, y_idx, iedge_y->base_type(), iedge_y->debug_info()
-            );
+            builder.add_computational_memlet(code_block, y_in, add_t, "_in2", y_idx, y_pointer, iedge_y->debug_info());
+            builder.add_computational_memlet(code_block, add_t, "_out", y_out, y_idx, y_pointer, iedge_y->debug_info());
         }
     }
 
