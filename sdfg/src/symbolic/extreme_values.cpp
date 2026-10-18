@@ -448,6 +448,12 @@ Interval BoundAnalysis::visit_function(const SymEngine::RCP<const SymEngine::Fun
 
         auto lhs_iv = visit(lhs, depth + 1);
 
+        // One dividend, such as a parameter, has one remainder.
+        if (lhs_iv.has_lower() && lhs_iv.has_upper() && symbolic::eq(lhs_iv.lower, lhs_iv.upper)) {
+            auto remainder = symbolic::mod(lhs_iv.lower, rhs);
+            return {remainder, remainder};
+        }
+
         // Exact for literal bounds with a common quotient: the remainder is then lhs - rhs*q, increasing in lhs.
         if (lhs_iv.has_lower() && lhs_iv.has_upper() && SymEngine::is_a<SymEngine::Integer>(*lhs_iv.lower) &&
             SymEngine::is_a<SymEngine::Integer>(*lhs_iv.upper)) {

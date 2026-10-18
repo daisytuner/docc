@@ -526,6 +526,15 @@ TEST(ExtremeValuesTest, IMod_Integral_reduced) {
 
 // ===== One-sided (non-negative dividend, no upper bound) idiv/imod =====
 
+TEST(ExtremeValuesTest, IMod_OfAParameterIsExact) {
+    // c is a parameter, so c % 2 is one value: 128 * (c % 2) spans no range, as 128 * (c / 2) does not either.
+    auto c = symbolic::symbol("c");
+    auto expr = symbolic::mul(symbolic::integer(128), symbolic::mod(c, symbolic::integer(2)));
+    symbolic::Assumptions assums;
+    EXPECT_TRUE(symbolic::eq(symbolic::minimum(expr, {c}, assums, false), expr));
+    EXPECT_TRUE(symbolic::eq(symbolic::maximum(expr, {c}, assums, false), expr));
+}
+
 TEST(ExtremeValuesTest, IDiv_LowerBoundOnly_NonNegative) {
     // a in [0, inf): idiv is monotonic in the numerator, so the lower bound passes
     // through and the upper stays unknown (rather than failing outright).
