@@ -22,7 +22,8 @@ int64_t exact_int32_reduction(int64_t magnitude);
 bool is_contraction(const data_flow::LibraryNode& node);
 
 /// Why @p node cannot be computed by a low-precision contraction with a reduction of at most @p max_k; empty if it can.
-std::string unsupported_contraction(const data_flow::LibraryNode& node, int64_t max_k);
+/// A MatMul may repeat over batch dimensions only if @p batched.
+std::string unsupported_contraction(const data_flow::LibraryNode& node, int64_t max_k, bool batched = false);
 
 /// K of a contraction, null if @p node is none.
 symbolic::Expression contraction_k(const data_flow::LibraryNode& node);
@@ -36,7 +37,21 @@ types::PrimitiveType contraction_type(const data_flow::LibraryNode& node);
 /// The smallest positive normal value of @p type.
 double smallest_normal(types::PrimitiveType type);
 
-/// Reads A and B and writes the result of a contraction under expansion, as matrices indexed [row, column].
+/// The matrices a batched contraction repeats over: its batch dimensions, outermost first; none for one matrix.
+struct Batch {
+    symbolic::MultiExpression extents;
+
+    /// The number of matrices.
+    symbolic::Expression count() const;
+    /// The position of the matrix at @p entry, its index over the batch dimensions, in row-major order.
+    symbolic::Expression position(const symbolic::MultiExpression& entry) const;
+    /// Maps over the batch dimensions in @p scope, outermost first: the innermost body and the entry it is at.
+    std::pair<structured_control_flow::Sequence*, symbolic::MultiExpression>
+    maps(KernelBuilder& kb, structured_control_flow::Sequence& scope) const;
+};
+
+/// Reads A and B and writes the result of a contraction under expansion, as matrices indexed [row, column] of the
+/// batch entry `entry` (none for one matrix).
 class ContractionOperands {
 public:
     virtual ~ContractionOperands() = default;
@@ -45,24 +60,36 @@ public:
     types::PrimitiveType element;
     /// Whether A (m x k) or B (k x n) is stored transposed, its rows along its columns' elements.
     bool a_transposed = false, b_transposed = false;
+    Batch batch;
 
-    virtual KernelValue a(BlockBuilder& block, const symbolic::Expression& row, const symbolic::Expression& column) = 0;
-    virtual KernelValue b(BlockBuilder& block, const symbolic::Expression& row, const symbolic::Expression& column) = 0;
+    virtual KernelValue
+    a(BlockBuilder& block,
+      const symbolic::MultiExpression& entry,
+      const symbolic::Expression& row,
+      const symbolic::Expression& column) = 0;
+    virtual KernelValue
+    b(BlockBuilder& block,
+      const symbolic::MultiExpression& entry,
+      const symbolic::Expression& row,
+      const symbolic::Expression& column) = 0;
 
     /// Stores the product @p value of A and B at [row, column], e.g. as `alpha value + beta C` for a GEMM, computed in
     /// the type of @p value.
     virtual void store(
         BlockBuilder& block,
         const KernelValue& value,
+        const symbolic::MultiExpression& entry,
         const symbolic::Expression& row,
         const symbolic::Expression& column
     ) = 0;
 };
 
-using MatrixRead = std::function<KernelValue(BlockBuilder&, const symbolic::Expression&, const symbolic::Expression&)>;
+/// X(o, i) of the batch entry `entry` of a matrix.
+using MatrixRead = std::function<
+    KernelValue(BlockBuilder&, const symbolic::MultiExpression&, const symbolic::Expression&, const symbolic::Expression&)>;
 
 /// `S[o] = max(max_i |X(o, i)|, tiny)` in @p type over @p outer x @p inner, where @p read gives X(o, i), as a map over
-/// o around a Max reduction over i.
+/// o around a Max reduction over i; per matrix of @p batch, the results of each after those of the one before.
 std::string absmax(
     KernelBuilder& kb,
     const std::string& prefix,
@@ -70,18 +97,21 @@ std::string absmax(
     const symbolic::Expression& outer,
     const symbolic::Expression& inner,
     double tiny,
-    types::PrimitiveType type
+    types::PrimitiveType type,
+    const Batch& batch = {}
 );
 
 /// Powers of two around the magnitudes @p magnitudes, in @p type: the exponents `E[o] = floor(log2(magnitudes[o])) +
 /// 1`, so that `|x| < 2^E[o]` for every |x| <= magnitudes[o], and the inverse powers `I[o] = 2^-E[o]`. Results are
-/// rescaled through the exponents, as scale_by_power_of_two(), since 2^E[o] itself may overflow.
+/// rescaled through the exponents, as scale_by_power_of_two(), since 2^E[o] itself may overflow. @p count magnitudes
+/// per matrix of @p batch.
 std::pair<std::string, std::string> power_of_two_scales(
     KernelBuilder& kb,
     const std::string& prefix,
     const std::string& magnitudes,
     const symbolic::Expression& count,
-    types::PrimitiveType type
+    types::PrimitiveType type,
+    const Batch& batch = {}
 );
 
 /// `value * 2^exponent` in @p type, finite whenever the result is representable.
@@ -93,7 +123,8 @@ KernelValue scale_by_power_of_two(
 KernelValue symmetric_mod(BlockBuilder& block, const KernelValue& value, int64_t modulus, types::PrimitiveType type);
 
 /// `P = A @ B` for the Int8 buffers A[m, k] and B[k, n] into the row-major Int32 buffer P[m, n], as a MatMul node. A
-/// or B is stored transposed if @p a_transposed or @p b_transposed.
+/// or B is stored transposed if @p a_transposed or @p b_transposed. Per matrix of @p batch, each buffer holds one
+/// matrix after the other.
 void int8_matmul(
     KernelBuilder& kb,
     const std::string& a,
@@ -103,7 +134,8 @@ void int8_matmul(
     const symbolic::Expression& n,
     const symbolic::Expression& k,
     bool a_transposed = false,
-    bool b_transposed = false
+    bool b_transposed = false,
+    const Batch& batch = {}
 );
 
 /// The MatMul or GEMM node a transformation description refers to as its subgraph node "0".

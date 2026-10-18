@@ -35,8 +35,8 @@ enum class Rescaling {
  * The scales are computed at run time, so the result changes with every rounding of A and B: about 1% relative error
  * for 8 bits. The Int8 matmul stays a library node for the target to map, e.g. onto integer matrix units.
  *
- * Applies to a 2-D Float or Double MatMul, or a row-major GEMM (whose alpha and beta it applies to the result), with a
- * constant K small enough for exact Int32 accumulation.
+ * Applies to a Float or Double MatMul, also one repeating over batch dimensions with scales per matrix, or a row-major
+ * GEMM (whose alpha and beta it applies to the result), with a constant K small enough for exact Int32 accumulation.
  */
 class QuantizeContraction : public transformations::Transformation {
 private:
