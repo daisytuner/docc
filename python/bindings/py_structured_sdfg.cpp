@@ -222,8 +222,15 @@ void PyStructuredSDFG::expand(const docc::target::TargetOptions& options) {
 
     // Before the targets map matmuls, e.g. to BLAS; they map the Int8 matmuls the emulation leaves instead.
     if (options.contraction_precision != "native") {
-        sdfg::fp_math::ContractionPrecisionPass
-            contraction_precision_pass(sdfg::fp_math::ContractionPrecision::parse(options.contraction_precision));
+        auto precision = sdfg::fp_math::ContractionPrecision::parse(options.contraction_precision);
+        if (auto* target = docc_context_.get_target_handler(options.target);
+            target && target->safe_get_direct_contraction_rescaling()) {
+            precision.rescaling = sdfg::fp_math::Rescaling::Direct;
+            if (precision.kind == sdfg::fp_math::ContractionPrecision::Kind::Ozaki) {
+                precision.variant = sdfg::fp_math::OzakiVariant::Slicing;
+            }
+        }
+        sdfg::fp_math::ContractionPrecisionPass contraction_precision_pass(precision);
         contraction_precision_pass.run(builder_opt, analysis_manager);
     }
 

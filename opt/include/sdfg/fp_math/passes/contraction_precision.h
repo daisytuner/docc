@@ -28,6 +28,9 @@ struct ContractionPrecision {
     OzakiVariant variant = OzakiVariant::Modular;
     /// Bits for Quantize, slices or moduli for Ozaki; 0 picks the default.
     int parameter = 0;
+    /// How the transformations apply the scales; not part of the spec, but chosen by the target, as Direct for
+    /// targets without Double, floor or exact powers of two (Ozaki then slices).
+    Rescaling rescaling = Rescaling::Exponents;
 
     /// @throws std::invalid_argument for a malformed spec
     static ContractionPrecision parse(const std::string& spec);

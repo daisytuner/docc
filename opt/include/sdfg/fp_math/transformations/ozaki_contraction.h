@@ -7,6 +7,7 @@
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/library_node.h"
+#include "sdfg/fp_math/transformations/quantize_contraction.h"
 #include "sdfg/transformations/transformation.h"
 
 namespace sdfg {
@@ -34,17 +35,29 @@ enum class OzakiVariant {
  *   modulo `P = prod m_l` as long as `K 2^2q < P / 2`. Each modulus takes one product of the Int8 residues; Garner's
  *   algorithm turns the residues of the result into mixed-radix digits, which are summed in Double.
  *
+ * Both run in Double, the scales applied through their exponents (Rescaling::Exponents). With
+ * Rescaling::Direct, slicing instead runs in the contraction's own type with nothing beyond the arithmetic
+ * QuantizeContraction's direct rescaling needs, for targets without Double, floor or exact powers of two: with
+ * `q = 2^7 - 1`, `s` the largest magnitude of a row of A (or column of B) and `r_1 = q x / s`, the slices are
+ * `d_t = rint(r_t)` and `r_{t+1} = 2q (r_t - d_t)`, each in [-q, q], so `x = (s / q) sum_t (2q)^(1-t) d_t` up to the
+ * last remainder, and `Y = (s_A[i] / q) (s_B[j] / q) sum_{t+u <= s+1} (2q)^(2-t-u) (A_t @ B_u)`. Each slice is computed
+ * by a nest of its own that reads the slices before it back from memory, as a target needs that rounds only when it
+ * stores Int8. Its accuracy is that of the contraction's type, and it applies to batched MatMuls too, with scales per
+ * matrix.
+ *
  * Accuracy is relative to the magnitudes of each row of A and column of B: elements much smaller than their row's
  * largest lose bits, as in all Ozaki schemes. The Int8 matmuls stay library nodes for the target to map.
  *
  * Applies to a 2-D Float or Double MatMul, or a row-major GEMM (whose alpha and beta it applies to the result), with a
- * constant K small enough for exact Int32 accumulation.
+ * constant K small enough for exact Int32 accumulation; with direct rescaling, slicing only, also to a MatMul that
+ * repeats over batch dimensions.
  */
 class OzakiContraction : public transformations::Transformation {
 private:
     data_flow::LibraryNode& node_;
     OzakiVariant variant_;
     int splits_;
+    Rescaling rescaling_;
 
 public:
     static constexpr int MAX_SLICES = 10;
@@ -55,8 +68,14 @@ public:
 
     /**
      * @param splits slices (Slicing) or moduli (Modular); 0 picks as many as the output precision needs
+     * @param rescaling Direct computes the slices and the result in the contraction's own type; Slicing only
      */
-    explicit OzakiContraction(data_flow::LibraryNode& node, OzakiVariant variant = OzakiVariant::Modular, int splits = 0);
+    explicit OzakiContraction(
+        data_flow::LibraryNode& node,
+        OzakiVariant variant = OzakiVariant::Modular,
+        int splits = 0,
+        Rescaling rescaling = Rescaling::Exponents
+    );
 
     virtual std::string name() const override;
 
@@ -71,6 +90,10 @@ public:
 
     OzakiVariant variant() const {
         return variant_;
+    }
+
+    Rescaling rescaling() const {
+        return rescaling_;
     }
 
     /// The slices or moduli the transformation uses for @p node, resolving 0 to the default.

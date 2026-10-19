@@ -1370,6 +1370,16 @@ PYBIND11_MODULE(_sdfg, m) {
         "Get native pointer to the global plugin context"
     );
 
+    m.def(
+        "target_default_contraction_precision",
+        [](const std::string& target) -> std::string {
+            auto* handler = docc_context.get_target_handler(target);
+            return handler ? handler->safe_get_default_contraction_precision() : "native";
+        },
+        py::arg("target"),
+        "How Float and Double matmuls compute for the target when no contraction_precision is selected"
+    );
+
     // Statistics
     m.def(
         "_enable_statistics",

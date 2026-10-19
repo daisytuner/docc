@@ -104,10 +104,11 @@ bool ContractionPrecisionPass::
                 bool done = false;
                 try {
                     if (precision_.kind == ContractionPrecision::Kind::Quantize) {
-                        QuantizeContraction transformation(*node, precision_.parameter);
+                        QuantizeContraction transformation(*node, precision_.parameter, precision_.rescaling);
                         done = transformation.try_apply(builder, analysis_manager);
                     } else {
-                        OzakiContraction transformation(*node, precision_.variant, precision_.parameter);
+                        OzakiContraction
+                            transformation(*node, precision_.variant, precision_.parameter, precision_.rescaling);
                         done = transformation.try_apply(builder, analysis_manager);
                     }
                 } catch (const transformations::InvalidTransformationException&) {
