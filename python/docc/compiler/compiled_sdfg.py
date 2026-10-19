@@ -268,6 +268,26 @@ _CTYPES_MAP = {
 }
 
 
+def torch_tensor_to_numpy(tensor) -> np.ndarray:
+    """Helper method to convert a torch.tensor to an numpy.ndarray that supports ml_dtypes"""
+    import torch
+
+    if tensor.dtype == torch.bfloat16:
+        return tensor.view(dtype=torch.uint16).numpy().view(dtype=ml_dtypes.bfloat16)
+    else:
+        return tensor.numpy()
+
+
+def numpy_to_torch_tensor(array: np.ndarray):
+    """Helper method to convert an numpy.ndarray to a torch.tensor that supports ml_dtypes"""
+    import torch
+
+    if array.dtype == ml_dtypes.bfloat16:
+        return torch.from_numpy(array.view(dtype=np.uint16)).view(dtype=torch.bfloat16)
+    else:
+        return torch.from_numpy(array)
+
+
 class CompiledSDFG:
     def __init__(
         self,
@@ -702,7 +722,7 @@ class CompiledSDFG:
         host = arg
         # Convert a CPU torch tensor to numpy first; cupy.asarray handles numpy.
         if hasattr(host, "detach") and hasattr(host, "numpy"):
-            host = host.detach().numpy()
+            host = torch_tensor_to_numpy(host.detach())
         device_arg = cupy.asarray(host)
         keepalive.append(device_arg)
         writebacks.append((arg, device_arg))
@@ -803,10 +823,8 @@ class CompiledSDFG:
             if isinstance(host_arg, np.ndarray):
                 np.copyto(host_arg, host_view.reshape(host_arg.shape))
             elif hasattr(host_arg, "copy_"):  # torch CPU tensor
-                import torch
-
                 host_arg.copy_(
-                    torch.from_numpy(host_view.reshape(tuple(host_arg.shape)))
+                    numpy_to_torch_tensor(host_view.reshape(tuple(host_arg.shape)))
                 )
 
         # 4. Process returns using pre-sorted order
@@ -904,7 +922,11 @@ class CompiledSDFG:
 
         if mode == _CALL_MODE_TORCH_CPU:
             args = tuple(
-                a.detach().cpu().contiguous().numpy() if _is_torch_tensor(a) else a
+                (
+                    torch_tensor_to_numpy(a.detach().cpu().contiguous())
+                    if _is_torch_tensor(a)
+                    else a
+                )
                 for a in args
             )
         return self._call_host(*args)

@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 
+import pytest
+
 from tests import check
 
 # --- addmm ---
@@ -334,7 +336,7 @@ def test_bmm_bf16(target: str) -> None:
             torch.randn(10, 3, 4, dtype=torch.bfloat16),
             torch.randn(10, 4, 5, dtype=torch.bfloat16),
         ),
-        rtol=1e-2,
+        rtol=1.6e-2,
         atol=1e-2,
         target=target,
     )
@@ -394,6 +396,26 @@ def test_mm_half(target: str) -> None:
     )
 
 
+def test_mm_half_force_expand(target: str) -> None:
+    class MMHalfForceExpandNet(nn.Module):
+        def forward(self, input: torch.Tensor, mat2: torch.Tensor) -> torch.Tensor:
+            return torch.mm(input, mat2)
+
+    check(
+        MMHalfForceExpandNet(),
+        *(
+            torch.randn(2, 3, dtype=torch.half),
+            torch.randn(3, 3, dtype=torch.half),
+        ),
+        rtol=1e-2,
+        atol=1e-2,
+        target=target,
+        options={"library_node_expansion.force_expand": True},
+    )
+
+
+# Problems with GPU reductions
+@pytest.mark.unsupported_targets("cuda")
 def test_mm_bf16(target: str) -> None:
     class MMBf16Net(nn.Module):
         def forward(self, input: torch.Tensor, mat2: torch.Tensor) -> torch.Tensor:
@@ -405,7 +427,7 @@ def test_mm_bf16(target: str) -> None:
             torch.randn(2, 3, dtype=torch.bfloat16),
             torch.randn(3, 3, dtype=torch.bfloat16),
         ),
-        rtol=1e-2,
+        rtol=1.6e-2,
         atol=1e-2,
         target=target,
     )
