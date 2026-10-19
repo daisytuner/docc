@@ -29,7 +29,7 @@ struct TargetOptions {
 };
 
 struct DoccTarget {
-    static constexpr int NEWEST_API_VER = 2;
+    static constexpr int NEWEST_API_VER = 3;
 
     int api_ver = NEWEST_API_VER;
     std::string short_name;
@@ -92,6 +92,22 @@ struct DoccTarget {
         } else {
             return {};
         }
+    }
+
+    /// How Float and Double matmuls compute when the user selects nothing, as TargetOptions::contraction_precision
+    /// spells it, e.g. an Ozaki emulation for a target that multiplies only integers.
+    std::string default_contraction_precision = "native";
+
+    [[nodiscard]] std::string safe_get_default_contraction_precision() const {
+        return api_ver >= 3 ? default_contraction_precision : "native";
+    }
+
+    /// Whether quantized and Ozaki contractions multiply by their scales and compute in the contraction's own type, as
+    /// a target without Double, floor or exact powers of two needs (fp_math::Rescaling::Direct); Ozaki then slices.
+    bool direct_contraction_rescaling = false;
+
+    [[nodiscard]] bool safe_get_direct_contraction_rescaling() const {
+        return api_ver >= 3 && direct_contraction_rescaling;
     }
 };
 

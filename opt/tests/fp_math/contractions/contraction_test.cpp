@@ -12,6 +12,7 @@
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/library_nodes/math/blas/gemm_node.h"
 #include "sdfg/data_flow/library_nodes/math/cmath/cmath_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/copy_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/matmul_node.h"
 #include "sdfg/fp_math/passes/contraction_precision.h"
 #include "sdfg/fp_math/transformations/ozaki_contraction.h"
@@ -20,6 +21,7 @@
 #include "sdfg/transformations/transformation_registry.h"
 #include "sdfg/types/pointer.h"
 #include "sdfg/types/scalar.h"
+#include "sdfg/visitor/for_each.h"
 
 using namespace sdfg;
 using math::tensor::MatMulNode;
@@ -281,7 +283,11 @@ constexpr int64_t H = 3;
 /// Largest error of the quantized Y[h] = A[h] @ B[h] over H matrices relative to sum_k |A[h, i, k] B[h, k, j]|, where
 /// matrix h of A is scaled by 2^(20 h), so that scales shared across the batch would lose the smaller ones. B is stored
 /// transposed per matrix, as the keys of attention scores are, or is one matrix all of them share if @p shared_b.
-double batched_relative_error(fp_math::Rescaling rescaling, bool shared_b) {
+double batched_relative_error(
+    const std::function<void(data_flow::LibraryNode&, builder::StructuredSDFGBuilder&)>& transform,
+    bool shared_b,
+    size_t int8_matmuls = 1
+) {
     builder::StructuredSDFGBuilder builder(shared_b ? "quantize_broadcast" : "quantize_batched", FunctionType_CPU);
     types::Pointer pointer{types::Scalar(PrimitiveType::Float)};
     for (auto name : {"a", "b", "y"}) {
@@ -302,13 +308,13 @@ double batched_relative_error(fp_math::Rescaling rescaling, bool shared_b) {
     builder.add_computational_memlet(block, builder.add_access(block, "a"), matmul, "A", {}, pointer);
     builder.add_computational_memlet(block, builder.add_access(block, "b"), matmul, "B", {}, pointer);
     builder.add_computational_memlet(block, builder.add_access(block, "y"), matmul, "Y", {}, pointer);
-    applying<fp_math::QuantizeContraction>(8, rescaling)(matmul, builder);
+    transform(matmul, builder);
 
     auto found = matmuls(builder.subject().root());
-    EXPECT_EQ(found.size(), 1);
-    if (found.size() == 1) {
-        EXPECT_EQ(found.front()->layout_a().dims(), 3);
-        EXPECT_EQ(found.front()->layout_b().dims(), 3);
+    EXPECT_EQ(found.size(), int8_matmuls);
+    for (auto* int8 : found) {
+        EXPECT_EQ(int8->layout_a().dims(), 3);
+        EXPECT_EQ(int8->layout_b().dims(), 3);
     }
     auto function = reinterpret_cast<void (*)(float*, float*, float*)>(test::compile_and_load(builder));
 
@@ -357,12 +363,12 @@ double batched_relative_error(fp_math::Rescaling rescaling, bool shared_b) {
 
 TEST(QuantizeContractionTest, Batched_ScalesEachMatrix) {
     for (auto rescaling : {fp_math::Rescaling::Exponents, fp_math::Rescaling::Direct}) {
-        EXPECT_LT(batched_relative_error(rescaling, false), 1e-2);
+        EXPECT_LT(batched_relative_error(applying<fp_math::QuantizeContraction>(8, rescaling), false), 1e-2);
     }
 }
 
 TEST(QuantizeContractionTest, Batched_BroadcastsASharedOperand) {
-    EXPECT_LT(batched_relative_error(fp_math::Rescaling::Direct, true), 1e-2);
+    EXPECT_LT(batched_relative_error(applying<fp_math::QuantizeContraction>(8, fp_math::Rescaling::Direct), true), 1e-2);
 }
 
 TEST(OzakiContractionTest, RejectsBatchedMatMuls) {
@@ -480,12 +486,84 @@ TEST(OzakiContractionTest, JsonRoundTrip) {
     builder::StructuredSDFGBuilder builder("ozaki_json", FunctionType_CPU);
     auto& matmul =
         add_matmul(builder, PrimitiveType::Double, symbolic::integer(M), symbolic::integer(N), symbolic::integer(K));
-    for (auto variant : {fp_math::OzakiVariant::Slicing, fp_math::OzakiVariant::Modular}) {
+    for (auto [variant, rescaling] :
+         {std::pair{fp_math::OzakiVariant::Slicing, fp_math::Rescaling::Exponents},
+          std::pair{fp_math::OzakiVariant::Modular, fp_math::Rescaling::Exponents},
+          std::pair{fp_math::OzakiVariant::Slicing, fp_math::Rescaling::Direct}}) {
         nlohmann::json description;
-        fp_math::OzakiContraction(matmul, variant, 3).to_json(description);
+        fp_math::OzakiContraction(matmul, variant, 3, rescaling).to_json(description);
         std::string error;
         EXPECT_TRUE(transformations::verify_transformation_round_trip(builder, description, error)) << error;
     }
+}
+
+namespace {
+
+auto ozaki_direct(int slices) {
+    return applying<fp_math::OzakiContraction>(fp_math::OzakiVariant::Slicing, slices, fp_math::Rescaling::Direct);
+}
+
+} // namespace
+
+TEST(OzakiContractionTest, Direct_SlicesInTheContractionsTypeByRounding) {
+    // For units without Double, floor or exact powers of two: rint, the absolute maxima's fabs and fmax, and
+    // multiplications only, and s(s+1)/2 Int8 matmuls.
+    builder::StructuredSDFGBuilder builder("ozaki_direct_structure", FunctionType_CPU);
+    auto& matmul =
+        add_matmul(builder, PrimitiveType::Float, symbolic::integer(M), symbolic::integer(N), symbolic::integer(K));
+    ozaki_direct(2)(matmul, builder);
+
+    auto& sdfg = builder.subject();
+    for (auto& name : sdfg.containers()) {
+        EXPECT_NE(sdfg.type(name).primitive_type(), PrimitiveType::Double) << name;
+    }
+    EXPECT_EQ(matmuls(sdfg.root()).size(), 3);
+    std::function<void(structured_control_flow::ControlFlowNode&)> visit =
+        [&](structured_control_flow::ControlFlowNode& node) {
+            if (auto* block = dynamic_cast<structured_control_flow::Block*>(&node)) {
+                for (auto* library_node : block->dataflow().library_nodes()) {
+                    if (auto* cmath = dynamic_cast<math::cmath::CMathNode*>(library_node)) {
+                        using math::cmath::CMathFunction;
+                        auto function = cmath->function();
+                        EXPECT_TRUE(
+                            function == CMathFunction::rint || function == CMathFunction::fabs ||
+                            function == CMathFunction::fmax
+                        ) << cmath->name();
+                    }
+                }
+            } else if (auto* sequence = dynamic_cast<structured_control_flow::Sequence*>(&node)) {
+                for (size_t i = 0; i < sequence->size(); i++) {
+                    visit(sequence->at(i));
+                }
+            } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&node)) {
+                visit(loop->root());
+            }
+        };
+    visit(sdfg.root());
+}
+
+TEST(OzakiContractionTest, Direct_TwoSlicesBetweenInt8AndFloat) {
+    // Two slices keep about 15 bits of each row and column, far beyond int8 quantization, far below Float.
+    auto error = relative_error<float>("ozaki_direct_2", ozaki_direct(2));
+    EXPECT_LT(error, 1e-4);
+    EXPECT_GT(error, 1e-7);
+}
+
+TEST(OzakiContractionTest, Direct_Float_AtFloatPrecision) {
+    EXPECT_LT(relative_error<float>("ozaki_direct_float", ozaki_direct(0)), 1e-6);
+}
+
+TEST(OzakiContractionTest, Direct_Batched_ScalesEachMatrix) {
+    EXPECT_LT(batched_relative_error(ozaki_direct(2), false, 3), 1e-4);
+}
+
+TEST(OzakiContractionTest, Direct_RejectsModular) {
+    builder::StructuredSDFGBuilder builder("ozaki_direct_modular", FunctionType_CPU);
+    auto& matmul =
+        add_matmul(builder, PrimitiveType::Float, symbolic::integer(M), symbolic::integer(N), symbolic::integer(K));
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    fp_math::OzakiContraction modular(matmul, fp_math::OzakiVariant::Modular, 0, fp_math::Rescaling::Direct);
+    EXPECT_FALSE(modular.can_be_applied(builder, analysis_manager));
 }
 
 namespace {
@@ -609,6 +687,33 @@ TEST(QuantizeContractionTest, Gemm_QuantizesInStorageOrder) {
     EXPECT_EQ(layout_b.is_2d_col_or_row_major(), math::tensor::TensorLayout::LAYOUT_COL_MAJOR);
     EXPECT_TRUE(symbolic::eq(layout_b.get_stride(1), symbolic::integer(K)));
     EXPECT_EQ(found.front()->layout_a().is_2d_col_or_row_major(), math::tensor::TensorLayout::LAYOUT_ROW_MAJOR);
+}
+
+TEST(OzakiContractionTest, Gemm_DirectTransposed) {
+    EXPECT_LT(gemm_relative_error("ozaki_gemm_direct", 2.0, 0.5, ozaki_direct(2)), 1e-4);
+}
+
+TEST(ContractionTest, Direct_ReadsRowMajorCopyOfTransposedB) {
+    // B is stored transposed (b[N, K]): a TensorCopy makes it row-major first, so that the scales of its columns
+    // reduce along rows and every Int8 matmul takes B row-major.
+    for (auto transform : {applying<fp_math::QuantizeContraction>(8, fp_math::Rescaling::Direct), ozaki_direct(2)}) {
+        builder::StructuredSDFGBuilder builder("direct_row_major_b", FunctionType_CPU);
+        auto& gemm = add_gemm(builder, "1.0", "0.0");
+        transform(gemm, builder);
+
+        int copies = 0;
+        visitor::for_each_block(builder.subject().root(), [&](structured_control_flow::Block& block) {
+            for (auto* node : block.dataflow().library_nodes()) {
+                copies += dynamic_cast<math::tensor::TensorCopyNode*>(node) != nullptr;
+            }
+        });
+        EXPECT_EQ(copies, 1);
+        auto found = matmuls(builder.subject().root());
+        ASSERT_FALSE(found.empty());
+        for (auto* matmul : found) {
+            EXPECT_EQ(matmul->layout_b().is_2d_col_or_row_major(), math::tensor::TensorLayout::LAYOUT_ROW_MAJOR);
+        }
+    }
 }
 
 TEST(ContractionPrecisionTest, Parse) {

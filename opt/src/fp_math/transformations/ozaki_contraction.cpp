@@ -2,11 +2,13 @@
 
 #include <cmath>
 #include <functional>
+#include <optional>
 #include <tuple>
 
 #include <nlohmann/json.hpp>
 
 #include "../contractions/contraction_kernels.h"
+#include "sdfg/fp_math/contractions/row_major_operand.h"
 
 namespace sdfg {
 namespace fp_math {
@@ -49,8 +51,8 @@ const std::vector<int64_t>& OzakiContraction::moduli() {
     return primes;
 }
 
-OzakiContraction::OzakiContraction(data_flow::LibraryNode& node, OzakiVariant variant, int splits)
-    : node_(node), variant_(variant), splits_(splits) {
+OzakiContraction::OzakiContraction(data_flow::LibraryNode& node, OzakiVariant variant, int splits, Rescaling rescaling)
+    : node_(node), variant_(variant), splits_(splits), rescaling_(rescaling) {
 }
 
 std::string OzakiContraction::name() const {
@@ -94,8 +96,12 @@ int OzakiContraction::matmuls() const {
 }
 
 bool OzakiContraction::can_be_applied(builder::StructuredSDFGBuilder&, analysis::AnalysisManager&) {
+    bool direct = rescaling_ == Rescaling::Direct;
+    if (direct && variant_ != OzakiVariant::Slicing) {
+        return false;
+    }
     int64_t magnitude = variant_ == OzakiVariant::Slicing ? (1 << SLICE_BITS) - 1 : (moduli().front() - 1) / 2;
-    if (!detail::unsupported_contraction(node_, detail::exact_int32_reduction(magnitude)).empty()) {
+    if (!detail::unsupported_contraction(node_, detail::exact_int32_reduction(magnitude), direct).empty()) {
         return false;
     }
     auto splits = effective_splits();
@@ -321,13 +327,132 @@ void build_modular(KernelBuilder& kb, detail::ContractionOperands& operands, int
     );
 }
 
+/// Slicing with direct rescaling, in the contraction's own type; see OzakiContraction.
+void build_slicing_direct(KernelBuilder& kb, detail::ContractionOperands& operands, int slices) {
+    auto m = operands.m, n = operands.n, k = operands.k;
+    // Each matrix of a batch gets scales of its own; every buffer holds one matrix after the other.
+    auto& batch = operands.batch;
+    auto type = operands.element;
+    const double q = (1 << SLICE_BITS) - 1;
+    auto tiny = detail::smallest_normal(type);
+    auto read_a = [&](BlockBuilder& block, auto& entry, auto& row, auto& column) {
+        return operands.a(block, entry, row, column);
+    };
+    auto read_b = [&](BlockBuilder& block, auto& entry, auto& row, auto& column) {
+        return operands.b(block, entry, row, column);
+    };
+    auto read_b_t = [&](BlockBuilder& block, auto& entry, auto& column, auto& row) {
+        return operands.b(block, entry, row, column);
+    };
+    auto scales_a = detail::absmax(kb, "_oz_scale_a", read_a, m, k, tiny, type, batch);
+    auto scales_b = detail::absmax(kb, "_oz_scale_b", read_b_t, n, k, tiny, type, batch);
+
+    // The slices of an operand in its storage order, each from x and the slices before it, read back from memory.
+    auto slice_operand = [&](const std::string& prefix,
+                             const symbolic::Expression& rows,
+                             const symbolic::Expression& columns,
+                             bool transposed,
+                             const detail::MatrixRead& read,
+                             const std::string& scales,
+                             bool per_row) {
+        auto size = symbolic::mul(rows, columns);
+        std::vector<std::string> digits;
+        for (int t = 0; t < slices; t++) {
+            auto digit = kb.buffer(prefix, PrimitiveType::Int8, symbolic::mul(batch.count(), size));
+            auto matrices = batch.maps(kb, kb.scope());
+            auto& entry = matrices.second;
+            auto position = batch.position(entry);
+            auto& outer = kb.map(*matrices.first, "_o", transposed ? columns : rows);
+            auto& inner = kb.map(outer.root(), "_e", transposed ? rows : columns);
+            auto r = transposed ? inner.indvar() : outer.indvar();
+            auto c = transposed ? outer.indvar() : inner.indvar();
+            auto body = kb.block(inner.root());
+            auto scale = symbolic::add(symbolic::mul(position, per_row ? rows : columns), per_row ? r : c);
+            auto index = symbolic::
+                add(symbolic::mul(position, size),
+                    transposed ? symbolic::add(symbolic::mul(c, rows), r)
+                               : symbolic::add(symbolic::mul(r, columns), c));
+            // r_1 = q x / s, dividing first, which never overflows, unlike q / s for small s.
+            auto ratio = body
+                             .op(TaskletCode::fp_div,
+                                 {body.convert(read(body, entry, r, c), type), body.read(scales, {scale})},
+                                 type);
+            auto rest = body.op(TaskletCode::fp_mul, {ratio, body.constant(q, type)}, type);
+            for (auto& previous : digits) {
+                auto difference =
+                    body.op(TaskletCode::fp_sub, {rest, body.convert(body.read(previous, {index}), type)}, type);
+                rest = body.op(TaskletCode::fp_mul, {difference, body.constant(2 * q, type)}, type);
+            }
+            body.store(body.cmath(CMathFunction::rint, {rest}, type), digit, {index});
+            digits.push_back(digit);
+        }
+        return digits;
+    };
+    auto a_slices = slice_operand("_oz_a_slice", m, k, operands.a_transposed, read_a, scales_a, true);
+    auto b_slices = slice_operand("_oz_b_slice", k, n, operands.b_transposed, read_b, scales_b, false);
+
+    // The products of slice pairs (t, u), 1-based, t + u <= s + 1, each with its weight (2q)^(2-t-u); smallest first.
+    auto size = symbolic::mul(batch.count(), symbolic::mul(m, n));
+    std::vector<std::pair<std::string, double>> products;
+    for (int g = slices + 1; g >= 2; g--) {
+        for (int t = std::max(1, g - slices); t <= std::min(slices, g - 1); t++) {
+            auto product = kb.buffer("_oz_p", PrimitiveType::Int32, size);
+            detail::int8_matmul(
+                kb,
+                a_slices.at(t - 1),
+                b_slices.at(g - t - 1),
+                product,
+                m,
+                n,
+                k,
+                operands.a_transposed,
+                operands.b_transposed,
+                batch
+            );
+            products.emplace_back(product, std::pow(2 * q, 2 - g));
+        }
+    }
+
+    auto matrices = batch.maps(kb, kb.scope());
+    auto position = batch.position(matrices.second);
+    auto& rows = kb.map(*matrices.first, "_i", m);
+    auto& columns = kb.map(rows.root(), "_j", n);
+    auto i = rows.indvar(), j = columns.indvar();
+    auto body = kb.block(columns.root());
+    auto at = symbolic::add(symbolic::mul(position, symbolic::mul(m, n)), flat(i, n, j));
+    std::optional<KernelValue> sum;
+    for (auto& [product, weight] : products) {
+        auto value = body.convert(body.read(product, {at}), type);
+        if (weight != 1.0) {
+            value = body.op(TaskletCode::fp_mul, {value, body.constant(weight, type)}, type);
+        }
+        sum = sum ? body.op(TaskletCode::fp_add, {*sum, value}, type) : value;
+    }
+    auto inverse_q = body.constant(1.0 / q, type);
+    auto row_scale = body
+                         .op(TaskletCode::fp_mul,
+                             {body.read(scales_a, {symbolic::add(symbolic::mul(position, m), i)}), inverse_q},
+                             type);
+    auto column_scale = body
+                            .op(TaskletCode::fp_mul,
+                                {body.read(scales_b, {symbolic::add(symbolic::mul(position, n), j)}), inverse_q},
+                                type);
+    auto scaled = body.op(TaskletCode::fp_mul, {*sum, row_scale}, type);
+    operands.store(body, body.op(TaskletCode::fp_mul, {scaled, column_scale}, type), matrices.second, i, j);
+}
+
 } // namespace
 
 void OzakiContraction::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     auto splits = effective_splits();
     auto variant = variant_;
-    detail::expand_contraction(builder, node_, [&](KernelBuilder& kb, detail::ContractionOperands& operands) {
-        if (variant == OzakiVariant::Slicing) {
+    auto direct = rescaling_ == Rescaling::Direct;
+    // Scales of B's columns then reduce along rows, and the slices are row-major, as targets of direct rescaling need.
+    auto& node = direct && b_stored_transposed(node_) ? read_b_row_major(builder, node_).contraction : node_;
+    detail::expand_contraction(builder, node, [&](KernelBuilder& kb, detail::ContractionOperands& operands) {
+        if (direct) {
+            build_slicing_direct(kb, operands, splits);
+        } else if (variant == OzakiVariant::Slicing) {
             build_slicing(kb, operands, splits);
         } else {
             build_modular(kb, operands, splits);
@@ -339,14 +464,20 @@ void OzakiContraction::apply(builder::StructuredSDFGBuilder& builder, analysis::
 void OzakiContraction::to_json(nlohmann::json& j) const {
     j["transformation_type"] = this->name();
     j["subgraph"] = {{"0", {{"element_id", node_.element_id()}, {"type", "library_node"}}}};
-    j["parameters"] = {{"variant", variant_ == OzakiVariant::Slicing ? "slicing" : "modular"}, {"splits", splits_}};
+    j["parameters"] = {
+        {"variant", variant_ == OzakiVariant::Slicing ? "slicing" : "modular"},
+        {"splits", splits_},
+        {"rescaling", rescaling_ == Rescaling::Direct ? "direct" : "exponents"},
+    };
 }
 
 OzakiContraction OzakiContraction::from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& j) {
     auto parameters = j.contains("parameters") ? j["parameters"] : nlohmann::json::object();
     auto variant = parameters.value("variant", std::string("modular")) == "slicing" ? OzakiVariant::Slicing
                                                                                     : OzakiVariant::Modular;
-    return OzakiContraction(detail::contraction_from_json(builder, j), variant, parameters.value("splits", 0));
+    auto rescaling = parameters.value("rescaling", std::string("exponents")) == "direct" ? Rescaling::Direct
+                                                                                         : Rescaling::Exponents;
+    return OzakiContraction(detail::contraction_from_json(builder, j), variant, parameters.value("splits", 0), rescaling);
 }
 
 } // namespace fp_math

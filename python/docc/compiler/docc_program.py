@@ -12,7 +12,13 @@ from dataclasses import dataclass, fields
 from functools import lru_cache
 from typing import Any, Dict, Optional, get_args, get_type_hints
 
-from docc.sdfg import StructuredSDFG, TargetOptions, DoccMetrics, registered_options
+from docc.sdfg import (
+    StructuredSDFG,
+    TargetOptions,
+    DoccMetrics,
+    registered_options,
+    target_default_contraction_precision,
+)
 from docc.sdfg._sdfg import (
     _enable_statistics,
     _statistics_mode_by_env,
@@ -93,10 +99,11 @@ class DoccOptions:
     # Mirrors -ffp-contract=fast: contract a multiplication feeding an addition
     # into a fused multiply-add during simplify. Defaults to True.
     fp_contract: Optional[bool] = None
-    # How Float and Double matmuls compute: "native" (default); "int8" (or int2 ... int7)
+    # How Float and Double matmuls compute: "native" (the default of most targets); "int8" (or int2 ... int7)
     # quantizes them with a scale per row and column, losing accuracy; "ozaki", "ozaki1[:s]"
     # (slices) and "ozaki2[:L]" (moduli) emulate them on exact Int8 matmuls at the native
-    # precision. Pays off only where Int8 matrix units are much faster than the native type.
+    # precision. Pays off only where Int8 matrix units are much faster than the native type. Unset takes
+    # the target's default (DoccTarget::default_contraction_precision).
     contraction_precision: Optional[str] = None
 
     # Frontend: parse array shapes as symbolic sizes (``_s{i}`` arguments) when
@@ -159,7 +166,9 @@ class DoccOptions:
         if self.fp_contract is None:
             self.fp_contract = True
         if self.contraction_precision is None:
-            self.contraction_precision = "native"
+            self.contraction_precision = target_default_contraction_precision(
+                self.target
+            )
         if not _CONTRACTION_PRECISION.fullmatch(self.contraction_precision):
             raise ValueError(
                 f"Invalid contraction_precision {self.contraction_precision!r}: expected native, "
