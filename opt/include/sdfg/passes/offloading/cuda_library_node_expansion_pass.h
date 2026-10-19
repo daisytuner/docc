@@ -9,9 +9,14 @@ namespace passes {
 
 class CudaExpansion : public visitor::NonStoppingStructuredSDFGVisitor {
     PassReportConsumer* report_ = nullptr;
+    bool force_expand_;
 
 public:
-    CudaExpansion(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager);
+    CudaExpansion(
+        builder::StructuredSDFGBuilder& builder,
+        analysis::AnalysisManager& analysis_manager,
+        const Options& options = Options::empty()
+    );
 
     void set_report(PassReportConsumer* report) {
         report_ = report;

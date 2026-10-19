@@ -29,6 +29,19 @@ public:
         return this;
     }
 
+    /**
+     * If this expander dispatches on a single, fixed library node code, expose it here.
+     *
+     * This lets aggregating expanders (e.g. @ref SwitchExpander) build an efficient
+     * code -> expander map and jump straight to the right expander, instead of testing every
+     * expander linearly via @ref for_lib_node.
+     *
+     * @return the matched code, or nullptr if this expander does not dispatch purely by code.
+     */
+    virtual const data_flow::LibraryNodeCode* matched_code() const {
+        return nullptr;
+    }
+
     class AccessNodeExpand {
     public:
         virtual ~AccessNodeExpand() = default;
@@ -180,6 +193,15 @@ class CodeLibNodeExpander : public TypedLibNodeExpander<T> {
 
 public:
     CodeLibNodeExpander(const data_flow::LibraryNodeCode& code) : code_(code) {
+    }
+
+    /// The fixed library node code this expander dispatches on.
+    const data_flow::LibraryNodeCode& code() const {
+        return code_;
+    }
+
+    const data_flow::LibraryNodeCode* matched_code() const override {
+        return &code_;
     }
 
     const LibNodeExpander* for_lib_node(const data_flow::LibraryNode& node) const override {

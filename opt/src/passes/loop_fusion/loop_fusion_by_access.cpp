@@ -358,6 +358,10 @@ std::unique_ptr<LoopFusionByAccessWorker::Plan> LoopFusionByAccessWorker::
     if (!first_map) {
         return {};
     }
+    // Pointers handed to library nodes hide which elements are accessed.
+    if (first.incompatible || first.nested_incompatible || second.incompatible || second.nested_incompatible) {
+        return {};
+    }
     auto state_ptr = std::make_unique<Plan>(*first_map, *second.loop);
     Plan& state = *state_ptr;
 

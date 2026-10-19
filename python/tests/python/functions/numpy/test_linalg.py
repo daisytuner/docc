@@ -46,6 +46,62 @@ def test_matmul_slicing():
     assert np.allclose(res, a[:10, :10] @ b[:10, :10])
 
 
+def test_matmul_transposed_operands_into_temporary():
+    @native
+    def matmul_transposed(a, b):
+        c = a.T @ b.T
+        return c * 2.0
+
+    a = np.random.rand(12, 10)
+    b = np.random.rand(8, 12)
+    res = matmul_transposed(a, b)
+    assert np.allclose(res, (a.T @ b.T) * 2.0)
+
+
+def test_matmul_operand_scaled_by_array():
+    @native
+    def matmul_gated(x, w1, w3, w2):
+        g = x @ w1
+        return ((g / (1 + np.exp(-g))) * (x @ w3)) @ w2
+
+    x = np.random.rand(12, 10)
+    w1 = np.random.rand(10, 8)
+    w3 = np.random.rand(10, 8)
+    w2 = np.random.rand(8, 6)
+    res = matmul_gated(x, w1, w3, w2)
+    g = x @ w1
+    assert np.allclose(res, ((g / (1 + np.exp(-g))) * (x @ w3)) @ w2)
+
+
+def test_matmul_plus_other_array():
+    @native
+    def residual(x, a, w, out):
+        out[:] = x + a @ w
+
+    @native
+    def two_products(a, w, v, out):
+        out[:] = (a @ w) + (a @ v)
+
+    x, a, w, v = (np.random.rand(10, 10) for _ in range(4))
+    out = np.zeros((10, 10))
+    residual(x, a, w, out)
+    assert np.allclose(out, x + a @ w)
+    two_products(a, w, v, out)
+    assert np.allclose(out, a @ w + a @ v)
+
+
+def test_matmul_accumulates_into_scaled_target():
+    @native
+    def accumulate(a, w, out):
+        out[:] = 0.5 * out + a @ w
+
+    a, w = np.random.rand(10, 10), np.random.rand(10, 10)
+    out = np.random.rand(10, 10)
+    expected = 0.5 * out + a @ w
+    accumulate(a, w, out)
+    assert np.allclose(out, expected)
+
+
 def test_matmul_broadcasting():
     # (2, 10, 10) @ (2, 10, 10) -> (2, 10, 10)
     @native

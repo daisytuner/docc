@@ -8,7 +8,6 @@ import time
 import numpy as np
 
 from docc.compiler import CompiledSDFG, DoccProgram, DoccOptions
-from docc.compiler.target_registry import reset_target_registry
 from docc.sdfg import StructuredSDFG, DoccMetrics
 from docc.mlir import MLIRModule
 
@@ -260,7 +259,10 @@ class TorchProgram(DoccProgram):
         # options, so repeated in-process compiles with different
         # instrumentation/arg-capture/remote-tuning do not alias to the first
         # built binary (the on-disk hash already accounts for these options).
-        mem_cache_key = f"{cache_key}|{self.options.capture_args}|{self.options.instrumentation_mode}|{self.options.remote_tuning}"
+        mem_cache_key = (
+            f"{cache_key}|{self.options.capture_args}|{self.options.instrumentation_mode}|"
+            f"{self.options.remote_tuning}|{self.options.fp_contract}|{self.options.contraction_precision}"
+        )
 
         cached_available = mem_cache_key in self.cache
 
@@ -290,7 +292,7 @@ class TorchProgram(DoccProgram):
                 except Exception:
                     pass
 
-            hash_input = f"{self.name}|{self.options.target}|{self.options.category}|{cache_key}|{model_code}|{self.options.capture_args}|{self.options.instrumentation_mode}|{self.options.remote_tuning}|{self.options.approximate_math}".encode(
+            hash_input = f"{self.name}|{self.options.target}|{self.options.category}|{cache_key}|{model_code}|{self.options.capture_args}|{self.options.instrumentation_mode}|{self.options.remote_tuning}|{self.options.approximate_math}|{self.options.fp_contract}|{self.options.contraction_precision}".encode(
                 "utf-8"
             )
             stable_id = hashlib.sha256(hash_input).hexdigest()[:16]

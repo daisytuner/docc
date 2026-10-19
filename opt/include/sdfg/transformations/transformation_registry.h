@@ -12,7 +12,12 @@
 #include <nlohmann/json.hpp>
 
 #include <sdfg/einsum/einsum.h>
+#include <sdfg/fp_math/transformations/fuse_fma.h>
+#include <sdfg/fp_math/transformations/ozaki_contraction.h>
+#include <sdfg/fp_math/transformations/quantize_contraction.h>
+#include <sdfg/fp_math/transformations/unfuse_fma.h>
 #include <sdfg/parallelization/transformations/loop_parallelization.h>
+#include <sdfg/targets/gpu/gpu_mma_einsum_transform.h>
 #include <sdfg/tiles/transformations/local_storage.h>
 #include <sdfg/tiles/transformations/software_pipelining.h>
 #include <sdfg/tiles/transformations/tile_fusion.h>
@@ -25,6 +30,7 @@
 #include <sdfg/transformations/loop_split.h>
 #include <sdfg/transformations/loop_tiling.h>
 #include <sdfg/transformations/map_collapse.h>
+#include <sdfg/transformations/map_delinearize.h>
 #include <sdfg/transformations/multi_level_tiling.h>
 #include <sdfg/transformations/offloading/cuda_offload_transform.h>
 #include <sdfg/transformations/offloading/cuda_parallelize_nested_map.h>
@@ -111,6 +117,8 @@ dispatch_transformation(const std::string& transformation_name, const nlohmann::
         return detail::invoke_for<transformations::LoopTiling>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "MapCollapse") {
         return detail::invoke_for<transformations::MapCollapse>(std::forward<Visitor>(visitor));
+    } else if (transformation_name == "MapDelinearize") {
+        return detail::invoke_for<transformations::MapDelinearize>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "MultiLevelTiling") {
         return detail::invoke_for<transformations::MultiLevelTiling>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "LoopDistribute") {
@@ -182,6 +190,16 @@ dispatch_transformation(const std::string& transformation_name, const nlohmann::
         return detail::invoke_for<einsum::Einsum2Dot>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "Einsum2Gemm") {
         return detail::invoke_for<einsum::Einsum2Gemm>(std::forward<Visitor>(visitor));
+    } else if (transformation_name == "FuseFMA") {
+        return detail::invoke_for<fp_math::FuseFMA>(std::forward<Visitor>(visitor));
+    } else if (transformation_name == "UnfuseFMA") {
+        return detail::invoke_for<fp_math::UnfuseFMA>(std::forward<Visitor>(visitor));
+    } else if (transformation_name == "QuantizeContraction") {
+        return detail::invoke_for<fp_math::QuantizeContraction>(std::forward<Visitor>(visitor));
+    } else if (transformation_name == "OzakiContraction") {
+        return detail::invoke_for<fp_math::OzakiContraction>(std::forward<Visitor>(visitor));
+    } else if (transformation_name == "GpuMmaEinsumTransform") {
+        return detail::invoke_for<gpu::GpuMmaEinsumTransform>(std::forward<Visitor>(visitor));
     } else {
         throw transformations::InvalidTransformationDescriptionException("Unknown transformation: " + transformation_name);
     }

@@ -3,6 +3,7 @@
 #include "sdfg/passes/dataflow/dead_data_elimination.h"
 #include "sdfg/passes/dataflow/memlet_simplification.h"
 #include "sdfg/passes/offloading/cuda_library_node_transfer_extraction_pass.h"
+#include "sdfg/passes/offloading/gpu_control_flow_offload_pass.h"
 #include "sdfg/passes/offloading/gpu_nested_offload_pass.h"
 #include "sdfg/passes/offloading/gpu_nested_parallelization_pass.h"
 #include "sdfg/passes/scheduler/loop_scheduler.h"
@@ -163,6 +164,10 @@ bool CUDAOffloadScheduler::post_schedule(
 
     cuda::CudaLibraryNodeTransferExtractionPass transfer_extraction_pass;
     changed |= transfer_extraction_pass.run(builder, analysis_manager);
+    analysis_manager.invalidate_all();
+
+    CUDAControlFlowOffloadPass control_flow_offload_pass;
+    changed |= control_flow_offload_pass.run(builder, analysis_manager);
     analysis_manager.invalidate_all();
     return changed;
 }

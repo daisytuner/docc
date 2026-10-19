@@ -219,16 +219,15 @@ data_flow::PointerAccessType BatchedGEMMNode::pointer_access_type(int input_idx)
         auto per_batch_range = GEMMNode::calc_matrix_access_range(m_, n_, ldc_, BLAS_Transpose::No, layout_);
         auto range = symbolic::mul(batch_count_, per_batch_range);
 
-        // Match GEMM handling: use full-write for dense layout and generic access otherwise.
-        if (symbolic::eq(ldc_, n_)) {
+        const bool dense = symbolic::eq(ldc_, n_);
+        auto beta = constant_input("__beta");
+        if (beta && *beta == 0.0 && dense) {
             return data_flow::PointerAccessMeta::create_full_write_only(range, true);
-        } else {
-            // Strided C: bounded by the total range, but the touched elements within
-            // it are an over-approximation (no structured layout here).
-            return data_flow::PointerAccessMeta::create_generic(
-                data_flow::ConvexAccessPattern::create(range), data_flow::ConvexAccessPattern::create(range), true
-            );
         }
+        // C is read unless beta is 0; a strided C touches only some elements of the range.
+        return data_flow::PointerAccessMeta::create_generic(
+            data_flow::ConvexAccessPattern::create(range), data_flow::ConvexAccessPattern::create(range, dense), true
+        );
     } else {
         return LibraryNode::pointer_access_type(input_idx);
     }

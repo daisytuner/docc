@@ -7,6 +7,7 @@
 #include "sdfg/data_flow/library_nodes/stdlib/free.h"
 #include "sdfg/data_flow/library_nodes/stdlib/malloc.h"
 #include "sdfg/passes/expansion/library_node_expansion_pass.h"
+#include "sdfg/serializer/json_serializer.h"
 #include "sdfg_debug_dump.h"
 
 using namespace sdfg;
@@ -69,7 +70,8 @@ TEST(MatMulTest, MatMul_2D_SimpleMatrix) {
 
     // Test expansion
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto outcome = passes::expansion::expand_single_math_node(builder, block, matmul_node);
+    auto outcome =
+        passes::expansion::expand_single_node(builder, block, matmul_node, math::tensor::MatMulBlasExpander());
     EXPECT_TRUE(outcome.expanded);
     EXPECT_TRUE(outcome.block_removed);
 
@@ -163,7 +165,8 @@ TEST(MatMulTest, MatMul_3D_Batched) {
 
     // Test expansion
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto outcome = passes::expansion::expand_single_math_node(builder, block, matmul_node);
+    auto outcome =
+        passes::expansion::expand_single_node(builder, block, matmul_node, math::tensor::MatMulBlasExpander());
 
     dump_sdfg(sdfg, "1.expanded");
     EXPECT_TRUE(outcome.expanded);
@@ -241,7 +244,8 @@ TEST(MatMulTest, MatMul_WithSymbolicDimensions) {
 
     // Test expansion
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto outcome = passes::expansion::expand_single_math_node(builder, block, matmul_node);
+    auto outcome =
+        passes::expansion::expand_single_node(builder, block, matmul_node, math::tensor::MatMulBlasExpander());
     EXPECT_TRUE(outcome.expanded);
     EXPECT_TRUE(outcome.block_removed);
 
@@ -303,7 +307,8 @@ TEST(MatMulTest, MatMul_IntegerType_ReturnsFailure) {
 
     // Test expansion - should fail for integer types
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto outcome = passes::expansion::expand_single_math_node(builder, block, matmul_node);
+    auto outcome =
+        passes::expansion::expand_single_node(builder, block, matmul_node, math::tensor::MatMulBlasExpander());
     EXPECT_FALSE(outcome.expanded);
     EXPECT_FALSE(outcome.block_removed);
 }
@@ -359,7 +364,8 @@ TEST(MatMulTest, MatMul_NoCopyForDefaultStrides) {
 
     // Test expansion
     analysis::AnalysisManager analysis_manager(sdfg);
-    auto outcome = passes::expansion::expand_single_math_node(builder, block, matmul_node);
+    auto outcome =
+        passes::expansion::expand_single_node(builder, block, matmul_node, math::tensor::MatMulBlasExpander());
     EXPECT_TRUE(outcome.expanded);
     EXPECT_TRUE(outcome.block_removed);
 
@@ -432,4 +438,261 @@ TEST(MatMulTest, MatMul_ConsumedLayout) {
     ASSERT_NE(y_write->layout(), nullptr);
     EXPECT_TRUE(symbolic::eq(y_write->layout()->get_dim(0), symbolic::integer(4)));
     EXPECT_TRUE(symbolic::eq(y_write->layout()->get_dim(1), symbolic::integer(6)));
+}
+
+namespace {
+
+/// Y = A @ B with A[4, 8], B[8, 6] of element type @p input and Y[4, 6] of @p output.
+math::tensor::MatMulNode& add_typed_matmul(
+    builder::StructuredSDFGBuilder& builder,
+    types::PrimitiveType input,
+    types::PrimitiveType output,
+    const math::tensor::ContractionTypes& node_types
+) {
+    auto& sdfg = builder.subject();
+    builder.add_container("a", types::Pointer(types::Scalar(input)), true);
+    builder.add_container("b", types::Pointer(types::Scalar(input)), true);
+    builder.add_container("y", types::Pointer(types::Scalar(output)), true);
+    auto& block = builder.add_block(sdfg.root());
+    auto& a_node = builder.add_access(block, "a");
+    auto& b_node = builder.add_access(block, "b");
+    auto& y_node = builder.add_access(block, "y");
+
+    symbolic::MultiExpression shape_a = {symbolic::integer(4), symbolic::integer(8)};
+    symbolic::MultiExpression shape_b = {symbolic::integer(8), symbolic::integer(6)};
+    symbolic::MultiExpression shape_y = {symbolic::integer(4), symbolic::integer(6)};
+    auto& matmul = static_cast<math::tensor::MatMulNode&>(builder.add_library_node<math::tensor::MatMulNode>(
+        block, DebugInfo(), math::tensor::TensorLayout(shape_a), math::tensor::TensorLayout(shape_b), node_types
+    ));
+    builder.add_computational_memlet(block, a_node, matmul, "A", {}, types::Tensor(input, shape_a));
+    builder.add_computational_memlet(block, b_node, matmul, "B", {}, types::Tensor(input, shape_b));
+    builder.add_computational_memlet(block, y_node, matmul, "Y", {}, types::Tensor(output, shape_y));
+    return matmul;
+}
+
+structured_control_flow::Block& block_of(math::tensor::MatMulNode& node) {
+    return static_cast<structured_control_flow::Block&>(*node.get_parent().get_parent());
+}
+
+bool has_tasklet(structured_control_flow::ControlFlowNode& node, data_flow::TaskletCode code) {
+    if (auto* block = dynamic_cast<structured_control_flow::Block*>(&node)) {
+        for (auto* tasklet : block->dataflow().tasklets()) {
+            if (tasklet->code() == code) {
+                return true;
+            }
+        }
+    } else if (auto* sequence = dynamic_cast<structured_control_flow::Sequence*>(&node)) {
+        for (size_t i = 0; i < sequence->size(); i++) {
+            if (has_tasklet(sequence->at(i), code)) {
+                return true;
+            }
+        }
+    } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&node)) {
+        return has_tasklet(loop->root(), code);
+    }
+    return false;
+}
+
+/// The first serialized library node with code @p code in @p j.
+nlohmann::json* find_library_node(nlohmann::json& j, const std::string& code) {
+    if (j.is_object()) {
+        if (j.contains("code") && j["code"].is_string() && j["code"] == code) {
+            return &j;
+        }
+        for (auto& [_, value] : j.items()) {
+            if (auto* found = find_library_node(value, code)) {
+                return found;
+            }
+        }
+    } else if (j.is_array()) {
+        for (auto& value : j) {
+            if (auto* found = find_library_node(value, code)) {
+                return found;
+            }
+        }
+    }
+    return nullptr;
+}
+
+math::tensor::MatMulNode* find_matmul(structured_control_flow::Sequence& root) {
+    for (size_t i = 0; i < root.size(); i++) {
+        if (auto* block = dynamic_cast<structured_control_flow::Block*>(&root.at(i))) {
+            for (auto* node : block->dataflow().library_nodes()) {
+                if (auto* matmul = dynamic_cast<math::tensor::MatMulNode*>(node)) {
+                    return matmul;
+                }
+            }
+        }
+    }
+    return nullptr;
+}
+
+} // namespace
+
+TEST(MatMulTest, MatMul_Int8ToInt32_ExplicitTypes) {
+    builder::StructuredSDFGBuilder builder("sdfg_matmul_int8", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    auto& matmul = add_typed_matmul(
+        builder,
+        types::PrimitiveType::Int8,
+        types::PrimitiveType::Int32,
+        {types::PrimitiveType::Int8, types::PrimitiveType::Void, types::PrimitiveType::Int32}
+    );
+    EXPECT_NO_THROW(sdfg.validate());
+
+    EXPECT_EQ(matmul.input_type(), types::PrimitiveType::Int8);
+    EXPECT_EQ(matmul.accumulator_type(), types::PrimitiveType::Int32);
+    EXPECT_EQ(matmul.output_type(), types::PrimitiveType::Int32);
+    EXPECT_FALSE(matmul.uniform_quantization(matmul.get_parent()).has_value());
+
+    // BLAS has no mixed-type GEMM; the naive expansion accumulates in Int32.
+    auto& block = block_of(matmul);
+    auto blas = passes::expansion::expand_single_node(builder, block, matmul, math::tensor::MatMulBlasExpander());
+    EXPECT_FALSE(blas.expanded);
+
+    auto naive = passes::expansion::expand_single_node(builder, block, matmul, math::tensor::MatMulNaiveExpander());
+    EXPECT_TRUE(naive.expanded);
+    EXPECT_NO_THROW(sdfg.validate());
+    EXPECT_TRUE(has_tasklet(sdfg.root(), data_flow::TaskletCode::int_mul));
+    EXPECT_TRUE(has_tasklet(sdfg.root(), data_flow::TaskletCode::int_add));
+}
+
+TEST(MatMulTest, MatMul_MixedTypes_Inferred) {
+    builder::StructuredSDFGBuilder builder("sdfg_matmul_inferred", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    auto& matmul = add_typed_matmul(
+        builder, types::PrimitiveType::Int8, types::PrimitiveType::Int32, math::tensor::ContractionTypes{}
+    );
+    EXPECT_NO_THROW(sdfg.validate());
+
+    EXPECT_EQ(matmul.input_type(), types::PrimitiveType::Int8);
+    EXPECT_EQ(matmul.accumulator_type(), types::PrimitiveType::Int32);
+    EXPECT_EQ(matmul.output_type(), types::PrimitiveType::Int32);
+}
+
+TEST(MatMulTest, MatMul_Uniform_Inferred) {
+    builder::StructuredSDFGBuilder builder("sdfg_matmul_uniform", FunctionType_CPU);
+    auto& matmul = add_typed_matmul(
+        builder, types::PrimitiveType::Float, types::PrimitiveType::Float, math::tensor::ContractionTypes{}
+    );
+    EXPECT_EQ(matmul.uniform_quantization(matmul.get_parent()), types::PrimitiveType::Float);
+}
+
+TEST(MatMulTest, MatMul_InputTypeMismatch_Throws) {
+    builder::StructuredSDFGBuilder builder("sdfg_matmul_mismatch", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    add_typed_matmul(
+        builder,
+        types::PrimitiveType::Float,
+        types::PrimitiveType::Int32,
+        {types::PrimitiveType::Int8, types::PrimitiveType::Void, types::PrimitiveType::Int32}
+    );
+    EXPECT_THROW(sdfg.validate(), InvalidSDFGException);
+}
+
+TEST(MatMulTest, MatMul_WiderAccumulator_NotExpandedInPlace) {
+    builder::StructuredSDFGBuilder builder("sdfg_matmul_wide_acc", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    auto& matmul = add_typed_matmul(
+        builder,
+        types::PrimitiveType::Half,
+        types::PrimitiveType::Half,
+        {types::PrimitiveType::Half, types::PrimitiveType::Float, types::PrimitiveType::Half}
+    );
+    EXPECT_NO_THROW(sdfg.validate());
+    EXPECT_EQ(matmul.accumulator_type(), types::PrimitiveType::Float);
+    EXPECT_FALSE(matmul.uniform_quantization(matmul.get_parent()).has_value());
+
+    auto naive =
+        passes::expansion::expand_single_node(builder, block_of(matmul), matmul, math::tensor::MatMulNaiveExpander());
+    EXPECT_FALSE(naive.expanded);
+}
+
+TEST(MatMulTest, MatMul_Types_SerializationRoundTrip) {
+    builder::StructuredSDFGBuilder builder("sdfg_matmul_serialize", FunctionType_CPU);
+    math::tensor::ContractionTypes node_types{
+        types::PrimitiveType::Int8, types::PrimitiveType::Int32, types::PrimitiveType::Int32
+    };
+    add_typed_matmul(builder, types::PrimitiveType::Int8, types::PrimitiveType::Int32, node_types);
+
+    serializer::JSONSerializer serializer;
+    auto j = serializer.serialize(builder.subject());
+    auto* node_json = find_library_node(j, math::tensor::LibraryNodeType_MatMul.value());
+    ASSERT_NE(node_json, nullptr);
+    // Older readers see no single type.
+    EXPECT_EQ((*node_json)["result_quant"].get<types::PrimitiveType>(), types::PrimitiveType::Void);
+
+    auto restored = serializer.deserialize(j);
+    auto* matmul = find_matmul(restored->root());
+    ASSERT_NE(matmul, nullptr);
+    EXPECT_EQ(matmul->types(), node_types);
+}
+
+TEST(MatMulTest, MatMul_Types_LegacyDeserialization) {
+    builder::StructuredSDFGBuilder builder("sdfg_matmul_legacy", FunctionType_CPU);
+    add_typed_matmul(
+        builder,
+        types::PrimitiveType::Float,
+        types::PrimitiveType::Float,
+        math::tensor::ContractionTypes::uniform(types::PrimitiveType::Float)
+    );
+
+    serializer::JSONSerializer serializer;
+    auto j = serializer.serialize(builder.subject());
+    auto* node_json = find_library_node(j, math::tensor::LibraryNodeType_MatMul.value());
+    ASSERT_NE(node_json, nullptr);
+    EXPECT_EQ((*node_json)["result_quant"].get<types::PrimitiveType>(), types::PrimitiveType::Float);
+    node_json->erase("input_type");
+    node_json->erase("accumulator_type");
+    node_json->erase("output_type");
+
+    auto restored = serializer.deserialize(j);
+    auto* matmul = find_matmul(restored->root());
+    ASSERT_NE(matmul, nullptr);
+    EXPECT_EQ(matmul->types(), math::tensor::ContractionTypes::uniform(types::PrimitiveType::Float));
+}
+
+TEST(MatMulTest, MatMul_Naive_PointerMemletsUseLayouts) {
+    // Pointer memlets, as einsum detection creates them: the layouts address the operands, here B transposed.
+    builder::StructuredSDFGBuilder builder("sdfg_matmul_naive_pointer", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    types::Pointer pointer{types::Scalar(types::PrimitiveType::Int32)};
+    builder.add_container("a", pointer, true);
+    builder.add_container("b", pointer, true);
+    builder.add_container("y", pointer, true);
+    auto& block = builder.add_block(sdfg.root());
+    auto m = symbolic::integer(4), n = symbolic::integer(6), k = symbolic::integer(8);
+    math::tensor::TensorLayout layout_b_transposed({k, n}, {symbolic::one(), k}, symbolic::zero());
+    auto& matmul = static_cast<math::tensor::MatMulNode&>(builder.add_library_node<math::tensor::MatMulNode>(
+        block, DebugInfo(), math::tensor::TensorLayout({m, k}), layout_b_transposed
+    ));
+    builder.add_computational_memlet(block, builder.add_access(block, "a"), matmul, "A", {}, pointer);
+    builder.add_computational_memlet(block, builder.add_access(block, "b"), matmul, "B", {}, pointer);
+    builder.add_computational_memlet(block, builder.add_access(block, "y"), matmul, "Y", {}, pointer);
+    EXPECT_NO_THROW(sdfg.validate());
+
+    auto outcome = passes::expansion::expand_single_node(builder, block, matmul, math::tensor::MatMulNaiveExpander());
+    ASSERT_TRUE(outcome.expanded);
+    EXPECT_NO_THROW(sdfg.validate());
+
+    // Every access to b is linear, k + 8 j for the transposed layout.
+    std::function<void(structured_control_flow::ControlFlowNode&)> check = [&](auto& node) {
+        if (auto* inner = dynamic_cast<structured_control_flow::Block*>(&node)) {
+            for (auto& memlet : inner->dataflow().edges()) {
+                auto* source = dynamic_cast<const data_flow::AccessNode*>(&memlet.src());
+                if (source && source->data() == "b") {
+                    ASSERT_EQ(memlet.subset().size(), 1);
+                    EXPECT_NE(memlet.subset().at(0)->__str__().find("8*"), std::string::npos)
+                        << memlet.subset().at(0)->__str__();
+                }
+            }
+        } else if (auto* sequence = dynamic_cast<structured_control_flow::Sequence*>(&node)) {
+            for (size_t i = 0; i < sequence->size(); i++) {
+                check(sequence->at(i));
+            }
+        } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&node)) {
+            check(loop->root());
+        }
+    };
+    check(sdfg.root());
 }

@@ -402,3 +402,18 @@ def test_sigmoid_simple(target: str) -> None:
             return self.sigmoid(input)
 
     check(SigmoidSimpleNet(), torch.randn(4), target=target)
+
+
+# --- Tanh ---
+
+
+def test_tanh_simple(target: str) -> None:
+    class TanhSimpleNet(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.tanh: nn.Tanh = nn.Tanh()
+
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return self.tanh(input)
+
+    check(TanhSimpleNet(), torch.randn(4), target=target)

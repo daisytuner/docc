@@ -103,22 +103,25 @@ static std::tuple<Block&, math::tensor::MatMulNode&> build_offloaded_mma_structu
     int tile_n,
     int tile_k,
     const gpu::GpuArch& arch,
-    bool b_k_major = false,
-    types::PrimitiveType elem = types::PrimitiveType::Half
+    types::PrimitiveType input_type = types::PrimitiveType::Half,
+    types::PrimitiveType output_type = types::PrimitiveType::Half
 ) {
     auto& sdfg = builder.subject();
     auto& root = sdfg.root();
 
-    types::Scalar base_desc(elem);
+    types::Scalar base_desc(input_type);
     types::Pointer dev_pointer_type(base_desc);
     dev_pointer_type.storage_type().value("AMD_Generic");
+    types::Scalar out_desc(output_type);
+    types::Pointer out_pointer_type(out_desc);
+    out_pointer_type.storage_type().value("AMD_Generic");
     types::Scalar index_desc(types::PrimitiveType::Int32);
     index_desc.storage_type().value("AMD_Generic");
 
     // Matrix pointers (device buffers) and the map induction variables.
     builder.add_container("A", dev_pointer_type, true);
     builder.add_container("B", dev_pointer_type, true);
-    builder.add_container("C", dev_pointer_type, true);
+    builder.add_container("C", out_pointer_type, true);
     builder.add_container("block_row", index_desc);
     builder.add_container("block_col", index_desc);
 
@@ -190,11 +193,14 @@ static std::tuple<Block&, math::tensor::MatMulNode&> build_offloaded_mma_structu
 
     types::Tensor a_tensor(base_desc, a_layout);
     types::Tensor b_tensor(base_desc, b_layout);
-    types::Tensor c_tensor(base_desc, c_layout);
+    types::Tensor c_tensor(out_desc, c_layout);
 
-    auto& matmul_node = static_cast<
-        math::tensor::MatMulNode&>(builder.add_library_node<
-                                   math::tensor::MatMulNode>(block, DebugInfo(), a_layout, b_layout, elem, &c_layout));
+    auto matmul_types = input_type == output_type
+                            ? math::tensor::ContractionTypes::uniform(input_type)
+                            : math::tensor::ContractionTypes{input_type, types::PrimitiveType::Void, output_type};
+    auto& matmul_node = static_cast<math::tensor::MatMulNode&>(builder.add_library_node<math::tensor::MatMulNode>(
+        block, DebugInfo(), a_layout, b_layout, matmul_types, &c_layout
+    ));
 
     builder.add_computational_memlet(block, a_node, matmul_node, "A", {}, a_tensor, block.debug_info());
     builder.add_computational_memlet(block, b_node, matmul_node, "B", {}, b_tensor, block.debug_info());
@@ -462,12 +468,13 @@ TEST(ROCMMMATest, ExpansionEmitsWaveMap_gfx90a) {
             }
         }
     });
-    EXPECT_EQ(loads, 3u); // A, B, C
+    EXPECT_EQ(loads, 2u); // A, B: a MatMul overwrites C
 
     auto out = test::utils::test_codegen(builder.subject(), "wave_map", true);
     EXPECT_NE(out.main_function.find("dim3((int)(128), (int)(2), (int)(1))"), std::string::npos) << out.main_function;
 
-    // fp16 inputs accumulate in fp32 (native MFMA accumulator); C/D fragments stay fp16.
+    // fp16 inputs accumulate in fp32 (native MFMA accumulator); C/D fragments stay fp16, C zero-filled for the
+    // converting add since a MatMul overwrites its output.
     std::string kernels;
     for (auto& [name, snippet] : out.snippets) {
         kernels += snippet.content;
@@ -837,7 +844,12 @@ TEST(ROCMMMATest, FragmentLoadOverload_gfx90a) {
     };
     EXPECT_EQ(load_line("mma_a0").find("rocwmma::mem_"), std::string::npos) << kernels;
     EXPECT_EQ(load_line("mma_b0").find("rocwmma::mem_"), std::string::npos) << kernels;
-    EXPECT_NE(load_line("mma_c0").find("rocwmma::mem_row_major"), std::string::npos) << kernels;
+    // A MatMul overwrites C: it never loads it, and stores the accumulator with its memory layout.
+    EXPECT_EQ(kernels.find("load_matrix_sync(mma_c0"), std::string::npos) << kernels;
+    auto store = kernels.find("store_matrix_sync(");
+    ASSERT_NE(store, std::string::npos) << kernels;
+    EXPECT_NE(kernels.substr(store, kernels.find('\n', store) - store).find("rocwmma::mem_row_major"), std::string::npos)
+        << kernels;
 }
 
 // K-major B: the transposed block tile [32 n][32+4 k] is read column-major by the fragments,
@@ -1206,6 +1218,78 @@ TEST(ROCMMMATest, SoftwarePipeliningRegisterStagedCoalesceFp32_gfx90a) {
     }
     EXPECT_NE(kernels.find("[16 * __tc_i + 15]"), std::string::npos) << kernels;
     EXPECT_NE(kernels.find("make_uint4("), std::string::npos) << kernels;
+}
+
+} // namespace sdfg::rocm
+
+namespace sdfg::rocm {
+
+namespace {
+
+std::string int8_kernels(const gpu::rocm::RocmArch& arch, const std::string& group) {
+    sdfg::builder::StructuredSDFGBuilder builder("test_sdfg_int8", FunctionType_CPU);
+    auto [block, matmul_node] = build_offloaded_mma_structure(
+        builder, 1024, 1024, 1024, 32, 32, 16, arch, types::PrimitiveType::Int8, types::PrimitiveType::Int32
+    );
+    EXPECT_NO_THROW(builder.subject().validate());
+    auto outcome = passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch));
+    EXPECT_TRUE(outcome.expanded);
+    EXPECT_NO_THROW(builder.subject().validate());
+
+    std::string kernels;
+    for (auto& [name, snippet] : test::utils::test_codegen(builder.subject(), group, true).snippets) {
+        kernels += snippet.content;
+    }
+    return kernels;
+}
+
+} // namespace
+
+TEST(ROCMMMATest, Int8_FullRateBlocks_gfx942) {
+    // CDNA3's native Int8 MFMA is 16x16x32; rocWMMA would pad 16x16x16 to it at half the rate.
+    auto kernels = int8_kernels(gpu::rocm::ROCM_ARCH_GFX942, "int8_gfx942");
+    EXPECT_NE(kernels.find("rocwmma::matrix_a, 16, 16, 32, int8_t"), std::string::npos) << kernels;
+    EXPECT_NE(kernels.find("rocwmma::matrix_b, 16, 16, 32, int8_t"), std::string::npos) << kernels;
+    EXPECT_NE(kernels.find("rocwmma::accumulator, 16, 16, 32, int32_t> mma_acc"), std::string::npos) << kernels;
+    EXPECT_NE(kernels.find("rocwmma::mma_sync("), std::string::npos) << kernels;
+    // The Int32 accumulator is the output: C is neither loaded nor added, since a MatMul overwrites it.
+    EXPECT_EQ(kernels.find("mma_c"), std::string::npos) << kernels;
+}
+
+TEST(ROCMMMATest, Int8_NativeBlocks_gfx90a) {
+    auto kernels = int8_kernels(gpu::rocm::ROCM_ARCH_GFX90A, "int8_gfx90a");
+    EXPECT_NE(kernels.find("rocwmma::matrix_a, 16, 16, 16, int8_t"), std::string::npos) << kernels;
+    EXPECT_NE(kernels.find("rocwmma::accumulator, 16, 16, 16, int32_t> mma_acc"), std::string::npos) << kernels;
+}
+
+TEST(ROCMMMATest, Int8_Support) {
+    auto* mma = gpu::rocm::ROCM_ARCH_GFX942.mma_support();
+    ASSERT_NE(mma, nullptr);
+    EXPECT_TRUE(mma->supported_types(types::PrimitiveType::Int8, types::PrimitiveType::Int32));
+    // An Int8 output would wrap the Int32 sums.
+    EXPECT_FALSE(mma->supported_types(types::PrimitiveType::Int8, types::PrimitiveType::Int8));
+    EXPECT_EQ(
+        mma->get_accumulator_type(types::PrimitiveType::Int8, types::PrimitiveType::Int32, types::PrimitiveType::Void),
+        types::PrimitiveType::Int32
+    );
+    EXPECT_TRUE(mma->is_valid_block_size({16, 16, 32}, types::PrimitiveType::Int8, types::PrimitiveType::Int32));
+    EXPECT_TRUE(mma->is_valid_block_size({16, 16, 16}, types::PrimitiveType::Int8, types::PrimitiveType::Int32));
+    EXPECT_FALSE(mma->is_valid_block_size({32, 32, 8}, types::PrimitiveType::Int8, types::PrimitiveType::Int32));
+    EXPECT_FALSE(
+        gpu::rocm::ROCM_ARCH_GFX90A.mma_support()
+            ->is_valid_block_size({16, 16, 32}, types::PrimitiveType::Int8, types::PrimitiveType::Int32)
+    );
+
+    // K = 48 only divides by 16: the half-rate block still applies.
+    auto tiling = mma->get_mma_tiling(
+        {symbolic::integer(64), symbolic::integer(64), symbolic::integer(48)},
+        types::PrimitiveType::Int8,
+        types::PrimitiveType::Int32,
+        nullptr,
+        nullptr
+    );
+    ASSERT_TRUE(tiling.has_value());
+    EXPECT_EQ(tiling->mma_block_size.k, 16);
 }
 
 } // namespace sdfg::rocm

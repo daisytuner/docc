@@ -16,10 +16,12 @@
 
 namespace sdfg::gpu::rocm {
 
-RocmArch ROCM_ARCH_GFX1201 = RocmArch("gfx1201", 32, true, false);
+// Int8 block K from rocWMMA's native instructions: WMMA i32_16x16x16_iu8 (RDNA4), MFMA i32_16x16x16i8 (CDNA2) and
+// i32_16x16x32_i8 (CDNA3).
+RocmArch ROCM_ARCH_GFX1201 = RocmArch("gfx1201", 32, true, false, 16);
 
-RocmArch ROCM_ARCH_GFX90A = RocmArch("gfx90a", 64, true, true);
-RocmArch ROCM_ARCH_GFX942 = RocmArch("gfx942", 64, true, true);
+RocmArch ROCM_ARCH_GFX90A = RocmArch("gfx90a", 64, true, true, 16);
+RocmArch ROCM_ARCH_GFX942 = RocmArch("gfx942", 64, true, true, 32);
 
 const RocmArch* rocm_arch_parse(const std::string& raw_name) {
     // Strip an optional case-insensitive "cuda:" prefix before matching.
@@ -217,6 +219,10 @@ const RocmArch* rocm_arch_from_available_hardware() {
 }
 
 bool RocmMmaSupport::supported_types(types::PrimitiveType input_type, types::PrimitiveType output_type) const {
+    if (input_type == types::PrimitiveType::Int8) {
+        // Int32 accumulates exactly; a narrower output would wrap.
+        return int8_block_k != 0 && output_type == types::PrimitiveType::Int32;
+    }
     if (input_type == types::PrimitiveType::BFloat || input_type == types::PrimitiveType::Half) {
         return output_type == types::PrimitiveType::Float || output_type == input_type;
     } else if (input_type == types::PrimitiveType::Float) {
@@ -321,8 +327,21 @@ std::optional<GpuMmaTiling> RocmMmaSupport::get_mma_tiling(
             return std::nullopt;
         }
         return try_get_mma_tiling(*block_size_hint, wave_tile_hint, res_shape, acc_type);
-    } else {
+    } else if (input_type == types::PrimitiveType::Int8) {
+        // The full-rate block first; 16x16x16 still runs if K only divides by 16.
+        if (auto full_rate = try_get_mma_tiling(int8_block_size(), wave_tile_hint, res_shape, acc_type)) {
+            return full_rate;
+        }
         return try_get_mma_tiling(DEFAULT_BLOCK_SIZE, wave_tile_hint, res_shape, acc_type);
+    } else {
+        auto default_valid = try_get_mma_tiling(DEFAULT_BLOCK_SIZE, wave_tile_hint, res_shape, acc_type);
+        if (default_valid.has_value()) {
+            return default_valid;
+        } else if (f32_support) {
+            return try_get_mma_tiling(CDNA_BLOCK_SIZE, wave_tile_hint, res_shape, acc_type);
+        } else {
+            return std::nullopt;
+        }
     }
 }
 
@@ -350,6 +369,10 @@ void RocmMmaSupport::set_mma_fragment_storage_type(
 bool RocmMmaSupport::is_valid_block_size(
     const MmaBlockSize& block_size, types::PrimitiveType input_type, types::PrimitiveType acc_type
 ) const {
+    if (input_type == types::PrimitiveType::Int8) {
+        return int8_block_k != 0 && acc_type == types::PrimitiveType::Int32 && block_size.m == 16 &&
+               block_size.n == 16 && (block_size.k == 16 || block_size.k == int8_block_k);
+    }
     if (block_size.m == 16 && block_size.n == 16 && block_size.k == 16) {
         return true;
     } else if (block_size.m == 32 && block_size.n == 32 && block_size.k == 8) {
@@ -470,6 +493,12 @@ void RocmMmaSupport::emit_block_frag_type(
         case types::PrimitiveType::Float:
             os << "rocwmma::float32_t";
             break;
+        case types::PrimitiveType::Int8:
+            os << "int8_t";
+            break;
+        case types::PrimitiveType::Int32:
+            os << "int32_t";
+            break;
         default:
             throw std::invalid_argument(
                 "invalid scalar type: " + std::string(types::primitive_type_to_string(scalar_type)) +
@@ -493,6 +522,15 @@ void RocmMmaSupport::emit_block_frag_type(
 std::vector<MmaBlockSize> RocmMmaSupport::
     get_supported_block_sizes(types::PrimitiveType input_type, types::PrimitiveType acc_type) const {
     std::vector<MmaBlockSize> supported_sizes;
+    if (input_type == types::PrimitiveType::Int8) {
+        if (int8_block_k != 0 && acc_type == types::PrimitiveType::Int32) {
+            supported_sizes.push_back(int8_block_size());
+            if (int8_block_k != DEFAULT_BLOCK_SIZE.k) {
+                supported_sizes.push_back(DEFAULT_BLOCK_SIZE);
+            }
+        }
+        return supported_sizes;
+    }
     if (types::is_floating_point(acc_type)) {
         supported_sizes.push_back(DEFAULT_BLOCK_SIZE);
     }

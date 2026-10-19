@@ -1389,7 +1389,7 @@ TEST(LocalStorageTest, CanApply_LibraryNodeCaptures_Rejects) {
         std::vector<std::string>{"_in"},
         std::unordered_map<std::string, std::string>{}
     );
-    builder.add_computational_memlet(lib_block, a_lib, lib, "_in", {i}, ptr);
+    builder.add_computational_memlet(lib_block, a_lib, lib, "_in", {}, ptr);
 
     // The library node has no global side effect...
     EXPECT_FALSE(LocalStorage::has_side_effect(loop));

@@ -157,6 +157,7 @@ register_module("aten.atan.default", UnaryCMathTensorOpParser(CMathFunction.atan
 register_module("aten.atanh.default", UnaryCMathTensorOpParser(CMathFunction.atanh))
 register_module("aten.cos.default", UnaryCMathTensorOpParser(CMathFunction.cos))
 register_module("aten.sin.default", UnaryCMathTensorOpParser(CMathFunction.sin))
+register_module("aten.tanh.default", UnaryCMathTensorOpParser(CMathFunction.tanh))
 
 
 class ErfParser(GraphParserModule):

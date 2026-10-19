@@ -212,11 +212,15 @@ class PythonProgram(DoccProgram):
         # options, so repeated in-process compiles with different
         # instrumentation/arg-capture/remote-tuning do not alias to the first
         # built binary (the on-disk hash already accounts for these options).
-        mem_cache_key = f"{signature}|{self.options.capture_args}|{self.options.instrumentation_mode}|{self.options.remote_tuning}"
+        pass_options = sorted(self.options.pass_options.items())
+        mem_cache_key = (
+            f"{signature}|{self.options.capture_args}|{self.options.instrumentation_mode}|"
+            f"{self.options.remote_tuning}|{self.options.fp_contract}|{self.options.contraction_precision}|{pass_options}"
+        )
 
         if output_folder is None:
             source_path = inspect.getsourcefile(self.func)
-            hash_input = f"{source_path}|{self.name}|{self.options.target}|{self.options.category}|{self.options.capture_args}|{self.options.instrumentation_mode}|{self.options.remote_tuning}|{self.options.approximate_math}|{signature}".encode(
+            hash_input = f"{source_path}|{self.name}|{self.options.target}|{self.options.category}|{self.options.capture_args}|{self.options.instrumentation_mode}|{self.options.remote_tuning}|{self.options.approximate_math}|{self.options.fp_contract}|{self.options.contraction_precision}|{pass_options}|{signature}".encode(
                 "utf-8"
             )
             stable_id = hashlib.sha256(hash_input).hexdigest()[:16]

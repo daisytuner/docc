@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -895,4 +896,99 @@ TEST(SoftwarePipeliningTest, PrivateScratchpadTargetRejectsUnsupportedStorage) {
     analysis::AnalysisManager am(builder.subject());
     transformations::SoftwarePipelining sp(kloop, 2);
     EXPECT_FALSE(sp.can_be_applied(builder, am));
+}
+
+namespace {
+
+// GPU map over i { stage A -> buf (TileCopyNode); compute buf -> C } -- the copy-in sits directly in
+// the parallel map, with no sequential loop enclosing it. Returns the map.
+structured_control_flow::Map& build_copy_in_map(builder::StructuredSDFGBuilder& builder) {
+    types::Scalar f(types::PrimitiveType::Float);
+    types::Pointer aptr(f);
+    types::Array buf_type(types::StorageType::NV_Shared(), 0, "", f, symbolic::integer(TILE));
+    builder.add_container("A", aptr, true);
+    builder.add_container("buf", buf_type);
+    builder.add_container("C", f, true);
+    builder.add_container("i", types::Scalar(types::PrimitiveType::UInt64));
+    builder.add_container("k", types::Scalar(types::PrimitiveType::UInt64));
+
+    auto cuda_sched = cuda::ScheduleType_CUDA::create();
+    cuda::ScheduleType_CUDA::dimension(cuda_sched, cuda::CUDADimension::X);
+    cuda::ScheduleType_CUDA::block_size(cuda_sched, symbolic::integer(32));
+    auto i = symbolic::symbol("i");
+    auto& gmap = builder.add_map(
+        builder.subject().root(),
+        i,
+        symbolic::Lt(i, symbolic::integer(64)),
+        symbolic::integer(0),
+        symbolic::add(i, symbolic::integer(1)),
+        cuda_sched
+    );
+    add_copy(builder, gmap.root(), "A", "buf", aptr);
+    add_compute(builder, gmap.root(), "buf", buf_type);
+    return gmap;
+}
+
+} // namespace
+
+// copied_in_buffers reports the async-stageable buffers that cooperative copy-ins fill.
+TEST(SoftwarePipeliningTest, CopiedInBuffersReportsStagedShared) {
+    builder::StructuredSDFGBuilder builder("sp", FunctionType_CPU);
+    auto& kloop = build(builder, /*K=*/4);
+    EXPECT_EQ(
+        transformations::SoftwarePipelining::copied_in_buffers(builder.subject(), kloop.root()),
+        (std::set<std::string>{"buf"})
+    );
+}
+
+// A buffer the enclosing tile target cannot async-stage (plain stack storage) is not reported.
+TEST(SoftwarePipeliningTest, CopiedInBuffersIgnoresNonStageableStorage) {
+    builder::StructuredSDFGBuilder builder("sp", FunctionType_CPU);
+    auto& kloop = build(builder, /*K=*/4, /*shared=*/false);
+    EXPECT_TRUE(transformations::SoftwarePipelining::copied_in_buffers(builder.subject(), kloop.root()).empty());
+}
+
+// The scan descends into conditionals, so a copy-in guarded by a boundary IfElse is still reported.
+TEST(SoftwarePipeliningTest, CopiedInBuffersDescendsIntoGuard) {
+    builder::StructuredSDFGBuilder builder("sp", FunctionType_CPU);
+    auto& kloop = build_guarded(builder, /*K=*/4);
+    EXPECT_EQ(
+        transformations::SoftwarePipelining::copied_in_buffers(builder.subject(), kloop.root()),
+        (std::set<std::string>{"buf"})
+    );
+}
+
+// Whether a buffer is staged follows the enclosing target's supports_async_staging, not a hard-coded
+// storage kind: the private scratchpad stages its local buffer but not plain heap storage.
+TEST(SoftwarePipeliningTest, CopiedInBuffersHonorsTargetAsyncStaging) {
+    builder::StructuredSDFGBuilder local("sp_private", FunctionType_CPU);
+    auto& local_panel = build_private(local, /*K=*/4, PRIVATE_LOCAL);
+    EXPECT_EQ(
+        transformations::SoftwarePipelining::copied_in_buffers(local.subject(), local_panel.root()),
+        (std::set<std::string>{"buf"})
+    );
+
+    builder::StructuredSDFGBuilder heap("sp_private_heap", FunctionType_CPU);
+    auto& heap_panel = build_private(heap, /*K=*/4, types::StorageType::CPU_Heap());
+    EXPECT_TRUE(transformations::SoftwarePipelining::copied_in_buffers(heap.subject(), heap_panel.root()).empty());
+}
+
+// staging_panels nominates the sequential loop enclosing a staged copy-in.
+TEST(SoftwarePipeliningTest, StagingPanelsReturnsSequentialPanel) {
+    builder::StructuredSDFGBuilder builder("sp", FunctionType_CPU);
+    auto& kloop = build(builder, /*K=*/4);
+    EXPECT_EQ(
+        transformations::SoftwarePipelining::staging_panels(builder.subject(), builder.subject().root()),
+        (std::vector<structured_control_flow::StructuredLoop*>{&kloop})
+    );
+}
+
+// A copy-in sitting directly in a parallel map has no sequential iteration order to pipeline: it is
+// still a staged buffer, but it nominates no panel.
+TEST(SoftwarePipeliningTest, StagingPanelsSkipsCopyDirectlyInMap) {
+    builder::StructuredSDFGBuilder builder("sp", FunctionType_CPU);
+    auto& gmap = build_copy_in_map(builder);
+    auto& sdfg = builder.subject();
+    EXPECT_EQ(transformations::SoftwarePipelining::copied_in_buffers(sdfg, gmap.root()), (std::set<std::string>{"buf"}));
+    EXPECT_TRUE(transformations::SoftwarePipelining::staging_panels(sdfg, sdfg.root()).empty());
 }

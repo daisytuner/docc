@@ -35,6 +35,14 @@ set(SOURCE_FILES
     src/einsum/transformations/einsum_promotion.cpp
     src/einsum/transformations/einsum2dot.cpp
     src/einsum/transformations/einsum2gemm.cpp
+    src/fp_math/contractions/contraction_kernels.cpp
+    src/fp_math/contractions/kernel_builder.cpp
+    src/fp_math/passes/contraction_precision.cpp
+    src/fp_math/passes/fp_contraction.cpp
+    src/fp_math/transformations/ozaki_contraction.cpp
+    src/fp_math/transformations/quantize_contraction.cpp
+    src/fp_math/transformations/fuse_fma.cpp
+    src/fp_math/transformations/unfuse_fma.cpp
     src/parallelization/analysis/loop_carried_dependency_analysis.cpp
     src/parallelization/passes/auto_parallelization.cpp
     src/parallelization/transformations/loop_parallelization.cpp
@@ -62,6 +70,7 @@ set(SOURCE_FILES
     src/passes/loop_fusion/loop_fusion_by_access.cpp
     src/passes/loop_fusion/loop_fusion_pass.cpp
     src/passes/normalization/loop_normal_form.cpp
+    src/passes/normalization/map_delinearization.cpp
     src/passes/normalization/map_fusion.cpp
     src/passes/normalization/normalize.cpp
     src/passes/normalization/perfect_loop_distribution.cpp
@@ -74,6 +83,7 @@ set(SOURCE_FILES
     src/passes/offloading/data_transfer_minimization_pass.cpp
     src/passes/offloading/device_buffer_reuse_pass.cpp
     src/passes/offloading/device_resident_arg_promotion_pass.cpp
+    src/passes/offloading/gpu_control_flow_offload_pass.cpp
     src/passes/offloading/gpu_loop_reordering_pass.cpp
     src/passes/offloading/gpu_nested_offload_pass.cpp
     src/passes/offloading/reduction_shared_memory_delinearization.cpp
@@ -85,6 +95,7 @@ set(SOURCE_FILES
     src/passes/opt_pipeline.cpp
     src/passes/readonly_transfer_hoisting_pass.cpp
     src/passes/redundant_load_elimination_pass.cpp
+    src/passes/scalar_promotion_pass.cpp
     src/passes/scheduler/cuda_scheduler.cpp
     src/passes/scheduler/cuda_offload_scheduler.cpp
     src/passes/scheduler/loop_scheduling_pass.cpp
@@ -171,6 +182,7 @@ set(SOURCE_FILES
     src/transformations/loop_tiling.cpp
     src/transformations/loop_unit_stride.cpp
     src/transformations/map_collapse.cpp
+    src/transformations/map_delinearize.cpp
     src/transformations/map_fusion.cpp
     src/transformations/multi_level_tiling.cpp
     src/transformations/offloading/cublas_data_transfer_extraction.cpp

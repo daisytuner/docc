@@ -9,9 +9,12 @@ namespace passes {
 
 class RocmExpansion : public visitor::NonStoppingStructuredSDFGVisitor {
     PassReportConsumer* report_ = nullptr;
+    bool force_expand_;
 
 public:
-    RocmExpansion(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager);
+    RocmExpansion(
+        builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager, const Options& options
+    );
 
     void set_report(PassReportConsumer* report) {
         report_ = report;

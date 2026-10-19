@@ -405,35 +405,36 @@ data_flow::PointerAccessType GEMMNode::pointer_access_type(int input_idx) const 
     const bool a_row_major = (trans_a_ == BLAS_Transpose::No) ^ (layout_ == BLAS_Layout::ColMajor);
     const bool b_row_major = (trans_b_ == BLAS_Transpose::No) ^ (layout_ == BLAS_Layout::ColMajor);
     const bool c_row_major = (layout_ == BLAS_Layout::RowMajor);
+    // BLAS leaves A and B unreferenced when alpha is 0, and C unread when beta is 0.
+    auto alpha = constant_input("__alpha");
+    auto beta = constant_input("__beta");
+    const bool products_read = alpha && *alpha != 0.0;
     if (input_idx == 0) { // A: m x k
         return data_flow::PointerAccessMeta::create_read_only(
             calc_matrix_access_range(m_, k_, lda_, trans_a_, layout_),
             true,
-            build_operand_layout(m_, k_, lda_, a_row_major)
+            build_operand_layout(m_, k_, lda_, a_row_major),
+            products_read
         );
     } else if (input_idx == 1) { // B: k x n
         return data_flow::PointerAccessMeta::create_read_only(
             calc_matrix_access_range(k_, n_, ldb_, trans_b_, layout_),
             true,
-            build_operand_layout(k_, n_, ldb_, b_row_major)
+            build_operand_layout(k_, n_, ldb_, b_row_major),
+            products_read
         );
     } else if (input_idx == 2) {
         auto c_layout = build_operand_layout(m_, n_, ldc_, c_row_major);
-        // for beta == 0, there would no reads of C. But we currently have no mechanism to access const-prop knowledge
-        // like tha
-        if (symbolic::eq(ldc_, n_)) { // non-sparse access over the m x n range
+        if (beta && *beta == 0.0) {
             return data_flow::PointerAccessMeta::create_full_write_only(
                 calc_matrix_access_range(m_, n_, ldc_, BLAS_Transpose::No, layout_), true, std::move(c_layout)
             );
-        } else {
-            // Strided C (ldc != n): the TensorLayoutPattern describes the accessed
-            // m x n region exactly (not_sparse), unlike a flat convex over-approximation.
-            return data_flow::PointerAccessMeta::create_generic(
-                data_flow::TensorLayoutPattern::create(c_layout, true),
-                data_flow::TensorLayoutPattern::create(c_layout, true),
-                true
-            );
         }
+        return data_flow::PointerAccessMeta::create_generic(
+            data_flow::TensorLayoutPattern::create(c_layout, beta.has_value()),
+            data_flow::TensorLayoutPattern::create(c_layout, true),
+            true
+        );
     } else {
         return LibraryNode::pointer_access_type(input_idx);
     }

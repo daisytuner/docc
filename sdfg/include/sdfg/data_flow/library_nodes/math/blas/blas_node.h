@@ -29,6 +29,8 @@
 
 #pragma once
 
+#include <optional>
+
 #include "sdfg/codegen/code_snippet_factory.h"
 #include "sdfg/data_flow/library_nodes/math/math_node.h"
 
@@ -204,6 +206,9 @@ public:
      * @return Primitive type for this precision
      */
     types::PrimitiveType scalar_primitive() const;
+
+    /// The value of the scalar input @p conn if a constant feeds it.
+    std::optional<double> constant_input(const std::string& conn) const;
 };
 
 class BLASLibDependency : public codegen::LibDependency {

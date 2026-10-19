@@ -97,6 +97,11 @@ public:
     virtual size_t min_async_bytes() const {
         return 4;
     }
+  
+    /// The most elements a staging buffer local to one of this target's loops may hold.
+    virtual size_t max_tile_elements() const {
+        return size_t{1} << 16;
+    }
 
     /// The implementation selector this target stamps onto its tile codegen library
     /// nodes (cp.async / vector copy / pipeline commit+wait) so the owning target's

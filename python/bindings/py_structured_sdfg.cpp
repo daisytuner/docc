@@ -19,6 +19,8 @@
 #include <sdfg/codegen/instrumentation/instrumentation_plan.h>
 #include <sdfg/codegen/loop_report.h>
 #include <sdfg/einsum/einsum.h>
+#include <sdfg/fp_math/passes/contraction_precision.h>
+#include <sdfg/fp_math/passes/fp_contraction.h>
 #include <sdfg/parallelization/passes/auto_parallelization.h>
 #include <sdfg/passes/dataflow/approximate_math.h>
 #include <sdfg/passes/dataflow/dead_data_elimination.h>
@@ -92,24 +94,8 @@ PyStructuredSDFG::PyStructuredSDFG(sdfg::plugins::Context& ctx, std::unique_ptr<
 }
 
 void PyStructuredSDFG::set_option(const std::string& key, pybind11::object value) {
-    const auto* spec = docc_context_.option_registry().find_option(key);
-    if (spec == nullptr) {
-        throw std::runtime_error("Unknown option: " + key);
-    }
-    switch (spec->type) {
-        case sdfg::OptionType::Bool:
-            options_.set(key, sdfg::OptionValue{value.cast<bool>()});
-            break;
-        case sdfg::OptionType::Int:
-            options_.set(key, sdfg::OptionValue{value.cast<int64_t>()});
-            break;
-        case sdfg::OptionType::Double:
-            options_.set(key, sdfg::OptionValue{value.cast<double>()});
-            break;
-        case sdfg::OptionType::String:
-            options_.set(key, sdfg::OptionValue{value.cast<std::string>()});
-            break;
-    }
+    // The registry-validated, type-coercing logic now lives on sdfg::Options.
+    options_.set_option(docc_context_.option_registry(), key, value.cast<sdfg::OptionValue>());
 }
 
 PyStructuredSDFG PyStructuredSDFG::parse(sdfg::plugins::Context& ctx, const std::string& sdfg_text) {
@@ -157,7 +143,6 @@ const sdfg::types::IType& PyStructuredSDFG::return_type() const {
 const sdfg::types::IType& PyStructuredSDFG::type(const std::string& name) const {
     return sdfg_->type(name);
 }
-
 bool PyStructuredSDFG::exists(const std::string& name) const {
     return sdfg_->exists(name);
 }
@@ -234,6 +219,13 @@ void PyStructuredSDFG::expand(const docc::target::TargetOptions& options) {
     // Tensor layouts are lost on expansion, so record buffer sizes for offloading first
     sdfg::passes::TensorAllocationSizeInference tensor_allocation_size_inference;
     tensor_allocation_size_inference.run(builder_opt, analysis_manager);
+
+    // Before the targets map matmuls, e.g. to BLAS; they map the Int8 matmuls the emulation leaves instead.
+    if (options.contraction_precision != "native") {
+        sdfg::fp_math::ContractionPrecisionPass
+            contraction_precision_pass(sdfg::fp_math::ContractionPrecision::parse(options.contraction_precision));
+        contraction_precision_pass.run(builder_opt, analysis_manager);
+    }
 
     if (auto* target = docc_context_.get_target_handler(options.target)) {
         if (auto target_expand = target->safe_apply_expand_time_mapping_fn_get()) {
@@ -410,6 +402,12 @@ void PyStructuredSDFG::simplify(const docc::target::TargetOptions& options) {
     // normalize() map-fusion run so loop distribution and fusion do not fight)
     auto map_fusion = sdfg::passes::normalization::map_fusion(false, false);
     map_fusion.run(builder_opt, analysis_manager);
+
+    // Contract multiplications feeding additions into FMAs (-ffp-contract=fast)
+    if (options.fp_contract) {
+        sdfg::fp_math::FPContractionPass fp_contraction_pass;
+        fp_contraction_pass.run(builder_opt, analysis_manager);
+    }
 
     sdfg::passes::CompileStatistics::exit_stage_if_enabled();
 }

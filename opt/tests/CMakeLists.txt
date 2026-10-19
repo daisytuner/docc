@@ -36,6 +36,10 @@ set(TEST_FILES
     einsum/transformations/einsum_extend_test.cpp
     einsum/transformations/einsum_lift_test.cpp
     einsum/transformations/einsum_promotion_test.cpp
+    fp_math/contractions/contraction_test.cpp
+    fp_math/passes/fp_contraction_test.cpp
+    fp_math/transformations/fuse_fma_test.cpp
+    fp_math/transformations/unfuse_fma_test.cpp
     parallelization/analysis/loop_carried_dependency_analysis_test.cpp
     parallelization/passes/auto_parallelization_test.cpp
     parallelization/transformations/loop_parallelization_test.cpp
@@ -43,6 +47,7 @@ set(TEST_FILES
     rocm/rocm_library_nodes_test.cpp
     rocm/rocm_mma_test.cpp
     rocm/rocm_reduce_dispatcher_test.cpp
+    passes/expansion/matmul_naive_expansion_test.cpp
     passes/loop_fusion/loop_fusion_by_domain_pass_test.cpp
     passes/loop_fusion/loop_fusion_pass_test.cpp
     passes/normalization/loop_normal_form_test.cpp
@@ -53,6 +58,7 @@ set(TEST_FILES
     passes/offloading/code_motion/block_sorting_test.cpp
     passes/offloading/data_transfer_minimization_pass_test.cpp
     passes/offloading/device_buffer_reuse_pass_test.cpp
+    passes/offloading/gpu_control_flow_offload_pass_test.cpp
     passes/offloading/gpu_nested_offload_pass_test.cpp
     analysis/data_dependency_tile_copy_test.cpp
     passes/tiling_pass_test.cpp
@@ -70,6 +76,7 @@ set(TEST_FILES
     transformations/offloading/gpu_tensor_allocation_size_offload_test.cpp
     optimizations/parallelogram_tiling_test.cpp
     passes/redundant_load_elimination_pass_test.cpp
+    passes/scalar_promotion_pass_test.cpp
     passes/offloading/cuda_library_node_transfer_extraction_pass_test.cpp
     passes/offloading/cuda_library_node_expand_tests.cpp
     passes/offloading/gpu_embedding_expansion_test.cpp
@@ -90,6 +97,7 @@ set(TEST_FILES
     transformations/collapse_to_depth_test.cpp
     transformations/omp_transform_test.cpp
     transformations/map_collapse_test.cpp
+    transformations/map_delinearize_test.cpp
     transformations/loop_condition_normalize_test.cpp
     transformations/loop_distribute_test.cpp
     transformations/loop_indvar_finalize_test.cpp
@@ -115,6 +123,12 @@ set(TEST_FILES
 add_executable(sdfgopt_test ${TEST_FILES})
 target_include_directories(sdfgopt_test PRIVATE ./)
 target_link_libraries(sdfgopt_test gtest_main sdfg::opt)
+# Numeric tests compile generated code with the project's compiler and load it.
+target_link_libraries(sdfgopt_test ${CMAKE_DL_LIBS})
+target_compile_definitions(sdfgopt_test PRIVATE
+    DOCC_TEST_CXX_COMPILER="${CMAKE_CXX_COMPILER}"
+    DOCC_TEST_RTL_INCLUDE="${CMAKE_CURRENT_SOURCE_DIR}/../../rtl/include"
+)
 if(DOCC_BUILD_TARGET_TENSTORRENT)
     target_link_libraries(sdfgopt_test docc::target::tenstorrent)
 endif()

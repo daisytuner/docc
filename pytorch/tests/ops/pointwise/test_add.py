@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 
+from docc.compiler.docc_program import DoccOptions
+from docc.pytorch.pytorch_program import PyTorchProgram
 from tests import check
 
 # --- add ---
@@ -12,6 +14,24 @@ def test_add_simple(target: str) -> None:
             return torch.add(input, other)
 
     check(PointwiseAddSimpleNet(), *(torch.randn(4), torch.randn(4)), target=target)
+
+
+def test_fp_contract_does_not_alias_in_memory_cache(tmp_path) -> None:
+    class PointwiseAddSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor, other: torch.Tensor) -> torch.Tensor:
+            return torch.add(input, other)
+
+    example_input = (torch.randn(4), torch.randn(4))
+    program = PyTorchProgram(
+        torch.fx.symbolic_trace(PointwiseAddSimpleNet()),
+        example_input,
+        options=DoccOptions(target="sequential", category="server"),
+    )
+    compiled = program.compile()
+
+    program.options.fp_contract = not program.options.fp_contract
+    rebuilt = program.compile(output_folder=str(tmp_path / "rebuilt"))
+    assert rebuilt is not compiled
 
 
 def test_add_constant_float_alpha(target: str) -> None:

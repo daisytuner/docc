@@ -19,12 +19,6 @@ from docc.sdfg._sdfg import (
     _statistics_report,
 )
 from docc.compiler.compiled_sdfg import CompiledSDFG
-from docc.compiler.target_registry import (
-    get_target_schedule_fn,
-    get_target_compile_fn,
-    get_target_expand_fn,
-    register_target_overrides,
-)
 
 
 @lru_cache(maxsize=1)
@@ -53,6 +47,10 @@ def _coerce_pass_option(spec: dict, value: Any) -> Any:
     if kind == "double":
         return float(value)
     return str(value)
+
+
+# Mirrors fp_math::ContractionPrecision::parse.
+_CONTRACTION_PRECISION = re.compile(r"native|int[2-8]|ozaki|ozaki[12](:[1-9][0-9]*)?")
 
 
 @dataclass
@@ -92,6 +90,14 @@ class DoccOptions:
     # Fast, approximate device math intrinsics (e.g. __expf). Unset resolves to the
     # frontend default (DoccProgram.default_approximate_math).
     approximate_math: Optional[bool] = None
+    # Mirrors -ffp-contract=fast: contract a multiplication feeding an addition
+    # into a fused multiply-add during simplify. Defaults to True.
+    fp_contract: Optional[bool] = None
+    # How Float and Double matmuls compute: "native" (default); "int8" (or int2 ... int7)
+    # quantizes them with a scale per row and column, losing accuracy; "ozaki", "ozaki1[:s]"
+    # (slices) and "ozaki2[:L]" (moduli) emulate them on exact Int8 matmuls at the native
+    # precision. Pays off only where Int8 matrix units are much faster than the native type.
+    contraction_precision: Optional[str] = None
 
     # Frontend: parse array shapes as symbolic sizes (``_s{i}`` arguments) when
     # True, or bake in the concrete integer sizes from the example inputs when
@@ -150,6 +156,15 @@ class DoccOptions:
             self.device_residency = self.target in ("cuda", "rocm")
         if self.symbolic_shapes is None:
             self.symbolic_shapes = True
+        if self.fp_contract is None:
+            self.fp_contract = True
+        if self.contraction_precision is None:
+            self.contraction_precision = "native"
+        if not _CONTRACTION_PRECISION.fullmatch(self.contraction_precision):
+            raise ValueError(
+                f"Invalid contraction_precision {self.contraction_precision!r}: expected native, "
+                "int2 ... int8, ozaki, ozaki1[:s] or ozaki2[:L]"
+            )
 
         if self.pass_options is None:
             self.pass_options = {}
@@ -341,6 +356,9 @@ class DoccProgram(ABC):
             target_options.target = self.options.target
             target_options.category = self.options.category
             target_options.remote_tuning = self.options.remote_tuning
+            target_options.fp_contract = self.options.fp_contract
+            target_options.contraction_precision = self.options.contraction_precision
+            target_options.options = sdfg.options
             metrics.add_target_options(target_options)
 
             # Einsum detection
@@ -350,16 +368,12 @@ class DoccProgram(ABC):
                     sdfg.dump(output_folder, "py1.einsum", dump_dot=True)
 
             # Tensor targets keep tensor nodes
-            custom_expand_fn = get_target_expand_fn(self.options.target)
-            if custom_expand_fn is not None:
-                custom_expand_fn(sdfg, self.options.category, {})
-            else:
-                sdfg.expand(target_options)
+            sdfg.expand(target_options)
             if self.options.debug_dump:
                 sdfg.dump(output_folder, "py2.expanded", dump_dot=True)
 
             # Simplify pipelines
-            sdfg.simplify()
+            sdfg.simplify(target_options)
             if self.options.debug_dump:
                 sdfg.dump(output_folder, "py3.opt", dump_dot=True)
 
@@ -375,18 +389,10 @@ class DoccProgram(ABC):
                 )
 
             # Schedule if target is specified
-            custom_schedule_fn = get_target_schedule_fn(self.options.target)
-            if custom_schedule_fn is not None:
-                custom_schedule_fn(
-                    sdfg,
-                    self.options.category,
-                    {"remote_tuning": self.options.remote_tuning},
-                )
-            else:
-                sdfg.schedule(
-                    target_options,
-                    not self.options.capture_args,
-                )
+            sdfg.schedule(
+                target_options,
+                not self.options.capture_args,
+            )
 
             # CMath nodes exist only after expansion.
             if self.options.approximate_math:
@@ -433,28 +439,15 @@ class DoccProgram(ABC):
                 "sdfg_compile_time_ms", round(sdfg_opt_time * 1000), "compile_times"
             )
 
-        custom_compile_fn = get_target_compile_fn(self.options.target)
-        if custom_compile_fn is not None:
-            lib_path = custom_compile_fn(
-                sdfg,
-                output_folder,
-                self.options.instrumentation_mode,
-                self.options.capture_args,
-                {
-                    "debug_build": self.options.debug_build,
-                    "threads": self.options.build_thread_count,
-                },
-            )
-        else:
-            lib_path = sdfg._compile(
-                output_folder=output_folder,
-                target=self.options.target,
-                instrumentation_mode=self.options.instrumentation_mode,
-                capture_args=self.options.capture_args,
-                debug_build=self.options.debug_build,
-                threads=self.options.build_thread_count,
-                reuse_sources=reuse_sources,
-            )
+        lib_path = sdfg._compile(
+            output_folder=output_folder,
+            target=self.options.target,
+            instrumentation_mode=self.options.instrumentation_mode,
+            capture_args=self.options.capture_args,
+            debug_build=self.options.debug_build,
+            threads=self.options.build_thread_count,
+            reuse_sources=reuse_sources,
+        )
 
         bin_build_time = time.perf_counter() - compile_end_time
         if metrics is not None:

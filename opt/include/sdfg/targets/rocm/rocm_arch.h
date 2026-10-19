@@ -19,9 +19,18 @@ struct RocmMmaSupport : public GpuMmaSupport {
     const bool base_support;
     const bool f32_support;
     const uint16_t threads_per_mma_block;
+    /// K of the native Int8 x Int8 -> Int32 instruction of 16x16 blocks (16 on CDNA2 and RDNA, 32 on CDNA3, where
+    /// rocWMMA pads 16x16x16 to 16x16x32 at half the throughput); 0 without Int8 matrix support.
+    const uint16_t int8_block_k;
 
-    RocmMmaSupport(bool base_support, bool f32_support, uint16_t threads)
-        : GpuMmaSupport(), base_support(base_support), f32_support(f32_support), threads_per_mma_block(threads) {
+    RocmMmaSupport(bool base_support, bool f32_support, uint16_t threads, uint16_t int8_block_k = 0)
+        : GpuMmaSupport(), base_support(base_support), f32_support(f32_support), threads_per_mma_block(threads),
+          int8_block_k(int8_block_k) {
+    }
+
+    /// The block size Int8 matmuls use by default, at the full Int8 rate.
+    MmaBlockSize int8_block_size() const {
+        return {16, 16, int8_block_k};
     }
 
 protected:
@@ -100,9 +109,15 @@ class RocmArch : public GpuArch {
     RocmMmaSupport mma_support_;
 
 public:
-    RocmArch(const std::string& name, int per_cu_threads, bool mma_base_support, bool mma_f32_support)
+    RocmArch(
+        const std::string& name,
+        int per_cu_threads,
+        bool mma_base_support,
+        bool mma_f32_support,
+        uint16_t mma_int8_block_k = 0
+    )
         : GpuArch(), rocm_name_(name), per_cu_threads_(per_cu_threads),
-          mma_support_(mma_base_support ? 16 : 0, mma_f32_support, per_cu_threads) {
+          mma_support_(mma_base_support ? 16 : 0, mma_f32_support, per_cu_threads, mma_int8_block_k) {
     }
 
     std::string unique_id() const override;

@@ -38,6 +38,8 @@
 
 #pragma once
 
+#include <optional>
+
 #include "sdfg/data_flow/library_nodes/math/tensor/tensor_layout.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/tensor_node.h"
 
@@ -74,10 +76,14 @@ inline data_flow::LibraryNodeCode LibraryNodeType_MatMul("ml::MatMul");
  * For inputs A[B, M, K] and B[B, K, N]:
  * - Y = A @ B has shape [B, M, N]
  * - Each (b, m, n) element is computed as: sum_k(A[b, m, k] * B[b, k, n])
+ *
+ * ## Element types
+ * A and B share the input type; the products are summed in the accumulator type and stored in the output type
+ * (see ContractionTypes), e.g. Int8 x Int8 accumulated and stored as Int32.
  */
 class MatMulNode : public TensorNode {
 private:
-    types::PrimitiveType fixed_quantization_;
+    ContractionTypes types_;
     TensorLayout layout_a_;
     TensorLayout layout_b_;
     TensorLayout layout_y_;
@@ -107,6 +113,22 @@ public:
         const data_flow::ImplementationType& impl_type = data_flow::ImplementationType_NONE
     );
 
+    /**
+     * @brief Construct a matmul node with explicit element types
+     * @param types input, accumulator and output types; Void entries are inferred
+     */
+    MatMulNode(
+        size_t element_id,
+        const DebugInfo& debug_info,
+        const graph::Vertex vertex,
+        data_flow::DataFlowGraph& parent,
+        const TensorLayout& layout_a,
+        const TensorLayout& layout_b,
+        const ContractionTypes& types,
+        const TensorLayout* layout_y = nullptr,
+        const data_flow::ImplementationType& impl_type = data_flow::ImplementationType_NONE
+    );
+
     static auto constexpr Y_INPUT_IDX = 0;
     static auto constexpr A_INPUT_IDX = 1;
     static auto constexpr B_INPUT_IDX = 2;
@@ -124,32 +146,45 @@ public:
      */
     symbolic::Expression n() const;
 
-    [[deprecated("Use uniform_quantization() or input/output_quantization() instead")]]
+    /// The configured element types; Void entries are inferred, see input_type(), accumulator_type(), output_type().
+    const ContractionTypes& types() const;
+
+    void set_types(const ContractionTypes& types);
+
+    /// Element type of A and B: configured, or inferred from their memlets (Void if they disagree).
+    types::PrimitiveType input_type() const;
+
+    /// Element type the products are summed in: configured, or the output type.
+    types::PrimitiveType accumulator_type() const;
+
+    /// Element type of Y: configured, or inferred from its memlet.
+    types::PrimitiveType output_type() const;
+
+    /**
+     * The single type of inputs, accumulator and output, if they all agree. None if the matmul mixes types, such as
+     * Int8 inputs into an Int32 output.
+     */
+    std::optional<types::PrimitiveType> uniform_quantization(const data_flow::DataFlowGraph& dataflow) const;
+
+    [[deprecated("Use input_type(), accumulator_type(), output_type() or uniform_quantization() instead")]]
     QuantizationType quantization() const {
         return quantization(get_parent());
     }
 
-    /**
-     * type of the math calculations. May be inferred or fixed.
-     */
-    [[deprecated("Use uniform_quantization() or input/output_quantization() instead")]]
+    [[deprecated("Use input_type(), accumulator_type(), output_type() or uniform_quantization() instead")]]
     QuantizationType quantization(const data_flow::DataFlowGraph& dataflow) const;
 
-    /**
-     * Same result as quantization if it matches all the inputs. None if its impossible to use the same types
-     * for input & output and math
-     */
-    std::optional<QuantizationType> uniform_quantization(const data_flow::DataFlowGraph& dataflow) const;
-
+    [[deprecated("Use input_type() instead")]]
     types::PrimitiveType input_quantization() const;
+
+    [[deprecated("Use output_type() instead")]]
     types::PrimitiveType output_quantization() const;
 
-    /**
-     * configuration of the type for the math calculations, independent of current input types etc.
-     * 'Void' indicates auto-inferring from inputs
-     */
+    /// The configured type if inputs and output share one (Void otherwise).
+    [[deprecated("Use types() instead")]]
     QuantizationType fixed_quantization() const;
 
+    [[deprecated("Use set_types(ContractionTypes::uniform(...)) instead")]]
     void set_fixed_quantization(const QuantizationType quant);
 
     const TensorLayout& layout_a() const;
@@ -232,6 +267,27 @@ public:
     data_flow::LibraryNode& deserialize(
         const nlohmann::json& j, builder::StructuredSDFGBuilder& builder, structured_control_flow::Block& parent
     ) override;
+};
+
+class MatMulNaiveExpander : public passes::CodeLibNodeExpander<MatMulNode> {
+public:
+    MatMulNaiveExpander() : passes::CodeLibNodeExpander<MatMulNode>(LibraryNodeType_MatMul) {
+    }
+
+    passes::LibNodeExpander::ExpandOutcome handle_expand(
+        passes::LibNodeExpander::ExpandContext& context, structured_control_flow::Block& block, MatMulNode& node
+    ) const override;
+};
+
+class MatMulBlasExpander : public passes::CodeLibNodeExpander<MatMulNode> {
+public:
+    MatMulBlasExpander() : passes::CodeLibNodeExpander<MatMulNode>(LibraryNodeType_MatMul) {
+    }
+
+
+    passes::LibNodeExpander::ExpandOutcome handle_expand(
+        passes::LibNodeExpander::ExpandContext& context, structured_control_flow::Block& block, MatMulNode& node
+    ) const override;
 };
 
 } // namespace tensor
