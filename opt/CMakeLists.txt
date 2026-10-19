@@ -38,6 +38,7 @@ set(SOURCE_FILES
     src/fp_math/contractions/contraction_kernels.cpp
     src/fp_math/contractions/kernel_builder.cpp
     src/fp_math/contractions/row_major_operand.cpp
+    src/fp_math/library_nodes/ozaki_matmul_node.cpp
     src/fp_math/passes/contraction_precision.cpp
     src/fp_math/passes/fp_contraction.cpp
     src/fp_math/transformations/ozaki_contraction.cpp

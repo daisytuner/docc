@@ -514,6 +514,20 @@ public:
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
 
+    /// Y = A @ B with B given as its prepared Ozaki slices (row-major k x n Int8) and the scales of its columns; see
+    /// sdfg::fp_math::OzakiMatMulNode.
+    sdfg::data_flow::LibraryNode& add_ozaki_matmul_op(
+        const std::string& A,
+        const sdfg::types::Tensor& A_type,
+        const std::string& scales,
+        const sdfg::types::Tensor& scales_type,
+        const std::vector<std::string>& slices,
+        const sdfg::types::Tensor& slice_type,
+        const std::string& Y,
+        const sdfg::types::Tensor& Y_type,
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+
     /// Add a whole-block cooperative TileCopyNode staging one tile between a global
     /// container and a local (e.g. shared/LDS) buffer. @p global_layout / @p
     /// buffer_layout are the source/destination geometries (plan.src / plan.dst);

@@ -45,6 +45,7 @@
 #include <sdfg/codegen/dispatchers/node_dispatcher_registry.h>
 #include <sdfg/codegen/instrumentation/instrumentation_plan.h>
 #include <sdfg/einsum/einsum.h>
+#include <sdfg/fp_math/plugin.h>
 #include <sdfg/parallelization/parallelization.h>
 #include <sdfg/passes/expansion/library_node_expansion_pass.h>
 #include <sdfg/plugins/plugins.h>
@@ -103,6 +104,7 @@ PYBIND11_MODULE(_sdfg, m) {
     sdfg::einsum::register_einsum_plugin();
     sdfg::parallelization::register_parallelization_plugin(docc_context);
     sdfg::tiles::register_tiles_plugin(docc_context);
+    sdfg::fp_math::register_fp_math_plugin(docc_context);
     sdfg::omp::register_omp_plugin();
     sdfg::vectorize::register_vectorize_plugin();
     sdfg::cuda::register_cuda_plugin(docc_context);
@@ -1065,6 +1067,20 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("A_type"),
             py::arg("B"),
             py::arg("B_type"),
+            py::arg("Y"),
+            py::arg("Y_type"),
+            py::arg("debug_info") = sdfg::DebugInfo(),
+            py::return_value_policy::reference
+        )
+        .def(
+            "add_ozaki_matmul_op",
+            &PyStructuredSDFGBuilder::add_ozaki_matmul_op,
+            py::arg("A"),
+            py::arg("A_type"),
+            py::arg("scales"),
+            py::arg("scales_type"),
+            py::arg("slices"),
+            py::arg("slice_type"),
             py::arg("Y"),
             py::arg("Y_type"),
             py::arg("debug_info") = sdfg::DebugInfo(),
