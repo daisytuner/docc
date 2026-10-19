@@ -103,6 +103,7 @@ static std::tuple<Block&, math::tensor::MatMulNode&> build_offloaded_mma_structu
     int tile_n,
     int tile_k,
     const gpu::GpuArch& arch,
+    bool b_k_major = false,
     types::PrimitiveType input_type = types::PrimitiveType::Half,
     types::PrimitiveType output_type = types::PrimitiveType::Half
 ) {
@@ -1149,7 +1150,17 @@ TEST(ROCMMMATest, LocalStorageCoalescedBStagesKMajorFp32_gfx90a) {
     auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
     sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
     auto [block, matmul_node] = build_offloaded_mma_structure(
-        builder, 1024, 1024, 1024, 32, 32, 16, arch, /*b_k_major=*/false, types::PrimitiveType::Float
+        builder,
+        1024,
+        1024,
+        1024,
+        32,
+        32,
+        16,
+        arch,
+        /*b_k_major=*/false,
+        types::PrimitiveType::Float,
+        types::PrimitiveType::Float
     );
     ASSERT_TRUE(passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch)).expanded);
     strip_mine_k(builder, 2);
@@ -1183,7 +1194,17 @@ TEST(ROCMMMATest, SoftwarePipeliningRegisterStagedCoalesceFp32_gfx90a) {
     auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
     sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
     auto [block, matmul_node] = build_offloaded_mma_structure(
-        builder, 1024, 1024, 1024, 32, 32, 16, arch, /*b_k_major=*/false, types::PrimitiveType::Float
+        builder,
+        1024,
+        1024,
+        1024,
+        32,
+        32,
+        16,
+        arch,
+        /*b_k_major=*/false,
+        types::PrimitiveType::Float,
+        types::PrimitiveType::Float
     );
     ASSERT_TRUE(passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch)).expanded);
     strip_mine_k(builder, 2);
@@ -1229,7 +1250,17 @@ namespace {
 std::string int8_kernels(const gpu::rocm::RocmArch& arch, const std::string& group) {
     sdfg::builder::StructuredSDFGBuilder builder("test_sdfg_int8", FunctionType_CPU);
     auto [block, matmul_node] = build_offloaded_mma_structure(
-        builder, 1024, 1024, 1024, 32, 32, 16, arch, types::PrimitiveType::Int8, types::PrimitiveType::Int32
+        builder,
+        1024,
+        1024,
+        1024,
+        32,
+        32,
+        16,
+        arch,
+        /*b_k_major=*/false,
+        types::PrimitiveType::Int8,
+        types::PrimitiveType::Int32
     );
     EXPECT_NO_THROW(builder.subject().validate());
     auto outcome = passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch));
