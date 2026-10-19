@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-import pytest
+
 from tests import check
 
 # --- addmm ---
@@ -273,7 +273,6 @@ def test_addmm_broadcast_alpha_beta(target: str) -> None:
     )
 
 
-@pytest.mark.supported_targets("rocm", "cuda")
 def test_addmm_broadcast_half(target: str) -> None:
     class AddMMBroadcastHalfNet(nn.Module):
         def forward(
@@ -284,9 +283,9 @@ def test_addmm_broadcast_half(target: str) -> None:
     check(
         AddMMBroadcastHalfNet(),
         *(
-            torch.randn(3, dtype=torch.float16),
-            torch.randn(2, 3, dtype=torch.float16),
-            torch.randn(3, 3, dtype=torch.float16),
+            torch.randn(3, dtype=torch.half),
+            torch.randn(2, 3, dtype=torch.half),
+            torch.randn(3, 3, dtype=torch.half),
         ),
         rtol=1e-2,
         atol=1e-2,
@@ -307,6 +306,40 @@ def test_bmm_simple(target: str) -> None:
     )
 
 
+def test_bmm_half(target: str) -> None:
+    class BMMHalfNet(nn.Module):
+        def forward(self, input: torch.Tensor, mat2: torch.Tensor) -> torch.Tensor:
+            return torch.bmm(input, mat2)
+
+    check(
+        BMMHalfNet(),
+        *(
+            torch.randn(10, 3, 4, dtype=torch.half),
+            torch.randn(10, 4, 5, dtype=torch.half),
+        ),
+        rtol=1e-2,
+        atol=1e-2,
+        target=target,
+    )
+
+
+def test_bmm_bf16(target: str) -> None:
+    class BMMBf16Net(nn.Module):
+        def forward(self, input: torch.Tensor, mat2: torch.Tensor) -> torch.Tensor:
+            return torch.bmm(input, mat2)
+
+    check(
+        BMMBf16Net(),
+        *(
+            torch.randn(10, 3, 4, dtype=torch.bfloat16),
+            torch.randn(10, 4, 5, dtype=torch.bfloat16),
+        ),
+        rtol=1e-2,
+        atol=1e-2,
+        target=target,
+    )
+
+
 def test_bmm_force_expand(target: str) -> None:
     class BMMSimpleNet(nn.Module):
         def forward(self, input: torch.Tensor, mat2: torch.Tensor) -> torch.Tensor:
@@ -317,6 +350,19 @@ def test_bmm_force_expand(target: str) -> None:
         *(torch.randn(10, 3, 4), torch.randn(10, 4, 5)),
         target=target,
         options={"library_node_expansion.force_expand": True},
+    )
+
+
+def test_bmm_strided(target: str) -> None:
+    class BMMStridedNet(nn.Module):
+        def forward(self, input: torch.Tensor, mat2: torch.Tensor) -> torch.Tensor:
+            input_permute = torch.permute(input, [2, 0, 1])
+            mat2_permute = torch.permute(mat2, [2, 0, 1])
+            res = torch.bmm(input_permute, mat2_permute)
+            return torch.permute(res, [1, 2, 0])
+
+    check(
+        BMMStridedNet(), *(torch.randn(3, 4, 10), torch.randn(4, 5, 10)), target=target
     )
 
 
@@ -331,7 +377,6 @@ def test_mm_simple(target: str) -> None:
     check(MMSimpleNet(), *(torch.randn(2, 3), torch.randn(3, 3)), target=target)
 
 
-@pytest.mark.supported_targets("rocm", "cuda")
 def test_mm_half(target: str) -> None:
     class MMHalfNet(nn.Module):
         def forward(self, input: torch.Tensor, mat2: torch.Tensor) -> torch.Tensor:
@@ -340,8 +385,25 @@ def test_mm_half(target: str) -> None:
     check(
         MMHalfNet(),
         *(
-            torch.randn(2, 3, dtype=torch.float16),
-            torch.randn(3, 3, dtype=torch.float16),
+            torch.randn(2, 3, dtype=torch.half),
+            torch.randn(3, 3, dtype=torch.half),
+        ),
+        rtol=1e-2,
+        atol=1e-2,
+        target=target,
+    )
+
+
+def test_mm_bf16(target: str) -> None:
+    class MMBf16Net(nn.Module):
+        def forward(self, input: torch.Tensor, mat2: torch.Tensor) -> torch.Tensor:
+            return torch.mm(input, mat2)
+
+    check(
+        MMBf16Net(),
+        *(
+            torch.randn(2, 3, dtype=torch.bfloat16),
+            torch.randn(3, 3, dtype=torch.bfloat16),
         ),
         rtol=1e-2,
         atol=1e-2,

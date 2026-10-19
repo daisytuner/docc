@@ -77,7 +77,7 @@ static DoccTarget cuda_target = {
         bool changed = cuda_expansion_pass.run(builder, analysis_manager);
 
         sdfg::passes::LibraryNodeExpansionPass
-            exp_pass(std::make_shared<sdfg::math::tensor::MatMulBlasExpander>(), *options.options);
+            exp_pass(std::make_shared<sdfg::math::tensor::MatMulBlasExpander>(true), *options.options);
         changed |= exp_pass.run_pass(builder, analysis_manager);
 
         return changed;
@@ -157,7 +157,7 @@ static DoccTarget rocm_target = {
         bool changed = rocm_expansion_pass.run(builder, analysis_manager);
 
         sdfg::passes::LibraryNodeExpansionPass
-            exp_pass(std::make_shared<sdfg::math::tensor::MatMulBlasExpander>(), *options.options);
+            exp_pass(std::make_shared<sdfg::math::tensor::MatMulBlasExpander>(true), *options.options);
         changed |= exp_pass.run_pass(builder, analysis_manager);
 
         return changed;

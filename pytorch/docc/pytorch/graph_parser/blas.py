@@ -17,76 +17,7 @@ from docc.pytorch.graph_parser.utils import (
 )
 
 
-class MatmulParserBase(GraphParserModule):
-    def _last_dims_non_transposed(self, tensor: Tensor) -> bool:
-        return tensor.is_contiguous()
-
-    def _last_dims_transposed(self, tensor: Tensor) -> bool:
-        if len(tensor.shape) < 2:
-            return False
-        test_shape: list[str] = tensor.shape
-        test_shape[-1] = tensor.shape[-2]
-        test_shape[-2] = tensor.shape[-1]
-        test_strides: list[str] = tensor.strides
-        test_strides[-1] = tensor.strides[-2]
-        test_strides[-2] = tensor.strides[-1]
-        test_tensor: Tensor = Tensor(tensor.element_type, test_shape)
-        return test_tensor.strides == test_strides
-
-    def _copy_if_needed(
-        self,
-        node: torch.fx.Node,
-        builder: StructuredSDFGBuilder,
-        metadata: TensorMetadata,
-        info: TensorInfo,
-        debug_info: DebugInfo,
-    ) -> TensorInfo:
-        if self._last_dims_non_transposed(
-            info.sdfg_tensor_type()
-        ) or self._last_dims_transposed(info.sdfg_tensor_type()):
-            return info  # Not needed
-
-        intermediate_tensor: Tensor = Tensor(info.element_type(), info.shape())
-        intermediate_info: TensorInfo = self.create_intermediate_tensor_info(
-            node, builder, metadata, info.sdfg_type(), intermediate_tensor, [info]
-        )
-        builder.add_copy_op(
-            info.container(),
-            info.sdfg_tensor_type(),
-            intermediate_info.container(),
-            intermediate_tensor,
-            debug_info,
-        )
-        return intermediate_info
-
-    def add_matmul_op(
-        self,
-        node: torch.fx.Node,
-        builder: StructuredSDFGBuilder,
-        metadata: TensorMetadata,
-        A_info: TensorInfo,
-        B_info: TensorInfo,
-        Y_info: TensorInfo,
-        debug_info: DebugInfo,
-    ) -> None:
-        A_info_: TensorInfo = self._copy_if_needed(
-            node, builder, metadata, A_info, debug_info
-        )
-        B_info_: TensorInfo = self._copy_if_needed(
-            node, builder, metadata, B_info, debug_info
-        )
-        builder.add_matmul_op(
-            A_info_.container(),
-            A_info_.sdfg_tensor_type(),
-            B_info_.container(),
-            B_info_.sdfg_tensor_type(),
-            Y_info.container(),
-            Y_info.sdfg_tensor_type(),
-            debug_info,
-        )
-
-
-class MMParser(MatmulParserBase):
+class MMParser(GraphParserModule):
     """Formula is: result = self @ mat2"""
 
     def parse(
@@ -109,13 +40,13 @@ class MMParser(MatmulParserBase):
         mat2_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 1)
         result_info: TensorInfo = self.get_result_tensor_info(node, builder, metadata)
         debug_info: DebugInfo = self.get_debug_info(node)
-        self.add_matmul_op(
-            node,
-            builder,
-            metadata,
-            self_info,
-            mat2_info,
-            result_info,
+        builder.add_matmul_op(
+            self_info.container(),
+            self_info.sdfg_tensor_type(),
+            mat2_info.container(),
+            mat2_info.sdfg_tensor_type(),
+            result_info.container(),
+            result_info.sdfg_tensor_type(),
             debug_info,
         )
 
@@ -124,7 +55,7 @@ register_module("aten.mm.default", MMParser())
 register_module("aten.bmm.default", MMParser())
 
 
-class AddMMParser(MatmulParserBase):
+class AddMMParser(GraphParserModule):
     """Formula is: result = beta * self + alpha * (mat1 @ mat2)"""
 
     def parse(
@@ -166,13 +97,13 @@ class AddMMParser(MatmulParserBase):
             result_info.sdfg_tensor_type(),
             [mat1_info, mat2_info],
         )
-        self.add_matmul_op(
-            node,
-            builder,
-            metadata,
-            mat1_info,
-            mat2_info,
-            matmul_info,
+        builder.add_matmul_op(
+            mat1_info.container(),
+            mat1_info.sdfg_tensor_type(),
+            mat2_info.container(),
+            mat2_info.sdfg_tensor_type(),
+            matmul_info.container(),
+            matmul_info.sdfg_tensor_type(),
             debug_info,
         )
 
