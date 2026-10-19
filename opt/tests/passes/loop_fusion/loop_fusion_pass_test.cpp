@@ -7,6 +7,8 @@
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/access_node.h"
+#include "sdfg/data_flow/library_nodes/stdlib/free.h"
+#include "sdfg/data_flow/library_nodes/stdlib/malloc.h"
 #include "sdfg/data_flow/library_nodes/stdlib/memset.h"
 #include "sdfg/data_flow/tasklet.h"
 #include "sdfg/function.h"
@@ -5612,4 +5614,118 @@ TEST(LoopFusionPassTest, ProducerWritingThroughLibraryNodePointer_NotFused) {
     passes::loop_fusion::LoopFusionPass loop_fusion_pass;
     EXPECT_FALSE(loop_fusion_pass.run(builder, analysis_manager));
     EXPECT_EQ(sdfg.root().size(), 2);
+}
+
+TEST(LoopFusionPassTest, DeepProducerIntoFlatConsumerAtRoot) {
+    // The head merge of multi-head attention: a 3-deep transposing copy t[i, j, k] = a[j, i, k], read by one flat loop
+    // over all elements, b[e] = t[e] with e delinearized, both at the root. Fusing by access moves all three producer
+    // levels into the consumer's single loop, whose candidate has no parent to merge the outer producer levels into.
+    builder::StructuredSDFGBuilder builder("sdfg_deep_into_flat", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Pointer desc(base_desc);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
+    builder.add_container("a", desc, true);
+    builder.add_container("b", desc, true);
+    builder.add_container("t", desc);
+    for (auto name : {"i", "j", "k", "e"}) {
+        builder.add_container(name, sym_desc);
+    }
+    auto I = symbolic::integer(4), J = symbolic::integer(3), K = symbolic::integer(8);
+    auto add_map = [&](structured_control_flow::Sequence& scope,
+                       const std::string& name,
+                       const symbolic::Expression& bound) -> structured_control_flow::Map& {
+        auto indvar = symbolic::symbol(name);
+        return builder.add_map(
+            scope,
+            indvar,
+            symbolic::Lt(indvar, bound),
+            symbolic::zero(),
+            symbolic::add(indvar, symbolic::one()),
+            structured_control_flow::ScheduleType_Sequential::create()
+        );
+    };
+    auto i = symbolic::symbol("i"), j = symbolic::symbol("j"), k = symbolic::symbol("k"), e = symbolic::symbol("e");
+
+    auto total = symbolic::mul(I, symbolic::mul(J, K));
+    // t is a transient the consumer alone reads, which fusion scalarizes.
+    auto& allocation = builder.add_block(root);
+    auto& malloc =
+        builder
+            .add_library_node<stdlib::MallocNode>(allocation, DebugInfo(), symbolic::mul(total, symbolic::integer(4)));
+    builder.add_computational_memlet(allocation, malloc, "_ret", builder.add_access(allocation, "t"), {}, desc);
+
+    auto& map_k = add_map(add_map(add_map(root, "i", I).root(), "j", J).root(), "k", K);
+    auto& copy = builder.add_block(map_k.root());
+    {
+        auto& a = builder.add_access(copy, "a");
+        auto& t = builder.add_access(copy, "t");
+        auto& assign = builder.add_tasklet(copy, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(
+            copy,
+            a,
+            assign,
+            "_in",
+            {symbolic::expand(symbolic::add(symbolic::mul(symbolic::add(symbolic::mul(j, I), i), K), k))}
+        );
+        builder.add_computational_memlet(
+            copy,
+            assign,
+            "_out",
+            t,
+            {symbolic::expand(symbolic::add(symbolic::mul(symbolic::add(symbolic::mul(i, J), j), K), k))}
+        );
+    }
+    auto& flat = add_map(root, "e", total);
+    auto& view = builder.add_block(flat.root());
+    {
+        auto& t = builder.add_access(view, "t");
+        auto& b = builder.add_access(view, "b");
+        auto& assign = builder.add_tasklet(view, data_flow::TaskletCode::assign, "_out", {"_in"});
+        // As the frontend delinearizes the flat index of a view.
+        auto JK = symbolic::mul(J, K);
+        auto row = symbolic::mul(JK, symbolic::div(e, JK));
+        builder.add_computational_memlet(
+            view,
+            t,
+            assign,
+            "_in",
+            {symbolic::
+                 add(row, symbolic::add(symbolic::mod(e, K), symbolic::mul(K, symbolic::mod(symbolic::div(e, K), J))))}
+        );
+        builder.add_computational_memlet(view, assign, "_out", b, {symbolic::add(row, symbolic::mod(e, JK))});
+    }
+    auto& release = builder.add_block(root);
+    auto& free = builder.add_library_node<stdlib::FreeNode>(release, DebugInfo());
+    builder.add_computational_memlet(
+        release,
+        builder.add_access(release, "t"),
+        free,
+        "_ptr",
+        {},
+        types::Pointer(types::Scalar(types::PrimitiveType::Void))
+    );
+    ASSERT_NO_THROW(sdfg.validate());
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    passes::loop_fusion::LoopFusionPass loop_fusion_pass({.allow_init_hoist = true});
+    EXPECT_TRUE(loop_fusion_pass.run(builder, analysis_manager));
+    EXPECT_NO_THROW(sdfg.validate());
+    // The copy is computed in the flat loop, which reads no t anymore.
+    bool reads_a = false;
+    for (auto& node : view.dataflow().nodes()) {
+        auto* access = dynamic_cast<data_flow::AccessNode*>(&node);
+        reads_a |= access && access->data() == "a";
+    }
+    for (size_t c = 0; c < flat.root().size(); c++) {
+        if (auto* block = dynamic_cast<structured_control_flow::Block*>(&flat.root().at(c))) {
+            for (auto& node : block->dataflow().nodes()) {
+                auto* access = dynamic_cast<data_flow::AccessNode*>(&node);
+                reads_a |= access && access->data() == "a";
+            }
+        }
+    }
+    EXPECT_TRUE(reads_a);
 }

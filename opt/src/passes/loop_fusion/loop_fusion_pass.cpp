@@ -802,6 +802,22 @@ void LoopFusionHandler::update_candidate_args_up(
         action
 ) {
     auto terminate_at = state_.loop_analysis->parent_loop(first_top);
+    auto depth = [&](FusionLoopCandidate* candidate) {
+        int levels = 0;
+        for (structured_control_flow::ControlFlowNode* loop = candidate->loop; loop && loop != terminate_at;
+             loop = state_.loop_analysis->parent_loop(loop)) {
+            levels++;
+        }
+        return levels;
+    };
+    // The chains end at the same parent; a producer nest deeper than the consumer's, as fusing by access into a flat
+    // loop, merges its extra inner levels into the consumer's innermost before both climb together.
+    for (int extra = depth(first_current) - depth(second_current); extra > 0; extra--) {
+        for (auto& [name, arg] : first_current->args) {
+            action(name, arg, second_current->args);
+        }
+        first_current = state_.get_parent(*first_current);
+    }
     do {
         auto& second_args = second_current->args;
         for (auto& [name, arg] : first_current->args) {
