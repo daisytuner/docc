@@ -124,7 +124,8 @@ static DoccTarget rocm_target = {
         }
 
         builder.add_compile_option("--offload-arch=" + arch_str);
-        std::filesystem::path rocm_path = "/opt/rocm";
+        const char* rocm_env = std::getenv("ROCM_PATH");
+        std::filesystem::path rocm_path = (rocm_env && *rocm_env) ? rocm_env : "/opt/rocm";
         builder.add_compile_option("--offload-host-only");
         builder.add_compile_option("--rocm-path=" + rocm_path.string());
         builder.add_include_path(rocm_path / "include");
