@@ -8,6 +8,7 @@
 #include <nlohmann/json.hpp>
 
 #include "../contractions/contraction_kernels.h"
+#include "sdfg/fp_math/contractions/row_major_operand.h"
 
 namespace sdfg {
 namespace fp_math {
@@ -446,7 +447,9 @@ void OzakiContraction::apply(builder::StructuredSDFGBuilder& builder, analysis::
     auto splits = effective_splits();
     auto variant = variant_;
     auto direct = rescaling_ == Rescaling::Direct;
-    detail::expand_contraction(builder, node_, [&](KernelBuilder& kb, detail::ContractionOperands& operands) {
+    // Scales of B's columns then reduce along rows, and the slices are row-major, as targets of direct rescaling need.
+    auto& node = direct && b_stored_transposed(node_) ? read_b_row_major(builder, node_).contraction : node_;
+    detail::expand_contraction(builder, node, [&](KernelBuilder& kb, detail::ContractionOperands& operands) {
         if (direct) {
             build_slicing_direct(kb, operands, splits);
         } else if (variant == OzakiVariant::Slicing) {

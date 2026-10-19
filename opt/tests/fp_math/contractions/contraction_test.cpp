@@ -12,6 +12,7 @@
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/library_nodes/math/blas/gemm_node.h"
 #include "sdfg/data_flow/library_nodes/math/cmath/cmath_node.h"
+#include "sdfg/data_flow/library_nodes/math/tensor/copy_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/matmul_node.h"
 #include "sdfg/fp_math/passes/contraction_precision.h"
 #include "sdfg/fp_math/transformations/ozaki_contraction.h"
@@ -20,6 +21,7 @@
 #include "sdfg/transformations/transformation_registry.h"
 #include "sdfg/types/pointer.h"
 #include "sdfg/types/scalar.h"
+#include "sdfg/visitor/for_each.h"
 
 using namespace sdfg;
 using math::tensor::MatMulNode;
@@ -685,6 +687,33 @@ TEST(QuantizeContractionTest, Gemm_QuantizesInStorageOrder) {
     EXPECT_EQ(layout_b.is_2d_col_or_row_major(), math::tensor::TensorLayout::LAYOUT_COL_MAJOR);
     EXPECT_TRUE(symbolic::eq(layout_b.get_stride(1), symbolic::integer(K)));
     EXPECT_EQ(found.front()->layout_a().is_2d_col_or_row_major(), math::tensor::TensorLayout::LAYOUT_ROW_MAJOR);
+}
+
+TEST(OzakiContractionTest, Gemm_DirectTransposed) {
+    EXPECT_LT(gemm_relative_error("ozaki_gemm_direct", 2.0, 0.5, ozaki_direct(2)), 1e-4);
+}
+
+TEST(ContractionTest, Direct_ReadsRowMajorCopyOfTransposedB) {
+    // B is stored transposed (b[N, K]): a TensorCopy makes it row-major first, so that the scales of its columns
+    // reduce along rows and every Int8 matmul takes B row-major.
+    for (auto transform : {applying<fp_math::QuantizeContraction>(8, fp_math::Rescaling::Direct), ozaki_direct(2)}) {
+        builder::StructuredSDFGBuilder builder("direct_row_major_b", FunctionType_CPU);
+        auto& gemm = add_gemm(builder, "1.0", "0.0");
+        transform(gemm, builder);
+
+        int copies = 0;
+        visitor::for_each_block(builder.subject().root(), [&](structured_control_flow::Block& block) {
+            for (auto* node : block.dataflow().library_nodes()) {
+                copies += dynamic_cast<math::tensor::TensorCopyNode*>(node) != nullptr;
+            }
+        });
+        EXPECT_EQ(copies, 1);
+        auto found = matmuls(builder.subject().root());
+        ASSERT_FALSE(found.empty());
+        for (auto* matmul : found) {
+            EXPECT_EQ(matmul->layout_b().is_2d_col_or_row_major(), math::tensor::TensorLayout::LAYOUT_ROW_MAJOR);
+        }
+    }
 }
 
 TEST(ContractionPrecisionTest, Parse) {
