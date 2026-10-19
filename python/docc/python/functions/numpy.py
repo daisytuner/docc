@@ -49,6 +49,7 @@ class NumPyHandler:
             "tanh": self._handle_numpy_unary_op,
             "sin": self._handle_numpy_unary_op,
             "cos": self._handle_numpy_unary_op,
+            "tan": self._handle_numpy_unary_op,
             "log2": self._handle_numpy_unary_op,
             "exp2": self._handle_numpy_unary_op,
             "log": self._handle_numpy_unary_op,
@@ -1399,6 +1400,7 @@ class NumPyHandler:
         cmath_only = {
             "sin": CMathFunction.sin,
             "cos": CMathFunction.cos,
+            "tan": CMathFunction.tan,
             "log2": CMathFunction.log2,
             "exp2": CMathFunction.exp2,
             "log": CMathFunction.log,

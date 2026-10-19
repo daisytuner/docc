@@ -339,6 +339,10 @@ def _cos(a):
     return np.cos(a)
 
 
+def _tan(a):
+    return np.tan(a)
+
+
 def _log2(a):
     return np.log2(a)
 
@@ -356,11 +360,12 @@ def _log(a):
     [
         (_sin, np.sin),
         (_cos, np.cos),
+        (_tan, np.tan),
         (_log2, np.log2),
         (_exp2, np.exp2),
         (_log, np.log),
     ],
-    ids=["sin", "cos", "log2", "exp2", "log"],
+    ids=["sin", "cos", "tan", "log2", "exp2", "log"],
 )
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
 def test_numpy_cmath_ufunc(fn, reference, dtype):
