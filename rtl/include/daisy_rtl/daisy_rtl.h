@@ -401,7 +401,6 @@ __DAISY_REDUCE_COMBINE_ALL(
     __builtin_bit_cast(_Float16, __daisy_assumed),
     __builtin_bit_cast(unsigned short, __daisy_new)
 )
-#endif
 __DAISY_REDUCE_COMBINE_ALL(
     __bf16,
     __bf16,
@@ -409,6 +408,7 @@ __DAISY_REDUCE_COMBINE_ALL(
     __builtin_bit_cast(__bf16, __daisy_assumed),
     __builtin_bit_cast(unsigned short, __daisy_new)
 )
+#endif
 __DAISY_REDUCE_COMBINE_ALL(float, float, unsigned int, __uint_as_float(__daisy_assumed), __float_as_uint(__daisy_new))
 __DAISY_REDUCE_COMBINE_ALL(
     double,

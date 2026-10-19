@@ -122,7 +122,7 @@ bool GPUNestedOffloadPass::run_pass(builder::StructuredSDFGBuilder& builder, ana
             plan.push_back({chain[0], gpu::TargetLevel::X_BLOCK, parallel_size_for(chain[0], DEFAULT_X_BLOCK, true)});
         } else if (depth == 3 && chain.size() >= 2) {
             plan.push_back({chain[0], gpu::TargetLevel::X_BLOCK, parallel_size_for(chain[0], DEFAULT_X_BLOCK, true)});
-            plan.push_back({chain[1], gpu::TargetLevel::WARP, symbolic::integer(WARP_SIZE)});
+            // plan.push_back({chain[1], gpu::TargetLevel::WARP, symbolic::integer(WARP_SIZE)});
         } else if (depth >= 4 && chain.size() >= 3) {
             plan.push_back({chain[0], gpu::TargetLevel::Y_GRID, parallel_size_for(chain[0], DEFAULT_Y_GRID, false)});
             plan.push_back({chain[1], gpu::TargetLevel::X_BLOCK, parallel_size_for(chain[1], DEFAULT_X_BLOCK, true)});

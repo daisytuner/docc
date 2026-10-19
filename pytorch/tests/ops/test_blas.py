@@ -414,8 +414,6 @@ def test_mm_half_force_expand(target: str) -> None:
     )
 
 
-# Problems with GPU reductions
-@pytest.mark.unsupported_targets("cuda")
 def test_mm_bf16(target: str) -> None:
     class MMBf16Net(nn.Module):
         def forward(self, input: torch.Tensor, mat2: torch.Tensor) -> torch.Tensor:
