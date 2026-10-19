@@ -327,69 +327,70 @@ void build_modular(KernelBuilder& kb, detail::ContractionOperands& operands, int
     );
 }
 
-/// Slicing with direct rescaling, in the contraction's own type; see OzakiContraction.
-void build_slicing_direct(KernelBuilder& kb, detail::ContractionOperands& operands, int slices) {
+/// The slices of an operand in its storage order, each from x and the slices before it, read back from memory, as
+/// slicing with direct rescaling computes them; see OzakiContraction.
+std::vector<std::string> slice_direct(
+    KernelBuilder& kb,
+    const detail::Batch& batch,
+    PrimitiveType type,
+    int slices,
+    const std::string& prefix,
+    const symbolic::Expression& rows,
+    const symbolic::Expression& columns,
+    bool transposed,
+    const detail::MatrixRead& read,
+    const std::string& scales,
+    bool per_row
+) {
+    const double q = (1 << SLICE_BITS) - 1;
+    auto size = symbolic::mul(rows, columns);
+    std::vector<std::string> digits;
+    for (int t = 0; t < slices; t++) {
+        auto digit = kb.buffer(prefix, PrimitiveType::Int8, symbolic::mul(batch.count(), size));
+        auto matrices = batch.maps(kb, kb.scope());
+        auto& entry = matrices.second;
+        auto position = batch.position(entry);
+        auto& outer = kb.map(*matrices.first, "_o", transposed ? columns : rows);
+        auto& inner = kb.map(outer.root(), "_e", transposed ? rows : columns);
+        auto r = transposed ? inner.indvar() : outer.indvar();
+        auto c = transposed ? outer.indvar() : inner.indvar();
+        auto body = kb.block(inner.root());
+        auto scale = symbolic::add(symbolic::mul(position, per_row ? rows : columns), per_row ? r : c);
+        auto index = symbolic::
+            add(symbolic::mul(position, size),
+                transposed ? symbolic::add(symbolic::mul(c, rows), r) : symbolic::add(symbolic::mul(r, columns), c));
+        // r_1 = q x / s, dividing first, which never overflows, unlike q / s for small s.
+        auto ratio = body
+                         .op(TaskletCode::fp_div,
+                             {body.convert(read(body, entry, r, c), type), body.read(scales, {scale})},
+                             type);
+        auto rest = body.op(TaskletCode::fp_mul, {ratio, body.constant(q, type)}, type);
+        for (auto& previous : digits) {
+            auto difference =
+                body.op(TaskletCode::fp_sub, {rest, body.convert(body.read(previous, {index}), type)}, type);
+            rest = body.op(TaskletCode::fp_mul, {difference, body.constant(2 * q, type)}, type);
+        }
+        body.store(body.cmath(CMathFunction::rint, {rest}, type), digit, {index});
+        digits.push_back(digit);
+    }
+    return digits;
+}
+
+/// The Int8 products of the slices of A and B, rescaled into the result; see OzakiContraction.
+void direct_products(
+    KernelBuilder& kb,
+    detail::ContractionOperands& operands,
+    int slices,
+    const std::vector<std::string>& a_slices,
+    const std::string& scales_a,
+    const std::vector<std::string>& b_slices,
+    const std::string& scales_b,
+    bool b_transposed
+) {
     auto m = operands.m, n = operands.n, k = operands.k;
-    // Each matrix of a batch gets scales of its own; every buffer holds one matrix after the other.
     auto& batch = operands.batch;
     auto type = operands.element;
     const double q = (1 << SLICE_BITS) - 1;
-    auto tiny = detail::smallest_normal(type);
-    auto read_a = [&](BlockBuilder& block, auto& entry, auto& row, auto& column) {
-        return operands.a(block, entry, row, column);
-    };
-    auto read_b = [&](BlockBuilder& block, auto& entry, auto& row, auto& column) {
-        return operands.b(block, entry, row, column);
-    };
-    auto read_b_t = [&](BlockBuilder& block, auto& entry, auto& column, auto& row) {
-        return operands.b(block, entry, row, column);
-    };
-    auto scales_a = detail::absmax(kb, "_oz_scale_a", read_a, m, k, tiny, type, batch);
-    auto scales_b = detail::absmax(kb, "_oz_scale_b", read_b_t, n, k, tiny, type, batch);
-
-    // The slices of an operand in its storage order, each from x and the slices before it, read back from memory.
-    auto slice_operand = [&](const std::string& prefix,
-                             const symbolic::Expression& rows,
-                             const symbolic::Expression& columns,
-                             bool transposed,
-                             const detail::MatrixRead& read,
-                             const std::string& scales,
-                             bool per_row) {
-        auto size = symbolic::mul(rows, columns);
-        std::vector<std::string> digits;
-        for (int t = 0; t < slices; t++) {
-            auto digit = kb.buffer(prefix, PrimitiveType::Int8, symbolic::mul(batch.count(), size));
-            auto matrices = batch.maps(kb, kb.scope());
-            auto& entry = matrices.second;
-            auto position = batch.position(entry);
-            auto& outer = kb.map(*matrices.first, "_o", transposed ? columns : rows);
-            auto& inner = kb.map(outer.root(), "_e", transposed ? rows : columns);
-            auto r = transposed ? inner.indvar() : outer.indvar();
-            auto c = transposed ? outer.indvar() : inner.indvar();
-            auto body = kb.block(inner.root());
-            auto scale = symbolic::add(symbolic::mul(position, per_row ? rows : columns), per_row ? r : c);
-            auto index = symbolic::
-                add(symbolic::mul(position, size),
-                    transposed ? symbolic::add(symbolic::mul(c, rows), r)
-                               : symbolic::add(symbolic::mul(r, columns), c));
-            // r_1 = q x / s, dividing first, which never overflows, unlike q / s for small s.
-            auto ratio = body
-                             .op(TaskletCode::fp_div,
-                                 {body.convert(read(body, entry, r, c), type), body.read(scales, {scale})},
-                                 type);
-            auto rest = body.op(TaskletCode::fp_mul, {ratio, body.constant(q, type)}, type);
-            for (auto& previous : digits) {
-                auto difference =
-                    body.op(TaskletCode::fp_sub, {rest, body.convert(body.read(previous, {index}), type)}, type);
-                rest = body.op(TaskletCode::fp_mul, {difference, body.constant(2 * q, type)}, type);
-            }
-            body.store(body.cmath(CMathFunction::rint, {rest}, type), digit, {index});
-            digits.push_back(digit);
-        }
-        return digits;
-    };
-    auto a_slices = slice_operand("_oz_a_slice", m, k, operands.a_transposed, read_a, scales_a, true);
-    auto b_slices = slice_operand("_oz_b_slice", k, n, operands.b_transposed, read_b, scales_b, false);
 
     // The products of slice pairs (t, u), 1-based, t + u <= s + 1, each with its weight (2q)^(2-t-u); smallest first.
     auto size = symbolic::mul(batch.count(), symbolic::mul(m, n));
@@ -406,7 +407,7 @@ void build_slicing_direct(KernelBuilder& kb, detail::ContractionOperands& operan
                 n,
                 k,
                 operands.a_transposed,
-                operands.b_transposed,
+                b_transposed,
                 batch
             );
             products.emplace_back(product, std::pow(2 * q, 2 - g));
@@ -441,7 +442,54 @@ void build_slicing_direct(KernelBuilder& kb, detail::ContractionOperands& operan
     operands.store(body, body.op(TaskletCode::fp_mul, {scaled, column_scale}, type), matrices.second, i, j);
 }
 
+/// Slicing with direct rescaling, in the contraction's own type; see OzakiContraction.
+void build_slicing_direct(KernelBuilder& kb, detail::ContractionOperands& operands, int slices) {
+    auto m = operands.m, n = operands.n, k = operands.k;
+    // Each matrix of a batch gets scales of its own; every buffer holds one matrix after the other.
+    auto& batch = operands.batch;
+    auto type = operands.element;
+    auto tiny = detail::smallest_normal(type);
+    auto read_a = [&](BlockBuilder& block, auto& entry, auto& row, auto& column) {
+        return operands.a(block, entry, row, column);
+    };
+    auto read_b = [&](BlockBuilder& block, auto& entry, auto& row, auto& column) {
+        return operands.b(block, entry, row, column);
+    };
+    auto read_b_t = [&](BlockBuilder& block, auto& entry, auto& column, auto& row) {
+        return operands.b(block, entry, row, column);
+    };
+    auto scales_a = detail::absmax(kb, "_oz_scale_a", read_a, m, k, tiny, type, batch);
+    auto scales_b = detail::absmax(kb, "_oz_scale_b", read_b_t, n, k, tiny, type, batch);
+    auto a_slices =
+        slice_direct(kb, batch, type, slices, "_oz_a_slice", m, k, operands.a_transposed, read_a, scales_a, true);
+    auto b_slices =
+        slice_direct(kb, batch, type, slices, "_oz_b_slice", k, n, operands.b_transposed, read_b, scales_b, false);
+    direct_products(kb, operands, slices, a_slices, scales_a, b_slices, scales_b, operands.b_transposed);
+}
+
 } // namespace
+
+namespace detail {
+
+void build_slicing_direct_prepared(
+    KernelBuilder& kb,
+    ContractionOperands& operands,
+    const std::vector<std::string>& b_slices,
+    const std::string& scales_b
+) {
+    auto m = operands.m, k = operands.k;
+    auto type = operands.element;
+    auto read_a = [&](BlockBuilder& block, auto& entry, auto& row, auto& column) {
+        return operands.a(block, entry, row, column);
+    };
+    auto scales_a = absmax(kb, "_oz_scale_a", read_a, m, k, smallest_normal(type), type, operands.batch);
+    auto slices = static_cast<int>(b_slices.size());
+    auto a_slices =
+        slice_direct(kb, operands.batch, type, slices, "_oz_a_slice", m, k, operands.a_transposed, read_a, scales_a, true);
+    direct_products(kb, operands, slices, a_slices, scales_a, b_slices, scales_b, false);
+}
+
+} // namespace detail
 
 void OzakiContraction::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     auto splits = effective_splits();

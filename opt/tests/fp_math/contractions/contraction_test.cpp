@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <functional>
+#include <limits>
 #include <random>
 #include <sstream>
 #include <vector>
@@ -14,6 +15,7 @@
 #include "sdfg/data_flow/library_nodes/math/cmath/cmath_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/copy_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/matmul_node.h"
+#include "sdfg/fp_math/library_nodes/ozaki_matmul_node.h"
 #include "sdfg/fp_math/passes/contraction_precision.h"
 #include "sdfg/fp_math/transformations/ozaki_contraction.h"
 #include "sdfg/fp_math/transformations/quantize_contraction.h"
@@ -555,6 +557,109 @@ TEST(OzakiContractionTest, Direct_Float_AtFloatPrecision) {
 
 TEST(OzakiContractionTest, Direct_Batched_ScalesEachMatrix) {
     EXPECT_LT(batched_relative_error(ozaki_direct(2), false, 3), 1e-4);
+}
+
+namespace {
+
+/// B's slices and the absolute maxima of its columns, as slicing with direct rescaling prepares them.
+std::pair<std::vector<std::vector<int8_t>>, std::vector<float>> prepare_b(const std::vector<float>& b, int slices) {
+    const float q = 127.0f;
+    std::vector<float> scales(N, std::numeric_limits<float>::min());
+    for (int64_t k = 0; k < K; k++) {
+        for (int64_t j = 0; j < N; j++) {
+            scales[j] = std::max(scales[j], std::fabs(b[k * N + j]));
+        }
+    }
+    std::vector<std::vector<int8_t>> digits(slices, std::vector<int8_t>(K * N));
+    for (int64_t e = 0; e < K * N; e++) {
+        float rest = b[e] / scales[e % N] * q;
+        for (int t = 0; t < slices; t++) {
+            if (t > 0) {
+                rest = (rest - digits[t - 1][e]) * (2 * q);
+            }
+            digits[t][e] = static_cast<int8_t>(std::rint(rest));
+        }
+    }
+    return {digits, scales};
+}
+
+/// y = a @ b through an OzakiMatMul node, with b's two slices prepared by prepare_b.
+std::vector<float> prepared_product(const std::vector<float>& a, const std::vector<float>& b) {
+    builder::StructuredSDFGBuilder builder("ozaki_matmul_prepared", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    types::Pointer f32{types::Scalar(PrimitiveType::Float)};
+    types::Pointer i8{types::Scalar(PrimitiveType::Int8)};
+    for (auto name : {"a", "sb", "y"}) {
+        builder.add_container(name, f32, true);
+    }
+    builder.add_container("b0", i8, true);
+    builder.add_container("b1", i8, true);
+    auto& block = builder.add_block(sdfg.root());
+    auto& node = builder.add_library_node<fp_math::OzakiMatMulNode>(
+        block,
+        DebugInfo(),
+        math::tensor::TensorLayout({symbolic::integer(M), symbolic::integer(K)}),
+        math::tensor::TensorLayout({symbolic::integer(M), symbolic::integer(N)}),
+        PrimitiveType::Float,
+        2
+    );
+    for (auto [container, connector] : {std::pair{"y", "Y"}, {"a", "A"}, {"sb", "SB"}, {"b0", "B0"}, {"b1", "B1"}}) {
+        auto& type = container[0] == 'b' ? i8 : f32;
+        builder.add_computational_memlet(block, builder.add_access(block, container), node, connector, {}, type);
+    }
+
+    analysis::AnalysisManager analysis_manager(sdfg);
+    EXPECT_TRUE(fp_math::expand_ozaki_matmuls(builder, analysis_manager));
+    EXPECT_EQ(matmuls(sdfg.root()).size(), 3);
+    auto function =
+        reinterpret_cast<void (*)(float*, float*, float*, int8_t*, int8_t*)>(test::compile_and_load(builder));
+    auto [digits, scales] = prepare_b(b, 2);
+    std::vector<float> a_copy = a, y(M * N, -7.0f);
+    function(a_copy.data(), scales.data(), y.data(), digits[0].data(), digits[1].data());
+    return y;
+}
+
+} // namespace
+
+TEST(OzakiContractionTest, Prepared_MatchesSlicingInTheGraph) {
+    // B sliced before, once, computes what slicing it with A computes.
+    std::vector<float> a, b;
+    fill(a, b);
+    auto prepared = prepared_product(a, b);
+
+    builder::StructuredSDFGBuilder builder("ozaki_direct_reference", FunctionType_CPU);
+    auto& matmul =
+        add_matmul(builder, PrimitiveType::Float, symbolic::integer(M), symbolic::integer(N), symbolic::integer(K));
+    ozaki_direct(2)(matmul, builder);
+    auto function = reinterpret_cast<void (*)(float*, float*, float*)>(test::compile_and_load(builder));
+    std::vector<float> direct(M * N, -7.0f);
+    function(a.data(), b.data(), direct.data());
+
+    for (int64_t e = 0; e < M * N; e++) {
+        EXPECT_NEAR(prepared[e], direct[e], 1e-6f * std::max(1.0f, std::fabs(direct[e]))) << "element " << e;
+    }
+}
+
+TEST(OzakiContractionTest, Prepared_JsonRoundTrip) {
+    builder::StructuredSDFGBuilder builder("ozaki_matmul_json", FunctionType_CPU);
+    auto& block = builder.add_block(builder.subject().root());
+    auto& node = static_cast<fp_math::OzakiMatMulNode&>(builder.add_library_node<fp_math::OzakiMatMulNode>(
+        block,
+        DebugInfo(),
+        math::tensor::TensorLayout({symbolic::integer(M), symbolic::integer(K)}),
+        math::tensor::TensorLayout({symbolic::integer(M), symbolic::integer(N)}),
+        PrimitiveType::Float,
+        3
+    ));
+    auto json = fp_math::OzakiMatMulNodeSerializer().serialize(node);
+    json["debug_info"] = nlohmann::json::object();
+    serializer::JSONSerializer().debug_info_to_json(json["debug_info"], DebugInfo());
+    auto& restored =
+        static_cast<fp_math::OzakiMatMulNode&>(fp_math::OzakiMatMulNodeSerializer().deserialize(json, builder, block));
+    EXPECT_EQ(restored.slices(), 3);
+    EXPECT_EQ(restored.inputs().size(), 6);
+    EXPECT_TRUE(symbolic::eq(restored.n(), symbolic::integer(N)));
+    EXPECT_TRUE(symbolic::eq(restored.k(), symbolic::integer(K)));
 }
 
 TEST(OzakiContractionTest, Direct_RejectsModular) {

@@ -2,6 +2,7 @@
 
 #include "sdfg/codegen/dispatchers/node_dispatcher_registry.h"
 #include "sdfg/einsum/einsum.h"
+#include "sdfg/fp_math/plugin.h"
 #include "sdfg/parallelization/parallelization.h"
 #include "sdfg/serializer/json_serializer.h"
 #include "sdfg/targets/cuda/plugin.h"
@@ -23,6 +24,7 @@ int main(int argc, char** argv) {
     sdfg::einsum::register_einsum_plugin();
     sdfg::parallelization::register_parallelization_plugin(context);
     sdfg::tiles::register_tiles_plugin(context);
+    sdfg::fp_math::register_fp_math_plugin(context);
     sdfg::vectorize::register_vectorize_plugin();
     sdfg::omp::register_omp_plugin();
     sdfg::cuda::register_cuda_plugin(context);

@@ -19,6 +19,7 @@
 #include <sdfg/codegen/instrumentation/instrumentation_plan.h>
 #include <sdfg/codegen/loop_report.h>
 #include <sdfg/einsum/einsum.h>
+#include <sdfg/fp_math/library_nodes/ozaki_matmul_node.h>
 #include <sdfg/fp_math/passes/contraction_precision.h>
 #include <sdfg/fp_math/passes/fp_contraction.h>
 #include <sdfg/parallelization/passes/auto_parallelization.h>
@@ -219,6 +220,10 @@ void PyStructuredSDFG::expand(const docc::target::TargetOptions& options) {
     // Tensor layouts are lost on expansion, so record buffer sizes for offloading first
     sdfg::passes::TensorAllocationSizeInference tensor_allocation_size_inference;
     tensor_allocation_size_inference.run(builder_opt, analysis_manager);
+
+    // Matmuls with prepared Ozaki slices of B leave Int8 matmuls as the precision pass does, before the targets map
+    // them.
+    sdfg::fp_math::expand_ozaki_matmuls(builder_opt, analysis_manager);
 
     // Before the targets map matmuls, e.g. to BLAS; they map the Int8 matmuls the emulation leaves instead.
     if (options.contraction_precision != "native") {

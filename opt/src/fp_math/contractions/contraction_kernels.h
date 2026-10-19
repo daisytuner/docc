@@ -138,6 +138,16 @@ void int8_matmul(
     const Batch& batch = {}
 );
 
+/// Slicing with direct rescaling (see OzakiContraction) of A only: B's slices and the scales of its columns were
+/// prepared before, as slicing with direct rescaling computes them, each slice an Int8 buffer holding the row-major
+/// k x n matrix (one after the other per matrix of a batch), the scales a buffer of n per matrix in A's type.
+void build_slicing_direct_prepared(
+    KernelBuilder& kb,
+    ContractionOperands& operands,
+    const std::vector<std::string>& b_slices,
+    const std::string& scales_b
+);
+
 /// The MatMul or GEMM node a transformation description refers to as its subgraph node "0".
 data_flow::LibraryNode& contraction_from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& j);
 
