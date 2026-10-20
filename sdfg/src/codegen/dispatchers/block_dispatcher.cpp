@@ -8,6 +8,19 @@
 namespace sdfg {
 namespace codegen {
 
+namespace {
+
+// Native GPU half/bf16 types (e.g. hip_bfloat16) have no implicit conversion from a double (or float)
+// literal, so low-precision floating-point constants are cast explicitly to the target type via float.
+std::string constant_literal(LanguageExtension& lang, const std::string& literal, types::PrimitiveType type) {
+    if (types::is_floating_point(type) && types::bit_width(type) <= 32) {
+        return "(" + lang.primitive_type(type) + ")(float)(" + literal + ")";
+    }
+    return literal;
+}
+
+} // namespace
+
 BlockDispatcher::BlockDispatcher(
     LanguageExtension& language_extension,
     StructuredSDFG& sdfg,
@@ -238,7 +251,10 @@ void DataFlowDispatcher::dispatch_tasklet(PrettyPrinter& stream, const data_flow
 
         // Reinterpret cast for opaque pointers
         std::string value;
-        if (iedge->base_type().type_id() == types::TypeID::Pointer) {
+        if (dynamic_cast<const data_flow::ConstantNode*>(&src) &&
+            types::is_floating_point(conn_type_scalar.primitive_type())) {
+            value = constant_literal(this->language_extension_, src_name, conn_type_scalar.primitive_type());
+        } else if (iedge->base_type().type_id() == types::TypeID::Pointer) {
             value = "(" + this->language_extension_.type_cast(src_name, iedge->base_type()) + ")";
         } else {
             value = src_name;
@@ -341,8 +357,8 @@ std::string resolve_input_edge_to_expression(
         );
     }
     std::string expr;
-    if (dynamic_cast<const data_flow::ConstantNode*>(&src)) {
-        expr = src_name;
+    if (auto* const_node = dynamic_cast<const data_flow::ConstantNode*>(&src)) {
+        expr = constant_literal(language_extension, src_name, const_node->type().primitive_type());
     } else if (iedge.base_type().type_id() == types::TypeID::Pointer &&
                (!function.exists(src_name) || iedge.base_type() != function.type(src_name))) {
         expr = "(" + language_extension.type_cast(src_name, iedge.base_type()) + ")";
