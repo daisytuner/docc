@@ -59,6 +59,10 @@ public:
 
     void run(analysis::AnalysisManager& analysis_manager) override;
 
+    /// Traverses the subtree of @p changed again in the scope around it; scopes elsewhere keep their assumptions.
+    /// The parameters stay as they are: no scalar argument is assumed to become written. False for the root.
+    bool invalidate(structured_control_flow::ControlFlowNode& changed) override;
+
     const symbolic::Assumptions& get(structured_control_flow::ControlFlowNode& node, bool include_trivial_bounds = false);
 
     /// Symbols whose assumption at `node` is `constant()`; equals filtering `get(node, ...)`, without the scan.

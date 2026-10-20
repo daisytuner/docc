@@ -726,7 +726,8 @@ void LoopInterchange::apply(builder::StructuredSDFGBuilder& builder, analysis::A
     builder.remove_child(new_outer_loop->root(), 0);
     builder.remove_child(outer_scope, index);
 
-    analysis_manager.invalidate_all();
+    // The new loops took the old ones' place and hold all that changed.
+    analysis_manager.invalidate_all(*new_outer_loop);
     applied_ = true;
     new_outer_loop_ = new_outer_loop;
     new_inner_loop_ = new_inner_loop;

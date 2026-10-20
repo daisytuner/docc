@@ -292,9 +292,11 @@ MemoryLayoutAnalysis::MemoryLayoutAnalysis(StructuredSDFG& sdfg, const Options& 
 
 void MemoryLayoutAnalysis::run(analysis::AnalysisManager& analysis_manager) {
     accesses_.clear();
-    access_order_.clear();
+    scope_memlets_.clear();
+    computed_.clear();
     tiles_.clear();
     tile_groups_.clear();
+    analysis_manager_ = &analysis_manager;
 
     // Build a fresh branch-condition-aware assumptions analysis on every
     // run. The manager-cached `AssumptionsAnalysis` deliberately skips
@@ -308,37 +310,106 @@ void MemoryLayoutAnalysis::run(analysis::AnalysisManager& analysis_manager) {
     bounds_cache_.clear();
 }
 
+bool MemoryLayoutAnalysis::invalidate(structured_control_flow::ControlFlowNode& changed) {
+    if (!detailed_assumptions_ || !detailed_assumptions_->invalidate(changed)) {
+        return false;
+    }
+    // The subtree changed, and with it the accesses of every scope around it.
+    std::vector<structured_control_flow::ControlFlowNode*> stack{&changed};
+    while (!stack.empty()) {
+        auto* node = stack.back();
+        stack.pop_back();
+        computed_.erase(node);
+        if (auto* sequence = dyn_cast<structured_control_flow::Sequence*>(node)) {
+            for (size_t i = 0; i < sequence->size(); i++) {
+                stack.push_back(&sequence->at(i));
+            }
+        } else if (auto* if_else = dyn_cast<structured_control_flow::IfElse*>(node)) {
+            for (size_t i = 0; i < if_else->size(); i++) {
+                stack.push_back(&if_else->at(i).first);
+            }
+        } else if (auto* while_stmt = dyn_cast<structured_control_flow::While*>(node)) {
+            stack.push_back(&while_stmt->root());
+        } else if (auto* loop = dyn_cast<structured_control_flow::StructuredLoop*>(node)) {
+            stack.push_back(&loop->root());
+        }
+    }
+    for (auto* node = changed.get_parent(); node; node = node->get_parent()) {
+        computed_.erase(node);
+    }
+    // Keyed by assumptions the invalidated scopes may have dropped.
+    bounds_cache_.clear();
+    return true;
+}
+
+void MemoryLayoutAnalysis::ensure(const structured_control_flow::ControlFlowNode& scope) const {
+    if (computed_.contains(&scope) || !analysis_manager_) {
+        return;
+    }
+    // Queries are const; computing what they ask for only fills the caches.
+    auto& self = const_cast<MemoryLayoutAnalysis&>(*this);
+    self.traverse(const_cast<structured_control_flow::ControlFlowNode&>(scope), *analysis_manager_);
+    self.bounds_cache_.clear();
+}
+
 void MemoryLayoutAnalysis::
     traverse(structured_control_flow::ControlFlowNode& node, analysis::AnalysisManager& analysis_manager) {
-    const size_t first_new_access = access_order_.size();
+    if (computed_.contains(&node)) {
+        return;
+    }
+    std::vector<const data_flow::Memlet*> memlets;
+    auto children = [&](structured_control_flow::ControlFlowNode& child) {
+        traverse(child, analysis_manager);
+        auto& inner = scope_memlets_[&child];
+        memlets.insert(memlets.end(), inner.begin(), inner.end());
+    };
 
     if (auto block = dyn_cast<structured_control_flow::Block*>(&node)) {
+        // Accesses recorded before, of memlets that may have changed since, are recorded again.
+        for (auto& memlet : block->dataflow().edges()) {
+            accesses_.erase(&memlet);
+        }
         process_block(*block, analysis_manager);
+        for (auto& memlet : block->dataflow().edges()) {
+            if (accesses_.contains(&memlet)) {
+                memlets.push_back(&memlet);
+            }
+        }
     } else if (auto sequence = dyn_cast<structured_control_flow::Sequence*>(&node)) {
         for (size_t i = 0; i < sequence->size(); i++) {
-            traverse(sequence->at(i), analysis_manager);
+            children(sequence->at(i));
         }
     } else if (auto if_else = dyn_cast<structured_control_flow::IfElse*>(&node)) {
         for (size_t i = 0; i < if_else->size(); i++) {
-            traverse(if_else->at(i).first, analysis_manager);
+            children(if_else->at(i).first);
         }
     } else if (auto while_stmt = dyn_cast<structured_control_flow::While*>(&node)) {
-        traverse(while_stmt->root(), analysis_manager);
+        children(while_stmt->root());
     } else if (auto loop = dyn_cast<structured_control_flow::StructuredLoop*>(&node)) {
-        traverse(loop->root(), analysis_manager);
+        children(loop->root());
     } else {
         // Break, Continue, Return nodes don't contain blocks
+        scope_memlets_[&node].clear();
+        computed_.insert(&node);
         return;
     }
 
     // Merge tiles for containers accessed within this scope
-    merge_scope_layouts(node, first_new_access, analysis_manager);
+    auto drop = [&](auto& by_scope) {
+        auto it = by_scope.lower_bound({&node, std::string()});
+        while (it != by_scope.end() && it->first.first == &node) {
+            it = by_scope.erase(it);
+        }
+    };
+    drop(tiles_);
+    drop(tile_groups_);
+    merge_scope_layouts(node, memlets, analysis_manager);
+    scope_memlets_[&node] = std::move(memlets);
+    computed_.insert(&node);
 }
 
 void MemoryLayoutAnalysis::record_access(const data_flow::Memlet& memlet, MemoryTile access) {
-    if (accesses_.emplace(&memlet, std::move(access)).second) {
-        access_order_.push_back(&memlet);
-    }
+    accesses_.emplace(&memlet, std::move(access));
 }
 
 void MemoryLayoutAnalysis::
@@ -479,6 +550,9 @@ void MemoryLayoutAnalysis::
 }
 
 const MemoryTile* MemoryLayoutAnalysis::access(const data_flow::Memlet& memlet) const {
+    if (auto* block = dynamic_cast<const structured_control_flow::Block*>(memlet.get_parent().get_parent())) {
+        ensure(*block);
+    }
     auto layout_it = accesses_.find(&memlet);
     if (layout_it == accesses_.end()) {
         return nullptr;
@@ -488,13 +562,12 @@ const MemoryTile* MemoryLayoutAnalysis::access(const data_flow::Memlet& memlet) 
 
 void MemoryLayoutAnalysis::merge_scope_layouts(
     structured_control_flow::ControlFlowNode& scope,
-    size_t first_new_access,
+    const std::vector<const data_flow::Memlet*>& memlets_in_scope,
     analysis::AnalysisManager& analysis_manager
 ) {
     // Group the accesses recorded while traversing this scope by container
     std::unordered_map<std::string, std::vector<const data_flow::Memlet*>> all_container_groups;
-    for (size_t k = first_new_access; k < access_order_.size(); ++k) {
-        const auto* memlet_ptr = access_order_[k];
+    for (const auto* memlet_ptr : memlets_in_scope) {
         all_container_groups[accesses_.at(memlet_ptr).container].push_back(memlet_ptr);
     }
     if (all_container_groups.empty()) {
@@ -866,6 +939,7 @@ void MemoryLayoutAnalysis::merge_scope_layouts(
 
 const MemoryTile* MemoryLayoutAnalysis::
     tile(const structured_control_flow::ControlFlowNode& scope, const std::string& container) const {
+    ensure(scope);
     auto key = std::make_pair(&scope, container);
     auto it = tiles_.find(key);
     if (it == tiles_.end()) {
@@ -1009,6 +1083,7 @@ void MemoryLayoutAnalysis::compute_tile_groups(
 
 const std::vector<MemoryTileGroup>* MemoryLayoutAnalysis::
     tile_groups(const structured_control_flow::ControlFlowNode& scope, const std::string& container) const {
+    ensure(scope);
     auto key = std::make_pair(&scope, container);
     auto it = tile_groups_.find(key);
     if (it == tile_groups_.end()) {
@@ -1019,6 +1094,7 @@ const std::vector<MemoryTileGroup>* MemoryLayoutAnalysis::
 
 const MemoryTileGroup* MemoryLayoutAnalysis::
     tile_group_for(const structured_control_flow::ControlFlowNode& scope, const data_flow::Memlet& memlet) const {
+    ensure(scope);
     // Find which container this memlet accesses
     auto acc_it = accesses_.find(&memlet);
     if (acc_it == accesses_.end()) {

@@ -183,7 +183,8 @@ void LoopTiling::apply(builder::StructuredSDFGBuilder& builder, analysis::Analys
     outer_loop_ = &tile_loop(builder, loop_, this->tile_size_, this->simplify_bounds_);
     inner_loop_ = &loop_;
 
-    analysis_manager.invalidate_all();
+    // The tile loop took the loop's place and holds all that changed.
+    analysis_manager.invalidate_all(*outer_loop_);
     applied_ = true;
 };
 

@@ -13,6 +13,7 @@
 #include <optional>
 #include <set>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -94,7 +95,13 @@ struct MemoryTileGroup {
 class MemoryLayoutAnalysis : public Analysis {
 private:
     std::unordered_map<const data_flow::Memlet*, MemoryTile> accesses_;
-    std::vector<const data_flow::Memlet*> access_order_;
+    // Per node, the memlets in its subtree whose accesses are recorded, and the nodes whose tiles are up to date.
+    // Queries compute a scope that is not, from its children that are not either: after a local invalidation, only
+    // what is queried is computed again.
+    std::unordered_map<const structured_control_flow::ControlFlowNode*, std::vector<const data_flow::Memlet*>>
+        scope_memlets_;
+    std::unordered_set<const structured_control_flow::ControlFlowNode*> computed_;
+    analysis::AnalysisManager* analysis_manager_ = nullptr;
     std::map<std::pair<const structured_control_flow::ControlFlowNode*, std::string>, MemoryTile> tiles_;
     std::map<std::pair<const structured_control_flow::ControlFlowNode*, std::string>, std::vector<MemoryTileGroup>>
         tile_groups_;
@@ -111,13 +118,16 @@ private:
 
     void traverse(structured_control_flow::ControlFlowNode& node, analysis::AnalysisManager& analysis_manager);
 
+    /// Computes the tiles of @p scope if they are not up to date.
+    void ensure(const structured_control_flow::ControlFlowNode& scope) const;
+
     void process_block(structured_control_flow::Block& block, analysis::AnalysisManager& analysis_manager);
 
     void record_access(const data_flow::Memlet& memlet, MemoryTile access);
 
     void merge_scope_layouts(
         structured_control_flow::ControlFlowNode& scope,
-        size_t first_new_access,
+        const std::vector<const data_flow::Memlet*>& memlets,
         analysis::AnalysisManager& analysis_manager
     );
 
@@ -142,6 +152,9 @@ public:
     std::string name() const override {
         return "MemoryLayoutAnalysis";
     }
+
+    /// Marks the subtree of @p changed and the scopes around it as out of date; queries compute them again.
+    bool invalidate(structured_control_flow::ControlFlowNode& changed) override;
 
     /**
      * @brief Get the inferred memory layout for a memlet

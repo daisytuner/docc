@@ -34,6 +34,18 @@ public:
 
     virtual std::string name() const = 0;
 
+    /**
+     * @brief Updates the analysis after a change confined to the subtree of @p changed.
+     *
+     * The subtree of @p changed is the only part of the SDFG that changed since the analysis last saw it: nodes in
+     * it were added, removed, moved or modified, and the position of @p changed in its parent may have changed. An
+     * analysis whose results elsewhere stay valid updates the affected ones, or drops them to recompute them on
+     * demand, and returns true. The default returns false: the analysis is evicted and runs again when needed.
+     */
+    virtual bool invalidate(structured_control_flow::ControlFlowNode& changed) {
+        return false;
+    }
+
     Analysis(const Analysis& a) = delete;
     Analysis& operator=(const Analysis&) = delete;
 };
@@ -127,6 +139,13 @@ public:
     }
 
     void invalidate_all();
+
+    /**
+     * @brief Invalidates the analyses after a change confined to the subtree of @p changed; see
+     * Analysis::invalidate. Analyses that cannot update locally are evicted, as by invalidate_all(). A transformation
+     * that changed several subtrees calls this for each.
+     */
+    void invalidate_all(structured_control_flow::ControlFlowNode& changed);
 };
 
 } // namespace analysis

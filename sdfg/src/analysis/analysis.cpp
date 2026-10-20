@@ -44,5 +44,15 @@ void AnalysisManager::invalidate_all() {
     }
 }
 
+void AnalysisManager::invalidate_all(structured_control_flow::ControlFlowNode& changed) {
+    for (auto it = cache_.begin(); it != cache_.end();) {
+        if (it->second->invalidate(changed)) {
+            ++it;
+        } else {
+            it = cache_.erase(it);
+        }
+    }
+}
+
 } // namespace analysis
 } // namespace sdfg
