@@ -173,10 +173,6 @@ jobs:
           pip install pytest pytest-xdist
           pip install numpy scipy ml_dtypes jsonschema transformers
 
-          # torch (ROCm) and cupy are provided by the base image and reused via
-          # the --system-site-packages venv above.
-          pip install cupy-rocm-7-0
-
       - name: Build
         run: |
           mkdir build
