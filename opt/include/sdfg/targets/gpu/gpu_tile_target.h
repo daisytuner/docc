@@ -25,6 +25,7 @@ class GPUTileTarget : public TileTarget {
     unsigned lane_width_;
     std::string offload_value_;
     data_flow::ImplementationType implementation_type_;
+    size_t min_async_bytes_;
 
     static unsigned spatial_axis_of(gpu::TargetLevel tl) {
         switch (tl) {
@@ -40,9 +41,14 @@ class GPUTileTarget : public TileTarget {
     }
 
 public:
-    GPUTileTarget(unsigned lane_width, std::string offload_value, data_flow::ImplementationType implementation_type)
+    GPUTileTarget(
+        unsigned lane_width,
+        std::string offload_value,
+        data_flow::ImplementationType implementation_type,
+        size_t min_async_bytes = 4
+    )
         : lane_width_(lane_width), offload_value_(std::move(offload_value)),
-          implementation_type_(std::move(implementation_type)) {
+          implementation_type_(std::move(implementation_type)), min_async_bytes_(min_async_bytes) {
     }
 
     std::optional<AxisSchedule> classify(const structured_control_flow::ScheduleType& sched) const override {
@@ -112,6 +118,10 @@ public:
 
     data_flow::ImplementationType implementation_type() const override {
         return implementation_type_;
+    }
+
+    size_t min_async_bytes() const override {
+        return min_async_bytes_;
     }
 };
 

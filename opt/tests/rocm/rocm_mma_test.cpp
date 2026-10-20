@@ -103,6 +103,7 @@ static std::tuple<Block&, math::tensor::MatMulNode&> build_offloaded_mma_structu
     int tile_n,
     int tile_k,
     const gpu::GpuArch& arch,
+    bool b_k_major = false,
     types::PrimitiveType input_type = types::PrimitiveType::Half,
     types::PrimitiveType output_type = types::PrimitiveType::Half
 ) {
@@ -174,8 +175,17 @@ static std::tuple<Block&, math::tensor::MatMulNode&> build_offloaded_mma_structu
         {symbolic::integer(K), symbolic::integer(1)},
         symbolic::mul(row, symbolic::integer(K))
     );
-    math::tensor::TensorLayout
-        b_layout({symbolic::integer(K), symbolic::integer(tile_n)}, {symbolic::integer(N), symbolic::integer(1)}, col);
+    // K-major B (C = A @ W^T with W[N][K] row-major): column-major [K, TILE] slice at row j of W.
+    math::tensor::TensorLayout b_layout = b_k_major ? math::tensor::TensorLayout(
+                                                          {symbolic::integer(K), symbolic::integer(tile_n)},
+                                                          {symbolic::integer(1), symbolic::integer(K)},
+                                                          symbolic::mul(col, symbolic::integer(K))
+                                                      )
+                                                    : math::tensor::TensorLayout(
+                                                          {symbolic::integer(K), symbolic::integer(tile_n)},
+                                                          {symbolic::integer(N), symbolic::integer(1)},
+                                                          col
+                                                      );
     math::tensor::TensorLayout c_layout(
         {symbolic::integer(tile_m), symbolic::integer(tile_n)},
         {symbolic::integer(N), symbolic::integer(1)},
@@ -844,7 +854,7 @@ TEST(ROCMMMATest, FragmentLoadOverload_gfx90a) {
 }
 
 // K-major B: the transposed block tile [32 n][32+4 k] is read column-major by the fragments,
-// and TileVectorizer stages it with the 4x4 register-transposing copy.
+// and TileVectorizer stages it with the 4x4 coalesced block copy.
 TEST(ROCMMMATest, LocalStorageTransposedBStagesKMajor_gfx90a) {
     auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
     sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
@@ -885,7 +895,7 @@ TEST(ROCMMMATest, LocalStorageTransposedBStagesKMajor_gfx90a) {
     }
     auto* copy_b = find_copy_from(builder.subject().root(), "B");
     ASSERT_NE(copy_b, nullptr);
-    EXPECT_EQ(copy_b->atom(), tiles::CopyAtom::TransposeSync);
+    EXPECT_EQ(copy_b->atom(), tiles::CopyAtom::CoalesceSync);
     EXPECT_EQ(copy_b->bytes(), 8u);
     auto* copy_a = find_copy_from(builder.subject().root(), "A");
     ASSERT_NE(copy_a, nullptr);
@@ -1090,6 +1100,147 @@ TEST(ROCMMMATest, RawMfma32x32x8_128x96Tile_LaunchBounds) {
     EXPECT_NE(kernels.find("__global__ void __launch_bounds__(768) kernel_"), std::string::npos) << kernels;
 }
 
+// K-major B (C = A @ W^T): the B tile is [k][n] with global strides [1, K]. The copy must sweep the
+// unit-stride k fastest across lanes and widen like A; sweeping n fastest reads 2 KB apart per lane.
+TEST(ROCMMMATest, LocalStorageKMajorBCopyIsCoalesced_gfx90a) {
+    auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
+    sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+    auto [block, matmul_node] =
+        build_offloaded_mma_structure(builder, 1024, 1024, 1024, 32, 32, 16, arch, /*b_k_major=*/true);
+    passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch));
+    strip_mine_k(builder, 2);
+    localize(builder, "tile_k0");
+    EXPECT_NO_THROW(builder.subject().validate());
+
+    auto* b = find_local_load(builder.subject().root(), "B");
+    ASSERT_NE(b, nullptr);
+    EXPECT_EQ(b->layout().layout, gpu::MMA_LAYOUT_COL_MAJOR);
+
+    {
+        analysis::AnalysisManager am(builder.subject());
+        transformations::TileVectorizer tv(*find_loop(am, "tile_k0_tile0"));
+        ASSERT_TRUE(tv.can_be_applied(builder, am));
+        tv.apply(builder, am);
+    }
+    auto* copy_a = find_copy_from(builder.subject().root(), "A");
+    ASSERT_NE(copy_a, nullptr);
+    EXPECT_EQ(copy_a->atom(), tiles::CopyAtom::VectorSync) << copy_a->toStr();
+    EXPECT_EQ(copy_a->bytes(), 16u) << copy_a->toStr();
+
+    auto* copy_b = find_copy_from(builder.subject().root(), "B");
+    ASSERT_NE(copy_b, nullptr);
+    // emit_cooperative_copy_loop delinearizes the lane index row-major: the last dim is lane-fastest.
+    EXPECT_TRUE(symbolic::eq(copy_b->plan().src.strides().back(), symbolic::one())) << copy_b->toStr();
+    EXPECT_EQ(copy_b->atom(), tiles::CopyAtom::VectorSync) << copy_b->toStr();
+    EXPECT_EQ(copy_b->bytes(), 16u) << copy_b->toStr();
+
+    auto out = test::utils::test_codegen(builder.subject(), "kmajor_b_global", true);
+    std::string kernels;
+    for (auto& [name, snippet] : out.snippets) {
+        kernels += snippet.content;
+    }
+    EXPECT_EQ(
+        kernels.find("(B))[1024*block_col + 16*tile_k0_tile0 + ((__tc_c) / (32)) + 1024*((__tc_c) % (32))]"),
+        std::string::npos
+    ) << kernels;
+}
+
+// fp32 K-major staging of a row-major B: 4x4 blocks load as coalesced 16-byte rows, regrouped in registers.
+TEST(ROCMMMATest, LocalStorageCoalescedBStagesKMajorFp32_gfx90a) {
+    auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
+    sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+    auto [block, matmul_node] = build_offloaded_mma_structure(
+        builder,
+        1024,
+        1024,
+        1024,
+        32,
+        32,
+        16,
+        arch,
+        /*b_k_major=*/false,
+        types::PrimitiveType::Float,
+        types::PrimitiveType::Float
+    );
+    ASSERT_TRUE(passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch)).expanded);
+    strip_mine_k(builder, 2);
+    localize(builder, "tile_k0", /*transpose_b=*/true);
+    EXPECT_NO_THROW(builder.subject().validate());
+
+    {
+        analysis::AnalysisManager am(builder.subject());
+        transformations::TileVectorizer tv(*find_loop(am, "tile_k0_tile0"));
+        ASSERT_TRUE(tv.can_be_applied(builder, am));
+        tv.apply(builder, am);
+    }
+    auto* copy_b = find_copy_from(builder.subject().root(), "B");
+    ASSERT_NE(copy_b, nullptr);
+    EXPECT_EQ(copy_b->atom(), tiles::CopyAtom::CoalesceSync) << copy_b->toStr();
+    EXPECT_EQ(copy_b->bytes(), 16u) << copy_b->toStr();
+
+    auto out = test::utils::test_codegen(builder.subject(), "kmajor_b_fp32", true);
+    std::string kernels;
+    for (auto& [name, snippet] : out.snippets) {
+        kernels += snippet.content;
+    }
+    EXPECT_NE(kernels.find("const uint4 __tc_v = *reinterpret_cast<const uint4*>"), std::string::npos) << kernels;
+    EXPECT_NE(kernels.find("*reinterpret_cast<uint4*>"), std::string::npos) << kernels;
+    EXPECT_NE(kernels.find("make_uint4(__tc_x[0][0], __tc_x[1][0], __tc_x[2][0], __tc_x[3][0])"), std::string::npos)
+        << kernels;
+}
+
+// Register-staged pipelining of the fp32 coalesced block copy: each lane holds 16 words per 4x4 block.
+TEST(ROCMMMATest, SoftwarePipeliningRegisterStagedCoalesceFp32_gfx90a) {
+    auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
+    sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+    auto [block, matmul_node] = build_offloaded_mma_structure(
+        builder,
+        1024,
+        1024,
+        1024,
+        32,
+        32,
+        16,
+        arch,
+        /*b_k_major=*/false,
+        types::PrimitiveType::Float,
+        types::PrimitiveType::Float
+    );
+    ASSERT_TRUE(passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch)).expanded);
+    strip_mine_k(builder, 2);
+    localize(builder, "tile_k0", /*transpose_b=*/true);
+    {
+        analysis::AnalysisManager am(builder.subject());
+        transformations::SoftwarePipelining sp(*find_loop(am, "tile_k0_tile0"), 2, false, /*register_staged=*/true);
+        ASSERT_TRUE(sp.can_be_applied(builder, am));
+        sp.apply(builder, am);
+    }
+    {
+        analysis::AnalysisManager am(builder.subject());
+        transformations::TileVectorizer tv(*find_loop(am, "wave_col0"));
+        ASSERT_TRUE(tv.can_be_applied(builder, am));
+        tv.apply(builder, am);
+    }
+    size_t coalesced = 0;
+    visitor::for_each_block(builder.subject().root(), [&](structured_control_flow::Block& b) {
+        for (auto* lib : b.dataflow().library_nodes()) {
+            if (auto* tc = dynamic_cast<tiles::TileCopyNode*>(lib)) {
+                EXPECT_NE(tc->atom(), tiles::CopyAtom::ScalarSync) << tc->toStr();
+                coalesced += tc->atom() == tiles::CopyAtom::CoalesceSync;
+            }
+        }
+    });
+    EXPECT_GT(coalesced, 0u);
+
+    auto out = test::utils::test_codegen(builder.subject(), "reg_staged_fp32_coalesce", true);
+    std::string kernels;
+    for (auto& [name, snippet] : out.snippets) {
+        kernels += snippet.content;
+    }
+    EXPECT_NE(kernels.find("[16 * __tc_i + 15]"), std::string::npos) << kernels;
+    EXPECT_NE(kernels.find("make_uint4("), std::string::npos) << kernels;
+}
+
 } // namespace sdfg::rocm
 
 namespace sdfg::rocm {
@@ -1099,7 +1250,17 @@ namespace {
 std::string int8_kernels(const gpu::rocm::RocmArch& arch, const std::string& group) {
     sdfg::builder::StructuredSDFGBuilder builder("test_sdfg_int8", FunctionType_CPU);
     auto [block, matmul_node] = build_offloaded_mma_structure(
-        builder, 1024, 1024, 1024, 32, 32, 16, arch, types::PrimitiveType::Int8, types::PrimitiveType::Int32
+        builder,
+        1024,
+        1024,
+        1024,
+        32,
+        32,
+        16,
+        arch,
+        /*b_k_major=*/false,
+        types::PrimitiveType::Int8,
+        types::PrimitiveType::Int32
     );
     EXPECT_NO_THROW(builder.subject().validate());
     auto outcome = passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch));

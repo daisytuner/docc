@@ -1200,6 +1200,10 @@ LocalStorage::BuiltCopy LocalStorage::build_tiled_copy(
         plan.dst_swizzle = buffer.layout().swizzle;
         out.guard = tile_boundary_guard(analysis_manager, guard_scope, vsizes);
     }
+    // The flat DMA placement fixes lane order to the buffer, so only the other placements reorder.
+    if (buffer.placement != tiles::Placement::Flat) {
+        tiles::coalesce_sweep_order(plan, out.guard);
+    }
 
     // Symbolic cooperating thread count over the dispatcher's coop axes (empty =
     // whole block, which also includes the per-thread-slot threads): the schedule's

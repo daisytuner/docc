@@ -1,5 +1,7 @@
 #include "sdfg/tiles/tiled_copy.h"
 
+#include <algorithm>
+
 #include "sdfg/symbolic/extreme_values.h"
 
 namespace sdfg {
@@ -83,6 +85,44 @@ bool TileGuard::discharge(const symbolic::SymbolSet& parameters, const symbolic:
         return false;
     }
     dims = std::move(kept);
+    return true;
+}
+
+bool coalesce_sweep_order(TiledCopy& plan, TileGuard& guard) {
+    const auto& strides = plan.src.strides();
+    const size_t n = strides.size();
+    size_t unit = n;
+    for (size_t d = 0; d < n; ++d) {
+        if (symbolic::eq(strides[d], symbolic::one())) {
+            unit = d;
+            break;
+        }
+    }
+    if (unit + 1 >= n) {
+        return false;
+    }
+    std::vector<size_t> order;
+    for (size_t d = 0; d < n; ++d) {
+        if (d != unit) {
+            order.push_back(d);
+        }
+    }
+    order.push_back(unit);
+    auto permute = [&](const symbolic::MultiExpression& v) {
+        symbolic::MultiExpression out;
+        for (size_t d : order) {
+            out.push_back(v.at(d));
+        }
+        return out;
+    };
+    plan.src = Layout(permute(plan.src.shape()), permute(plan.src.strides()), plan.src.offset());
+    plan.dst = Layout(permute(plan.dst.shape()), permute(plan.dst.strides()), plan.dst.offset());
+    if (guard.tile_sizes.size() == n) {
+        guard.tile_sizes = permute(guard.tile_sizes);
+    }
+    for (auto& d : guard.dims) {
+        d.axis = static_cast<size_t>(std::find(order.begin(), order.end(), d.axis) - order.begin());
+    }
     return true;
 }
 
