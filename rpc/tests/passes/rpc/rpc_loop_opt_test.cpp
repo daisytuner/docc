@@ -156,6 +156,32 @@ TEST_F(RPCLoopOptTest, Matmul_FMA) {
     );
 };
 
+TEST_F(RPCLoopOptTest, RunPassInvalidatesLoopAnalysis) {
+    analysis::AnalysisManager analysis_manager(builder_->subject());
+
+    // Populate (cache) LoopAnalysis before the transform runs: i, j, k.
+    auto& loop_analysis = analysis_manager.get<sdfg::analysis::LoopAnalysis>();
+    ASSERT_EQ(loop_analysis.loops().size(), 3u);
+
+    passes::rpc::SimpleRpcContextBuilder ctx_builder;
+    auto rpc_context = ctx_builder.initialize_local_default().from_env().from_header_env().build();
+
+    passes::scheduler::RpcOptimizationPass
+        rpc_optimization_pass(rpc_context, docc::target::TargetOptions{"sequential", "server", false});
+
+    bool applied = rpc_optimization_pass.run_pass(*builder_, analysis_manager);
+    ASSERT_TRUE(applied);
+
+    sdfg::analysis::AnalysisManager fresh_manager(builder_->subject());
+    const size_t fresh_count = fresh_manager.get<sdfg::analysis::LoopAnalysis>().loops().size();
+    ASSERT_GT(fresh_count, 3u);
+
+    const size_t reused_count = analysis_manager.get<sdfg::analysis::LoopAnalysis>().loops().size();
+    EXPECT_EQ(reused_count, fresh_count)
+        << "RpcOptimizationPass::run_pass must invalidate the AnalysisManager; "
+           "otherwise the reused LoopAnalysis is stale and holds dangling loop pointers.";
+}
+
 TEST_F(RPCLoopOptTest, Double_Matmul) {
     {
         analysis::AnalysisManager analysis_manager(builder_->subject());
