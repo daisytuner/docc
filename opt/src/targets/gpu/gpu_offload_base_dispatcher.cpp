@@ -106,12 +106,14 @@ void GPUOffloadBaseDispatcher::dispatch_node(
 
     std::sort(arguments.begin(), arguments.end());
     std::vector<std::string> arguments_device;
+    auto& language_extension = strategy_->create_kernel_language_extension();
     for (auto& argument : arguments) {
         auto& arg_type = sdfg_.type(argument);
+        std::string arg_with_cast = language_extension.type_cast(argument, arg_type);
         if (strategy_->is_device_pointer_storage(arg_type.storage_type())) {
-            arguments_device.push_back(argument);
+            arguments_device.push_back(arg_with_cast);
         } else if (arg_type.type_id() == types::TypeID::Scalar) {
-            arguments_device.push_back(argument);
+            arguments_device.push_back(arg_with_cast);
         } else {
             throw InvalidSDFGException("Argument " + argument + " is not a scalar or device pointer");
         }
@@ -158,7 +160,7 @@ void GPUOffloadBaseDispatcher::dispatch_node(
             const std::string decl_name = strategy_->is_device_pointer_storage(arg_type.storage_type())
                                               ? "__restrict__ " + container
                                               : container;
-            arguments_declaration.push_back(this->language_extension_.declaration(decl_name, arg_type));
+            arguments_declaration.push_back(language_extension.declaration(decl_name, arg_type));
         }
 
         std::unordered_map<TargetLevel, ScheduleType> nested_schedule_types;
