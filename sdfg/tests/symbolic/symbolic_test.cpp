@@ -172,3 +172,36 @@ TEST(SymbolicTest, has) {
     auto expr = symbolic::max(x, inf);
     EXPECT_TRUE(symbolic::has<SymEngine::Infty>(expr));
 }
+
+TEST(SymbolicTest, OverapproximateDistributesIntoMin) {
+    // The extent of a ragged tile: min(i0 + 64, N) - i0 is at most 64.
+    auto i0 = symbolic::symbol("i0");
+    auto n = symbolic::symbol("N");
+    auto e = symbolic::sub(symbolic::min(symbolic::add(i0, symbolic::integer(64)), n), i0);
+    EXPECT_TRUE(symbolic::eq(symbolic::simplify(symbolic::expand(symbolic::overapproximate(e))), symbolic::integer(64)));
+}
+
+TEST(SymbolicTest, OverapproximateDistributesIntoMax) {
+    // The merged extent of two clipped accesses: max(min(b + 31, N), min(b + 15, N)) - b + 1 is at most 32.
+    auto b = symbolic::symbol("b");
+    auto n = symbolic::symbol("N");
+    auto e = symbolic::
+        add(symbolic::
+                sub(symbolic::
+                        max(symbolic::min(symbolic::add(b, symbolic::integer(31)), n),
+                            symbolic::min(symbolic::add(b, symbolic::integer(15)), n)),
+                    b),
+            symbolic::one());
+    auto approx = symbolic::simplify(symbolic::expand(symbolic::overapproximate(e)));
+    EXPECT_TRUE(symbolic::eq(approx, symbolic::integer(32))) << approx->__str__();
+}
+
+TEST(SymbolicTest, OverapproximateMaxKeepsSymbolicArguments) {
+    // max(8, x) may exceed 8, so no integer is a sound upper bound.
+    auto x = symbolic::symbol("x");
+    auto approx = symbolic::overapproximate(symbolic::max(symbolic::integer(8), x));
+    EXPECT_FALSE(SymEngine::is_a<SymEngine::Integer>(*approx)) << approx->__str__();
+    // With every argument constant, the largest one bounds the max.
+    auto c = symbolic::overapproximate(symbolic::max(symbolic::integer(8), symbolic::integer(16)));
+    EXPECT_TRUE(symbolic::eq(c, symbolic::integer(16)));
+}
