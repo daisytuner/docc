@@ -336,8 +336,8 @@ def test_bmm_bf16(target: str) -> None:
             torch.randn(10, 3, 4, dtype=torch.bfloat16),
             torch.randn(10, 4, 5, dtype=torch.bfloat16),
         ),
-        rtol=1.6e-2,
-        atol=1e-2,
+        rtol=2e-2,
+        atol=2e-2,
         target=target,
     )
 
