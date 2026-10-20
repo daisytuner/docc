@@ -402,10 +402,10 @@ __DAISY_REDUCE_COMBINE_ALL(
     __builtin_bit_cast(unsigned short, __daisy_new)
 )
 __DAISY_REDUCE_COMBINE_ALL(
-    __bf16,
-    __bf16,
+    nv_bfloat16,
+    nv_bfloat16,
     unsigned short,
-    __builtin_bit_cast(__bf16, __daisy_assumed),
+    __builtin_bit_cast(nv_bfloat16, __daisy_assumed),
     __builtin_bit_cast(unsigned short, __daisy_new)
 )
 #endif
