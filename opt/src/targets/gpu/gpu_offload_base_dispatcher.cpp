@@ -109,11 +109,11 @@ void GPUOffloadBaseDispatcher::dispatch_node(
     auto& language_extension = strategy_->create_kernel_language_extension();
     for (auto& argument : arguments) {
         auto& arg_type = sdfg_.type(argument);
-        std::string arg_with_cast = language_extension.type_cast(argument, arg_type);
         if (strategy_->is_device_pointer_storage(arg_type.storage_type())) {
+            std::string arg_with_cast = language_extension.type_cast(argument, arg_type);
             arguments_device.push_back(arg_with_cast);
         } else if (arg_type.type_id() == types::TypeID::Scalar) {
-            arguments_device.push_back(arg_with_cast);
+            arguments_device.push_back(argument);
         } else {
             throw InvalidSDFGException("Argument " + argument + " is not a scalar or device pointer");
         }
