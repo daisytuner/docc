@@ -30,6 +30,17 @@ int GpuMmaSupport::get_integer_block_count(const symbolic::Expression& size, uin
     return 0;
 }
 
+int GpuMmaSupport::get_ceil_block_count(const symbolic::Expression& size, uint16_t block_size) {
+    auto s = symbolic::simplify(size);
+    if (block_size > 0 && SymEngine::is_a<SymEngine::Integer>(*s)) {
+        auto v = SymEngine::rcp_static_cast<const SymEngine::Integer>(s)->as_int();
+        if (v > 0) {
+            return static_cast<int>((v + block_size - 1) / block_size);
+        }
+    }
+    return 0;
+}
+
 const GpuArch* GpuArch::get_from_schedule_type(const structured_control_flow::ScheduleType& schedule) {
     if (schedule.value() == ::sdfg::cuda::ScheduleType_CUDA_Offload::value()) {
         return cuda::cuda_arch_from_schedule_type(schedule);

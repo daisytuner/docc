@@ -114,6 +114,9 @@ struct GpuMmaSupport {
 
     static int get_integer_block_count(const symbolic::Expression& size, uint16_t block_size);
 
+    /// ceil(size / block_size) for a positive integer @p size, otherwise 0.
+    static int get_ceil_block_count(const symbolic::Expression& size, uint16_t block_size);
+
     virtual bool supported_types(types::PrimitiveType input_type, types::PrimitiveType output_type) const = 0;
 
     virtual std::optional<GpuMmaTiling> get_mma_tiling(
@@ -123,6 +126,22 @@ struct GpuMmaSupport {
         const MmaBlockSize* block_size_hint,
         const BlockCounts* wave_tile_hint
     ) const = 0;
+
+    /**
+     * Tiling for a ragged problem: @p padded_shape is a constant upper bound of each extent that need not be a
+     * multiple of the MMA block. Fragments crossing the exact extent are clipped (zero-filled loads, masked
+     * stores; see GpuMmaFromMemoryLayout::rows/cols). Targets without masked fragment transfers return nullopt.
+     */
+    virtual std::optional<GpuMmaTiling> get_ragged_mma_tiling(
+        const symbolic::MultiExpression& padded_shape,
+        types::PrimitiveType input_type,
+        types::PrimitiveType output_type,
+        types::PrimitiveType acc_type,
+        const MmaBlockSize* block_size_hint,
+        const BlockCounts* wave_tile_hint
+    ) const {
+        return std::nullopt;
+    }
 
     virtual void set_mma_fragment_storage_type(
         types::StorageType& storage_type, const GpuMmaTiling& tiling, MmaFragmentType type, MmaFragmentLayout layout
@@ -145,14 +164,29 @@ struct GpuMmaFromMemoryLayout {
     symbolic::Expression offset; ///< element offset added to the base pointer
     symbolic::Expression ldstride; ///< leading-dimension stride
     MmaFragmentLayout layout; ///< memory layout of the tile
+    /// Clip of a ragged fragment: only logical rows `r < rows` and columns `c < cols` (from the fragment origin)
+    /// are in bounds; loads zero-fill the rest, stores skip it. Null = the whole block is in bounds. Values above
+    /// the block extent or below zero are allowed (fully inside / fully outside).
+    symbolic::Expression rows = SymEngine::null;
+    symbolic::Expression cols = SymEngine::null;
+
+    bool clipped() const {
+        return !rows.is_null() || !cols.is_null();
+    }
 
     std::string toStr() const;
     void collect_symbols(symbolic::SymbolSet& syms) const;
     void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression);
     void replace(const symbolic::ExpressionMapping& replacements);
 
+    /// The accessed tile; a clipped fragment reports its clipped (in-bounds) extents `min(block, rows/cols)`.
     [[nodiscard]] std::optional<math::tensor::TensorLayout>
     to_tensor_layout(const MmaBlockSize& block_size, MmaFragmentType frag) const;
+
+    /// Whether @p shape is this fragment's block shape or its clipped shape (see @ref to_tensor_layout).
+    bool matches_access_shape(
+        const symbolic::MultiExpression& shape, const MmaBlockSize& block_size, MmaFragmentType frag
+    ) const;
 
     static std::optional<GpuMmaFromMemoryLayout> from_tensor_layout(const math::tensor::TensorLayout& layout);
 };

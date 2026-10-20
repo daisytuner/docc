@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <ranges>
 
 #include "sdfg/targets/gpu/gpu_mma_einsum_transform.h"
@@ -16,9 +17,40 @@
 
 namespace sdfg::gpu {
 
-GpuMmaEinsumReplacer::
-    GpuMmaEinsumReplacer(const GpuArch* arch, const MmaBlockSize* block_size_hint, const BlockCounts* wave_tile_hint)
-    : arch_(arch), block_size_hint_(block_size_hint), wave_tile_hint_(wave_tile_hint) {
+GpuMmaEinsumReplacer::GpuMmaEinsumReplacer(
+    const GpuArch* arch, const MmaBlockSize* block_size_hint, const BlockCounts* wave_tile_hint, int k_block_multiple
+)
+    : arch_(arch), block_size_hint_(block_size_hint), wave_tile_hint_(wave_tile_hint),
+      k_block_multiple_(std::max(1, k_block_multiple)) {
+}
+
+std::optional<GpuMmaTiling> GpuMmaEinsumReplacer::select_tiling(EinsumMmaAnalysis& analysis) const {
+    auto* mma_arch = arch_->mma_support();
+    analysis.ragged = false;
+    if (auto exact = mma_arch->get_mma_tiling(
+            {analysis.m, analysis.n, analysis.k},
+            analysis.input_type,
+            analysis.acc_type,
+            block_size_hint_,
+            wave_tile_hint_
+        )) {
+        return exact;
+    }
+    // Ragged extents (e.g. the `min(i0 + T, N) - i0` of a non-dividing tile, or K not a block multiple): tile the
+    // constant over-approximation and clip the fragments crossing the exact extent.
+    auto pad = [](const symbolic::Expression& e) {
+        return symbolic::simplify(symbolic::expand(symbolic::overapproximate(e)));
+    };
+    auto ragged = mma_arch->get_ragged_mma_tiling(
+        {pad(analysis.m), pad(analysis.n), pad(analysis.k)},
+        analysis.input_type,
+        analysis.output_type,
+        analysis.acc_type,
+        block_size_hint_,
+        wave_tile_hint_
+    );
+    analysis.ragged = ragged.has_value();
+    return ragged;
 }
 
 bool GpuMmaEinsumReplacer::matches_possible_mma_pattern(EinsumMmaAnalysis& analysis) const {
@@ -51,10 +83,6 @@ bool GpuMmaEinsumReplacer::matches_possible_mma_pattern(EinsumMmaAnalysis& analy
         return false;
     }
 
-    auto& m = dims_a.get_dim(0);
-    auto& n = dims_b.get_dim(1);
-    auto& k = dims_a.get_dim(1);
-
     auto input_type = analysis.input_type;
     auto output_type = analysis.output_type;
 
@@ -65,9 +93,7 @@ bool GpuMmaEinsumReplacer::matches_possible_mma_pattern(EinsumMmaAnalysis& analy
     auto acc_type = mma_arch->get_accumulator_type(input_type, output_type, types::PrimitiveType::Void);
     analysis.acc_type = acc_type;
 
-    auto tiling = mma_arch->get_mma_tiling({m, n, k}, input_type, acc_type, block_size_hint_, wave_tile_hint_);
-
-    return tiling.has_value();
+    return select_tiling(analysis).has_value();
 }
 
 bool GpuMmaEinsumReplacer::analyze(const einsum::EinsumCluster& cluster, EinsumMmaAnalysis& result) const {
@@ -82,8 +108,6 @@ einsum::ReplaceOutcome GpuMmaEinsumReplacer::
     replace(einsum::EinsumReplacementContext& context, const einsum::EinsumCluster& cluster) const {
     using Dir = passes::LibNodeExpander::InputUse;
 
-    auto* mma_arch = arch_->mma_support();
-
     // --- Applicability (mirrors Einsum2Gemm, restricted to the canonical MatMul form) ---
 
     EinsumMmaAnalysis analysis;
@@ -91,9 +115,7 @@ einsum::ReplaceOutcome GpuMmaEinsumReplacer::
         return context.unapplicable();
     }
 
-    auto mma_tiling = mma_arch->get_mma_tiling(
-        {analysis.m, analysis.n, analysis.k}, analysis.input_type, analysis.acc_type, block_size_hint_, wave_tile_hint_
-    );
+    auto mma_tiling = select_tiling(analysis);
 
     if (!mma_tiling) {
         return context.unable();
@@ -119,7 +141,9 @@ einsum::ReplaceOutcome GpuMmaEinsumReplacer::
         true,
         cluster.consumed_loops.front()->debug_info(),
         // {y, a, b}: the cluster lists the output after its inputs, and A/B in no particular order.
-        {static_cast<int>(cluster.inputs.size()), analysis.a_idx, analysis.b_idx}
+        {static_cast<int>(cluster.inputs.size()), analysis.a_idx, analysis.b_idx},
+        analysis.ragged,
+        k_block_multiple_
     );
 }
 
@@ -151,7 +175,10 @@ bool GpuMmaEinsumTransform::run_internal(
     std::vector<einsum::EinsumNode*> mapped_einsums;
     for (auto& einsum_node : detector.einsums()) {
         GpuMmaEinsumReplacer repl(
-            arch_, block_size_hint_ ? &*block_size_hint_ : nullptr, wave_tiling_hint_ ? &*wave_tiling_hint_ : nullptr
+            arch_,
+            block_size_hint_ ? &*block_size_hint_ : nullptr,
+            wave_tiling_hint_ ? &*wave_tiling_hint_ : nullptr,
+            k_block_multiple_
         );
         // einsum::Einsum2MatMul repl;
         if (verify_only) {
@@ -171,11 +198,13 @@ GpuMmaEinsumTransform::GpuMmaEinsumTransform(
     StructuredLoop& outermoost_mma_loop,
     const gpu::GpuArch* arch,
     const MmaBlockSize* block_size_hint,
-    const BlockCounts* wave_tiling_hint
+    const BlockCounts* wave_tiling_hint,
+    int k_block_multiple
 )
     : outermost_mma_loop_(outermoost_mma_loop), arch_(arch),
       block_size_hint_(block_size_hint ? std::optional<MmaBlockSize>(*block_size_hint) : std::nullopt),
-      wave_tiling_hint_(wave_tiling_hint ? std::optional<BlockCounts>(*wave_tiling_hint) : std::nullopt) {
+      wave_tiling_hint_(wave_tiling_hint ? std::optional<BlockCounts>(*wave_tiling_hint) : std::nullopt),
+      k_block_multiple_(std::max(1, k_block_multiple)) {
     // Copy any provided hints into our own storage so we never retain pointers
     // into caller-owned memory (which would dangle once the caller returns).
 }
@@ -184,10 +213,11 @@ GpuMmaEinsumTransform::GpuMmaEinsumTransform(
     StructuredLoop& outermoost_mma_loop,
     const gpu::GpuArch* arch,
     std::optional<MmaBlockSize> block_size_hint,
-    std::optional<BlockCounts> wave_tile_hint
+    std::optional<BlockCounts> wave_tile_hint,
+    int k_block_multiple
 )
     : outermost_mma_loop_(outermoost_mma_loop), arch_(arch), block_size_hint_(block_size_hint),
-      wave_tiling_hint_(wave_tile_hint) {
+      wave_tiling_hint_(wave_tile_hint), k_block_multiple_(std::max(1, k_block_multiple)) {
     // Hints are stored by value, so copying/moving this transform stays safe.
 }
 
@@ -221,6 +251,9 @@ void GpuMmaEinsumTransform::to_json(nlohmann::json& j) const {
     if (wave_tiling_hint_) {
         j["parameters"]["wave_tile"]["blocks_m"] = wave_tiling_hint_->blocks_m;
         j["parameters"]["wave_tile"]["blocks_n"] = wave_tiling_hint_->blocks_n;
+    }
+    if (k_block_multiple_ > 1) {
+        j["parameters"]["k_block_multiple"] = k_block_multiple_;
     }
 
     serializer::JSONSerializer serializer(false);
@@ -266,7 +299,7 @@ GpuMmaEinsumTransform GpuMmaEinsumTransform::from_json(builder::StructuredSDFGBu
         wave_tile = BlockCounts{wt.at("blocks_m").get<int>(), wt.at("blocks_n").get<int>()};
     }
 
-    return GpuMmaEinsumTransform(*loop, arch, block_size, wave_tile);
+    return GpuMmaEinsumTransform(*loop, arch, block_size, wave_tile, params.value("k_block_multiple", 1));
 }
 
 } // namespace sdfg::gpu

@@ -104,7 +104,9 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
     types::PrimitiveType output_type,
     bool include_c_add,
     const DebugInfo& org_debug_info,
-    const std::array<int, 3>& args_order // {y, a, b}
+    const std::array<int, 3>& args_order, // {y, a, b}
+    bool ragged,
+    int k_block_multiple
 ) {
     auto* mma_arch = arch.mma_support();
 
@@ -186,7 +188,16 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
 
     // K-block loop (unit stride, so LoopTiling can strip-mine it into staged K-panels).
     auto k_tile = symbolic::symbol(builder.find_new_name("tile_k"));
-    auto k_blocks = GpuMmaSupport::get_integer_block_count(k_dim, mma_tiling.mma_block_size.k);
+    int k_blocks = 0;
+    if (ragged) {
+        auto k_pad = symbolic::simplify(symbolic::expand(symbolic::overapproximate(k_dim)));
+        k_blocks = GpuMmaSupport::get_ceil_block_count(k_pad, mma_tiling.mma_block_size.k);
+        if (k_blocks > 0 && k_block_multiple > 1) {
+            k_blocks = (k_blocks + k_block_multiple - 1) / k_block_multiple * k_block_multiple;
+        }
+    } else {
+        k_blocks = GpuMmaSupport::get_integer_block_count(k_dim, mma_tiling.mma_block_size.k);
+    }
     if (!k_blocks) {
         throw std::runtime_error("MMA expansion: K is not a multiple of the MMA block size");
     }
@@ -230,6 +241,55 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
         );
     };
 
+    // Ragged extents: a fragment keeps the in-bounds rows/cols counted from its origin (null = never clipped).
+    // A `min` argument of the exact extent at or above the covered tile size never clips a fragment of the tile,
+    // e.g. min(N, i0 + 64) - i0 over a 64-tile clips like N - i0.
+    auto clip = [&](const symbolic::Expression& exact, int covered, const symbolic::Expression& origin) {
+        auto e = symbolic::simplify(exact);
+        if (!ragged || symbolic::eq(e, symbolic::integer(covered))) {
+            return symbolic::Expression(SymEngine::null);
+        }
+        e = symbolic::expand(e);
+        if (SymEngine::is_a<SymEngine::Add>(*e)) {
+            symbolic::Expression minterm = SymEngine::null;
+            symbolic::Expression rest = symbolic::zero();
+            for (const auto& arg : e->get_args()) {
+                if (minterm.is_null() && SymEngine::is_a<SymEngine::Min>(*arg)) {
+                    minterm = arg;
+                } else {
+                    rest = symbolic::add(rest, arg);
+                }
+            }
+            if (!minterm.is_null()) {
+                SymEngine::vec_basic kept;
+                for (const auto& a : minterm->get_args()) {
+                    auto v = symbolic::simplify(symbolic::expand(symbolic::add(a, rest)));
+                    if (SymEngine::is_a<SymEngine::Integer>(*v) &&
+                        SymEngine::rcp_static_cast<const SymEngine::Integer>(v)->as_int() >= covered) {
+                        continue;
+                    }
+                    kept.push_back(v);
+                }
+                if (kept.empty()) {
+                    return symbolic::Expression(SymEngine::null);
+                }
+                e = kept.size() == 1 ? kept.front() : SymEngine::min(kept);
+            }
+        }
+        return symbolic::simplify(symbolic::sub(e, origin));
+    };
+    auto& n_dim = layout_b.get_dim(1);
+    const int m_covered = mma_tiling.macro_tiling.blocks_m * mma_tiling.mma_block_size.m;
+    const int n_covered = mma_tiling.macro_tiling.blocks_n * mma_tiling.mma_block_size.n;
+    const int k_covered = k_blocks * mma_tiling.mma_block_size.k;
+    auto m_clip = [&](int i) {
+        return clip(m_dim, m_covered, symbolic::mul(brow(i), block_m));
+    };
+    auto n_clip = [&](int j) {
+        return clip(n_dim, n_covered, symbolic::mul(bcol(j), block_n));
+    };
+    auto k_clip = clip(k_dim, k_covered, k_elem);
+
     auto& per_wavefront_block = builder.add_block(row_map.root());
     for (const auto& acc_frag_name : acc_frag_names) {
         auto& fill_node = builder.add_library_node<GpuMmaFillNode>(
@@ -265,7 +325,7 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
             a_frag_names[i],
             mma_tiling.mma_block_size,
             MmaFragmentType::A,
-            {.offset = a_offset(i), .ldstride = lda, .layout = a_frag_layout},
+            {.offset = a_offset(i), .ldstride = lda, .layout = a_frag_layout, .rows = m_clip(i), .cols = k_clip},
             args_order.at(1),
             load_block
         );
@@ -280,7 +340,7 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
             b_frag_names[j],
             mma_tiling.mma_block_size,
             MmaFragmentType::B,
-            {.offset = b_offset(j), .ldstride = ldb, .layout = b_frag_layout},
+            {.offset = b_offset(j), .ldstride = ldb, .layout = b_frag_layout, .rows = k_clip, .cols = n_clip(j)},
             args_order.at(2),
             load_block
         );
@@ -329,7 +389,9 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
     for (int i = 0; i < mma_tiling.wave_tiling.blocks_m; ++i) {
         for (int j = 0; j < mma_tiling.wave_tiling.blocks_n; ++j) {
             const auto& acc_frag_name = acc_frag_names[i * mma_tiling.wave_tiling.blocks_n + j];
-            GpuMmaFromMemoryLayout y_mem{.offset = y_offset(i, j), .ldstride = ldc, .layout = y_layout};
+            GpuMmaFromMemoryLayout y_mem{
+                .offset = y_offset(i, j), .ldstride = ldc, .layout = y_layout, .rows = m_clip(i), .cols = n_clip(j)
+            };
             std::string store_frag_name = acc_frag_name;
             if (convert_output) {
                 auto& load_c_block = builder.add_block(row_map.root());

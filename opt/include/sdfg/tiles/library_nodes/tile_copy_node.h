@@ -158,6 +158,10 @@ public:
 /// enclosing @p node is rewritten as `init + stride * t`; any other symbol is an unknown integer.
 bool provably_multiple_of(symbolic::Expression e, long long m, const TileCopyNode& node);
 
+/// Every guard dim on tile @p axis has a base and exclusive bound that are multiples of @p factor, so a
+/// factor-aligned run of coordinates along it is entirely in or entirely out of bounds.
+bool guard_axis_aligned(const TileCopyNode& node, size_t axis, long long factor);
+
 /// The first of @p widths (bytes, widest first) at which each lane of @p node can move one
 /// contiguous multi-element run under @p atom, or 0. `node.bytes()` is taken as the element width.
 size_t widest_legal_transfer(const TileCopyNode& node, CopyAtom atom, const std::vector<size_t>& widths);
