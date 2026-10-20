@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <filesystem>
 #include <map>
 #include <optional>
 #include <sstream>
@@ -138,8 +139,19 @@ std::vector<RocmDeviceInfo> parse_rocminfo(const std::string& report) {
     return result;
 }
 
+std::string rocminfo_command() {
+    if (const char* rocm_env = std::getenv("ROCM_PATH"); rocm_env != nullptr && *rocm_env != '\0') {
+        std::error_code ec;
+        const std::filesystem::path rocminfo = std::filesystem::path(rocm_env) / "bin" / "rocminfo";
+        if (std::filesystem::exists(rocminfo, ec)) {
+            return rocminfo.string() + " 2>/dev/null";
+        }
+    }
+    return "rocminfo 2>/dev/null";
+}
+
 std::vector<RocmDeviceInfo> query_rocm_devices_impl() {
-    const auto output = gpu::util::run_and_capture("rocminfo 2>/dev/null");
+    const auto output = gpu::util::run_and_capture(rocminfo_command());
     if (!output) {
         return {};
     }
