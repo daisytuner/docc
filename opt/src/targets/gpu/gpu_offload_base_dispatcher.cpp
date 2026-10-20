@@ -151,6 +151,8 @@ void GPUOffloadBaseDispatcher::dispatch_node(
     symbolic::Expression num_iters = node_.num_iterations();
 
     if (is_outermost_map(analysis_manager)) {
+        strategy_->emit_target_global_includes(library_snippet_factory);
+
         // Arguments Declaration
         std::vector<std::string> arguments_declaration;
         for (auto& container : arguments) {

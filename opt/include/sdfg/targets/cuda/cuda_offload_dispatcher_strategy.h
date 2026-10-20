@@ -38,6 +38,7 @@ public:
     ) override;
 
     void emit_target_header_declarations(codegen::PrettyPrinter& kernel_header_stream) override;
+    void emit_target_global_includes(codegen::CodeSnippetFactory& library_snippet_factory) override;
 
     CUDAOffloadDispatcherStrategy(StructuredSDFG& sdfg);
 

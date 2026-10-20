@@ -39,6 +39,8 @@ public:
 
     void emit_target_header_declarations(codegen::PrettyPrinter& kernel_header_stream) override;
 
+    void emit_target_global_includes(codegen::CodeSnippetFactory& library_snippet_factory) override;
+
     ROCMOffloadDispatcherStrategy(StructuredSDFG& sdfg, const StructuredLoop& loop);
 
     /// For library node dispatchers without a scheduled loop: no architecture-specific kernel features.

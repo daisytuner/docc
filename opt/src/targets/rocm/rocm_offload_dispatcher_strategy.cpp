@@ -64,6 +64,11 @@ void ROCMOffloadDispatcherStrategy::emit_target_header_declarations(codegen::Pre
     kernel_header_stream << "#include <hip/hip_bf16.h>" << std::endl;
 }
 
+void ROCMOffloadDispatcherStrategy::emit_target_global_includes(codegen::CodeSnippetFactory& library_snippet_factory) {
+    library_snippet_factory.add_global("#include <hip/hip_fp16.h>");
+    library_snippet_factory.add_global("#include <hip/hip_bf16.h>");
+}
+
 void ROCMOffloadDispatcherStrategy::dispatch_kernel_launch_error_check(
     codegen::PrettyPrinter& stream, const codegen::LanguageExtension& language_extension
 ) {

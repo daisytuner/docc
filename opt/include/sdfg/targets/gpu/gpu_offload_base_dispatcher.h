@@ -24,6 +24,8 @@ public:
     /// (device fp16/bf16 intrinsics, lib-dependency includes, ...).
     virtual void emit_target_header_declarations(codegen::PrettyPrinter& kernel_header_stream) = 0;
 
+    virtual void emit_target_global_includes(codegen::CodeSnippetFactory& library_snippet_factory) = 0;
+
     virtual void dispatch_kernel_call(
         codegen::PrettyPrinter& main_stream,
         const std::string& kernel_name,
