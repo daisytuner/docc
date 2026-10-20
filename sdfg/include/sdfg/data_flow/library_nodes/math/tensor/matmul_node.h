@@ -280,8 +280,12 @@ public:
 };
 
 class MatMulBlasExpander : public passes::CodeLibNodeExpander<MatMulNode> {
+private:
+    bool supports_half_; //< Not all BLAS implementations support half precision (hgemm)
+
 public:
-    MatMulBlasExpander() : passes::CodeLibNodeExpander<MatMulNode>(LibraryNodeType_MatMul) {
+    MatMulBlasExpander(bool supports_half = false)
+        : passes::CodeLibNodeExpander<MatMulNode>(LibraryNodeType_MatMul), supports_half_(supports_half) {
     }
 
 

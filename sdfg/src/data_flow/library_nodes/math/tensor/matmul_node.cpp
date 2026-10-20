@@ -802,6 +802,10 @@ passes::LibNodeExpander::ExpandOutcome MatMulBlasExpander::handle_expand(
     blas::BLAS_Precision precision;
     switch (prim_type.value()) {
         case types::PrimitiveType::Half:
+            if (!this->supports_half_) {
+                DEBUG_PRINTLN("MatMulBlasExpander: No support for BLAS call with half precision");
+                return context.unable();
+            }
             precision = blas::BLAS_Precision::h;
             break;
         case types::PrimitiveType::Float:
@@ -817,8 +821,28 @@ passes::LibNodeExpander::ExpandOutcome MatMulBlasExpander::handle_expand(
 
     if (!node.layout_y().is_last_dims_expressible_as_row_major()) {
         DEBUG_PRINTLN(
-            "Matmul #" << node.element_id() << " uses a custom result layout, that does not fulfill GEMM requirements"
+            "MatMulBlasExpander: Matmul #" << node.element_id()
+                                           << " uses a custom result layout, that does not fulfill GEMM requirements"
         );
+        return context.unable();
+    }
+
+    // Check if A and B have basic strides and whether they are transposed in the last dimension
+    blas::BLAS_Transpose trans_a, trans_b;
+    if (node.layout_a().has_linear_accesses_no_padding()) {
+        trans_a = blas::BLAS_Transpose::No;
+    } else if (node.layout_a().has_transposed_strides_no_padding()) {
+        trans_a = blas::BLAS_Transpose::Trans;
+    } else {
+        DEBUG_PRINTLN("MatMulBlasExpander: A must be in c-order but got: " + node.layout_a().toStr());
+        return context.unable();
+    }
+    if (node.layout_b().has_linear_accesses_no_padding()) {
+        trans_b = blas::BLAS_Transpose::No;
+    } else if (node.layout_b().has_transposed_strides_no_padding()) {
+        trans_b = blas::BLAS_Transpose::Trans;
+    } else {
+        DEBUG_PRINTLN("MatMulBlasExpander: B must be in c-order but got: " + node.layout_b().toStr());
         return context.unable();
     }
 
@@ -830,25 +854,6 @@ passes::LibNodeExpander::ExpandOutcome MatMulBlasExpander::handle_expand(
 
         // Add new graph after the current block
         auto& new_sequence = standalone->replace_with_sequence();
-
-        // Check if A and B have basic strides and whether they are transposed in the last dimension
-        blas::BLAS_Transpose trans_a, trans_b;
-        if (node.layout_a().has_linear_accesses_no_padding()) {
-            trans_a = blas::BLAS_Transpose::No;
-        } else if (node.layout_a().has_transposed_strides_no_padding()) {
-            trans_a = blas::BLAS_Transpose::Trans;
-        } else {
-            trans_a = blas::BLAS_Transpose::No;
-            throw InvalidSDFGException("A must be in c-order but got: " + node.layout_a().toStr());
-        }
-        if (node.layout_b().has_linear_accesses_no_padding()) {
-            trans_b = blas::BLAS_Transpose::No;
-        } else if (node.layout_b().has_transposed_strides_no_padding()) {
-            trans_b = blas::BLAS_Transpose::Trans;
-        } else {
-            trans_b = blas::BLAS_Transpose::No;
-            throw InvalidSDFGException("B must be in c-order but got: " + node.layout_b().toStr());
-        }
 
         // Create maps for batch dimensions and M, N dimensions
         structured_control_flow::Sequence* last_scope = &new_sequence;

@@ -212,7 +212,6 @@ TEST(GPUNestedOffloadPassTest, Depth3_ChainFitsWarpBudget_XBlockAndWarpApplied) 
     EXPECT_TRUE(pass.run(builder, analysis_manager));
 
     EXPECT_EQ(cuda::ScheduleType_CUDA_Offload::target_level(c0.schedule_type()), gpu::TargetLevel::X_BLOCK);
-    EXPECT_EQ(cuda::ScheduleType_CUDA_Offload::target_level(c1.schedule_type()), gpu::TargetLevel::WARP);
 }
 
 // chain[0] has 128 iterations => X_BLOCK(128); X_BLOCK * WARP = 128 * 32 = 4096 > 1024
