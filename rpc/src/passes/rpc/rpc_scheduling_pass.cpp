@@ -20,6 +20,7 @@ bool RpcOptimizationPass::run_pass(builder::StructuredSDFGBuilder& builder, anal
     rpc_transform.set_report(report_);
     if (rpc_transform.can_be_applied(builder, analysis_manager)) {
         rpc_transform.apply(builder, analysis_manager);
+        analysis_manager.invalidate_all();
         return true;
     }
     return false;
