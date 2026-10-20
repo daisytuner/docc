@@ -19,6 +19,7 @@
 #include <sdfg/codegen/instrumentation/instrumentation_plan.h>
 #include <sdfg/codegen/loop_report.h>
 #include <sdfg/einsum/einsum.h>
+#include <sdfg/fp_math/library_nodes/ozaki_matmul_node.h>
 #include <sdfg/fp_math/passes/contraction_precision.h>
 #include <sdfg/fp_math/passes/fp_contraction.h>
 #include <sdfg/parallelization/passes/auto_parallelization.h>
@@ -220,10 +221,21 @@ void PyStructuredSDFG::expand(const docc::target::TargetOptions& options) {
     sdfg::passes::TensorAllocationSizeInference tensor_allocation_size_inference;
     tensor_allocation_size_inference.run(builder_opt, analysis_manager);
 
+    // Matmuls with prepared Ozaki slices of B leave Int8 matmuls as the precision pass does, before the targets map
+    // them.
+    sdfg::fp_math::expand_ozaki_matmuls(builder_opt, analysis_manager);
+
     // Before the targets map matmuls, e.g. to BLAS; they map the Int8 matmuls the emulation leaves instead.
     if (options.contraction_precision != "native") {
-        sdfg::fp_math::ContractionPrecisionPass
-            contraction_precision_pass(sdfg::fp_math::ContractionPrecision::parse(options.contraction_precision));
+        auto precision = sdfg::fp_math::ContractionPrecision::parse(options.contraction_precision);
+        if (auto* target = docc_context_.get_target_handler(options.target);
+            target && target->safe_get_direct_contraction_rescaling()) {
+            precision.rescaling = sdfg::fp_math::Rescaling::Direct;
+            if (precision.kind == sdfg::fp_math::ContractionPrecision::Kind::Ozaki) {
+                precision.variant = sdfg::fp_math::OzakiVariant::Slicing;
+            }
+        }
+        sdfg::fp_math::ContractionPrecisionPass contraction_precision_pass(precision);
         contraction_precision_pass.run(builder_opt, analysis_manager);
     }
 

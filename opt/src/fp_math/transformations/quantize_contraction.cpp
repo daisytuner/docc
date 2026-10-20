@@ -3,6 +3,7 @@
 #include <nlohmann/json.hpp>
 
 #include "../contractions/contraction_kernels.h"
+#include "sdfg/fp_math/contractions/row_major_operand.h"
 
 namespace sdfg {
 namespace fp_math {
@@ -29,7 +30,11 @@ bool QuantizeContraction::can_be_applied(builder::StructuredSDFGBuilder&, analys
 
 void QuantizeContraction::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     const double q = static_cast<double>((int64_t{1} << (bits_ - 1)) - 1);
-    detail::expand_contraction(builder, node_, [&](KernelBuilder& kb, detail::ContractionOperands& operands) {
+    // Scales of B's columns then reduce along rows, and B quantizes row-major, as targets of direct rescaling need.
+    auto& node = rescaling_ == Rescaling::Direct && b_stored_transposed(node_)
+                     ? read_b_row_major(builder, node_).contraction
+                     : node_;
+    detail::expand_contraction(builder, node, [&](KernelBuilder& kb, detail::ContractionOperands& operands) {
         auto m = operands.m, n = operands.n, k = operands.k;
         // Each matrix of a batch gets scales of its own; every buffer holds one matrix after the other.
         auto& batch = operands.batch;

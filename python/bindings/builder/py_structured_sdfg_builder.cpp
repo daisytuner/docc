@@ -30,6 +30,7 @@
 #include "sdfg/data_flow/library_nodes/stdlib/memcpy.h"
 #include "sdfg/data_flow/library_nodes/stdlib/memset.h"
 #include "sdfg/exceptions.h"
+#include "sdfg/fp_math/library_nodes/ozaki_matmul_node.h"
 #include "sdfg/passes/debug_info_propagation.h"
 #include "sdfg/targets/cuda/cuda_data_offloading_node.h"
 #include "sdfg/targets/rocm/rocm_data_offloading_node.h"
@@ -2176,6 +2177,40 @@ sdfg::data_flow::LibraryNode& PyStructuredSDFGBuilder::add_matmul_op(
     builder_.add_computational_memlet(block, A_access, libnode, "A", {}, A_type, debug_info);
     builder_.add_computational_memlet(block, B_access, libnode, "B", {}, B_type, debug_info);
     builder_.add_computational_memlet(block, Y_access, libnode, "Y", {}, Y_type, debug_info);
+    return libnode;
+}
+
+sdfg::data_flow::LibraryNode& PyStructuredSDFGBuilder::add_ozaki_matmul_op(
+    const std::string& A,
+    const sdfg::types::Tensor& A_type,
+    const std::string& scales,
+    const sdfg::types::Tensor& scales_type,
+    const std::vector<std::string>& slices,
+    const sdfg::types::Tensor& slice_type,
+    const std::string& Y,
+    const sdfg::types::Tensor& Y_type,
+    const sdfg::DebugInfo& debug_info
+) {
+    auto& block = builder_.add_block(current_sequence(), {}, debug_info);
+    auto& libnode = builder_.add_library_node<sdfg::fp_math::OzakiMatMulNode>(
+        block,
+        debug_info,
+        A_type.layout(),
+        Y_type.layout(),
+        Y_type.element_type().primitive_type(),
+        static_cast<int>(slices.size())
+    );
+    auto connect = [&](const std::string& container, const std::string& connector, const sdfg::types::Tensor& type) {
+        builder_.add_computational_memlet(
+            block, builder_.add_access(block, container, debug_info), libnode, connector, {}, type, debug_info
+        );
+    };
+    connect(Y, "Y", Y_type);
+    connect(A, "A", A_type);
+    connect(scales, "SB", scales_type);
+    for (size_t t = 0; t < slices.size(); t++) {
+        connect(slices[t], "B" + std::to_string(t), slice_type);
+    }
     return libnode;
 }
 
