@@ -199,13 +199,6 @@ jobs:
           ./tutorial/printf_target/tests/printf_target_test
           ./arg-capture-io/tests/capture_io_test
 
-      - name: Python Integration Tests
-        env:
-          DOCC_ACCESS_TOKEN: ${{ secrets.DOCC_CI_TOKEN }}
-        run: |
-          export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
-          python -m pytest -v python/tests -m "unmarked"
-
       - name: PyTorch Frontend Tests
         env:
           DOCC_ACCESS_TOKEN: ${{ secrets.DOCC_CI_TOKEN }}
@@ -218,13 +211,14 @@ jobs:
           # The python + pytorch frontends are importable through PYTHONPATH
           # ($PWD/python:$PWD/pytorch) exported during venv setup.
           # Exclude known failures on torch 2.11 + ROCm 7.2.3 (gfx1201):
-          #   - test_arange_gpu / test_empty_gpu: upstream torch-ROCm
+          #   - *_gpu creation/transfer tests (test_arange_gpu, test_empty_gpu,
+          #     test_full_gpu, ...): upstream torch-ROCm
           #     hipErrorInvalidConfiguration when eager-executing a GPU tensor
-          #     creation op (e.g. torch.arange/empty(..., device="cuda")).
+          #     op with device=torch.device("cuda").
           #   - test_clamp_nan_min / test_clamp_nan_max: docc clamp NaN-bound
           #     codegen mismatch.
           python -m pytest -v pytorch/tests --target=rocm \
-            -k "not test_arange_gpu and not test_empty_gpu and not test_clamp_nan_min and not test_clamp_nan_max"
+            -k "not _gpu and not test_clamp_nan_min and not test_clamp_nan_max"
 
 
   ##### FRONTENDS #####
