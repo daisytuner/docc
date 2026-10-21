@@ -98,6 +98,11 @@ void CodeGenerationPass::add_subcomp_opts_from_arg(std::vector<std::string>& out
     }
 }
 
+std::string docc_rocm_path() {
+    const char* rocm_env = std::getenv("ROCM_PATH");
+    return (rocm_env && *rocm_env) ? std::string(rocm_env) : std::string("/opt/rocm");
+}
+
 bool wants_to_replay(const std::string& F) {
     return (
         /* ABI or machine code */
@@ -117,9 +122,10 @@ void add_schedule_type_specific_linker_args(const ScheduleType& schedule_type, s
 
     } else if (schedule_type.value() == sdfg::rocm::ScheduleType_ROCM::value() ||
                schedule_type.value() == sdfg::rocm::ScheduleType_ROCM_Offload::value()) {
-        linker_args.emplace("/opt/rocm/lib/libamdhip64.so");
-        linker_args.emplace("/opt/rocm/lib/libhiprtc.so");
-        linker_args.emplace("/opt/rocm/lib/libhipblas.so");
+        const std::string rocm_path = docc_rocm_path();
+        linker_args.emplace(rocm_path + "/lib/libamdhip64.so");
+        linker_args.emplace(rocm_path + "/lib/libhiprtc.so");
+        linker_args.emplace(rocm_path + "/lib/libhipblas.so");
     } else if (sdfg::tenstorrent::is_tenstorrent_schedule(schedule_type)) {
         if (auto tt_path = std::getenv("TT_METAL_INSTALL_DIR")) {
             linker_args.emplace("-L" + std::string(tt_path) + "/lib");
@@ -177,8 +183,9 @@ void add_schedule_type_specific_compile_args(
         compile_args.emplace_back("-x hip");
         compile_args.emplace_back("--offload-arch=gfx1201");
         compile_args.emplace_back("--offload-host-only");
-        compile_args.emplace_back("--rocm-path=/opt/rocm");
-        compile_args.emplace_back("-I/opt/rocm/include");
+        const std::string rocm_path = docc_rocm_path();
+        compile_args.emplace_back("--rocm-path=" + rocm_path);
+        compile_args.emplace_back("-I" + rocm_path + "/include");
         language = llvm::dwarf::DW_LANG_C_plus_plus;
     } else if (schedule_type.value() == sdfg::cuda::ScheduleType_CUDA::value() ||
                schedule_type.value() == sdfg::cuda::ScheduleType_CUDA_Offload::value()) {
@@ -263,8 +270,9 @@ bool CodeGenerationPass::compile_additional_files(
         comp_args.push_back("-x");
         comp_args.push_back("hip");
         comp_args.push_back("--offload-arch=gfx1201");
-        comp_args.push_back("--rocm-path=/opt/rocm");
-        comp_args.push_back("-I/opt/rocm/include");
+        const std::string rocm_path = docc_rocm_path();
+        comp_args.push_back("--rocm-path=" + rocm_path);
+        comp_args.push_back("-I" + rocm_path + "/include");
         for (const auto& inc : docc_paths.get_default_include_paths()) {
             comp_args.push_back("-I" + inc.string());
         }
