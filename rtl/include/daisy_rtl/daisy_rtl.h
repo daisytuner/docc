@@ -353,7 +353,11 @@ inline int __daisy_sym_pow(int base, int exp) {
 #if defined(__CUDACC__) || defined(__HIPCC__)
 
 #if defined(__HIPCC__)
+#include <hip/hip_bfloat16.h>
 #include <hip/hip_runtime.h>
+#else
+#include <cuda_bf16.h>
+#include <cuda_runtime.h>
 #endif
 
 // Emit one CAS-loop combine function. TO_VAL reinterprets the CAS word as the
@@ -401,13 +405,24 @@ __DAISY_REDUCE_COMBINE_ALL(
     __builtin_bit_cast(_Float16, __daisy_assumed),
     __builtin_bit_cast(unsigned short, __daisy_new)
 )
+// Helper suffix/type follow the codegen's bf16 C type: hip_bfloat16 on ROCm, nv_bfloat16 on CUDA.
+#if defined(__HIPCC__)
 __DAISY_REDUCE_COMBINE_ALL(
-    __bf16,
-    __bf16,
+    hip_bfloat16,
+    hip_bfloat16,
     unsigned short,
-    __builtin_bit_cast(__bf16, __daisy_assumed),
+    __builtin_bit_cast(hip_bfloat16, __daisy_assumed),
     __builtin_bit_cast(unsigned short, __daisy_new)
 )
+#else
+__DAISY_REDUCE_COMBINE_ALL(
+    nv_bfloat16,
+    nv_bfloat16,
+    unsigned short,
+    __builtin_bit_cast(nv_bfloat16, __daisy_assumed),
+    __builtin_bit_cast(unsigned short, __daisy_new)
+)
+#endif
 #endif
 __DAISY_REDUCE_COMBINE_ALL(float, float, unsigned int, __uint_as_float(__daisy_assumed), __float_as_uint(__daisy_new))
 __DAISY_REDUCE_COMBINE_ALL(

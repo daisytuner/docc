@@ -85,6 +85,11 @@ void CUDAOffloadDispatcherStrategy::emit_target_header_declarations(codegen::Pre
     kernel_header_stream << "#include <cuda_pipeline.h>" << std::endl;
 }
 
+void CUDAOffloadDispatcherStrategy::emit_target_global_includes(codegen::CodeSnippetFactory& library_snippet_factory) {
+    library_snippet_factory.add_global("#include <cuda_fp16.h>");
+    library_snippet_factory.add_global("#include <cuda_bf16.h>");
+}
+
 std::string CUDAOffloadDispatcherStrategy::warp_shuffle_xor(const std::string& value, const std::string& lane_mask) const {
     return "__shfl_xor_sync(0xffffffff, " + value + ", " + lane_mask + ")";
 }

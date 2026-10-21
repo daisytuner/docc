@@ -37,7 +37,7 @@ std::string CUDALanguageExtension::primitive_type(const types::PrimitiveType pri
         case types::PrimitiveType::Half:
             return "_Float16";
         case types::PrimitiveType::BFloat:
-            return "__bf16";
+            return "nv_bfloat16";
         case types::PrimitiveType::Float:
             return "float";
         case types::PrimitiveType::Double:

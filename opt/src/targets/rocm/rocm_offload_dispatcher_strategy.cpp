@@ -60,8 +60,13 @@ void ROCMOffloadDispatcherStrategy::dispatch_kernel_call(
 void ROCMOffloadDispatcherStrategy::emit_target_header_declarations(codegen::PrettyPrinter& kernel_header_stream) {
     // fp16/bf16 atomics (e.g. split-K accumulate) use the __half / __hip_bfloat16
     // struct overloads of atomicAdd, declared in these HIP headers.
-    kernel_header_stream << "#include <hip/hip_fp16.h>" << std::endl;
-    kernel_header_stream << "#include <hip/hip_bf16.h>" << std::endl;
+    // BFloat is emitted as the legacy hip_bfloat16 type (matching rocwmma::bfloat16_t),
+    // which lives in a different header than __hip_bfloat16.
+    kernel_header_stream << "#include <hip/hip_bfloat16.h>" << std::endl;
+}
+
+void ROCMOffloadDispatcherStrategy::emit_target_global_includes(codegen::CodeSnippetFactory& library_snippet_factory) {
+    library_snippet_factory.add_global("#include <hip/hip_bfloat16.h>");
 }
 
 void ROCMOffloadDispatcherStrategy::dispatch_kernel_launch_error_check(

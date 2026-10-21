@@ -92,7 +92,7 @@ __global__ void kernel_test_sdfg_1(float *__restrict__ __daisy_cuda_A){
     __daisy_cuda_A = reinterpret_cast<decltype(__daisy_cuda_A)>(__builtin_assume_aligned(__daisy_cuda_A, 16));
     if (__daisy_cuda_indvar_x < 100) {
         {
-            float in_ = 0.0f;
+            float in_ = (float)(0.0f);
             float out_;
 
             out_ = in_;
@@ -199,7 +199,7 @@ __global__ void kernel_test_sdfg_1(float *__restrict__ __daisy_cuda_A){
     if (__daisy_cuda_indvar_x < 100) {
         if (__daisy_cuda_indvar_y < 40) {
             {
-                float in_ = 0.0f;
+                float in_ = (float)(0.0f);
                 float out_;
 
                 out_ = in_;
@@ -307,7 +307,7 @@ __global__ void kernel_test_sdfg_1(float *__restrict__ __daisy_cuda_A){
     if (__daisy_cuda_indvar_x < 100) {
         if (__daisy_cuda_indvar_z < 40) {
             {
-                float in_ = 0.0f;
+                float in_ = (float)(0.0f);
                 float out_;
 
                 out_ = in_;
@@ -434,7 +434,7 @@ __global__ void kernel_test_sdfg_1(float *__restrict__ __daisy_cuda_A){
         if (__daisy_cuda_indvar_y < 40) {
             if (__daisy_cuda_indvar_z < 200) {
                 {
-                    float in_ = 0.0f;
+                    float in_ = (float)(0.0f);
                     float out_;
 
                     out_ = in_;
