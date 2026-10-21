@@ -368,9 +368,10 @@ std::optional<GpuMmaTiling> RocmMmaSupport::get_ragged_mma_tiling(
     const BlockCounts* wave_tile_hint
 ) const {
     // Masked fragment transfers recover element coordinates from an iota fragment of the element type, which
-    // must represent every index of a block exactly (16-bit floats: all integers up to 2048).
+    // must represent every index of a block exactly (16-bit floats: all integers up to 2048). BFloat is exact up
+    // to 256, i.e. a 16x16 block, the only bf16 block size (32x32x8 is fp16-only).
     auto exact_iota = [](types::PrimitiveType t) {
-        return t == types::PrimitiveType::Half || t == types::PrimitiveType::Float;
+        return t == types::PrimitiveType::Half || t == types::PrimitiveType::Float || t == types::PrimitiveType::BFloat;
     };
     if (!exact_iota(input_type) || !exact_iota(output_type) || !exact_iota(acc_type)) {
         return std::nullopt;
