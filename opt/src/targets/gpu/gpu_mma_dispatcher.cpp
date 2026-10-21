@@ -74,10 +74,16 @@ void emit_clipped_fragment_transfer(
     // each lane element's linear block coordinate, independent of the fragment's register layout.
     auto emit_iota = [&]() {
         const std::string n = std::to_string(R * C);
+        // hip_bfloat16 has no constexpr float constructor: build bf16 iota values from their bits (exact up to 256).
+        const std::string iota_value =
+            element_type == types::PrimitiveType::BFloat
+                ? "__builtin_bit_cast(__docc_elem_t, static_cast<unsigned short>(__builtin_bit_cast(unsigned int, "
+                  "static_cast<float>(i)) >> 16))"
+                : "static_cast<__docc_elem_t>(i)";
         out.stream << "struct __docc_iota_t { __docc_elem_t v[" << n << "]; };" << std::endl;
         out.stream << "static constexpr __docc_iota_t __docc_iota = []() constexpr { __docc_iota_t t{}; for (int i "
                       "= 0; i < "
-                   << n << "; ++i) { t.v[i] = static_cast<__docc_elem_t>(i); } return t; }();" << std::endl;
+                   << n << "; ++i) { t.v[i] = " << iota_value << "; } return t; }();" << std::endl;
         out.stream << "__typeof__(" << frag << ") __docc_idx;" << std::endl;
         GpuMmaFromMemoryLayout iota_layout{
             .offset = symbolic::zero(), .ldstride = symbolic::integer(row_major ? C : R), .layout = layout.layout
