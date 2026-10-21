@@ -14,7 +14,7 @@ namespace {
 // literal, so low-precision floating-point constants are cast explicitly to the target type via float.
 std::string constant_literal(LanguageExtension& lang, const std::string& literal, types::PrimitiveType type) {
     if (types::is_floating_point(type) && types::bit_width(type) <= 32) {
-        return "(" + lang.primitive_type(type) + ")(float)(" + literal + ")";
+        return "(" + lang.primitive_type(type) + ")(" + literal + ")";
     }
     return literal;
 }
