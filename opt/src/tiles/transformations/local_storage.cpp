@@ -718,6 +718,11 @@ void LocalStorage::apply_prepared(builder::StructuredSDFGBuilder& builder, analy
     if (!parent) {
         throw InvalidTransformationException("LocalStorage: parent of loop must be a Sequence");
     }
+    // The copies go next to the loop, so what changed is the loop and the children of its parent added around it.
+    std::unordered_set<const structured_control_flow::ControlFlowNode*> siblings;
+    for (size_t i = 0; i < parent->size(); i++) {
+        siblings.insert(&parent->at(i));
+    }
 
     // Element type from a representative group memlet (container type may be opaque).
     auto* representative = *group_memlets_.begin();
@@ -891,7 +896,17 @@ void LocalStorage::apply_prepared(builder::StructuredSDFGBuilder& builder, analy
         }
     }
 
-    analysis_manager.invalidate_all();
+    // Reductions retargeted or converted elsewhere change more than the loop and its new siblings.
+    if (!reduce_retargets_.empty() || !grid_reduce_owners_.empty() || loop_.get_parent() != parent) {
+        analysis_manager.invalidate_all();
+        return;
+    }
+    analysis_manager.invalidate_all(loop_);
+    for (size_t i = 0; i < parent->size(); i++) {
+        if (!siblings.contains(&parent->at(i))) {
+            analysis_manager.invalidate_all(parent->at(i));
+        }
+    }
 }
 
 symbolic::Condition LocalStorage::boundary_guard(

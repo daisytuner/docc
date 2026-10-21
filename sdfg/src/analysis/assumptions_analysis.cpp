@@ -648,6 +648,40 @@ void merge_outer(symbolic::Assumptions& into, const symbolic::Assumptions& outer
 void AssumptionsAnalysis::add_scope(Node& node, symbolic::Assumptions own, Node& parent) {
     this->own_assumptions_[&node] = std::move(own);
     this->parent_scope_[&node] = &parent;
+    // A scope added again, as when its subtree is traversed again, materializes anew.
+    this->assumptions_.erase(&node);
+    this->assumptions_with_trivial_.erase(&node);
+    this->constant_symbols_.erase(&node);
+    this->constant_symbols_with_trivial_.erase(&node);
+}
+
+bool AssumptionsAnalysis::invalidate(structured_control_flow::ControlFlowNode& changed) {
+    // The body of a loop or the branches of an IfElse are scopes their parent opens: traverse from the parent.
+    Node* subtree = &changed;
+    while (subtree != &sdfg_.root() && dyn_cast<structured_control_flow::Sequence*>(subtree)) {
+        auto* parent = subtree->get_parent();
+        if (!parent || !(dyn_cast<structured_control_flow::StructuredLoop*>(parent) ||
+                         dyn_cast<structured_control_flow::IfElse*>(parent) ||
+                         dyn_cast<structured_control_flow::While*>(parent))) {
+            break;
+        }
+        subtree = parent;
+    }
+    auto* parent = subtree->get_parent();
+    if (subtree == &sdfg_.root() || !parent) {
+        return false;
+    }
+    // The scope the parent opens for its children, or the one it lies in.
+    Node* scope = parent;
+    if (parent != &sdfg_.root() && !this->own_assumptions_.contains(parent)) {
+        auto known = this->scope_of_.find(parent);
+        if (known == this->scope_of_.end()) {
+            return false;
+        }
+        scope = known->second;
+    }
+    this->traverse(*subtree, *scope);
+    return true;
 }
 
 const symbolic::Assumptions& AssumptionsAnalysis::materialize(Node& scope, bool include_trivial_bounds) {
