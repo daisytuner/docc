@@ -457,7 +457,21 @@ std::string emit_tile_copy_stmt(
     return stmt;
 }
 
+std::string emit_predicated_guarded_load(
+    const std::string& type, const std::string& var, const std::string& base, const std::string& index
+) {
+    return type + " " + var + "{}; if (__tc_ok) { " + var + " = *reinterpret_cast<const " + type + "*>(&(" + base +
+           ")[" + index + "]); }";
+}
+
 namespace {
+
+// GuardedLoadFn adapter of emit_predicated_guarded_load (the widths do not matter for a plain predicated load).
+std::string default_guarded_load(
+    const std::string& type, const std::string& var, const std::string& base, const std::string& index, size_t, size_t
+) {
+    return emit_predicated_guarded_load(type, var, base, index);
+}
 
 // The register array of a staged phase, addressed as 32-bit words.
 std::string register_words(
@@ -521,7 +535,8 @@ void emit_coalesce_copy_blocks(
     const std::string& dst_expr,
     const std::string& src_expr,
     types::PrimitiveType elem,
-    const std::string& runtime_threads
+    const std::string& runtime_threads,
+    const GuardedLoadFn& guarded_load
 ) {
     const auto& plan = node.plan();
     const long long rows = SymEngine::rcp_static_cast<const SymEngine::Integer>(plan.src.shape()[0])->as_int();
@@ -580,8 +595,8 @@ void emit_coalesce_copy_blocks(
         stream << "unsigned __tc_x[4][" << row_words << "];" << std::endl;
     }
     // Ragged tile: each 4-element source row is in or out of bounds as a whole (the vectorizer requires the
-    // inner-axis bound to be 4-aligned). Out-of-bounds rows load branch-free from the array base and select zero;
-    // stores then write the zero-padded block unguarded, which is exact for a copy-in.
+    // inner-axis bound to be 4-aligned). Out-of-bounds rows read zero through @p guarded_load (no select on the
+    // loaded value); stores then write the zero-padded block unguarded, which is exact for a copy-in.
     const bool guarded = !node.guard().trivial();
     for (int q = 0; q < 4 && phase != CopyPhase::StoreRegs; ++q) {
         auto row = symbolic::add(r4, symbolic::integer(q));
@@ -590,16 +605,13 @@ void emit_coalesce_copy_blocks(
         if (guarded) {
             stream << "const bool __tc_ok = "
                    << language_extension.expression(node.guard().predicate(symbolic::MultiExpression{row, c4})) << "; ";
-            off = "(__tc_ok ? (" + off + ") : 0)";
+            stream << guarded_load(row_t, "__tc_v", scast, off, types::bit_width(elem) / 8, 4 * row_words);
+        } else {
+            stream << "const " << row_t << " __tc_v = *reinterpret_cast<const " << row_t << "*>(&(" << scast << ")["
+                   << off << "]);";
         }
-        stream << "const " << row_t << " __tc_v = *reinterpret_cast<const " << row_t << "*>(&(" << scast << ")[" << off
-               << "]);";
         for (int w = 0; w < row_words; ++w) {
-            if (guarded) {
-                stream << " " << x(q, w) << " = __tc_ok ? __tc_v." << fields[w] << " : 0u;";
-            } else {
-                stream << " " << x(q, w) << " = __tc_v." << fields[w] << ";";
-            }
+            stream << " " << x(q, w) << " = __tc_v." << fields[w] << ";";
         }
         stream << " }" << std::endl;
     }
@@ -638,12 +650,14 @@ void emit_cooperative_copy_loop(
     const std::string& dst_expr,
     const std::string& src_expr,
     types::PrimitiveType elem,
-    const std::function<std::string(const std::string&, const std::string&, size_t)>& async_stmt
+    const std::function<std::string(const std::string&, const std::string&, size_t)>& async_stmt,
+    const GuardedLoadFn& guarded_load_fn
 ) {
     const auto& plan = node.plan();
     const bool copy_in = node.direction() == CopyDirection::In;
     const std::string size = language_extension.expression(plan.src.total_elements());
     auto c = symbolic::symbol("__tc_c");
+    const GuardedLoadFn guarded_load = guarded_load_fn ? guarded_load_fn : GuardedLoadFn(default_guarded_load);
 
     // A vector (VectorSync) or async (CpAsync) transfer moves `bytes` per step, so the
     // loop strides by the transfer's element count; a scalar copy strides by one.
@@ -682,7 +696,7 @@ void emit_cooperative_copy_loop(
     stream << "int __tc_tid = " << tid << ";" << std::endl;
 
     if (node.atom() == CopyAtom::CoalesceSync) {
-        emit_coalesce_copy_blocks(language_extension, stream, node, dst_expr, src_expr, elem, n);
+        emit_coalesce_copy_blocks(language_extension, stream, node, dst_expr, src_expr, elem, n, guarded_load);
         stream << "}" << std::endl;
         return;
     }
@@ -733,12 +747,14 @@ void emit_cooperative_copy_loop(
     const std::string doff = language_extension.expression(copy_in ? buffer_off : global_off);
     const std::string soff = language_extension.expression(copy_in ? global_off : buffer_off);
 
-    // A guarded copy-in loads branch-free: out-of-bounds lanes read the (valid, aligned) array base instead and
-    // select zero, so the loads stay unconditional and the backend can batch them.
+    // A guarded copy-in loads out-of-bounds lanes as zero through `guarded_load`, without a select on the loaded
+    // value (which would force a wait right after the load and serialize register-staged prefetches).
     const bool guarded = !node.guard().trivial();
     const bool masked = guarded && copy_in && node.phase() != CopyPhase::StoreRegs && node.atom() != CopyAtom::CpAsync;
     const std::string pred = guarded ? language_extension.expression(node.guard().predicate(coords)) : "";
-    const std::string lsoff = masked ? "(__tc_ok ? (" + soff + ") : 0)" : soff;
+    auto guarded_decl = [&](const std::string& type, const std::string& var, size_t bytes) {
+        return guarded_load(type, var, scast, soff, elem_bytes, bytes);
+    };
 
     std::string stmt;
     if (node.phase() != CopyPhase::Full) {
@@ -753,27 +769,25 @@ void emit_cooperative_copy_loop(
         const char* lane = !vec && elem_bytes == 2   ? "unsigned short"
                            : !vec && elem_bytes == 1 ? "unsigned char"
                                                      : "unsigned";
+        const size_t lane_bytes = !vec && elem_bytes <= 2 ? elem_bytes : 4;
         const char* wide_t = words == 4 ? "uint4" : "uint2";
         const char* fields[4] = {"x", "y", "z", "w"};
-        auto masked_value = [&](const std::string& v) {
-            return masked ? "(__tc_ok ? " + v + " : 0u)" : v;
-        };
         if (node.phase() == CopyPhase::LoadRegs) {
-            const std::string src_addr = "&(" + scast + ")[" + lsoff + "]";
+            const std::string src_addr = "&(" + scast + ")[" + soff + "]";
             if (words > 1) {
-                stmt = std::string("{ const ") + wide_t + " __tc_v = *reinterpret_cast<const " + wide_t + "*>(" +
-                       src_addr + ");";
+                stmt = std::string("{ ") +
+                       (masked ? guarded_decl(wide_t, "__tc_v", 4 * words)
+                               : std::string("const ") + wide_t + " __tc_v = *reinterpret_cast<const " + wide_t +
+                                     "*>(" + src_addr + ");");
                 for (size_t k = 0; k < words; ++k) {
-                    stmt += " " + reg(k) + " = " + masked_value(std::string("__tc_v.") + fields[k]) + ";";
+                    stmt += " " + reg(k) + " = __tc_v." + fields[k] + ";";
                 }
                 stmt += " }";
+            } else if (masked) {
+                stmt = "{ " + guarded_decl(lane, "__tc_s", lane_bytes) + " " + reg(0) +
+                       " = static_cast<unsigned>(__tc_s); }";
             } else {
-                stmt = reg(0) + " = " +
-                       masked_value(
-                           std::string("static_cast<unsigned>(*reinterpret_cast<const ") + lane + "*>(" + src_addr +
-                           "))"
-                       ) +
-                       ";";
+                stmt = reg(0) + " = static_cast<unsigned>(*reinterpret_cast<const " + lane + "*>(" + src_addr + "));";
             }
         } else {
             const std::string dst_addr = "&(" + dcast + ")[" + doff + "]";
@@ -810,12 +824,12 @@ void emit_cooperative_copy_loop(
         const char* vec = int_type(node.bytes());
         const size_t chunk = buffer_access_bytes(node, elem_bytes);
         const std::string dst_addr = "&(" + dcast + ")[" + doff + "]";
-        const std::string src_addr = "&(" + scast + ")[" + (copy_in ? lsoff : soff) + "]";
-        const std::string mask = masked ? std::string("if (!__tc_ok) { __tc_w = ") + vec + "{}; } " : "";
+        const std::string src_addr = "&(" + scast + ")[" + soff + "]";
+        const std::string load = std::string("*reinterpret_cast<const ") + vec + "*>(" + src_addr + ")";
         if (chunk >= node.bytes()) {
             if (masked) {
-                stmt = std::string("{ ") + vec + " __tc_w = *reinterpret_cast<const " + vec + "*>(" + src_addr + "); " +
-                       mask + "*reinterpret_cast<" + vec + "*>(" + dst_addr + ") = __tc_w; }";
+                stmt = "{ " + guarded_decl(vec, "__tc_w", node.bytes()) + " *reinterpret_cast<" + vec + "*>(" +
+                       dst_addr + ") = __tc_w; }";
             } else {
                 stmt = std::string("*reinterpret_cast<") + vec + "*>(" + dst_addr +
                        ") = " + "*reinterpret_cast<const " + vec + "*>(" + src_addr + ");";
@@ -833,8 +847,10 @@ void emit_cooperative_copy_loop(
                 return out;
             };
             if (copy_in) {
-                stmt = std::string("{ ") + (masked ? "" : "const ") + vec + " __tc_w = *reinterpret_cast<const " + vec +
-                       "*>(" + src_addr + "); " + mask + pieces(dst_addr, "&__tc_w") + "}";
+                stmt = "{ " +
+                       (masked ? guarded_decl(vec, "__tc_w", node.bytes())
+                               : std::string("const ") + vec + " __tc_w = " + load + ";") +
+                       " " + pieces(dst_addr, "&__tc_w") + "}";
             } else {
                 stmt = std::string("{ ") + vec + " __tc_w; " + pieces("&__tc_w", src_addr) + "*reinterpret_cast<" +
                        vec + "*>(" + dst_addr + ") = __tc_w; }";
@@ -842,7 +858,7 @@ void emit_cooperative_copy_loop(
         }
     } else if (masked) {
         const std::string t = language_extension.primitive_type(elem);
-        stmt = "(" + dcast + ")[" + doff + "] = __tc_ok ? (" + scast + ")[" + lsoff + "] : static_cast<" + t + ">(0);";
+        stmt = "{ " + guarded_decl(t, "__tc_s", elem_bytes) + " (" + dcast + ")[" + doff + "] = __tc_s; }";
     } else {
         stmt = "(" + dcast + ")[" + doff + "] = (" + scast + ")[" + soff + "];";
     }

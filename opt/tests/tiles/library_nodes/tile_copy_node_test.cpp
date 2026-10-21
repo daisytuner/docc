@@ -229,8 +229,10 @@ TEST(TileCopyNodeTest, ReferenceDispatcherEmitsBoundaryGuard) {
 }
 
 namespace {
-// A guarded 1-D float copy of a 48-tile with bound `max`, dispatched through the cooperative CUDA path.
-std::string dispatch_guarded_cooperative(tiles::CopyDirection direction, size_t bytes, tiles::CopyAtom atom) {
+// A guarded 1-D float copy of a 48-tile with bound `max`, dispatched through the cooperative CUDA (or ROCm) path.
+std::string dispatch_guarded_cooperative(
+    tiles::CopyDirection direction, size_t bytes, tiles::CopyAtom atom, bool rocm_target = false
+) {
     auto builder = make_builder();
     types::Scalar elem(types::PrimitiveType::Float);
     types::Pointer ptr(elem);
@@ -260,27 +262,44 @@ std::string dispatch_guarded_cooperative(tiles::CopyDirection direction, size_t 
     builder.add_computational_memlet(block, buf, node, "_dst", {}, ptr);
     builder.add_computational_memlet(block, g, node, "_src", {}, ptr);
 
-    cuda::CUDALanguageExtension le(builder.subject());
-    cuda::tiles::TileCopyNodeDispatcher dispatcher(le, builder.subject(), block.dataflow(), node);
     codegen::PrettyPrinter stream, globals;
     codegen::CodeSnippetFactory snippets;
-    dispatcher.dispatch(stream, globals, snippets);
+    if (rocm_target) {
+        rocm::ROCMLanguageExtension le(builder.subject());
+        rocm::tiles::TileCopyNodeDispatcher dispatcher(le, builder.subject(), block.dataflow(), node);
+        dispatcher.dispatch(stream, globals, snippets);
+    } else {
+        cuda::CUDALanguageExtension le(builder.subject());
+        cuda::tiles::TileCopyNodeDispatcher dispatcher(le, builder.subject(), block.dataflow(), node);
+        dispatcher.dispatch(stream, globals, snippets);
+    }
     return stream.str();
 }
 } // namespace
 
 TEST(TileCopyNodeTest, CooperativeRaggedCopyInZeroFillsBranchFree) {
-    const auto code = dispatch_guarded_cooperative(tiles::CopyDirection::In, 4, tiles::CopyAtom::ScalarSync);
-    // Out-of-bounds lanes load the array base instead and select zero, without branching around the load.
-    EXPECT_NE(code.find("const bool __tc_ok = "), std::string::npos) << code;
-    EXPECT_NE(code.find("(__tc_ok ? ("), std::string::npos) << code;
-    EXPECT_NE(code.find(": 0)]"), std::string::npos) << code;
-    EXPECT_NE(code.find("static_cast<float>(0)"), std::string::npos) << code;
-}
-
-TEST(TileCopyNodeTest, CooperativeRaggedVectorCopyInZeroFills) {
-    const auto code = dispatch_guarded_cooperative(tiles::CopyDirection::In, 16, tiles::CopyAtom::VectorSync);
-    EXPECT_NE(code.find("if (!__tc_ok) { __tc_w = int4{}; }"), std::string::npos) << code;
+    // Out-of-bounds lanes read zero without a select on the loaded value (which would force a wait right after the
+    // load and serialize register-staged prefetches): CUDA uses a predicated load into a zero-initialized value,
+    // ROCm a CDNA buffer load whose out-of-range offset the hardware returns as zero (predicated load otherwise).
+    const std::pair<size_t, tiles::CopyAtom> cases[] = {
+        {4, tiles::CopyAtom::ScalarSync},
+        {16, tiles::CopyAtom::VectorSync},
+    };
+    for (bool rocm_target : {false, true}) {
+        for (const auto& [bytes, atom] : cases) {
+            const auto code = dispatch_guarded_cooperative(tiles::CopyDirection::In, bytes, atom, rocm_target);
+            EXPECT_NE(code.find("const bool __tc_ok = "), std::string::npos) << code;
+            EXPECT_NE(code.find("{}; if (__tc_ok) { "), std::string::npos) << code;
+            EXPECT_EQ(code.find("__tc_ok ? __tc"), std::string::npos) << code;
+            EXPECT_EQ(code.find("if (!__tc_ok)"), std::string::npos) << code;
+            const bool buffer_load = code.find("__builtin_amdgcn_raw_buffer_load_b") != std::string::npos;
+            EXPECT_EQ(buffer_load, rocm_target) << code;
+            if (rocm_target) {
+                EXPECT_NE(code.find("#else"), std::string::npos) << code;
+                EXPECT_NE(code.find(": (int) 0x80000000"), std::string::npos) << code;
+            }
+        }
+    }
 }
 
 TEST(TileCopyNodeTest, CooperativeRaggedCopyOutSkipsOutOfBounds) {
