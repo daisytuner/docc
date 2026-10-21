@@ -1065,3 +1065,154 @@ TEST(LoopAnalysisTest, MapStackDepth_just2) {
     EXPECT_EQ(la.loop_info(&a1).map_stack_depth, 1);
     EXPECT_EQ(la.loop_info(&a0).map_stack_depth, 2);
 }
+
+namespace {
+
+void expect_same_loops(const analysis::LoopAnalysis& updated, const analysis::LoopAnalysis& fresh) {
+    ASSERT_EQ(updated.loops_in_pre_order(), fresh.loops_in_pre_order());
+    EXPECT_EQ(updated.outermost_loops(), fresh.outermost_loops());
+    for (auto* loop : fresh.loops_in_pre_order()) {
+        EXPECT_EQ(updated.parent_loop(loop), fresh.parent_loop(loop));
+        EXPECT_EQ(updated.children(loop), fresh.children(loop));
+        EXPECT_EQ(analysis::loop_info_to_json(updated.loop_info(loop)), analysis::loop_info_to_json(fresh.loop_info(loop)));
+        auto& a = updated.loop_info_local(loop);
+        auto& b = fresh.loop_info_local(loop);
+        EXPECT_EQ(a.loop_id, b.loop_id);
+        EXPECT_EQ(a.last_child_id, b.last_child_id);
+        EXPECT_EQ(a.loop_level, b.loop_level);
+        EXPECT_EQ(a.type, b.type);
+        EXPECT_EQ(a.is_elementwise, b.is_elementwise);
+        EXPECT_EQ(a.contains_non_perfectly_nested, b.contains_non_perfectly_nested);
+        EXPECT_EQ(a.contains_side_effects, b.contains_side_effects);
+    }
+}
+
+structured_control_flow::For&
+add_loop(builder::StructuredSDFGBuilder& builder, structured_control_flow::Sequence& parent, const std::string& name) {
+    builder.add_container(name, types::Scalar(types::PrimitiveType::Int32));
+    auto indvar = symbolic::symbol(name);
+    return builder.add_for(
+        parent,
+        indvar,
+        symbolic::Lt(indvar, symbolic::symbol("N")),
+        symbolic::zero(),
+        symbolic::add(indvar, symbolic::one())
+    );
+}
+
+} // namespace
+
+TEST(LoopAnalysisTest, Invalidate_UpdatesTheNestAroundTheChange) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+    auto& root = builder.subject().root();
+    auto& loop_i = add_loop(builder, root, "i");
+    auto& loop_j = add_loop(builder, loop_i.root(), "j");
+    auto& loop_k = add_loop(builder, root, "k");
+    add_loop(builder, loop_k.root(), "m");
+
+    analysis::AnalysisManager manager(builder.subject());
+    auto& before = manager.get<analysis::LoopAnalysis>();
+
+    // A loop and a block more in the first nest shift the loops of the second.
+    add_loop(builder, loop_j.root(), "l");
+    builder.add_block(loop_i.root());
+    manager.invalidate_all(loop_i);
+
+    auto& updated = manager.get<analysis::LoopAnalysis>();
+    EXPECT_EQ(&updated, &before);
+    analysis::AnalysisManager fresh(builder.subject());
+    expect_same_loops(updated, fresh.get<analysis::LoopAnalysis>());
+}
+
+TEST(LoopAnalysisTest, Invalidate_KeepsLoopsForChangesOutsideOfThem) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+    auto& root = builder.subject().root();
+    auto& loop_i = add_loop(builder, root, "i");
+    add_loop(builder, loop_i.root(), "j");
+
+    analysis::AnalysisManager manager(builder.subject());
+    auto& before = manager.get<analysis::LoopAnalysis>();
+
+    auto& block = builder.add_block(root);
+    manager.invalidate_all(block);
+
+    auto& updated = manager.get<analysis::LoopAnalysis>();
+    EXPECT_EQ(&updated, &before);
+    analysis::AnalysisManager fresh(builder.subject());
+    expect_same_loops(updated, fresh.get<analysis::LoopAnalysis>());
+}
+
+TEST(LoopAnalysisTest, Invalidate_RunsAgainForANewOutermostLoop) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+    auto& root = builder.subject().root();
+    add_loop(builder, root, "i");
+
+    analysis::AnalysisManager manager(builder.subject());
+    manager.get<analysis::LoopAnalysis>();
+
+    auto& loop_k = add_loop(builder, root, "k");
+    manager.invalidate_all(loop_k);
+
+    analysis::AnalysisManager fresh(builder.subject());
+    expect_same_loops(manager.get<analysis::LoopAnalysis>(), fresh.get<analysis::LoopAnalysis>());
+}
+
+TEST(LoopAnalysisTest, Invalidate_ForgetsLoopsRemovedWithTheirParent) {
+    // B is an outermost loop under two branches; removing the inner branch's IfElse removes B with it.
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+    auto& root = builder.subject().root();
+    auto& loop_a = add_loop(builder, root, "a");
+    auto& outer = builder.add_if_else(root);
+    auto& branch = builder.add_case(outer, symbolic::Lt(symbolic::symbol("N"), symbolic::integer(4)));
+    builder.add_block(branch);
+    auto& inner = builder.add_if_else(branch);
+    auto& inner_branch = builder.add_case(inner, symbolic::Lt(symbolic::symbol("N"), symbolic::integer(2)));
+    auto& loop_b = add_loop(builder, inner_branch, "b");
+    add_loop(builder, loop_b.root(), "c");
+
+    analysis::AnalysisManager manager(builder.subject());
+    ASSERT_EQ(manager.get<analysis::LoopAnalysis>().loops_in_pre_order().size(), 3);
+    builder.remove_child(branch, branch.index(inner));
+    manager.invalidate_all(branch);
+
+    auto& updated = manager.get<analysis::LoopAnalysis>();
+    analysis::AnalysisManager fresh(builder.subject());
+    expect_same_loops(updated, fresh.get<analysis::LoopAnalysis>());
+    EXPECT_EQ(updated.loops_in_pre_order(), std::vector<structured_control_flow::ControlFlowNode*>{&loop_a});
+}
+
+TEST(LoopAnalysisTest, Invalidate_ForgetsLoopsRemovedFromABranch) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+    auto& root = builder.subject().root();
+    auto& if_else = builder.add_if_else(root);
+    auto& branch = builder.add_case(if_else, symbolic::Lt(symbolic::symbol("N"), symbolic::integer(4)));
+    add_loop(builder, branch, "b");
+    auto& loop_a = add_loop(builder, root, "a");
+
+    analysis::AnalysisManager manager(builder.subject());
+    manager.get<analysis::LoopAnalysis>();
+    builder.remove_child(branch, 0);
+    manager.invalidate_all(if_else);
+
+    auto& updated = manager.get<analysis::LoopAnalysis>();
+    analysis::AnalysisManager fresh(builder.subject());
+    expect_same_loops(updated, fresh.get<analysis::LoopAnalysis>());
+    EXPECT_EQ(updated.loops_in_pre_order(), std::vector<structured_control_flow::ControlFlowNode*>{&loop_a});
+}
+
+TEST(LoopAnalysisTest, Invalidate_LoopMovedIntoANest) {
+    // k moves into i, and only i is reported: k must not stay listed as an outermost loop as well.
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+    auto& root = builder.subject().root();
+    auto& loop_i = add_loop(builder, root, "i");
+    auto& loop_k = add_loop(builder, root, "k");
+    add_loop(builder, loop_k.root(), "m");
+
+    analysis::AnalysisManager manager(builder.subject());
+    manager.get<analysis::LoopAnalysis>();
+    builder.move_child(root, root.index(loop_k), loop_i.root());
+    manager.invalidate_all(loop_i);
+
+    analysis::AnalysisManager fresh(builder.subject());
+    expect_same_loops(manager.get<analysis::LoopAnalysis>(), fresh.get<analysis::LoopAnalysis>());
+}

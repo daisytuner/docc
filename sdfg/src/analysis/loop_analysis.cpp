@@ -2,8 +2,10 @@
 #include <unordered_set>
 #include <vector>
 
+#include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/structured_control_flow/reduce.h"
+#include "sdfg/structured_control_flow/return.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/structured_control_flow/while.h"
 #include "sdfg/symbolic/conjunctive_normal_form.h"
@@ -250,6 +252,69 @@ void LoopAnalysis::run(AnalysisManager& analysis_manager) {
         this->compute_loop_infos(root_loop);
         this->loop_infos_[root_loop].nest.loopnest_index = loopnest_index++;
     }
+}
+
+bool LoopAnalysis::invalidate(structured_control_flow::ControlFlowNode& changed) {
+    auto is_loop = [](structured_control_flow::ControlFlowNode* node) {
+        return dyn_cast<structured_control_flow::StructuredLoop*>(node) ||
+               dyn_cast<structured_control_flow::While*>(node);
+    };
+    structured_control_flow::ControlFlowNode* outermost = nullptr;
+    for (auto* node = &changed; node; node = node->get_parent()) {
+        if (is_loop(node)) {
+            outermost = node;
+        }
+    }
+    if (!outermost) {
+        // Only a leaf never held a loop. A change anywhere else may have removed loops along with their non-loop
+        // parents, which this analysis can no longer find: they are freed with the subtree.
+        return dyn_cast<structured_control_flow::Block*>(&changed) ||
+               dyn_cast<structured_control_flow::AssignmentBlock*>(&changed) ||
+               dyn_cast<structured_control_flow::Return*>(&changed) ||
+               dyn_cast<structured_control_flow::Break*>(&changed) ||
+               dyn_cast<structured_control_flow::Continue*>(&changed);
+    }
+    auto known = this->loop_infos_.find(outermost);
+    if (known == this->loop_infos_.end() || this->loop_tree_.at(outermost) != nullptr) {
+        return false;
+    }
+
+    // The nest takes loops_[first, end): run adds the loops of a nest right after its outermost loop.
+    auto first = known->second.local.loop_id;
+    auto end = known->second.local.last_child_id + 1;
+    std::vector<structured_control_flow::ControlFlowNode*> rest(this->loops_.begin() + end, this->loops_.end());
+    for (auto it = this->loops_.begin() + first; it != this->loops_.begin() + end; ++it) {
+        this->loop_infos_.erase(*it);
+        this->loop_tree_.erase(*it);
+        this->loop_children_.erase(*it);
+    }
+    this->loops_.resize(first);
+
+    // The outermost loop keeps its place among the outermost ones; its nest is traversed as run traverses it.
+    this->loops_.push_back(outermost);
+    this->loop_tree_[outermost] = nullptr;
+    this->loop_children_[outermost];
+    init_new_loop_info(
+        this->loop_infos_[outermost],
+        first,
+        0,
+        outermost,
+        dyn_cast<structured_control_flow::Map*>(outermost),
+        dyn_cast<structured_control_flow::While*>(outermost)
+    );
+    auto known_loops = this->loop_infos_.size();
+    this->run(*get_loop_content_root(outermost), outermost, 1);
+    // A loop of the nest known elsewhere moved into it, and would stay listed where it was.
+    if (this->loop_infos_.size() - known_loops != this->loops_.size() - first - 1) {
+        return false;
+    }
+    this->compute_loop_infos(outermost);
+
+    auto nest_end = this->loops_.size();
+    this->loops_.insert(this->loops_.end(), rest.begin(), rest.end());
+    reindex(this->loops_.begin() + nest_end, this->loops_.end());
+    reindex_loop_nest_idx();
+    return true;
 }
 
 const std::vector<structured_control_flow::ControlFlowNode*> LoopAnalysis::loops() const {

@@ -193,6 +193,13 @@ public:
     void run(analysis::AnalysisManager& analysis_manager) override;
 
     /**
+     * Updates the nest of the outermost loop around @p changed, the only nest whose infos depend on it, and keeps the
+     * others. A change outside of every loop that contains no loop leaves all as they are. Returns false, to be run
+     * again, for a change of the outermost loops themselves: a new one, or a change containing loops outside of all.
+     */
+    bool invalidate(structured_control_flow::ControlFlowNode& changed) override;
+
+    /**
      * Currently guaranteed to be in Pre-Order
      */
     const std::vector<structured_control_flow::ControlFlowNode*> loops() const;
