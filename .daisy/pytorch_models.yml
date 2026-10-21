@@ -10,7 +10,7 @@ parameters:
   timeout: 120
   docc_version: ~
   partitions:
-    - aster
+    - chamomile
 
 steps:
   build: |
