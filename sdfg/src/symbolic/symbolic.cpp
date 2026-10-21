@@ -953,21 +953,24 @@ Expression overapproximate(const Expression expr) {
 
         Expression best = SymEngine::null;
         int64_t best_val = std::numeric_limits<int64_t>::min();
-        bool has_integer = false;
+        bool all_integer = true;
         for (const auto& arg : approx_args) {
             if (SymEngine::is_a<SymEngine::Integer>(*arg)) {
                 try {
                     auto val = SymEngine::rcp_static_cast<const SymEngine::Integer>(arg)->as_int();
-                    if (!has_integer || val > best_val) {
+                    if (val > best_val) {
                         best = arg;
                         best_val = val;
-                        has_integer = true;
                     }
                 } catch (const SymEngine::SymEngineException&) {
+                    all_integer = false;
                 }
+            } else {
+                all_integer = false;
             }
         }
-        if (has_integer) {
+        // An integer bounds a max only if every argument does: max(8, x) may exceed 8.
+        if (all_integer && !best.is_null()) {
             return best;
         }
 
@@ -983,21 +986,32 @@ Expression overapproximate(const Expression expr) {
         auto add_node = SymEngine::rcp_static_cast<const SymEngine::Add>(expr);
         auto args = add_node->get_args();
 
-        // If exactly one addend is a Min, distribute the rest into it:
-        // min(a, b) + c = min(a+c, b+c)
-        // This exposes pure integer args after cancellation.
+        // If an addend is a Min (or, failing that, a Max), distribute the rest into it:
+        // min(a, b) + c = min(a+c, b+c), max(a, b) + c = max(a+c, b+c)
+        // This exposes pure integer args after cancellation, e.g. for the merged extent
+        // max(min(...), min(...)) - base + 1 of several clipped accesses.
         SymEngine::vec_basic min_children;
         SymEngine::vec_basic rest;
         int min_count = 0;
-        for (const auto& arg : args) {
-            if (min_count == 0 && SymEngine::is_a<SymEngine::Min>(*arg)) {
+        bool is_max = false;
+        auto distributable = [](const Expression& arg) {
+            return SymEngine::is_a<SymEngine::Min>(*arg);
+        };
+        auto pick = std::find_if(args.begin(), args.end(), distributable);
+        if (pick == args.end()) {
+            pick = std::find_if(args.begin(), args.end(), [](const Expression& arg) {
+                return SymEngine::is_a<SymEngine::Max>(*arg);
+            });
+            is_max = pick != args.end();
+        }
+        for (auto it = args.begin(); it != args.end(); ++it) {
+            if (it == pick) {
                 min_count++;
-                auto min_op = SymEngine::rcp_static_cast<const SymEngine::Min>(arg);
-                for (const auto& mc : min_op->get_args()) {
+                for (const auto& mc : (*it)->get_args()) {
                     min_children.push_back(mc);
                 }
             } else {
-                rest.push_back(arg);
+                rest.push_back(*it);
             }
         }
 
@@ -1007,7 +1021,7 @@ Expression overapproximate(const Expression expr) {
             for (const auto& mc : min_children) {
                 new_min_args.push_back(SymEngine::expand(SymEngine::add(mc, sum_rest)));
             }
-            return overapproximate(SymEngine::min(new_min_args));
+            return overapproximate(is_max ? SymEngine::max(new_min_args) : SymEngine::min(new_min_args));
         }
 
         // Normal case: recurse into each addend
