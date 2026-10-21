@@ -144,7 +144,7 @@ jobs:
       group: dahlia
       labels: rocm
     container:
-      image: daisytuner/docc-run-env-vllm-rocm-ubuntu-22.04:beta-amd64
+      image: daisytuner/docc-run-env-vllm-rocm-ubuntu-22.04:latest-amd64
       options: >-
         --cap-add=PERFMON
         --device /dev/kfd
