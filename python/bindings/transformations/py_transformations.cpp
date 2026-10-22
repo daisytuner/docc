@@ -31,6 +31,7 @@
 #include <sdfg/transformations/recorder.h>
 #include <sdfg/transformations/stream_k.h>
 #include <sdfg/transformations/transformation.h>
+#include <sdfg/transformations/trivial_loop_elimination.h>
 #include <sdfg/transformations/unroll_transform.h>
 #include <sdfg/transformations/vectorize_transform.h>
 #include <sdfg/types/type.h>
@@ -382,6 +383,23 @@ void register_transformations(py::module& m) {
         .def("__repr__", [](const LoopPeeling& t) {
             std::ostringstream oss;
             oss << "<LoopPeeling name='" << t.name() << "'>";
+            return oss.str();
+        });
+
+    // TrivialLoopElimination transformation
+    py::class_<TrivialLoopElimination, Transformation>(m, "TrivialLoopElimination")
+        .def(
+            py::init<Map&>(),
+            py::arg("loop"),
+            "Create a trivial loop elimination transformation.\n\n"
+            "Replaces a sequential, unit-stride map with exactly one iteration by its body,\n"
+            "substituting the induction variable with the map's init.\n\n"
+            "Args:\n"
+            "    loop: The map to eliminate"
+        )
+        .def("__repr__", [](const TrivialLoopElimination& t) {
+            std::ostringstream oss;
+            oss << "<TrivialLoopElimination name='" << t.name() << "'>";
             return oss.str();
         });
 
