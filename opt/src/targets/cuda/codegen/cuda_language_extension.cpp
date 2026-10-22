@@ -37,7 +37,7 @@ std::string CUDALanguageExtension::primitive_type(const types::PrimitiveType pri
         case types::PrimitiveType::Half:
             return "__half";
         case types::PrimitiveType::BFloat:
-            return "__nv_bfloat16";
+            return "nv_bfloat16";
         case types::PrimitiveType::Float:
             return "float";
         case types::PrimitiveType::Double:
@@ -245,7 +245,7 @@ std::string CUDALanguageExtension::tasklet(const data_flow::Tasklet& tasklet) {
                 case types::PrimitiveType::Float:
                     return "fmaf" + args;
                 case types::PrimitiveType::Half:
-                    return "__builtin_fmaf16" + args;
+                    return "__hfma" + args;
                 default:
                     return in.at(0) + " * " + in.at(1) + " + " + in.at(2);
             }
