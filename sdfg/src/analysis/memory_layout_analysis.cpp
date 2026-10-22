@@ -306,7 +306,8 @@ void MemoryLayoutAnalysis::run(analysis::AnalysisManager& analysis_manager) {
     detailed_assumptions_ = std::make_unique<AssumptionsAnalysis>(sdfg_, /*with_branch_conditions=*/true);
     detailed_assumptions_->run(analysis_manager);
 
-    traverse(sdfg_.root(), analysis_manager);
+    // Scopes are traversed when first queried (see ensure), so that recomputing the analysis after a change costs
+    // only what is asked for.
     bounds_cache_.clear();
 }
 
