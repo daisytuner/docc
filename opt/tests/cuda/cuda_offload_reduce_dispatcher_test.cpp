@@ -212,7 +212,7 @@ static std::string dispatch_block_reduce(
         reduce,
         *instrumentation,
         *arg_capture,
-        std::make_unique<CUDAOffloadDispatcherStrategy>(builder.subject())
+        std::make_unique<CUDAOffloadDispatcherStrategy>()
     );
 
     codegen::PrettyPrinter main_stream;
@@ -422,7 +422,7 @@ TEST(CUDAOffloadReduceDispatcherTest, PlacedPartialContainerWrongStorageThrows) 
         reduce,
         *instrumentation,
         *arg_capture,
-        std::make_unique<CUDAOffloadDispatcherStrategy>(builder.subject())
+        std::make_unique<CUDAOffloadDispatcherStrategy>()
     );
     codegen::PrettyPrinter main_stream, globals_stream;
     codegen::CodeSnippetFactory library_snippet_factory;
@@ -526,7 +526,7 @@ std::string dispatch_rescale_reduce(
         reduce,
         *instrumentation,
         *arg_capture,
-        std::make_unique<CUDAOffloadDispatcherStrategy>(builder.subject())
+        std::make_unique<CUDAOffloadDispatcherStrategy>()
     );
     codegen::PrettyPrinter main_stream, globals_stream;
     codegen::CodeSnippetFactory library_snippet_factory;
