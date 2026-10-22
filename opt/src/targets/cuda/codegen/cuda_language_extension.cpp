@@ -35,9 +35,9 @@ std::string CUDALanguageExtension::primitive_type(const types::PrimitiveType pri
         case types::PrimitiveType::UInt128:
             return "unsigned __int128";
         case types::PrimitiveType::Half:
-            return "_Float16";
+            return "__half";
         case types::PrimitiveType::BFloat:
-            return "nv_bfloat16";
+            return "__nv_bfloat16";
         case types::PrimitiveType::Float:
             return "float";
         case types::PrimitiveType::Double:
@@ -67,25 +67,39 @@ std::string CUDALanguageExtension::
         val << " ";
         val << name;
     } else if (auto array_type = dynamic_cast<const types::Array*>(&type)) {
-        if (array_type->storage_type().is_nv_shared()) {
-            val << "__shared__ ";
-        }
-        auto& element_type = array_type->element_type();
-        val << declaration(name + "[" + this->expression(array_type->num_elements()) + "]", element_type);
-    } else if (auto pointer_type = dynamic_cast<const types::Pointer*>(&type)) {
-        if (pointer_type->has_pointee_type()) {
-            const types::IType& pointee = pointer_type->pointee_type();
-
-            const bool pointee_is_function_or_array = dynamic_cast<const types::Function*>(&pointee) ||
-                                                      dynamic_cast<const types::Array*>(&pointee);
-
-            // Parenthesise *only* when it is needed to bind tighter than [] or ()
-            std::string decorated = pointee_is_function_or_array ? "(*" + name + ")" : "*" + name;
-
-            val << declaration(decorated, pointee);
-        } else {
-            val << "void*";
+        if (gpu::cuda::CudaMmaSupport::is_mma_type(array_type->storage_type())) {
+            arch_->mma_support()->emit_block_frag_type(
+                val, *this, array_type->storage_type(), array_type->element_type().primitive_type()
+            );
             val << " " << name;
+        } else {
+            if (array_type->storage_type().is_nv_shared()) {
+                val << "__shared__ ";
+            }
+            auto& element_type = array_type->element_type();
+            val << declaration(name + "[" + this->expression(array_type->num_elements()) + "]", element_type);
+        }
+    } else if (auto pointer_type = dynamic_cast<const types::Pointer*>(&type)) {
+        if (gpu::cuda::CudaMmaSupport::is_mma_type(pointer_type->storage_type())) {
+            arch_->mma_support()->emit_block_frag_type(
+                val, *this, pointer_type->storage_type(), pointer_type->pointee_type().primitive_type()
+            );
+            val << " " << name;
+        } else {
+            if (pointer_type->has_pointee_type()) {
+                const types::IType& pointee = pointer_type->pointee_type();
+
+                const bool pointee_is_function_or_array = dynamic_cast<const types::Function*>(&pointee) ||
+                                                          dynamic_cast<const types::Array*>(&pointee);
+
+                // Parenthesise *only* when it is needed to bind tighter than [] or ()
+                std::string decorated = pointee_is_function_or_array ? "(*" + name + ")" : "*" + name;
+
+                val << declaration(decorated, pointee);
+            } else {
+                val << "void*";
+                val << " " << name;
+            }
         }
     } else if (auto ref_type = dynamic_cast<const codegen::Reference*>(&type)) {
         val << declaration("&" + name, ref_type->reference_type());

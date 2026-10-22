@@ -2,6 +2,11 @@
 
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/targets/gpu/gpu_arch.h"
+#include "sdfg/types/array.h"
+
+namespace sdfg::codegen {
+class LanguageExtension;
+}
 
 namespace sdfg::gpu::cuda {
 
@@ -72,6 +77,23 @@ public:
 
     std::vector<MmaBlockSize>
     get_supported_block_sizes(types::PrimitiveType input_type, types::PrimitiveType acc_type) const override;
+
+    void emit_block_frag_type(
+        std::ostream& os,
+        codegen::LanguageExtension& lang_ext,
+        const types::StorageType& storage_type,
+        types::PrimitiveType element_type
+    ) const;
+
+    static void emit_block_frag_type(
+        std::ostream& os,
+        codegen::LanguageExtension& lang_ext,
+        MmaFragmentType type,
+        const MmaBlockSize& dims,
+        MmaFragmentLayout layout,
+        types::PrimitiveType scalar_type,
+        std::optional<std::pair<int, int>> coop_dims
+    );
 
     static bool is_mma_type(const types::StorageType& storage);
 };
