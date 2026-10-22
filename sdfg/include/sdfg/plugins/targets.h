@@ -163,7 +163,6 @@ struct DoccTarget {
     [[nodiscard]] bool safe_get_direct_contraction_rescaling() const {
         return api_ver >= 3 && direct_contraction_rescaling;
     }
-
 };
 
 /// Codegens of @p target, default first; a target without a handler supports only "cpp".
