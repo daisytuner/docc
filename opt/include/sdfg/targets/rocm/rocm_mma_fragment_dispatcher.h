@@ -58,17 +58,11 @@ public:
         return "static_cast<int>(" + frag + ".num_elements)";
     }
 
-    /// CDNA (wave64) 16x16 accumulators keep the MFMA output layout: lane l holds column l % 16, rows
-    /// 4 * (l / 16) + e.
+    /// On wave64 targets (per the queried wavefront size), 16x16 accumulators keep the MFMA output layout:
+    /// lane l holds column l % 16, rows 4 * (l / 16) + e. Other wavefront sizes fall back to the iota path.
     std::optional<std::pair<std::string, std::string>> fragment_element_coords(
         MmaFragmentType frag_type, const MmaBlockSize& block_size, const std::string& idx, std::string& condition
-    ) const override {
-        if (frag_type != MmaFragmentType::C || block_size.m != 16 || block_size.n != 16) {
-            return std::nullopt;
-        }
-        condition = "defined(__GFX9__)";
-        return std::make_pair("(4 * ((threadIdx.x % 64) / 16) + " + idx + ")", std::string("(threadIdx.x % 16)"));
-    }
+    ) const override;
 };
 
 class RocmWmmaLibDependency : public codegen::LibDependency {
