@@ -147,6 +147,11 @@ bool MapFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis
         return false;
     }
 
+    if (structured_control_flow::ScheduleType_NoFusion::is_set(first_map_.schedule_type()) ||
+        structured_control_flow::ScheduleType_NoFusion::is_set(second_loop_.schedule_type())) {
+        return false;
+    }
+
     // Criterion: Get parent scope and verify both loops are sequential children
     auto* first_parent = first_map_.get_parent();
     auto* second_parent = second_loop_.get_parent();
