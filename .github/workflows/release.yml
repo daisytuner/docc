@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - "v*.*.*"
+  # Manual runs build and test everything but skip publishing
+  workflow_dispatch:
 
 jobs:
   # Stage 1: Build docc-compiler (no dependencies)
@@ -96,8 +98,55 @@ jobs:
           name: wheels-docc-ai-${{ matrix.os }}-${{ matrix.python }}
           path: wheelhouse/*.whl
 
+  # docc-pytorch is pure Python, so a single py3-none-any wheel covers all platforms
+  wheels-pytorch:
+    name: PyTorch
+    needs: [wheels-compiler]
+    runs-on: build-amd64-big
+    container:
+      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:latest-amd64
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Pin docc-compiler version
+        run: |
+          VERSION=$(cat VERSION)
+          sed -i.bak "s/\"docc-compiler\"/\"docc-compiler==$VERSION\"/" pytorch/pyproject.toml && rm pytorch/pyproject.toml.bak
+          grep -q "\"docc-compiler==$VERSION\"" pytorch/pyproject.toml
+
+      - name: Build wheel
+        run: |
+          python -m pip install --upgrade pip build twine
+          python -m build --wheel --outdir pytorch/dist pytorch/
+          twine check pytorch/dist/*
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: wheels-docc-compiler-build-amd64-big-cp312
+          path: compiler-wheels
+
+      - name: Smoke test
+        run: |
+          python -m venv /tmp/smoke
+          /tmp/smoke/bin/pip install \
+            --find-links compiler-wheels \
+            --extra-index-url https://download.pytorch.org/whl/cpu \
+            pytorch/dist/*.whl
+          cd /tmp && /tmp/smoke/bin/python -c "import docc.pytorch; print('docc-pytorch imported successfully')"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-docc-pytorch
+          path: pytorch/dist/*.whl
+
   wheels-publish:
-    needs: [wheels-compiler, wheels-ai]
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [wheels-compiler, wheels-ai, wheels-pytorch]
     runs-on: build-amd64-big
     permissions:
       id-token: write
@@ -197,6 +246,7 @@ jobs:
           path: "build/*.${{ matrix.package-format }}"
 
       - name: Upload docc package to Firebase
+        if: startsWith(github.ref, 'refs/tags/')
         uses: daisytuner/upload-distribution-action@main
         with:
           file: "build/*.${{ matrix.package-format }}"
