@@ -85,7 +85,7 @@ void register_rocm_plugin(plugins::Context& context) {
                 node,
                 instrumentation_plan,
                 arg_capture_plan,
-                std::make_unique<rocm::ROCMOffloadDispatcherStrategy>(sdfg, node)
+                std::make_unique<rocm::ROCMOffloadDispatcherStrategy>()
             );
         }
     );
@@ -105,7 +105,7 @@ void register_rocm_plugin(plugins::Context& context) {
                 node,
                 instrumentation_plan,
                 arg_capture_plan,
-                std::make_unique<rocm::ROCMOffloadDispatcherStrategy>(sdfg, node)
+                std::make_unique<rocm::ROCMOffloadDispatcherStrategy>()
             );
         }
     );

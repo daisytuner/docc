@@ -13,12 +13,7 @@
 namespace sdfg {
 namespace cuda {
 
-CUDAOffloadDispatcherStrategy::CUDAOffloadDispatcherStrategy(StructuredSDFG& sdfg)
-    : gpu::GPUOffloadDispatcherStrategy(), kernel_language_extension_(sdfg) {};
-
-codegen::LanguageExtension& CUDAOffloadDispatcherStrategy::create_kernel_language_extension() {
-    return kernel_language_extension_;
-}
+CUDAOffloadDispatcherStrategy::CUDAOffloadDispatcherStrategy() {};
 
 void CUDAOffloadDispatcherStrategy::dispatch_kernel_call(
     codegen::PrettyPrinter& main_stream,
@@ -96,6 +91,18 @@ std::string CUDAOffloadDispatcherStrategy::warp_shuffle_xor(const std::string& v
 
 codegen::TargetType CUDAOffloadDispatcherStrategy::get_instrumentation_kernel_target_type() const {
     return TargetType_CUDA;
+}
+
+std::unique_ptr<codegen::LanguageExtension> CUDAOffloadDispatcherStrategy::
+    create_kernel_language_extension(StructuredSDFG& sdfg, const StructuredLoop& loop) {
+    auto* arch = sdfg::gpu::cuda::cuda_arch_from_schedule_type(loop.schedule_type());
+    return std::make_unique<CUDALanguageExtension>(sdfg, arch);
+}
+
+bool CUDAOffloadDispatcherStrategy::is_matching_kernel_language_extension(
+    const StructuredSDFG& sdfg, const StructuredLoop& loop, codegen::LanguageExtension& language_extension
+) {
+    return dynamic_cast<CUDALanguageExtension*>(&language_extension) != nullptr;
 }
 
 } // namespace cuda

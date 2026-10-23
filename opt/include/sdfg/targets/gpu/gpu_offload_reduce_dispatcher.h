@@ -26,6 +26,7 @@ protected:
         codegen::NestedCodeSnippetFactory& kernel_snippet_factory,
         codegen::PrettyPrinter& kernel_source_stream,
         codegen::PrettyPrinter& kernel_header_stream,
+        codegen::LanguageExtension& kernel_lang_ext,
         symbolic::Symbol indvar,
         std::vector<std::string>& scope_variables,
         symbolic::Expression& num_iterations
