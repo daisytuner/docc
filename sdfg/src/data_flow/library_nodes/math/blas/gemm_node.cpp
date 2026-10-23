@@ -216,15 +216,12 @@ passes::LibNodeExpander::ExpandOutcome GEMMNode::
         auto cond = symbolic::Lt(sym, indvar_end);
         auto update = symbolic::add(sym, symbolic::one());
         if (as_map) {
-            return builder.add_map(
-                scope,
-                sym,
-                cond,
-                symbolic::zero(),
-                update,
-                structured_control_flow::ScheduleType_Sequential::create(),
-                block.debug_info()
-            );
+            // Keep the init and compute nests unfused: mark the outermost loop of each nest.
+            auto schedule = structured_control_flow::ScheduleType_Sequential::create();
+            if (&scope == &new_sequence) {
+                structured_control_flow::ScheduleType_NoFusion::set(schedule);
+            }
+            return builder.add_map(scope, sym, cond, symbolic::zero(), update, schedule, block.debug_info());
         }
         return builder.add_for(scope, sym, cond, symbolic::zero(), update, block.debug_info());
     };
