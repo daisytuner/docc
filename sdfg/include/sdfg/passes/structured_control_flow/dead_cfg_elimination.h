@@ -4,10 +4,6 @@
 #include "sdfg/passes/pass.h"
 
 namespace sdfg {
-namespace structured_control_flow {
-class Map;
-}
-
 namespace passes {
 
 class DeadCFGElimination : public Pass {
@@ -15,10 +11,6 @@ private:
     bool permissive_;
 
     bool is_dead(const structured_control_flow::ControlFlowNode& node);
-
-    bool is_trivial(structured_control_flow::Map* loop);
-
-    void update_loop_indvar_accesses(builder::StructuredSDFGBuilder& builder, structured_control_flow::Map* loop);
 
 public:
     DeadCFGElimination();
