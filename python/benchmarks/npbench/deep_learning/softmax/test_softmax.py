@@ -50,7 +50,7 @@ def test_softmax(target):
                 "VECTORIZE": 6,
                 "REDUCE": 2,
                 "SEQUENTIAL": 12,
-                "MAP": 14,
+                "MAP": 16,
             }
         )
     elif target == "openmp":

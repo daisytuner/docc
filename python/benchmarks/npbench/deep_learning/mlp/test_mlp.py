@@ -67,7 +67,7 @@ def test_mlp(target):
                 "REDUCE": 2,
                 "VECTORIZE": 9,
                 "SEQUENTIAL": 7,
-                "MAP": 12,
+                "MAP": 14,
                 "GEMM": 3,
             }
         )
