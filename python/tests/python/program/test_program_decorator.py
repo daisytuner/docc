@@ -94,8 +94,8 @@ def test_invalid_annotation():
 
 def test_pass_options():
     # `A @ B` lowers to a GEMM library node. Forcing BLAS expansion replaces it
-    # with explicit loop nests: an init nest (i, j) plus a matmul nest (i, j, k),
-    # so loop analysis should report 5 loops in total.
+    # with explicit loop nests: an init nest (i, j) plus a matmul nest (i, j, k) and a writeback nest,
+    # so loop analysis should report 7 loops in total.
     @native(target="sequential", **{"library_node_expansion.force_expand": True})
     def matmul_op(a, b):
         return a @ b
@@ -112,13 +112,13 @@ def test_pass_options():
     loop_analysis = analysis.loop_analysis()
 
     loops = loop_analysis.loops()
-    assert len(loops) == 5
+    assert len(loops) == 7
 
-    # Two outermost nests: init (2 loops) + matmul (3 loops).
+    # Two outermost nests: init (2 loops) + matmul (3 loops) + writeback (2 loops).
     outermost = loop_analysis.outermost_loops()
     assert len(outermost) == 2
     total_loops = sum(loop_analysis.loop_info(loop).num_loops for loop in outermost)
-    assert total_loops == 5
+    assert total_loops == 7
 
 
 def test_symbolic_shapes_default():
