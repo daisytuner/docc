@@ -116,7 +116,7 @@ def test_pass_options():
 
     # Two outermost nests: init (2 loops) + matmul (3 loops) + writeback (2 loops).
     outermost = loop_analysis.outermost_loops()
-    assert len(outermost) == 2
+    assert len(outermost) == 3
     total_loops = sum(loop_analysis.loop_info(loop).num_loops for loop in outermost)
     assert total_loops == 7
 
