@@ -1,5 +1,6 @@
 #include "py_structured_sdfg.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -15,6 +16,7 @@
 #include <sdfg/analysis/analysis.h>
 #include <sdfg/builder/structured_sdfg_builder.h>
 #include <sdfg/codegen/code_generators/cpp_code_generator.h>
+#include <sdfg/codegen/code_generators/python_code_generator.h>
 #include <sdfg/codegen/instrumentation/arg_capture_plan.h>
 #include <sdfg/codegen/instrumentation/instrumentation_plan.h>
 #include <sdfg/codegen/loop_report.h>
@@ -607,12 +609,47 @@ std::string PyStructuredSDFG::compile(
     bool capture_args,
     bool debug_build,
     int threads,
-    bool reuse_sources
+    bool reuse_sources,
+    const std::string& codegen
 ) const {
     fs::path build_path(output_folder);
     if (!fs::exists(build_path)) {
         fs::create_directories(build_path);
     }
+
+    auto codegens = docc::target::target_codegens(docc_context_.get_target_handler(target));
+    auto selected = std::find_if(codegens.begin(), codegens.end(), [&](const docc::target::TargetCodegen& candidate) {
+        return candidate.name == codegen;
+    });
+    if (selected == codegens.end()) {
+        throw std::runtime_error("Target '" + target + "' does not support codegen '" + codegen + "'");
+    }
+    if (selected->compile) {
+        docc::target::CodegenRequest request{
+            .output_folder = output_folder,
+            .instrumentation_mode = instrumentation_mode,
+            .capture_args = capture_args,
+            .debug_build = debug_build,
+            .threads = threads,
+            .reuse_sources = reuse_sources,
+            .options = &options_,
+        };
+        return selected->compile(*sdfg_, request);
+    }
+
+    if (codegen == "numpy") {
+        if (!instrumentation_mode.empty() || capture_args) {
+            throw std::runtime_error("The numpy codegen supports neither instrumentation nor argument capture");
+        }
+        fs::path module_path = build_path / (sdfg_->name() + ".py");
+        if (!reuse_sources || !fs::exists(module_path)) {
+            std::ofstream(module_path) << to_python();
+        }
+        return module_path.string();
+    } else if (codegen != "cpp") {
+        throw std::runtime_error("Unsupported codegen: " + codegen);
+    }
+
     fs::path header_path = build_path / (sdfg_->name() + ".h");
     fs::path source_path = build_path / (sdfg_->name() + ".cpp");
 
@@ -799,5 +836,29 @@ std::string PyStructuredSDFG::to_cpp() const {
     oss << generator.main().str() << std::endl;
     oss << "}" << std::endl;
 
+    return oss.str();
+}
+
+std::string PyStructuredSDFG::to_python() const {
+    sdfg::builder::StructuredSDFGBuilder builder(*sdfg_);
+    sdfg::analysis::AnalysisManager analysis_manager(*sdfg_, options_);
+
+    // Implementation types select C dispatchers (e.g. BLAS), so lower everything without a Python one.
+    auto expand_options = options_;
+    expand_options.set(std::string(sdfg::passes::LibraryNodeExpansionPass<>::FORCE_EXPAND.key), true);
+    sdfg::passes::LibraryNodeExpansionPass<> expansion(expand_options);
+    expansion.run(builder, analysis_manager);
+
+    // Expansions address tensors by coordinates, which the Python codegen indexes as flat pointers.
+    sdfg::passes::TensorToPointerConversionPass tensor_to_pointer_conversion;
+    tensor_to_pointer_conversion.run(builder, analysis_manager);
+
+    auto instrumentation_plan = sdfg::codegen::InstrumentationPlan::none(*sdfg_);
+    auto arg_capture_plan = sdfg::codegen::ArgCapturePlan::none(*sdfg_);
+    sdfg::codegen::PythonCodeGenerator generator(*sdfg_, analysis_manager, *instrumentation_plan, *arg_capture_plan);
+    generator.generate();
+
+    std::ostringstream oss;
+    generator.emit_main_source(oss, "");
     return oss.str();
 }

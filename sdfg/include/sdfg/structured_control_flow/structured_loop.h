@@ -137,6 +137,21 @@ public:
     }
 };
 
+/**
+ * @brief Marks a schedule whose iterations may also run one after another in program order with the same result,
+ * so code generators without the schedule's target can emit a sequential loop.
+ */
+class ScheduleType_Serializable {
+public:
+    static void set(ScheduleType& schedule) {
+        schedule.set_property("serializable", "true");
+    }
+
+    static bool is_set(const ScheduleType& schedule) {
+        auto it = schedule.properties().find("serializable");
+        return it != schedule.properties().end() && it->second == "true";
+    }
+};
 
 /**
  * @brief Base class for structured loop constructs
