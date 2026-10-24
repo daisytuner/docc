@@ -7,6 +7,8 @@ namespace sdfg::gpu::rocm {
 
 namespace {
 
+/// Lane index within a wavefront (wave64 assumed), currently this path is only valid for CDNA architecture.
+/// Thus, wave64 can be implied for this lane calculation.
 constexpr const char* kLane = "(threadIdx.x % 64)";
 
 /// True if the affine @p expr is a multiple of @p n for every symbol value (constant and all

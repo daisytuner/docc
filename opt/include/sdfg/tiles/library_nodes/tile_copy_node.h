@@ -158,6 +158,10 @@ public:
 /// enclosing @p node is rewritten as `init + stride * t`; any other symbol is an unknown integer.
 bool provably_multiple_of(symbolic::Expression e, long long m, const TileCopyNode& node);
 
+/// Every guard dim on tile @p axis has a base and exclusive bound that are multiples of @p factor, so a
+/// factor-aligned run of coordinates along it is entirely in or entirely out of bounds.
+bool guard_axis_aligned(const TileCopyNode& node, size_t axis, long long factor);
+
 /// The first of @p widths (bytes, widest first) at which each lane of @p node can move one
 /// contiguous multi-element run under @p atom, or 0. `node.bytes()` is taken as the element width.
 size_t widest_legal_transfer(const TileCopyNode& node, CopyAtom atom, const std::vector<size_t>& widths);
@@ -177,14 +181,36 @@ std::string emit_tile_copy_stmt(
     const symbolic::Expression& index
 );
 
+/// Renders a guarded (ragged-tile) copy-in load for the cooperative copy loop: a statement declaring
+/// `type var` that holds the @p bytes -wide value at `(base)[index]` (an element index into the flat
+/// @p elem_bytes -sized element pointer @p base), or zero where the in-scope `__tc_ok` predicate is false.
+/// It must not select on the loaded value: such a select forces a wait right after the load, which
+/// serializes register-staged (software-pipelined) prefetches.
+using GuardedLoadFn = std::function<std::string(
+    const std::string& type,
+    const std::string& var,
+    const std::string& base,
+    const std::string& index,
+    size_t elem_bytes,
+    size_t bytes
+)>;
+
+/// Vendor-agnostic @ref GuardedLoadFn: a predicated load into a zero-initialized value
+/// (CUDA: `@p LDG`; AMDGPU: an exec-masked load).
+std::string emit_predicated_guarded_load(
+    const std::string& type, const std::string& var, const std::string& base, const std::string& index
+);
+
 /// Emit the block-cooperative staging loop for @p node into @p stream: every thread
 /// of the enclosing kernel block strides the flat tile from its flat index by the
 /// block thread count. `ScalarSync` moves one element per step; `VectorSync` moves a
 /// contiguous @ref TileCopyNode::bytes -wide vector per step (the loop strides by the
 /// vector's element count). For `CpAsync`, @p async_stmt renders the per-step async
 /// transfer given the destination/source element addresses and the byte width (the
-/// target supplies its own primitive; e.g. CUDA `__pipeline_memcpy_async`). Shared by
-/// the CUDA and ROCm dispatchers; the visibility barrier is the producer's.
+/// target supplies its own primitive; e.g. CUDA `__pipeline_memcpy_async`). Guarded
+/// (ragged) copy-ins load through @p guarded_load, defaulting to
+/// @ref emit_predicated_guarded_load. Shared by the CUDA and ROCm dispatchers; the
+/// visibility barrier is the producer's.
 void emit_cooperative_copy_loop(
     codegen::LanguageExtension& language_extension,
     codegen::PrettyPrinter& stream,
@@ -193,7 +219,8 @@ void emit_cooperative_copy_loop(
     const std::string& src_expr,
     types::PrimitiveType elem,
     const std::function<std::string(const std::string& dst_addr, const std::string& src_addr, size_t bytes)>&
-        async_stmt = {}
+        async_stmt = {},
+    const GuardedLoadFn& guarded_load = {}
 );
 
 /**
