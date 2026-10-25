@@ -25,6 +25,8 @@ __daisy_metadata_t metadata = {
 
 For GPU kernels, use `__DAISY_EVENT_SET_CUDA` instead (works for ROCm too). Counters are disabled using `__DAISY_EVENT_SET_NONE`.
 
+In aggregate mode, `__DAISY_EVENT_SET_CUDA` regions with `target_type` `CUDA`/`ROCM` are timed with GPU events. Every other region with a GPU `target_type` (e.g. blocking memcpy/free, or all GPU regions when async capture is off) is timed on the host clock, and the device is synchronized right before the start and before the end timestamp. Otherwise a blocking call would absorb the runtime of all previously queued kernels, which their own regions already report.
+
 Regions are subsequently started using the unique region ID:
 
 ```
