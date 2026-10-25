@@ -34,6 +34,7 @@ void GpuMmaExpander::create_fragment_load(
     MmaFragmentType frag_type,
     const GpuMmaFromMemoryLayout& from_memory,
     unsigned input_index,
+    const char* operand_label,
     Block& block
 ) {
     auto& load_node = builder.add_library_node<
@@ -48,7 +49,7 @@ void GpuMmaExpander::create_fragment_load(
         {},
         types::Pointer(types::Scalar(input_type))
     );
-    builder.add_computational_memlet(
+    auto& mem_memlet = builder.add_computational_memlet(
         block,
         mem_ptr,
         load_node,
@@ -56,6 +57,9 @@ void GpuMmaExpander::create_fragment_load(
         {},
         types::Pointer(types::Scalar(input_type))
     );
+    if (operand_label != nullptr) {
+        mem_memlet.add_metadata(math::tensor::MatMulNode::OPERAND_METADATA_KEY, operand_label);
+    }
 }
 
 void GpuMmaExpander::create_fragment_store(
@@ -69,6 +73,7 @@ void GpuMmaExpander::create_fragment_store(
     MmaFragmentType frag_type,
     const GpuMmaFromMemoryLayout& to_memory,
     unsigned input_index,
+    const char* operand_label,
     Block& block
 ) {
     auto& store_node = builder.add_library_node<
@@ -83,7 +88,7 @@ void GpuMmaExpander::create_fragment_store(
         {},
         types::Pointer(types::Scalar(output_type))
     );
-    builder.add_computational_memlet(
+    auto& mem_memlet = builder.add_computational_memlet(
         block,
         mem_ptr,
         store_node,
@@ -91,6 +96,9 @@ void GpuMmaExpander::create_fragment_store(
         {},
         types::Pointer(types::Scalar(output_type))
     );
+    if (operand_label != nullptr) {
+        mem_memlet.add_metadata(math::tensor::MatMulNode::OPERAND_METADATA_KEY, operand_label);
+    }
 }
 
 passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
@@ -327,6 +335,7 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
             MmaFragmentType::A,
             {.offset = a_offset(i), .ldstride = lda, .layout = a_frag_layout, .rows = m_clip(i), .cols = k_clip},
             args_order.at(1),
+            "A",
             load_block
         );
     }
@@ -342,6 +351,7 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
             MmaFragmentType::B,
             {.offset = b_offset(j), .ldstride = ldb, .layout = b_frag_layout, .rows = k_clip, .cols = n_clip(j)},
             args_order.at(2),
+            "B",
             load_block
         );
     }
@@ -407,6 +417,7 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
                         MmaFragmentType::C,
                         y_mem,
                         args_order.at(0),
+                        "Y",
                         load_c_block
                     );
                 } else {
@@ -449,6 +460,7 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
                 MmaFragmentType::C,
                 y_mem,
                 args_order.at(0),
+                "Y",
                 store_block
             );
         }

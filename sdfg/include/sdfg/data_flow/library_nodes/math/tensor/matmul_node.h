@@ -133,6 +133,11 @@ public:
     static auto constexpr A_INPUT_IDX = 1;
     static auto constexpr B_INPUT_IDX = 2;
 
+    /// Metadata key tagging a memlet with the matmul operand it carries
+    /// ("A", "B", or "Y"), attached during expansion so the originating operand
+    /// can be matched on the expanded dataflow.
+    static constexpr const char* OPERAND_METADATA_KEY = "ml.matmul.operand";
+
 
     /**
      * @brief Get the M dimension (rows of A, rows of output)

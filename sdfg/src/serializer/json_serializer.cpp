@@ -46,16 +46,6 @@ namespace serializer {
 
 namespace {
 
-void element_metadata_to_json(nlohmann::json& json, const Element& element) {
-    if (element.metadata().empty()) {
-        return;
-    }
-    json["metadata"] = nlohmann::json::object();
-    for (const auto& [key, value] : element.metadata()) {
-        json["metadata"][key] = value;
-    }
-}
-
 void json_to_element_metadata(const nlohmann::json& json, Element& element) {
     const auto it = json.find("metadata");
     if (it == json.end()) {
@@ -73,6 +63,17 @@ void json_to_element_metadata(const nlohmann::json& json, Element& element) {
 }
 
 } // namespace
+
+void JSONSerializer::element_metadata_to_json(nlohmann::json& json, const Element& element) {
+    if (element.metadata().empty()) {
+        return;
+    }
+    json["metadata"] = nlohmann::json::object();
+    for (const auto& [key, value] : element.metadata()) {
+        json["metadata"][key] = value;
+    }
+}
+
 
 FunctionType function_type_from_string(const std::string& str) {
     if (str == FunctionType_CPU.value()) {
