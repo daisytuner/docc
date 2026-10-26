@@ -147,6 +147,8 @@ struct DaisyRegion {
     EventCaptureType event_capture_type;
     // GPU runtime to drain around a host-timed GPU region (see drain_device).
     EventCaptureType host_sync_type = EventCaptureType::NONE;
+    // GPU runtime to drain before reading the region's device counters (see drain_for_counters).
+    EventCaptureType counter_sync_type = EventCaptureType::NONE;
 
     // Temporary buffers
     std::vector<long long> last_counts;
@@ -968,12 +970,9 @@ public:
         return EventCaptureType::NONE;
     }
 
-    // GPU regions timed on the host clock (blocking memcpy/free, or any GPU region when
-    // event capture is off) must drain the device around the region: otherwise a blocking
-    // call absorbs all previously queued async kernels, whose time their own regions
-    // already report, and async launches would only measure the launch overhead.
-    EventCaptureType decide_host_sync(const __daisy_metadata* metadata, EventCaptureType event_capture) {
-        if (event_capture != EventCaptureType::NONE || !metadata->target_type) {
+    // Runtime whose deviceSynchronize drains the region's GPU target, if available.
+    EventCaptureType device_sync_api(const __daisy_metadata* metadata) {
+        if (!metadata->target_type) {
             return EventCaptureType::NONE;
         }
         if (std::strcmp(metadata->target_type, "CUDA") == 0) {
@@ -988,15 +987,48 @@ public:
         return EventCaptureType::NONE;
     }
 
-    void drain_device(const DaisyRegion& region) {
-        if (region.host_sync_type == EventCaptureType::NONE) {
-            return;
+    // GPU regions timed on the host clock (blocking memcpy/free, or any GPU region when
+    // event capture is off) must drain the device around the region: otherwise a blocking
+    // call absorbs all previously queued async kernels, whose time their own regions
+    // already report, and async launches would only measure the launch overhead.
+    EventCaptureType decide_host_sync(const __daisy_metadata* metadata, EventCaptureType event_capture) {
+        if (event_capture != EventCaptureType::NONE) {
+            return EventCaptureType::NONE;
         }
-        auto& api = get_event_api(region.host_sync_type);
+        return device_sync_api(metadata);
+    }
+
+    // Device counters (e.g. PAPI's ROCm component in sampling mode) only reflect kernels
+    // that have completed. Without draining the device before each read, an async launch
+    // is read before it ran: most samples see nothing and a later one absorbs several
+    // kernels, including those of other regions.
+    EventCaptureType decide_counter_sync(const __daisy_metadata* metadata, enum __daisy_event_set event_set) {
+        if (event_set != __DAISY_EVENT_SET_CUDA || !this->has_events(event_set)) {
+            return EventCaptureType::NONE;
+        }
+        return device_sync_api(metadata);
+    }
+
+    static void synchronize_device(GpuEventApi& api) {
         int res = api.deviceSynchronize_();
         if (res != 0) {
             std::cerr << "[daisy-rtl] GPU device synchronize failed with " << res << "\n";
         }
+    }
+
+    void drain_device(const DaisyRegion& region) {
+        if (region.host_sync_type == EventCaptureType::NONE) {
+            return;
+        }
+        synchronize_device(get_event_api(region.host_sync_type));
+    }
+
+    // Host-timed regions already drained the device at this point (drain_device).
+    void drain_for_counters(const DaisyRegion& region) {
+        if (region.counter_sync_type == EventCaptureType::NONE || region.host_sync_type != EventCaptureType::NONE) {
+            return;
+        }
+        synchronize_device(get_event_api(region.counter_sync_type));
     }
 
     size_t register_region(const __daisy_metadata* metadata, enum __daisy_event_set event_set) {
@@ -1056,6 +1088,7 @@ public:
         region.event_capture_type = decide_event_capture(event_set, metadata);
         region.host_sync_type = decide_host_sync(metadata, region.event_capture_type);
         region.event_set = event_set;
+        region.counter_sync_type = decide_counter_sync(metadata, event_set);
 
         if (this->has_events(region.event_set)) {
             if (_PAPI_create_eventset(&region.papi_eventset) != 0) {
@@ -1115,6 +1148,7 @@ public:
             region.last_counts = counts;
         } else if (region.event_set == __DAISY_EVENT_SET_CUDA && this->event_names_cuda.size() > 0) {
             std::vector<long long> counts(this->event_names_cuda.size(), 0);
+            drain_for_counters(region);
             _PAPI_read(region.papi_eventset, counts.data());
             DEBUG_PRINTLN("[daisy-rtl] Read CUDA event counts: " << counts.size());
             region.last_counts = counts;
@@ -1270,6 +1304,7 @@ public:
             }
         } else if (region.event_set == __DAISY_EVENT_SET_CUDA && this->event_names_cuda.size() > 0) {
             std::vector<long long> counts(this->event_names_cuda.size(), 0);
+            drain_for_counters(region);
             _PAPI_read(region.papi_eventset, counts.data());
 
             for (size_t i = 0; i < counts.size(); ++i) {
