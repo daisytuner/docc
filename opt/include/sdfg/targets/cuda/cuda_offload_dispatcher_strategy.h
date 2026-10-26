@@ -20,10 +20,6 @@ namespace cuda {
  */
 class CUDAOffloadDispatcherStrategy : public gpu::GPUOffloadDispatcherStrategy {
 public:
-    CUDALanguageExtension kernel_language_extension_;
-
-    codegen::LanguageExtension& create_kernel_language_extension() override;
-
     void dispatch_kernel_call(
         codegen::PrettyPrinter& main_stream,
         const std::string& kernel_name,
@@ -40,7 +36,7 @@ public:
     void emit_target_header_declarations(codegen::PrettyPrinter& kernel_header_stream) override;
     void emit_target_global_includes(codegen::CodeSnippetFactory& library_snippet_factory) override;
 
-    CUDAOffloadDispatcherStrategy(StructuredSDFG& sdfg);
+    CUDAOffloadDispatcherStrategy();
 
     void dispatch_kernel_launch_error_check(
         codegen::PrettyPrinter& stream, const codegen::LanguageExtension& language_extension
@@ -59,6 +55,13 @@ public:
     std::string warp_shuffle_xor(const std::string& value, const std::string& lane_mask) const override;
 
     codegen::TargetType get_instrumentation_kernel_target_type() const override;
+
+    std::unique_ptr<codegen::LanguageExtension>
+    create_kernel_language_extension(StructuredSDFG& sdfg, const StructuredLoop& loop) override;
+
+    bool is_matching_kernel_language_extension(
+        const StructuredSDFG& sdfg, const StructuredLoop& loop, codegen::LanguageExtension& language_extension
+    ) override;
 };
 
 } // namespace cuda

@@ -119,6 +119,7 @@ set(SOURCE_FILES
     src/targets/cuda/cuda_arch.cpp
     src/targets/cuda/cuda_data_offloading_node.cpp
     src/targets/cuda/cuda_map_dispatcher.cpp
+    src/targets/cuda/cuda_mma_fragment_dispatcher.cpp
     src/targets/cuda/cuda_offload_dispatcher_strategy.cpp
     src/targets/cuda/cuda_reduce_dispatcher.cpp
     src/targets/cuda/cuda.cpp
