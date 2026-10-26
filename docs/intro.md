@@ -2,50 +2,85 @@
 title: Introduction
 sidebar_position: 1
 slug: /intro
-description: What docc is and how it is organized
+description: What docc is, what it offers, and where to start
 ---
 
-The Daisytuner Optimizing Compiler Collection (**docc**) implements an intermediate representation as well as frontends, drivers, and code generation for translating and optimizing various programming languages for multiple targets.
+The Daisytuner Optimizing Compiler Collection (**docc**) compiles ordinary C/C++, Python/NumPy, and PyTorch code for multi-core CPUs, GPUs, and accelerators. You keep your code as it is and choose a target; docc parallelizes, offloads, and optimizes it for that target.
 
-The core of the project is **stateful dataflow multigraphs (SDFGs)**, implemented in the `sdfg` module. It contains the definition of the intermediate representation as well as numerous passes and analyses. For instance, docc supports auto-parallelization using data-centric and polyhedral analysis.
+## What docc offers
 
-SDFGs can be generated from Python (JIT) and MLIR frontends, which are separate components including Python bindings and an MLIR dialect for conversion. Targets such as Generic, [OpenMP](https://www.openmp.org/), [CUDA](https://developer.nvidia.com/cuda/toolkit), and [ROCm](https://rocmdocs.amd.com/en/latest/) are implemented in `opt`.
+- **Drop-in C/C++ compiler**: use `docc` instead of `clang` or `gcc`.
+- **Python JIT**: compile NumPy functions with the `@native` decorator.
+- **PyTorch backend**: run models through `torch.compile(..., backend="docc")`.
+- **Automatic parallelization and offloading**: OpenMP, CUDA, ROCm, and Tenstorrent from the same source code.
+- **Data-transfer optimization**: avoids unnecessary copies between host and device, even across library boundaries.
+- **Runtime instrumentation**: measure performance counters and capture kernel arguments of generated code.
+- **Transfer tuning** (optional): reuse optimizations from the Daisytuner cloud database.
 
-The repository also contains runtime libraries for code instrumentation (performance counters and data capturing).
+## Same idea, three frontends
+
+Each example parallelizes the same computation across CPU cores with OpenMP. Change the target to `cuda` or `rocm` to run it on a GPU.
+
+**C/C++**
+
+```bash
+docc -O3 -docc-tune=openmp app.c -o app
+```
+
+**Python**
+
+```python
+from docc.python import native
+
+@native(target="openmp")
+def matmul(A, B):
+    return A @ B
+```
+
+**PyTorch**
+
+```python
+import docc.pytorch
+
+compiled = torch.compile(model, backend="docc", options={"target": "openmp"})
+```
+
+## How it works
+
+All frontends translate code into one shared intermediate representation, the **stateful dataflow multigraph (SDFG)**. docc analyzes and optimizes the SDFG, then generates code for the selected hardware:
+
+```text
+Frontends          Intermediate representation       Targets
+
+┌───────────┐
+│ C/C++     │──┐                                     ┌──────────────────────────────────┐
+└───────────┘  │   ┌─────────────────────────┐   ┌──►│ CPU          sequential, OpenMP  │
+┌───────────┐  │   │ SDFG IR                 │   ├──►│ NVIDIA GPU   CUDA                │
+│ Python    │──┼──►│ analysis & optimization │───┼──►│ AMD GPU      ROCm                │
+└───────────┘  │   │ code generation         │   ├──►│ Tenstorrent  Wormhole, Blackhole │
+┌───────────┐  │   └─────────────────────────┘   └──►│ Apple GPU    Metal (in progress) │
+│ PyTorch   │──┘                                     └──────────────────────────────────┘
+└───────────┘
+```
+
+[Architecture & Development](./architecture/overview.md) describes the components in detail.
 
 ## Compatibility
 
-|                 | OpenMP | CUDA | ROCm | Metal |
-| --------------- | :----: | :--: | :--: | :---: |
-| C/C++ (Linux)   |   ✅   |  ✅  |  ✅  |   —   |
-| Python (Linux)  |   ✅   |  ✅  |  ✅  |   —   |
-| PyTorch (Linux) |   ✅   |  ✅  |  ✅  |   —   |
-| Python (macOS)  |   ✅   |  —   |  —   |  🚧   |
-| PyTorch (macOS) |   🚧   |  —   |  —   |  🚧   |
+|                 | OpenMP | CUDA | ROCm | Tenstorrent | Metal |
+| --------------- | :----: | :--: | :--: | :---------: | :---: |
+| C/C++ (Linux)   |   ✅   |  ✅  |  ✅  |     ✅      |   —   |
+| Python (Linux)  |   ✅   |  ✅  |  ✅  |      —      |   —   |
+| PyTorch (Linux) |   ✅   |  ✅  |  ✅  |      —      |   —   |
+| Python (macOS)  |   ✅   |  —   |  —   |      —      |  🚧   |
+| PyTorch (macOS) |   🚧   |  —   |  —   |      —      |  🚧   |
 
 ✅ Supported | 🚧 Work in progress
 
-## Repository layout
-
-| Module           | Description                                                         |
-| ---------------- | ------------------------------------------------------------------- |
-| `sdfg`           | SDFG intermediate representation, passes, analyses, code generation |
-| `opt`            | Transformations and target backends (OpenMP, CUDA, ROCm, …)         |
-| `llvm`           | LLVM-based C/C++ frontend (lifting LLVM IR to SDFGs)                |
-| `mlir`           | SDFG MLIR dialect and conversion from core MLIR dialects            |
-| `python`         | Python bindings and the `@native` JIT frontend                      |
-| `pytorch`        | PyTorch `torch.compile` backend                                     |
-| `c-compile`      | Compiler driver                                                     |
-| `rtl`            | Runtime library for instrumentation                                 |
-| `arg-capture-io` | Runtime data capturing                                              |
-| `rpc`            | Remote optimization passes                                          |
-| `targets`        | Additional offload targets                                          |
-
-The C++ headers of all modules are documented in the [C++ API reference](./reference/api.md).
-
 ## Where to go next
 
-- C/C++: [Install docc](./getting-started-docc/install.md) and [run your first code](./getting-started-docc/first-program.md).
-- Python: [Install docc for Python](./getting-started-python/install.md).
-- PyTorch: [Use docc as a `torch.compile` backend](./getting-started-pytorch/usage.md).
+- **C/C++**: [Quickstart](./c-cpp/quickstart/install.md)
+- **Python**: [Quickstart](./python/quickstart/install.md)
+- **PyTorch**: [Quickstart](./pytorch/quickstart/install.md)
+- **Contributors**: [Architecture & Development](./architecture/overview.md)
 - Daisy Cloud, self-hosted runners, and performance guides are covered in the [Daisytuner Docs](https://docs.daisytuner.com).
