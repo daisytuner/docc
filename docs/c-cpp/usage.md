@@ -1,87 +1,118 @@
 ---
-title: Commandline Options
-sidebar_position: 1
-description: How to use docc from the commandline
+title: Usage
+sidebar_position: 3
+description: Compiler flags, targets, instrumentation, and environment variables of docc for C/C++
 ---
 
-`docc` is based on Clang/LLVM, so most of their options are inherited. Because of the way docc plugs into LLVM, some options may interfere with docc's operation. docc picks relevant parts of the original source code to handle itself, partially outside of LLVM's control, before reintegrating the further optimized results.
+This page explains how to control docc in your builds, using the WAXPBY example from the [Quickstart](./quickstart/first-program.md). All docc-specific flags start with `-docc-`; all other flags are passed to Clang unchanged.
 
-For this, new source files may be generated at link time that contain that code. This link-time generated code can have different build options than the original source code. docc generally manages the build options so that the code can interoperate.
+## Use docc in your build system
 
-## Environment options
+`docc` replaces `clang`, and `docc-cpp` replaces `clang++`. Pass docc flags like any other compiler flag:
 
-- `DOCC_TMP`: where docc puts its intermediate outputs. Defaults to `/tmp/[$USER]/DOCC`. During normal operation, docc removes its intermediate outputs when it's done, like other compilers.
+```bash
+# CMake
+CC=docc CXX=docc-cpp cmake -B build -DCMAKE_C_FLAGS="-docc-tune=openmp" -DCMAKE_CXX_FLAGS="-docc-tune=openmp"
 
-## Optimization options
+# Make
+make CC=docc CXX=docc-cpp CFLAGS="-O3 -docc-tune=openmp"
+```
 
-### `-docc-tune=...`
+Use the same `-docc-tune` value at compile and link time. docc generates parts of the optimized code at link time.
 
-Chooses the target to optimize for. See [Targets](./targets.md).
+## Choose a target
 
-- Default: `none`
-- Options:
-  - `sequential`
-  - `openmp`: parallelize across multiple CPU cores using OpenMP
-  - `cuda`: offload to NVIDIA CUDA accelerators and GPUs
-  - `tenstorrent`: offload to Tenstorrent Wormhole and Blackhole accelerator cards
+`-docc-tune=<target>` selects the hardware docc optimizes for:
 
-### `-docc-offloading-force-synchronous`
+| Target        | Hardware                               | Backends used                  |
+| ------------- | -------------------------------------- | ------------------------------ |
+| `none`        | default, regular Clang compilation     | —                              |
+| `sequential`  | single CPU core                        | sequential C                   |
+| `openmp`      | all CPU cores                          | OpenMP                         |
+| `cuda`        | NVIDIA GPUs                            | CUDA, OpenMP for host code     |
+| `rocm`        | AMD GPUs                               | ROCm/HIP, OpenMP for host code |
+| `tenstorrent` | Tenstorrent Wormhole and Blackhole     | TT-Metalium                    |
 
-For offloading backends that support it, use synchronous instead of asynchronous kernel calls. Host profiling then includes processing time on the offload device, at the cost of performance. Without it, host-to-device and device-to-host transfer time measurements may be meaningless because the transfers happen in the background.
+## Control the optimization
 
-### `-docc-no-offloading-transfer-opt`
+| Flag                                 | Description                                                                                                                                                        |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `-docc-func-blacklist=<regex>`       | Do not optimize functions whose full symbol name (mangled for C++) matches the regex, for example `'init'` or `'.*_ref$'`.                                    |
+| `-docc-lower-invoke`                 | Remove exception-handling code before optimizing. Such code can otherwise prevent offloading.                                                                      |
+| `-docc-offload-unknown-sizes`        | Offload arrays whose size docc cannot determine, using `malloc_usable_size()` as an upper bound.                                                                   |
+| `-docc-no-offloading-transfer-opt`   | Do not remove redundant host-device transfers. Slower, but transfers stay close to the code that uses the data.                                                    |
+| `-docc-einsum`                       | Detect loops that implement tensor contractions (Einstein notation) and optimize them as such.                                                                     |
+| `-docc-plugins=<list>`               | Load a comma-separated list of [plugins](../architecture/plugins.md) with domain-specific optimizations.                                                           |
 
-Disable attempts to remove unnecessary transfers between host and offload device. The optimization can save significant time, but may hide bugs because transfers may no longer happen near the code working on the data.
+For example, to offload WAXPBY but keep the initialization loop on the CPU, move the initialization into a function `init` and run:
 
-### `-docc-transfer-tune`
+```bash
+docc -O3 -docc-tune=cuda -docc-func-blacklist='init' waxpby.c -o waxpby
+```
 
-Enable transfer tuning, which queries the Daisytuner cloud database for possible optimizations. Access requires a valid registration/license of your device. The level of access to transfer tuning for different targets may depend on the linked account.
+## Transfer tuning
 
-### `-docc-func-blacklist=...`
+With `-docc-transfer-tune`, docc queries the Daisytuner optimization database for known-good optimizations of similar code. This requires a registered device. `-docc-target-architecture=edge|desktop|server` (default `server`) selects the class of hardware to tune for.
 
-Sets a regular expression for functions that should not be optimized beyond Clang's normal handling. Helpful when setting experimental options that only work for some parts of the code. Matches the final symbol names (mangled names for C++).
+```bash
+docc -O3 -docc-tune=openmp -docc-transfer-tune waxpby.c -o waxpby
+```
 
-- Example: `'.*blacklisted_function.*'`
+## Options for generated code
 
-### `-docc-lower-invoke`
+docc compiles the code it generates separately from your sources. `-docc-comp-opt=<flag>` adds a compiler flag to this generated code and can be repeated:
 
-Removes exception handling code. Such code may be too complex to offload or constrain the code too much for further optimization.
+```bash
+docc -O3 -docc-tune=openmp -docc-comp-opt=-march=native waxpby.c -o waxpby
+```
 
-## Handling options
+When set at link time, `-docc-comp-opt` overrides the values given at compile time.
 
-### `-docc-work-dir=...`
+## Measure performance
 
-Sets a specific output directory for intermediate files instead of generating a unique directory under `DOCC_TMP`. Implies `-docc-save-temps`.
+docc can instrument the code it generates and record runtimes and hardware counters for each optimized region.
 
-### `-docc-save-temps`
+| Flag                         | Description                                                                                             |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `-docc-instrument=ols`       | Measure every outermost loop that docc optimized, including host-device transfers.                     |
+| `-docc-instrument=ols_tuned` | Like `ols`, but groups loops that originate from the same source location.                              |
+| `-docc-capture-args`         | Save the inputs and outputs of each optimized region to disk, for example to replay or verify a kernel. |
 
-Stops docc from deleting its intermediate output directory.
+Instrumented programs use [PAPI](https://icl.utk.edu/papi/) at runtime. Build and run WAXPBY with instrumentation:
 
-### `-docc-comp-opt=...`
+```bash
+docc -O3 -docc-tune=openmp -docc-instrument=ols waxpby.c -o waxpby
 
-Sets compile options for newly generated code manually. Can be repeated as often as needed.
+export __DAISY_PAPI_VERSION=0x07010000          # version of your PAPI library, here 7.1
+export __DAISY_INSTRUMENTATION_EVENTS=PAPI_TOT_CYC,PAPI_L2_TCM
+./waxpby                                         # writes daisy_trace.json
+```
 
-- When set at compile time of a code unit, it is inherited by any code generated from that unit.
-- When set at link time, it takes precedence over all other manually set options of the different code units.
+The trace is a JSON file in Chrome trace format and can be viewed in [Perfetto](https://ui.perfetto.dev/) or `chrome://tracing`.
 
-Most commonly used to build generated code with debug information: `-docc-comp-opt=-g`. The main `-g` flag is not applied to generated code by default, because that debug information would point to machine-generated source files in temporary directories rather than your original sources.
+Runtime settings for instrumented programs:
 
-## Plugins
+| Variable                                | Description                                                                         |
+| --------------------------------------- | ----------------------------------------------------------------------------------- |
+| `__DAISY_PAPI_VERSION`                  | PAPI version number (required), for example `0x07010000`                            |
+| `DAISY_PAPI_PATH`                       | Path to the PAPI library, default `libpapi.so`                                      |
+| `__DAISY_INSTRUMENTATION_FILE`          | Output file, default `daisy_trace.json`                                             |
+| `__DAISY_INSTRUMENTATION_MODE`          | `aggregate` to record one summary per region instead of one event per execution     |
+| `__DAISY_INSTRUMENTATION_EVENTS`        | Comma-separated PAPI events to record on the CPU                                    |
+| `__DAISY_INSTRUMENTATION_EVENTS_CUDA`   | Comma-separated PAPI events to record on NVIDIA GPUs                                |
+| `__DAISY_CAPTURE_BASE_DIR`              | Output directory of `-docc-capture-args`, default `arg_captures`                    |
+| `__DAISY_CAPTURE_STRATEGY_DEFAULT`      | Which executions to capture: `once` (default), `all`, or `never`                    |
 
-### `-docc-plugins=...`
+## Environment variables
 
-Comma-separated list of docc plugins. Each plugin can add domain- or application-specific knowledge for further optimization. This may include replacing entire functions with code better suited to offloading, or using different data representations.
+| Variable          | Description                                                                         |
+| ----------------- | ----------------------------------------------------------------------------------- |
+| `DOCC_TMP`        | Directory for intermediate files, default `/tmp/$USER/DOCC`                         |
+| `DOCC_CUDA_ARCH`  | NVIDIA GPU architecture, for example `sm_90`. Default: the first GPU in the system |
+| `DOCC_ROCM_ARCH`  | AMD GPU architecture, for example `gfx942`. Default: the first GPU in the system   |
+| `ROCM_PATH`       | ROCm installation, default `/opt/rocm`                                              |
+| `TT_METAL_INSTALL_DIR`, `TT_METAL_HOME` | TT-Metalium installation for the `tenstorrent` target (one is required) |
 
-See [docc Plugins](./plugins.md).
+## Next step
 
-## Instrumentation
-
-### `-docc-instrument=...`
-
-Enables instrumentation of generated code, which measures performance data at runtime.
-
-- Default: `none`
-- Options:
-  - `ols`: instruments only the outermost code in each generated code region.
-
-See [Runtime Instrumentation](./runtime-instrumentation.md) for how to run instrumented code and control its measurements and outputs.
+If docc does not optimize your code as expected, [Debug Options](./debugging.md) shows how to look at what docc does with WAXPBY.

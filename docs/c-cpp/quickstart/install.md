@@ -15,7 +15,7 @@ description: Install the prebuilt docc compiler for C/C++ and prepare your syste
 | LLVM/Clang         | 21, from the [official LLVM repository](https://apt.llvm.org/)           |
 | NVIDIA GPUs        | CUDA toolkit in `/usr/local/cuda` (only for `-docc-tune=cuda`)           |
 | AMD GPUs           | ROCm in `/opt/rocm` or `$ROCM_PATH` (only for `-docc-tune=rocm`)         |
-| Tenstorrent        | TT-Metalium, located via `$TT_METAL_HOME` (only for `-docc-tune=tenstorrent`) |
+| Tenstorrent        | TT-Metalium, located via `$TT_METAL_INSTALL_DIR` or `$TT_METAL_HOME` (only for `-docc-tune=tenstorrent`) |
 
 ## Install
 
