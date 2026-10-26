@@ -6,10 +6,12 @@ The core of the project is stateful dataflow multigraphs (SDFG), implemented in 
 It contains the definition of the intermediate representation as well as numerous passes and analyses.
 For instance, docc comes with support for auto-parallelization using data-centric and polyhedral analysis.
 
-SDFGs can be generated from Python (JIT) and MLIR frontends, which are separate components including Python bindings and an MLIR dialect for conversion.
+SDFGs can be generated from C/C++ (via LLVM), Python (JIT), and PyTorch (`torch.compile`) frontends.
 Targets such as Generic, [OpenMP](https://www.openmp.org/), [CUDA](https://developer.nvidia.com/cuda/toolkit), and [ROCm](https://rocmdocs.amd.com/en/latest/) are implemented in `opt`.
 
 Furthermore, the repository contains runtime libraries for code instrumentation (performance counters and data capturing).
+
+The full documentation is available at [docs.daisytuner.com/docc](https://docs.daisytuner.com/docc).
 
 ## Compatibility
 
@@ -46,7 +48,7 @@ They provide an easy way to get started with docc.
 ### Python
 
 The Python frontend generates native C++ code, which is compiled and called from Python.
-This requires `clang-19` to be installed on the system (see [LLVM releases](https://apt.llvm.org/)).
+This requires `clang-21` to be installed on the system (see [LLVM releases](https://apt.llvm.org/)).
 
 Afterwards, simply install docc via [PyPI](https://pypi.org/project/docc-compiler/):
 
@@ -72,77 +74,30 @@ For further details, check out the [component's README.md](./python/).
 
 ### PyTorch
 
-The PyTorch frontend can be installed from PyPi:
+The PyTorch frontend is a backend for `torch.compile`. Install PyTorch for your hardware, then the docc compiler and the backend:
 
 ```bash
-pip install docc-ai
+pip install docc-compiler docc-pytorch
 ```
 
-To use the frontend with PyTorch, also install `torch-mlir`, which we use to translate models to core MLIR dialects initially:
-
-```bash
-pip install -r mlir/requirements.txt
-```
-
-This allows you to import models directly from PyTorch, generate an optimized SDFG, and run inference.
-For this, make sure to use the `torch.no_grad()` mode to enforce inference via the dynamo backend:
+Import `docc.pytorch` to register the backend and compile your model with `backend="docc"`.
+Only inference is supported, so run the compiled model inside `torch.no_grad()`:
 
 ```python
 import torch
-import torch.nn as nn
+import torchvision.models as models
 
-class LinearRegression(nn.Module):
-    def __init__(self, in_features=4, out_features=2):
-        super().__init__()
-        self.linear = nn.Linear(in_features, out_features, bias=False)
+import docc.pytorch
 
-    def forward(self, x: torch.Tensor):
-        return self.linear(x)
+model = models.resnet18(weights=models.ResNet18_Weights.DEFAULT).eval()
+x = torch.randn(1, 3, 224, 224)
 
-model = LinearRegression()
-example_input = torch.randn(2, 4)
-
-# Compile model
 with torch.no_grad():
-    compiled_model = torch.compile(model, backend="docc", options={"target": "openmp", "category": "server"})
-
-# Forward
-res = compiled_model(example_input)
+    compiled = torch.compile(model, backend="docc", options={"target": "openmp"})
+    y = compiled(x)
 ```
 
-Similarly, we have experimental support for training models via an AOTAutograd integration:
-
-```python
-import torch
-import torch.nn as nn
-
-class LinearRegression(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.linear = nn.Linear(2, 2, bias=False)
-
-    def forward(self, x: torch.Tensor):
-        return self.linear(x)
-
-torch.manual_seed(42)
-model = LinearRegression()
-
-program = torch.compile(model, backend="docc", options={"target": "openmp", "category": "server"})
-optimizer = torch.optim.SGD(program.parameters(), lr=0.5)
-criterion = nn.MSELoss()
-
-for _ in range(20):
-    x = torch.randn(32, 2)
-    target = x  # Identity: output should equal input (example purposes)
-
-    optimizer.zero_grad()
-    res = program(x)
-    loss = criterion(res, target)
-    loss.backward()
-    optimizer.step()
-```
-
-For further details, check out the [component's README.md](./mlir/).
+For further details, check out the [component's README.md](./pytorch/).
 
 ### C/C++
 
