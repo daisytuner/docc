@@ -5,11 +5,17 @@
 #include "sdfg/data_flow/library_nodes/barrier_local_node.h"
 #include "sdfg/passes/scheduler/cuda_offload_scheduler.h"
 #include "sdfg/targets/cuda/cuda.h"
+#include "sdfg/targets/cuda/cuda_mma_fragment_dispatcher.h"
 #include "sdfg/targets/cuda/cuda_offload_dispatcher_strategy.h"
 #include "sdfg/targets/cuda/cuda_reduce_dispatcher.h"
 #include "sdfg/targets/cuda/tiles/pipeline_node.h"
 #include "sdfg/targets/cuda/tiles/tile_copy_node.h"
 #include "sdfg/targets/gpu/barrier_local_node_dispatcher.h"
+#include "sdfg/targets/gpu/gpu_mma_fill_node.h"
+#include "sdfg/targets/gpu/gpu_mma_fragment_eltwise_add_node.h"
+#include "sdfg/targets/gpu/gpu_mma_fragment_load_node.h"
+#include "sdfg/targets/gpu/gpu_mma_fragment_store_node.h"
+#include "sdfg/targets/gpu/gpu_mma_matmul_node.h"
 #include "sdfg/targets/gpu/gpu_offload_map_dispatcher.h"
 #include "sdfg/targets/gpu/gpu_offload_reduce_dispatcher.h"
 #include "sdfg/targets/gpu/gpu_tile_target.h"
@@ -77,7 +83,7 @@ void register_cuda_plugin(plugins::Context& context) {
                 node,
                 instrumentation_plan,
                 arg_capture_plan,
-                std::make_unique<CUDAOffloadDispatcherStrategy>(sdfg)
+                std::make_unique<CUDAOffloadDispatcherStrategy>()
             );
         }
     );
@@ -97,7 +103,7 @@ void register_cuda_plugin(plugins::Context& context) {
                 node,
                 instrumentation_plan,
                 arg_capture_plan,
-                std::make_unique<CUDAOffloadDispatcherStrategy>(sdfg)
+                std::make_unique<CUDAOffloadDispatcherStrategy>()
             );
         }
     );
@@ -280,6 +286,88 @@ void register_cuda_plugin(plugins::Context& context) {
            const data_flow::LibraryNode& node) {
             return std::make_unique<cuda::stdlib::MemcpyNodeDispatcher_CUDAWithoutTransfers>(
                 language_extension, function, data_flow_graph, dynamic_cast<const sdfg::stdlib::MemcpyNode&>(node)
+            );
+        }
+    );
+
+    // MMA
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
+        gpu::LibraryNodeType_GpuMmaMatmul,
+        gpu::cuda::ImplementationType_CUDA_MMA_FRAGMENT,
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<gpu::GpuMmaMatmulDispatcher>(
+                language_extension,
+                function,
+                data_flow_graph,
+                node,
+                std::make_unique<gpu::cuda::CudaMmaFragmentStrategy>()
+            );
+        }
+    );
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
+        gpu::LibraryNodeType_GpuMmaFill,
+        gpu::cuda::ImplementationType_CUDA_MMA_FRAGMENT,
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<gpu::GpuMmaFillDispatcher>(
+                language_extension,
+                function,
+                data_flow_graph,
+                node,
+                std::make_unique<gpu::cuda::CudaMmaFragmentStrategy>()
+            );
+        }
+    );
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
+        gpu::LibraryNodeType_GpuMmaFragmentLoad,
+        gpu::cuda::ImplementationType_CUDA_MMA_FRAGMENT,
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<gpu::GpuMmaFragmentLoadDispatcher>(
+                language_extension,
+                function,
+                data_flow_graph,
+                node,
+                std::make_unique<gpu::cuda::CudaMmaFragmentStrategy>()
+            );
+        }
+    );
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
+        gpu::LibraryNodeType_GpuMmaFragmentStore,
+        gpu::cuda::ImplementationType_CUDA_MMA_FRAGMENT,
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<gpu::GpuMmaFragmentStoreDispatcher>(
+                language_extension,
+                function,
+                data_flow_graph,
+                node,
+                std::make_unique<gpu::cuda::CudaMmaFragmentStrategy>()
+            );
+        }
+    );
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
+        gpu::LibraryNodeType_GpuMmaFragmentEltwiseAdd,
+        gpu::cuda::ImplementationType_CUDA_MMA_FRAGMENT,
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<gpu::GpuMmaEltwiseAddDispatcher>(
+                language_extension,
+                function,
+                data_flow_graph,
+                node,
+                std::make_unique<gpu::cuda::CudaMmaFragmentStrategy>()
             );
         }
     );

@@ -1,7 +1,20 @@
 #include "sdfg/targets/rocm/rocm_mma_fragment_dispatcher.h"
 
+#include "sdfg/targets/rocm/rocm.h"
 
 namespace sdfg::gpu::rocm {
+
+std::optional<std::pair<std::string, std::string>> RocmMmaFragmentStrategy::fragment_element_coords(
+    MmaFragmentType frag_type, const MmaBlockSize& block_size, const std::string& idx, std::string& condition
+) const {
+    const int wavefront = ::sdfg::rocm::rocm_wavefront_size();
+    if (frag_type != MmaFragmentType::C || block_size.m != 16 || block_size.n != 16 || wavefront != 64) {
+        return std::nullopt;
+    }
+    condition.clear();
+    const std::string lane = "(threadIdx.x % " + std::to_string(wavefront) + ")";
+    return std::make_pair("(4 * (" + lane + " / 16) + " + idx + ")", std::string("(threadIdx.x % 16)"));
+}
 
 void RocmMmaFragmentStrategy::emit_needed_declarations(codegen::CodegenOutput& out) const {
     out.library_snippet_factory.require_dependency(RocmWmmaLibDependency::instance());

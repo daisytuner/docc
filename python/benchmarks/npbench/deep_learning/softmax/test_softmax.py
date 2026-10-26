@@ -42,15 +42,15 @@ def test_softmax(target):
     verifier = None
     if target == "none":
         verifier = SDFGVerification(
-            verification={"REDUCE": 2, "SEQUENTIAL": 16, "MAP": 14}
+            verification={"REDUCE": 2, "SEQUENTIAL": 18, "MAP": 16}
         )
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
                 "VECTORIZE": 6,
                 "REDUCE": 2,
-                "SEQUENTIAL": 10,
-                "MAP": 14,
+                "SEQUENTIAL": 12,
+                "MAP": 16,
             }
         )
     elif target == "openmp":

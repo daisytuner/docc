@@ -96,7 +96,7 @@ data_flow::PointerAccessType GpuMmaFragmentStoreNode::pointer_access_type(int in
 
 bool GpuMmaFragmentStoreNode::can_relocalize_operand(int input_idx, const math::tensor::TensorLayout& packed) const {
     if (input_idx == PTR_INPUT_IDX) {
-        if (!symbolic::vectors_of_expressions_match(packed.shape(), block_size_.get_shape(fragment_type_))) {
+        if (!layout_.matches_access_shape(packed.shape(), block_size_, fragment_type_)) {
             return false;
         }
         if (auto new_layout = GpuMmaFromMemoryLayout::from_tensor_layout(packed)) {
@@ -108,7 +108,7 @@ bool GpuMmaFragmentStoreNode::can_relocalize_operand(int input_idx, const math::
 
 bool GpuMmaFragmentStoreNode::relocalize_operand(int input_idx, const math::tensor::TensorLayout& packed) {
     if (input_idx == PTR_INPUT_IDX) {
-        if (!symbolic::vectors_of_expressions_match(packed.shape(), block_size_.get_shape(fragment_type_))) {
+        if (!layout_.matches_access_shape(packed.shape(), block_size_, fragment_type_)) {
             return false;
         }
         if (auto new_layout = GpuMmaFromMemoryLayout::from_tensor_layout(packed)) {

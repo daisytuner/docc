@@ -154,6 +154,12 @@ void register_gpu_arch(py::module& m, sdfg::plugins::Context& context) {
                 return self.name();
             }
         )
+        .def_property_readonly(
+            "has_mma",
+            [](const sdfg::gpu::cuda::CudaArch& self) {
+                return self.mma_support() != nullptr;
+            }
+        )
         .def("__repr__", [](const sdfg::gpu::cuda::CudaArch& self) {
             return "<CudaArch '" + self.name() + "'>";
         });

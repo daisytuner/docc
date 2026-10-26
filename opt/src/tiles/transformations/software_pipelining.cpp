@@ -548,8 +548,8 @@ bool SoftwarePipelining::
         for (size_t i = 0; i < body.size(); ++i) {
             if (i > group->lead && i < group->trail) {
                 auto* tc = staging_copy(staged, body.at(i));
-                if (!tc->guard().trivial() || tc->atom() == tiles::CopyAtom::CpAsync ||
-                    !stage_words(*tc, staged_element_bytes(*tc))) {
+                // A guarded (ragged) copy stages fine: the load phase zero-fills its out-of-bounds registers.
+                if (tc->atom() == tiles::CopyAtom::CpAsync || !stage_words(*tc, staged_element_bytes(*tc))) {
                     return false;
                 }
             } else if (i != group->lead && i != group->trail && subtree_writes_any(body.at(i), staged)) {

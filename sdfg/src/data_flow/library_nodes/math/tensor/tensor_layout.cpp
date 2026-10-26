@@ -452,12 +452,16 @@ std::unique_ptr<TensorLayout> TensorLayout::broadcast(const symbolic::MultiExpre
     symbolic::MultiExpression new_shape;
     symbolic::MultiExpression new_strides;
     for (long long i = 0; i < ref_shape.size(); i++) {
-        if (i < offset || symbolic::eq(this->shape_[i - offset], symbolic::one())) {
-            new_shape.push_back(ref_shape[i]);
-            new_strides.push_back(symbolic::zero());
-        } else if (symbolic::eq(this->shape_[i - offset], ref_shape[i])) {
+        // Matching extents keep their stride, also for extent 1: only a genuine broadcast (a missing leading
+        // dimension or extent 1 against a larger extent) gets stride 0. Otherwise a unit dimension (e.g. a single
+        // token) would index inputs with the folded constant 0 while outputs keep `stride * i`, and fusion of the
+        // producer's write with the consumer's read would fail on the syntactically different subsets.
+        if (i >= offset && symbolic::eq(this->shape_[i - offset], ref_shape[i])) {
             new_shape.push_back(this->shape_[i - offset]);
             new_strides.push_back(this->strides_[i - offset]);
+        } else if (i < offset || symbolic::eq(this->shape_[i - offset], symbolic::one())) {
+            new_shape.push_back(ref_shape[i]);
+            new_strides.push_back(symbolic::zero());
         } else {
             // Incompatible shapes
             return nullptr;

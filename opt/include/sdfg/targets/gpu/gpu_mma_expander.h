@@ -83,7 +83,11 @@ public:
         types::PrimitiveType output_type,
         bool include_c_add, // Y += A @ B with the loaded Y, rather than overwriting Y = A @ B
         const DebugInfo& org_debug_info,
-        const std::array<int, 3>& args_order // indices of inputs in order of {y, a, b}
+        const std::array<int, 3>& args_order, // indices of inputs in order of {y, a, b}
+        // The layouts carry exact (possibly symbolic) extents not covered exactly by the tiling: clip the
+        // fragments crossing them. The K-block loop is padded to a multiple of k_block_multiple.
+        bool ragged = false,
+        int k_block_multiple = 1
     );
 
     static void create_fragment_mma(

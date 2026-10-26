@@ -145,6 +145,8 @@ struct DaisyRegion {
     enum __daisy_event_set event_set;
     int papi_eventset = -1;
     EventCaptureType event_capture_type;
+    // GPU runtime to drain around a host-timed GPU region (see drain_device).
+    EventCaptureType host_sync_type = EventCaptureType::NONE;
 
     // Temporary buffers
     std::vector<long long> last_counts;
@@ -218,6 +220,7 @@ struct GpuEventApi {
     int (*eventSynchronize_)(void*) = nullptr;
     int (*eventElapsedTime_)(float*, void*, void*) = nullptr;
     int (*eventDestroy_)(void*) = nullptr;
+    int (*deviceSynchronize_)() = nullptr;
     const char* (*errorString)(int) = nullptr;
     const char* (*errorName)(int) = nullptr;
 
@@ -288,6 +291,8 @@ private:
             int (*)(float*, void*, void*)>(dlsym(cuda_events_.event_lib_handle, "cudaEventElapsedTime"));
         cuda_events_.eventDestroy_ =
             reinterpret_cast<int (*)(void*)>(dlsym(cuda_events_.event_lib_handle, "cudaEventDestroy"));
+        cuda_events_.deviceSynchronize_ =
+            reinterpret_cast<int (*)()>(dlsym(cuda_events_.event_lib_handle, "cudaDeviceSynchronize"));
         cuda_events_.errorString =
             reinterpret_cast<const char* (*) (int)>(dlsym(cuda_events_.event_lib_handle, "cudaGetErrorString"));
         cuda_events_.errorName =
@@ -320,6 +325,8 @@ private:
             reinterpret_cast<int (*)(float*, void*, void*)>(dlsym(rocm_events_.event_lib_handle, "hipEventElapsedTime"));
         rocm_events_.eventDestroy_ =
             reinterpret_cast<int (*)(void*)>(dlsym(rocm_events_.event_lib_handle, "hipEventDestroy"));
+        rocm_events_.deviceSynchronize_ =
+            reinterpret_cast<int (*)()>(dlsym(rocm_events_.event_lib_handle, "hipDeviceSynchronize"));
         rocm_events_.errorString =
             reinterpret_cast<const char* (*) (int)>(dlsym(rocm_events_.event_lib_handle, "hipGetErrorString"));
         rocm_events_.errorName =
@@ -961,6 +968,37 @@ public:
         return EventCaptureType::NONE;
     }
 
+    // GPU regions timed on the host clock (blocking memcpy/free, or any GPU region when
+    // event capture is off) must drain the device around the region: otherwise a blocking
+    // call absorbs all previously queued async kernels, whose time their own regions
+    // already report, and async launches would only measure the launch overhead.
+    EventCaptureType decide_host_sync(const __daisy_metadata* metadata, EventCaptureType event_capture) {
+        if (event_capture != EventCaptureType::NONE || !metadata->target_type) {
+            return EventCaptureType::NONE;
+        }
+        if (std::strcmp(metadata->target_type, "CUDA") == 0) {
+            if (ensure_cuda_events() && cuda_events_.deviceSynchronize_) {
+                return EventCaptureType::CUDA_EVT;
+            }
+        } else if (std::strcmp(metadata->target_type, "ROCM") == 0) {
+            if (ensure_rocm_events() && rocm_events_.deviceSynchronize_) {
+                return EventCaptureType::ROCM_EVT;
+            }
+        }
+        return EventCaptureType::NONE;
+    }
+
+    void drain_device(const DaisyRegion& region) {
+        if (region.host_sync_type == EventCaptureType::NONE) {
+            return;
+        }
+        auto& api = get_event_api(region.host_sync_type);
+        int res = api.deviceSynchronize_();
+        if (res != 0) {
+            std::cerr << "[daisy-rtl] GPU device synchronize failed with " << res << "\n";
+        }
+    }
+
     size_t register_region(const __daisy_metadata* metadata, enum __daisy_event_set event_set) {
         std::lock_guard<std::mutex> lock(mutex);
 
@@ -1016,6 +1054,7 @@ public:
         DaisyRegion region;
         std::memcpy(&region.metadata, metadata, sizeof(__daisy_metadata));
         region.event_capture_type = decide_event_capture(event_set, metadata);
+        region.host_sync_type = decide_host_sync(metadata, region.event_capture_type);
         region.event_set = event_set;
 
         if (this->has_events(region.event_set)) {
@@ -1067,6 +1106,7 @@ public:
         }
 
         DaisyRegion& region = it->second;
+        drain_device(region);
 
         // Save start counters (before timing)
         if (region.event_set == __DAISY_EVENT_SET_CPU && this->event_names_cpu.size() > 0) {
@@ -1150,6 +1190,7 @@ public:
             region.last_start_event = nullptr;
         } else {
             // Save duration (before counters)
+            drain_device(region);
             long long end_ns = _PAPI_get_real_nsec();
             if (this->aggregate_events) {
                 long long duration_ns = end_ns - region.last_start;

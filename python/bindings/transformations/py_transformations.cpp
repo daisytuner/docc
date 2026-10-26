@@ -31,6 +31,7 @@
 #include <sdfg/transformations/recorder.h>
 #include <sdfg/transformations/stream_k.h>
 #include <sdfg/transformations/transformation.h>
+#include <sdfg/transformations/trivial_loop_elimination.h>
 #include <sdfg/transformations/unroll_transform.h>
 #include <sdfg/transformations/vectorize_transform.h>
 #include <sdfg/types/type.h>
@@ -385,6 +386,23 @@ void register_transformations(py::module& m) {
             return oss.str();
         });
 
+    // TrivialLoopElimination transformation
+    py::class_<TrivialLoopElimination, Transformation>(m, "TrivialLoopElimination")
+        .def(
+            py::init<Map&>(),
+            py::arg("loop"),
+            "Create a trivial loop elimination transformation.\n\n"
+            "Replaces a sequential, unit-stride map with exactly one iteration by its body,\n"
+            "substituting the induction variable with the map's init.\n\n"
+            "Args:\n"
+            "    loop: The map to eliminate"
+        )
+        .def("__repr__", [](const TrivialLoopElimination& t) {
+            std::ostringstream oss;
+            oss << "<TrivialLoopElimination name='" << t.name() << "'>";
+            return oss.str();
+        });
+
     // SoftwarePipelining transformation (cp.async double-buffer a panel loop)
     py::class_<SoftwarePipelining, Transformation>(m, "SoftwarePipelining")
         .def(
@@ -641,11 +659,13 @@ void register_transformations(py::module& m) {
                 StructuredLoop&,
                 const sdfg::gpu::GpuArch*,
                 const sdfg::gpu::MmaBlockSize*,
-                const sdfg::gpu::BlockCounts*>(),
+                const sdfg::gpu::BlockCounts*,
+                int>(),
             py::arg("outermost_mma_loop"),
             py::arg("arch") = nullptr,
             py::arg("block_size_hint") = nullptr,
             py::arg("wave_tiling_hint") = nullptr,
+            py::arg("k_block_multiple") = 1,
             py::keep_alive<1, 2>(),
             py::keep_alive<1, 3>(),
             py::keep_alive<1, 4>(),
@@ -658,13 +678,17 @@ void register_transformations(py::module& m) {
             "Defaults to arch-specific heuristic if null.\n"
             "    wave_tiling_hint (BlockCounts): Required wave tiling (MMA blocks per wave). Defaults to arch-specific "
             "heuristic if null.\n"
+            "    k_block_multiple (int): For ragged sizes, pad the K-block loop to a multiple of this (e.g. the "
+            "K-panel "
+            "size in MMA blocks); padded blocks read as zeros.\n"
         )
         .def(
             py::init([](StructuredLoop& loop,
                         const sdfg::gpu::GpuArch* arch,
                         int wave_tile_m,
                         int wave_tile_n,
-                        const std::string& mma_shape) {
+                        const std::string& mma_shape,
+                        int k_block_multiple) {
                 // Synthesise the hints from the legacy scalar arguments and hand
                 // them to the owning constructor, which copies them internally.
                 // No keep_alive is needed for the hints: the C++ object owns
@@ -679,13 +703,14 @@ void register_transformations(py::module& m) {
                 if (wave_tile_m > 0 && wave_tile_n > 0) {
                     wave_tiling = sdfg::gpu::BlockCounts{.blocks_m = wave_tile_m, .blocks_n = wave_tile_n};
                 }
-                return new sdfg::gpu::GpuMmaEinsumTransform(loop, arch, block_hint, wave_tiling);
+                return new sdfg::gpu::GpuMmaEinsumTransform(loop, arch, block_hint, wave_tiling, k_block_multiple);
             }),
             py::arg("outermost_mma_loop"),
             py::arg("arch") = nullptr,
             py::arg("wave_tile_m") = 1,
             py::arg("wave_tile_n") = 1,
             py::arg("mma_shape") = "",
+            py::arg("k_block_multiple") = 1,
             py::keep_alive<1, 2>(),
             "Transform with legacy parameters\n\n"
             "Args:\n"
@@ -694,6 +719,8 @@ void register_transformations(py::module& m) {
             "    wave_tile_m, wave_tile_n (int): MMA blocks per wave (register blocking); must divide the block tile. "
             "Non-positive uses the arch heuristic.\n"
             "    mma_shape (str): MMA atom, e.g. \"32x32x8\" (raw MFMA on CDNA); empty uses the arch default.\n"
+            "    k_block_multiple (int): For ragged sizes, pad the K-block loop to a multiple of this; padded blocks "
+            "read as zeros.\n"
         )
         .def_property_readonly(
             "matched", &sdfg::gpu::GpuMmaEinsumTransform::matched, "Whether the node was expanded (valid after apply())"

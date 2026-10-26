@@ -15,6 +15,7 @@ namespace py = pybind11;
  * - LoopSkewing: Skew a loop by a given factor
  * - TileFusion: Fuse tiled loop nests
  * - MapFusion: Fuse adjacent map operations
+ * - TrivialLoopElimination: Replace a single-iteration map by its body
  * - Recorder: Record transformation history for replay
  *
  * Each transformation provides:

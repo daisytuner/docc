@@ -305,6 +305,57 @@ bool provably_multiple_of(symbolic::Expression e, long long m, const TileCopyNod
     return true;
 }
 
+namespace {
+
+// `e + offset` is a multiple of m for every value of the enclosing loops; a min/max is one if all its
+// arguments are (distributing an addend over a single min/max term).
+bool bound_multiple_of(const symbolic::Expression& e, long long offset, long long m, const TileCopyNode& node) {
+    if (SymEngine::is_a<SymEngine::Min>(*e) || SymEngine::is_a<SymEngine::Max>(*e)) {
+        for (const auto& arg : e->get_args()) {
+            if (!bound_multiple_of(arg, offset, m, node)) {
+                return false;
+            }
+        }
+        return true;
+    }
+    if (SymEngine::is_a<SymEngine::Add>(*e)) {
+        symbolic::Expression minmax = SymEngine::null;
+        symbolic::Expression rest = symbolic::zero();
+        for (const auto& arg : e->get_args()) {
+            if (minmax.is_null() && (SymEngine::is_a<SymEngine::Min>(*arg) || SymEngine::is_a<SymEngine::Max>(*arg))) {
+                minmax = arg;
+            } else {
+                rest = symbolic::add(rest, arg);
+            }
+        }
+        if (!minmax.is_null()) {
+            for (const auto& arg : minmax->get_args()) {
+                if (!bound_multiple_of(symbolic::add(arg, rest), offset, m, node)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+    }
+    return provably_multiple_of(symbolic::add(e, symbolic::integer(offset)), m, node);
+}
+
+} // namespace
+
+bool guard_axis_aligned(const TileCopyNode& node, size_t axis, long long factor) {
+    for (const auto& d : node.guard().dims) {
+        if (d.axis != axis) {
+            continue;
+        }
+        // Coordinates are swept in factor-aligned runs: with base and the exclusive bound (max + 1) both
+        // multiples of factor, a run is entirely in or entirely out of bounds.
+        if (!provably_multiple_of(d.base, factor, node) || !bound_multiple_of(d.max, 1, factor, node)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 size_t widest_legal_transfer(const TileCopyNode& node, CopyAtom atom, const std::vector<size_t>& widths) {
     const auto& plan = node.plan();
     const size_t elem_bytes = node.bytes();
@@ -319,12 +370,12 @@ size_t widest_legal_transfer(const TileCopyNode& node, CopyAtom atom, const std:
         !symbolic::eq(plan.dst.strides().back(), symbolic::one())) {
         return 0;
     }
-    // The guard is checked once per transfer at its first element; only outer-axis bounds hold for the whole run.
+    // The guard is checked once per transfer at its first element; outer-axis bounds hold for the whole run, an
+    // inner-axis bound only when it is aligned to the transfer (checked per width below).
     const size_t inner_axis = static_cast<size_t>(plan.src.dims() - 1);
+    bool inner_guarded = false;
     for (const auto& d : node.guard().dims) {
-        if (d.axis == inner_axis) {
-            return 0;
-        }
+        inner_guarded |= d.axis == inner_axis;
     }
     auto* inner_i = dynamic_cast<const SymEngine::Integer*>(plan.src.shape().back().get());
     auto total = plan.src.total_elements();
@@ -340,6 +391,9 @@ size_t widest_legal_transfer(const TileCopyNode& node, CopyAtom atom, const std:
         }
         const long long factor = static_cast<long long>(width / elem_bytes);
         if (inner_n % factor != 0 || total_n % factor != 0) {
+            continue;
+        }
+        if (inner_guarded && !guard_axis_aligned(node, inner_axis, factor)) {
             continue;
         }
         // Synchronous copies split buffer-side accesses to the row alignment at emission;
@@ -391,14 +445,33 @@ std::string emit_tile_copy_stmt(
     const std::string dst_off = language_extension.expression(copy_in ? buffer_off : global_off);
     const std::string src_off = language_extension.expression(copy_in ? global_off : buffer_off);
     std::string stmt = "(" + dcast + ")[" + dst_off + "] = (" + scast + ")[" + src_off + "];";
-    // Ragged tiles: skip the over-approximated elements that fall out of bounds.
+    // Ragged tiles: skip the over-approximated elements that fall out of bounds. A copy-in zero-fills them, so
+    // consumers of the padded buffer (e.g. MMA fragments) read zeros rather than stale data.
     if (!node.guard().trivial()) {
         stmt = "if (" + language_extension.expression(node.guard().predicate(coords)) + ") { " + stmt + " }";
+        if (copy_in) {
+            stmt += " else { (" + dcast + ")[" + dst_off + "] = static_cast<" +
+                    language_extension.primitive_type(elem) + ">(0); }";
+        }
     }
     return stmt;
 }
 
+std::string emit_predicated_guarded_load(
+    const std::string& type, const std::string& var, const std::string& base, const std::string& index
+) {
+    return type + " " + var + "{}; if (__tc_ok) { " + var + " = *reinterpret_cast<const " + type + "*>(&(" + base +
+           ")[" + index + "]); }";
+}
+
 namespace {
+
+// GuardedLoadFn adapter of emit_predicated_guarded_load (the widths do not matter for a plain predicated load).
+std::string default_guarded_load(
+    const std::string& type, const std::string& var, const std::string& base, const std::string& index, size_t, size_t
+) {
+    return emit_predicated_guarded_load(type, var, base, index);
+}
 
 // The register array of a staged phase, addressed as 32-bit words.
 std::string register_words(
@@ -462,7 +535,8 @@ void emit_coalesce_copy_blocks(
     const std::string& dst_expr,
     const std::string& src_expr,
     types::PrimitiveType elem,
-    const std::string& runtime_threads
+    const std::string& runtime_threads,
+    const GuardedLoadFn& guarded_load
 ) {
     const auto& plan = node.plan();
     const long long rows = SymEngine::rcp_static_cast<const SymEngine::Integer>(plan.src.shape()[0])->as_int();
@@ -520,10 +594,22 @@ void emit_coalesce_copy_blocks(
     if (phase == CopyPhase::Full) {
         stream << "unsigned __tc_x[4][" << row_words << "];" << std::endl;
     }
+    // Ragged tile: each 4-element source row is in or out of bounds as a whole (the vectorizer requires the
+    // inner-axis bound to be 4-aligned). Out-of-bounds rows read zero through @p guarded_load (no select on the
+    // loaded value); stores then write the zero-padded block unguarded, which is exact for a copy-in.
+    const bool guarded = !node.guard().trivial();
     for (int q = 0; q < 4 && phase != CopyPhase::StoreRegs; ++q) {
-        auto off = plan.src.resolve_element({symbolic::add(r4, symbolic::integer(q)), c4}, false);
-        stream << "{ const " << row_t << " __tc_v = *reinterpret_cast<const " << row_t << "*>(&(" << scast << ")["
-               << language_extension.expression(off) << "]);";
+        auto row = symbolic::add(r4, symbolic::integer(q));
+        std::string off = language_extension.expression(plan.src.resolve_element({row, c4}, false));
+        stream << "{ ";
+        if (guarded) {
+            stream << "const bool __tc_ok = "
+                   << language_extension.expression(node.guard().predicate(symbolic::MultiExpression{row, c4})) << "; ";
+            stream << guarded_load(row_t, "__tc_v", scast, off, types::bit_width(elem) / 8, 4 * row_words);
+        } else {
+            stream << "const " << row_t << " __tc_v = *reinterpret_cast<const " << row_t << "*>(&(" << scast << ")["
+                   << off << "]);";
+        }
         for (int w = 0; w < row_words; ++w) {
             stream << " " << x(q, w) << " = __tc_v." << fields[w] << ";";
         }
@@ -564,12 +650,14 @@ void emit_cooperative_copy_loop(
     const std::string& dst_expr,
     const std::string& src_expr,
     types::PrimitiveType elem,
-    const std::function<std::string(const std::string&, const std::string&, size_t)>& async_stmt
+    const std::function<std::string(const std::string&, const std::string&, size_t)>& async_stmt,
+    const GuardedLoadFn& guarded_load_fn
 ) {
     const auto& plan = node.plan();
     const bool copy_in = node.direction() == CopyDirection::In;
     const std::string size = language_extension.expression(plan.src.total_elements());
     auto c = symbolic::symbol("__tc_c");
+    const GuardedLoadFn guarded_load = guarded_load_fn ? guarded_load_fn : GuardedLoadFn(default_guarded_load);
 
     // A vector (VectorSync) or async (CpAsync) transfer moves `bytes` per step, so the
     // loop strides by the transfer's element count; a scalar copy strides by one.
@@ -608,7 +696,7 @@ void emit_cooperative_copy_loop(
     stream << "int __tc_tid = " << tid << ";" << std::endl;
 
     if (node.atom() == CopyAtom::CoalesceSync) {
-        emit_coalesce_copy_blocks(language_extension, stream, node, dst_expr, src_expr, elem, n);
+        emit_coalesce_copy_blocks(language_extension, stream, node, dst_expr, src_expr, elem, n, guarded_load);
         stream << "}" << std::endl;
         return;
     }
@@ -659,6 +747,15 @@ void emit_cooperative_copy_loop(
     const std::string doff = language_extension.expression(copy_in ? buffer_off : global_off);
     const std::string soff = language_extension.expression(copy_in ? global_off : buffer_off);
 
+    // A guarded copy-in loads out-of-bounds lanes as zero through `guarded_load`, without a select on the loaded
+    // value (which would force a wait right after the load and serialize register-staged prefetches).
+    const bool guarded = !node.guard().trivial();
+    const bool masked = guarded && copy_in && node.phase() != CopyPhase::StoreRegs && node.atom() != CopyAtom::CpAsync;
+    const std::string pred = guarded ? language_extension.expression(node.guard().predicate(coords)) : "";
+    auto guarded_decl = [&](const std::string& type, const std::string& var, size_t bytes) {
+        return guarded_load(type, var, scast, soff, elem_bytes, bytes);
+    };
+
     std::string stmt;
     if (node.phase() != CopyPhase::Full) {
         // Staged phase: one register word per scalar step, bytes/4 words per vector step.
@@ -672,19 +769,25 @@ void emit_cooperative_copy_loop(
         const char* lane = !vec && elem_bytes == 2   ? "unsigned short"
                            : !vec && elem_bytes == 1 ? "unsigned char"
                                                      : "unsigned";
+        const size_t lane_bytes = !vec && elem_bytes <= 2 ? elem_bytes : 4;
         const char* wide_t = words == 4 ? "uint4" : "uint2";
         const char* fields[4] = {"x", "y", "z", "w"};
         if (node.phase() == CopyPhase::LoadRegs) {
             const std::string src_addr = "&(" + scast + ")[" + soff + "]";
             if (words > 1) {
-                stmt = std::string("{ const ") + wide_t + " __tc_v = *reinterpret_cast<const " + wide_t + "*>(" +
-                       src_addr + ");";
+                stmt = std::string("{ ") +
+                       (masked ? guarded_decl(wide_t, "__tc_v", 4 * words)
+                               : std::string("const ") + wide_t + " __tc_v = *reinterpret_cast<const " + wide_t +
+                                     "*>(" + src_addr + ");");
                 for (size_t k = 0; k < words; ++k) {
                     stmt += " " + reg(k) + " = __tc_v." + fields[k] + ";";
                 }
                 stmt += " }";
+            } else if (masked) {
+                stmt = "{ " + guarded_decl(lane, "__tc_s", lane_bytes) + " " + reg(0) +
+                       " = static_cast<unsigned>(__tc_s); }";
             } else {
-                stmt = reg(0) + " = *reinterpret_cast<const " + lane + "*>(" + src_addr + ");";
+                stmt = reg(0) + " = static_cast<unsigned>(*reinterpret_cast<const " + lane + "*>(" + src_addr + "));";
             }
         } else {
             const std::string dst_addr = "&(" + dcast + ")[" + doff + "]";
@@ -722,9 +825,15 @@ void emit_cooperative_copy_loop(
         const size_t chunk = buffer_access_bytes(node, elem_bytes);
         const std::string dst_addr = "&(" + dcast + ")[" + doff + "]";
         const std::string src_addr = "&(" + scast + ")[" + soff + "]";
+        const std::string load = std::string("*reinterpret_cast<const ") + vec + "*>(" + src_addr + ")";
         if (chunk >= node.bytes()) {
-            stmt = std::string("*reinterpret_cast<") + vec + "*>(" + dst_addr + ") = " + "*reinterpret_cast<const " +
-                   vec + "*>(" + src_addr + ");";
+            if (masked) {
+                stmt = "{ " + guarded_decl(vec, "__tc_w", node.bytes()) + " *reinterpret_cast<" + vec + "*>(" +
+                       dst_addr + ") = __tc_w; }";
+            } else {
+                stmt = std::string("*reinterpret_cast<") + vec + "*>(" + dst_addr +
+                       ") = " + "*reinterpret_cast<const " + vec + "*>(" + src_addr + ");";
+            }
         } else {
             // Padded buffer rows: the buffer side moves in row-aligned pieces.
             const char* piece = int_type(chunk);
@@ -738,18 +847,35 @@ void emit_cooperative_copy_loop(
                 return out;
             };
             if (copy_in) {
-                stmt = std::string("{ const ") + vec + " __tc_w = *reinterpret_cast<const " + vec + "*>(" + src_addr +
-                       "); " + pieces(dst_addr, "&__tc_w") + "}";
+                stmt = "{ " +
+                       (masked ? guarded_decl(vec, "__tc_w", node.bytes())
+                               : std::string("const ") + vec + " __tc_w = " + load + ";") +
+                       " " + pieces(dst_addr, "&__tc_w") + "}";
             } else {
                 stmt = std::string("{ ") + vec + " __tc_w; " + pieces("&__tc_w", src_addr) + "*reinterpret_cast<" +
                        vec + "*>(" + dst_addr + ") = __tc_w; }";
             }
         }
+    } else if (masked) {
+        const std::string t = language_extension.primitive_type(elem);
+        stmt = "{ " + guarded_decl(t, "__tc_s", elem_bytes) + " (" + dcast + ")[" + doff + "] = __tc_s; }";
     } else {
         stmt = "(" + dcast + ")[" + doff + "] = (" + scast + ")[" + soff + "];";
     }
-    if (!node.guard().trivial()) {
-        stmt = "if (" + language_extension.expression(node.guard().predicate(coords)) + ") { " + stmt + " }";
+    if (masked) {
+        stmt = "{ const bool __tc_ok = " + pred + "; " + stmt + " }";
+    } else if (guarded && !copy_in) {
+        stmt = "if (" + pred + ") { " + stmt + " }";
+    } else if (guarded && node.phase() != CopyPhase::StoreRegs) {
+        // An asynchronous copy-in cannot select: zero-fill the out-of-bounds part of the tile directly.
+        const size_t chunk = buffer_access_bytes(node, elem_bytes);
+        const std::string dst_addr = "&(" + dcast + ")[" + doff + "]";
+        std::string zero;
+        for (size_t k = 0; k < node.bytes() / chunk; ++k) {
+            zero += std::string("reinterpret_cast<") + int_type(chunk) + "*>(" + dst_addr + ")[" + std::to_string(k) +
+                    "] = " + int_type(chunk) + "{}; ";
+        }
+        stmt = "if (" + pred + ") { " + stmt + " } else { " + zero + " }";
     }
     stream << stmt << std::endl;
     if (unrolled && !exact) {
@@ -805,6 +931,10 @@ void TileCopyNodeDispatcher::dispatch_code_with_edges(
         // The guard is per-dim over the tile coordinates, so it applies directly to
         // the nested per-mode indices.
         stmt = "if (" + language_extension_.expression(node.guard().predicate(coords)) + ") { " + stmt + " }";
+        if (copy_in) {
+            stmt += " else { (" + dcast + ")[" + doff + "] = static_cast<" + language_extension_.primitive_type(pt) +
+                    ">(0); }";
+        }
     }
     out.stream << stmt << std::endl;
     for (size_t d = 0; d < shape.size(); ++d) {

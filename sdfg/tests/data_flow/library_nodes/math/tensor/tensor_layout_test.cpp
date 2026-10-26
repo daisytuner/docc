@@ -91,3 +91,33 @@ TEST(TensorLayoutTest, PartitionNonImmediateStrideFails) {
     auto result = layout.partition_offset_into_dimensions();
     EXPECT_FALSE(result.has_value());
 }
+
+TEST(TensorLayoutTest, BroadcastKeepsStrideOfMatchingUnitDimension) {
+    // [1, 8960] slice of a [1, 17920] row against a [1, 8960] result (e.g. a single token): dimension 0 matches, so
+    // it keeps its stride instead of being folded to a broadcast stride of 0.
+    math::tensor::TensorLayout
+        layout({symbolic::one(), symbolic::integer(8960)}, {symbolic::integer(17920), symbolic::one()});
+
+    auto result = layout.broadcast({symbolic::one(), symbolic::integer(8960)});
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(symbolic::eq(result->strides().at(0), symbolic::integer(17920)));
+    EXPECT_TRUE(symbolic::eq(result->strides().at(1), symbolic::one()));
+}
+
+TEST(TensorLayoutTest, BroadcastZeroesStrideOfGenuineBroadcast) {
+    auto n = symbolic::symbol("N");
+    math::tensor::TensorLayout layout({symbolic::one(), symbolic::integer(8)}, {symbolic::integer(8), symbolic::one()});
+
+    // Extent 1 against a larger extent and a missing leading dimension are broadcast with stride 0.
+    auto result = layout.broadcast({symbolic::integer(4), n, symbolic::integer(8)});
+    ASSERT_NE(result, nullptr);
+    ASSERT_EQ(result->shape().size(), 3);
+    EXPECT_TRUE(symbolic::eq(result->shape().at(0), symbolic::integer(4)));
+    EXPECT_TRUE(symbolic::eq(result->shape().at(1), n));
+    EXPECT_TRUE(symbolic::eq(result->strides().at(0), symbolic::zero()));
+    EXPECT_TRUE(symbolic::eq(result->strides().at(1), symbolic::zero()));
+    EXPECT_TRUE(symbolic::eq(result->strides().at(2), symbolic::one()));
+
+    // Incompatible extents cannot be broadcast.
+    EXPECT_EQ(layout.broadcast({symbolic::integer(2), symbolic::integer(4)}), nullptr);
+}

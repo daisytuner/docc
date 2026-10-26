@@ -67,6 +67,7 @@ set(SOURCE_FILES
     src/passes/code_motion/extended_block_hoisting.cpp
     src/passes/code_motion/extended_block_sorting.cpp
     src/passes/collapse_pass.cpp
+    src/passes/trivial_loop_elimination_pass.cpp
     src/passes/tiling_pass.cpp
     src/passes/dot_expansion_pass.cpp
     src/passes/loop_fusion/loop_fusion_by_access.cpp
@@ -118,6 +119,7 @@ set(SOURCE_FILES
     src/targets/cuda/cuda_arch.cpp
     src/targets/cuda/cuda_data_offloading_node.cpp
     src/targets/cuda/cuda_map_dispatcher.cpp
+    src/targets/cuda/cuda_mma_fragment_dispatcher.cpp
     src/targets/cuda/cuda_offload_dispatcher_strategy.cpp
     src/targets/cuda/cuda_reduce_dispatcher.cpp
     src/targets/cuda/cuda.cpp
@@ -207,6 +209,7 @@ set(SOURCE_FILES
     src/transformations/recorder.cpp
     src/transformations/replayer.cpp
     src/transformations/stream_k.cpp
+    src/transformations/trivial_loop_elimination.cpp
     src/transformations/transformation_schema.cpp
     src/transformations/unroll_transform.cpp
     src/transformations/vectorize_transform.cpp

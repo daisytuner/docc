@@ -87,9 +87,20 @@ struct TileGuard {
     void replace_symbols(const symbolic::ExpressionMapping& replacements);
 
     /// Drop dims provably full (`base + size - 1 <= max`) under the assumptions;
-    /// returns true if any dim was discharged.
+    /// returns true if any dim was discharged or simplified.
     bool discharge(const symbolic::SymbolSet& parameters, const symbolic::Assumptions& assumptions);
+
+    /// Simplify each dim's bound with @ref simplify_tile_bound; returns true if any changed.
+    bool simplify();
 };
+
+/// Simplify a tile's inclusive bound @p max for coordinates `base + i`, `0 <= i < size`, preserving the predicate
+/// `base + i <= max` on that range: drops min/max arguments dominated by another and min arguments at or above the
+/// tile's last coordinate (they never bind). E.g. `max(min(N-1, b+47), min(N-1, b+63))` over a 64-tile at `b`
+/// becomes `N-1`.
+symbolic::Expression simplify_tile_bound(
+    const symbolic::Expression& max, const symbolic::Expression& base, const symbolic::Expression& size
+);
 
 /// Move the source's unit-stride tile dim last (lane-fastest in the row-major sweep), permuting
 /// both plan sides and the guard axes alike. Returns true if the order changed.

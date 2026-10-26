@@ -112,6 +112,7 @@ set(TEST_FILES
     transformations/map_fusion_test.cpp
     transformations/multi_level_tiling_test.cpp
     transformations/stream_k_test.cpp
+    transformations/trivial_loop_elimination_test.cpp
     transformations/recorder_test.cpp
     transformations/vectorize_transform_test.cpp
     transformations/unroll_transform_test.cpp
