@@ -15,8 +15,8 @@ The docc Python package compiles Python functions that work on NumPy arrays into
 | Operating system  | Linux (x86-64, arm64, glibc ≥ 2.28), macOS ≥ 14 (Apple silicon)                        |
 | C++ compiler      | Linux: `clang++-21` from the [official LLVM repository](https://apt.llvm.org/); macOS: Xcode Command Line Tools |
 | OpenMP on macOS   | `brew install libomp`                                                                  |
-| NVIDIA GPUs       | CUDA toolkit in `/usr/local/cuda` (only for `target="cuda"`)                           |
-| AMD GPUs          | ROCm in `/opt/rocm` or `$ROCM_PATH` (only for `target="rocm"`)                         |
+| NVIDIA GPUs       | CUDA toolkit in `/usr/local/cuda` and [CuPy](https://cupy.dev/) (`cupy-cuda12x`), only for `target="cuda"` |
+| AMD GPUs          | ROCm in `/opt/rocm` or `$ROCM_PATH` and [CuPy](https://cupy.dev/) (`cupy-rocm-7-0`), only for `target="rocm"` |
 
 docc generates C++ code and compiles it with Clang when your function is called for the first time. This is why a C++ compiler is required at runtime.
 
