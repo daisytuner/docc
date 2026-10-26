@@ -27,6 +27,8 @@ For GPU kernels, use `__DAISY_EVENT_SET_CUDA` instead (works for ROCm too). Coun
 
 In aggregate mode, `__DAISY_EVENT_SET_CUDA` regions with `target_type` `CUDA`/`ROCM` are timed with GPU events. Every other region with a GPU `target_type` (e.g. blocking memcpy/free, or all GPU regions when async capture is off) is timed on the host clock, and the device is synchronized right before the start and before the end timestamp. Otherwise a blocking call would absorb the runtime of all previously queued kernels, which their own regions already report.
 
+When `__DAISY_INSTRUMENTATION_EVENTS_CUDA` is set, `__DAISY_EVENT_SET_CUDA` regions with `target_type` `CUDA`/`ROCM` also synchronize the device right before reading their counters at enter and exit. Device counters only reflect completed kernels, so an asynchronous launch would otherwise be read before it ran. GPU-event timing is unaffected: the synchronization precedes the start event and follows the stop event.
+
 Regions are subsequently started using the unique region ID:
 
 ```
