@@ -1,6 +1,6 @@
 ---
-title: Structured SDFGs Overview
-sidebar_position: 1
+title: Structured SDFGs
+sidebar_position: 3
 description: How Structured SDFGs work and how they differ from regular SDFGs
 ---
 
