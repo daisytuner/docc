@@ -684,10 +684,7 @@ passes::LibNodeExpander::ExpandOutcome MatMulNaiveExpander::handle_expand(
             builder.add_tasklet(init_blk, data_flow::TaskletCode::assign, "_out", {"_in"}, block.debug_info());
         auto& y_write = standalone->add_indirect_write_access(init_blk, MatMulNode::Y_INPUT_IDX);
         builder.add_computational_memlet(init_blk, zero_node, assign_t, "_in", {}, compute_scalar, block.debug_info());
-        builder
-            .add_computational_memlet(
-                init_blk, assign_t, "_out", y_write, y_idx, iedge_y->base_type(), iedge_y->debug_info()
-            )
+        builder.add_computational_memlet(init_blk, assign_t, "_out", y_write, y_idx, y_pointer, iedge_y->debug_info())
             .add_metadata(MatMulNode::OPERAND_METADATA_KEY, "Y");
     }
 
