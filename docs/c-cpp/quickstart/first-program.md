@@ -1,84 +1,84 @@
 ---
 title: Run Your First Code
+sidebar_label: First Program
 sidebar_position: 2
-description: Learn how to cross-compile a simple example for different processors
+description: Compile a vector kernel with docc and run it on CPU cores and GPUs
 ---
 
-This guide demonstrates how to offload a simple vector addition kernel to different backends like CUDA and Tenstorrent using `docc`. The example code is written in standard C and can be found on [GitHub](https://github.com/daisytuner/examples/blob/main/example_01/example_01.c).
+Throughout this guide, we use one running example: **WAXPBY**, the vector update `w = alpha * x + beta * y`. It is plain C, with no pragmas, intrinsics, or GPU code.
 
-The following C code implements a simple vector addition (WAXPBY) operation.
-
-```c
+```c title="waxpby.c"
 #include <stdio.h>
 #include <stdlib.h>
-#include <omp.h>
 
-#define N 8194
+#define N (1 << 24)
 
-int main(int argc, char** argv) {
-    float* x = (float*)malloc(N * sizeof(float));
-    float* y = (float*)malloc(N * sizeof(float));
-    float* w = (float*)malloc(N * sizeof(float));
+int main(void) {
+    float* x = malloc(N * sizeof(float));
+    float* y = malloc(N * sizeof(float));
+    float* w = malloc(N * sizeof(float));
 
-    // Initialize arrays
-    float alpha = 2.0f;
-    float beta = 3.0f;
+    float alpha = 2.0f, beta = 3.0f;
     for (int i = 0; i < N; i++) {
         x[i] = (float)i;
         y[i] = (float)(N - i);
-        w[i] = 0.0f;
     }
 
-    double start = omp_get_wtime();
-
-    // Perform waxpby operation: w = alpha * x + beta * y
+    // The kernel: w = alpha * x + beta * y
     for (int i = 0; i < N; i++) {
         w[i] = alpha * x[i] + beta * y[i];
     }
 
-    double end = omp_get_wtime();
-
-    // Print the result
-    for (int i = 0; i < 32; i++) {
-        printf("w[%d] = %f, ", i, w[i]);
-    }
-    printf("\n");
-
-    free(x);
-    free(y);
-    free(w);
-
+    printf("w[0] = %f, w[N-1] = %f\n", w[0], w[N - 1]);
+    free(x); free(y); free(w);
     return 0;
 }
 ```
 
-To compile this example with `docc`, use the following command, which is equivalent to standard `clang` or `gcc`:
+## Step 1: Compile it like with clang
+
+`docc` accepts the same flags as `clang`, so you can use it on existing code right away:
 
 ```bash
-docc -g -O3 example_01.c -o example_01.out
-./example_01.out
+docc -O3 waxpby.c -o waxpby
+./waxpby
 ```
 
-`docc` can automatically parallelize your code for multi-core CPUs. To enable this, use the OpenMP tuning mode:
+Without further options, docc behaves like a regular compiler and the program runs sequentially.
+
+## Step 2: Use all CPU cores
+
+Select a target with `-docc-tune`. With `openmp`, docc detects that the loop iterations are independent and parallelizes the loop across all cores:
 
 ```bash
-docc -g -O3 -docc-tune=openmp example_01.c -o example_01.out
+docc -O3 -docc-tune=openmp waxpby.c -o waxpby
+./waxpby
 ```
 
-## Cross-compiling for CUDA and Tenstorrent
+## Step 3: Offload to a GPU
 
-Running code on accelerators like NVIDIA GPUs or Tenstorrent devices typically requires rewriting kernels in CUDA or using specialized APIs. With `docc`, you achieve this by changing a single compiler flag.
-
-**CUDA backend:**
+The same source runs on a GPU when you change the target. docc generates the GPU kernel and the data transfers between host and device:
 
 ```bash
-docc -g -O3 -docc-tune=cuda example_01.c -o example_01.out
+# NVIDIA
+docc -O3 -docc-tune=cuda waxpby.c -o waxpby
+
+# AMD
+docc -O3 -docc-tune=rocm waxpby.c -o waxpby
 ```
 
-**Tenstorrent backend:**
+During compilation, docc reports which GPU it compiles for, for example:
 
-```bash
-docc -g -O3 -docc-tune=tenstorrent example_01.c -o example_01.out
+```text
+[DOCC] Compiling CUDA for sm_90 of NVIDIA H100
 ```
 
-All available targets are listed in [Targets](../using-docc/targets.md). Continue with [Using Libraries](./libraries.md).
+Tenstorrent Wormhole and Blackhole cards work the same way with `-docc-tune=tenstorrent`.
+
+## What happened
+
+docc compiled your program with Clang, lifted the kernel loop into its intermediate representation (SDFG), parallelized it for the selected target, and linked the generated code back into your executable. Code that docc cannot optimize is compiled as usual, so the program always behaves the same as with `clang`.
+
+## Next step
+
+Real applications are rarely a single file. In [Using Libraries](./libraries.md), we move the WAXPBY kernel into a shared library and see how docc avoids unnecessary GPU transfers across library calls.
