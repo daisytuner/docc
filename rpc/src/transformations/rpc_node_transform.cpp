@@ -1,6 +1,7 @@
 #include "sdfg/transformations/rpc_node_transform.h"
 
 #include <curl/curl.h>
+#include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <nlohmann/json.hpp>
@@ -90,6 +91,16 @@ bool RPCNodeTransform::
         builder.subject().add_metadata("transfer_tuning_session_id", this->session_id_.value());
     }
 
+    // Optionally pin the server-side recipe lookup to a specific collection. When
+    // DAISY_RECIPE_COLLECTION is set in the environment, forward its value so the request targets
+    // that collection instead of the server default.
+    std::optional<std::string> collection;
+    if (const char* collection_env = std::getenv("DAISY_RECIPE_COLLECTION")) {
+        if (collection_env[0] != '\0') {
+            collection = std::string(collection_env);
+        }
+    }
+
     auto opt_resp = query_rpc_server(
         {.sdfg = builder.subject(),
          .category = this->category_,
@@ -97,7 +108,8 @@ bool RPCNodeTransform::
          .enable_fusion = this->enable_fusion_,
          .normalize = this->normalize_,
          .schedule_loops = this->schedule_loops_,
-         .session_id = this->session_id_},
+         .session_id = this->session_id_,
+         .collection = collection},
         rpc_context_
     );
 
@@ -152,6 +164,9 @@ std::variant<std::unique_ptr<passes::rpc::RpcOptResponse>, std::string> RPCNodeT
     };
     if (request.session_id.has_value()) {
         payload["session_id"] = request.session_id.value();
+    }
+    if (request.collection.has_value()) {
+        payload["collection"] = request.collection.value();
     }
     std::string payload_str = payload.dump();
 
