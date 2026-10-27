@@ -620,7 +620,7 @@ void EinsumDetection::
     auto cnf = symbolic::conjunctive_normal_form(loop.condition());
     symbolic::Expression bound = this->cnf_to_upper_bound(cnf, indvar);
 
-    cluster.dims.emplace(cluster.dims.begin(), indvar, init, bound);
+    cluster.dims.insert(cluster.dims.begin(), EinsumDimension{indvar, init, bound});
     cluster.consumed_loops.insert(cluster.consumed_loops.begin(), &loop);
 
     // Merge the verified contributions into each operand's indexing (kept ordered by index).
