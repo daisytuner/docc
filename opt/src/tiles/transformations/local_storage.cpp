@@ -1555,6 +1555,28 @@ void LocalStorage::to_json(nlohmann::json& j) const {
     j["subgraph"]["1"] = nlohmann::json::object();
     j["subgraph"]["1"]["element_id"] = access_node_.element_id();
     j["subgraph"]["1"]["type"] = "access_node";
+
+    // Serialize the memlet the access node is attached to (if any), so the
+    // data-movement context (subset, base type, endpoints) travels with the
+    // recipe. Selection is deterministic (outgoing edge first, then incoming),
+    // keeping the from_json/to_json round-trip a stable fixed point.
+    const auto& dfg = access_node_.get_parent();
+    const data_flow::Memlet* attached_memlet = nullptr;
+    for (auto& memlet : dfg.out_edges(access_node_)) {
+        attached_memlet = &memlet;
+        break;
+    }
+    if (attached_memlet == nullptr) {
+        for (auto& memlet : dfg.in_edges(access_node_)) {
+            attached_memlet = &memlet;
+            break;
+        }
+    }
+    if (attached_memlet != nullptr) {
+        j["subgraph"]["1"]["memlet"] = nlohmann::json::object();
+        j["subgraph"]["1"]["memlet"]["element_id"] = attached_memlet->element_id();
+        serializer::JSONSerializer::element_metadata_to_json(j["subgraph"]["1"]["memlet"], *attached_memlet);
+    }
 }
 
 LocalStorage LocalStorage::from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& desc) {

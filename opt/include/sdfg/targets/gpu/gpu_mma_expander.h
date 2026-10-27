@@ -37,6 +37,7 @@ public:
         MmaFragmentType frag_type,
         const GpuMmaFromMemoryLayout& from_memory,
         unsigned input_index,
+        const char* operand_label,
         Block& block
     );
 
@@ -51,6 +52,7 @@ public:
         MmaFragmentType frag_type,
         const GpuMmaFromMemoryLayout& to_memory,
         unsigned input_index,
+        const char* operand_label,
         Block& block
     );
 
