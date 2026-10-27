@@ -16,7 +16,7 @@
             "title": "Adding Custom Offload Targets",
             "description":
                 "How to implement a custom offload target, using a Printf debug target as example",
-            "sidebarPosition": 4
+            "sidebarPosition": 5
         }
     ],
     "doxygen": {

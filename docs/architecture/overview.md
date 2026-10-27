@@ -64,7 +64,7 @@ Runtime     │ rtl/               │ │ arg-capture-io/    │
 | Directory in `sdfg/include/sdfg/` | Contents                                                                                               |
 | --------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | `data_flow/`                      | Data containers, memlets (data movement), tasklets (computations), library nodes                       |
-| `structured_control_flow/`        | Structured SDFGs: sequences, loops, maps, and branches, see [Structured SDFGs](./structured-sdfgs.md) |
+| `structured_control_flow/`        | Structured SDFGs: sequences, loops, maps, and branches, see [Structured SDFGs](./core-concepts/structured-sdfgs.md) |
 | `builder/`                        | APIs to construct SDFGs, used by all frontends                                                         |
 | `analysis/`                       | Data dependencies, loops, memory layout, types                                                         |
 | `passes/`                         | Simplifications, data-flow optimizations, scheduling                                                   |
@@ -72,8 +72,10 @@ Runtime     │ rtl/               │ │ arg-capture-io/    │
 | `serializer/`                     | Reading and writing SDFGs as JSON                                                                      |
 | `plugins/`                        | Interface for target plugins                                                                           |
 
+[Core Concepts](./core-concepts/index.md) explains these building blocks in detail: [Structured SDFGs](./core-concepts/structured-sdfgs.md), [analyses](./core-concepts/analyses.md), [passes](./core-concepts/passes.md), and [transformations](./core-concepts/transformations.md).
+
 ## How targets plug in
 
-A target is a plugin that registers schedules, code generators, and library-node implementations with the core. The built-in targets in `opt/` and the accelerator backends in `targets/` use the same interface (`sdfg/plugins/plugins.h`). External plugins are shared libraries that export `register_docc_plugin` and are loaded with [`-docc-plugins`](../c-cpp/usage.md#control-the-optimization).
+A target is a plugin that registers schedules, code generators, and library-node implementations with the core. The built-in targets in `opt/` and the accelerator backends in `targets/` use the same interface (`sdfg/plugins/plugins.h`). External plugins are shared libraries that export `register_docc_plugin` and are loaded with [`-docc-plugins`](../c-cpp/usage.md#control-the-optimization), see [Plugins](./plugins.md).
 
 For a complete example, see [Adding Custom Offload Targets](./custom-offload-targets.md). The C++ API of all components is documented in the [C++ API reference](../reference/api.md).
