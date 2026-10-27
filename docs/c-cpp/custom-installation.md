@@ -11,7 +11,7 @@ Build docc from source if you want the latest `main` branch, a debug build, or t
 - Linux (Ubuntu 24.04 is used in CI)
 - CMake ≥ 3.16 and Ninja
 - LLVM/Clang 21.1, including the development packages
-- System libraries: GMP, zstd, ISL, nlohmann-json, Boost Graph (other Boost components are fetched automatically)
+- System libraries: GMP, zstd, ISL, nlohmann-json, Boost Graph (other Boost components are fetched automatically), curl, blas
 
 On Ubuntu:
 
@@ -19,7 +19,7 @@ On Ubuntu:
 wget https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && sudo ./llvm.sh 21
 sudo apt-get install -y cmake ninja-build git \
     llvm-21-dev libclang-21-dev libomp-21-dev \
-    libgmp-dev libzstd-dev libisl-dev nlohmann-json3-dev libboost-graph-dev
+    libgmp-dev libzstd-dev libisl-dev nlohmann-json3-dev libboost-graph-dev libcurl4-openssl-dev libblas-dev
 ```
 
 :::tip
