@@ -23,7 +23,7 @@ sudo apt-get install -y cmake ninja-build git \
 ```
 
 :::tip
-The CI build environments are published as Docker images, for example `daisytuner/docc-build-env-llvm21-ubuntu-24.04`. They contain all dependencies.
+Skip the setup with the [Docker images](../docker.md): `daisytuner/docc-build-env-llvm21-ubuntu-24.04` contains all build dependencies, and the run-env images add CUDA, ROCm, and TT-Metalium.
 :::
 
 ## Build

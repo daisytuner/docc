@@ -26,6 +26,10 @@ On macOS:
 brew install cmake ninja gmp isl nlohmann-json boost libomp
 ```
 
+:::tip
+Skip the setup with the [Docker images](../docker.md): `daisytuner/docc-build-env-llvm21-ubuntu-24.04` contains all build dependencies, and the run-env images add CUDA and ROCm.
+:::
+
 ## Build
 
 ```bash
