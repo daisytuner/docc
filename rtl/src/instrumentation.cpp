@@ -253,7 +253,7 @@ private:
     std::list<std::string> sleeping_regions_by_name;
     std::unordered_map<std::string, size_t> sleeping_regions_id_lookup;
 
-    bool aggregate_events = false;
+    __daisy_instrumentation_mode_t instrumentation_mode = __DAISY_MODE_TRACE;
     bool papi_available = false;
     bool no_async_event_capture = false;
     std::string output_file;
@@ -385,7 +385,7 @@ private:
                     DEBUG_PRINTLN(
                         "[daisy-rtl] GPU region " << region.metadata.region_uuid << " elapsed time: " << ms << " ms"
                     );
-                    if (this->aggregate_events) {
+                    if (this->aggregate_events()) {
                         accumulate_runtime(region, static_cast<long long>(static_cast<double>(ms) * 1.0e6));
                     } else {
                         region.durations.push_back(static_cast<long long>(static_cast<double>(ms) * 1.0e6));
@@ -396,6 +396,10 @@ private:
             }
             region.pending_events.clear();
         }
+    }
+
+    bool aggregate_events() const {
+        return this->instrumentation_mode == __DAISY_MODE_AGGREGATE;
     }
 
     void post_process_region(DaisyRegion& region) {
@@ -797,9 +801,9 @@ public:
         // Aggregate events
         const char* aggregate_events_env = std::getenv("__DAISY_INSTRUMENTATION_MODE");
         if (aggregate_events_env && std::strcmp(aggregate_events_env, "aggregate") == 0) {
-            this->aggregate_events = true;
+            this->instrumentation_mode = __DAISY_MODE_AGGREGATE;
         } else {
-            this->aggregate_events = false;
+            this->instrumentation_mode = __DAISY_MODE_TRACE;
         }
 
         // Output file
@@ -881,7 +885,7 @@ public:
             auto& region = iter->second;
 
             // Print one aggregated event
-            if (this->aggregate_events) {
+            if (this->aggregate_events()) {
                 std::vector<std::string> event_names = {};
                 if (region.event_set == __DAISY_EVENT_SET_CPU) {
                     event_names = this->event_names_cpu;
@@ -953,7 +957,7 @@ public:
     }
 
     EventCaptureType decide_event_capture(enum __daisy_event_set event_set, const __daisy_metadata* metadata) {
-        if (this->no_async_event_capture || !this->aggregate_events) {
+        if (this->no_async_event_capture || !this->aggregate_events()) {
             return EventCaptureType::NONE;
         }
         if (event_set == __DAISY_EVENT_SET_CUDA) {
@@ -1174,7 +1178,7 @@ public:
         if (!async_capture) {
             // Save start time
             long long start_ns = _PAPI_get_real_nsec();
-            if (this->aggregate_events) {
+            if (this->aggregate_events()) {
                 if (region.first_start == 0) {
                     region.first_start = start_ns;
                 }
@@ -1226,7 +1230,7 @@ public:
             // Save duration (before counters)
             drain_device(region);
             long long end_ns = _PAPI_get_real_nsec();
-            if (this->aggregate_events) {
+            if (this->aggregate_events()) {
                 long long duration_ns = end_ns - region.last_start;
 
                 // Update aggregated runtime stats
@@ -1264,7 +1268,7 @@ public:
                 counts[i] -= region.last_counts[i];
             }
 
-            if (!this->aggregate_events) {
+            if (!this->aggregate_events()) {
                 region.counts.push_back(counts);
                 return;
             }
@@ -1311,7 +1315,7 @@ public:
                 counts[i] -= region.last_counts[i];
             }
 
-            if (!this->aggregate_events) {
+            if (!this->aggregate_events()) {
                 region.counts.push_back(counts);
                 return;
             }
@@ -1644,6 +1648,10 @@ public:
     bool is_enabled() const {
         return enabled.load(std::memory_order_relaxed);
     }
+
+    __daisy_instrumentation_mode_t get_instrumentation_mode() const {
+        return this->instrumentation_mode;
+    }
 };
 
 static DaisyInstrumentationState& get_daisy_state() {
@@ -1712,6 +1720,10 @@ void __daisy_instrumentation_stop(void) {
 
 bool __daisy_instrumentation_is_enabled(void) {
     return get_daisy_state().is_enabled();
+}
+
+__daisy_instrumentation_mode_t __daisy_instrumentation_mode(void) {
+    return get_daisy_state().get_instrumentation_mode();
 }
 
 void __daisy_instrumentation_finalize_all(void) {

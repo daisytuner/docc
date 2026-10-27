@@ -77,6 +77,7 @@ _RTL_RESET_SYMBOL = "__daisy_instrumentation_reset_all"
 _RTL_START_SYMBOL = "__daisy_instrumentation_start"
 _RTL_STOP_SYMBOL = "__daisy_instrumentation_stop"
 _RTL_IS_ENABLED_SYMBOL = "__daisy_instrumentation_is_enabled"
+_RTL_MODE_SYMBOL = "__daisy_instrumentation_mode"
 
 
 def _rtl_lib_names() -> tuple[str, str]:
@@ -281,6 +282,23 @@ def instrumentation_enabled() -> Optional[bool]:
     fn.restype = ctypes.c_bool
     fn.argtypes = []
     return bool(fn())
+
+
+def instrumentation_mode() -> Optional[str]:
+    """Query the current instrumentation mode, or None if not queryable.
+
+    Returns None when the RTL is statically linked (no shared instance to query).
+    """
+    lib = _rtl_lib()
+    if lib is None:
+        return None
+    try:
+        fn = lib[_RTL_MODE_SYMBOL]
+    except (AttributeError, KeyError, ValueError):
+        return None
+    fn.restype = ctypes.c_int
+    fn.argtypes = []
+    return "trace" if int(fn()) == 0 else "aggregate"
 
 
 class InstrumentationNotReady(RuntimeError):

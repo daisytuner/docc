@@ -70,6 +70,8 @@ Two modes are available:
 - full trace (default): records individual region invocations
 - aggregate: records summary metrics (invocation count and runtime statistics (min/mean/max))
 
+The mode is read from the environment once, when the process-global RTL state is first used, and is fixed from then on. Query the active mode with `__daisy_instrumentation_mode()`, which returns `__DAISY_MODE_TRACE` or `__DAISY_MODE_AGGREGATE` (`instrumentation_mode()` in the Python bindings).
+
 ### Configuration
 
 Tracing can be configured using the following environment variables:
