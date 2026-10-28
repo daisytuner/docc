@@ -631,6 +631,10 @@ void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
                   << static_cast<int>(direction_)
     );
 
+    // A fused zero-init nest no longer is a pure initialization.
+    builder.remove_schedule_property(this->first_map_, structured_control_flow::ScheduleType_ZeroInit::KEY);
+    builder.remove_schedule_property(this->second_loop_, structured_control_flow::ScheduleType_ZeroInit::KEY);
+
     if (direction_ == LoopFusionByAccessWorker::FusionDirection::ProducerIntoConsumer) {
         // Pattern 1 + Reverse Pattern 2: Inline producer blocks into consumer's read body
         auto& first_dataflow = producer_block_->dataflow();
