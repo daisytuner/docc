@@ -154,6 +154,8 @@ TEST(BlasTest, GemmNode) {
 
     // Only the outermost loop of each nest is excluded from fusion.
     EXPECT_TRUE(structured_control_flow::ScheduleType_NoFusion::is_set(init_map_i->schedule_type()));
+    // beta * C reads C: not a zero init.
+    EXPECT_FALSE(structured_control_flow::ScheduleType_ZeroInit::is_set(init_map_i->schedule_type()));
     EXPECT_TRUE(structured_control_flow::ScheduleType_NoFusion::is_set(comp_map_i->schedule_type()));
     EXPECT_FALSE(structured_control_flow::ScheduleType_NoFusion::is_set(init_map_j->schedule_type()));
     EXPECT_FALSE(structured_control_flow::ScheduleType_NoFusion::is_set(comp_map_j->schedule_type()));
@@ -267,6 +269,11 @@ TEST(BlasTest, GemmNode_AlphaOneBetaZero) {
     // ---- Compute nest: alpha == 1 => C[i,j] = A[i,k] * B[k,j] + C[i,j] ----
     auto comp_map_i = dyn_cast<structured_control_flow::Map*>(&new_sequence->at(1));
     ASSERT_NE(comp_map_i, nullptr);
+
+    // Only the outermost init loop is certified as zero init.
+    EXPECT_TRUE(structured_control_flow::ScheduleType_ZeroInit::is_set(init_map_i->schedule_type()));
+    EXPECT_FALSE(structured_control_flow::ScheduleType_ZeroInit::is_set(init_map_j->schedule_type()));
+    EXPECT_FALSE(structured_control_flow::ScheduleType_ZeroInit::is_set(comp_map_i->schedule_type()));
     auto comp_map_j = dyn_cast<structured_control_flow::Map*>(&comp_map_i->root().at(0));
     ASSERT_NE(comp_map_j, nullptr);
     auto comp_for_k = dyn_cast<structured_control_flow::For*>(&comp_map_j->root().at(0));
