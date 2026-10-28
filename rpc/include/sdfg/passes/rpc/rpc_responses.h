@@ -52,6 +52,7 @@ struct RpcOptRequest {
     bool schedule_loops = true;
     std::optional<std::string> session_id;
     std::optional<std::string> collection;
+    bool use_identity = false;
 };
 
 } // namespace sdfg::passes::rpc

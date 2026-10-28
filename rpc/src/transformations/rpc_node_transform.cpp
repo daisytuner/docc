@@ -101,6 +101,14 @@ bool RPCNodeTransform::
         }
     }
 
+    // Opt-in: ask the server to only match recipes whose outermost loop bound equals this nest's.
+    // Off by default; enabled by setting DAISY_USE_IDENTITY to anything other than "", "0", "false".
+    bool use_identity = false;
+    if (const char* identity_env = std::getenv("DAISY_USE_IDENTITY")) {
+        std::string v(identity_env);
+        use_identity = !(v.empty() || v == "0" || v == "false" || v == "FALSE");
+    }
+
     auto opt_resp = query_rpc_server(
         {.sdfg = builder.subject(),
          .category = this->category_,
@@ -109,7 +117,8 @@ bool RPCNodeTransform::
          .normalize = this->normalize_,
          .schedule_loops = this->schedule_loops_,
          .session_id = this->session_id_,
-         .collection = collection},
+         .collection = collection,
+         .use_identity = use_identity},
         rpc_context_
     );
 
@@ -167,6 +176,9 @@ std::variant<std::unique_ptr<passes::rpc::RpcOptResponse>, std::string> RPCNodeT
     }
     if (request.collection.has_value()) {
         payload["collection_name"] = request.collection.value();
+    }
+    if (request.use_identity) {
+        payload["use_identity"] = true;
     }
     std::string payload_str = payload.dump();
 
