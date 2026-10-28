@@ -209,6 +209,7 @@ set(SOURCE_FILES
     src/transformations/recorder.cpp
     src/transformations/replayer.cpp
     src/transformations/stream_k.cpp
+    src/transformations/redundant_zero_init_elimination.cpp
     src/transformations/trivial_loop_elimination.cpp
     src/transformations/transformation_schema.cpp
     src/transformations/unroll_transform.cpp
