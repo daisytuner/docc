@@ -5,6 +5,7 @@
 
 #include "sdfg/analysis/loop_analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/structured_control_flow/for.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/gpu/gpu_map_utils.h"
@@ -247,6 +248,13 @@ structured_control_flow::StructuredLoop& LoopTiling::tile_loop(
         );
     }
 
+    // The outer tile loop becomes the nest root and carries the nest annotations (Map/Reduce inherit them above).
+    if (dyn_cast<structured_control_flow::For*>(outer_loop)) {
+        auto outer_schedule = outer_loop->schedule_type();
+        structured_control_flow::ScheduleType_NestAnnotations::copy(loop.schedule_type(), outer_schedule);
+        builder.update_schedule_type(*outer_loop, outer_schedule, false);
+    }
+
     // Step 2: Redefine inner loop
     auto inner_indvar = indvar;
     builder.update_loop(loop, inner_indvar, geometry.inner.condition, geometry.inner.init, geometry.inner.update);
@@ -254,8 +262,13 @@ structured_control_flow::StructuredLoop& LoopTiling::tile_loop(
     // When tiling a Map, the outer tile loop inherits the schedule (created above
     // via add_map_before), but the inner element loop must become sequential.
     // Otherwise nested GPU Maps end up with repeated dimensions.
+    // Nest annotations stay on the outer tile loop only (the new nest root).
     if (dyn_cast<structured_control_flow::Map*>(&loop)) {
-        builder.update_schedule_type(loop, structured_control_flow::ScheduleType_Sequential::create());
+        builder.update_schedule_type(loop, structured_control_flow::ScheduleType_Sequential::create(), false);
+    } else {
+        auto inner_schedule = loop.schedule_type();
+        structured_control_flow::ScheduleType_NestAnnotations::strip(inner_schedule);
+        builder.update_schedule_type(loop, inner_schedule, false);
     }
 
     // Step 3: Move loop into tiling loop

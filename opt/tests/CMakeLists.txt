@@ -110,6 +110,7 @@ set(TEST_FILES
     transformations/loop_tiling_test.cpp
     transformations/loop_unit_stride_test.cpp
     transformations/map_fusion_test.cpp
+    transformations/nest_annotations_test.cpp
     transformations/multi_level_tiling_test.cpp
     transformations/stream_k_test.cpp
     transformations/trivial_loop_elimination_test.cpp
