@@ -70,6 +70,7 @@
 #include "sdfg/passes/offloading/data_transfer_minimization_pass.h"
 #include "sdfg/passes/offloading/rocm_library_node_expansion_pass.h"
 #include "sdfg/passes/redundant_load_elimination_pass.h"
+#include "sdfg/passes/redundant_zero_init_elimination_pass.h"
 #include "sdfg/passes/rpc/daisytuner_rpc_context.h"
 #include "sdfg/passes/rpc/rpc_context.h"
 #include "sdfg/passes/scheduler/vectorize_scheduler.h"
@@ -546,6 +547,10 @@ void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options, bool
     loop_scheduling_pass.run(builder, analysis_manager);
 
     if (options.target == "cuda" || options.target == "rocm") {
+        // Zero-init nests of matmuls lowered to MMA are redundant; drop them before minimizing the transfers they need.
+        sdfg::passes::RedundantZeroInitEliminationPass redundant_zero_init_elimination_pass;
+        redundant_zero_init_elimination_pass.run(builder, analysis_manager);
+
         sdfg::passes::DataTransferMinimizationPass data_transfer_minimization_pass;
         data_transfer_minimization_pass.run(builder, analysis_manager);
         sdfg::passes::DeviceBufferReusePass device_buffer_reuse_pass;
