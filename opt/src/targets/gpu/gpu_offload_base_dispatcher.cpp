@@ -1,6 +1,7 @@
 #include "sdfg/targets/gpu/gpu_offload_base_dispatcher.h"
 #include "sdfg/tiles/analysis/reduction_buffer_analysis.h"
 
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -88,10 +89,15 @@ void GPUOffloadBaseDispatcher::dispatch_node(
         scope_variables_unfiltered.end()
     );
     std::vector<std::string> arguments;
+    std::set<std::string> static_buffers;
 
     for (auto& argument : used_arguments) {
         auto& type = sdfg_.type(argument.first);
         auto storage = type.storage_type();
+        if (storage.is_gpu_static()) {
+            static_buffers.insert(argument.first);
+            continue;
+        }
         if (type.type_id() == types::TypeID::Array) {
             // Shared memory or register arrays of the kernel.
             // These arrays are not passed as kernel arguments.
@@ -121,6 +127,10 @@ void GPUOffloadBaseDispatcher::dispatch_node(
 
     for (auto& var : scope_variables_unfiltered) {
         if (analysis_manager.get<tiles::ReductionBufferAnalysis>().is_partial_buffer(var)) {
+            continue;
+        }
+        if (sdfg_.type(var).storage_type().is_gpu_static()) {
+            static_buffers.insert(var);
             continue;
         }
         if (x_grids.find(symbolic::symbol(var)) == x_grids.end() &&
@@ -235,7 +245,12 @@ void GPUOffloadBaseDispatcher::dispatch_node(
 
         auto& kernel_header_stream = kernel_header_snippet.stream();
         auto kernel_header_path = library_snippet_factory.output_path() / kernel_header_snippet.filename();
-        kernel_stream << "#include " << kernel_header_path.filename() << std::endl << std::endl << std::endl;
+        kernel_stream << "#include " << kernel_header_path.filename() << std::endl << std::endl;
+        for (auto& container : static_buffers) {
+            kernel_stream << kernel_lang_ext->declaration(container, sdfg_.type(container), false, true) << ";"
+                          << std::endl;
+        }
+        kernel_stream << std::endl;
         kernel_header_stream << "#include " << library_snippet_factory.header_path().filename()
                              << std::endl; // we
                                            // expect
