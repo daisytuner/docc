@@ -404,6 +404,17 @@ void register_control_flow(py::module& m) {
             "reduction, partial_storage (ReduceStrategy) and partial_container (buffer name) may be set; "
             "lanes (X_BLOCK only) makes each iteration a wave of that many lanes"
         )
+        .def_property(
+            "zero_init",
+            [](const ScheduleType& st) {
+                return ScheduleType_ZeroInit::is_set(st);
+            },
+            [](ScheduleType& st, bool zero_init) {
+                ScheduleType_ZeroInit::set(st, zero_init);
+            },
+            "Whether the loop is the outermost loop of a pure zero-initialization nest of the directly following "
+            "matmul nest (see RedundantZeroInitElimination)"
+        )
         .def("__repr__", [](const ScheduleType& st) {
             std::ostringstream oss;
             oss << "<ScheduleType value='" << st.value() << "'>";
