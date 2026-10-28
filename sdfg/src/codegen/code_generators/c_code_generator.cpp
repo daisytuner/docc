@@ -159,6 +159,9 @@ void CCodeGenerator::dispatch_schedule() {
             continue;
         }
         auto& type = sdfg_.type(container);
+        if (type.storage_type().is_gpu_static()) {
+            continue;
+        }
 
         // Declare transient
         if (sdfg_.is_transient(container)) {

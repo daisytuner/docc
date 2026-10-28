@@ -97,6 +97,12 @@ void register_types(py::module& m) {
             }
         )
         .def_static(
+            "GPU_Static",
+            []() {
+                return StorageType::GPU_Static();
+            }
+        )
+        .def_static(
             "AMD_Generic",
             []() {
                 return StorageType("AMD_Generic");
