@@ -67,6 +67,7 @@ set(SOURCE_FILES
     src/passes/code_motion/extended_block_hoisting.cpp
     src/passes/code_motion/extended_block_sorting.cpp
     src/passes/collapse_pass.cpp
+    src/passes/redundant_zero_init_elimination_pass.cpp
     src/passes/trivial_loop_elimination_pass.cpp
     src/passes/tiling_pass.cpp
     src/passes/dot_expansion_pass.cpp
