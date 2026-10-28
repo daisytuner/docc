@@ -48,7 +48,7 @@ void add_frag_load(
     const std::string& memory,
     gpu::MmaFragmentType frag_type
 ) {
-    types::Pointer half_ptr(types::Scalar(types::PrimitiveType::Half));
+    types::Pointer half_ptr{types::Scalar(types::PrimitiveType::Half)};
     auto& load = builder.add_library_node<gpu::GpuMmaFragmentLoadNode>(
         block,
         DebugInfo(),
