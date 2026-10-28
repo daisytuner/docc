@@ -88,6 +88,7 @@ public:
         const std::array<int, 3>& args_order, // indices of inputs in order of {y, a, b}
         // The layouts carry exact (possibly symbolic) extents not covered exactly by the tiling: clip the
         // fragments crossing them. The K-block loop is padded to a multiple of k_block_multiple.
+        // The K-block loop is a sequential Reduce{Add} over the accumulator fragments.
         bool ragged = false,
         int k_block_multiple = 1
     );

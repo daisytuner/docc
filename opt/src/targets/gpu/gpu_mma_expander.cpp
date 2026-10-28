@@ -2,6 +2,7 @@
 
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/structured_control_flow/block.h"
+#include "sdfg/structured_control_flow/reduce.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/gpu/gpu_mma_fill_node.h"
 #include "sdfg/targets/gpu/gpu_mma_fragment_eltwise_add_node.h"
@@ -314,12 +315,18 @@ passes::LibNodeExpander::ExpandOutcome GpuMmaExpander::expand_mma_standalone(
         );
     }
 
-    auto& k_sweep = builder.add_for(
+    std::vector<structured_control_flow::ReductionInfo> k_reductions;
+    for (const auto& acc_frag_name : acc_frag_names) {
+        k_reductions.push_back({structured_control_flow::ReductionOperation::Add, acc_frag_name});
+    }
+    auto& k_sweep = builder.add_reduce(
         row_map.root(),
         k_tile,
         symbolic::Lt(k_tile, k_count),
         symbolic::zero(),
-        symbolic::add(k_tile, symbolic::integer(1))
+        symbolic::add(k_tile, symbolic::integer(1)),
+        k_reductions,
+        structured_control_flow::ScheduleType_Sequential::create()
     );
 
     auto& load_block = builder.add_block(k_sweep.root());
