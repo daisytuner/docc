@@ -15,6 +15,7 @@
 #include "sdfg/targets/gpu/gpu_mma_fragment_load_node.h"
 #include "sdfg/targets/gpu/gpu_mma_fragment_store_node.h"
 #include "sdfg/targets/gpu/gpu_mma_matmul_node.h"
+#include "sdfg/targets/offloading/data_offloading_node.h"
 
 namespace sdfg {
 namespace transformations {
@@ -82,17 +83,50 @@ std::optional<std::string> zero_init_container(StructuredLoop& loop) {
     }
 }
 
-/// The loop nest directly following @p loop in its parent sequence.
-StructuredLoop* next_sibling_loop(StructuredLoop& loop) {
+/// True if @p node is a block holding only data-transfer (offloading) nodes and their access nodes, none of which
+/// touches @p container. Such blocks are inserted between nests by offloading and may be skipped.
+bool is_unrelated_transfer_block(ControlFlowNode& node, const std::string& container) {
+    auto* block = dynamic_cast<Block*>(&node);
+    if (block == nullptr) {
+        return false;
+    }
+    auto& dataflow = block->dataflow();
+    if (!dataflow.tasklets().empty() || dataflow.library_nodes().empty()) {
+        return false;
+    }
+    for (auto* lib_node : dataflow.library_nodes()) {
+        if (dynamic_cast<offloading::DataOffloadingNode*>(lib_node) == nullptr) {
+            return false;
+        }
+    }
+    for (auto* access : dataflow.data_nodes()) {
+        if (access->data() == container) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/// The loop nest following @p loop in its parent sequence, skipping data-transfer blocks unrelated to @p container.
+StructuredLoop* next_sibling_loop(StructuredLoop& loop, const std::string& container) {
     auto* parent = dynamic_cast<Sequence*>(loop.get_parent());
     if (parent == nullptr) {
         return nullptr;
     }
     int index = parent->index(loop);
-    if (index < 0 || static_cast<size_t>(index) + 1 >= parent->size()) {
+    if (index < 0) {
         return nullptr;
     }
-    return dynamic_cast<StructuredLoop*>(&parent->at(index + 1));
+    for (size_t i = index + 1; i < parent->size(); ++i) {
+        auto& sibling = parent->at(i);
+        if (auto* next = dynamic_cast<StructuredLoop*>(&sibling)) {
+            return next;
+        }
+        if (!is_unrelated_transfer_block(sibling, container)) {
+            return nullptr;
+        }
+    }
+    return nullptr;
 }
 
 std::optional<std::vector<MmaNestOutputUses::CFragmentLoad>>
@@ -104,7 +138,7 @@ analyze(StructuredLoop& loop, StructuredSDFG& sdfg, analysis::AnalysisManager& a
     if (!container) {
         return std::nullopt;
     }
-    auto* mma_nest = next_sibling_loop(loop);
+    auto* mma_nest = next_sibling_loop(loop, *container);
     if (mma_nest == nullptr) {
         return std::nullopt;
     }

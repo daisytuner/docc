@@ -16,8 +16,10 @@
 #include "sdfg/targets/gpu/gpu_mma_fragment_store_node.h"
 #include "sdfg/targets/gpu/gpu_mma_matmul_node.h"
 #include "sdfg/targets/gpu/gpu_offload_schedule_type.h"
+#include "sdfg/targets/offloading/data_offloading_node.h"
 #include "sdfg/targets/rocm/rocm.h"
 #include "sdfg/targets/rocm/rocm_arch.h"
+#include "sdfg/targets/rocm/rocm_data_offloading_node.h"
 #include "sdfg/targets/rocm/rocm_mma_fragment_dispatcher.h"
 #include "sdfg/tiles/library_nodes/tile_copy_node.h"
 #include "sdfg/visitor/for_each.h"
@@ -149,7 +151,16 @@ void add_tile_copy(
  *
  * The MMA nest is what GpuMmaEinsumTransform (+ LoopTiling, LocalStorage) emits for the accumulation nest.
  */
-structured_control_flow::Map& build_qwen_gate_up_matmul(builder::StructuredSDFGBuilder& builder, bool annotate) {
+/// A data transfer inserted by offloading between the init nest and the MMA nest.
+struct Transfer {
+    std::string container;
+    offloading::DataTransferDirection direction = offloading::DataTransferDirection::NONE;
+    offloading::BufferLifecycle lifecycle = offloading::BufferLifecycle::ALLOC;
+};
+
+structured_control_flow::Map& build_qwen_gate_up_matmul(
+    builder::StructuredSDFGBuilder& builder, bool annotate, const std::vector<Transfer>& transfers_between = {}
+) {
     auto& root = builder.subject().root();
     auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
 
@@ -204,6 +215,26 @@ structured_control_flow::Map& build_qwen_gate_up_matmul(builder::StructuredSDFGB
             builder.add_access(block, kY),
             {sym::add(sym::mul(sym::symbol("_i0"), sym::integer(N)), sym::symbol("_j0"))},
             half_ptr()
+        );
+    }
+
+    // ---- Data transfers inserted by offloading between the nests ----
+    for (auto& [container, direction, lifecycle] : transfers_between) {
+        if (!builder.subject().exists(container)) {
+            builder.add_container(container, device_half);
+        }
+        builder.add_container(container + "_host", half_ptr());
+        offloading::add_offloading_block<rocm::ROCMDataOffloadingNode>(
+            builder,
+            root,
+            container + "_host",
+            container,
+            direction,
+            lifecycle,
+            device_half,
+            DebugInfo(),
+            sym::integer(M * N * 2),
+            sym::integer(0)
         );
     }
 
@@ -471,4 +502,52 @@ TEST(RedundantZeroInitEliminationPassTest, QwenGateUpMatmul_EliminatesInitNest) 
     // Nothing left to eliminate.
     analysis::AnalysisManager fresh_analysis(builder.subject());
     EXPECT_FALSE(pass.run(builder, fresh_analysis));
+}
+
+TEST(RedundantZeroInitEliminationPassTest, QwenGateUpMatmul_SkipsTransferBlocksInBetween) {
+    builder::StructuredSDFGBuilder builder("qwen_gate_up", FunctionType_CPU);
+    // Allocation of the following silu-mul's output, as in the qwen_mlp_39 dump.
+    build_qwen_gate_up_matmul(builder, /*annotate=*/true, {{.container = "__daisy_hip_1000338_mul_1"}});
+    EXPECT_NO_THROW(builder.subject().validate());
+
+    auto& root = builder.subject().root();
+    ASSERT_EQ(root.size(), 3);
+    auto* transfer = dynamic_cast<structured_control_flow::Block*>(&root.at(1));
+    ASSERT_NE(transfer, nullptr);
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    passes::RedundantZeroInitEliminationPass pass;
+    EXPECT_TRUE(pass.run(builder, analysis_manager));
+    EXPECT_NO_THROW(builder.subject().validate());
+
+    // The init nest is gone, the allocation stays in front of the MMA nest.
+    ASSERT_EQ(root.size(), 2);
+    EXPECT_EQ(&root.at(0), transfer);
+    auto* mma_nest = dynamic_cast<structured_control_flow::Map*>(&root.at(1));
+    ASSERT_NE(mma_nest, nullptr);
+    EXPECT_EQ(mma_nest->indvar()->get_name(), "_j1_tile0");
+    auto after = count(root);
+    EXPECT_EQ(after.zero_stores_to_y, 0);
+    EXPECT_EQ(after.c_loads_of_y, 0);
+    EXPECT_EQ(after.fills_of_c, 1);
+}
+
+TEST(RedundantZeroInitEliminationPassTest, QwenGateUpMatmul_KeepsInitIfOutputIsTransferredInBetween) {
+    builder::StructuredSDFGBuilder builder("qwen_gate_up", FunctionType_CPU);
+    // Copy the zero-initialized output to the host between the nests: the init is observable.
+    build_qwen_gate_up_matmul(
+        builder,
+        /*annotate=*/true,
+        {{.container = kY,
+          .direction = offloading::DataTransferDirection::D2H,
+          .lifecycle = offloading::BufferLifecycle::NO_CHANGE}}
+    );
+    auto& root = builder.subject().root();
+    EXPECT_NO_THROW(builder.subject().validate());
+    ASSERT_EQ(root.size(), 3);
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    passes::RedundantZeroInitEliminationPass pass;
+    EXPECT_FALSE(pass.run(builder, analysis_manager));
+    EXPECT_EQ(root.size(), 3);
 }

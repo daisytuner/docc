@@ -87,8 +87,9 @@ public:
  *   nest directly following it.
  * - The nest is still a pure zero init, i.e. a perfect loop chain whose body is a single
  *   `constant 0 -> assign -> Y` block (it was not fused with other computation).
- * - The next sibling in the same sequence is a loop nest containing GPU MMA matmul nodes and
- *   fragment stores to Y.
+ * - The next loop nest in the same sequence contains GPU MMA matmul nodes and fragment stores to Y.
+ *   Only data-transfer blocks (offloading nodes and their access nodes) that do not access Y may lie in
+ *   between; these are inserted by offloading and are kept in place.
  * - Within that nest, Y is only used as the memory operand of fragment stores and of C-fragment loads,
  *   and the C-fragment loads are only nested in maps (no sequential loop could re-read stored partial results).
  *

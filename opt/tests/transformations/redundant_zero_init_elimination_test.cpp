@@ -15,6 +15,8 @@
 #include "sdfg/targets/gpu/gpu_mma_fragment_load_node.h"
 #include "sdfg/targets/gpu/gpu_mma_fragment_store_node.h"
 #include "sdfg/targets/gpu/gpu_mma_matmul_node.h"
+#include "sdfg/targets/offloading/data_offloading_node.h"
+#include "sdfg/targets/rocm/rocm_data_offloading_node.h"
 #include "sdfg/transformations/transformation_registry.h"
 #include "sdfg/visitor/for_each.h"
 
@@ -30,6 +32,8 @@ struct Options {
     std::string init_value = "0.0";
     bool fused_init_body = false; ///< an additional read in the init block
     bool block_between = false; ///< an unrelated block between the init and the MMA nest
+    std::vector<std::string> transfers_between; ///< containers transferred by offloading blocks in between
+    bool assignment_between = false; ///< a symbol assignment block in between
     bool with_mma = true;
     bool store_to_other = false; ///< the MMA stores to a different container than the init writes
     bool extra_read_of_y = false; ///< the MMA nest reads Y other than through a C-fragment load
@@ -86,6 +90,7 @@ Built build(builder::StructuredSDFGBuilder& builder, const Options& opts = {}) {
     types::Scalar idx(types::PrimitiveType::Int32);
     for (auto* name : {"A", "B", "Y", "Z"}) {
         builder.add_container(name, half_ptr, true);
+        builder.add_container(std::string(name) + "_host", half_ptr, true);
     }
     for (auto* name : {"acc", "frag_a", "frag_b", "frag_c"}) {
         builder.add_container(name, half_ptr);
@@ -135,6 +140,23 @@ Built build(builder::StructuredSDFGBuilder& builder, const Options& opts = {}) {
 
     if (opts.block_between) {
         builder.add_block(root);
+    }
+    for (auto& container : opts.transfers_between) {
+        offloading::add_offloading_block<rocm::ROCMDataOffloadingNode>(
+            builder,
+            root,
+            container + "_host",
+            container,
+            offloading::DataTransferDirection::NONE,
+            offloading::BufferLifecycle::ALLOC,
+            half_ptr,
+            DebugInfo(),
+            symbolic::integer(N * N * 2),
+            symbolic::integer(0)
+        );
+    }
+    if (opts.assignment_between) {
+        builder.add_assignments(root, {{symbolic::symbol("s"), symbolic::zero()}});
     }
 
     // ---- MMA nest ----
@@ -329,6 +351,44 @@ TEST(RedundantZeroInitEliminationTest, FusedInitBody) {
 
 TEST(RedundantZeroInitEliminationTest, NotAdjacent) {
     EXPECT_FALSE(applicable({.block_between = true}));
+}
+
+TEST(RedundantZeroInitEliminationTest, SkipsUnrelatedTransferBlocks) {
+    EXPECT_TRUE(applicable({.transfers_between = {"Z"}}));
+    EXPECT_TRUE(applicable({.transfers_between = {"A", "B", "Z"}}));
+}
+
+TEST(RedundantZeroInitEliminationTest, TransferOfOutputInBetween) {
+    // A transfer of Y between the nests could change what the MMA reads or what the host observes.
+    EXPECT_FALSE(applicable({.transfers_between = {"Y"}}));
+    EXPECT_FALSE(applicable({.transfers_between = {"A", "Y"}}));
+}
+
+TEST(RedundantZeroInitEliminationTest, AssignmentInBetween) {
+    EXPECT_FALSE(applicable({.assignment_between = true}));
+}
+
+TEST(RedundantZeroInitEliminationTest, RemovesInitAndKeepsTransferBlocks) {
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto built = build(builder, {.transfers_between = {"A", "B"}});
+    auto& root = builder.subject().root();
+    ASSERT_EQ(root.size(), 4);
+    auto* transfer_a = &root.at(1);
+    auto* transfer_b = &root.at(2);
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    transformations::RedundantZeroInitElimination transformation(*built.init);
+    ASSERT_TRUE(transformation.can_be_applied(builder, analysis_manager));
+    transformation.apply(builder, analysis_manager);
+    EXPECT_NO_THROW(builder.subject().validate());
+
+    ASSERT_EQ(root.size(), 3);
+    EXPECT_EQ(&root.at(0), transfer_a);
+    EXPECT_EQ(&root.at(1), transfer_b);
+    EXPECT_EQ(&root.at(2), built.mma_nest);
+    auto after = count(root);
+    EXPECT_EQ(after.c_loads, 0);
+    EXPECT_EQ(after.fills, 2);
 }
 
 TEST(RedundantZeroInitEliminationTest, NextNestIsNotMma) {
