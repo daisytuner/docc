@@ -6,6 +6,7 @@
 #include "sdfg/passes/offloading/data_transfer_minimization_pass.h"
 #include "sdfg/passes/offloading/device_buffer_reuse_pass.h"
 #include "sdfg/passes/offloading/device_resident_arg_promotion_pass.h"
+#include "sdfg/passes/redundant_zero_init_elimination_pass.h"
 #include "sdfg/passes/structured_control_flow/dead_cfg_elimination.h"
 
 namespace sdfg {
@@ -40,6 +41,16 @@ bool promote_device_residency(StructuredSDFG& sdfg, bool is_rocm) {
         device_buffer_reuse_pass.run(builder, analysis_manager);
         dead_data_elimination.run(builder, analysis_manager);
         dead_cfg_elimination.run(builder, analysis_manager);
+
+        // Drop redundant zero-init nests of matmuls lowered to MMA. Promoting device residency removes the
+        // redundant host round-trips of the matmul output, which can leave a zero-init nest as the immediate
+        // sibling of its MMA nest only now (e.g. the down-projection output). The schedule-time run of this
+        // pass only sees the nests that were already clean before promotion, so re-run it here.
+        RedundantZeroInitEliminationPass redundant_zero_init_elimination_pass;
+        if (redundant_zero_init_elimination_pass.run(builder, analysis_manager)) {
+            dead_data_elimination.run(builder, analysis_manager);
+            dead_cfg_elimination.run(builder, analysis_manager);
+        }
     }
 
     return promoted;

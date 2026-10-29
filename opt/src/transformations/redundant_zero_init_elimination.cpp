@@ -82,17 +82,42 @@ std::optional<std::string> zero_init_container(StructuredLoop& loop) {
     }
 }
 
-/// The loop nest directly following @p loop in its parent sequence.
-StructuredLoop* next_sibling_loop(StructuredLoop& loop) {
+/// True if @p block reads or writes @p container.
+bool block_accesses_container(const Block& block, const std::string& container) {
+    for (auto* access : block.dataflow().data_nodes()) {
+        if (dynamic_cast<const data_flow::ConstantNode*>(access) == nullptr && access->data() == container) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// The MMA loop nest following @p loop in its parent sequence, skipping intervening transfer/alias blocks.
+///
+/// After scheduling, host-to-device copies of the matmul's other operands and buffer alloc/alias blocks may sit
+/// between the zero-init nest and the MMA nest. These do not touch the zero-init container, so they are skipped.
+/// Any intervening block that does access the container (which could observe or clobber the zeros), or any
+/// non-block/non-loop node, stops the search.
+StructuredLoop* next_sibling_loop(StructuredLoop& loop, const std::string& container) {
     auto* parent = dynamic_cast<Sequence*>(loop.get_parent());
     if (parent == nullptr) {
         return nullptr;
     }
     int index = parent->index(loop);
-    if (index < 0 || static_cast<size_t>(index) + 1 >= parent->size()) {
+    if (index < 0) {
         return nullptr;
     }
-    return dynamic_cast<StructuredLoop*>(&parent->at(index + 1));
+    for (size_t i = static_cast<size_t>(index) + 1; i < parent->size(); i++) {
+        auto& sibling = parent->at(i);
+        if (auto* nest = dynamic_cast<StructuredLoop*>(&sibling)) {
+            return nest;
+        }
+        auto* block = dynamic_cast<Block*>(&sibling);
+        if (block == nullptr || block_accesses_container(*block, container)) {
+            return nullptr;
+        }
+    }
+    return nullptr;
 }
 
 std::optional<std::vector<MmaNestOutputUses::CFragmentLoad>>
@@ -102,15 +127,19 @@ analyze(StructuredLoop& loop, StructuredSDFG& sdfg, analysis::AnalysisManager& a
     }
     auto container = zero_init_container(loop);
     if (!container) {
+        std::cerr << "RedundantZeroInitElimination: loop is not a perfect zero-init nest" << std::endl;
         return std::nullopt;
     }
-    auto* mma_nest = next_sibling_loop(loop);
+    auto* mma_nest = next_sibling_loop(loop, *container);
     if (mma_nest == nullptr) {
+        std::cerr << "RedundantZeroInitElimination: no sibling loop found after zero-init nest" << std::endl;
         return std::nullopt;
     }
     MmaNestOutputUses uses(sdfg, analysis_manager, *mma_nest, *container);
     uses.visit();
     if (!uses.valid() || !uses.has_mma() || !uses.has_store()) {
+        std::cerr << "RedundantZeroInitElimination: sibling loop is not a valid MMA nest using the zero-init container"
+                  << std::endl;
         return std::nullopt;
     }
     return uses.c_loads();

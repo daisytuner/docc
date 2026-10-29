@@ -13,6 +13,7 @@ bool RedundantZeroInitEliminationPass::
     run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     // Collect first: applying the transformation removes loops and invalidates the loop analysis.
     // Annotated init nests are disjoint, so removing one does not affect the others.
+    std::cerr << "Running RedundantZeroInitEliminationPass..." << std::endl;
     std::vector<structured_control_flow::StructuredLoop*> candidates;
     for (auto* node : analysis_manager.get<analysis::LoopAnalysis>().loops()) {
         auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(node);
