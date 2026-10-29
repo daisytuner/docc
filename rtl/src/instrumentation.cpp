@@ -257,6 +257,7 @@ private:
     bool papi_available = false;
     bool no_async_event_capture = false;
     std::string output_file;
+    bool output_file_pid_suffix = false;
 
     // Global measurement switch. When false, enter/exit/metric calls are no-ops
     // so no samples accumulate. Atomic so start/stop don't contend on `mutex` and
@@ -813,6 +814,8 @@ public:
         } else {
             this->output_file = output_file_env;
         }
+        const char* pid_suffix_env = std::getenv("__DAISY_INSTRUMENTATION_FILE_PID_SUFFIX");
+        this->output_file_pid_suffix = pid_suffix_env && std::strcmp(pid_suffix_env, "1") == 0;
 
         // Events - CPU
         const char* env_events_cpu = std::getenv("__DAISY_INSTRUMENTATION_EVENTS");
@@ -870,8 +873,13 @@ public:
             }
         }
 
-        // Write output file
-        FILE* f = std::fopen(this->output_file.c_str(), "w");
+        // Write output file. With the pid suffix, every process sharing the same output path
+        // (e.g. MPI ranks or forked workers) writes its own trace instead of overwriting the others.
+        std::string output_path = this->output_file;
+        if (this->output_file_pid_suffix) {
+            output_path += "." + std::to_string(getpid());
+        }
+        FILE* f = std::fopen(output_path.c_str(), "w");
         if (!f) {
             std::perror("[daisy-rtl] Failed to open output file");
             exit(EXIT_FAILURE);

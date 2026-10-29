@@ -79,6 +79,7 @@ Tracing can be configured using the following environment variables:
 - `__DAISY_PAPI_VERSION` (required): PAPI library version (e.g., `0x07020000` for version 7.2.0.0)
 - `__DAISY_INSTRUMENTATION_MODE`: Set to `aggregate` to activate aggregate mode (default is full tracing)
 - `__DAISY_INSTRUMENTATION_FILE`: Output location of the trace file
+- `__DAISY_INSTRUMENTATION_FILE_PID_SUFFIX`: Set to `1` to append `.<pid>` to the trace file path, so that multiple processes sharing the same `__DAISY_INSTRUMENTATION_FILE` (e.g. MPI ranks or forked workers) each write their own trace
 - `__DAISY_INSTRUMENTATION_EVENTS`: List of PAPI events to record on the CPU
 - `__DAISY_INSTRUMENTATION_EVENTS_CUDA`: List of PAPI events to record on the GPU
 - `__DAISY_INSTRUMENTATION_ASYNC_CAPTURE` Enable/disable asynchronous event capturing (on by default for aggregate GPU event recording)

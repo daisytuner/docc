@@ -302,6 +302,55 @@ def test_instrumentation_aggregate(event):
     )
 
 
+def test_instrumentation_file_pid_suffix(tmp_path):
+    workdir = Path(__file__).parent / "applications"
+
+    benchmark_path = workdir / "instrumentation_test.c"
+    output_path = tmp_path / "instrumentation_test.out"
+    compiled = subprocess.run(
+        [
+            "gcc",
+            str(benchmark_path),
+            "-o",
+            str(output_path),
+            "-ldaisy_rtl",
+            "-larg_capture_io",
+            "-lstdc++",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert compiled.returncode == 0, compiled.stdout + compiled.stderr
+
+    trace_file = tmp_path / "trace.instrumentation.1"
+    os.environ["__DAISY_PAPI_VERSION"] = "0x07020000"
+    os.environ["__DAISY_INSTRUMENTATION_FILE"] = str(trace_file)
+    os.environ["__DAISY_INSTRUMENTATION_FILE_PID_SUFFIX"] = "1"
+    os.environ["__DAISY_INSTRUMENTATION_MODE"] = "aggregate"
+
+    # Processes sharing the same output path must each write their own trace
+    processes = [
+        subprocess.Popen(
+            [str(output_path)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+        )
+        for _ in range(2)
+    ]
+    for process in processes:
+        stdout, stderr = process.communicate()
+        assert process.returncode == 0, stdout + stderr
+
+    assert not trace_file.exists()
+    expected = {f"{trace_file.name}.{process.pid}" for process in processes}
+    assert {path.name for path in tmp_path.glob(f"{trace_file.name}.*")} == expected
+    for name in expected:
+        events = json.load(open(tmp_path / name))["traceEvents"]
+        assert len(events) == 1
+        assert events[0]["cat"] == "aggregated_region,daisy"
+
+
 @pytest.mark.parametrize(
     "event",
     [
