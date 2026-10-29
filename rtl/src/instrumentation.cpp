@@ -100,6 +100,15 @@ static void flush_caches_impl() {
     }
 }
 
+// Path of the shared object (or executable) containing the given code address.
+static const char* shared_object_path(const void* addr) {
+    Dl_info info;
+    if (addr && dladdr(addr, &info) && info.dli_fname) {
+        return info.dli_fname;
+    }
+    return "unknown";
+}
+
 static int (*_PAPI_library_init)(int) = nullptr;
 static int (*_PAPI_create_eventset)(int*) = nullptr;
 static int (*_PAPI_cleanup_eventset)(int) = nullptr;
@@ -870,15 +879,32 @@ public:
             }
         }
 
-        if (regions.empty()) {
-            return;
+        if (!write_trace(this->output_file)) {
+            exit(EXIT_FAILURE);
         }
+    }
 
+    // Resolve pending GPU events and write the trace to `path` (or the configured
+    // output file when null/empty) without tearing down state. For processes that
+    // never run static destructors (e.g. vLLM's EngineCore killed on shutdown).
+    bool dump(const char* path) {
+        std::lock_guard<std::mutex> lock(mutex);
+        for (auto& [region_id, region] : regions) {
+            post_process_region(region);
+        }
+        std::string out = (path && path[0] != '\0') ? std::string(path) : this->output_file;
+        std::cerr << "[daisy-rtl] Dumping " << regions.size() << " regions to " << out << " (pid: " << getpid()
+                  << ")\n";
+        return write_trace(out);
+    }
+
+private:
+    bool write_trace(const std::string& path) {
         // Write output file
-        FILE* f = std::fopen(this->output_file.c_str(), "w");
+        FILE* f = std::fopen(path.c_str(), "w");
         if (!f) {
             std::perror("[daisy-rtl] Failed to open output file");
-            exit(EXIT_FAILURE);
+            return false;
         }
 
         // Output file header
@@ -927,7 +953,10 @@ public:
 
         // Close output file
         std::fclose(f);
+        return true;
     }
+
+public:
 
     // Whether any PAPI counters are configured for the given event set. When no
     // events are requested (e.g. the __DAISY_INSTRUMENTATION_EVENTS* env vars are
@@ -1125,14 +1154,20 @@ public:
         }
 
         size_t region_id = next_region_id++;
-        regions[region_id] = region;
+        bool res = regions.emplace(region_id, std::move(region)).second;
+        if (!res) {
+            std::fprintf(stderr, "[daisy-rtl] Failed to register region %s (id %zu)\n", metadata->region_uuid, region_id);
+            exit(EXIT_FAILURE);
+        }
         region_name_to_id[region.metadata.region_uuid] = region_id;
 
         this->start_region_eventset(region.papi_eventset);
         return region_id;
     }
 
-    void enter_region(size_t region_id) {
+    void enter_region(size_t region_id, const void* caller) {
+        std::cerr << "[daisy-rtl] Entering region " << region_id << " (pid: " << getpid()
+                  << ", caller object: " << shared_object_path(caller) << ")\n";
         // No-op while measurement is globally disabled: skip recording a start so
         // the matching (also skipped) exit leaves per-region buffers consistent.
         if (!enabled.load(std::memory_order_relaxed)) {
@@ -1193,7 +1228,7 @@ public:
         }
     }
 
-    void exit_region(size_t region_id) {
+    void exit_region(size_t region_id, const void* caller) {
         // No-op while disabled: the paired enter was also skipped, so there is no
         // start to close out and no sample to record.
         if (!enabled.load(std::memory_order_relaxed)) {
@@ -1675,11 +1710,11 @@ size_t __daisy_instrumentation_init(__daisy_metadata* metadata, enum __daisy_eve
 }
 
 void __daisy_instrumentation_enter(size_t region_id) {
-    get_daisy_state().enter_region(region_id);
+    get_daisy_state().enter_region(region_id, __builtin_return_address(0));
 }
 
 void __daisy_instrumentation_exit(size_t region_id) {
-    get_daisy_state().exit_region(region_id);
+    get_daisy_state().exit_region(region_id, __builtin_return_address(0));
 }
 
 void __daisy_instrumentation_finalize(size_t region_id) {
@@ -1732,6 +1767,10 @@ __daisy_instrumentation_mode_t __daisy_instrumentation_mode(void) {
 
 void __daisy_instrumentation_finalize_all(void) {
     get_daisy_state().post_process_regions();
+}
+
+bool __daisy_instrumentation_dump(const char* path) {
+    return get_daisy_state().dump(path);
 }
 
 #ifdef __cplusplus
