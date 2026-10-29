@@ -9,8 +9,20 @@
 #include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/symbolic/symbolic.h"
+#include "sdfg/targets/gpu/gpu_mma_fill_node.h"
+#include "sdfg/targets/gpu/gpu_mma_fragment_eltwise_add_node.h"
+#include "sdfg/targets/gpu/gpu_mma_fragment_load_node.h"
+#include "sdfg/targets/gpu/gpu_mma_fragment_store_node.h"
+#include "sdfg/targets/gpu/gpu_mma_matmul_node.h"
 #include "sdfg/targets/gpu/gpu_offload_schedule_type.h"
+#include "sdfg/targets/gpu/gpu_tile_arrival_node.h"
+#include "sdfg/types/array.h"
+#include "sdfg/types/pointer.h"
 #include "sdfg/types/scalar.h"
+
+#include <functional>
+#include <map>
+#include <optional>
 
 #include <symengine/integer.h>
 
@@ -69,6 +81,124 @@ bool is_constant_trip(const symbolic::Expression& iterations) {
            !SymEngine::eq(*iterations, *symbolic::zero());
 }
 
+
+std::optional<int64_t> constant_trip(const symbolic::Expression& iterations) {
+    if (!is_constant_trip(iterations)) {
+        return std::nullopt;
+    }
+    return SymEngine::rcp_static_cast<const SymEngine::Integer>(iterations)->as_int();
+}
+
+struct GridChain {
+    std::vector<Map*> maps;
+    Sequence* block_parent = nullptr;
+    ControlFlowNode* block_subtree = nullptr;
+};
+
+/// The perfectly nested grid-level output-tile Maps rooted at @p anchor and the first non-grid node below them.
+std::optional<GridChain> grid_chain(StructuredLoop& anchor) {
+    GridChain chain;
+    StructuredLoop* cur = &anchor;
+    while (true) {
+        auto* m = dynamic_cast<Map*>(cur);
+        if (m == nullptr || m->root().size() != 1) {
+            return std::nullopt;
+        }
+        chain.maps.push_back(m);
+        ControlFlowNode& child = m->root().at(0);
+        if (auto* child_map = dynamic_cast<Map*>(&child); child_map != nullptr && is_grid_offloaded(*child_map)) {
+            cur = child_map;
+            continue;
+        }
+        chain.block_parent = &m->root();
+        chain.block_subtree = &child;
+        return chain;
+    }
+}
+
+/// MMA accumulator fragments updated in @p root, keyed by container, with the MMA node updating them.
+std::map<std::string, const gpu::GpuMmaMatmulNode*> mma_accumulators(ControlFlowNode& root) {
+    std::map<std::string, const gpu::GpuMmaMatmulNode*> accs;
+    std::function<void(ControlFlowNode&)> visit = [&](ControlFlowNode& node) {
+        if (auto* block = dynamic_cast<Block*>(&node)) {
+            auto& graph = block->dataflow();
+            for (auto* lib : graph.library_nodes()) {
+                auto* mma = dynamic_cast<const gpu::GpuMmaMatmulNode*>(lib);
+                if (mma == nullptr) {
+                    continue;
+                }
+                for (auto& edge : graph.in_edges(*lib)) {
+                    auto* access = dynamic_cast<const data_flow::AccessNode*>(&edge.src());
+                    if (access && edge.dst_conn() == lib->input(gpu::GpuMmaMatmulNode::Y_INPUT_IDX)) {
+                        accs[access->data()] = mma;
+                    }
+                }
+            }
+        } else if (auto* seq = dynamic_cast<Sequence*>(&node)) {
+            for (size_t i = 0; i < seq->size(); ++i) {
+                visit(seq->at(i));
+            }
+        } else if (auto* loop = dynamic_cast<StructuredLoop*>(&node)) {
+            visit(loop->root());
+        } else if (auto* if_else = dynamic_cast<IfElse*>(&node)) {
+            for (size_t i = 0; i < if_else->size(); ++i) {
+                visit(if_else->at(i).first);
+            }
+        }
+    };
+    visit(root);
+    return accs;
+}
+
+/// The MMA fragment accumulators of @p reduce: nullopt if its body updates none, empty if some reduction
+/// container is not one (mixed reductions are unsupported).
+std::optional<std::map<std::string, const gpu::GpuMmaMatmulNode*>> fragment_accumulators(Reduce& reduce) {
+    auto accs = mma_accumulators(reduce.root());
+    if (accs.empty()) {
+        return std::nullopt;
+    }
+    std::map<std::string, const gpu::GpuMmaMatmulNode*> result;
+    for (const auto& info : reduce.reductions()) {
+        auto it = accs.find(info.container);
+        if (it == accs.end()) {
+            return std::map<std::string, const gpu::GpuMmaMatmulNode*>{};
+        }
+        result.insert(*it);
+    }
+    return result;
+}
+
+/// The block-level Maps enclosing @p reduce below @p block_subtree, outermost first; nullopt if anything but
+/// constant-trip Maps and Sequences lies in between.
+std::optional<std::vector<Map*>> wave_maps(Reduce& reduce, ControlFlowNode& block_subtree) {
+    std::vector<Map*> maps;
+    for (auto* node : ControlFlowNode::parent_chain(reduce)) {
+        if (dynamic_cast<Sequence*>(node)) {
+            continue;
+        }
+        auto* map = dynamic_cast<Map*>(node);
+        if (map == nullptr || !is_constant_trip(map->num_iterations())) {
+            return std::nullopt;
+        }
+        maps.insert(maps.begin(), map);
+        if (node == &block_subtree) {
+            return maps;
+        }
+    }
+    return std::nullopt;
+}
+
+/// Number of blocks splitting each tile's panel range evenly, if @p num_blocks is such a decomposition.
+std::optional<int64_t> aligned_splits(int64_t tiles, int64_t panels, int64_t num_blocks) {
+    if (num_blocks <= 0 || num_blocks % tiles != 0) {
+        return std::nullopt;
+    }
+    int64_t splits = num_blocks / tiles;
+    if (panels % splits != 0) {
+        return std::nullopt;
+    }
+    return splits;
+}
 } // namespace
 
 StreamK::StreamK(structured_control_flow::StructuredLoop& grid_loop, size_t num_blocks)
@@ -116,12 +246,42 @@ bool StreamK::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::
         return false;
     }
 
+    auto fragments = fragment_accumulators(*reduce);
+    if (fragments.has_value()) {
+        if (fragments->empty()) {
+            return false;
+        }
+        auto chain = grid_chain(grid_loop_);
+        if (!chain.has_value() || !wave_maps(*reduce, *chain->block_subtree).has_value()) {
+            return false;
+        }
+        int64_t tiles = 1;
+        for (auto* map : chain->maps) {
+            auto trip = constant_trip(map->num_iterations());
+            if (!trip.has_value()) {
+                return false;
+            }
+            tiles *= *trip;
+        }
+        auto panels = constant_trip(reduce->num_iterations());
+        if (!aligned_splits(tiles, *panels, static_cast<int64_t>(num_blocks_)).has_value()) {
+            return false;
+        }
+    }
+
     return true;
 }
 
 void StreamK::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     namespace sym = symbolic;
     using namespace structured_control_flow;
+
+    if (auto* reduce = find_reduce(grid_loop_.root())) {
+        if (auto fragments = fragment_accumulators(*reduce); fragments.has_value() && !fragments->empty()) {
+            apply_fragment_split(builder, analysis_manager, *reduce);
+            return;
+        }
+    }
 
     // (0) Walk the grid-level output-tile Maps from the anchor down to the first
     // non-grid child. That child -- the block-map + K-reduction subtree (or, in
@@ -289,6 +449,209 @@ void StreamK::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisM
     }
 
     analysis_manager.invalidate_all();
+}
+
+void StreamK::apply_fragment_split(
+    builder::StructuredSDFGBuilder& builder,
+    analysis::AnalysisManager& analysis_manager,
+    structured_control_flow::Reduce& reduce
+) {
+    namespace sym = symbolic;
+    using namespace structured_control_flow;
+
+    auto chain = grid_chain(grid_loop_).value();
+    auto waves = wave_maps(reduce, *chain.block_subtree).value();
+    auto accumulators = fragment_accumulators(reduce).value();
+    const auto reductions = reduce.reductions();
+    const size_t num_dims = chain.maps.size();
+
+    std::vector<sym::Symbol> old_indvars;
+    std::vector<sym::Expression> steps;
+    std::vector<int64_t> trips;
+    int64_t tiles = 1;
+    for (auto* g : chain.maps) {
+        old_indvars.push_back(g->indvar());
+        steps.push_back(sym::sub(g->update(), g->indvar()));
+        trips.push_back(constant_trip(g->num_iterations()).value());
+        tiles *= trips.back();
+    }
+    const int64_t panels = constant_trip(reduce.num_iterations()).value();
+    const int64_t num_blocks = static_cast<int64_t>(num_blocks_);
+    const int64_t splits = aligned_splits(tiles, panels, num_blocks).value();
+    const int64_t panels_per_block = panels / splits;
+    sym::Expression panel_step = sym::sub(reduce.update(), reduce.indvar());
+    sym::Expression panel_init = reduce.init();
+
+    sym::Expression wave = sym::zero();
+    int64_t num_waves = 1;
+    for (auto* map : waves) {
+        auto trip = constant_trip(map->num_iterations()).value();
+        auto index = sym::div(sym::sub(map->indvar(), map->init()), sym::sub(map->update(), map->indvar()));
+        wave = sym::add(sym::mul(wave, sym::integer(trip)), index);
+        num_waves *= trip;
+    }
+
+    auto bid = sym::symbol(builder.find_new_name("__streamk_bid"));
+    const bool narrow = num_blocks <= (int64_t(1) << 30);
+    builder
+        .add_container(bid->get_name(), types::Scalar(narrow ? types::PrimitiveType::Int32 : types::PrimitiveType::Int64));
+    sym::Expression tile = sym::div(bid, sym::integer(splits));
+    sym::Expression split = sym::mod(bid, sym::integer(splits));
+
+    Map* outer = chain.maps[0];
+    builder.update_loop(*outer, bid, sym::Lt(bid, sym::integer(num_blocks)), sym::zero(), sym::add(bid, sym::one()));
+    auto grid_sched = outer->schedule_type();
+    gpu::ScheduleType_GPU_Offload::parallel_size(grid_sched, sym::integer(num_blocks));
+    gpu::ScheduleType_GPU_Offload::target_level(grid_sched, gpu::TargetLevel::X_GRID);
+    builder.update_schedule_type(*outer, grid_sched);
+    if (num_dims > 1) {
+        Sequence& outer_body = outer->root();
+        builder.move_child(*chain.block_parent, chain.block_parent->index(*chain.block_subtree), outer_body);
+        builder.remove_child(outer_body, outer_body.index(*chain.maps[1]));
+    }
+
+    sym::Expression k_begin =
+        sym::add(panel_init, sym::mul(sym::mul(split, sym::integer(panels_per_block)), panel_step));
+    sym::Expression k_end = sym::add(k_begin, sym::mul(sym::integer(panels_per_block), panel_step));
+    builder.update_loop(reduce, reduce.indvar(), sym::Lt(reduce.indvar(), k_end), k_begin, reduce.update());
+
+    for (size_t i = 0; i < num_dims; ++i) {
+        int64_t divisor = 1;
+        for (size_t j = i + 1; j < num_dims; ++j) {
+            divisor *= trips[j];
+        }
+        sym::Expression index = sym::mod(sym::div(tile, sym::integer(divisor)), sym::integer(trips[i]));
+        builder.replace_symbols(old_indvars[i], sym::mul(index, steps[i]));
+    }
+
+    if (splits > 1) {
+        build_fragment_merge(builder, reduce, reductions, accumulators, bid, tile, wave, num_waves, splits, tiles);
+    }
+
+    analysis_manager.invalidate_all();
+}
+
+void StreamK::build_fragment_merge(
+    builder::StructuredSDFGBuilder& builder,
+    structured_control_flow::Reduce& reduce,
+    const std::vector<structured_control_flow::ReductionInfo>& reductions,
+    const std::map<std::string, const gpu::GpuMmaMatmulNode*>& accumulators,
+    const symbolic::Symbol& bid,
+    const symbolic::Expression& tile,
+    const symbolic::Expression& wave,
+    int64_t num_waves,
+    int64_t splits,
+    int64_t tiles
+) {
+    namespace sym = symbolic;
+    using namespace structured_control_flow;
+
+    auto& sdfg = builder.subject();
+    auto& parent = static_cast<Sequence&>(*reduce.get_parent());
+    const auto debug_info = reduce.debug_info();
+    const auto* first = accumulators.at(reductions.front().container);
+    const auto block_size = first->mma_block_size();
+    const auto acc_type = first->acc_type();
+    const auto impl_type = first->implementation_type();
+    const int64_t num_fragments = static_cast<int64_t>(reductions.size());
+    const int64_t fragment_elems = static_cast<int64_t>(block_size.m) * block_size.n;
+
+    types::Scalar acc_scalar(acc_type);
+    types::Pointer acc_pointer(acc_scalar);
+    types::Scalar i32(types::PrimitiveType::Int32);
+    auto ws_name = builder.find_new_name("__streamk_workspace");
+    types::Array ws_type(
+        types::StorageType::GPU_Static(),
+        16,
+        "",
+        acc_scalar,
+        sym::integer(static_cast<int64_t>(num_blocks_) * num_waves * num_fragments * fragment_elems)
+    );
+    builder.add_container(ws_name, ws_type);
+    auto cnt_name = builder.find_new_name("__streamk_arrivals");
+    types::Array cnt_type(types::StorageType::GPU_Static(), 4, "", i32, sym::integer(tiles));
+    builder.add_container(cnt_name, cnt_type);
+    auto last = sym::symbol(builder.find_new_name("__streamk_last"));
+    builder.add_container(last->get_name(), i32);
+    auto peer = sym::symbol(builder.find_new_name("__streamk_split"));
+    builder.add_container(peer->get_name(), i32);
+
+    auto slot = [&](const sym::Expression& block, int64_t fragment) {
+        auto linear = sym::
+            add(sym::mul(sym::add(sym::mul(block, sym::integer(num_waves)), wave), sym::integer(num_fragments)),
+                sym::integer(fragment));
+        return gpu::GpuMmaFromMemoryLayout{
+            .offset = sym::mul(linear, sym::integer(fragment_elems)),
+            .ldstride = sym::integer(block_size.n),
+            .layout = gpu::MmaFragmentLayout::MMA_LAYOUT_ROW_MAJOR
+        };
+    };
+    auto connect = [&](Block& block,
+                       const std::string& container,
+                       data_flow::LibraryNode& node,
+                       int input,
+                       const types::IType& type) {
+        auto& access = builder.add_access(block, container, debug_info);
+        builder.add_computational_memlet(block, access, node, node.input(input), {}, type, debug_info);
+    };
+
+    auto& store_block = builder.add_block_after(parent, reduce, debug_info);
+    for (int64_t f = 0; f < num_fragments; ++f) {
+        auto& store = builder.add_library_node<gpu::GpuMmaFragmentStoreNode>(
+            store_block, debug_info, block_size, gpu::MmaFragmentType::C, slot(bid, f), acc_type, impl_type
+        );
+        connect(store_block, reductions[f].container, store, gpu::GpuMmaFragmentStoreNode::FRAG_INPUT_IDX, acc_pointer);
+        connect(store_block, ws_name, store, gpu::GpuMmaFragmentStoreNode::PTR_INPUT_IDX, ws_type);
+    }
+
+    auto& arrival_block = builder.add_block_after(parent, store_block, debug_info);
+    auto& arrival =
+        builder.add_library_node<gpu::GpuTileArrivalNode>(arrival_block, debug_info, tile, sym::integer(splits));
+    connect(arrival_block, cnt_name, arrival, gpu::GpuTileArrivalNode::COUNTER_INPUT_IDX, cnt_type);
+    auto& last_access = builder.add_access(arrival_block, last->get_name(), debug_info);
+    builder.add_computational_memlet(arrival_block, arrival, "_last", last_access, {}, i32, debug_info);
+
+    auto& election = builder.add_if_else_after(parent, arrival_block, debug_info);
+    auto& winner = builder.add_case(election, sym::Ne(last, sym::zero()), debug_info);
+
+    auto& zero_block = builder.add_block(winner, debug_info);
+    for (int64_t f = 0; f < num_fragments; ++f) {
+        auto& fill =
+            builder.add_library_node<gpu::GpuMmaFillNode>(zero_block, debug_info, block_size, acc_type, impl_type);
+        connect(zero_block, reductions[f].container, fill, gpu::GpuMmaFillNode::Y_INPUT_IDX, acc_pointer);
+    }
+
+    std::vector<std::string> partials;
+    for (int64_t f = 0; f < num_fragments; ++f) {
+        partials.push_back(builder.find_new_name("__streamk_partial"));
+        builder.add_container(partials.back(), sdfg.type(reductions[f].container));
+    }
+    auto& peers = builder.add_for(
+        winner, peer, sym::Lt(peer, sym::integer(splits)), sym::zero(), sym::add(peer, sym::one()), debug_info
+    );
+    auto& load_block = builder.add_block(peers.root(), debug_info);
+    auto& add_block = builder.add_block(peers.root(), debug_info);
+    auto peer_block = sym::add(sym::mul(tile, sym::integer(splits)), peer);
+    for (int64_t f = 0; f < num_fragments; ++f) {
+        auto& load = builder.add_library_node<gpu::GpuMmaFragmentLoadNode>(
+            load_block, debug_info, block_size, gpu::MmaFragmentType::C, slot(peer_block, f), acc_type, impl_type
+        );
+        connect(load_block, partials[f], load, gpu::GpuMmaFragmentLoadNode::FRAG_INPUT_IDX, acc_pointer);
+        connect(load_block, ws_name, load, gpu::GpuMmaFragmentLoadNode::PTR_INPUT_IDX, ws_type);
+
+        auto& add = builder.add_library_node<
+            gpu::GpuMmaFragmentEltwiseAddNode>(add_block, debug_info, block_size, acc_type, acc_type, impl_type);
+        connect(add_block, partials[f], add, gpu::GpuMmaFragmentEltwiseAddNode::FRAG_C_INPUT_IDX, acc_pointer);
+        connect(
+            add_block, reductions[f].container, add, gpu::GpuMmaFragmentEltwiseAddNode::FRAG_ACC_INPUT_IDX, acc_pointer
+        );
+        connect(add_block, reductions[f].container, add, gpu::GpuMmaFragmentEltwiseAddNode::FRAG_D_INPUT_IDX, acc_pointer);
+    }
+
+    const size_t epilogue = parent.index(election) + 1;
+    while (parent.size() > epilogue) {
+        builder.move_child(parent, epilogue, winner);
+    }
 }
 
 void StreamK::to_json(nlohmann::json& j) const {
