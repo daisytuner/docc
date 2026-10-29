@@ -52,6 +52,7 @@ __all__ = [
     "start_instrumentation",
     "stop_instrumentation",
     "instrumentation_enabled",
+    "dump_instrumentation",
     "ensure_instrumentation_ready",
     "try_ensure_instrumentation_ready",
     "InstrumentationNotReady",
@@ -78,6 +79,7 @@ _RTL_START_SYMBOL = "__daisy_instrumentation_start"
 _RTL_STOP_SYMBOL = "__daisy_instrumentation_stop"
 _RTL_IS_ENABLED_SYMBOL = "__daisy_instrumentation_is_enabled"
 _RTL_MODE_SYMBOL = "__daisy_instrumentation_mode"
+_RTL_DUMP_SYMBOL = "__daisy_instrumentation_dump"
 
 
 def _rtl_lib_names() -> tuple[str, str]:
@@ -299,6 +301,26 @@ def instrumentation_mode() -> Optional[str]:
     fn.restype = ctypes.c_int
     fn.argtypes = []
     return "trace" if int(fn()) == 0 else "aggregate"
+
+
+def dump_instrumentation() -> bool:
+    """Write the trace file of the shared RTL now; return True if it was written.
+
+    The trace is otherwise only written at normal interpreter exit. Call this
+    before a process ends without running exit handlers, e.g. forked
+    ``multiprocessing`` workers, which leave via ``os._exit``. Returns False when
+    the RTL is statically linked or the trace could not be written.
+    """
+    lib = _rtl_lib()
+    if lib is None:
+        return False
+    try:
+        fn = lib[_RTL_DUMP_SYMBOL]
+    except (AttributeError, KeyError, ValueError):
+        return False
+    fn.restype = ctypes.c_bool
+    fn.argtypes = []
+    return bool(fn())
 
 
 class InstrumentationNotReady(RuntimeError):

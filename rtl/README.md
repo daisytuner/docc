@@ -79,10 +79,17 @@ Tracing can be configured using the following environment variables:
 - `__DAISY_PAPI_VERSION` (required): PAPI library version (e.g., `0x07020000` for version 7.2.0.0)
 - `__DAISY_INSTRUMENTATION_MODE`: Set to `aggregate` to activate aggregate mode (default is full tracing)
 - `__DAISY_INSTRUMENTATION_FILE`: Output location of the trace file
-- `__DAISY_INSTRUMENTATION_FILE_PID_SUFFIX`: Set to `1` to append `.<pid>` to the trace file path, so that multiple processes sharing the same `__DAISY_INSTRUMENTATION_FILE` (e.g. MPI ranks or forked workers) each write their own trace
+- `__DAISY_INSTRUMENTATION_FILE_PID_SUFFIX`: Set to `1` to append `.<pid>` to the trace file path, so that multiple processes sharing the same `__DAISY_INSTRUMENTATION_FILE` (e.g. MPI ranks or forked workers) each write their own trace. This also dumps the trace on `SIGTERM`/`SIGINT` (see below)
 - `__DAISY_INSTRUMENTATION_EVENTS`: List of PAPI events to record on the CPU
 - `__DAISY_INSTRUMENTATION_EVENTS_CUDA`: List of PAPI events to record on the GPU
 - `__DAISY_INSTRUMENTATION_ASYNC_CAPTURE` Enable/disable asynchronous event capturing (on by default for aggregate GPU event recording)
+
+### Processes ending without a normal exit
+
+The trace is written when the process exits normally (returning from `main` or calling `exit`). It is not written when the process ends otherwise:
+- **Termination signals:** with `__DAISY_INSTRUMENTATION_FILE_PID_SUFFIX=1`, the RTL handles `SIGTERM` and `SIGINT` by writing the trace, then restoring the previous disposition and re-raising the signal, so default termination or the application's own handler still apply. Handlers are installed when the RTL state is first used: signals the application ignores at that point stay ignored, and handlers the application installs afterwards replace the dump. The dump is best effort: it is skipped if the signal interrupts the RTL itself or another thread does not leave the RTL within one second. Invocations still in progress and unresolved asynchronous GPU events are not part of the dumped trace.
+- **`_exit`, e.g. forked Python `multiprocessing` workers (`os._exit`):** call `__daisy_instrumentation_dump()` (`dump_instrumentation()` in the Python bindings) before exiting to write the trace explicitly.
+- `SIGKILL` and crashes always lose the trace.
 
 Captured arguments are written to individual files in the directory specified by `__DAISY_CAPTURE_BASE_DIR`.
 The default capturing behavior is defined by `__DAISY_CAPTURE_STRATEGY_DEFAULT`:

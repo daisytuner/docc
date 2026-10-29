@@ -1,5 +1,6 @@
 import os
 import shutil
+import signal
 import subprocess
 import pytest
 import json
@@ -349,6 +350,86 @@ def test_instrumentation_file_pid_suffix(tmp_path):
         events = json.load(open(tmp_path / name))["traceEvents"]
         assert len(events) == 1
         assert events[0]["cat"] == "aggregated_region,daisy"
+
+
+def _compile_signal_test(tmp_path):
+    benchmark_path = (
+        Path(__file__).parent / "applications" / "instrumentation_signal_test.c"
+    )
+    output_path = tmp_path / "instrumentation_signal_test.out"
+    compiled = subprocess.run(
+        [
+            "gcc",
+            str(benchmark_path),
+            "-o",
+            str(output_path),
+            "-ldaisy_rtl",
+            "-larg_capture_io",
+            "-lstdc++",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert compiled.returncode == 0, compiled.stdout + compiled.stderr
+    return output_path
+
+
+@pytest.mark.parametrize(
+    "mode,instrumentation_mode,returncode,num_events",
+    [
+        pytest.param("sigterm", "", -signal.SIGTERM, 3),
+        pytest.param("sigterm", "aggregate", -signal.SIGTERM, 1),
+        # The unfinished invocation is not part of the trace
+        pytest.param("sigterm_active", "", -signal.SIGTERM, 3),
+        pytest.param("sigterm_active", "aggregate", -signal.SIGTERM, 1),
+        # The application handler still runs after the dump
+        pytest.param("sigterm_handler", "", 42, 3),
+        pytest.param("dump_exit", "", 0, 3),
+        pytest.param("dump_exit", "aggregate", 0, 1),
+    ],
+)
+def test_instrumentation_dump_without_normal_exit(
+    mode, instrumentation_mode, returncode, num_events, tmp_path
+):
+    executable = _compile_signal_test(tmp_path)
+
+    trace_file = tmp_path / "trace.instrumentation.1"
+    os.environ["__DAISY_PAPI_VERSION"] = "0x07020000"
+    os.environ["__DAISY_INSTRUMENTATION_FILE"] = str(trace_file)
+    os.environ["__DAISY_INSTRUMENTATION_FILE_PID_SUFFIX"] = "1"
+    os.environ["__DAISY_INSTRUMENTATION_MODE"] = instrumentation_mode
+
+    process = subprocess.run(
+        [str(executable), mode], capture_output=True, text=True, timeout=30
+    )
+    assert process.returncode == returncode, process.stdout + process.stderr
+    if mode == "sigterm_handler":
+        assert "application handler" in process.stdout
+
+    traces = list(tmp_path.glob(f"{trace_file.name}.*"))
+    assert len(traces) == 1
+    events = json.load(open(traces[0]))["traceEvents"]
+    assert len(events) == num_events
+    if instrumentation_mode == "aggregate":
+        assert events[0]["cat"] == "aggregated_region,daisy"
+        assert events[0]["args"]["metrics"]["runtime"]["count"] == 3
+    else:
+        assert all(event["cat"] == "region,daisy" for event in events)
+        assert all("dur" in event for event in events)
+
+
+def test_instrumentation_no_signal_dump_without_pid_suffix(tmp_path):
+    executable = _compile_signal_test(tmp_path)
+
+    trace_file = tmp_path / "trace.json"
+    os.environ["__DAISY_PAPI_VERSION"] = "0x07020000"
+    os.environ["__DAISY_INSTRUMENTATION_FILE"] = str(trace_file)
+
+    process = subprocess.run(
+        [str(executable), "sigterm"], capture_output=True, text=True, timeout=30
+    )
+    assert process.returncode == -signal.SIGTERM, process.stdout + process.stderr
+    assert not trace_file.exists()
 
 
 @pytest.mark.parametrize(
