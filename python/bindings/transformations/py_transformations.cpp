@@ -466,7 +466,10 @@ void register_transformations(py::module& m) {
             "        as a direct child.\n"
             "    num_blocks: Fixed persistent grid size (absolute). Pick a multiple\n"
             "        of the device multiprocessor/CU count (e.g. 336 = 84*4 on an\n"
-            "        RTX 5080).\n"
+            "        RTX 5080).\n\n"
+            "MMA fragment accumulators (after GpuMmaEinsumTransform) are merged through a\n"
+            "static workspace by the last arriving block; only aligned splits are accepted:\n"
+            "num_blocks = tiles * S with S dividing the K-panel count.\n"
         )
         .def("__repr__", [](const StreamK& t) {
             std::ostringstream oss;
