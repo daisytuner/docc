@@ -75,6 +75,8 @@ std::string ROCMLanguageExtension::
         } else {
             if (array_type->storage_type().is_nv_shared()) {
                 val << "__shared__ ";
+            } else if (array_type->storage_type().is_gpu_static()) {
+                val << "static __device__ ";
             }
             auto& element_type = array_type->element_type();
             val << declaration(name + "[" + this->expression(array_type->num_elements()) + "]", element_type);

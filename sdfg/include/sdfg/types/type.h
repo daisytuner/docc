@@ -252,6 +252,18 @@ public:
     }
 
     /**
+     * @brief Checks if this storage is a static GPU buffer
+     *
+     * A static GPU buffer is a fixed-size device array with program lifetime: it is defined once at
+     * file scope of each kernel translation unit using it, zero-initialized when the module is
+     * loaded, persists across kernel launches and is never passed as a kernel argument nor
+     * materialized on the host.
+     */
+    bool is_gpu_static() const {
+        return value_ == "GPU_Static";
+    }
+
+    /**
      * @brief Creates a CPU stack storage type
      * @return StorageType configured for CPU stack with unmanaged allocation
      */
@@ -305,6 +317,11 @@ public:
     /// @brief Creates an NVIDIA symbol storage type
     static StorageType NV_Symbol() {
         return StorageType("NV_Symbol");
+    }
+
+    /// @brief Creates a static GPU buffer storage type (see @ref is_gpu_static)
+    static StorageType GPU_Static() {
+        return StorageType("GPU_Static");
     }
 };
 
