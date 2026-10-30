@@ -149,14 +149,31 @@ void ROCMDataOffloadingNodeDispatcher::dispatch_code_with_edges(
     if (offloading_node.is_alloc()) {
         auto& ptr = outputs.at(0);
         pre_allocate_output(out, ptr, offloading_node.output(0));
-        // Stream-ordered allocation on __daisy_stream so scratch alloc/free are
-        // captured as graph memory nodes instead of breaking HIP-graph capture
-        // (hipMalloc/hipFree are synchronous and illegal during capture). The
-        // async pool also makes the per-call host cost negligible.
-        out.stream << "err = hipMallocAsync(&" << *ptr.local_name << ", "
-                   << this->language_extension_.expression(offloading_node.size()) << ", __daisy_stream);"
-                   << std::endl;
+        // Persistent scratch: DOCC artifacts are static-shape, so each scratch
+        // buffer has a fixed size per call. Allocate it once with plain
+        // hipMalloc (synchronous), cache it in a function-local static keyed by
+        // this node's id, and reuse the same device pointer on every call.
+        //
+        // Why not hipMallocAsync: the stream-ordered pool allocator is broken on
+        // some ROCm/GPU combinations (e.g. gfx90a returns hipErrorOutOfMemory
+        // regardless of free memory). Why not per-call hipMalloc: synchronous
+        // allocation is illegal during HIP-graph capture. Allocating once (on the
+        // first, non-captured warmup call) and reusing a stable address satisfies
+        // both: no allocation happens inside the captured region, and the pointer
+        // is constant across graph replays.
+        const std::string scratch = "__daisy_scratch_" + std::to_string(this->node_.element_id());
+        const std::string size_expr = this->language_extension_.expression(offloading_node.size());
+        out.stream << "static void *" << scratch << " = nullptr;" << std::endl;
+        out.stream << "static size_t " << scratch << "_sz = 0;" << std::endl;
+        out.stream << "if (" << scratch << "_sz < (size_t)(" << size_expr << ")) {" << std::endl;
+        out.stream << "if (" << scratch << " != nullptr) { err = hipFree(" << scratch << ");" << std::endl;
         rocm_error_checking(out.stream, this->language_extension_, "err");
+        out.stream << "}" << std::endl;
+        out.stream << "err = hipMalloc(&" << scratch << ", " << size_expr << ");" << std::endl;
+        rocm_error_checking(out.stream, this->language_extension_, "err");
+        out.stream << scratch << "_sz = (size_t)(" << size_expr << ");" << std::endl;
+        out.stream << "}" << std::endl;
+        out.stream << *ptr.local_name << " = (decltype(" << *ptr.local_name << "))" << scratch << ";" << std::endl;
         dev_ptr = *ptr.local_name;
     } else {
         dev_ptr = inputs.at(offloading_node.dev_ptr_input_idx()).expr;
@@ -175,8 +192,9 @@ void ROCMDataOffloadingNodeDispatcher::dispatch_code_with_edges(
     }
 
     if (offloading_node.is_free()) {
-        out.stream << "err = hipFreeAsync(" << dev_ptr << ", __daisy_stream);" << std::endl;
-        rocm_error_checking(out.stream, this->language_extension_, "err");
+        // No-op: scratch is persistent (see the alloc branch). The buffer is kept
+        // and reused across calls so that no hipFree runs inside a captured graph
+        // and the address stays stable for replay.
     }
 }
 
