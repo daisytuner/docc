@@ -55,7 +55,7 @@ print(f"Probability of Samoyed (dog): {(probs[0, 258] * 100):.3f}%")
 The PyTorch model is parallelized on the CPU.
 If, for example, you want to execute this model on an NVIDIA GPU and enable remote tuning, adapt the `options` attribute as follows:
 ```python
-    program = torch.compile(model, backend="docc", options={"target": "cuda", "remote-tuning": True})
+    program = torch.compile(model, backend="docc", options={"target": "cuda", "remote_tuning": True})
 ```
 
 ## Installation From Source

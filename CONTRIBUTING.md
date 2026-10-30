@@ -34,13 +34,19 @@ community.
 3. Install the prerequisites for the component you want to work on. The project
    is organized into modules, each with its own `README.md`:
    - `sdfg/` — core SDFG intermediate representation, interfaces, passes, and analyses.
-   - `python/` — Python (JIT) frontend and bindings.
-   - `mlir/` — MLIR dialect and PyTorch frontend.
-   - `opt/` — optional pass and transformation logic.
-   - `rtl/` — runtime libraries for instrumentation.
-   - `targets/` — target-specific code generation and definitions.
+   - `opt/` — transformations and built-in targets (OpenMP, CUDA, ROCm).
+   - `rpc/` — remote optimization passes (transfer tuning).
+   - `targets/` — accelerator backends (Tenstorrent, ETSoC).
    - `c-compile/` — C/C++ emission, compilation, and linking logic.
-4. `docc` requires `clang-19` (see [LLVM releases](https://apt.llvm.org/)).
+   - `llvm/` — C/C++ frontend: compiler drivers and LLVM plugin.
+   - `python/` — Python (JIT) frontend and bindings.
+   - `pytorch/` — PyTorch `torch.compile` backend.
+   - `rtl/`, `arg-capture-io/` — runtime libraries for instrumentation and argument capture.
+   - `mlir/` — legacy MLIR frontend (no longer used for PyTorch).
+
+   The [architecture overview](https://docs.daisytuner.com/docc/architecture/overview) explains how
+   the modules work together.
+4. `docc` requires `clang-21` (see [LLVM releases](https://apt.llvm.org/)).
 5. Install the developer tooling used for formatting and checks:
    ```bash
    pip install pre-commit
@@ -58,7 +64,7 @@ community.
 
 ## Coding Standards
 This repo enforces formatting via [pre-commit](https://pre-commit.com/):
-- **C/C++** is formatted with `clang-format` (`-style=file`, version 19).
+- **C/C++** is formatted with `clang-format` (`-style=file`, version 21).
 - **Python** is formatted with [`black`](https://github.com/psf/black).
 - Trailing whitespace, end-of-file newlines, and YAML validity are checked
   automatically.
@@ -70,9 +76,17 @@ pre-commit run --all-files
 
 ## Testing
 All changes should be covered by tests. Depending on the component:
+- **C++ unit tests** use GoogleTest and run with `ctest` from the build directory, e.g.:
+  ```bash
+  ctest --test-dir build --parallel
+  ```
 - **Python tests** use `pytest`, e.g.:
   ```bash
-  python -m pytest python/tests/ -q
+  python -m pytest python/tests/ -q -m unmarked
+  ```
+- **PyTorch tests** use `pytest` and select the target with `--target`, e.g.:
+  ```bash
+  python -m pytest pytorch/tests/ -q --target=openmp
   ```
 - Add **unit tests** for new logic and edge cases.
 - Add or update **integration tests** when behavior crosses component or target
