@@ -686,6 +686,13 @@ passes::LibNodeExpander::ExpandOutcome MatMulNaiveExpander::handle_expand(
         builder.add_computational_memlet(init_blk, zero_node, assign_t, "_in", {}, compute_scalar, block.debug_info());
         builder.add_computational_memlet(init_blk, assign_t, "_out", y_write, y_idx, y_pointer, iedge_y->debug_info())
             .add_metadata(MatMulNode::OPERAND_METADATA_KEY, "Y");
+
+        // Certify the nest as a pure zero init of exactly the accumulation nest's output, so it may be
+        // eliminated once that nest is lowered to MMA.
+        auto& init_root = dynamic_cast<structured_control_flow::StructuredLoop&>(new_sequence.at(0));
+        auto init_schedule = init_root.schedule_type();
+        structured_control_flow::ScheduleType_ZeroInit::set(init_schedule);
+        builder.update_schedule_type(init_root, init_schedule);
     }
 
     // ---- Accumulation nest: for (batch, i, j) for k: Y[...] += A[...] * B[...] ----

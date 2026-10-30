@@ -1,6 +1,8 @@
 #pragma once
 
 #include <optional>
+#include <string>
+#include <vector>
 
 #include "sdfg/structured_control_flow/control_flow_node.h"
 #include "sdfg/structured_control_flow/sequence.h"
@@ -73,6 +75,14 @@ public:
         properties_.at(key) = value;
     }
 
+    /**
+     * @brief Remove a schedule property if present
+     * @param key Property name
+     */
+    void remove_property(const std::string& key) {
+        properties_.erase(key);
+    }
+
     void operator=(const ScheduleType& rhs) {
         value_ = rhs.value_;
         properties_.clear();
@@ -134,6 +144,69 @@ public:
     static bool is_set(const ScheduleType& schedule) {
         auto it = schedule.properties().find("fusion");
         return it != schedule.properties().end() && it->second == "none";
+    }
+};
+
+/**
+ * @brief Zero-initialization annotation carried as a generic property on any ScheduleType.
+ *
+ * Stored as `"init" = "zero"` on the outermost loop of an initialization nest. The producer
+ * (e.g. the naive MatMul/GEMM expansion) certifies that the nest only writes zeros to exactly
+ * the output region of the matmul nest directly following it. Such a nest may be eliminated
+ * once that matmul is lowered to MMA (see RedundantZeroInitElimination).
+ */
+class ScheduleType_ZeroInit {
+public:
+    static constexpr const char* KEY = "init";
+
+    static void set(ScheduleType& schedule, bool zero_init = true) {
+        schedule.set_property(KEY, zero_init ? "zero" : "none");
+    }
+
+    static bool is_set(const ScheduleType& schedule) {
+        auto it = schedule.properties().find(KEY);
+        return it != schedule.properties().end() && it->second == "zero";
+    }
+};
+
+/**
+ * @brief Annotations describing a whole loop nest rather than a single loop's execution strategy.
+ *
+ * They live on the outermost loop of a nest and must survive schedule changes (offloading,
+ * parallelization, ...) of that loop, but must not be duplicated onto inner loops.
+ */
+class ScheduleType_NestAnnotations {
+public:
+    static const std::vector<std::string>& keys() {
+        static const std::vector<std::string> keys{"fusion", ScheduleType_ZeroInit::KEY};
+        return keys;
+    }
+
+    /// Copy all nest annotations present on @p from onto @p to (overwriting).
+    static void copy(const ScheduleType& from, ScheduleType& to) {
+        for (const auto& key : keys()) {
+            auto it = from.properties().find(key);
+            if (it != from.properties().end()) {
+                to.set_property(key, it->second);
+            }
+        }
+    }
+
+    /// Copy nest annotations present on @p from onto @p to, unless @p to already sets them.
+    static void inherit(const ScheduleType& from, ScheduleType& to) {
+        for (const auto& key : keys()) {
+            auto it = from.properties().find(key);
+            if (it != from.properties().end() && !to.properties().contains(key)) {
+                to.set_property(key, it->second);
+            }
+        }
+    }
+
+    /// Remove all nest annotations from @p schedule.
+    static void strip(ScheduleType& schedule) {
+        for (const auto& key : keys()) {
+            schedule.remove_property(key);
+        }
     }
 };
 

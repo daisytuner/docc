@@ -385,7 +385,18 @@ public:
         const symbolic::Expression update
     );
 
-    void update_schedule_type(StructuredLoop& loop, const ScheduleType& schedule_type);
+    /**
+     * @brief Replace the schedule type of a loop.
+     *
+     * By default, nest-level annotations (see ScheduleType_NestAnnotations, e.g. no-fusion and zero-init)
+     * of the current schedule are kept unless @p schedule_type sets them itself, so that re-scheduling a nest root
+     * (offloading, parallelization, ...) does not lose them. Pass @p keep_nest_annotations = false to set
+     * @p schedule_type exactly, e.g. when a loop stops being the root of its nest.
+     */
+    void update_schedule_type(StructuredLoop& loop, const ScheduleType& schedule_type, bool keep_nest_annotations = true);
+
+    /// Remove a single property (if present) from the schedule type of a loop.
+    void remove_schedule_property(StructuredLoop& loop, const std::string& key);
 
     /***** Section: Dataflow Graph *****/
 

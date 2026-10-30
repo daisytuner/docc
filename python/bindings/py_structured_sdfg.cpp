@@ -70,6 +70,7 @@
 #include "sdfg/passes/offloading/data_transfer_minimization_pass.h"
 #include "sdfg/passes/offloading/rocm_library_node_expansion_pass.h"
 #include "sdfg/passes/redundant_load_elimination_pass.h"
+#include "sdfg/passes/redundant_zero_init_elimination_pass.h"
 #include "sdfg/passes/rpc/daisytuner_rpc_context.h"
 #include "sdfg/passes/rpc/rpc_context.h"
 #include "sdfg/passes/scheduler/vectorize_scheduler.h"
@@ -548,6 +549,7 @@ void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options, bool
     if (options.target == "cuda" || options.target == "rocm") {
         sdfg::passes::DataTransferMinimizationPass data_transfer_minimization_pass;
         data_transfer_minimization_pass.run(builder, analysis_manager);
+
         sdfg::passes::DeviceBufferReusePass device_buffer_reuse_pass;
         device_buffer_reuse_pass.run(builder, analysis_manager);
         sdfg::passes::DeadDataElimination dde(false);
@@ -561,6 +563,16 @@ void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options, bool
         dead_reference_elimination.run(builder, analysis_manager);
         reference_propagation.run(builder, analysis_manager);
         dead_reference_elimination.run(builder, analysis_manager);
+
+        // Drop redundant zero-init nests of matmuls lowered to MMA. Run after reference propagation and
+        // transfer cleanup so the init map is the immediate sibling of the MMA nest and both name the same
+        // (aliases collapsed) output container, which is what the transformation matches. Nests whose output
+        // still round-trips through the host here only become eligible after device-residency promotion, so
+        // the pass is re-run in promote_device_residency().
+        dump_debug("pre_zero_init_elim");
+        sdfg::passes::RedundantZeroInitEliminationPass redundant_zero_init_elimination_pass;
+        redundant_zero_init_elimination_pass.run(builder, analysis_manager);
+        dde.run(builder, analysis_manager);
 
         dead_cfg_elimination.run(builder, analysis_manager);
     }
