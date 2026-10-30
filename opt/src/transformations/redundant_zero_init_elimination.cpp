@@ -9,6 +9,7 @@
 #include "sdfg/data_flow/library_node.h"
 #include "sdfg/data_flow/tasklet.h"
 #include "sdfg/structured_control_flow/block.h"
+#include "sdfg/structured_control_flow/if_else.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/targets/gpu/gpu_mma_fill_node.h"
@@ -82,17 +83,42 @@ std::optional<std::string> zero_init_container(StructuredLoop& loop) {
     }
 }
 
-/// The loop nest directly following @p loop in its parent sequence.
-StructuredLoop* next_sibling_loop(StructuredLoop& loop) {
+/// True if @p block reads or writes @p container.
+bool block_accesses_container(const Block& block, const std::string& container) {
+    for (auto* access : block.dataflow().data_nodes()) {
+        if (dynamic_cast<const data_flow::ConstantNode*>(access) == nullptr && access->data() == container) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// The MMA loop nest following @p loop in its parent sequence, skipping intervening transfer/alias blocks.
+///
+/// After scheduling, host-to-device copies of the matmul's other operands and buffer alloc/alias blocks may sit
+/// between the zero-init nest and the MMA nest. These do not touch the zero-init container, so they are skipped.
+/// Any intervening block that does access the container (which could observe or clobber the zeros), or any
+/// non-block/non-loop node, stops the search.
+StructuredLoop* next_sibling_loop(StructuredLoop& loop, const std::string& container) {
     auto* parent = dynamic_cast<Sequence*>(loop.get_parent());
     if (parent == nullptr) {
         return nullptr;
     }
     int index = parent->index(loop);
-    if (index < 0 || static_cast<size_t>(index) + 1 >= parent->size()) {
+    if (index < 0) {
         return nullptr;
     }
-    return dynamic_cast<StructuredLoop*>(&parent->at(index + 1));
+    for (size_t i = static_cast<size_t>(index) + 1; i < parent->size(); i++) {
+        auto& sibling = parent->at(i);
+        if (auto* nest = dynamic_cast<StructuredLoop*>(&sibling)) {
+            return nest;
+        }
+        auto* block = dynamic_cast<Block*>(&sibling);
+        if (block == nullptr || block_accesses_container(*block, container)) {
+            return nullptr;
+        }
+    }
+    return nullptr;
 }
 
 std::optional<std::vector<MmaNestOutputUses::CFragmentLoad>>
@@ -104,7 +130,7 @@ analyze(StructuredLoop& loop, StructuredSDFG& sdfg, analysis::AnalysisManager& a
     if (!container) {
         return std::nullopt;
     }
-    auto* mma_nest = next_sibling_loop(loop);
+    auto* mma_nest = next_sibling_loop(loop, *container);
     if (mma_nest == nullptr) {
         return std::nullopt;
     }
@@ -131,11 +157,14 @@ bool MmaNestOutputUses::visit() {
     return this->visit_internal(nest_.root());
 }
 
-bool MmaNestOutputUses::only_maps_enclose(const structured_control_flow::Block& block) const {
-    // A sequential loop (or branch) could re-read partial results stored to the container earlier.
+bool MmaNestOutputUses::only_maps_or_branches_enclose(const structured_control_flow::Block& block) const {
+    // Only maps and branches may enclose the C-fragment load: a sequential loop could re-read partial results
+    // stored to the container in an earlier iteration, whereas a branch (e.g. the StreamK last-arrival guard,
+    // which runs at most once per output tile) and maps (distinct output tiles) cannot.
     for (auto* node = block.get_parent(); node != nullptr; node = node->get_parent()) {
         if (dynamic_cast<const Sequence*>(node) == nullptr &&
-            dynamic_cast<const structured_control_flow::Map*>(node) == nullptr) {
+            dynamic_cast<const structured_control_flow::Map*>(node) == nullptr &&
+            dynamic_cast<const structured_control_flow::IfElse*>(node) == nullptr) {
             return false;
         }
         if (node == &nest_) {
@@ -170,7 +199,7 @@ bool MmaNestOutputUses::accept(structured_control_flow::Block& block) {
             } else if (auto* load = dynamic_cast<gpu::GpuMmaFragmentLoadNode*>(&dst)) {
                 if (load->fragment_type() == gpu::MmaFragmentType::C &&
                     edge.dst_conn() == load->input(gpu::GpuMmaFragmentLoadNode::PTR_INPUT_IDX) &&
-                    only_maps_enclose(block)) {
+                    only_maps_or_branches_enclose(block)) {
                     c_loads_.push_back({&block, load});
                     continue;
                 }

@@ -19,7 +19,7 @@ namespace transformations {
  * @brief Collects the uses of an output container within a GPU MMA loop nest.
  *
  * Visits all blocks below the nest root and records MMA matmul nodes, fragment stores to the container and
- * C-fragment loads of it. Any other use of the container, or a C-fragment load below anything but maps,
+ * C-fragment loads of it. Any other use of the container, or a C-fragment load below a sequential loop,
  * invalidates the result. visit() stops early once the result is invalid.
  */
 class MmaNestOutputUses : public visitor::ImmutableStructuredSDFGVisitor {
@@ -38,8 +38,8 @@ private:
     bool has_store_ = false;
     std::vector<CFragmentLoad> c_loads_;
 
-    /// True if only maps enclose @p block within the nest (including the nest root).
-    bool only_maps_enclose(const structured_control_flow::Block& block) const;
+    /// True if only maps and branches enclose @p block within the nest (including the nest root).
+    bool only_maps_or_branches_enclose(const structured_control_flow::Block& block) const;
 
 public:
     MmaNestOutputUses(
@@ -53,7 +53,7 @@ public:
 
     bool accept(structured_control_flow::Block& node) override;
 
-    /// The container is only used by fragment stores and C-fragment loads only nested in maps.
+    /// The container is only used by fragment stores and C-fragment loads only nested in maps and branches.
     bool valid() const {
         return valid_;
     }
@@ -90,7 +90,8 @@ public:
  * - The next sibling in the same sequence is a loop nest containing GPU MMA matmul nodes and
  *   fragment stores to Y.
  * - Within that nest, Y is only used as the memory operand of fragment stores and of C-fragment loads,
- *   and the C-fragment loads are only nested in maps (no sequential loop could re-read stored partial results).
+ *   and the C-fragment loads are only nested in maps and branches (no sequential loop could re-read stored
+ *   partial results).
  *
  * Note: the MMA nests produced by GpuMmaEinsumTransform never use the data already contained in Y beyond
  * these C-fragment loads. If other MMA lowerings are matched in the future (e.g. an overwrite mode

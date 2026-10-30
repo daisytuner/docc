@@ -547,12 +547,9 @@ void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options, bool
     loop_scheduling_pass.run(builder, analysis_manager);
 
     if (options.target == "cuda" || options.target == "rocm") {
-        // Zero-init nests of matmuls lowered to MMA are redundant; drop them before minimizing the transfers they need.
-        sdfg::passes::RedundantZeroInitEliminationPass redundant_zero_init_elimination_pass;
-        redundant_zero_init_elimination_pass.run(builder, analysis_manager);
-
         sdfg::passes::DataTransferMinimizationPass data_transfer_minimization_pass;
         data_transfer_minimization_pass.run(builder, analysis_manager);
+
         sdfg::passes::DeviceBufferReusePass device_buffer_reuse_pass;
         device_buffer_reuse_pass.run(builder, analysis_manager);
         sdfg::passes::DeadDataElimination dde(false);
@@ -566,6 +563,16 @@ void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options, bool
         dead_reference_elimination.run(builder, analysis_manager);
         reference_propagation.run(builder, analysis_manager);
         dead_reference_elimination.run(builder, analysis_manager);
+
+        // Drop redundant zero-init nests of matmuls lowered to MMA. Run after reference propagation and
+        // transfer cleanup so the init map is the immediate sibling of the MMA nest and both name the same
+        // (aliases collapsed) output container, which is what the transformation matches. Nests whose output
+        // still round-trips through the host here only become eligible after device-residency promotion, so
+        // the pass is re-run in promote_device_residency().
+        dump_debug("pre_zero_init_elim");
+        sdfg::passes::RedundantZeroInitEliminationPass redundant_zero_init_elimination_pass;
+        redundant_zero_init_elimination_pass.run(builder, analysis_manager);
+        dde.run(builder, analysis_manager);
 
         dead_cfg_elimination.run(builder, analysis_manager);
     }
