@@ -149,8 +149,13 @@ void ROCMDataOffloadingNodeDispatcher::dispatch_code_with_edges(
     if (offloading_node.is_alloc()) {
         auto& ptr = outputs.at(0);
         pre_allocate_output(out, ptr, offloading_node.output(0));
-        out.stream << "err = hipMalloc(&" << *ptr.local_name << ", "
-                   << this->language_extension_.expression(offloading_node.size()) << ");" << std::endl;
+        // Stream-ordered allocation on __daisy_stream so scratch alloc/free are
+        // captured as graph memory nodes instead of breaking HIP-graph capture
+        // (hipMalloc/hipFree are synchronous and illegal during capture). The
+        // async pool also makes the per-call host cost negligible.
+        out.stream << "err = hipMallocAsync(&" << *ptr.local_name << ", "
+                   << this->language_extension_.expression(offloading_node.size()) << ", __daisy_stream);"
+                   << std::endl;
         rocm_error_checking(out.stream, this->language_extension_, "err");
         dev_ptr = *ptr.local_name;
     } else {
@@ -170,7 +175,7 @@ void ROCMDataOffloadingNodeDispatcher::dispatch_code_with_edges(
     }
 
     if (offloading_node.is_free()) {
-        out.stream << "err = hipFree(" << dev_ptr << ");" << std::endl;
+        out.stream << "err = hipFreeAsync(" << dev_ptr << ", __daisy_stream);" << std::endl;
         rocm_error_checking(out.stream, this->language_extension_, "err");
     }
 }

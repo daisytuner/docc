@@ -288,6 +288,45 @@ def numpy_to_torch_tensor(array: np.ndarray):
         return torch.from_numpy(array)
 
 
+_PRIMITIVE_TO_TORCH_DTYPE_CACHE = None
+
+
+def _primitive_to_torch_dtype(primitive_type):
+    """Map a docc ``PrimitiveType`` to a torch dtype (building the table lazily
+    so importing this module never imports torch)."""
+    global _PRIMITIVE_TO_TORCH_DTYPE_CACHE
+    if _PRIMITIVE_TO_TORCH_DTYPE_CACHE is None:
+        import torch
+
+        table = {
+            PrimitiveType.Bool: torch.bool,
+            PrimitiveType.Int8: torch.int8,
+            PrimitiveType.Int16: torch.int16,
+            PrimitiveType.Int32: torch.int32,
+            PrimitiveType.Int64: torch.int64,
+            PrimitiveType.UInt8: torch.uint8,
+            PrimitiveType.Float: torch.float32,
+            PrimitiveType.Double: torch.float64,
+            PrimitiveType.Half: torch.float16,
+            PrimitiveType.BFloat: torch.bfloat16,
+        }
+        # Unsigned 16/32/64 only exist in newer torch; add when present.
+        for name, pt in (
+            ("uint16", PrimitiveType.UInt16),
+            ("uint32", PrimitiveType.UInt32),
+            ("uint64", PrimitiveType.UInt64),
+        ):
+            dt = getattr(torch, name, None)
+            if dt is not None:
+                table[pt] = dt
+        _PRIMITIVE_TO_TORCH_DTYPE_CACHE = table
+
+    dtype = _PRIMITIVE_TO_TORCH_DTYPE_CACHE.get(primitive_type)
+    if dtype is None:
+        raise TypeError(f"No torch dtype mapping for primitive type {primitive_type}")
+    return dtype
+
+
 class CompiledSDFG:
     def __init__(
         self,
@@ -310,7 +349,21 @@ class CompiledSDFG:
         self.lib = ctypes.CDLL(lib_path)
         self.func = getattr(self.lib, sdfg.name)
 
-        # Check for output args
+        # Optional per-artifact stream setter, emitted only by GPU (ROCm)
+        # artifacts. When present, the device call path aims every kernel launch
+        # and scratch alloc/free at the caller's current stream, which lets the
+        # whole region be captured into a HIP graph. Absent on host/CPU artifacts
+        # and on binaries built before stream threading (those keep the default
+        # stream). getattr-by-string avoids Python name-mangling of the dunder
+        # symbol and returns None when the symbol is missing.
+        self._set_stream = getattr(self.lib, "__daisy_set_stream", None)
+        if self._set_stream is not None:
+            self._set_stream.argtypes = [ctypes.c_void_p]
+            self._set_stream.restype = None
+        # Persistent device output buffers, keyed by (output id, shape, device).
+        # Reusing them keeps the output at a stable address (required for graph
+        # capture/replay) and removes a device allocation per call.
+        self._torch_out_cache = {}
         self.output_args = output_args or []
         if not self.output_args and hasattr(sdfg, "metadata"):
             out_args_str = sdfg.metadata("output_args")
@@ -733,6 +786,41 @@ class CompiledSDFG:
 
         return device_arg
 
+    def _point_at_current_stream(self):
+        """Aim this artifact's kernel launches and scratch alloc/free at torch's
+        current stream.
+
+        During HIP/CUDA-graph capture torch sets ``current_stream`` to the
+        capture stream, so doing this right before the call makes the whole
+        region record into the graph instead of running (and stalling the host)
+        on the default stream. No-op for artifacts without the stream setter.
+        """
+        try:
+            import torch
+
+            stream = torch.cuda.current_stream().cuda_stream
+        except Exception:
+            return
+        self._set_stream(_ctypes_c_void_p(stream))
+
+    def _get_persistent_torch_output(self, key_id, size, dims, primitive_type, device):
+        """Return a reusable torch output buffer for ``(key_id, dims, device)``.
+
+        The buffer comes from torch's caching allocator (capture-aware) and is
+        reused across calls so the output address is stable for graph replay and
+        no allocation happens on the hot path.
+        """
+        import torch
+
+        cache_key = (key_id, tuple(dims), device)
+        buf = self._torch_out_cache.get(cache_key)
+        if buf is None:
+            buf = torch.empty(
+                size, dtype=_primitive_to_torch_dtype(primitive_type), device=device
+            )
+            self._torch_out_cache[cache_key] = buf
+        return buf
+
     def _call_device(self, *args):
         """Execute with device-resident arguments (cupy / torch.cuda).
 
@@ -761,6 +849,15 @@ class CompiledSDFG:
         # expects host outputs, so device output buffers are copied back to host.
         any_device_input = False
 
+        # When the caller works in torch-CUDA space, allocate outputs from torch's
+        # capture-aware caching allocator and reuse them across calls. cupy
+        # callers keep the previous per-call cupy allocation.
+        torch_out_device = None
+        for a in args:
+            if _is_torch_tensor(a) and getattr(a, "is_cuda", False):
+                torch_out_device = a.device
+                break
+
         for info in self._arg_info:
             arg_type = info[0]
 
@@ -777,10 +874,17 @@ class CompiledSDFG:
                     dims.append(d)
                     size *= d
 
-                buf = cupy.empty(size, dtype=np_dtype)
+                if torch_out_device is not None:
+                    buf = self._get_persistent_torch_output(
+                        id(info), size, dims, info[6], torch_out_device
+                    )
+                    ptr = buf.data_ptr()
+                else:
+                    buf = cupy.empty(size, dtype=np_dtype)
+                    ptr = int(buf.data.ptr)
                 keepalive.append(buf)
                 return_buffers.append((buf, size, dims, compiled_strides, info[6]))
-                converted_args.append(_ctypes_cast(int(buf.data.ptr), target_type))
+                converted_args.append(_ctypes_cast(ptr, target_type))
 
             elif arg_type == _ARG_TYPE_OUTPUT_SCALAR:
                 base_type = info[2]
@@ -813,6 +917,8 @@ class CompiledSDFG:
                 converted_args.append(info[3](arg))
 
         # 3. Call the function
+        if self._set_stream is not None:
+            self._point_at_current_stream()
         func_result = self.func(*converted_args)
 
         # 3b. Mirror device results back into host inputs that were copied to the
