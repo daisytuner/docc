@@ -730,10 +730,13 @@ TEST(MatMulTest, MatMul_Naive_OuterLoopsExcludedFromFusion) {
         auto* batch_map = dyn_cast<structured_control_flow::Map*>(&new_sequence.at(i));
         ASSERT_NE(batch_map, nullptr);
         EXPECT_TRUE(structured_control_flow::ScheduleType_NoFusion::is_set(batch_map->schedule_type()));
+        // Only the outermost loop of the init nest (index 0) is certified as zero init.
+        EXPECT_EQ(structured_control_flow::ScheduleType_ZeroInit::is_set(batch_map->schedule_type()), i == 0);
 
         ASSERT_EQ(batch_map->root().size(), 1);
         auto* i_map = dyn_cast<structured_control_flow::Map*>(&batch_map->root().at(0));
         ASSERT_NE(i_map, nullptr);
         EXPECT_FALSE(structured_control_flow::ScheduleType_NoFusion::is_set(i_map->schedule_type()));
+        EXPECT_FALSE(structured_control_flow::ScheduleType_ZeroInit::is_set(i_map->schedule_type()));
     }
 }

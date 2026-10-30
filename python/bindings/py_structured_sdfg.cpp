@@ -70,6 +70,7 @@
 #include "sdfg/passes/offloading/data_transfer_minimization_pass.h"
 #include "sdfg/passes/offloading/rocm_library_node_expansion_pass.h"
 #include "sdfg/passes/redundant_load_elimination_pass.h"
+#include "sdfg/passes/redundant_zero_init_elimination_pass.h"
 #include "sdfg/passes/rpc/daisytuner_rpc_context.h"
 #include "sdfg/passes/rpc/rpc_context.h"
 #include "sdfg/passes/scheduler/vectorize_scheduler.h"
@@ -518,6 +519,11 @@ void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options, bool
             rpc_optimization_pass(context, options, options.enable_fusion_in_normalize, schedule_loops);
         rpc_optimization_pass.run(builder, analysis_manager);
     }
+
+    // Zero-init nests of matmuls lowered to MMA (by remote tuning) are redundant. Run before the arg-capture early
+    // return, so they are dropped in every mode, and before the transfers they need are minimized.
+    sdfg::passes::RedundantZeroInitEliminationPass redundant_zero_init_elimination_pass;
+    redundant_zero_init_elimination_pass.run(builder, analysis_manager);
 
     // Arg-capture mode: Pretends to schedule for target
     // but keeps all execution on single-core host
