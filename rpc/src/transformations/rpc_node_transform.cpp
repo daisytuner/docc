@@ -1,6 +1,7 @@
 #include "sdfg/transformations/rpc_node_transform.h"
 
 #include <curl/curl.h>
+#include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <nlohmann/json.hpp>
@@ -90,6 +91,24 @@ bool RPCNodeTransform::
         builder.subject().add_metadata("transfer_tuning_session_id", this->session_id_.value());
     }
 
+    // Optionally pin the server-side recipe lookup to a specific collection. When
+    // DAISY_RECIPE_COLLECTION is set in the environment, forward its value so the request targets
+    // that collection instead of the server default.
+    std::optional<std::string> collection;
+    if (const char* collection_env = std::getenv("DAISY_RECIPE_COLLECTION")) {
+        if (collection_env[0] != '\0') {
+            collection = std::string(collection_env);
+        }
+    }
+
+    // Opt-in: ask the server to only match recipes whose outermost loop bound equals this nest's.
+    // Off by default; enabled by setting DAISY_USE_IDENTITY to anything other than "", "0", "false".
+    bool use_identity = false;
+    if (const char* identity_env = std::getenv("DAISY_USE_IDENTITY")) {
+        std::string v(identity_env);
+        use_identity = !(v.empty() || v == "0" || v == "false" || v == "FALSE");
+    }
+
     auto opt_resp = query_rpc_server(
         {.sdfg = builder.subject(),
          .category = this->category_,
@@ -97,7 +116,9 @@ bool RPCNodeTransform::
          .enable_fusion = this->enable_fusion_,
          .normalize = this->normalize_,
          .schedule_loops = this->schedule_loops_,
-         .session_id = this->session_id_},
+         .session_id = this->session_id_,
+         .collection = collection,
+         .use_identity = use_identity},
         rpc_context_
     );
 
@@ -152,6 +173,12 @@ std::variant<std::unique_ptr<passes::rpc::RpcOptResponse>, std::string> RPCNodeT
     };
     if (request.session_id.has_value()) {
         payload["session_id"] = request.session_id.value();
+    }
+    if (request.collection.has_value()) {
+        payload["collection_name"] = request.collection.value();
+    }
+    if (request.use_identity) {
+        payload["use_identity"] = true;
     }
     std::string payload_str = payload.dump();
 
