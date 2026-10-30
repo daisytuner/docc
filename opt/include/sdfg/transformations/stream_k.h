@@ -1,6 +1,13 @@
 #pragma once
 
+#include <map>
+
+#include "sdfg/structured_control_flow/reduce.h"
 #include "sdfg/transformations/transformation.h"
+
+namespace sdfg::gpu {
+class GpuMmaMatmulNode;
+}
 
 namespace sdfg {
 namespace transformations {
@@ -52,6 +59,20 @@ namespace transformations {
  *     the same launch that would race the partial tiles).
  * Any failure -> can_be_applied returns false (conservative, like the others).
  *
+ * ## MMA fragment accumulators (aligned split)
+ *  When the reduction's accumulators are MMA fragments (every reduction container is the accumulator of a
+ *  GpuMmaMatmulNode in its body, as emitted by the MMA expansion), partial tiles are merged through a
+ *  workspace instead of atomics, since fragments have no addressable elements:
+ *   - Only aligned decompositions are accepted: @p num_blocks = tiles * S with S dividing the panel count P,
+ *     so block `bid` owns the contiguous panel range [s*P/S, (s+1)*P/S) of tile `t` (t = bid / S,
+ *     s = bid % S). Every K-panel loop keeps a constant trip count P/S, and no worker loop is emitted.
+ *   - The maps between the grid band and the reduction must be constant-trip block-level Maps (the waves).
+ *   - For S > 1, after the reduction each wave stores its fp accumulators to its slot of a
+ *     GPU_Static workspace, the block arrives at the tile's GPU_Static counter (GpuTileArrivalNode), and
+ *     only the last arriving block zeroes its accumulators, sums the S slots of the tile in split order,
+ *     and runs the original epilogue (everything following the reduction in its sequence). The result is
+ *     deterministic and needs neither a zeroed output nor any per-launch initialization.
+ *
  * ## Generality
  *  Applies to any associative-reduction-over-tiles: GEMM, GEMV, batched/grouped
  *  GEMM, conv-as-GEMM (implicit GEMM), tensor contractions with a reduction axis.
@@ -66,6 +87,25 @@ class StreamK : public Transformation {
 
     // Fixed persistent grid size (absolute block count).
     size_t num_blocks_;
+
+    void apply_fragment_split(
+        builder::StructuredSDFGBuilder& builder,
+        analysis::AnalysisManager& analysis_manager,
+        structured_control_flow::Reduce& reduce
+    );
+
+    void build_fragment_merge(
+        builder::StructuredSDFGBuilder& builder,
+        structured_control_flow::Reduce& reduce,
+        const std::vector<structured_control_flow::ReductionInfo>& reductions,
+        const std::map<std::string, const gpu::GpuMmaMatmulNode*>& accumulators,
+        const symbolic::Symbol& bid,
+        const symbolic::Expression& tile,
+        const symbolic::Expression& wave,
+        int64_t num_waves,
+        int64_t splits,
+        int64_t tiles
+    );
 
 public:
     explicit StreamK(structured_control_flow::StructuredLoop& grid_loop, size_t num_blocks = 336);
