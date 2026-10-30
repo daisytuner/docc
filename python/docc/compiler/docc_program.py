@@ -9,7 +9,6 @@ import warnings
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, fields
-from functools import lru_cache
 from typing import Any, Dict, Optional, get_args, get_type_hints
 
 from docc.sdfg import (
@@ -25,11 +24,16 @@ from docc.sdfg._sdfg import (
     _statistics_report,
 )
 from docc.compiler.compiled_sdfg import CompiledSDFG
+from docc.compiler.codegens import (
+    build_artifact,
+    get_target_codegens,
+    get_target_default_codegen,
+)
 
 
-@lru_cache(maxsize=1)
 def _pass_option_specs() -> Dict[str, dict]:
     """Registered pass options keyed by full key (empty if unavailable)."""
+    # Not cached: target plugins register their options when they are loaded.
     return {spec["key"]: spec for spec in registered_options()}
 
 
@@ -64,7 +68,7 @@ class DoccOptions:
     """Compile options for a :class:`DoccProgram`.
 
     Precedence (lowest to highest): field default < environment variable
-    (``DOCC_CI``, ``DOCC_DEBUG``) < explicit constructor argument.
+    (``DOCC_CI``, ``DOCC_DEBUG``, ``DOCC_CODEGEN``) < explicit constructor argument.
 
     Env-settable fields default to ``None`` ("unset") so an explicit value is
     distinguishable from the default and wins over the environment. Everything
@@ -75,6 +79,10 @@ class DoccOptions:
     target: Optional[str] = None
     category: Optional[str] = None
     remote_tuning: Optional[bool] = None
+
+    # Code generation (settable via DOCC_CODEGEN): "cpp" builds a shared
+    # library, "numpy" a Python module. Must be supported by the target.
+    codegen: Optional[str] = None
 
     # Debug (settable via DOCC_DEBUG)
     debug_dump: Optional[bool] = None
@@ -130,6 +138,12 @@ class DoccOptions:
             self.category = "server"
         if self.remote_tuning is None:
             self.remote_tuning = False
+
+        # Code generation
+        if self.codegen is None:
+            self.codegen = os.environ.get("DOCC_CODEGEN") or get_target_default_codegen(
+                self.target
+            )
 
         # Debug
         if self.debug_dump is None:
@@ -343,6 +357,12 @@ class DoccProgram(ABC):
 
         start_time = time.perf_counter()
 
+        if self.options.codegen not in get_target_codegens(self.options.target):
+            raise ValueError(
+                f"Target '{self.options.target}' does not support codegen "
+                f"'{self.options.codegen}'"
+            )
+
         if not reuse_sources and output_folder:
             if self.options.debug_dump:
                 sdfg.dump(output_folder, "py0.parsed", dump_dot=True)
@@ -456,7 +476,9 @@ class DoccProgram(ABC):
             debug_build=self.options.debug_build,
             threads=self.options.build_thread_count,
             reuse_sources=reuse_sources,
+            codegen=self.options.codegen,
         )
+        build_artifact(self.options.target, self.options.codegen, lib_path, sdfg.name)
 
         bin_build_time = time.perf_counter() - compile_end_time
         if metrics is not None:

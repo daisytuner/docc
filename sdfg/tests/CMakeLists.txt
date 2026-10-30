@@ -24,6 +24,7 @@ set(TEST_FILES
     builder/structured_sdfg_conversion_test.cpp
     codegen/code_generators/c_code_generator_test.cpp
     codegen/code_generators/cpp_code_generator_test.cpp
+    codegen/code_generators/python_code_generator_test.cpp
     codegen/dispatchers/block_dispatcher_test.cpp
     codegen/dispatchers/for_dispatcher_test.cpp
     codegen/dispatchers/if_else_dispatcher_test.cpp
@@ -36,6 +37,7 @@ set(TEST_FILES
     codegen/instrumentation/arg_capture_plan_test.cpp
     codegen/language_extensions/c_language_extension_test.cpp
     codegen/language_extensions/cpp_language_extension_test.cpp
+    codegen/language_extensions/python_language_extension_test.cpp
     codegen/utils_test.cpp
     control_flow/interstate_edge_test.cpp
     control_flow/state_test.cpp

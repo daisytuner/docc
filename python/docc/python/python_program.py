@@ -25,6 +25,7 @@ from docc.sdfg import (
 )
 from docc.compiler.docc_program import DoccProgram, DoccOptions
 from docc.compiler.compiled_sdfg import CompiledSDFG
+from docc.compiler.codegens import codegen_artifact
 from docc.python.ast_parser import ASTParser
 from docc.python.type_system import element_type_from_sdfg_type, scalar_type_for_dtype
 
@@ -214,13 +215,13 @@ class PythonProgram(DoccProgram):
         # built binary (the on-disk hash already accounts for these options).
         pass_options = sorted(self.options.pass_options.items())
         mem_cache_key = (
-            f"{signature}|{self.options.capture_args}|{self.options.instrumentation_mode}|"
+            f"{signature}|{self.options.codegen}|{self.options.capture_args}|{self.options.instrumentation_mode}|"
             f"{self.options.remote_tuning}|{self.options.fp_contract}|{self.options.contraction_precision}|{pass_options}"
         )
 
         if output_folder is None:
             source_path = inspect.getsourcefile(self.func)
-            hash_input = f"{source_path}|{self.name}|{self.options.target}|{self.options.category}|{self.options.capture_args}|{self.options.instrumentation_mode}|{self.options.remote_tuning}|{self.options.approximate_math}|{self.options.fp_contract}|{self.options.contraction_precision}|{pass_options}|{signature}".encode(
+            hash_input = f"{source_path}|{self.name}|{self.options.target}|{self.options.codegen}|{self.options.category}|{self.options.capture_args}|{self.options.instrumentation_mode}|{self.options.remote_tuning}|{self.options.approximate_math}|{self.options.fp_contract}|{self.options.contraction_precision}|{pass_options}|{signature}".encode(
                 "utf-8"
             )
             stable_id = hashlib.sha256(hash_input).hexdigest()[:16]
@@ -301,6 +302,7 @@ class PythonProgram(DoccProgram):
             device_resident=self._device_resident,
             device_backend=self._device_backend,
             target=self.options.target,
+            codegen=self.options.codegen,
         )
 
         # Cache if using default output folder
@@ -362,7 +364,10 @@ class PythonProgram(DoccProgram):
             return None
 
         sdfg_name = f"{self.name}_sdfg"
-        lib_path = os.path.join(output_folder, f"lib{sdfg_name}.so")
+        lib_path = os.path.join(
+            output_folder,
+            codegen_artifact(self.options.target, self.options.codegen, sdfg_name),
+        )
         json_path = os.path.join(output_folder, f"{sdfg_name}.py5.post_sched.json")
         if not os.path.exists(lib_path):
             raise ValueError(f"Tried reusing binary '{lib_path}' but does not exist")
@@ -407,6 +412,7 @@ class PythonProgram(DoccProgram):
             device_resident=self._device_resident,
             device_backend=self._device_backend,
             target=self.options.target,
+            codegen=self.options.codegen,
         )
 
     def to_sdfg(self, *args: Any) -> StructuredSDFG:
