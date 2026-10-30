@@ -38,7 +38,10 @@ void ROCMOffloadDispatcherStrategy::dispatch_kernel_call(
     main_stream << "dim3((int)(" << host_language_ext.expression(block_size_x) << "), ";
     main_stream << "(int)(" << host_language_ext.expression(block_size_y) << "), ";
     main_stream << "(int)(" << host_language_ext.expression(block_size_z) << ")), ";
-    main_stream << "0, 0, "; // shared memory size and stream
+    // Shared-mem size, then the stream. Launching on __daisy_stream (set from the
+    // caller's current stream, default 0) instead of the hard-coded stream 0 lets
+    // the kernels join a HIP graph when the caller captures on that stream.
+    main_stream << "0, __daisy_stream, ";
     main_stream << helpers::join(arguments_device, ", ");
     main_stream << ")";
     main_stream << ";" << std::endl;
@@ -60,6 +63,16 @@ void ROCMOffloadDispatcherStrategy::emit_target_header_declarations(codegen::Pre
 
 void ROCMOffloadDispatcherStrategy::emit_target_global_includes(codegen::CodeSnippetFactory& library_snippet_factory) {
     library_snippet_factory.add_global("#include <hip/hip_bfloat16.h>");
+
+    // File-scope stream used by every kernel launch and scratch alloc/free in
+    // this artifact. Defaults to stream 0 (legacy behaviour). The Python runtime
+    // calls __daisy_set_stream() with the caller's current stream before each
+    // invocation; during HIP-graph capture that is the capture stream, so the
+    // whole region records into the graph instead of stalling the host.
+    library_snippet_factory.add_global(
+        "static hipStream_t __daisy_stream = (hipStream_t)0;\n"
+        "extern \"C\" void __daisy_set_stream(void* __s) { __daisy_stream = (hipStream_t)__s; }"
+    );
 }
 
 void ROCMOffloadDispatcherStrategy::dispatch_kernel_launch_error_check(
