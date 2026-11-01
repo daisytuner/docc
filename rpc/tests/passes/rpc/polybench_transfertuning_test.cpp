@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include <gtest/gtest.h>
 #include <memory>
 
@@ -19,6 +20,9 @@ using namespace sdfg;
 // RpcOptimizationPass sends the whole SDFG to the transfer server in one request,
 // exercising the multi-nest handling path.
 static bool run_rpc_scheduling(std::unique_ptr<StructuredSDFG> init_sdfg) {
+    // Neighbor-distance tolerance for these tests; an explicitly set env var takes precedence.
+    setenv("DOCC_RPC_DISTANCE_THRESHOLD", "0.6", /*overwrite=*/0);
+
     builder::StructuredSDFGBuilder builder(init_sdfg);
     analysis::AnalysisManager analysis_manager(builder.subject());
 
