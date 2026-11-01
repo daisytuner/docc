@@ -16,6 +16,7 @@
 #include "sdfg/targets/gpu/gpu_mma_fragment_load_node.h"
 #include "sdfg/targets/gpu/gpu_mma_fragment_store_node.h"
 #include "sdfg/targets/gpu/gpu_mma_matmul_node.h"
+#include "sdfg/targets/offloading/data_offloading_node.h"
 
 namespace sdfg {
 namespace transformations {
@@ -93,6 +94,33 @@ bool block_accesses_container(const Block& block, const std::string& container) 
     return false;
 }
 
+/// True if @p block is empty or only moves data: it has no tasklets and consists of offloading nodes or
+/// reference/dereference memlets (buffer alloc/alias/copy blocks), but no computation.
+bool is_transfer_or_alias_block(const Block& block) {
+    auto& dataflow = block.dataflow();
+    if (dataflow.nodes().size() == 0) {
+        return true;
+    }
+    if (!dataflow.tasklets().empty()) {
+        return false;
+    }
+    auto libs = dataflow.library_nodes();
+    for (auto* lib : libs) {
+        if (dynamic_cast<const offloading::DataOffloadingNode*>(lib) == nullptr) {
+            return false;
+        }
+    }
+    if (libs.empty()) {
+        for (auto& edge : dataflow.edges()) {
+            if (edge.type() == data_flow::Computational) {
+                return false;
+            }
+        }
+        return dataflow.edges().size() > 0;
+    }
+    return true;
+}
+
 /// The MMA loop nest following @p loop in its parent sequence, skipping intervening transfer/alias blocks.
 ///
 /// After scheduling, host-to-device copies of the matmul's other operands and buffer alloc/alias blocks may sit
@@ -114,7 +142,7 @@ StructuredLoop* next_sibling_loop(StructuredLoop& loop, const std::string& conta
             return nest;
         }
         auto* block = dynamic_cast<Block*>(&sibling);
-        if (block == nullptr || block_accesses_container(*block, container)) {
+        if (block == nullptr || !is_transfer_or_alias_block(*block) || block_accesses_container(*block, container)) {
             return nullptr;
         }
     }

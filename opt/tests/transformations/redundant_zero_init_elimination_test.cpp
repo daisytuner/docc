@@ -29,7 +29,8 @@ struct Options {
     bool annotated = true;
     std::string init_value = "0.0";
     bool fused_init_body = false; ///< an additional read in the init block
-    bool block_between = false; ///< an unrelated block between the init and the MMA nest
+    bool block_between = false; ///< an unrelated computational block between the init and the MMA nest
+    bool empty_block_between = false; ///< an empty block between the init and the MMA nest
     bool with_mma = true;
     bool store_to_other = false; ///< the MMA stores to a different container than the init writes
     bool extra_read_of_y = false; ///< the MMA nest reads Y other than through a C-fragment load
@@ -133,8 +134,16 @@ Built build(builder::StructuredSDFGBuilder& builder, const Options& opts = {}) {
         }
     }
 
-    if (opts.block_between) {
+    if (opts.empty_block_between) {
         builder.add_block(root);
+    }
+    if (opts.block_between) {
+        auto& block = builder.add_block(root);
+        auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder
+            .add_computational_memlet(block, builder.add_access(block, "A"), tasklet, "_in", {symbolic::zero()}, half_ptr);
+        builder
+            .add_computational_memlet(block, tasklet, "_out", builder.add_access(block, "Z"), {symbolic::zero()}, half_ptr);
     }
 
     // ---- MMA nest ----
@@ -329,6 +338,10 @@ TEST(RedundantZeroInitEliminationTest, FusedInitBody) {
 
 TEST(RedundantZeroInitEliminationTest, NotAdjacent) {
     EXPECT_FALSE(applicable({.block_between = true}));
+}
+
+TEST(RedundantZeroInitEliminationTest, EmptyBlockBetween) {
+    EXPECT_TRUE(applicable({.empty_block_between = true}));
 }
 
 TEST(RedundantZeroInitEliminationTest, NextNestIsNotMma) {
