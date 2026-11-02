@@ -76,6 +76,7 @@ set(TEST_FILES
     transformations/offloading/gpu_tensor_allocation_size_offload_test.cpp
     optimizations/parallelogram_tiling_test.cpp
     passes/redundant_load_elimination_pass_test.cpp
+    passes/redundant_zero_init_elimination_pass_test.cpp
     passes/scalar_promotion_pass_test.cpp
     passes/offloading/cuda_library_node_transfer_extraction_pass_test.cpp
     passes/offloading/cuda_library_node_expand_tests.cpp
@@ -111,6 +112,8 @@ set(TEST_FILES
     transformations/loop_tiling_test.cpp
     transformations/loop_unit_stride_test.cpp
     transformations/map_fusion_test.cpp
+    transformations/nest_annotations_test.cpp
+    transformations/redundant_zero_init_elimination_test.cpp
     transformations/multi_level_tiling_test.cpp
     transformations/stream_k_test.cpp
     transformations/trivial_loop_elimination_test.cpp

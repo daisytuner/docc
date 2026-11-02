@@ -716,6 +716,19 @@ void LoopInterchange::apply(builder::StructuredSDFGBuilder& builder, analysis::A
         }
     }
 
+    // Schedules travel with the loop headers, but nest annotations describe the nest and stay on its outermost loop.
+    {
+        auto outer_schedule = new_outer_loop->schedule_type();
+        structured_control_flow::ScheduleType_NestAnnotations::strip(outer_schedule);
+        structured_control_flow::ScheduleType_NestAnnotations::copy(this->outer_loop_.schedule_type(), outer_schedule);
+        builder.update_schedule_type(*new_outer_loop, outer_schedule, false);
+
+        auto inner_schedule = new_inner_loop->schedule_type();
+        structured_control_flow::ScheduleType_NestAnnotations::strip(inner_schedule);
+        structured_control_flow::ScheduleType_NestAnnotations::copy(this->inner_loop_.schedule_type(), inner_schedule);
+        builder.update_schedule_type(*new_inner_loop, inner_schedule, false);
+    }
+
     // Insert inner loop body into new inner loop
     builder.move_children(this->inner_loop_.root(), new_inner_loop->root());
 

@@ -19,6 +19,12 @@ static inline constexpr bool DUMP_ASSUMPTIONS = false;
 static inline constexpr bool DUMP_LOOP_INFOS = false;
 static inline constexpr bool DUMP_GRAPHS = false;
 
+// A fused zero-init nest no longer is a pure initialization: drop the annotation from all participants.
+static void drop_zero_init(builder::StructuredSDFGBuilder& builder, StructuredLoop& first, StructuredLoop& second) {
+    builder.remove_schedule_property(first, structured_control_flow::ScheduleType_ZeroInit::KEY);
+    builder.remove_schedule_property(second, structured_control_flow::ScheduleType_ZeroInit::KEY);
+}
+
 static bool vectors_of_expressions_match(
     const std::vector<symbolic::Expression>& a,
     const std::vector<symbolic::Expression>& b,
@@ -654,6 +660,7 @@ PatternHandler::MatchResult LoopFusionHandler::match(StructuredLoop& first, Stru
             );
 
             auto& target_root = second_current->loop->root();
+            drop_zero_init(state_.builder, first, second);
             return fuse_contents(&first, first_current, second_current, indvar_mapping, target_root, no_uses_between);
         }
     }
@@ -671,6 +678,9 @@ PatternHandler::MatchResult LoopFusionHandler::match(StructuredLoop& first, Stru
         }
         bool leaf_loops = state_.loop_analysis->children(first_loop).empty() &&
                           state_.loop_analysis->children(second_loop).empty();
+
+        // Conservative: the participants may be restructured or removed by the attempt.
+        drop_zero_init(state_.builder, first, second);
 
         return try_complex_fuse_producer_into_consumer(
             *first_top, *second_top, no_uses_between, domains_match && leaf_loops

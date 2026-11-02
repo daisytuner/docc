@@ -1641,4 +1641,42 @@ TEST(ForLoopTest, ResetCache) {
     EXPECT_TRUE(loop.num_iterations().is_null());
 }
 
+TEST(ScheduleTypeAnnotationTest, ZeroInitSetAndClear) {
+    auto schedule = ScheduleType_Sequential::create();
+    EXPECT_FALSE(ScheduleType_ZeroInit::is_set(schedule));
+    ScheduleType_ZeroInit::set(schedule);
+    EXPECT_TRUE(ScheduleType_ZeroInit::is_set(schedule));
+    EXPECT_EQ(schedule.properties().at("init"), "zero");
+    ScheduleType_ZeroInit::set(schedule, false);
+    EXPECT_FALSE(ScheduleType_ZeroInit::is_set(schedule));
+}
+
+TEST(ScheduleTypeAnnotationTest, NestAnnotationsCopyInheritStrip) {
+    auto src = ScheduleType_Sequential::create();
+    ScheduleType_ZeroInit::set(src);
+    ScheduleType_NoFusion::set(src);
+    ScheduleType_Unroll::set(src);
+
+    auto copied = ScheduleType("OTHER", ScheduleTypeCategory::Offloader);
+    ScheduleType_NestAnnotations::copy(src, copied);
+    EXPECT_TRUE(ScheduleType_ZeroInit::is_set(copied));
+    EXPECT_TRUE(ScheduleType_NoFusion::is_set(copied));
+    // Per-loop properties are not nest annotations.
+    EXPECT_FALSE(ScheduleType_Unroll::is_set(copied));
+
+    auto inherited = ScheduleType_Sequential::create();
+    ScheduleType_NoFusion::set(inherited, false);
+    ScheduleType_NestAnnotations::inherit(src, inherited);
+    EXPECT_TRUE(ScheduleType_ZeroInit::is_set(inherited));
+    // An explicitly set annotation on the target wins.
+    EXPECT_FALSE(ScheduleType_NoFusion::is_set(inherited));
+
+    ScheduleType_NestAnnotations::strip(src);
+    EXPECT_FALSE(ScheduleType_ZeroInit::is_set(src));
+    EXPECT_FALSE(ScheduleType_NoFusion::is_set(src));
+    EXPECT_FALSE(src.properties().contains("init"));
+    EXPECT_FALSE(src.properties().contains("fusion"));
+    EXPECT_TRUE(ScheduleType_Unroll::is_set(src));
+}
+
 } // namespace sdfg::structured_control_flow
