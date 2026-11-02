@@ -15,12 +15,19 @@ inline data_flow::LibraryNodeCode LibraryNodeType_GpuMmaFragmentStore("gpu::MmaF
  *
  * Writes the fragment behind its "frag" input to the base pointer behind its "ptr" input (following
  * the given MmaFromMemoryLayout). Both inputs are treated like pointers.
+ *
+ * A coherent store writes the fragment in this lane's register order (element e of lane l at
+ * offset + e * warpSize + l) with device-scope stores, so that a @ref GpuTileArrivalNode with
+ * SynchronizationStrategy::CoherentStores can publish it without a device-wide fence. Its memory layout is opaque:
+ * it must only be read back by a coherent @ref GpuMmaFragmentLoadNode of the same fragment type and block size.
+ * Targets without device-coherent transfers fall back to the regular store following the layout's offset.
  */
 class GpuMmaFragmentStoreNode : public data_flow::LibraryNode {
     MmaBlockSize block_size_;
     MmaFragmentType fragment_type_;
     GpuMmaFromMemoryLayout layout_;
     types::PrimitiveType element_type_;
+    bool coherent_;
 
 public:
     static constexpr auto FRAG_INPUT_IDX = 0;
@@ -35,7 +42,8 @@ public:
         MmaFragmentType fragment_type,
         const GpuMmaFromMemoryLayout& layout,
         types::PrimitiveType element_type,
-        const data_flow::ImplementationType& impl_type
+        const data_flow::ImplementationType& impl_type,
+        bool coherent = false
     );
 
     const GpuMmaFromMemoryLayout& layout() const {
@@ -49,6 +57,10 @@ public:
     }
     types::PrimitiveType element_type() const {
         return element_type_;
+    }
+    /// Lane-ordered, device-coherent transfer (see class documentation).
+    bool coherent() const {
+        return coherent_;
     }
 
     void validate(const Function& function) const override;

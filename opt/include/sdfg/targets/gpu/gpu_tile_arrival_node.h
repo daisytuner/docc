@@ -9,6 +9,17 @@ namespace sdfg::gpu {
 
 inline data_flow::LibraryNodeCode LibraryNodeType_GpuTileArrival("gpu::TileArrival");
 
+/// How a @ref GpuTileArrivalNode makes the writes of the arriving blocks visible to the electing block.
+enum class SynchronizationStrategy {
+    /// Every global write the block issued before the node (device-wide fences around the election).
+    DeviceFence,
+    /// Only the writes made through device-coherent transfers (coherent @ref GpuMmaFragmentStoreNode), which the
+    /// electing block reads back through device-coherent loads. The node then only waits for the completion of
+    /// those stores instead of fencing, which on multi-XCD GPUs (gfx942) avoids writing back and invalidating the
+    /// whole L2. Targets without such a wait emit the @ref SynchronizationStrategy::DeviceFence protocol.
+    CoherentStores,
+};
+
 /**
  * @brief Counts the arrival of a thread block at a shared work item and elects the last arriving block.
  *
@@ -24,10 +35,14 @@ inline data_flow::LibraryNodeCode LibraryNodeType_GpuTileArrival("gpu::TileArriv
  * The output `_last` is 1 in every thread of the electing block and 0 in every thread of the other blocks.
  * The electing block issues a device-wide fence after the election, so it observes all writes the other
  * blocks made before their arrival, and resets `counter[index]` to zero for the next use.
+ *
+ * With @ref SynchronizationStrategy::CoherentStores (ROCm), step 1 only waits for the coherent stores on gfx9 and
+ * step 3 is an agent-scope acquire fence instead of a full device fence (see there).
  */
 class GpuTileArrivalNode : public data_flow::LibraryNode {
     symbolic::Expression index_;
     symbolic::Expression expected_;
+    SynchronizationStrategy synchronization_strategy_;
 
 public:
     static constexpr auto COUNTER_INPUT_IDX = 0;
@@ -38,7 +53,8 @@ public:
         const graph::Vertex vertex,
         data_flow::DataFlowGraph& parent,
         const symbolic::Expression& index,
-        const symbolic::Expression& expected
+        const symbolic::Expression& expected,
+        SynchronizationStrategy synchronization_strategy = SynchronizationStrategy::DeviceFence
     );
 
     /// Element of the counter array the block arrives at.
@@ -49,6 +65,10 @@ public:
     /// Number of arrivals that completes the work item.
     const symbolic::Expression& expected() const {
         return expected_;
+    }
+
+    SynchronizationStrategy synchronization_strategy() const {
+        return synchronization_strategy_;
     }
 
     void validate(const Function& function) const override;

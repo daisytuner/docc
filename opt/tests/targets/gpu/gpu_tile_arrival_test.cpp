@@ -33,7 +33,9 @@ struct ArrivalKernel {
     std::vector<GpuTileArrivalNode*> arrivals;
     structured_control_flow::Map* grid = nullptr;
 
-    explicit ArrivalKernel(size_t num_counters) {
+    explicit ArrivalKernel(
+        size_t num_counters, SynchronizationStrategy synchronization_strategy = SynchronizationStrategy::DeviceFence
+    ) {
         auto& root = builder.subject().root();
         types::Scalar i32(types::PrimitiveType::Int32);
         types::Pointer dev_ptr(types::StorageType("AMD_Generic"), 0, "", i32);
@@ -62,8 +64,8 @@ struct ArrivalKernel {
             auto& block = builder.add_block(grid->root());
             auto& cnt_access = builder.add_access(block, cnt);
             auto& last_access = builder.add_access(block, last);
-            auto& arrival =
-                builder.add_library_node<GpuTileArrivalNode>(block, DebugInfo(), symbolic::div(b, per_item), per_item);
+            auto& arrival = builder.add_library_node<
+                GpuTileArrivalNode>(block, DebugInfo(), symbolic::div(b, per_item), per_item, synchronization_strategy);
             builder.add_computational_memlet(block, cnt_access, arrival, "counter", {}, counter);
             builder.add_computational_memlet(block, arrival, "_last", last_access, {}, i32);
             arrivals.push_back(static_cast<GpuTileArrivalNode*>(&arrival));
@@ -184,6 +186,56 @@ TEST(GpuTileArrivalTest, ReplaceAndSerializationPreserveParameters) {
     EXPECT_TRUE(symbolic::eq(restored.index(), node.index()));
     EXPECT_TRUE(symbolic::eq(restored.expected(), node.expected()));
     EXPECT_TRUE(restored.side_effect());
+}
+
+/// Coherent-store synchronization: on ROCm gfx9 the release reduces to waiting for the (device-coherent) stores, the
+/// other targets keep the release fence; the elected block uses an agent-scope acquire fence only.
+TEST(GpuTileArrivalTest, CoherentStoresRelaxFences) {
+    ArrivalKernel kernel(1, SynchronizationStrategy::CoherentStores);
+    EXPECT_NO_THROW(kernel.builder.subject().validate());
+    auto code = kernel.kernel();
+
+    auto flag = "__daisy_arrival_" + std::to_string(kernel.arrivals[0]->element_id());
+    size_t pos = 0;
+    expect_in_order(
+        code,
+        {
+            "#if defined(__GFX9__)",
+            "asm volatile(\"s_waitcnt vmcnt(0)\" ::: \"memory\");",
+            "#else",
+            "__threadfence();",
+            "#endif",
+            "__syncthreads();",
+            flag + " = atomicAdd(&(cnt0)[",
+            "__syncthreads();",
+            "if (" + flag + ") {",
+            "__builtin_amdgcn_fence(__ATOMIC_ACQUIRE, \"agent\");",
+        },
+        pos
+    );
+    EXPECT_EQ(count(code, "__threadfence();"), 1u) << code;
+    EXPECT_EQ(count(code, "atomicAdd("), 1u) << code;
+}
+
+/// The synchronization strategy survives cloning and serialization; documents without it deserialize to device fences.
+TEST(GpuTileArrivalTest, PublicationSurvivesCloneAndSerialization) {
+    ArrivalKernel kernel(1, SynchronizationStrategy::CoherentStores);
+    auto& node = *kernel.arrivals[0];
+    auto& block = kernel.builder.add_block(kernel.builder.subject().root());
+
+    GpuTileArrivalNodeSerializer arrival_serializer;
+    auto j = arrival_serializer.serialize(node);
+    serializer::JSONSerializer json;
+    json.debug_info_to_json(j["debug_info"], node.debug_info());
+    auto& restored = static_cast<GpuTileArrivalNode&>(arrival_serializer.deserialize(j, kernel.builder, block));
+    EXPECT_EQ(restored.synchronization_strategy(), SynchronizationStrategy::CoherentStores);
+
+    auto clone = node.clone(0, node.vertex(), node.get_parent());
+    EXPECT_EQ(static_cast<GpuTileArrivalNode&>(*clone).synchronization_strategy(), SynchronizationStrategy::CoherentStores);
+
+    j.erase("coherent_stores");
+    auto& legacy = static_cast<GpuTileArrivalNode&>(arrival_serializer.deserialize(j, kernel.builder, block));
+    EXPECT_EQ(legacy.synchronization_strategy(), SynchronizationStrategy::DeviceFence);
 }
 
 } // namespace sdfg::gpu
