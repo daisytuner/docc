@@ -562,7 +562,7 @@ void StreamK::build_fragment_merge(
     auto ws_name = builder.find_new_name("__streamk_workspace");
     types::Array ws_type(
         types::StorageType::GPU_Static(),
-        16,
+        32,
         "",
         acc_scalar,
         sym::integer(static_cast<int64_t>(num_blocks_) * num_waves * num_fragments * fragment_elems)
