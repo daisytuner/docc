@@ -79,12 +79,13 @@ def test_apply_cutout_identity_preserves_signature():
     node = _outermost(sdfg, "i")
 
     piece = cutout(sdfg, AnalysisManager(sdfg), node)
-    apply_cutout(sdfg, int(node.element_id), piece)
+    element_id = int(node.element_id)
+    apply_cutout(sdfg, element_id, piece)
 
     assert list(sdfg.arguments) == arguments_before
     outermost = AnalysisManager(sdfg).loop_analysis().outermost_loops()
     assert len(outermost) == 2
-    assert all(int(loop.element_id) != int(node.element_id) for loop in outermost)
+    assert all(int(loop.element_id) != element_id for loop in outermost)
 
 
 def test_apply_cutout_merges_transformed_cutout():
