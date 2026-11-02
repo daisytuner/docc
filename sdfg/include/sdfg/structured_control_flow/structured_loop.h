@@ -119,6 +119,24 @@ public:
     }
 };
 
+/**
+ * @brief No-fusion annotation carried as a generic property on any ScheduleType.
+ *
+ * Stored as `"fusion" = "none"`. Loop/map fusion passes never fuse a loop carrying it,
+ * e.g. to keep expanded GEMM/MatMul nests separate from their init loops and neighbours.
+ */
+class ScheduleType_NoFusion {
+public:
+    static void set(ScheduleType& schedule, bool no_fusion = true) {
+        schedule.set_property("fusion", no_fusion ? "none" : "default");
+    }
+
+    static bool is_set(const ScheduleType& schedule) {
+        auto it = schedule.properties().find("fusion");
+        return it != schedule.properties().end() && it->second == "none";
+    }
+};
+
 
 /**
  * @brief Base class for structured loop constructs

@@ -10,6 +10,13 @@ an einsum matmul and lowers it to tensor-core MMA.
 The expanded kernel is only compiled & executed on the matching GPU
 (``DOCC_ROCM_ARCH`` names the arch under test); otherwise we exercise the pure
 apply/decline logic, which needs no device.
+
+The matmul-nest builders are arch-agnostic (keyed off the target arch name), so a
+separate CUDA-marked ``expand_executes`` test reuses them to cover the basic
+tensor-core path on whatever CUDA device is present. That test does not sweep
+architectures: it queries the current arch and skips when it has no MMA support.
+Backend-specific skip rules and block-size choices intentionally live in the
+per-backend tests, since they are expected to diverge.
 """
 
 from pathlib import Path
@@ -23,6 +30,7 @@ from docc.sdfg import (
     AnalysisManager,
     Block,
     BufferLifecycle,
+    CudaArch,
     DataTransferDirection,
     GpuMmaEinsumTransform,
     IfElse,
@@ -50,6 +58,42 @@ HALF_BYTES = 2
 
 def _ceil_div(a, b):
     return -(-a // b)
+
+
+# --- Backend selection for the arch-agnostic generators ----------------------
+# The matmul nest builders below are shared between the ROCm tests and the CUDA
+# ``expand_executes`` test; the per-backend bits (device storage, offload
+# schedule, transfer blocks, compile target) are keyed off the arch name
+# (``gfx*`` -> ROCm, ``sm_*`` -> CUDA).
+
+
+def _is_cuda(arch_name):
+    return arch_name.startswith("sm_")
+
+
+def _dev_pointer(arch_name):
+    storage = (
+        StorageType.NV_Generic() if _is_cuda(arch_name) else StorageType.AMD_Generic()
+    )
+    return Pointer(HALF, storage)
+
+
+def _offload_schedule(arch_name, level, count):
+    factory = (
+        ScheduleType.cuda_offload if _is_cuda(arch_name) else ScheduleType.rocm_offload
+    )
+    return factory(level, count)
+
+
+def _add_offloading_block(builder, arch_name, hc, dc, direction, lifecycle, dev, size):
+    if _is_cuda(arch_name):
+        builder.add_cuda_offloading_block(hc, dc, direction, lifecycle, dev, size)
+    else:
+        builder.add_rocm_offloading_block(hc, dc, direction, lifecycle, dev, size)
+
+
+def _compile_backend(arch_name):
+    return "cuda" if _is_cuda(arch_name) else "rocm"
 
 
 # --- Bare-binding equivalents of the gym loop/access helpers (see agent_rocm.py) ---
@@ -122,7 +166,7 @@ def _localize_operands(builder, a_name, b_name, k_panel_blocks=2, transpose_b=Fa
 
 
 def _add_einsum_mma_nest(
-    builder, M, N, K, tile_m, tile_n, a, b, c, swap_operands=False
+    builder, M, N, K, tile_m, tile_n, a, b, c, arch_name, swap_operands=False
 ):
     """Build the raw matmul loop nest ``c[i,j] += a[i,k] * b[k,j]`` (row-major).
 
@@ -132,7 +176,7 @@ def _add_einsum_mma_nest(
     that ``GpuMmaEinsumTransform`` is applied to. ``swap_operands`` writes the
     product as ``b * a`` so B is the einsum's first input.
     """
-    dev = Pointer(HALF, StorageType.AMD_Generic())
+    dev = _dev_pointer(arch_name)
 
     # Grid: X_GRID over columns (_j1_tile0), Y_GRID over rows (_i1_tile0).
     builder.begin_map(
@@ -140,14 +184,14 @@ def _add_einsum_mma_nest(
         "0",
         str(N),
         str(tile_n),
-        ScheduleType.rocm_offload(TargetLevel.X_GRID, _ceil_div(N, tile_n)),
+        _offload_schedule(arch_name, TargetLevel.X_GRID, _ceil_div(N, tile_n)),
     )
     builder.begin_map(
         "_i1_tile0",
         "0",
         str(M),
         str(tile_m),
-        ScheduleType.rocm_offload(TargetLevel.Y_GRID, _ceil_div(M, tile_m)),
+        _offload_schedule(arch_name, TargetLevel.Y_GRID, _ceil_div(M, tile_m)),
     )
 
     # Sequential tile loops + K reduction.
@@ -181,10 +225,10 @@ def _add_einsum_mma_nest(
     return loop_i1
 
 
-def _build_offloaded_einsum_mma(M, N, K, tile_m, tile_n):
+def _build_offloaded_einsum_mma(M, N, K, tile_m, tile_n, arch_name):
     """Device-only matmul nest (kernel arguments, no host transfers)."""
     builder = StructuredSDFGBuilder("test_mma_einsum")
-    dev = Pointer(HALF, StorageType.AMD_Generic())
+    dev = _dev_pointer(arch_name)
     i32 = Scalar(PrimitiveType.Int32)
 
     builder.add_container("A", dev, is_argument=True)
@@ -193,7 +237,9 @@ def _build_offloaded_einsum_mma(M, N, K, tile_m, tile_n):
     for nm in ("_j1_tile0", "_i1_tile0", "_i1", "_j1", "_k0"):
         builder.add_container(nm, i32)
 
-    loop_i1 = _add_einsum_mma_nest(builder, M, N, K, tile_m, tile_n, "A", "B", "C")
+    loop_i1 = _add_einsum_mma_nest(
+        builder, M, N, K, tile_m, tile_n, "A", "B", "C", arch_name
+    )
     return builder, loop_i1
 
 
@@ -215,7 +261,7 @@ ALIGNED = [
 )
 def test_mma_einsum_expand_applies(arch_name, M, N, K, tile_m, tile_n):
     arch = RocmArch.get_from_name(arch_name)
-    builder, loop_i1 = _build_offloaded_einsum_mma(M, N, K, tile_m, tile_n)
+    builder, loop_i1 = _build_offloaded_einsum_mma(M, N, K, tile_m, tile_n, arch_name)
     am = AnalysisManager(builder)
     xform = GpuMmaEinsumTransform(loop_i1, arch)
 
@@ -259,11 +305,13 @@ def _applied_mma_block_size(sdfg):
 # ---------------------------------------------------------------------------
 
 
-def _build_executable_einsum_mma(M, N, K, tile_m, tile_n, swap_operands=False):
+def _build_executable_einsum_mma(
+    M, N, K, tile_m, tile_n, arch_name, swap_operands=False
+):
     """Full runnable matmul: host args, device buffers, H2D/D2H transfers, kernel."""
     builder = StructuredSDFGBuilder("test_mma_einsum_exec")
     host = Pointer(HALF)
-    dev = Pointer(HALF, StorageType.AMD_Generic())
+    dev = _dev_pointer(arch_name)
     i32 = Scalar(PrimitiveType.Int32)
 
     builder.add_container("A", host, is_argument=True)
@@ -276,8 +324,15 @@ def _build_executable_einsum_mma(M, N, K, tile_m, tile_n, swap_operands=False):
         builder.add_container(nm, i32)
 
     def off(hc, dc, direction, lifecycle, elems):
-        builder.add_rocm_offloading_block(
-            hc, dc, direction, lifecycle, dev, f"{elems} * {HALF_BYTES}"
+        _add_offloading_block(
+            builder,
+            arch_name,
+            hc,
+            dc,
+            direction,
+            lifecycle,
+            dev,
+            f"{elems} * {HALF_BYTES}",
         )
 
     off("A", "dA", DataTransferDirection.H2D, BufferLifecycle.ALLOC, M * K)
@@ -285,7 +340,7 @@ def _build_executable_einsum_mma(M, N, K, tile_m, tile_n, swap_operands=False):
     off("C", "dC", DataTransferDirection.H2D, BufferLifecycle.ALLOC, M * N)
 
     loop_i1 = _add_einsum_mma_nest(
-        builder, M, N, K, tile_m, tile_n, "dA", "dB", "dC", swap_operands
+        builder, M, N, K, tile_m, tile_n, "dA", "dB", "dC", arch_name, swap_operands
     )
 
     off("C", "dC", DataTransferDirection.D2H, BufferLifecycle.FREE, M * N)
@@ -319,31 +374,19 @@ def _assert_matmul_close(C, ref):
     assert rel < 1e-2, f"relative L2 error {rel}"
 
 
-@pytest.mark.rocm()
-@pytest.mark.parametrize("swap_operands", [False, True], ids=["ab", "ba"])
-@pytest.mark.parametrize("arch_name", ARCHES)
-@pytest.mark.parametrize(
-    "M,N,K,tile_m,tile_n,block_size",
-    EXEC_CASES,
-    ids=[_exec_case_id(c) for c in EXEC_CASES],
-)
-def test_mma_einsum_expand_executes(
-    arch_name, M, N, K, tile_m, tile_n, block_size, swap_operands
+def _run_expand_executes(
+    arch, arch_name, M, N, K, tile_m, tile_n, block_size, swap_operands, output_dir
 ):
-    if RocmArch.current_name() != arch_name:
-        pytest.skip(f"DOCC_ROCM_ARCH ({RocmArch.current_name()}) != {arch_name}")
-    if block_size in _CDNA_ONLY_BLOCKS and arch_name != "gfx90a":
-        pytest.skip(f"{block_size} MMA block is CDNA-only; not on {arch_name}")
-    arch = RocmArch.get_current()
+    """Arch-agnostic ``expand_executes`` body: build the offloaded matmul nest,
+    lower it to MMA, compile for the arch's backend, run it and verify ``A @ B``.
 
-    output_dir = (
-        PYTEST_OUTPUT_DIR
-        / f"mma_einsum_{arch_name}_{M}x{N}x{K}_{tile_m}x{tile_n}_{block_size}_{swap_operands}_executes"
-    )
+    Callers own the backend-specific skip rules and ``block_size`` choice; this
+    helper only assumes the expansion is expected to apply.
+    """
     output_dir.mkdir(parents=True, exist_ok=True)
 
     builder, loop_i1 = _build_executable_einsum_mma(
-        M, N, K, tile_m, tile_n, swap_operands
+        M, N, K, tile_m, tile_n, arch_name, swap_operands
     )
     builder.dump(output_dir, "init", True, True)
 
@@ -360,7 +403,7 @@ def test_mma_einsum_expand_executes(
     if block_size:
         assert _applied_mma_block_size(sdfg) == block_size
 
-    lib_path = sdfg._compile(str(output_dir), "rocm")
+    lib_path = sdfg._compile(str(output_dir), _compile_backend(arch_name))
     compiled = CompiledSDFG(lib_path, sdfg)
 
     rng = np.random.default_rng(0)
@@ -370,8 +413,76 @@ def test_mma_einsum_expand_executes(
 
     compiled(A.reshape(-1), B.reshape(-1), C.reshape(-1))
 
-    ref = A.astype(np.float32) @ B.astype(np.float32)
-    _assert_matmul_close(C, ref)
+    _assert_matmul_close(C, A.astype(np.float32) @ B.astype(np.float32))
+
+
+@pytest.mark.rocm()
+@pytest.mark.parametrize("swap_operands", [False, True], ids=["ab", "ba"])
+@pytest.mark.parametrize("arch_name", ARCHES)
+@pytest.mark.parametrize(
+    "M,N,K,tile_m,tile_n,block_size",
+    EXEC_CASES,
+    ids=[_exec_case_id(c) for c in EXEC_CASES],
+)
+def test_mma_einsum_expand_executes(
+    arch_name, M, N, K, tile_m, tile_n, block_size, swap_operands
+):
+    if RocmArch.current_name() != arch_name:
+        pytest.skip(f"DOCC_ROCM_ARCH ({RocmArch.current_name()}) != {arch_name}")
+    if block_size in _CDNA_ONLY_BLOCKS and arch_name != "gfx90a":
+        pytest.skip(f"{block_size} MMA block is CDNA-only; not on {arch_name}")
+
+    output_dir = (
+        PYTEST_OUTPUT_DIR
+        / f"mma_einsum_{arch_name}_{M}x{N}x{K}_{tile_m}x{tile_n}_{block_size}_{swap_operands}_executes"
+    )
+    _run_expand_executes(
+        RocmArch.get_current(),
+        arch_name,
+        M,
+        N,
+        K,
+        tile_m,
+        tile_n,
+        block_size,
+        swap_operands,
+        output_dir,
+    )
+
+
+# CUDA only supports the 16x16x16 WMMA block, so there is no block-size hint to
+# sweep; the apply/decline logic is covered by the ROCm tests. We just exercise a
+# few representative tile shapes on whatever CUDA device is present.
+CUDA_EXEC_CASES = [
+    (32, 32, 32, 16, 16),
+    (64, 64, 32, 16, 16),
+    (32, 32, 32, 32, 32),
+]
+
+
+@pytest.mark.cuda()
+@pytest.mark.parametrize("swap_operands", [False, True], ids=["ab", "ba"])
+@pytest.mark.parametrize(
+    "M,N,K,tile_m,tile_n",
+    CUDA_EXEC_CASES,
+    ids=[f"{m}x{n}x{k}_{tm}x{tn}" for (m, n, k, tm, tn) in CUDA_EXEC_CASES],
+)
+def test_mma_einsum_expand_executes_cuda(M, N, K, tile_m, tile_n, swap_operands):
+    try:
+        arch = CudaArch.get_current()
+        if (arch is None) or (not arch.has_mma):
+            pytest.skip(f"unsupported CUDA arch {CudaArch.current_name()}")
+    except RuntimeError:
+        pytest.skip("no CUDA device available")
+    arch_name = arch.name
+
+    output_dir = (
+        PYTEST_OUTPUT_DIR
+        / f"mma_einsum_{arch_name}_{M}x{N}x{K}_{tile_m}x{tile_n}_{swap_operands}_executes"
+    )
+    _run_expand_executes(
+        arch, arch_name, M, N, K, tile_m, tile_n, None, swap_operands, output_dir
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -387,7 +498,7 @@ def test_mma_einsum_expand_executes(
 )
 def test_mma_einsum_local_storage_applies(arch_name, M, N, K, tile_m, tile_n):
     arch = RocmArch.get_from_name(arch_name)
-    builder, loop_i1 = _build_offloaded_einsum_mma(M, N, K, tile_m, tile_n)
+    builder, loop_i1 = _build_offloaded_einsum_mma(M, N, K, tile_m, tile_n, arch_name)
 
     am = AnalysisManager(builder)
     xform = GpuMmaEinsumTransform(loop_i1, arch)
@@ -423,7 +534,7 @@ def test_mma_einsum_local_storage_executes(
     )
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    builder, loop_i1 = _build_executable_einsum_mma(M, N, K, tile_m, tile_n)
+    builder, loop_i1 = _build_executable_einsum_mma(M, N, K, tile_m, tile_n, arch_name)
 
     am = AnalysisManager(builder)
     hint = MmaBlockSize.parse(block_size) if block_size else None
@@ -465,7 +576,7 @@ def test_mma_einsum_local_storage_executes(
     "wave_tile", [(3, 1), (1, 3), (0, 1)], ids=["3x1", "1x3", "0x1"]
 )
 def test_mma_einsum_wave_tile_must_divide(wave_tile):
-    builder, loop_i1 = _build_offloaded_einsum_mma(1024, 1024, 1024, 64, 64)
+    builder, loop_i1 = _build_offloaded_einsum_mma(1024, 1024, 1024, 64, 64, "gfx90a")
     am = AnalysisManager(builder)
     xform = GpuMmaEinsumTransform(
         loop_i1,
@@ -494,7 +605,7 @@ def test_mma_einsum_wave_tile_executes(wave_tile, localize):
     )
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    builder, loop_i1 = _build_executable_einsum_mma(M, N, K, tile, tile)
+    builder, loop_i1 = _build_executable_einsum_mma(M, N, K, tile, tile, arch_name)
     am = AnalysisManager(builder)
     xform = GpuMmaEinsumTransform(
         loop_i1, RocmArch.get_current(), wave_tiling_hint=BlockCounts(*wave_tile)
@@ -553,7 +664,7 @@ def test_mma_einsum_mfma32_executes(tile, wave_tile, staging):
     )
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    builder, loop_i1 = _build_executable_einsum_mma(M, N, K, tile, tile)
+    builder, loop_i1 = _build_executable_einsum_mma(M, N, K, tile, tile, arch_name)
     am = AnalysisManager(builder)
     block_hint = MmaBlockSize.parse("32x32x8")
     xform = GpuMmaEinsumTransform(

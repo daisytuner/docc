@@ -1,6 +1,7 @@
 #include "sdfg/targets/gpu/gpu_offload_base_dispatcher.h"
 #include "sdfg/tiles/analysis/reduction_buffer_analysis.h"
 
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -88,10 +89,15 @@ void GPUOffloadBaseDispatcher::dispatch_node(
         scope_variables_unfiltered.end()
     );
     std::vector<std::string> arguments;
+    std::set<std::string> static_buffers;
 
     for (auto& argument : used_arguments) {
         auto& type = sdfg_.type(argument.first);
         auto storage = type.storage_type();
+        if (storage.is_gpu_static()) {
+            static_buffers.insert(argument.first);
+            continue;
+        }
         if (type.type_id() == types::TypeID::Array) {
             // Shared memory or register arrays of the kernel.
             // These arrays are not passed as kernel arguments.
@@ -106,18 +112,6 @@ void GPUOffloadBaseDispatcher::dispatch_node(
 
     std::sort(arguments.begin(), arguments.end());
     std::vector<std::string> arguments_device;
-    auto& language_extension = strategy_->create_kernel_language_extension();
-    for (auto& argument : arguments) {
-        auto& arg_type = sdfg_.type(argument);
-        if (strategy_->is_device_pointer_storage(arg_type.storage_type())) {
-            std::string arg_with_cast = language_extension.type_cast(argument, arg_type);
-            arguments_device.push_back(arg_with_cast);
-        } else if (arg_type.type_id() == types::TypeID::Scalar) {
-            arguments_device.push_back(argument);
-        } else {
-            throw InvalidSDFGException("Argument " + argument + " is not a scalar or device pointer");
-        }
-    }
 
     std::vector<std::string> scope_variables;
 
@@ -135,6 +129,10 @@ void GPUOffloadBaseDispatcher::dispatch_node(
         if (analysis_manager.get<tiles::ReductionBufferAnalysis>().is_partial_buffer(var)) {
             continue;
         }
+        if (sdfg_.type(var).storage_type().is_gpu_static()) {
+            static_buffers.insert(var);
+            continue;
+        }
         if (x_grids.find(symbolic::symbol(var)) == x_grids.end() &&
             y_grids.find(symbolic::symbol(var)) == y_grids.end() &&
             z_grids.find(symbolic::symbol(var)) == z_grids.end() &&
@@ -150,8 +148,25 @@ void GPUOffloadBaseDispatcher::dispatch_node(
 
     symbolic::Expression num_iters = node_.num_iterations();
 
+    // TODO we also should be able to check the language extension here.
+    // If its already matching (strategy_->is_matching_kernel_language_extension(sdfg_, node_, language_extension_)),
+    // then another dispatcher was above is, otherwise we are the first
     if (is_outermost_map(analysis_manager)) {
         strategy_->emit_target_global_includes(library_snippet_factory);
+
+        auto kernel_lang_ext = strategy_->create_kernel_language_extension(sdfg_, node_);
+
+        for (auto& argument : arguments) {
+            auto& arg_type = sdfg_.type(argument);
+            if (strategy_->is_device_pointer_storage(arg_type.storage_type())) {
+                std::string arg_with_cast = kernel_lang_ext->type_cast(argument, arg_type);
+                arguments_device.push_back(arg_with_cast);
+            } else if (arg_type.type_id() == types::TypeID::Scalar) {
+                arguments_device.push_back(argument);
+            } else {
+                throw InvalidSDFGException("Argument " + argument + " is not a scalar or device pointer");
+            }
+        }
 
         // Arguments Declaration
         std::vector<std::string> arguments_declaration;
@@ -162,7 +177,7 @@ void GPUOffloadBaseDispatcher::dispatch_node(
             const std::string decl_name = strategy_->is_device_pointer_storage(arg_type.storage_type())
                                               ? "__restrict__ " + container
                                               : container;
-            arguments_declaration.push_back(language_extension.declaration(decl_name, arg_type));
+            arguments_declaration.push_back(kernel_lang_ext->declaration(decl_name, arg_type));
         }
 
         std::unordered_map<TargetLevel, ScheduleType> nested_schedule_types;
@@ -230,7 +245,12 @@ void GPUOffloadBaseDispatcher::dispatch_node(
 
         auto& kernel_header_stream = kernel_header_snippet.stream();
         auto kernel_header_path = library_snippet_factory.output_path() / kernel_header_snippet.filename();
-        kernel_stream << "#include " << kernel_header_path.filename() << std::endl << std::endl << std::endl;
+        kernel_stream << "#include " << kernel_header_path.filename() << std::endl << std::endl;
+        for (auto& container : static_buffers) {
+            kernel_stream << kernel_lang_ext->declaration(container, sdfg_.type(container), false, true) << ";"
+                          << std::endl;
+        }
+        kernel_stream << std::endl;
         kernel_header_stream << "#include " << library_snippet_factory.header_path().filename()
                              << std::endl; // we
                                            // expect
@@ -259,7 +279,13 @@ void GPUOffloadBaseDispatcher::dispatch_node(
         }
 
         this->dispatch_kernel_body(
-            nested_snippet_factory, kernel_stream, kernel_header_stream, node_.indvar(), scope_variables, num_iters
+            nested_snippet_factory,
+            kernel_stream,
+            kernel_header_stream,
+            *kernel_lang_ext,
+            node_.indvar(),
+            scope_variables,
+            num_iters
         );
 
         kernel_stream.setIndent(kernel_stream.indent() - 4);
@@ -268,10 +294,12 @@ void GPUOffloadBaseDispatcher::dispatch_node(
         strategy_->emit_target_header_declarations(kernel_header_stream);
         this->emit_lib_dependency_includes(kernel_header_stream, nested_snippet_factory);
     } else {
+        strategy_->require_matching_kernel_language_extension(sdfg_, node_, language_extension_);
         this->dispatch_kernel_body(
             dynamic_cast<codegen::NestedCodeSnippetFactory&>(library_snippet_factory),
             main_stream,
             globals_stream,
+            language_extension_,
             node_.indvar(),
             scope_variables,
             num_iters

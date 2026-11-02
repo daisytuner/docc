@@ -98,7 +98,7 @@ struct WaveKernel {
             *grid,
             *instrumentation,
             *arg_capture,
-            std::make_unique<hip::ROCMOffloadDispatcherStrategy>(sdfg, *grid)
+            std::make_unique<hip::ROCMOffloadDispatcherStrategy>()
         );
         codegen::PrettyPrinter main_stream;
         codegen::PrettyPrinter globals_stream;

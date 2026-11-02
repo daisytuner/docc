@@ -275,7 +275,8 @@ std::optional<GpuMmaTiling> RocmMmaSupport::try_get_mma_tiling(
     const MmaBlockSize& block_size,
     const BlockCounts* wave_tile_hint,
     const symbolic::MultiExpression& res_shape,
-    types::PrimitiveType acc_type
+    types::PrimitiveType acc_type,
+    bool ceil_counts
 ) const {
     GpuMmaTiling tiling;
     tiling.mma_block_size = block_size;
@@ -283,9 +284,10 @@ std::optional<GpuMmaTiling> RocmMmaSupport::try_get_mma_tiling(
     tiling.acc_type = acc_type;
     tiling.wave_tiling = {.blocks_m = 1, .blocks_n = 1};
 
-    auto mma_blocks_m = get_integer_block_count(res_shape.at(0), tiling.mma_block_size.m);
-    auto mma_blocks_n = get_integer_block_count(res_shape.at(1), tiling.mma_block_size.n);
-    auto mma_blocks_k = get_integer_block_count(res_shape.at(2), tiling.mma_block_size.k);
+    auto block_count = ceil_counts ? &GpuMmaSupport::get_ceil_block_count : &GpuMmaSupport::get_integer_block_count;
+    auto mma_blocks_m = block_count(res_shape.at(0), tiling.mma_block_size.m);
+    auto mma_blocks_n = block_count(res_shape.at(1), tiling.mma_block_size.n);
+    auto mma_blocks_k = block_count(res_shape.at(2), tiling.mma_block_size.k);
 
     if (!mma_blocks_m || !mma_blocks_n || !mma_blocks_k) {
         return std::nullopt;
@@ -355,6 +357,39 @@ std::optional<GpuMmaTiling> RocmMmaSupport::get_mma_tiling(
             return std::nullopt;
         }
     }
+}
+
+std::optional<GpuMmaTiling> RocmMmaSupport::get_ragged_mma_tiling(
+    const symbolic::MultiExpression& padded_shape,
+    types::PrimitiveType input_type,
+    types::PrimitiveType output_type,
+    types::PrimitiveType acc_type,
+    const MmaBlockSize* block_size_hint,
+    const BlockCounts* wave_tile_hint
+) const {
+    // Masked fragment transfers recover element coordinates from an iota fragment of the element type, which
+    // must represent every index of a block exactly (16-bit floats: all integers up to 2048). BFloat is exact up
+    // to 256, i.e. a 16x16 block, the only bf16 block size (32x32x8 is fp16-only).
+    auto exact_iota = [](types::PrimitiveType t) {
+        return t == types::PrimitiveType::Half || t == types::PrimitiveType::Float || t == types::PrimitiveType::BFloat;
+    };
+    if (!exact_iota(input_type) || !exact_iota(output_type) || !exact_iota(acc_type)) {
+        return std::nullopt;
+    }
+    if (block_size_hint) {
+        if (!is_valid_block_size(*block_size_hint, input_type, acc_type)) {
+            return std::nullopt;
+        }
+        return try_get_mma_tiling(*block_size_hint, wave_tile_hint, padded_shape, acc_type, true);
+    }
+    for (const auto& block : {DEFAULT_BLOCK_SIZE, CDNA_BLOCK_SIZE}) {
+        if (is_valid_block_size(block, input_type, acc_type)) {
+            if (auto tiling = try_get_mma_tiling(block, wave_tile_hint, padded_shape, acc_type, true)) {
+                return tiling;
+            }
+        }
+    }
+    return std::nullopt;
 }
 
 void RocmMmaSupport::set_mma_fragment_storage_type(

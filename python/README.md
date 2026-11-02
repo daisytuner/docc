@@ -36,11 +36,11 @@ sudo apt-get install -y libisl-dev
 
 #### Compiler Requirements
 
-**Clang/LLVM 19 is required** for code generation. Install it with:
+**Clang/LLVM 21 is required** for code generation. Install it with:
 
 ```bash
 # Ubuntu/Debian
-sudo apt-get install -y clang-19 llvm-19
+sudo apt-get install -y clang-21 llvm-21
 ```
 
 For CUDA support, you also need the NVIDIA CUDA Toolkit installed.

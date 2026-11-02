@@ -1324,3 +1324,57 @@ TEST(ROCMMMATest, Int8_Support) {
 }
 
 } // namespace sdfg::rocm
+
+namespace sdfg {
+
+TEST(ROCMMMATest, ClippedFragmentLayoutReportsClippedShape) {
+    auto s16 = symbolic::integer(16);
+    auto rows = symbolic::sub(symbolic::integer(1000), symbolic::symbol("i0"));
+    gpu::GpuMmaFromMemoryLayout layout{
+        .offset = symbolic::zero(),
+        .ldstride = symbolic::integer(1000),
+        .layout = gpu::MMA_LAYOUT_ROW_MAJOR,
+        .rows = rows,
+    };
+    ASSERT_TRUE(layout.clipped());
+    auto t = layout.to_tensor_layout(gpu::MmaBlockSize(16, 16, 16), gpu::MmaFragmentType::A);
+    ASSERT_TRUE(t.has_value());
+    EXPECT_TRUE(symbolic::eq(t->shape()[0], symbolic::min(s16, rows)));
+    EXPECT_TRUE(symbolic::eq(t->shape()[1], s16));
+    // Both the block shape (a padded local buffer) and the clipped shape relocalize.
+    EXPECT_TRUE(layout.matches_access_shape({s16, s16}, gpu::MmaBlockSize(16, 16, 16), gpu::MmaFragmentType::A));
+    EXPECT_TRUE(layout.matches_access_shape(t->shape(), gpu::MmaBlockSize(16, 16, 16), gpu::MmaFragmentType::A));
+
+    nlohmann::json j;
+    gpu::serialize_mma_from_memory_layout(j, layout);
+    auto back = gpu::deserialize_mma_from_memory_layout(j);
+    ASSERT_FALSE(back.rows.is_null());
+    EXPECT_TRUE(symbolic::eq(back.rows, rows));
+    EXPECT_TRUE(back.cols.is_null());
+}
+
+TEST(ROCMMMATest, RaggedTilingCoversPaddedExtents) {
+    auto* mma = gpu::rocm::ROCM_ARCH_GFX90A.mma_support();
+    gpu::MmaBlockSize b16(16, 16, 16);
+    auto exact16 = mma->get_mma_tiling(
+        {symbolic::integer(64), symbolic::integer(64), symbolic::integer(1000)},
+        types::PrimitiveType::Half,
+        types::PrimitiveType::Float,
+        &b16,
+        nullptr
+    );
+    EXPECT_FALSE(exact16.has_value());
+    auto ragged = mma->get_ragged_mma_tiling(
+        {symbolic::integer(64), symbolic::integer(64), symbolic::integer(1000)},
+        types::PrimitiveType::Half,
+        types::PrimitiveType::Half,
+        types::PrimitiveType::Float,
+        &b16,
+        nullptr
+    );
+    ASSERT_TRUE(ragged.has_value());
+    EXPECT_EQ(ragged->macro_tiling.blocks_m, 4);
+    EXPECT_EQ(ragged->macro_tiling.blocks_n, 4);
+}
+
+} // namespace sdfg

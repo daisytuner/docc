@@ -3,30 +3,46 @@
 #include <nlohmann/json.hpp>
 #include <sstream>
 
+#include "sdfg/symbolic/utils.h"
+
 namespace sdfg::gpu {
 
 void GpuMmaFromMemoryLayout::collect_symbols(symbolic::SymbolSet& symbols) const {
-    for (auto& sym : symbolic::atoms(offset)) {
-        symbols.insert(sym);
-    }
-    for (auto& sym : symbolic::atoms(ldstride)) {
-        symbols.insert(sym);
+    for (const auto* e : {&offset, &ldstride, &rows, &cols}) {
+        if (e->is_null()) {
+            continue;
+        }
+        for (auto& sym : symbolic::atoms(*e)) {
+            symbols.insert(sym);
+        }
     }
 }
 
 void GpuMmaFromMemoryLayout::replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) {
-    offset = symbolic::subs(offset, old_expression, new_expression);
-    ldstride = symbolic::subs(ldstride, old_expression, new_expression);
+    for (auto* e : {&offset, &ldstride, &rows, &cols}) {
+        if (!e->is_null()) {
+            *e = symbolic::subs(*e, old_expression, new_expression);
+        }
+    }
 }
 
 void GpuMmaFromMemoryLayout::replace(const symbolic::ExpressionMapping& replacements) {
-    offset = symbolic::subs(offset, replacements);
-    ldstride = symbolic::subs(ldstride, replacements);
+    for (auto* e : {&offset, &ldstride, &rows, &cols}) {
+        if (!e->is_null()) {
+            *e = symbolic::subs(*e, replacements);
+        }
+    }
 }
 
 std::optional<math::tensor::TensorLayout> GpuMmaFromMemoryLayout::
     to_tensor_layout(const MmaBlockSize& block_size, MmaFragmentType frag) const {
     std::vector<symbolic::Expression> shape = block_size.get_shape(frag);
+    if (!rows.is_null()) {
+        shape[0] = symbolic::min(shape[0], rows);
+    }
+    if (!cols.is_null()) {
+        shape[1] = symbolic::min(shape[1], cols);
+    }
     std::vector<symbolic::Expression> strides;
     switch (layout) {
         case MmaFragmentLayout::MMA_LAYOUT_ROW_MAJOR:
@@ -40,6 +56,21 @@ std::optional<math::tensor::TensorLayout> GpuMmaFromMemoryLayout::
     }
 
     return math::tensor::TensorLayout(shape, strides, offset);
+}
+
+bool GpuMmaFromMemoryLayout::matches_access_shape(
+    const symbolic::MultiExpression& shape, const MmaBlockSize& block_size, MmaFragmentType frag
+) const {
+    if (symbolic::vectors_of_expressions_match(shape, block_size.get_shape(frag))) {
+        return true;
+    }
+    if (!clipped()) {
+        return false;
+    }
+    if (auto own = to_tensor_layout(block_size, frag)) {
+        return symbolic::vectors_of_expressions_match(shape, own->shape());
+    }
+    return false;
 }
 
 std::optional<GpuMmaFromMemoryLayout> GpuMmaFromMemoryLayout::from_tensor_layout(const math::tensor::TensorLayout& layout) {
@@ -124,6 +155,12 @@ std::string GpuMmaFromMemoryLayout::toStr() const {
     std::stringstream ss;
     ss << "offset: " << offset->__str__() << ", ldstride: " << ldstride->__str__();
     ss << ", " << mma_fragment_layout_to_string(layout);
+    if (!rows.is_null()) {
+        ss << ", rows: " << rows->__str__();
+    }
+    if (!cols.is_null()) {
+        ss << ", cols: " << cols->__str__();
+    }
     return ss.str();
 }
 
@@ -146,14 +183,27 @@ void serialize_mma_from_memory_layout(nlohmann::json& j, const GpuMmaFromMemoryL
     j["offset"] = layout.offset->__str__();
     j["ldstride"] = layout.ldstride->__str__();
     j["layout"] = static_cast<int>(layout.layout);
+    if (!layout.rows.is_null()) {
+        j["rows"] = layout.rows->__str__();
+    }
+    if (!layout.cols.is_null()) {
+        j["cols"] = layout.cols->__str__();
+    }
 }
 
 GpuMmaFromMemoryLayout deserialize_mma_from_memory_layout(const nlohmann::json& j) {
-    return GpuMmaFromMemoryLayout{
+    GpuMmaFromMemoryLayout layout{
         symbolic::parse(j.at("offset").get<std::string>()),
         symbolic::parse(j.at("ldstride").get<std::string>()),
         static_cast<MmaFragmentLayout>(j.at("layout").get<int>())
     };
+    if (j.contains("rows")) {
+        layout.rows = symbolic::parse(j.at("rows").get<std::string>());
+    }
+    if (j.contains("cols")) {
+        layout.cols = symbolic::parse(j.at("cols").get<std::string>());
+    }
+    return layout;
 }
 
 } // namespace sdfg::gpu

@@ -50,8 +50,9 @@ public:
 
     void serialize_node(nlohmann::json& j, const structured_control_flow::ControlFlowNode& node);
 
-    std::unique_ptr<sdfg::StructuredSDFG> deserialize(nlohmann::json& j);
+    static void element_metadata_to_json(nlohmann::json& j, const sdfg::Element& element);
 
+    std::unique_ptr<sdfg::StructuredSDFG> deserialize(nlohmann::json& j);
     void structure_definition_to_json(nlohmann::json& j, const sdfg::types::StructureDefinition& definition);
     void type_to_json(nlohmann::json& j, const sdfg::types::IType& type);
     void dataflow_to_json(nlohmann::json& j, const sdfg::data_flow::DataFlowGraph& dataflow);

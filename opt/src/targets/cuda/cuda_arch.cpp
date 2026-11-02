@@ -171,21 +171,23 @@ std::optional<GpuMmaTiling> CudaMmaSupport::get_mma_tiling(
         return std::nullopt;
     }
 
-    if (wave_tile_hint && GpuMmaTiling::wave_tile_divides(*wave_tile_hint, tiling.macro_tiling)) {
-        int waves = (tiling.macro_tiling.blocks_m / wave_tile_hint->blocks_m) *
-                    (tiling.macro_tiling.blocks_n / wave_tile_hint->blocks_n);
-        if (waves * tiling.threads_per_mma_wavefront <= 1024) {
-            tiling.wave_tiling = *wave_tile_hint;
+    if (wave_tile_hint) {
+        if (GpuMmaTiling::wave_tile_divides(*wave_tile_hint, tiling.macro_tiling)) {
+            int waves = (tiling.macro_tiling.blocks_m / wave_tile_hint->blocks_m) *
+                        (tiling.macro_tiling.blocks_n / wave_tile_hint->blocks_n);
+            if (waves * tiling.threads_per_mma_wavefront <= 1024) {
+                tiling.wave_tiling = *wave_tile_hint;
+            } else {
+                DEBUG_PRINTLN(
+                    "Wave tiling hint could not be applied because it would exceed the maximum number of threads per "
+                    "block (1024)."
+                );
+                return std::nullopt;
+            }
         } else {
-            DEBUG_PRINTLN(
-                "Wave tiling hint could not be applied because it would exceed the maximum number of threads.x per "
-                "block (1024)."
-            );
+            DEBUG_PRINTLN("Wave tiling hint could not be applied as it does not divide the macro tiles.");
             return std::nullopt;
         }
-    } else {
-        DEBUG_PRINTLN("Wave tiling hint could not be applied as it does not divide the macro tiles.");
-        return std::nullopt;
     }
 
     return tiling;
@@ -194,7 +196,7 @@ std::optional<GpuMmaTiling> CudaMmaSupport::get_mma_tiling(
 void CudaMmaSupport::set_mma_fragment_storage_type(
     types::StorageType& storage_type, const GpuMmaTiling& tiling, MmaFragmentType type, MmaFragmentLayout layout
 ) const {
-    storage_type.value() = MMA_STORAGE_TYPE;
+    storage_type.value(MMA_STORAGE_TYPE);
     auto& size = tiling.mma_block_size;
     storage_type.args(
         {symbolic::integer(size.m),
@@ -208,6 +210,76 @@ void CudaMmaSupport::set_mma_fragment_storage_type(
 std::vector<MmaBlockSize> CudaMmaSupport::
     get_supported_block_sizes(types::PrimitiveType input_type, types::PrimitiveType acc_type) const {
     return {DEFAULT_BLOCK_SIZE};
+}
+
+void CudaMmaSupport::emit_block_frag_type(
+    std::ostream& os,
+    codegen::LanguageExtension& lang_ext,
+    const types::StorageType& storage_type,
+    types::PrimitiveType element_type
+) const {
+    MmaBlockSize size{
+        get_storage_type_arg_as_int(storage_type, 0),
+        get_storage_type_arg_as_int(storage_type, 1),
+        get_storage_type_arg_as_int(storage_type, 2)
+    };
+    auto type = static_cast<MmaFragmentType>(get_storage_type_arg_as_int(storage_type, 3));
+    auto layout = static_cast<MmaFragmentLayout>(get_storage_type_arg_as_int(storage_type, 4));
+    auto val = storage_type.value();
+    emit_block_frag_type(os, lang_ext, type, size, layout, element_type, std::nullopt);
+}
+
+void CudaMmaSupport::emit_block_frag_type(
+    std::ostream& os,
+    codegen::LanguageExtension& lang_ext,
+    MmaFragmentType type,
+    const MmaBlockSize& dims,
+    MmaFragmentLayout layout,
+    types::PrimitiveType scalar_type,
+    std::optional<std::pair<int, int>> coop_dims
+) {
+    os << "nvcuda::wmma::fragment<";
+    switch (type) {
+        case MmaFragmentType::A:
+            os << "nvcuda::wmma::matrix_a, ";
+            break;
+        case MmaFragmentType::B:
+            os << "nvcuda::wmma::matrix_b, ";
+            break;
+        case MmaFragmentType::C:
+            os << "nvcuda::wmma::accumulator, ";
+            break;
+        default:
+            throw std::invalid_argument("invalid fragment type");
+    }
+    os << dims.m << ", ";
+    os << dims.n << ", ";
+    os << dims.k << ", ";
+    switch (scalar_type) {
+        case types::PrimitiveType::BFloat:
+        case types::PrimitiveType::Half:
+        case types::PrimitiveType::Float:
+        case types::PrimitiveType::Double:
+            os << lang_ext.primitive_type(scalar_type);
+            break;
+        default:
+            throw std::invalid_argument(
+                "invalid scalar type: " + std::string(types::primitive_type_to_string(scalar_type)) +
+                " on mma fragment declaration"
+            );
+    }
+
+    if (layout == MmaFragmentLayout::MMA_LAYOUT_COL_MAJOR) {
+        os << ", nvcuda::wmma::col_major";
+    } else if (layout == MmaFragmentLayout::MMA_LAYOUT_ROW_MAJOR) {
+        os << ", nvcuda::wmma::row_major";
+    }
+
+    if (coop_dims) {
+        os << ", nvcuda::wmma::fragment_scheduler::coop_row_major_2d<" << coop_dims->first << ", " << coop_dims->second
+           << ">";
+    }
+    os << ">";
 }
 
 bool CudaMmaSupport::is_mma_type(const types::StorageType& storage) {

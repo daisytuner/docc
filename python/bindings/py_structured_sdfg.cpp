@@ -770,20 +770,24 @@ std::string PyStructuredSDFG::to_dot() const {
 }
 
 std::string PyStructuredSDFG::to_cpp() const {
-    sdfg::builder::StructuredSDFGBuilder builder(*sdfg_);
-    sdfg::analysis::AnalysisManager analysis_manager(*sdfg_, options_);
+    // Clone the SDFG to avoid mutating the original during code generation.
+    auto owner = sdfg_->clone();
+    sdfg::StructuredSDFG& sdfg = *owner;
+
+    sdfg::builder::StructuredSDFGBuilder builder(sdfg);
+    sdfg::analysis::AnalysisManager analysis_manager(sdfg, options_);
 
     sdfg::passes::ReductionSharedMemoryDelinearization reduction_buffers;
     reduction_buffers.run(builder, analysis_manager);
 
-    auto instrumentation_plan = sdfg::codegen::InstrumentationPlan::none(*sdfg_);
-    auto arg_capture_plan = sdfg::codegen::ArgCapturePlan::none(*sdfg_);
+    auto instrumentation_plan = sdfg::codegen::InstrumentationPlan::none(sdfg);
+    auto arg_capture_plan = sdfg::codegen::ArgCapturePlan::none(sdfg);
 
     std::shared_ptr<sdfg::codegen::CodeSnippetFactory> snippet_factory =
         std::make_shared<sdfg::codegen::CodeSnippetFactory>();
 
     sdfg::codegen::CPPCodeGenerator
-        generator(*sdfg_, analysis_manager, *instrumentation_plan, *arg_capture_plan, snippet_factory);
+        generator(sdfg, analysis_manager, *instrumentation_plan, *arg_capture_plan, snippet_factory);
     generator.generate();
 
     std::ostringstream oss;

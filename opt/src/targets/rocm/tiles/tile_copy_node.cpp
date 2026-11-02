@@ -39,6 +39,37 @@ bool lds_dma_compatible(const ::sdfg::tiles::TileCopyNode& node, size_t elem_byt
     return true;
 }
 
+// Guarded (ragged) copy-in load on CDNA: out-of-bounds lanes issue a raw buffer load at an out-of-range offset
+// (the descriptor spans 2^31 - 1 bytes), which the hardware returns as zero, so no select on the loaded value
+// stalls the register-staged prefetch. Requires byte offsets below 2 GiB. RDNA (different descriptor flags) and
+// the host pass use the predicated load.
+std::string buffer_guarded_load(
+    const std::string& type,
+    const std::string& var,
+    const std::string& base,
+    const std::string& index,
+    size_t elem_bytes,
+    size_t bytes
+) {
+    const char* builtin = bytes == 16  ? "__builtin_amdgcn_raw_buffer_load_b128"
+                          : bytes == 8 ? "__builtin_amdgcn_raw_buffer_load_b64"
+                          : bytes == 4 ? "__builtin_amdgcn_raw_buffer_load_b32"
+                          : bytes == 2 ? "__builtin_amdgcn_raw_buffer_load_b16"
+                          : bytes == 1 ? "__builtin_amdgcn_raw_buffer_load_b8"
+                                       : nullptr;
+    const std::string predicated = ::sdfg::tiles::emit_predicated_guarded_load(type, var, base, index);
+    if (builtin == nullptr || elem_bytes == 0) {
+        return predicated;
+    }
+    std::string s = "\n#if ";
+    s += kCdnaArchGuard;
+    s += "\nconst " + type + " " + var + " = __builtin_bit_cast(" + type + ", " + builtin +
+         "(__builtin_amdgcn_make_buffer_rsrc((void*) (" + base + "), (short) 0, 0x7fffffff, 0x00020000), __tc_ok ? " +
+         "(int) (" + std::to_string(elem_bytes) + " * (" + index + ")) : (int) 0x80000000, 0, 0));\n";
+    s += "#else\n" + predicated + "\n#endif\n";
+    return s;
+}
+
 } // namespace
 
 TileCopyNodeDispatcher::TileCopyNodeDispatcher(
@@ -93,7 +124,9 @@ void TileCopyNodeDispatcher::dispatch_code_with_edges(
         s += "#endif";
         return s;
     };
-    ::sdfg::tiles::emit_cooperative_copy_loop(language_extension_, out.stream, node, dst, src, pt, async_stmt);
+    ::sdfg::tiles::emit_cooperative_copy_loop(
+        language_extension_, out.stream, node, dst, src, pt, async_stmt, buffer_guarded_load
+    );
     // Keep the scheduler from sinking prefetch loads to their LDS store, which exposes their latency.
     if (node.phase() == ::sdfg::tiles::CopyPhase::LoadRegs) {
         out.stream << "__builtin_amdgcn_sched_barrier(0);" << std::endl;

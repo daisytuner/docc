@@ -1,6 +1,8 @@
 #include "sdfg/transformations/rpc_node_transform.h"
 
 #include <curl/curl.h>
+#include <cmath>
+#include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <nlohmann/json.hpp>
@@ -27,6 +29,48 @@
 
 namespace sdfg {
 namespace transformations {
+
+namespace {
+
+// Environment-controlled options of the RPC request, read in one place.
+struct RpcEnvOptions {
+    // DAISY_RECIPE_COLLECTION: pin the server-side recipe lookup to a specific collection
+    // (server default if unset or empty).
+    std::optional<std::string> collection;
+    // DAISY_USE_IDENTITY: only match recipes whose outermost loop bound equals this nest's.
+    // Off by default; enabled by any value other than "", "0", "false", "FALSE".
+    bool use_identity = false;
+    // DOCC_RPC_DISTANCE_THRESHOLD: override of the server's neighbor-distance tolerance
+    // (positive number; server default if unset, warning and ignored if invalid).
+    std::optional<double> distance_threshold;
+};
+
+RpcEnvOptions read_rpc_env_options() {
+    RpcEnvOptions opts;
+
+    if (const char* v = std::getenv("DAISY_RECIPE_COLLECTION"); v && *v) {
+        opts.collection = std::string(v);
+    }
+
+    if (const char* v = std::getenv("DAISY_USE_IDENTITY")) {
+        std::string s(v);
+        opts.use_identity = !(s.empty() || s == "0" || s == "false" || s == "FALSE");
+    }
+
+    if (const char* v = std::getenv("DOCC_RPC_DISTANCE_THRESHOLD"); v && *v) {
+        char* end = nullptr;
+        double threshold = std::strtod(v, &end);
+        if (end != v && *end == '\0' && std::isfinite(threshold) && threshold > 0.0) {
+            opts.distance_threshold = threshold;
+        } else {
+            std::cerr << "[WARN] Ignoring invalid DOCC_RPC_DISTANCE_THRESHOLD='" << v << "'" << std::endl;
+        }
+    }
+
+    return opts;
+}
+
+} // namespace
 
 
 RPCNodeTransform::RPCNodeTransform(
@@ -90,6 +134,8 @@ bool RPCNodeTransform::
         builder.subject().add_metadata("transfer_tuning_session_id", this->session_id_.value());
     }
 
+    const RpcEnvOptions env_opts = read_rpc_env_options();
+
     auto opt_resp = query_rpc_server(
         {.sdfg = builder.subject(),
          .category = this->category_,
@@ -97,7 +143,10 @@ bool RPCNodeTransform::
          .enable_fusion = this->enable_fusion_,
          .normalize = this->normalize_,
          .schedule_loops = this->schedule_loops_,
-         .session_id = this->session_id_},
+         .session_id = this->session_id_,
+         .collection = env_opts.collection,
+         .use_identity = env_opts.use_identity,
+         .distance_threshold = env_opts.distance_threshold},
         rpc_context_
     );
 
@@ -152,6 +201,15 @@ std::variant<std::unique_ptr<passes::rpc::RpcOptResponse>, std::string> RPCNodeT
     };
     if (request.session_id.has_value()) {
         payload["session_id"] = request.session_id.value();
+    }
+    if (request.collection.has_value()) {
+        payload["collection_name"] = request.collection.value();
+    }
+    if (request.use_identity) {
+        payload["use_identity"] = true;
+    }
+    if (request.distance_threshold.has_value()) {
+        payload["distance_threshold"] = request.distance_threshold.value();
     }
     std::string payload_str = payload.dump();
 

@@ -65,9 +65,117 @@ void TileGuard::replace_symbols(const symbolic::ExpressionMapping& replacements)
     }
 }
 
+namespace {
+
+// Provably `x >= y` for every symbol value: a non-negative constant difference, or for min/max
+// operands the matching componentwise argument relation.
+bool provably_ge(const symbolic::Expression& x, const symbolic::Expression& y) {
+    auto diff = symbolic::simplify(symbolic::expand(symbolic::sub(x, y)));
+    if (SymEngine::is_a<SymEngine::Integer>(*diff)) {
+        return SymEngine::rcp_static_cast<const SymEngine::Integer>(diff)->as_int() >= 0;
+    }
+    // min(X) >= y if every X_i >= y; x >= max(Y) if x >= every Y_j.
+    if (SymEngine::is_a<SymEngine::Min>(*x)) {
+        for (const auto& a : x->get_args()) {
+            if (!provably_ge(a, y)) {
+                return false;
+            }
+        }
+        return true;
+    }
+    if (SymEngine::is_a<SymEngine::Max>(*y)) {
+        for (const auto& b : y->get_args()) {
+            if (!provably_ge(x, b)) {
+                return false;
+            }
+        }
+        return true;
+    }
+    // x >= min(Y) if x >= some Y_j; max(X) >= y if some X_i >= y.
+    if (SymEngine::is_a<SymEngine::Min>(*y)) {
+        for (const auto& b : y->get_args()) {
+            if (provably_ge(x, b)) {
+                return true;
+            }
+        }
+    }
+    if (SymEngine::is_a<SymEngine::Max>(*x)) {
+        for (const auto& a : x->get_args()) {
+            if (provably_ge(a, y)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+} // namespace
+
+symbolic::Expression simplify_tile_bound(
+    const symbolic::Expression& max, const symbolic::Expression& base, const symbolic::Expression& size
+) {
+    if (max.is_null()) {
+        return max;
+    }
+    const bool is_min = SymEngine::is_a<SymEngine::Min>(*max);
+    if (!is_min && !SymEngine::is_a<SymEngine::Max>(*max)) {
+        return max;
+    }
+    // The coordinate never exceeds base + size - 1, so a min argument at or above it never binds.
+    symbolic::Expression tile_last = size.is_null() ? symbolic::Expression(SymEngine::null)
+                                                    : symbolic::add(base, symbolic::sub(size, symbolic::one()));
+    std::vector<symbolic::Expression> args;
+    for (const auto& a : max->get_args()) {
+        args.push_back(simplify_tile_bound(a, base, size));
+    }
+    std::vector<symbolic::Expression> kept;
+    for (size_t i = 0; i < args.size(); ++i) {
+        if (is_min && !tile_last.is_null() && provably_ge(args[i], tile_last)) {
+            continue;
+        }
+        // Drop an argument dominated by another (for min: one that is >= another; for max: <=).
+        bool dominated = false;
+        for (size_t j = 0; j < args.size() && !dominated; ++j) {
+            if (i == j) {
+                continue;
+            }
+            bool ge = is_min ? provably_ge(args[i], args[j]) : provably_ge(args[j], args[i]);
+            // Mutual dominance (equal arguments): keep the first.
+            bool le = is_min ? provably_ge(args[j], args[i]) : provably_ge(args[i], args[j]);
+            dominated = ge && (!le || j < i);
+        }
+        if (!dominated) {
+            kept.push_back(args[i]);
+        }
+    }
+    if (kept.empty()) {
+        // Every min argument is above the tile: the bound never binds within it.
+        return tile_last.is_null() ? max : tile_last;
+    }
+    if (kept.size() == 1) {
+        return kept.front();
+    }
+    SymEngine::vec_basic v(kept.begin(), kept.end());
+    return is_min ? SymEngine::min(v) : SymEngine::max(v);
+}
+
+bool TileGuard::simplify() {
+    bool changed = false;
+    for (auto& d : dims) {
+        auto size = d.axis < tile_sizes.size() ? tile_sizes.at(d.axis) : symbolic::Expression(SymEngine::null);
+        auto s = simplify_tile_bound(d.max, d.base, size);
+        if (!symbolic::eq(s, d.max)) {
+            d.max = s;
+            changed = true;
+        }
+    }
+    return changed;
+}
+
 bool TileGuard::discharge(const symbolic::SymbolSet& parameters, const symbolic::Assumptions& assumptions) {
+    bool simplified = simplify();
     if (assumptions.empty()) {
-        return false;
+        return simplified;
     }
     std::vector<Dim> kept;
     for (const auto& d : dims) {
@@ -82,7 +190,7 @@ bool TileGuard::discharge(const symbolic::SymbolSet& parameters, const symbolic:
         kept.push_back(d);
     }
     if (kept.size() == dims.size()) {
-        return false;
+        return simplified;
     }
     dims = std::move(kept);
     return true;

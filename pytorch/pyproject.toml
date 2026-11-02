@@ -1,3 +1,7 @@
+[build-system]
+requires = ["scikit-build-core>=0.10"]
+build-backend = "scikit_build_core.build"
+
 [project]
 name = "docc-pytorch"
 dynamic = ["version"]
@@ -25,7 +29,8 @@ classifiers = [
 ]
 keywords = ["pytorch", "sdfg", "compiler", "optimization"]
 dependencies = [
-    # "docc-compiler",
+    "docc-compiler",
+    "torch>=2.13",
     "numpy>=1.19.0",
     "ml_dtypes>=0.5.4",
     "sympy>=1.14.0"
@@ -36,3 +41,12 @@ Homepage = "https://daisytuner.com"
 Documentation = "https://docs.daisytuner.com"
 Repository = "https://github.com/daisytuner/docc"
 Issues = "https://github.com/daisytuner/docc/issues"
+
+[tool.scikit-build]
+wheel.cmake = false
+wheel.packages = ["docc"]
+
+[tool.scikit-build.metadata.version]
+provider = "scikit_build_core.metadata.regex"
+input = "../VERSION"
+regex = "(?P<value>\\d+\\.\\d+\\.\\d+)"

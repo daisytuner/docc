@@ -19,6 +19,7 @@ test_outputs/
 *.resolution.txt
 *.egg-info
 
+pytestOutput/
 
 # Prerequisites
 *.d

@@ -2,7 +2,9 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "sdfg/codegen/dispatchers/block_dispatcher.h"
@@ -75,7 +77,45 @@ public:
         const std::vector<std::string>& additional_frags,
         const EltwiseCompute& compute
     ) const = 0;
+
+    /// Expression for element @p idx of this lane's share of @p frag (needed for clipped transfers).
+    virtual std::string fragment_element(const std::string& frag, const std::string& idx) const {
+        throw std::runtime_error("GpuMmaDispatcherStrategy: clipped fragment transfers are not supported");
+    }
+
+    /// Number of elements of this lane's share of @p frag (needed for clipped transfers).
+    virtual std::string fragment_element_count(const std::string& frag) const {
+        throw std::runtime_error("GpuMmaDispatcherStrategy: clipped fragment transfers are not supported");
+    }
+
+    /// Analytic (row, col) block coordinates of this lane's element @p idx, if the fragment's register layout is
+    /// known; clipped transfers otherwise recover them by loading an iota table through the fragment load.
+    /// @p condition receives a preprocessor condition under which the layout holds (empty = always).
+    virtual std::optional<std::pair<std::string, std::string>> fragment_element_coords(
+        MmaFragmentType frag_type, const MmaBlockSize& block_size, const std::string& idx, std::string& condition
+    ) const {
+        return std::nullopt;
+    }
 };
+
+/**
+ * Emit a fragment load/store whose layout is clipped (GpuMmaFromMemoryLayout::rows/cols): a wave-uniform branch
+ * takes the plain transfer when the fragment is fully in bounds, otherwise an element-wise transfer that zero-fills
+ * out-of-bounds loads and skips out-of-bounds stores. The element coordinates come from loading an iota table
+ * through the strategy's own fragment load, so no knowledge of the fragment's register layout is needed.
+ */
+void emit_clipped_fragment_transfer(
+    codegen::CodegenOutput& out,
+    const GpuMmaDispatcherStrategy& strategy,
+    bool load,
+    const std::string& frag,
+    const std::string& base,
+    const GpuMmaFromMemoryLayout& layout,
+    const MmaBlockSize& block_size,
+    MmaFragmentType frag_type,
+    types::PrimitiveType element_type,
+    MmaFragmentLayout fragment_layout
+);
 
 /// Shared storage for the strategy; each composable MMA node has its own dispatcher subclass.
 class GpuMmaNodeDispatcher : public codegen::LibraryNodeDispatcher {

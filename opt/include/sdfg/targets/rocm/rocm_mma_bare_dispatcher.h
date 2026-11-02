@@ -49,6 +49,32 @@ public:
         const EltwiseCompute& compute
     ) const override;
 
+    std::string fragment_element(const std::string& frag, const std::string& idx) const override {
+        return frag + "[" + idx + "]";
+    }
+
+    std::string fragment_element_count(const std::string& frag) const override {
+        return "static_cast<int>(sizeof(" + frag + ") / sizeof(" + frag + "[0]))";
+    }
+
+    /// The raw MFMA register layouts documented above.
+    std::optional<std::pair<std::string, std::string>> fragment_element_coords(
+        MmaFragmentType frag_type, const MmaBlockSize& block_size, const std::string& idx, std::string& condition
+    ) const override {
+        const std::string lane = "(threadIdx.x % 64)";
+        const std::string lo = "(" + lane + " % 32)";
+        const std::string kq = "(4 * (" + lane + " / 32) + " + idx + ")";
+        condition.clear();
+        switch (frag_type) {
+            case MmaFragmentType::A:
+                return std::make_pair(lo, kq);
+            case MmaFragmentType::B:
+                return std::make_pair(kq, lo);
+            default:
+                return std::make_pair("(8 * (" + idx + " / 4) + 4 * (" + lane + " / 32) + " + idx + " % 4)", lo);
+        }
+    }
+
 private:
     /// Move a fragment between memory and its lane registers (@p load: memory -> fragment).
     void emit_fragment_transfer(

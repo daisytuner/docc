@@ -211,6 +211,60 @@ TEST(TileVectorizerTest, InnerAxisGuardBlocksWidening) {
 
 // The fp32 4x4 coalesced block copy issues 16-byte row loads/stores, so both plan offsets must be
 // provably 4-element aligned, using the enclosing map's stride for its indvar.
+TEST(TileVectorizerTest, AlignedInnerAxisGuardWidens) {
+    // A column-major fp16 [16][4] tile with rows 0..7 valid: after the sweep reorder the ragged row axis
+    // is inner, but its exclusive bound (8) is a multiple of the 8-element transfer, so every 16-byte
+    // transfer is entirely in or out of bounds.
+    builder::StructuredSDFGBuilder builder("tv_guard_aligned", FunctionType_CPU);
+    types::Scalar loop_var(types::PrimitiveType::Int32);
+    types::Scalar elem(types::PrimitiveType::Half);
+    types::Pointer ptr(elem);
+    builder.add_container("A", ptr, true);
+    builder.add_container("buf", types::Array(types::StorageType::NV_Shared(), 16, "", elem, symbolic::integer(96)));
+    builder.add_container("b", loop_var);
+    auto b = symbolic::symbol("b");
+    auto sched_b = gpu::ScheduleType_GPU_Offload::create<
+        cuda::ScheduleType_CUDA_Offload>(gpu::TargetLevel::X_BLOCK, symbolic::integer(32));
+    auto& map_b = builder.add_map(
+        builder.subject().root(),
+        b,
+        symbolic::Lt(b, symbolic::integer(32)),
+        symbolic::integer(0),
+        symbolic::add(b, symbolic::integer(1)),
+        sched_b
+    );
+    auto& block = builder.add_block(map_b.root());
+    auto& src = builder.add_access(block, "A");
+    auto& dst = builder.add_access(block, "buf");
+
+    tiles::TiledCopy plan;
+    plan.src = tiles::Layout(
+        {symbolic::integer(16), symbolic::integer(4)}, {symbolic::integer(1), symbolic::integer(32)}, symbolic::zero()
+    );
+    plan.dst = tiles::Layout(
+        {symbolic::integer(16), symbolic::integer(4)}, {symbolic::integer(1), symbolic::integer(24)}, symbolic::zero()
+    );
+    tiles::TileGuard guard;
+    guard.tile_sizes = {symbolic::integer(16), symbolic::integer(4)};
+    guard.dims.push_back({0u, symbolic::zero(), symbolic::integer(7)});
+    ASSERT_TRUE(tiles::coalesce_sweep_order(plan, guard));
+
+    auto& copy = static_cast<tiles::TileCopyNode&>(builder.add_library_node<tiles::TileCopyNode>(
+        block, DebugInfo(), data_flow::ImplementationType_NONE, plan, tiles::CopyDirection::In, 2, guard
+    ));
+    builder.add_computational_memlet(block, dst, copy, "_dst", {}, ptr);
+    builder.add_computational_memlet(block, src, copy, "_src", {}, ptr);
+
+    analysis::AnalysisManager am(builder.subject());
+    TileVectorizer tv(map_b);
+    ASSERT_TRUE(tv.can_be_applied(builder, am));
+    tv.apply(builder, am);
+    EXPECT_EQ(copy.atom(), tiles::CopyAtom::VectorSync) << copy.toStr();
+    EXPECT_EQ(copy.bytes(), 16u);
+}
+
+// The fp32 4x4 coalesced block copy issues 16-byte row loads/stores, so both plan offsets must be
+// provably 4-element aligned, using the enclosing map's stride for its indvar.
 TEST(TileVectorizerTest, CoalescedBlockCopyRequiresAlignedOffsets) {
     auto b = symbolic::symbol("b");
     struct Case {

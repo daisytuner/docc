@@ -25,10 +25,11 @@ bool is_grid_level(gpu::TargetLevel level) {
     return level == gpu::TargetLevel::X_GRID || level == gpu::TargetLevel::Y_GRID || level == gpu::TargetLevel::Z_GRID;
 }
 
-// A GPU-offloaded loop whose schedule maps it to a grid axis.
+/// Returns true if the given loop is a grid-level GPU offload (Map) node. Safe to ask on non-offloaded loops
 bool is_grid_offloaded(const StructuredLoop& loop) {
     try {
-        return is_grid_level(gpu::ScheduleType_GPU_Offload::target_level(loop.schedule_type()));
+        auto tgt_level = gpu::ScheduleType_GPU_Offload::target_level_if_exists(loop.schedule_type());
+        return tgt_level.has_value() && is_grid_level(tgt_level.value());
     } catch (...) {
         return false; // schedule is not a GPU offload / target_level unset
     }

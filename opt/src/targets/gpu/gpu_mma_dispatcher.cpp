@@ -7,9 +7,146 @@
 #include "sdfg/targets/gpu/gpu_mma_fragment_load_node.h"
 #include "sdfg/targets/gpu/gpu_mma_fragment_store_node.h"
 #include "sdfg/targets/gpu/gpu_mma_matmul_node.h"
+#include "sdfg/types/pointer.h"
+#include "sdfg/types/scalar.h"
 
 namespace sdfg::gpu {
 
+void emit_clipped_fragment_transfer(
+    codegen::CodegenOutput& out,
+    const GpuMmaDispatcherStrategy& strategy,
+    bool load,
+    const std::string& frag,
+    const std::string& base,
+    const GpuMmaFromMemoryLayout& layout,
+    const MmaBlockSize& block_size,
+    MmaFragmentType frag_type,
+    types::PrimitiveType element_type,
+    MmaFragmentLayout fragment_layout
+) {
+    auto& lang = out.language_extension;
+    auto shape = block_size.get_shape(frag_type);
+    const auto R = SymEngine::rcp_static_cast<const SymEngine::Integer>(shape[0])->as_int();
+    const auto C = SymEngine::rcp_static_cast<const SymEngine::Integer>(shape[1])->as_int();
+    const bool row_major = layout.layout == MmaFragmentLayout::MMA_LAYOUT_ROW_MAJOR;
+
+    GpuMmaFromMemoryLayout unclipped = layout;
+    unclipped.rows = SymEngine::null;
+    unclipped.cols = SymEngine::null;
+
+    symbolic::Condition full = SymEngine::boolTrue;
+    if (!layout.rows.is_null()) {
+        full = symbolic::And(full, symbolic::Ge(layout.rows, shape[0]));
+    }
+    if (!layout.cols.is_null()) {
+        full = symbolic::And(full, symbolic::Ge(layout.cols, shape[1]));
+    }
+
+    out.stream << "if (" << lang.expression(full) << ") {" << std::endl;
+    out.stream.changeIndent(+4);
+    if (load) {
+        strategy.emit_fragment_load(out, frag, base, unclipped, frag_type, element_type, fragment_layout);
+    } else {
+        strategy.emit_fragment_store(out, frag, base, unclipped, frag_type, element_type);
+    }
+    out.stream.changeIndent(-4);
+    out.stream << "} else {" << std::endl;
+    out.stream.changeIndent(+4);
+
+    out.stream << "using __docc_elem_t = std::remove_cv_t<std::remove_reference_t<decltype("
+               << strategy.fragment_element(frag, "0") << ")>>;" << std::endl;
+
+    const std::string ld = "(" + lang.expression(layout.ldstride) + ")";
+    const std::string off = layout.offset.is_null() ? "0" : "(" + lang.expression(layout.offset) + ")";
+    const std::string ptr = lang.type_cast(base, types::Pointer(types::Scalar(element_type)));
+    std::string in_bounds = "true";
+    if (!layout.rows.is_null()) {
+        in_bounds += " && __docc_r < (" + lang.expression(layout.rows) + ")";
+    }
+    if (!layout.cols.is_null()) {
+        in_bounds += " && __docc_c < (" + lang.expression(layout.cols) + ")";
+    }
+    const std::string mem = "(" + ptr + ")[" + off + " + " +
+                            (row_major ? "__docc_r * " + ld + " + __docc_c" : "__docc_r + __docc_c * " + ld) + "]";
+    const std::string elem = strategy.fragment_element(frag, "__docc_e");
+
+    // Iota table over the block in the fragment's memory layout: loading it through the same fragment load yields
+    // each lane element's linear block coordinate, independent of the fragment's register layout.
+    auto emit_iota = [&]() {
+        const std::string n = std::to_string(R * C);
+        // hip_bfloat16 has no constexpr float constructor: build bf16 iota values from their bits (exact up to 256).
+        const std::string iota_value =
+            element_type == types::PrimitiveType::BFloat
+                ? "__builtin_bit_cast(__docc_elem_t, static_cast<unsigned short>(__builtin_bit_cast(unsigned int, "
+                  "static_cast<float>(i)) >> 16))"
+                : "static_cast<__docc_elem_t>(i)";
+        out.stream << "struct __docc_iota_t { __docc_elem_t v[" << n << "]; };" << std::endl;
+        out.stream << "static constexpr __docc_iota_t __docc_iota = []() constexpr { __docc_iota_t t{}; for (int i "
+                      "= 0; i < "
+                   << n << "; ++i) { t.v[i] = " << iota_value << "; } return t; }();" << std::endl;
+        out.stream << "__typeof__(" << frag << ") __docc_idx;" << std::endl;
+        GpuMmaFromMemoryLayout iota_layout{
+            .offset = symbolic::zero(), .ldstride = symbolic::integer(row_major ? C : R), .layout = layout.layout
+        };
+        strategy.emit_fragment_load(
+            out,
+            "__docc_idx",
+            "const_cast<__docc_elem_t*>(__docc_iota.v)",
+            iota_layout,
+            frag_type,
+            element_type,
+            fragment_layout
+        );
+    };
+    auto emit_coords_from_iota = [&]() {
+        out.stream << "const int __docc_v = static_cast<int>(static_cast<float>("
+                   << strategy.fragment_element("__docc_idx", "__docc_e") << "));" << std::endl;
+        if (row_major) {
+            out.stream << "const int __docc_r = __docc_v / " << C << ", __docc_c = __docc_v % " << C << ";"
+                       << std::endl;
+        } else {
+            out.stream << "const int __docc_c = __docc_v / " << R << ", __docc_r = __docc_v % " << R << ";"
+                       << std::endl;
+        }
+    };
+
+    std::string condition;
+    auto coords = strategy.fragment_element_coords(frag_type, block_size, "__docc_e", condition);
+    if (coords && !condition.empty()) {
+        out.stream << "#if !(" << condition << ")" << std::endl;
+        emit_iota();
+        out.stream << "#endif" << std::endl;
+    } else if (!coords) {
+        emit_iota();
+    }
+
+    out.stream << "for (int __docc_e = 0; __docc_e < " << strategy.fragment_element_count(frag) << "; ++__docc_e) {"
+               << std::endl;
+    out.stream.changeIndent(+4);
+    if (coords) {
+        if (!condition.empty()) {
+            out.stream << "#if " << condition << std::endl;
+        }
+        out.stream << "const int __docc_r = " << coords->first << ", __docc_c = " << coords->second << ";" << std::endl;
+        if (!condition.empty()) {
+            out.stream << "#else" << std::endl;
+            emit_coords_from_iota();
+            out.stream << "#endif" << std::endl;
+        }
+    } else {
+        emit_coords_from_iota();
+    }
+    if (load) {
+        out.stream << elem << " = (" << in_bounds << ") ? static_cast<__docc_elem_t>(" << mem
+                   << ") : static_cast<__docc_elem_t>(0);" << std::endl;
+    } else {
+        out.stream << "if (" << in_bounds << ") { " << mem << " = " << elem << "; }" << std::endl;
+    }
+    out.stream.changeIndent(-4);
+    out.stream << "}" << std::endl;
+    out.stream.changeIndent(-4);
+    out.stream << "}" << std::endl;
+}
 void GpuMmaMatmulDispatcher::dispatch_code_with_edges(
     codegen::CodegenOutput& out,
     std::vector<codegen::DispatchInput>& inputs,
@@ -70,6 +207,21 @@ void GpuMmaFragmentLoadDispatcher::dispatch_code_with_edges(
         static_cast<const data_flow::AccessNode&>(inputs.at(GpuMmaFragmentLoadNode::FRAG_INPUT_IDX).edge.src());
     auto frag_layout = get_fragment_memory_layout(frag_node.data(), function_);
 
+    if (node.layout().clipped()) {
+        emit_clipped_fragment_transfer(
+            out,
+            *strategy_,
+            true,
+            frag,
+            base,
+            node.layout(),
+            node.block_size(),
+            node.fragment_type(),
+            node.element_type(),
+            frag_layout
+        );
+        return;
+    }
     strategy_
         ->emit_fragment_load(out, frag, base, node.layout(), node.fragment_type(), node.element_type(), frag_layout);
 }
@@ -86,6 +238,23 @@ void GpuMmaFragmentStoreDispatcher::dispatch_code_with_edges(
     const std::string& frag = inputs.at(GpuMmaFragmentStoreNode::FRAG_INPUT_IDX).expr;
     const std::string& base = inputs.at(GpuMmaFragmentStoreNode::PTR_INPUT_IDX).expr;
 
+    if (node.layout().clipped()) {
+        auto& frag_node =
+            static_cast<const data_flow::AccessNode&>(inputs.at(GpuMmaFragmentStoreNode::FRAG_INPUT_IDX).edge.src());
+        emit_clipped_fragment_transfer(
+            out,
+            *strategy_,
+            false,
+            frag,
+            base,
+            node.layout(),
+            node.block_size(),
+            node.fragment_type(),
+            node.element_type(),
+            get_fragment_memory_layout(frag_node.data(), function_)
+        );
+        return;
+    }
     strategy_->emit_fragment_store(out, frag, base, node.layout(), node.fragment_type(), node.element_type());
 }
 

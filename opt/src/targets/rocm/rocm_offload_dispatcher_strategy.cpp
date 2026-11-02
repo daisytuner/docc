@@ -12,15 +12,8 @@
 namespace sdfg {
 namespace rocm {
 
-ROCMOffloadDispatcherStrategy::ROCMOffloadDispatcherStrategy(StructuredSDFG& sdfg, const StructuredLoop& loop)
-    : kernel_language_extension_(sdfg, gpu::rocm::rocm_arch_from_schedule_type(loop.schedule_type())) {};
+ROCMOffloadDispatcherStrategy::ROCMOffloadDispatcherStrategy() {};
 
-ROCMOffloadDispatcherStrategy::ROCMOffloadDispatcherStrategy(StructuredSDFG& sdfg)
-    : kernel_language_extension_(sdfg, nullptr) {};
-
-codegen::LanguageExtension& ROCMOffloadDispatcherStrategy::create_kernel_language_extension() {
-    return kernel_language_extension_;
-}
 
 void ROCMOffloadDispatcherStrategy::dispatch_kernel_call(
     codegen::PrettyPrinter& main_stream,
@@ -102,6 +95,18 @@ std::string ROCMOffloadDispatcherStrategy::warp_shuffle_xor(const std::string& v
 
 codegen::TargetType ROCMOffloadDispatcherStrategy::get_instrumentation_kernel_target_type() const {
     return TargetType_ROCM;
+}
+
+bool ROCMOffloadDispatcherStrategy::is_matching_kernel_language_extension(
+    const StructuredSDFG& sdfg, const StructuredLoop& loop, codegen::LanguageExtension& language_extension
+) {
+    return dynamic_cast<ROCMLanguageExtension*>(&language_extension) != nullptr;
+}
+
+std::unique_ptr<codegen::LanguageExtension> ROCMOffloadDispatcherStrategy::
+    create_kernel_language_extension(StructuredSDFG& sdfg, const StructuredLoop& loop) {
+    auto* arch = sdfg::gpu::rocm::rocm_arch_from_schedule_type(loop.schedule_type());
+    return std::make_unique<ROCMLanguageExtension>(sdfg, arch);
 }
 
 } // namespace rocm

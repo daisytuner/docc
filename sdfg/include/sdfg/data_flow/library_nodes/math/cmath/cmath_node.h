@@ -1,6 +1,6 @@
 #pragma once
 
-#include "sdfg/data_flow/library_nodes/math/math_node.h"
+#include "sdfg/data_flow/library_node.h"
 #include "sdfg/types/type.h"
 
 #include "sdfg/codegen/dispatchers/block_dispatcher.h"
@@ -482,7 +482,7 @@ inline std::string get_cmath_approximate_intrinsic_name(CMathFunction func, type
     }
 }
 
-class CMathNode : public math::MathNode {
+class CMathNode : public data_flow::LibraryNode {
 private:
     CMathFunction function_;
     types::PrimitiveType primitive_type_;
@@ -517,12 +517,6 @@ public:
     void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override;
 
     void replace(const symbolic::ExpressionMapping& replacements) override;
-
-
-    passes::LibNodeExpander::ExpandOutcome
-    expand(passes::LibNodeExpander::ExpandContext& context, structured_control_flow::Block& block) override {
-        return context.unable();
-    }
 
     std::unique_ptr<data_flow::DataFlowNode>
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const override;

@@ -223,6 +223,120 @@ TEST(TileCopyNodeTest, ReferenceDispatcherEmitsBoundaryGuard) {
     const std::string code = stream.str();
     EXPECT_NE(code.find("if ("), std::string::npos) << code;
     EXPECT_NE(code.find("__tc_i0 <= 2"), std::string::npos) << code;
+    // A ragged copy-in zero-fills the over-approximated buffer elements.
+    EXPECT_NE(code.find("else"), std::string::npos) << code;
+    EXPECT_NE(code.find("(0)"), std::string::npos) << code;
+}
+
+namespace {
+// A guarded 1-D float copy of a 48-tile with bound `max`, dispatched through the cooperative CUDA (or ROCm) path.
+std::string dispatch_guarded_cooperative(
+    tiles::CopyDirection direction, size_t bytes, tiles::CopyAtom atom, bool rocm_target = false
+) {
+    auto builder = make_builder();
+    types::Scalar elem(types::PrimitiveType::Float);
+    types::Pointer ptr(elem);
+    builder.add_container("g", ptr);
+    builder.add_container("buf", types::Array(elem, symbolic::integer(48)));
+    auto& block = builder.add_block(builder.subject().root());
+    auto& g = builder.add_access(block, "g");
+    auto& buf = builder.add_access(block, "buf");
+    tiles::TiledCopy plan;
+    plan.src = tiles::Layout({symbolic::integer(48)}, {symbolic::integer(1)}, symbolic::integer(0));
+    plan.dst = tiles::Layout({symbolic::integer(48)}, {symbolic::integer(1)}, symbolic::integer(0));
+    plan.atom = atom;
+    tiles::TileGuard guard;
+    guard.tile_sizes = {symbolic::integer(48)};
+    guard.dims.push_back({0, symbolic::integer(0), symbolic::integer(39)});
+    auto& node = static_cast<tiles::TileCopyNode&>(builder.add_library_node<tiles::TileCopyNode>(
+        block,
+        DebugInfo(),
+        data_flow::ImplementationType_NONE,
+        plan,
+        direction,
+        bytes,
+        guard,
+        std::vector<int>{},
+        symbolic::integer(32)
+    ));
+    builder.add_computational_memlet(block, buf, node, "_dst", {}, ptr);
+    builder.add_computational_memlet(block, g, node, "_src", {}, ptr);
+
+    codegen::PrettyPrinter stream, globals;
+    codegen::CodeSnippetFactory snippets;
+    if (rocm_target) {
+        rocm::ROCMLanguageExtension le(builder.subject());
+        rocm::tiles::TileCopyNodeDispatcher dispatcher(le, builder.subject(), block.dataflow(), node);
+        dispatcher.dispatch(stream, globals, snippets);
+    } else {
+        cuda::CUDALanguageExtension le(builder.subject());
+        cuda::tiles::TileCopyNodeDispatcher dispatcher(le, builder.subject(), block.dataflow(), node);
+        dispatcher.dispatch(stream, globals, snippets);
+    }
+    return stream.str();
+}
+} // namespace
+
+TEST(TileCopyNodeTest, CooperativeRaggedCopyInZeroFillsBranchFree) {
+    // Out-of-bounds lanes read zero without a select on the loaded value (which would force a wait right after the
+    // load and serialize register-staged prefetches): CUDA uses a predicated load into a zero-initialized value,
+    // ROCm a CDNA buffer load whose out-of-range offset the hardware returns as zero (predicated load otherwise).
+    const std::pair<size_t, tiles::CopyAtom> cases[] = {
+        {4, tiles::CopyAtom::ScalarSync},
+        {16, tiles::CopyAtom::VectorSync},
+    };
+    for (bool rocm_target : {false, true}) {
+        for (const auto& [bytes, atom] : cases) {
+            const auto code = dispatch_guarded_cooperative(tiles::CopyDirection::In, bytes, atom, rocm_target);
+            EXPECT_NE(code.find("const bool __tc_ok = "), std::string::npos) << code;
+            EXPECT_NE(code.find("{}; if (__tc_ok) { "), std::string::npos) << code;
+            EXPECT_EQ(code.find("__tc_ok ? __tc"), std::string::npos) << code;
+            EXPECT_EQ(code.find("if (!__tc_ok)"), std::string::npos) << code;
+            const bool buffer_load = code.find("__builtin_amdgcn_raw_buffer_load_b") != std::string::npos;
+            EXPECT_EQ(buffer_load, rocm_target) << code;
+            if (rocm_target) {
+                EXPECT_NE(code.find("#else"), std::string::npos) << code;
+                EXPECT_NE(code.find(": (int) 0x80000000"), std::string::npos) << code;
+            }
+        }
+    }
+}
+
+TEST(TileCopyNodeTest, CooperativeRaggedCopyOutSkipsOutOfBounds) {
+    const auto code = dispatch_guarded_cooperative(tiles::CopyDirection::Out, 4, tiles::CopyAtom::ScalarSync);
+    EXPECT_EQ(code.find("__tc_ok"), std::string::npos) << code;
+    EXPECT_NE(code.find("if ("), std::string::npos) << code;
+    EXPECT_EQ(code.find("static_cast<float>(0)"), std::string::npos) << code;
+}
+
+TEST(TileCopyNodeTest, SimplifyTileBoundDropsNonBindingAndDominatedArgs) {
+    auto b = symbolic::symbol("b");
+    auto size = symbolic::integer(64);
+    auto n1 = symbolic::integer(999);
+    // max(min(999, b + 47), min(999, b + 63)) over the 64-tile at b: the b + 63 term never binds and the
+    // b + 47 alternative is dominated, leaving the global bound.
+    auto max = symbolic::
+        max(symbolic::min(n1, symbolic::add(b, symbolic::integer(47))),
+            symbolic::min(n1, symbolic::add(b, symbolic::integer(63))));
+    EXPECT_TRUE(symbolic::eq(tiles::simplify_tile_bound(max, b, size), n1));
+
+    // A bound below the tile's last coordinate is kept.
+    auto tight = symbolic::min(n1, symbolic::add(b, symbolic::integer(31)));
+    EXPECT_TRUE(symbolic::eq(tiles::simplify_tile_bound(tight, b, size), tight));
+
+    // Plain bounds pass through.
+    EXPECT_TRUE(symbolic::eq(tiles::simplify_tile_bound(n1, b, size), n1));
+}
+
+TEST(TileCopyNodeTest, GuardSimplifyRewritesDims) {
+    auto b = symbolic::symbol("b");
+    tiles::TileGuard guard;
+    guard.tile_sizes = {symbolic::integer(64)};
+    guard.dims.push_back({0, b, symbolic::min(symbolic::integer(999), symbolic::add(b, symbolic::integer(63)))});
+    EXPECT_TRUE(guard.simplify());
+    ASSERT_EQ(guard.dims.size(), 1u);
+    EXPECT_TRUE(symbolic::eq(guard.dims[0].max, symbolic::integer(999)));
+    EXPECT_FALSE(guard.simplify());
 }
 
 TEST(TileCopyNodeTest, GuardSurvivesReplaceAndRoundTrip) {

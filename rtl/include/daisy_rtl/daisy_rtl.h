@@ -8,6 +8,11 @@
 extern "C" {
 #endif
 
+typedef enum __daisy_instrumentation_mode {
+    __DAISY_MODE_TRACE = 0,
+    __DAISY_MODE_AGGREGATE = 1,
+} __daisy_instrumentation_mode_t;
+
 enum __daisy_event_set {
     __DAISY_EVENT_SET_CPU = 0,
     __DAISY_EVENT_SET_CUDA = 1,
@@ -126,6 +131,13 @@ bool __daisy_instrumentation_is_enabled(void);
 
 // Called at end of instrumented function to do any cleanup or post processing before handles and libraries might destr
 void __daisy_instrumentation_finalize_all(void);
+
+// Write the trace file now. The trace is otherwise only written at normal process exit, so call
+// this before ending a process without running destructors (e.g. _exit or os._exit in forked
+// workers). Returns false if the trace file could not be written.
+bool __daisy_instrumentation_dump(void);
+
+__daisy_instrumentation_mode_t __daisy_instrumentation_mode(void);
 
 typedef struct __daisy_capture __daisy_capture_t;
 

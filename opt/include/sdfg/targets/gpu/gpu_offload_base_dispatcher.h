@@ -20,6 +20,19 @@ class GPUOffloadDispatcherStrategy {
 public:
     virtual ~GPUOffloadDispatcherStrategy() = default;
 
+    virtual bool is_matching_kernel_language_extension(
+        const StructuredSDFG& sdfg, const StructuredLoop& loop, codegen::LanguageExtension& language_extension
+    ) = 0;
+    virtual std::unique_ptr<codegen::LanguageExtension>
+    create_kernel_language_extension(StructuredSDFG& sdfg, const StructuredLoop& loop) = 0;
+    void require_matching_kernel_language_extension(
+        const StructuredSDFG& sdfg, const StructuredLoop& loop, codegen::LanguageExtension& language_extension
+    ) {
+        if (!is_matching_kernel_language_extension(sdfg, loop, language_extension)) {
+            throw std::runtime_error("Outermost loop should have already provided kernel language extension");
+        }
+    }
+
     /// Target-specific includes/declarations emitted into the kernel include header
     /// (device fp16/bf16 intrinsics, lib-dependency includes, ...).
     virtual void emit_target_header_declarations(codegen::PrettyPrinter& kernel_header_stream) = 0;
@@ -42,8 +55,6 @@ public:
     virtual codegen::TargetType get_instrumentation_kernel_target_type() const = 0;
 
     virtual int get_warp_size() const = 0;
-
-    virtual codegen::LanguageExtension& create_kernel_language_extension() = 0;
 
     virtual bool is_device_pointer_storage(const types::StorageType& storage) const = 0;
 
@@ -112,6 +123,7 @@ protected:
         codegen::NestedCodeSnippetFactory& kernel_snippet_factory,
         codegen::PrettyPrinter& kernel_source_stream,
         codegen::PrettyPrinter& kernel_header_stream,
+        codegen::LanguageExtension& kernel_lang_ext,
         symbolic::Symbol indvar,
         std::vector<std::string>& scope_variables,
         symbolic::Expression& num_iterations

@@ -4095,3 +4095,82 @@ TEST(MapFusionTest, ConsumerHasMoreDimensions) {
 
     dump_sdfg(builder.subject(), "1.fused");
 }
+
+namespace {
+
+/// T[i] = A[i] + 1.0; B[j] = T[j] * 2.0 -- fusable unless a map is marked no-fusion.
+std::pair<structured_control_flow::Map*, structured_control_flow::Map*>
+add_producer_consumer_maps(builder::StructuredSDFGBuilder& builder, bool no_fusion_first, bool no_fusion_second) {
+    auto& root = builder.subject().root();
+    types::Scalar float_desc(types::PrimitiveType::Float);
+    types::Array array_desc(float_desc, {symbolic::symbol("N")});
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("N", sym_desc, true);
+    builder.add_container("A", array_desc, true);
+    builder.add_container("T", array_desc);
+    builder.add_container("B", array_desc, true);
+
+    auto add_map = [&](const std::string& iv,
+                       bool no_fusion,
+                       const std::string& in,
+                       const std::string& out,
+                       const std::string& constant,
+                       data_flow::TaskletCode code) {
+        builder.add_container(iv, sym_desc);
+        auto sym = symbolic::symbol(iv);
+        auto schedule = structured_control_flow::ScheduleType_Sequential::create();
+        if (no_fusion) {
+            structured_control_flow::ScheduleType_NoFusion::set(schedule);
+        }
+        auto& map = builder.add_map(
+            root,
+            sym,
+            symbolic::Lt(sym, symbolic::symbol("N")),
+            symbolic::integer(0),
+            symbolic::add(sym, symbolic::integer(1)),
+            schedule
+        );
+        auto& block = builder.add_block(map.root());
+        auto& in_node = builder.add_access(block, in);
+        auto& const_node = builder.add_constant(block, constant, float_desc);
+        auto& out_node = builder.add_access(block, out);
+        auto& tasklet = builder.add_tasklet(block, code, "_out", {"_in1", "_in2"});
+        builder.add_computational_memlet(block, in_node, tasklet, "_in1", {sym}, array_desc);
+        builder.add_computational_memlet(block, const_node, tasklet, "_in2", {});
+        builder.add_computational_memlet(block, tasklet, "_out", out_node, {sym}, array_desc);
+        return &map;
+    };
+
+    auto* first = add_map("i", no_fusion_first, "A", "T", "1.0", data_flow::TaskletCode::fp_add);
+    auto* second = add_map("j", no_fusion_second, "T", "B", "2.0", data_flow::TaskletCode::fp_mul);
+    return {first, second};
+}
+
+} // namespace
+
+TEST(MapFusionTest, NoFusion_Unmarked) {
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto [first, second] = add_producer_consumer_maps(builder, false, false);
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    transformations::MapFusion transformation(*first, *second);
+    EXPECT_TRUE(transformation.can_be_applied(builder, analysis_manager));
+}
+
+TEST(MapFusionTest, NoFusion_Producer) {
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto [first, second] = add_producer_consumer_maps(builder, true, false);
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    transformations::MapFusion transformation(*first, *second);
+    EXPECT_FALSE(transformation.can_be_applied(builder, analysis_manager));
+}
+
+TEST(MapFusionTest, NoFusion_Consumer) {
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto [first, second] = add_producer_consumer_maps(builder, false, true);
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    transformations::MapFusion transformation(*first, *second);
+    EXPECT_FALSE(transformation.can_be_applied(builder, analysis_manager));
+}

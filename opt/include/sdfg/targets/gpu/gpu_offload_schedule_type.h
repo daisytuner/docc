@@ -136,6 +136,14 @@ public:
         return gpu::target_level_from_string(schedule.properties().at("target_level"));
     }
 
+    static std::optional<TargetLevel> target_level_if_exists(const structured_control_flow::ScheduleType& schedule) {
+        auto it = schedule.properties().find("target_level");
+        if (it == schedule.properties().end()) {
+            return std::nullopt;
+        }
+        return gpu::target_level_from_string(it->second);
+    }
+
     /**
      * @brief Set the parallel size for a schedule
      */

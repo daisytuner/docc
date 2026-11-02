@@ -5729,3 +5729,56 @@ TEST(LoopFusionPassTest, DeepProducerIntoFlatConsumerAtRoot) {
     }
     EXPECT_TRUE(reads_a);
 }
+
+TEST(LoopFusionPassTest, ProducerConsumer_1D_NoFusion) {
+    // T[i] = A[i] + 1.0; B[j] = T[j] * 2.0 fuses by domain (see ProducerConsumer_1D),
+    // unless either map is marked no-fusion.
+    for (bool mark_producer : {true, false}) {
+        builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+        auto& root = builder.subject().root();
+        types::Scalar float_desc(types::PrimitiveType::Float);
+        types::Array array_desc(float_desc, {symbolic::symbol("N")});
+        types::Scalar sym_desc(types::PrimitiveType::UInt64);
+        builder.add_container("N", sym_desc, true);
+        builder.add_container("A", array_desc, true);
+        builder.add_container("T", array_desc);
+        builder.add_container("B", array_desc, true);
+
+        auto add_map = [&](const std::string& iv,
+                           bool no_fusion,
+                           const std::string& in,
+                           const std::string& out,
+                           const std::string& constant,
+                           data_flow::TaskletCode code) {
+            builder.add_container(iv, sym_desc);
+            auto sym = symbolic::symbol(iv);
+            auto schedule = structured_control_flow::ScheduleType_Sequential::create();
+            if (no_fusion) {
+                structured_control_flow::ScheduleType_NoFusion::set(schedule);
+            }
+            auto& map = builder.add_map(
+                root,
+                sym,
+                symbolic::Lt(sym, symbolic::symbol("N")),
+                symbolic::integer(0),
+                symbolic::add(sym, symbolic::integer(1)),
+                schedule
+            );
+            auto& block = builder.add_block(map.root());
+            auto& in_node = builder.add_access(block, in);
+            auto& const_node = builder.add_constant(block, constant, float_desc);
+            auto& out_node = builder.add_access(block, out);
+            auto& tasklet = builder.add_tasklet(block, code, "_out", {"_in1", "_in2"});
+            builder.add_computational_memlet(block, in_node, tasklet, "_in1", {sym}, array_desc);
+            builder.add_computational_memlet(block, const_node, tasklet, "_in2", {});
+            builder.add_computational_memlet(block, tasklet, "_out", out_node, {sym}, array_desc);
+        };
+        add_map("i", mark_producer, "A", "T", "1.0", data_flow::TaskletCode::fp_add);
+        add_map("j", !mark_producer, "T", "B", "2.0", data_flow::TaskletCode::fp_mul);
+
+        analysis::AnalysisManager analysis_manager(builder.subject());
+        passes::loop_fusion::LoopFusionPass loop_fusion_pass;
+        EXPECT_FALSE(loop_fusion_pass.run_pass(builder, analysis_manager)) << "mark_producer=" << mark_producer;
+        EXPECT_EQ(root.size(), 2) << "mark_producer=" << mark_producer;
+    }
+}

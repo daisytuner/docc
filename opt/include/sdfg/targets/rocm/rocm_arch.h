@@ -55,12 +55,22 @@ public:
         const MmaBlockSize& block_size,
         const BlockCounts* wave_tile_hint,
         const symbolic::MultiExpression& res_shape,
-        types::PrimitiveType acc_type
+        types::PrimitiveType acc_type,
+        bool ceil_counts = false
     ) const;
 
     std::optional<GpuMmaTiling> get_mma_tiling(
         const symbolic::MultiExpression& res_shape,
         types::PrimitiveType input_type,
+        types::PrimitiveType acc_type,
+        const MmaBlockSize* block_size_hint,
+        const BlockCounts* wave_tile_hint
+    ) const override;
+
+    std::optional<GpuMmaTiling> get_ragged_mma_tiling(
+        const symbolic::MultiExpression& padded_shape,
+        types::PrimitiveType input_type,
+        types::PrimitiveType output_type,
         types::PrimitiveType acc_type,
         const MmaBlockSize* block_size_hint,
         const BlockCounts* wave_tile_hint

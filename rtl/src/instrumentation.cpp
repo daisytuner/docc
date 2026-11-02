@@ -1,5 +1,7 @@
 #include <atomic>
+#include <cerrno>
 #include <cmath>
+#include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -140,11 +142,102 @@ static void load_papi_symbols() {
 
 enum class EventCaptureType { NONE = 0, CUDA_EVT = 1, ROCM_EVT = 2 };
 
+// Set while the current thread holds (or waits for) the state mutex. A signal handler that
+// interrupts this thread must not take the non-recursive mutex again.
+static thread_local bool tls_holds_state_lock = false;
+
+class StateLock {
+public:
+    explicit StateLock(std::mutex& mutex) : mutex_(mutex) {
+        tls_holds_state_lock = true;
+        mutex_.lock();
+    }
+    ~StateLock() {
+        mutex_.unlock();
+        tls_holds_state_lock = false;
+    }
+    StateLock(const StateLock&) = delete;
+    StateLock& operator=(const StateLock&) = delete;
+
+private:
+    std::mutex& mutex_;
+};
+
+// Signals on which the trace is dumped before the process terminates (see
+// __DAISY_INSTRUMENTATION_FILE_PID_SUFFIX). The previous dispositions are restored and the
+// signal is re-raised afterwards, so default termination or application handlers still apply.
+static const int dump_signals[] = {SIGTERM, SIGINT};
+static constexpr size_t num_dump_signals = sizeof(dump_signals) / sizeof(dump_signals[0]);
+static struct sigaction previous_signal_actions[num_dump_signals];
+static std::atomic<bool> signal_handler_installed[num_dump_signals];
+
+static void dump_signal_handler(int sig);
+
+static void install_dump_signal_handlers() {
+    for (size_t i = 0; i < num_dump_signals; ++i) {
+        struct sigaction previous;
+        if (sigaction(dump_signals[i], nullptr, &previous) != 0) {
+            continue;
+        }
+        // Respect signals the application chose to ignore
+        if (!(previous.sa_flags & SA_SIGINFO) && previous.sa_handler == SIG_IGN) {
+            continue;
+        }
+        struct sigaction action = {};
+        action.sa_handler = dump_signal_handler;
+        sigemptyset(&action.sa_mask);
+        for (int sig : dump_signals) {
+            sigaddset(&action.sa_mask, sig);
+        }
+        action.sa_flags = SA_RESTART;
+        if (sigaction(dump_signals[i], &action, &previous_signal_actions[i]) == 0) {
+            signal_handler_installed[i].store(true);
+        }
+    }
+}
+
+static void restore_dump_signal_handler(int sig) {
+    for (size_t i = 0; i < num_dump_signals; ++i) {
+        if (dump_signals[i] != sig) {
+            continue;
+        }
+        if (signal_handler_installed[i].exchange(false)) {
+            sigaction(sig, &previous_signal_actions[i], nullptr);
+        } else {
+            signal(sig, SIG_DFL);
+        }
+    }
+}
+
+static void restore_dump_signal_handlers() {
+    for (size_t i = 0; i < num_dump_signals; ++i) {
+        if (signal_handler_installed[i].exchange(false)) {
+            sigaction(dump_signals[i], &previous_signal_actions[i], nullptr);
+        }
+    }
+}
+
+static void write_stderr(const char* message) {
+    ssize_t ignored = write(STDERR_FILENO, message, std::strlen(message));
+    (void) ignored;
+}
+
+class DaisyInstrumentationState;
+// Fully constructed state the signal handler dumps; null outside the state's lifetime.
+static std::atomic<DaisyInstrumentationState*> signal_dump_state{nullptr};
+
 struct DaisyRegion {
     __daisy_metadata metadata;
     enum __daisy_event_set event_set;
     int papi_eventset = -1;
     EventCaptureType event_capture_type;
+    // GPU runtime to drain around a host-timed GPU region (see drain_device).
+    EventCaptureType host_sync_type = EventCaptureType::NONE;
+    // GPU runtime to drain before reading the region's device counters (see drain_for_counters).
+    EventCaptureType counter_sync_type = EventCaptureType::NONE;
+
+    // Entered but not yet exited; an unfinished invocation is not part of a dumped trace.
+    bool active = false;
 
     // Temporary buffers
     std::vector<long long> last_counts;
@@ -218,6 +311,7 @@ struct GpuEventApi {
     int (*eventSynchronize_)(void*) = nullptr;
     int (*eventElapsedTime_)(float*, void*, void*) = nullptr;
     int (*eventDestroy_)(void*) = nullptr;
+    int (*deviceSynchronize_)() = nullptr;
     const char* (*errorString)(int) = nullptr;
     const char* (*errorName)(int) = nullptr;
 
@@ -248,10 +342,11 @@ private:
     std::list<std::string> sleeping_regions_by_name;
     std::unordered_map<std::string, size_t> sleeping_regions_id_lookup;
 
-    bool aggregate_events = false;
+    __daisy_instrumentation_mode_t instrumentation_mode = __DAISY_MODE_TRACE;
     bool papi_available = false;
     bool no_async_event_capture = false;
     std::string output_file;
+    bool output_file_pid_suffix = false;
 
     // Global measurement switch. When false, enter/exit/metric calls are no-ops
     // so no samples accumulate. Atomic so start/stop don't contend on `mutex` and
@@ -288,6 +383,8 @@ private:
             int (*)(float*, void*, void*)>(dlsym(cuda_events_.event_lib_handle, "cudaEventElapsedTime"));
         cuda_events_.eventDestroy_ =
             reinterpret_cast<int (*)(void*)>(dlsym(cuda_events_.event_lib_handle, "cudaEventDestroy"));
+        cuda_events_.deviceSynchronize_ =
+            reinterpret_cast<int (*)()>(dlsym(cuda_events_.event_lib_handle, "cudaDeviceSynchronize"));
         cuda_events_.errorString =
             reinterpret_cast<const char* (*) (int)>(dlsym(cuda_events_.event_lib_handle, "cudaGetErrorString"));
         cuda_events_.errorName =
@@ -320,6 +417,8 @@ private:
             reinterpret_cast<int (*)(float*, void*, void*)>(dlsym(rocm_events_.event_lib_handle, "hipEventElapsedTime"));
         rocm_events_.eventDestroy_ =
             reinterpret_cast<int (*)(void*)>(dlsym(rocm_events_.event_lib_handle, "hipEventDestroy"));
+        rocm_events_.deviceSynchronize_ =
+            reinterpret_cast<int (*)()>(dlsym(rocm_events_.event_lib_handle, "hipDeviceSynchronize"));
         rocm_events_.errorString =
             reinterpret_cast<const char* (*) (int)>(dlsym(rocm_events_.event_lib_handle, "hipGetErrorString"));
         rocm_events_.errorName =
@@ -376,7 +475,7 @@ private:
                     DEBUG_PRINTLN(
                         "[daisy-rtl] GPU region " << region.metadata.region_uuid << " elapsed time: " << ms << " ms"
                     );
-                    if (this->aggregate_events) {
+                    if (this->aggregate_events()) {
                         accumulate_runtime(region, static_cast<long long>(static_cast<double>(ms) * 1.0e6));
                     } else {
                         region.durations.push_back(static_cast<long long>(static_cast<double>(ms) * 1.0e6));
@@ -387,6 +486,10 @@ private:
             }
             region.pending_events.clear();
         }
+    }
+
+    bool aggregate_events() const {
+        return this->instrumentation_mode == __DAISY_MODE_AGGREGATE;
     }
 
     void post_process_region(DaisyRegion& region) {
@@ -788,9 +891,9 @@ public:
         // Aggregate events
         const char* aggregate_events_env = std::getenv("__DAISY_INSTRUMENTATION_MODE");
         if (aggregate_events_env && std::strcmp(aggregate_events_env, "aggregate") == 0) {
-            this->aggregate_events = true;
+            this->instrumentation_mode = __DAISY_MODE_AGGREGATE;
         } else {
-            this->aggregate_events = false;
+            this->instrumentation_mode = __DAISY_MODE_TRACE;
         }
 
         // Output file
@@ -800,6 +903,8 @@ public:
         } else {
             this->output_file = output_file_env;
         }
+        const char* pid_suffix_env = std::getenv("__DAISY_INSTRUMENTATION_FILE_PID_SUFFIX");
+        this->output_file_pid_suffix = pid_suffix_env && std::strcmp(pid_suffix_env, "1") == 0;
 
         // Events - CPU
         const char* env_events_cpu = std::getenv("__DAISY_INSTRUMENTATION_EVENTS");
@@ -821,9 +926,19 @@ public:
                 this->no_async_event_capture = true;
             }
         }
+
+        // Processes writing per-pid traces are commonly terminated by a parent (e.g. worker
+        // pools), which skips the destructor; dump their trace on termination signals instead.
+        if (this->output_file_pid_suffix) {
+            signal_dump_state.store(this);
+            install_dump_signal_handlers();
+        }
     }
 
     ~DaisyInstrumentationState() {
+        restore_dump_signal_handlers();
+        signal_dump_state.store(nullptr);
+
         // Cleanup cached regions
         for (auto& region_uuid : this->sleeping_regions_by_name) {
             size_t region_id = this->sleeping_regions_id_lookup[region_uuid];
@@ -857,59 +972,92 @@ public:
             }
         }
 
-        // Write output file
-        FILE* f = std::fopen(this->output_file.c_str(), "w");
-        if (!f) {
-            std::perror("[daisy-rtl] Failed to open output file");
+        if (!write_trace()) {
             exit(EXIT_FAILURE);
         }
+    }
 
-        // Output file header
+    // Write the trace of all regions. Unfinished invocations (entered but not yet exited) and
+    // unresolved asynchronous GPU events are not part of the trace.
+    bool write_trace() {
+        // With the pid suffix, every process sharing the same output path (e.g. MPI ranks or
+        // forked workers) writes its own trace instead of overwriting the others.
+        std::string output_path = this->output_file;
+        if (this->output_file_pid_suffix) {
+            output_path += "." + std::to_string(getpid());
+        }
+        FILE* f = std::fopen(output_path.c_str(), "w");
+        if (!f) {
+            std::perror("[daisy-rtl] Failed to open output file");
+            return false;
+        }
+
         std::fprintf(f, "{\"traceEvents\":[\n");
 
-        // Output all events
-        for (auto iter = regions.begin(); iter != regions.end(); ++iter) {
-            auto& region = iter->second;
+        bool first_event = true;
+        auto separate_event = [&]() {
+            if (!first_event) {
+                std::fprintf(f, ",\n");
+            }
+            first_event = false;
+        };
+        for (auto& [region_id, region] : regions) {
+            std::vector<std::string> event_names = {};
+            if (region.event_set == __DAISY_EVENT_SET_CPU) {
+                event_names = this->event_names_cpu;
+            } else if (region.event_set == __DAISY_EVENT_SET_CUDA) {
+                event_names = this->event_names_cuda;
+            }
 
             // Print one aggregated event
-            if (this->aggregate_events) {
-                std::vector<std::string> event_names = {};
-                if (region.event_set == __DAISY_EVENT_SET_CPU) {
-                    event_names = this->event_names_cpu;
-                } else if (region.event_set == __DAISY_EVENT_SET_CUDA) {
-                    event_names = this->event_names_cuda;
-                }
+            if (this->aggregate_events()) {
+                separate_event();
                 append_event_aggregated(f, region, event_names);
-
-                if (std::next(iter) != regions.end()) {
-                    std::fprintf(f, ",\n");
-                }
                 continue;
             }
 
             // Print all individual events
-            for (size_t event_index = 0; event_index < region.starts.size(); ++event_index) {
-                std::vector<std::string> event_names = {};
-                if (region.event_set == __DAISY_EVENT_SET_CPU) {
-                    event_names = this->event_names_cpu;
-                } else if (region.event_set == __DAISY_EVENT_SET_CUDA) {
-                    event_names = this->event_names_cuda;
-                }
-                append_event(f, region, event_index, event_names);
-                if (event_index < region.starts.size() - 1) {
-                    std::fprintf(f, ",\n");
-                }
+            size_t num_events = region.starts.size();
+            if (region.active && num_events > region.durations.size()) {
+                num_events -= 1;
             }
-            if (std::next(iter) != regions.end()) {
-                std::fprintf(f, ",\n");
+            for (size_t event_index = 0; event_index < num_events; ++event_index) {
+                separate_event();
+                append_event(f, region, event_index, event_names);
             }
         }
 
-        // Output file footer
         std::fprintf(f, "\n]}\n");
+        return std::fclose(f) == 0;
+    }
 
-        // Close output file
-        std::fclose(f);
+    // Write the trace now, e.g. before a process ends without running destructors (_exit).
+    bool dump() {
+        StateLock lock(mutex);
+        post_process_regions();
+        return write_trace();
+    }
+
+    // Best-effort dump from a signal handler. Skipped if the interrupted thread is inside the
+    // runtime or another thread does not leave it in time, as the state may be inconsistent.
+    // Pending GPU events are not resolved, as GPU runtimes cannot be called safely here.
+    void dump_from_signal() {
+        if (tls_holds_state_lock) {
+            write_stderr("[daisy-rtl] Signal interrupted the instrumentation runtime, skipping trace dump.\n");
+            return;
+        }
+        for (int attempt = 0; !mutex.try_lock(); ++attempt) {
+            if (attempt >= 100) {
+                write_stderr("[daisy-rtl] Instrumentation runtime busy, skipping trace dump.\n");
+                return;
+            }
+            struct timespec delay = {0, 10 * 1000 * 1000};
+            nanosleep(&delay, nullptr);
+        }
+        tls_holds_state_lock = true;
+        write_trace();
+        tls_holds_state_lock = false;
+        mutex.unlock();
     }
 
     // Whether any PAPI counters are configured for the given event set. When no
@@ -944,7 +1092,7 @@ public:
     }
 
     EventCaptureType decide_event_capture(enum __daisy_event_set event_set, const __daisy_metadata* metadata) {
-        if (this->no_async_event_capture || !this->aggregate_events) {
+        if (this->no_async_event_capture || !this->aggregate_events()) {
             return EventCaptureType::NONE;
         }
         if (event_set == __DAISY_EVENT_SET_CUDA) {
@@ -961,8 +1109,69 @@ public:
         return EventCaptureType::NONE;
     }
 
+    // Runtime whose deviceSynchronize drains the region's GPU target, if available.
+    EventCaptureType device_sync_api(const __daisy_metadata* metadata) {
+        if (!metadata->target_type) {
+            return EventCaptureType::NONE;
+        }
+        if (std::strcmp(metadata->target_type, "CUDA") == 0) {
+            if (ensure_cuda_events() && cuda_events_.deviceSynchronize_) {
+                return EventCaptureType::CUDA_EVT;
+            }
+        } else if (std::strcmp(metadata->target_type, "ROCM") == 0) {
+            if (ensure_rocm_events() && rocm_events_.deviceSynchronize_) {
+                return EventCaptureType::ROCM_EVT;
+            }
+        }
+        return EventCaptureType::NONE;
+    }
+
+    // GPU regions timed on the host clock (blocking memcpy/free, or any GPU region when
+    // event capture is off) must drain the device around the region: otherwise a blocking
+    // call absorbs all previously queued async kernels, whose time their own regions
+    // already report, and async launches would only measure the launch overhead.
+    EventCaptureType decide_host_sync(const __daisy_metadata* metadata, EventCaptureType event_capture) {
+        if (event_capture != EventCaptureType::NONE) {
+            return EventCaptureType::NONE;
+        }
+        return device_sync_api(metadata);
+    }
+
+    // Device counters (e.g. PAPI's ROCm component in sampling mode) only reflect kernels
+    // that have completed. Without draining the device before each read, an async launch
+    // is read before it ran: most samples see nothing and a later one absorbs several
+    // kernels, including those of other regions.
+    EventCaptureType decide_counter_sync(const __daisy_metadata* metadata, enum __daisy_event_set event_set) {
+        if (event_set != __DAISY_EVENT_SET_CUDA || !this->has_events(event_set)) {
+            return EventCaptureType::NONE;
+        }
+        return device_sync_api(metadata);
+    }
+
+    static void synchronize_device(GpuEventApi& api) {
+        int res = api.deviceSynchronize_();
+        if (res != 0) {
+            std::cerr << "[daisy-rtl] GPU device synchronize failed with " << res << "\n";
+        }
+    }
+
+    void drain_device(const DaisyRegion& region) {
+        if (region.host_sync_type == EventCaptureType::NONE) {
+            return;
+        }
+        synchronize_device(get_event_api(region.host_sync_type));
+    }
+
+    // Host-timed regions already drained the device at this point (drain_device).
+    void drain_for_counters(const DaisyRegion& region) {
+        if (region.counter_sync_type == EventCaptureType::NONE || region.host_sync_type != EventCaptureType::NONE) {
+            return;
+        }
+        synchronize_device(get_event_api(region.counter_sync_type));
+    }
+
     size_t register_region(const __daisy_metadata* metadata, enum __daisy_event_set event_set) {
-        std::lock_guard<std::mutex> lock(mutex);
+        StateLock lock(mutex);
 
         // Check cache first
         if (this->sleeping_regions_id_lookup.find(metadata->region_uuid) != this->sleeping_regions_id_lookup.end()) {
@@ -1016,7 +1225,9 @@ public:
         DaisyRegion region;
         std::memcpy(&region.metadata, metadata, sizeof(__daisy_metadata));
         region.event_capture_type = decide_event_capture(event_set, metadata);
+        region.host_sync_type = decide_host_sync(metadata, region.event_capture_type);
         region.event_set = event_set;
+        region.counter_sync_type = decide_counter_sync(metadata, event_set);
 
         if (this->has_events(region.event_set)) {
             if (_PAPI_create_eventset(&region.papi_eventset) != 0) {
@@ -1058,7 +1269,7 @@ public:
         if (!enabled.load(std::memory_order_relaxed)) {
             return;
         }
-        std::lock_guard<std::mutex> lock(mutex);
+        StateLock lock(mutex);
 
         auto it = regions.find(region_id);
         if (it == regions.end()) {
@@ -1067,6 +1278,7 @@ public:
         }
 
         DaisyRegion& region = it->second;
+        drain_device(region);
 
         // Save start counters (before timing)
         if (region.event_set == __DAISY_EVENT_SET_CPU && this->event_names_cpu.size() > 0) {
@@ -1075,6 +1287,7 @@ public:
             region.last_counts = counts;
         } else if (region.event_set == __DAISY_EVENT_SET_CUDA && this->event_names_cuda.size() > 0) {
             std::vector<long long> counts(this->event_names_cuda.size(), 0);
+            drain_for_counters(region);
             _PAPI_read(region.papi_eventset, counts.data());
             DEBUG_PRINTLN("[daisy-rtl] Read CUDA event counts: " << counts.size());
             region.last_counts = counts;
@@ -1100,7 +1313,7 @@ public:
         if (!async_capture) {
             // Save start time
             long long start_ns = _PAPI_get_real_nsec();
-            if (this->aggregate_events) {
+            if (this->aggregate_events()) {
                 if (region.first_start == 0) {
                     region.first_start = start_ns;
                 }
@@ -1109,6 +1322,7 @@ public:
                 region.starts.push_back(start_ns);
             }
         }
+        region.active = true;
     }
 
     void exit_region(size_t region_id) {
@@ -1117,7 +1331,7 @@ public:
         if (!enabled.load(std::memory_order_relaxed)) {
             return;
         }
-        std::lock_guard<std::mutex> lock(mutex);
+        StateLock lock(mutex);
 
         auto it = regions.find(region_id);
         if (it == regions.end()) {
@@ -1126,6 +1340,7 @@ public:
         }
 
         DaisyRegion& region = it->second;
+        region.active = false;
 
         // CUDA-event timing: record the stop event on the stream and defer the
         // elapsed-time read to stats time. The host clock would only see the async
@@ -1150,8 +1365,9 @@ public:
             region.last_start_event = nullptr;
         } else {
             // Save duration (before counters)
+            drain_device(region);
             long long end_ns = _PAPI_get_real_nsec();
-            if (this->aggregate_events) {
+            if (this->aggregate_events()) {
                 long long duration_ns = end_ns - region.last_start;
 
                 // Update aggregated runtime stats
@@ -1189,7 +1405,7 @@ public:
                 counts[i] -= region.last_counts[i];
             }
 
-            if (!this->aggregate_events) {
+            if (!this->aggregate_events()) {
                 region.counts.push_back(counts);
                 return;
             }
@@ -1229,13 +1445,14 @@ public:
             }
         } else if (region.event_set == __DAISY_EVENT_SET_CUDA && this->event_names_cuda.size() > 0) {
             std::vector<long long> counts(this->event_names_cuda.size(), 0);
+            drain_for_counters(region);
             _PAPI_read(region.papi_eventset, counts.data());
 
             for (size_t i = 0; i < counts.size(); ++i) {
                 counts[i] -= region.last_counts[i];
             }
 
-            if (!this->aggregate_events) {
+            if (!this->aggregate_events()) {
                 region.counts.push_back(counts);
                 return;
             }
@@ -1282,7 +1499,7 @@ public:
         if (!enabled.load(std::memory_order_relaxed)) {
             return;
         }
-        std::lock_guard<std::mutex> lock(mutex);
+        StateLock lock(mutex);
 
         auto it = regions.find(region_id);
         if (it == regions.end()) {
@@ -1335,7 +1552,7 @@ public:
     }
 
     void finalize(size_t region_id) {
-        std::lock_guard<std::mutex> lock(mutex);
+        StateLock lock(mutex);
 
         auto it = regions.find(region_id);
         if (it == regions.end()) {
@@ -1397,7 +1614,7 @@ public:
     // Returns false if the region is unknown or has no samples yet. Units:
     // mean in microseconds, variance in microseconds^2.
     bool get_runtime_stats(size_t region_id, double* mean_us, double* variance_us2, long long* count) {
-        std::lock_guard<std::mutex> lock(mutex);
+        StateLock lock(mutex);
         auto it = regions.find(region_id);
         if (it == regions.end()) {
             return false;
@@ -1432,7 +1649,7 @@ public:
         static const double target_cv = env_double("DOCC_MEASURE_CV", 0.05);
         static const double max_seconds = env_double("DOCC_MEASURE_MAX_SECONDS", 10.0);
 
-        std::lock_guard<std::mutex> lock(mutex);
+        StateLock lock(mutex);
         auto it = regions.find(region_id);
         if (it == regions.end()) {
             return false;
@@ -1474,7 +1691,7 @@ public:
     // Aggregate over all regions (sum of means/variances, min count). Mirrors
     // parse_region_runtime summing every event's duration.
     bool get_total_stats(double* mean_us, double* variance_us2, long long* count) {
-        std::lock_guard<std::mutex> lock(mutex);
+        StateLock lock(mutex);
         double sum_mean_ns = 0.0;
         double sum_var_ns2 = 0.0;
         long long min_n = 0;
@@ -1518,7 +1735,7 @@ public:
 
     // Clear running aggregate runtime stats for all regions (keeps registration).
     void reset_all_stats() {
-        std::lock_guard<std::mutex> lock(mutex);
+        StateLock lock(mutex);
         for (auto& kv : regions) {
             DaisyRegion& region = kv.second;
             region.runtime_n = 0;
@@ -1568,11 +1785,26 @@ public:
     bool is_enabled() const {
         return enabled.load(std::memory_order_relaxed);
     }
+
+    __daisy_instrumentation_mode_t get_instrumentation_mode() const {
+        return this->instrumentation_mode;
+    }
 };
 
 static DaisyInstrumentationState& get_daisy_state() {
     static DaisyInstrumentationState instance;
     return instance;
+}
+
+static void dump_signal_handler(int sig) {
+    int saved_errno = errno;
+    if (DaisyInstrumentationState* state = signal_dump_state.load()) {
+        state->dump_from_signal();
+    }
+    // Re-raised signal is delivered to the previous disposition once this handler returns
+    restore_dump_signal_handler(sig);
+    errno = saved_errno;
+    raise(sig);
 }
 
 #ifdef __cplusplus
@@ -1638,8 +1870,16 @@ bool __daisy_instrumentation_is_enabled(void) {
     return get_daisy_state().is_enabled();
 }
 
+__daisy_instrumentation_mode_t __daisy_instrumentation_mode(void) {
+    return get_daisy_state().get_instrumentation_mode();
+}
+
 void __daisy_instrumentation_finalize_all(void) {
     get_daisy_state().post_process_regions();
+}
+
+bool __daisy_instrumentation_dump(void) {
+    return get_daisy_state().dump();
 }
 
 #ifdef __cplusplus

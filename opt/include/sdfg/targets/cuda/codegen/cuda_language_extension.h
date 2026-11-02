@@ -4,14 +4,23 @@
 
 #include "sdfg/codegen/language_extensions/c_style_language_extension.h"
 #include "sdfg/symbolic/symbolic.h"
+#include "sdfg/targets/cuda/cuda_arch.h"
 #include "sdfg/types/type.h"
 
 namespace sdfg::cuda {
 
 class CUDALanguageExtension : public sdfg::codegen::CStyleLanguageExtension {
+    const sdfg::gpu::cuda::CudaArch* arch_;
+
 public:
+    CUDALanguageExtension(
+        sdfg::Function& function, const sdfg::gpu::cuda::CudaArch* arch, const std::string& external_prefix = ""
+    )
+        : CStyleLanguageExtension(function, external_prefix), arch_(arch) {
+    }
+
     CUDALanguageExtension(sdfg::Function& function, const std::string& external_prefix = "")
-        : CStyleLanguageExtension(function, external_prefix) {
+        : CUDALanguageExtension(function, nullptr, external_prefix) {
     }
 
     const std::string language() const override {

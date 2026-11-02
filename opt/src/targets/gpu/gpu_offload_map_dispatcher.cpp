@@ -45,11 +45,11 @@ void GPUOffloadMapDispatcher::dispatch_kernel_body(
     codegen::NestedCodeSnippetFactory& library_snippet_factory,
     codegen::PrettyPrinter& kernel_source_stream,
     codegen::PrettyPrinter& kernel_header_stream,
+    codegen::LanguageExtension& kernel_language_extension,
     symbolic::Symbol indvar,
     std::vector<std::string>& scope_variables,
     symbolic::Expression& num_iterations
 ) {
-    codegen::LanguageExtension& kernel_language_extension = strategy_->create_kernel_language_extension();
     if (is_outermost_map(analysis_manager_)) {
         // Declare and optionally allocate scope variables
         for (auto& local : scope_variables) {

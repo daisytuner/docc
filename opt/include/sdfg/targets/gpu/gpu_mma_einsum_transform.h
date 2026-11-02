@@ -11,14 +11,21 @@ class GpuMmaEinsumReplacer : public einsum::Einsum2MatMul {
     const GpuArch* arch_;
     const BlockCounts* wave_tile_hint_ = nullptr;
     const MmaBlockSize* block_size_hint_ = nullptr;
+    int k_block_multiple_ = 1;
 
 public:
     GpuMmaEinsumReplacer(
-        const GpuArch* arch, const MmaBlockSize* block_size_hint = nullptr, const BlockCounts* wave_tile_hint = nullptr
+        const GpuArch* arch,
+        const MmaBlockSize* block_size_hint = nullptr,
+        const BlockCounts* wave_tile_hint = nullptr,
+        int k_block_multiple = 1
     );
 
     struct EinsumMmaAnalysis : public MatMulAnalysis {
         types::PrimitiveType acc_type;
+        /// Some extent is not a constant multiple of the MMA block: the tiling covers the padded extents and the
+        /// fragments crossing the exact extents are clipped.
+        bool ragged = false;
     };
 
     bool analyze(const einsum::EinsumCluster& cluster, EinsumMmaAnalysis& result) const;
@@ -30,6 +37,9 @@ public:
 
 protected:
     bool matches_possible_mma_pattern(EinsumMmaAnalysis& analysis) const;
+
+    /// The MMA tiling for @p analysis: exact if the extents divide, else (if the target supports it) ragged.
+    std::optional<GpuMmaTiling> select_tiling(EinsumMmaAnalysis& analysis) const;
 };
 
 class GpuMmaEinsumTransform : public transformations::Transformation {
@@ -39,6 +49,9 @@ class GpuMmaEinsumTransform : public transformations::Transformation {
 
     std::optional<MmaBlockSize> block_size_hint_;
     std::optional<BlockCounts> wave_tiling_hint_;
+    /// Pads a ragged K-block loop to a multiple of this (e.g. the K-panel size in blocks), so a later panel
+    /// tiling divides it evenly. The padded blocks are clipped, i.e. read as zeros.
+    int k_block_multiple_ = 1;
 
 protected:
     /// the einsum parts modify the SDFG in place, so WILL ALWAYS CHANGE IT. We need to revert the changes if we did not
@@ -52,7 +65,8 @@ public:
         StructuredLoop& outermoost_mma_loop,
         const gpu::GpuArch* arch = nullptr,
         const MmaBlockSize* block_size_hint = nullptr,
-        const BlockCounts* wave_tiling_hint = nullptr
+        const BlockCounts* wave_tiling_hint = nullptr,
+        int k_block_multiple = 1
     );
 
     /// Owning overload: takes the hints by value and stores them internally, so
@@ -63,7 +77,8 @@ public:
         StructuredLoop& outermoost_mma_loop,
         const gpu::GpuArch* arch,
         std::optional<MmaBlockSize> block_size_hint,
-        std::optional<BlockCounts> wave_tile_hint
+        std::optional<BlockCounts> wave_tile_hint,
+        int k_block_multiple = 1
     );
 
     std::string name() const override {

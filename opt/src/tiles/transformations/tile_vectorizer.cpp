@@ -59,8 +59,11 @@ bool coalesce_tile_copy_node(tiles::TileCopyNode& node) {
     const auto& plan = node.plan();
     const size_t elem_bytes = node.bytes();
     if (node.atom() != tiles::CopyAtom::ScalarSync || node.direction() != tiles::CopyDirection::In ||
-        (elem_bytes != 2 && elem_bytes != 4) || plan.src.dims() != 2 || !plan.dst_swizzle.is_identity() ||
-        !node.guard().trivial()) {
+        (elem_bytes != 2 && elem_bytes != 4) || plan.src.dims() != 2 || !plan.dst_swizzle.is_identity()) {
+        return false;
+    }
+    // A ragged copy loads each 4-element source row whole: its inner-axis bound must be 4-aligned.
+    if (!tiles::guard_axis_aligned(node, 1, 4)) {
         return false;
     }
     if (!symbolic::eq(plan.src.strides()[1], symbolic::integer(1)) ||

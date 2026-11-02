@@ -16,18 +16,13 @@ _requires_linux = pytest.mark.skipif(
 )
 
 
-def _run_instrumented(code: str, trace_file: str):
-    """Run `code` in a subprocess with instrumentation enabled (trace flushes at exit)."""
+def _run_python(code: str, env: dict):
+    """Run `code` in a subprocess with `env`."""
     fd_script, script_file = tempfile.mkstemp(suffix=".py")
     os.close(fd_script)
     with open(script_file, "w") as f:
         f.write(code)
 
-    env = os.environ.copy()
-    env["DOCC_CI"] = "regions"
-    env["__DAISY_PAPI_VERSION"] = "0x07020000"
-    env["__DAISY_INSTRUMENTATION_FILE"] = trace_file
-    env["__DAISY_INSTRUMENTATION_MODE"] = "aggregate"
     try:
         return subprocess.run(
             [sys.executable, script_file], env=env, capture_output=True, text=True
@@ -35,6 +30,16 @@ def _run_instrumented(code: str, trace_file: str):
     finally:
         if os.path.exists(script_file):
             os.remove(script_file)
+
+
+def _run_instrumented(code: str, trace_file: str):
+    """Run `code` in a subprocess with instrumentation enabled (trace flushes at exit)."""
+    env = os.environ.copy()
+    env["DOCC_CI"] = "regions"
+    env["__DAISY_PAPI_VERSION"] = "0x07020000"
+    env["__DAISY_INSTRUMENTATION_FILE"] = trace_file
+    env["__DAISY_INSTRUMENTATION_MODE"] = "aggregate"
+    return _run_python(code, env)
 
 
 def test_instrumentation_compile():
@@ -238,3 +243,39 @@ def test_start_stop_excludes_one_sdfg():
     finally:
         if os.path.exists(trace_file):
             os.remove(trace_file)
+
+
+def _mode_env(mode):
+    env = os.environ.copy()
+    env["__DAISY_PAPI_VERSION"] = "0x07020000"
+    if mode is None:
+        env.pop("__DAISY_INSTRUMENTATION_MODE", None)
+    else:
+        env["__DAISY_INSTRUMENTATION_MODE"] = mode
+    return env
+
+
+_REPORT_MODE = """
+from docc.benchmarks.rtl import instrumentation_mode
+
+print(instrumentation_mode())
+"""
+
+
+@_requires_linux
+@pytest.mark.parametrize(
+    "mode, expected",
+    [
+        ("aggregate", "aggregate"),
+        ("", "trace"),
+        ("nonsense", "trace"),
+        (None, "trace"),
+    ],
+)
+def test_instrumentation_mode_reports_the_selected_mode(mode, expected):
+    assert _find_rtl_lib() is not None
+
+    result = _run_python(_REPORT_MODE, _mode_env(mode))
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == expected

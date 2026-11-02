@@ -530,6 +530,11 @@ void LoopFusionHandler::update_copied_leaf_contents_from_first_to_second(
 }
 
 PatternHandler::MatchResult LoopFusionHandler::match(StructuredLoop& first, StructuredLoop& second, bool no_uses_between) {
+    if (structured_control_flow::ScheduleType_NoFusion::is_set(first.schedule_type()) ||
+        structured_control_flow::ScheduleType_NoFusion::is_set(second.schedule_type())) {
+        return {};
+    }
+
     auto first_it = state_.fuse_candidates.find(first.element_id());
     if (first_it == state_.fuse_candidates.end()) {
         return {};

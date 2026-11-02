@@ -696,3 +696,44 @@ TEST(MatMulTest, MatMul_Naive_PointerMemletsUseLayouts) {
     };
     check(sdfg.root());
 }
+
+TEST(MatMulTest, MatMul_Naive_OuterLoopsExcludedFromFusion) {
+    // Y[2, 4, 6] = A[2, 4, 8] @ B[2, 8, 6]: init and accumulate nests each start with a batch map.
+    builder::StructuredSDFGBuilder builder("sdfg_matmul_naive_no_fusion", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    types::Scalar desc(types::PrimitiveType::Double);
+    types::Pointer desc_ptr(desc);
+    builder.add_container("a", desc_ptr, true);
+    builder.add_container("b", desc_ptr, true);
+    builder.add_container("y", desc_ptr, true);
+    auto& block = builder.add_block(sdfg.root());
+
+    symbolic::MultiExpression shape_a = {symbolic::integer(2), symbolic::integer(4), symbolic::integer(8)};
+    symbolic::MultiExpression shape_b = {symbolic::integer(2), symbolic::integer(8), symbolic::integer(6)};
+    symbolic::MultiExpression shape_y = {symbolic::integer(2), symbolic::integer(4), symbolic::integer(6)};
+    auto& matmul = static_cast<math::tensor::MatMulNode&>(builder.add_library_node<math::tensor::MatMulNode>(
+        block, DebugInfo(), math::tensor::TensorLayout(shape_a), math::tensor::TensorLayout(shape_b)
+    ));
+    builder.add_computational_memlet(block, builder.add_access(block, "a"), matmul, "A", {}, desc_ptr);
+    builder.add_computational_memlet(block, builder.add_access(block, "b"), matmul, "B", {}, desc_ptr);
+    builder.add_computational_memlet(block, builder.add_access(block, "y"), matmul, "Y", {}, desc_ptr);
+    EXPECT_NO_THROW(sdfg.validate());
+
+    auto outcome = passes::expansion::expand_single_node(builder, block, matmul, math::tensor::MatMulNaiveExpander());
+    ASSERT_TRUE(outcome.expanded);
+    EXPECT_NO_THROW(sdfg.validate());
+
+    ASSERT_EQ(sdfg.root().size(), 1);
+    auto& new_sequence = dyn_cast<structured_control_flow::Sequence&>(sdfg.root().at(0));
+    ASSERT_EQ(new_sequence.size(), 2);
+    for (size_t i = 0; i < new_sequence.size(); i++) {
+        auto* batch_map = dyn_cast<structured_control_flow::Map*>(&new_sequence.at(i));
+        ASSERT_NE(batch_map, nullptr);
+        EXPECT_TRUE(structured_control_flow::ScheduleType_NoFusion::is_set(batch_map->schedule_type()));
+
+        ASSERT_EQ(batch_map->root().size(), 1);
+        auto* i_map = dyn_cast<structured_control_flow::Map*>(&batch_map->root().at(0));
+        ASSERT_NE(i_map, nullptr);
+        EXPECT_FALSE(structured_control_flow::ScheduleType_NoFusion::is_set(i_map->schedule_type()));
+    }
+}

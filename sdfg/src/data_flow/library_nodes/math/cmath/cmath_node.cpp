@@ -1,10 +1,11 @@
 #include "sdfg/data_flow/library_nodes/math/cmath/cmath_node.h"
-#include "sdfg/symbolic/symbolic.h"
 
 #include <string>
 #include <unordered_map>
 
+#include "sdfg/data_flow/library_node.h"
 #include "sdfg/data_flow/pointer_metadata.h"
+#include "sdfg/symbolic/symbolic.h"
 #include "sdfg/types/utils.h"
 
 namespace sdfg {
@@ -203,8 +204,16 @@ CMathNode::CMathNode(
     types::PrimitiveType primitive_type,
     bool approximate
 )
-    : MathNode(
-          element_id, debug_info, vertex, parent, LibraryNodeType_CMath, {"_out"}, {}, data_flow::ImplementationType_NONE
+    : data_flow::LibraryNode(
+          element_id,
+          debug_info,
+          vertex,
+          parent,
+          LibraryNodeType_CMath,
+          {"_out"},
+          {},
+          false,
+          data_flow::ImplementationType_NONE
       ),
       function_(function), primitive_type_(primitive_type), approximate_(approximate) {
     for (size_t i = 0; i < cmath_function_to_arity(function); i++) {
@@ -253,7 +262,7 @@ void CMathNode::replace(const symbolic::ExpressionMapping& replacements) {
 }
 
 void CMathNode::validate(const Function& function) const {
-    MathNode::validate(function);
+    LibraryNode::validate(function);
 
     if (!types::is_floating_point(this->primitive_type_)) {
         throw InvalidSDFGException("CMathNode: Primitive type must be a floating point type");

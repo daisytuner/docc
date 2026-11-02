@@ -151,6 +151,13 @@ TEST(BlasTest, GemmNode) {
     ASSERT_NE(comp_for_k, nullptr);
     EXPECT_EQ(sdfg.type(comp_for_k->indvar()->get_name()).primitive_type(), types::PrimitiveType::Int32);
     ASSERT_EQ(comp_for_k->root().size(), 1);
+
+    // Only the outermost loop of each nest is excluded from fusion.
+    EXPECT_TRUE(structured_control_flow::ScheduleType_NoFusion::is_set(init_map_i->schedule_type()));
+    EXPECT_TRUE(structured_control_flow::ScheduleType_NoFusion::is_set(comp_map_i->schedule_type()));
+    EXPECT_FALSE(structured_control_flow::ScheduleType_NoFusion::is_set(init_map_j->schedule_type()));
+    EXPECT_FALSE(structured_control_flow::ScheduleType_NoFusion::is_set(comp_map_j->schedule_type()));
+    EXPECT_FALSE(structured_control_flow::ScheduleType_NoFusion::is_set(comp_for_k->schedule_type()));
     {
         auto block_fma = dyn_cast<structured_control_flow::Block*>(&comp_for_k->root().at(0));
         ASSERT_NE(block_fma, nullptr);
