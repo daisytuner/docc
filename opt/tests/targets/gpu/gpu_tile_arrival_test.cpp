@@ -189,7 +189,7 @@ TEST(GpuTileArrivalTest, ReplaceAndSerializationPreserveParameters) {
 }
 
 /// Coherent-store synchronization: on ROCm gfx9 the release reduces to waiting for the (device-coherent) stores, the
-/// other targets keep the release fence; the elected block uses an agent-scope acquire fence only.
+/// acquire fence is dropped (the partials are read through device-coherent loads); the other targets keep both fences.
 TEST(GpuTileArrivalTest, CoherentStoresRelaxFences) {
     ArrivalKernel kernel(1, SynchronizationStrategy::CoherentStores);
     EXPECT_NO_THROW(kernel.builder.subject().validate());
@@ -209,11 +209,13 @@ TEST(GpuTileArrivalTest, CoherentStoresRelaxFences) {
             flag + " = atomicAdd(&(cnt0)[",
             "__syncthreads();",
             "if (" + flag + ") {",
-            "__builtin_amdgcn_fence(__ATOMIC_ACQUIRE, \"agent\");",
+            "#if !defined(__GFX9__)",
+            "__threadfence();",
+            "#endif",
         },
         pos
     );
-    EXPECT_EQ(count(code, "__threadfence();"), 1u) << code;
+    EXPECT_EQ(count(code, "__threadfence();"), 2u) << code;
     EXPECT_EQ(count(code, "atomicAdd("), 1u) << code;
 }
 

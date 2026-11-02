@@ -36,8 +36,8 @@ enum class SynchronizationStrategy {
  * The electing block issues a device-wide fence after the election, so it observes all writes the other
  * blocks made before their arrival, and resets `counter[index]` to zero for the next use.
  *
- * With @ref SynchronizationStrategy::CoherentStores (ROCm), step 1 only waits for the coherent stores on gfx9 and
- * step 3 is an agent-scope acquire fence instead of a full device fence (see there).
+ * With @ref SynchronizationStrategy::CoherentStores (ROCm gfx9), step 1 only waits for the coherent stores and the
+ * fence of step 3 is dropped, since the partials are read back through device-coherent loads (see there).
  */
 class GpuTileArrivalNode : public data_flow::LibraryNode {
     symbolic::Expression index_;
