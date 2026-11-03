@@ -2,19 +2,30 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <memory>
+#include <stdexcept>
 #include <string>
+#include <unordered_set>
+#include <vector>
 
 #include "sdfg/analysis/loop_analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/codegen/code_generators/cpp_code_generator.h"
 #include "sdfg/codegen/instrumentation/instrumentation_plan.h"
 #include "sdfg/cutouts/cutouts.h"
+#include "sdfg/data_flow/tasklet.h"
+#include "sdfg/metadata/loop_provenance.h"
 #include "sdfg/metadata/rpc_optimization.h"
+#include "sdfg/structured_control_flow/block.h"
+#include "sdfg/structured_control_flow/if_else.h"
 #include "sdfg/structured_control_flow/map.h"
+#include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
+#include "sdfg/structured_control_flow/while.h"
 #include "sdfg/structured_sdfg.h"
 #include "sdfg/types/pointer.h"
+#include "sdfg/types/scalar.h"
 #include "sdfg/types/type.h"
 
 using namespace sdfg;
@@ -295,4 +306,273 @@ TEST(CutoutTest_External, ExternalAndArgumentDoNotCollide) {
     // function argument.
     EXPECT_TRUE(cutout_sdfg->is_external("ext_table"));
     EXPECT_FALSE(cutout_sdfg->is_argument("ext_table"));
+}
+
+namespace {
+
+// `loop_count` independent top-level sequential maps over i<n> in [0, 64), each copying A[i] into B[i].
+std::unique_ptr<builder::StructuredSDFGBuilder> build_copy_sdfg(size_t loop_count = 1) {
+    auto builder = std::make_unique<builder::StructuredSDFGBuilder>("cutout_test", FunctionType_CPU);
+
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Pointer ptr_desc(base_desc);
+    builder->add_container("A", ptr_desc, true);
+    builder->add_container("B", ptr_desc, true);
+
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
+
+    for (size_t n = 0; n < loop_count; ++n) {
+        std::string indvar_name = "i" + std::to_string(n);
+        builder->add_container(indvar_name, sym_desc);
+
+        auto indvar = symbolic::symbol(indvar_name);
+        auto& map = builder->add_map(
+            builder->subject().root(),
+            indvar,
+            symbolic::Lt(indvar, symbolic::integer(64)),
+            symbolic::integer(0),
+            symbolic::add(indvar, symbolic::integer(1)),
+            structured_control_flow::ScheduleType_Sequential::create()
+        );
+
+        auto& block = builder->add_block(map.root());
+        auto& a_in = builder->add_access(block, "A");
+        auto& b_out = builder->add_access(block, "B");
+        auto& tasklet = builder->add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder->add_computational_memlet(block, a_in, tasklet, "_in", {indvar});
+        builder->add_computational_memlet(block, tasklet, "_out", b_out, {indvar});
+    }
+
+    return builder;
+}
+
+size_t outermost_loop_id(builder::StructuredSDFGBuilder& builder, size_t index = 0) {
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
+    return static_cast<size_t>(loop_analysis.outermost_loops().at(index)->element_id());
+}
+
+std::unique_ptr<StructuredSDFG> cutout_by_id(builder::StructuredSDFGBuilder& builder, size_t element_id) {
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    auto* node = dynamic_cast<structured_control_flow::ControlFlowNode*>(builder.find_element_by_id(element_id));
+    return util::cutout(builder.subject(), analysis_manager, *node);
+}
+
+void collect_element_ids(const structured_control_flow::ControlFlowNode& node, std::vector<size_t>& ids) {
+    ids.push_back(node.element_id());
+
+    if (auto* sequence = dynamic_cast<const structured_control_flow::Sequence*>(&node)) {
+        for (size_t i = 0; i < sequence->size(); ++i) {
+            collect_element_ids(sequence->at(i), ids);
+        }
+    } else if (auto* block = dynamic_cast<const structured_control_flow::Block*>(&node)) {
+        for (auto& dataflow_node : block->dataflow().nodes()) {
+            ids.push_back(dataflow_node.element_id());
+        }
+        for (auto& memlet : block->dataflow().edges()) {
+            ids.push_back(memlet.element_id());
+        }
+    } else if (auto* if_else = dynamic_cast<const structured_control_flow::IfElse*>(&node)) {
+        for (size_t i = 0; i < if_else->size(); ++i) {
+            collect_element_ids(if_else->at(i).first, ids);
+        }
+    } else if (auto* loop = dynamic_cast<const structured_control_flow::StructuredLoop*>(&node)) {
+        collect_element_ids(loop->root(), ids);
+    } else if (auto* while_loop = dynamic_cast<const structured_control_flow::While*>(&node)) {
+        collect_element_ids(while_loop->root(), ids);
+    }
+}
+
+// Sorted, so the result is independent of the unordered dataflow iteration order.
+std::vector<size_t> element_ids(const StructuredSDFG& sdfg) {
+    std::vector<size_t> ids;
+    collect_element_ids(sdfg.root(), ids);
+    std::sort(ids.begin(), ids.end());
+    return ids;
+}
+
+} // namespace
+
+TEST(ApplyCutoutTest, RoundTrip_ReplacesNode) {
+    auto builder = build_copy_sdfg();
+    size_t element_id = outermost_loop_id(*builder);
+    auto cutout = cutout_by_id(*builder, element_id);
+
+    size_t target_size_before = builder->subject().root().size();
+    size_t cutout_child_count = cutout->root().size();
+
+    util::apply_cutout(*builder, element_id, *cutout);
+
+    EXPECT_EQ(builder->subject().root().size(), target_size_before - 1 + cutout_child_count);
+
+    analysis::AnalysisManager analysis_manager(builder->subject());
+    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
+    EXPECT_EQ(loop_analysis.outermost_loops().size(), 1u);
+    // "i0" still exists in the target, so the merged transient is renamed.
+    EXPECT_TRUE(loop_analysis.find_loop_by_indvar("i0_0") != nullptr);
+}
+
+TEST(ApplyCutoutTest, PreservesTargetArguments) {
+    auto builder = build_copy_sdfg();
+    size_t element_id = outermost_loop_id(*builder);
+    auto arguments_before = builder->subject().arguments();
+    auto cutout = cutout_by_id(*builder, element_id);
+
+    util::apply_cutout(*builder, element_id, *cutout);
+
+    EXPECT_EQ(builder->subject().arguments(), arguments_before);
+}
+
+TEST(ApplyCutoutTest, AddsMissingContainers) {
+    auto builder = build_copy_sdfg();
+    size_t element_id = outermost_loop_id(*builder);
+    auto cutout = cutout_by_id(*builder, element_id);
+
+    {
+        builder::StructuredSDFGBuilder cutout_builder(*cutout);
+        cutout_builder.add_container("extra_container", types::Scalar(types::PrimitiveType::Int64));
+    }
+    ASSERT_FALSE(builder->subject().exists("extra_container"));
+
+    util::apply_cutout(*builder, element_id, *cutout);
+
+    EXPECT_TRUE(builder->subject().exists("extra_container"));
+    EXPECT_FALSE(builder->subject().is_argument("extra_container"));
+}
+
+TEST(ApplyCutoutTest, MergesMultipleChildren) {
+    auto builder = build_copy_sdfg();
+    size_t element_id = outermost_loop_id(*builder);
+    auto cutout = cutout_by_id(*builder, element_id);
+
+    size_t cutout_child_count_before = cutout->root().size();
+    {
+        builder::StructuredSDFGBuilder cutout_builder(*cutout);
+        cutout_builder.add_block(cutout->root());
+    }
+    size_t cutout_child_count = cutout->root().size();
+    ASSERT_EQ(cutout_child_count, cutout_child_count_before + 1);
+
+    size_t target_size_before = builder->subject().root().size();
+
+    util::apply_cutout(*builder, element_id, *cutout);
+
+    EXPECT_EQ(builder->subject().root().size(), target_size_before - 1 + cutout_child_count);
+}
+
+TEST(ApplyCutoutTest, RecordsProvenanceForAllOutermostLoops) {
+    auto builder = build_copy_sdfg();
+    const size_t element_id = outermost_loop_id(*builder);
+    auto response = cutout_by_id(*builder, element_id);
+
+    {
+        builder::StructuredSDFGBuilder response_builder(*response);
+        response_builder.add_container("i_extra", types::Scalar(types::PrimitiveType::Int64));
+
+        auto indvar = symbolic::symbol("i_extra");
+        auto& map = response_builder.add_map(
+            response->root(),
+            indvar,
+            symbolic::Lt(indvar, symbolic::integer(8)),
+            symbolic::integer(0),
+            symbolic::add(indvar, symbolic::integer(1)),
+            structured_control_flow::ScheduleType_Sequential::create()
+        );
+
+        auto& block = response_builder.add_block(map.root());
+        auto& input = response_builder.add_access(block, "A");
+        auto& output = response_builder.add_access(block, "B");
+        auto& tasklet = response_builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+        response_builder.add_computational_memlet(block, input, tasklet, "_in", {indvar});
+        response_builder.add_computational_memlet(block, tasklet, "_out", output, {indvar});
+    }
+
+    builder->subject().add_metadata("unrelated", "preserve me");
+    util::apply_cutout(*builder, element_id, *response);
+
+    analysis::AnalysisManager analysis_manager(builder->subject());
+    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
+    const auto& loops = loop_analysis.outermost_loops();
+
+    ASSERT_EQ(loops.size(), 2u);
+    for (const auto* loop : loops) {
+        EXPECT_EQ(metadata::source_loop_id(*loop), std::optional<ElementId>(element_id));
+    }
+    EXPECT_EQ(builder->subject().metadata("unrelated"), "preserve me");
+}
+
+TEST(ApplyCutoutTest, ThrowsForUnknownElementId) {
+    auto builder = build_copy_sdfg();
+    size_t element_id = outermost_loop_id(*builder);
+    auto cutout = cutout_by_id(*builder, element_id);
+
+    EXPECT_THROW(util::apply_cutout(*builder, 999999u, *cutout), std::runtime_error);
+}
+
+TEST(ApplyCutoutTest, ThrowsForRoot) {
+    auto builder = build_copy_sdfg();
+    size_t element_id = outermost_loop_id(*builder);
+    auto cutout = cutout_by_id(*builder, element_id);
+
+    EXPECT_THROW(util::apply_cutout(*builder, builder->subject().root().element_id(), *cutout), std::runtime_error);
+}
+
+TEST(ApplyCutoutTest, MultipleRegions) {
+    auto builder = build_copy_sdfg(2);
+    std::vector<size_t> region_ids = {outermost_loop_id(*builder, 0), outermost_loop_id(*builder, 1)};
+
+    std::vector<std::unique_ptr<StructuredSDFG>> cutouts;
+    for (auto id : region_ids) {
+        cutouts.push_back(cutout_by_id(*builder, id));
+    }
+    for (size_t i = 0; i < region_ids.size(); ++i) {
+        util::apply_cutout(*builder, region_ids[i], *cutouts[i]);
+    }
+
+    analysis::AnalysisManager analysis_manager(builder->subject());
+    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
+    ASSERT_EQ(loop_analysis.outermost_loops().size(), 2u);
+    EXPECT_TRUE(loop_analysis.find_loop_by_indvar("i0_0") != nullptr);
+    EXPECT_TRUE(loop_analysis.find_loop_by_indvar("i1_0") != nullptr);
+    for (size_t i = 0; i < region_ids.size(); ++i) {
+        EXPECT_EQ(metadata::source_loop_id(*loop_analysis.outermost_loops()[i]), std::optional<ElementId>(region_ids[i]));
+    }
+}
+
+TEST(ApplyCutoutTest, ReapplicationRecordsDirectReplacementId) {
+    auto builder = build_copy_sdfg();
+    const size_t source_loop_id = outermost_loop_id(*builder);
+
+    auto first_response = cutout_by_id(*builder, source_loop_id);
+    util::apply_cutout(*builder, source_loop_id, *first_response);
+
+    const size_t intermediate_loop_id = outermost_loop_id(*builder);
+    auto second_response = cutout_by_id(*builder, intermediate_loop_id);
+    util::apply_cutout(*builder, intermediate_loop_id, *second_response);
+
+    analysis::AnalysisManager analysis_manager(builder->subject());
+    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
+    ASSERT_EQ(loop_analysis.outermost_loops().size(), 1u);
+    EXPECT_EQ(
+        metadata::source_loop_id(*loop_analysis.outermost_loops().front()),
+        std::optional<ElementId>(intermediate_loop_id)
+    );
+}
+
+// Responses sharing element ids (a cutout and its clone) must not leave duplicate ids behind.
+TEST(ApplyCutoutTest, IdenticalResponseElementIds_ProducesUniqueIds) {
+    auto builder = build_copy_sdfg(2);
+    std::vector<size_t> region_ids = {outermost_loop_id(*builder, 0), outermost_loop_id(*builder, 1)};
+
+    auto first_cutout = cutout_by_id(*builder, region_ids[0]);
+    auto second_cutout = first_cutout->clone();
+    ASSERT_EQ(element_ids(*first_cutout), element_ids(*second_cutout));
+
+    util::apply_cutout(*builder, region_ids[0], *first_cutout);
+    util::apply_cutout(*builder, region_ids[1], *second_cutout);
+
+    auto merged_ids = element_ids(builder->subject());
+    std::unordered_set<size_t> unique_ids(merged_ids.begin(), merged_ids.end());
+    EXPECT_EQ(merged_ids.size(), unique_ids.size()) << "Duplicate element ids in the merged SDFG";
+    EXPECT_LE(merged_ids.back(), builder->subject().element_counter());
 }

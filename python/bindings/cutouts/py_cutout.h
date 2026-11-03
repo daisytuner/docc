@@ -30,6 +30,11 @@ inline PyStructuredSDFG cutout(
     return PyStructuredSDFG::from_sdfg(sdfg.docc_context(), std::move(result));
 }
 
+inline void apply_cutout(PyStructuredSDFG& sdfg, size_t element_id, PyStructuredSDFG& cutout_sdfg) {
+    sdfg::builder::StructuredSDFGBuilder builder(sdfg.sdfg());
+    sdfg::util::apply_cutout(builder, element_id, cutout_sdfg.sdfg());
+}
+
 /**
  * @brief Register the cutout utility function
  */
@@ -62,6 +67,31 @@ Example:
     >>> loops = loop_analysis.loops()
     >>> # Create a cutout of the first loop
     >>> cutout_sdfg = cutout(sdfg, analysis, loops[0])
+)doc"
+    );
+
+    m.def(
+        "apply_cutout",
+        &apply_cutout,
+        py::arg("sdfg"),
+        py::arg("element_id"),
+        py::arg("cutout_sdfg"),
+        R"doc(
+Merge an (optimized) cutout back into ``sdfg``, in place.
+
+Replaces the control-flow node with ``element_id`` by the children of
+``cutout_sdfg``'s root. Arguments and externals of the cutout keep their names
+so they bind to the target's containers; colliding transients are renamed, and
+containers missing from the target are added as transients, so the target's
+signature is preserved. Merged nodes receive fresh element ids.
+
+Args:
+    sdfg: The StructuredSDFG to merge into (mutated in place).
+    element_id: Element id of the control-flow node to replace.
+    cutout_sdfg: The cutout to merge; its transients may be renamed.
+
+Raises:
+    RuntimeError: No node with ``element_id`` exists, or it has no parent scope.
 )doc"
     );
 }
