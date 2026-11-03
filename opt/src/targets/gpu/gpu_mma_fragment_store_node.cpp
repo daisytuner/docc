@@ -21,7 +21,8 @@ GpuMmaFragmentStoreNode::GpuMmaFragmentStoreNode(
     MmaFragmentType fragment_type,
     const GpuMmaFromMemoryLayout& layout,
     types::PrimitiveType element_type,
-    const data_flow::ImplementationType& impl_type
+    const data_flow::ImplementationType& impl_type,
+    bool coherent
 )
     : LibraryNode(
           element_id,
@@ -34,7 +35,8 @@ GpuMmaFragmentStoreNode::GpuMmaFragmentStoreNode(
           false,
           impl_type
       ),
-      block_size_(block_size), fragment_type_(fragment_type), layout_(layout), element_type_(element_type) {
+      block_size_(block_size), fragment_type_(fragment_type), layout_(layout), element_type_(element_type),
+      coherent_(coherent) {
 }
 
 void GpuMmaFragmentStoreNode::validate(const Function& function) const {
@@ -64,7 +66,16 @@ void GpuMmaFragmentStoreNode::replace(const symbolic::ExpressionMapping& replace
 std::unique_ptr<data_flow::DataFlowNode> GpuMmaFragmentStoreNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
     return std::unique_ptr<data_flow::DataFlowNode>(new GpuMmaFragmentStoreNode(
-        element_id, debug_info(), vertex, parent, block_size_, fragment_type_, layout_, element_type_, implementation_type_
+        element_id,
+        debug_info(),
+        vertex,
+        parent,
+        block_size_,
+        fragment_type_,
+        layout_,
+        element_type_,
+        implementation_type_,
+        coherent_
     ));
 }
 
@@ -73,6 +84,9 @@ std::string GpuMmaFragmentStoreNode::toStr() const {
     ss << "MmaFragmentStore(" << block_size_.dim_str(fragment_type_) << ", " << layout_;
     ss << ", " << types::primitive_type_to_string(element_type_);
     ss << ", " << implementation_type_.value();
+    if (coherent_) {
+        ss << ", coherent";
+    }
     ss << ")";
     return ss.str();
 }
@@ -95,7 +109,7 @@ data_flow::PointerAccessType GpuMmaFragmentStoreNode::pointer_access_type(int in
 }
 
 bool GpuMmaFragmentStoreNode::can_relocalize_operand(int input_idx, const math::tensor::TensorLayout& packed) const {
-    if (input_idx == PTR_INPUT_IDX) {
+    if (input_idx == PTR_INPUT_IDX && !coherent_) {
         if (!layout_.matches_access_shape(packed.shape(), block_size_, fragment_type_)) {
             return false;
         }
@@ -107,7 +121,7 @@ bool GpuMmaFragmentStoreNode::can_relocalize_operand(int input_idx, const math::
 }
 
 bool GpuMmaFragmentStoreNode::relocalize_operand(int input_idx, const math::tensor::TensorLayout& packed) {
-    if (input_idx == PTR_INPUT_IDX) {
+    if (input_idx == PTR_INPUT_IDX && !coherent_) {
         if (!layout_.matches_access_shape(packed.shape(), block_size_, fragment_type_)) {
             return false;
         }
@@ -127,6 +141,7 @@ nlohmann::json GpuMmaFragmentStoreNodeSerializer::serialize(const data_flow::Lib
     j["fragment_type"] = static_cast<int>(node.fragment_type());
     serialize_mma_from_memory_layout(j["layout"], node.layout());
     j["element_type"] = node.element_type();
+    j["coherent"] = node.coherent();
     return j;
 }
 
@@ -139,8 +154,9 @@ data_flow::LibraryNode& GpuMmaFragmentStoreNodeSerializer::deserialize(
     auto fragment_type = static_cast<MmaFragmentType>(j.at("fragment_type").get<int>());
     auto layout = deserialize_mma_from_memory_layout(j.at("layout"));
     auto element_type = j.at("element_type").get<types::PrimitiveType>();
+    const bool coherent = j.value("coherent", false);
     return builder.add_library_node<GpuMmaFragmentStoreNode>(
-        parent, debug_info, block_size, fragment_type, layout, element_type, data_flow::ImplementationType_NONE
+        parent, debug_info, block_size, fragment_type, layout, element_type, data_flow::ImplementationType_NONE, coherent
     );
 }
 

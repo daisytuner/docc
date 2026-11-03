@@ -7,10 +7,54 @@
 #include "sdfg/targets/gpu/gpu_mma_fragment_load_node.h"
 #include "sdfg/targets/gpu/gpu_mma_fragment_store_node.h"
 #include "sdfg/targets/gpu/gpu_mma_matmul_node.h"
+#include "sdfg/targets/rocm/codegen/rocm_language_extension.h"
 #include "sdfg/types/pointer.h"
 #include "sdfg/types/scalar.h"
 
 namespace sdfg::gpu {
+
+namespace {
+
+/// Coherent transfers are emitted for ROCm only; elsewhere both sides use the regular transfer and the arrival
+/// keeps its device-wide fences.
+bool emits_coherent_transfer(const codegen::CodegenOutput& out, bool coherent) {
+    return coherent && dynamic_cast<const ::sdfg::rocm::ROCMLanguageExtension*>(&out.language_extension) != nullptr;
+}
+
+/// Lane-ordered transfer with device-scope atomics: element e of lane l lives at offset + e * warpSize + l. An
+/// accumulator holds each of its m * n elements in exactly one lane, so this covers the same m * n slot as the
+/// row-major transfer it replaces.
+void emit_coherent_fragment_transfer(
+    codegen::CodegenOutput& out,
+    const GpuMmaDispatcherStrategy& strategy,
+    bool load,
+    const std::string& frag,
+    const std::string& base,
+    const GpuMmaFromMemoryLayout& layout,
+    types::PrimitiveType element_type
+) {
+    auto& lang = out.language_extension;
+    const std::string elem_t = lang.primitive_type(element_type);
+    const std::string ptr = lang.type_cast(base, types::Pointer(types::Scalar(element_type)));
+    const std::string off = layout.offset.is_null() ? "0" : "(" + lang.expression(layout.offset) + ")";
+    const std::string addr = "(" + ptr + ") + " + off + " + __docc_e * warpSize + __lane_id()";
+    const std::string elem = strategy.fragment_element(frag, "__docc_e");
+
+    out.stream << "for (int __docc_e = 0; __docc_e < " << strategy.fragment_element_count(frag) << "; ++__docc_e) {"
+               << std::endl;
+    out.stream.changeIndent(+4);
+    if (load) {
+        out.stream << elem << " = __hip_atomic_load(" << addr << ", __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_AGENT);"
+                   << std::endl;
+    } else {
+        out.stream << "__hip_atomic_store(" << addr << ", static_cast<" << elem_t << ">(" << elem
+                   << "), __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_AGENT);" << std::endl;
+    }
+    out.stream.changeIndent(-4);
+    out.stream << "}" << std::endl;
+}
+
+} // namespace
 
 void emit_clipped_fragment_transfer(
     codegen::CodegenOutput& out,
@@ -200,6 +244,11 @@ void GpuMmaFragmentLoadDispatcher::dispatch_code_with_edges(
     const std::string& frag = inputs.at(GpuMmaFragmentLoadNode::FRAG_INPUT_IDX).expr;
     const std::string& base = inputs.at(GpuMmaFragmentLoadNode::PTR_INPUT_IDX).expr;
 
+    if (emits_coherent_transfer(out, node.coherent())) {
+        emit_coherent_fragment_transfer(out, *strategy_, true, frag, base, node.layout(), node.element_type());
+        return;
+    }
+
     // A/B fragments with a matching declared layout take the direct overload; the runtime-layout one goes through a
     // temporary that defeats packing of the operand registers.
 
@@ -237,6 +286,11 @@ void GpuMmaFragmentStoreDispatcher::dispatch_code_with_edges(
 
     const std::string& frag = inputs.at(GpuMmaFragmentStoreNode::FRAG_INPUT_IDX).expr;
     const std::string& base = inputs.at(GpuMmaFragmentStoreNode::PTR_INPUT_IDX).expr;
+
+    if (emits_coherent_transfer(out, node.coherent())) {
+        emit_coherent_fragment_transfer(out, *strategy_, false, frag, base, node.layout(), node.element_type());
+        return;
+    }
 
     if (node.layout().clipped()) {
         auto& frag_node =

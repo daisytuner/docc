@@ -72,6 +72,9 @@ namespace transformations {
  *     only the last arriving block zeroes its accumulators, sums the S slots of the tile in split order,
  *     and runs the original epilogue (everything following the reduction in its sequence). The result is
  *     deterministic and needs neither a zeroed output nor any per-launch initialization.
+ *   - The partials are exchanged through coherent fragment stores/loads and an arrival that publishes only those
+ *     (SynchronizationStrategy::CoherentStores): on ROCm gfx9 the arrival waits for the stores instead of issuing
+ *     device-wide fences, which on gfx942 would write back and invalidate the whole L2 in every block.
  *
  * ## Generality
  *  Applies to any associative-reduction-over-tiles: GEMM, GEMV, batched/grouped

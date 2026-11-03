@@ -16,7 +16,8 @@ GpuTileArrivalNode::GpuTileArrivalNode(
     const graph::Vertex vertex,
     data_flow::DataFlowGraph& parent,
     const symbolic::Expression& index,
-    const symbolic::Expression& expected
+    const symbolic::Expression& expected,
+    SynchronizationStrategy synchronization_strategy
 )
     : LibraryNode(
           element_id,
@@ -29,7 +30,7 @@ GpuTileArrivalNode::GpuTileArrivalNode(
           true,
           data_flow::ImplementationType_NONE
       ),
-      index_(index), expected_(expected) {
+      index_(index), expected_(expected), synchronization_strategy_(synchronization_strategy) {
 }
 
 void GpuTileArrivalNode::validate(const Function& function) const {
@@ -66,13 +67,18 @@ void GpuTileArrivalNode::replace(const symbolic::ExpressionMapping& replacements
 
 std::unique_ptr<data_flow::DataFlowNode> GpuTileArrivalNode::
     clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const {
-    return std::unique_ptr<
-        data_flow::DataFlowNode>(new GpuTileArrivalNode(element_id, debug_info(), vertex, parent, index_, expected_));
+    return std::unique_ptr<data_flow::DataFlowNode>(
+        new GpuTileArrivalNode(element_id, debug_info(), vertex, parent, index_, expected_, synchronization_strategy_)
+    );
 }
 
 std::string GpuTileArrivalNode::toStr() const {
     std::stringstream ss;
-    ss << "GpuTileArrival(index: " << index_->__str__() << ", expected: " << expected_->__str__() << ")";
+    ss << "GpuTileArrival(index: " << index_->__str__() << ", expected: " << expected_->__str__();
+    if (synchronization_strategy_ == SynchronizationStrategy::CoherentStores) {
+        ss << ", coherent stores";
+    }
+    ss << ")";
     return ss.str();
 }
 
@@ -82,6 +88,7 @@ nlohmann::json GpuTileArrivalNodeSerializer::serialize(const data_flow::LibraryN
     j["code"] = node.code().value();
     j["index"] = node.index()->__str__();
     j["expected"] = node.expected()->__str__();
+    j["coherent_stores"] = node.synchronization_strategy() == SynchronizationStrategy::CoherentStores;
     return j;
 }
 
@@ -90,11 +97,13 @@ data_flow::LibraryNode& GpuTileArrivalNodeSerializer::deserialize(
 ) {
     serializer::JSONSerializer serializer;
     DebugInfo debug_info = serializer.json_to_debug_info(j["debug_info"]);
+    const bool coherent = j.value("coherent_stores", false);
     return builder.add_library_node<GpuTileArrivalNode>(
         parent,
         debug_info,
         symbolic::parse(j.at("index").get<std::string>()),
-        symbolic::parse(j.at("expected").get<std::string>())
+        symbolic::parse(j.at("expected").get<std::string>()),
+        coherent ? SynchronizationStrategy::CoherentStores : SynchronizationStrategy::DeviceFence
     );
 }
 
@@ -124,8 +133,20 @@ void GpuTileArrivalDispatcher::dispatch_code_with_edges(
     const std::string slot = "(" + inputs.at(GpuTileArrivalNode::COUNTER_INPUT_IDX).expr + ")[" +
                              lang.expression(node.index()) + "]";
     const std::string leader = "threadIdx.x == 0 && threadIdx.y == 0 && threadIdx.z == 0";
+    // On gfx9, device-coherent stores are complete (visible device-wide) once vmcnt drains, so the release
+    // reduces to that wait; the device-scope fence would also write back (and later invalidate) the whole L2.
+    const bool coherent = node.synchronization_strategy() == SynchronizationStrategy::CoherentStores &&
+                          dynamic_cast<::sdfg::rocm::ROCMLanguageExtension*>(&lang) != nullptr;
 
-    out.stream << "__threadfence();" << std::endl;
+    if (coherent) {
+        out.stream << "#if defined(__GFX9__)" << std::endl;
+        out.stream << "asm volatile(\"s_waitcnt vmcnt(0)\" ::: \"memory\");" << std::endl;
+        out.stream << "#else" << std::endl;
+        out.stream << "__threadfence();" << std::endl;
+        out.stream << "#endif" << std::endl;
+    } else {
+        out.stream << "__threadfence();" << std::endl;
+    }
     out.stream << "__syncthreads();" << std::endl;
     out.stream << "__shared__ int " << flag << ";" << std::endl;
     out.stream << "if (" << leader << ") {" << std::endl;
@@ -142,7 +163,14 @@ void GpuTileArrivalDispatcher::dispatch_code_with_edges(
     out.stream << "__syncthreads();" << std::endl;
     out.stream << "if (" << flag << ") {" << std::endl;
     out.stream.changeIndent(+4);
-    out.stream << "__threadfence();" << std::endl;
+    if (coherent) {
+        // The partials are read back through device-coherent loads, which bypass the non-coherent caches.
+        out.stream << "#if !defined(__GFX9__)" << std::endl;
+        out.stream << "__threadfence();" << std::endl;
+        out.stream << "#endif" << std::endl;
+    } else {
+        out.stream << "__threadfence();" << std::endl;
+    }
     out.stream.changeIndent(-4);
     out.stream << "}" << std::endl;
 
