@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 #include <sdfg/serializer/json_serializer.h>
+#include <set>
 #include <strstream>
 
 #include "sdfg/analysis/analysis.h"
@@ -12,12 +13,19 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/matmul_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/tensor_layout.h"
 #include "sdfg/passes/expansion/library_node_expansion_pass.h"
+#include "sdfg/structured_control_flow/for.h"
+#include "sdfg/structured_control_flow/if_else.h"
 #include "sdfg/structured_control_flow/map.h"
+#include "sdfg/structured_control_flow/reduce.h"
 #include "sdfg/symbolic/symbolic.h"
+#include "sdfg/targets/gpu/gpu_mma_fill_node.h"
 #include "sdfg/targets/gpu/gpu_mma_fragment.h"
+#include "sdfg/targets/gpu/gpu_mma_fragment_eltwise_add_node.h"
 #include "sdfg/targets/gpu/gpu_mma_fragment_load_node.h"
+#include "sdfg/targets/gpu/gpu_mma_fragment_store_node.h"
 #include "sdfg/targets/gpu/gpu_mma_matmul_node.h"
 #include "sdfg/targets/gpu/gpu_offload_schedule_type.h"
+#include "sdfg/targets/gpu/gpu_tile_arrival_node.h"
 #include "sdfg/targets/gpu/gpu_types.h"
 #include "sdfg/targets/rocm/rocm.h"
 #include "sdfg/targets/rocm/rocm_arch.h"
@@ -27,6 +35,7 @@
 #include "sdfg/tiles/transformations/software_pipelining.h"
 #include "sdfg/tiles/transformations/tile_vectorizer.h"
 #include "sdfg/transformations/loop_tiling.h"
+#include "sdfg/transformations/stream_k.h"
 #include "sdfg/types/array.h"
 #include "sdfg/types/tensor.h"
 #include "sdfg/visitor/for_each.h"
@@ -577,7 +586,96 @@ find_local_load(structured_control_flow::ControlFlowNode& root, const std::strin
     return found;
 }
 
+std::vector<structured_control_flow::Reduce*> sequential_reduces(builder::StructuredSDFGBuilder& builder) {
+    analysis::AnalysisManager am(builder.subject());
+    std::vector<structured_control_flow::Reduce*> found;
+    for (auto* loop : am.get<analysis::LoopAnalysis>().loops()) {
+        auto* reduce = dynamic_cast<structured_control_flow::Reduce*>(loop);
+        if (reduce && reduce->schedule_type().category() != structured_control_flow::ScheduleTypeCategory::Offloader) {
+            found.push_back(reduce);
+        }
+    }
+    return found;
+}
+
+std::set<std::string> reduction_containers(const structured_control_flow::Reduce& reduce) {
+    std::set<std::string> containers;
+    for (const auto& info : reduce.reductions()) {
+        EXPECT_EQ(info.operation, structured_control_flow::ReductionOperation::Add);
+        containers.insert(info.container);
+    }
+    return containers;
+}
+
+std::set<std::string> mma_accumulators(structured_control_flow::ControlFlowNode& root) {
+    std::set<std::string> containers;
+    visitor::for_each_block(root, [&](structured_control_flow::Block& b) {
+        for (auto* lib : b.dataflow().library_nodes()) {
+            if (!dynamic_cast<gpu::GpuMmaMatmulNode*>(lib)) {
+                continue;
+            }
+            for (auto& e : b.dataflow().in_edges(*lib)) {
+                auto* a = dynamic_cast<const data_flow::AccessNode*>(&e.src());
+                if (a && e.dst_conn() == lib->input(math::tensor::MatMulNode::Y_INPUT_IDX)) {
+                    containers.insert(a->data());
+                }
+            }
+        }
+    });
+    return containers;
+}
+
+void expand_with_wave_tile(builder::StructuredSDFGBuilder& builder, int tile, gpu::BlockCounts wave_tile) {
+    auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
+    auto [block, matmul_node] = build_offloaded_mma_structure(builder, 1024, 1024, 1024, tile, tile, 16, arch);
+    passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch, nullptr, &wave_tile));
+}
+
 } // namespace
+
+/// Base: with one accumulator fragment per wave, the K sweep is a sequential Reduce{Add} over exactly it.
+TEST(ROCMMMATest, KSweepReduceBase_SingleFragment_gfx90a) {
+    builder::StructuredSDFGBuilder builder("ksweep", FunctionType_CPU);
+    expand_with_wave_tile(builder, 32, {1, 1});
+    EXPECT_NO_THROW(builder.subject().validate());
+
+    auto reduces = sequential_reduces(builder);
+    ASSERT_EQ(reduces.size(), 1u);
+    auto containers = reduction_containers(*reduces.front());
+    EXPECT_EQ(containers.size(), 1u);
+    EXPECT_EQ(containers, mma_accumulators(reduces.front()->root()));
+}
+
+/// Step: every additional fragment of a wave tile adds exactly its accumulator to the same Reduce.
+TEST(ROCMMMATest, KSweepReduceStep_WaveTileFragments_gfx90a) {
+    for (auto wave_tile : {gpu::BlockCounts{1, 2}, gpu::BlockCounts{2, 1}, gpu::BlockCounts{2, 2}}) {
+        builder::StructuredSDFGBuilder builder("ksweep", FunctionType_CPU);
+        expand_with_wave_tile(builder, 64, wave_tile);
+        EXPECT_NO_THROW(builder.subject().validate());
+
+        auto reduces = sequential_reduces(builder);
+        ASSERT_EQ(reduces.size(), 1u);
+        auto containers = reduction_containers(*reduces.front());
+        EXPECT_EQ(containers.size(), static_cast<size_t>(wave_tile.total_blocks()));
+        EXPECT_EQ(containers, mma_accumulators(reduces.front()->root()));
+    }
+}
+
+/// Preservation: strip-mining the K sweep into panels keeps both loops reductions over the same accumulators.
+TEST(ROCMMMATest, KSweepReducePreservedByPanelTiling_gfx90a) {
+    builder::StructuredSDFGBuilder builder("ksweep", FunctionType_CPU);
+    expand_with_wave_tile(builder, 64, {2, 2});
+    auto before = reduction_containers(*sequential_reduces(builder).front());
+
+    strip_mine_k(builder, 4);
+    EXPECT_NO_THROW(builder.subject().validate());
+
+    auto reduces = sequential_reduces(builder);
+    ASSERT_EQ(reduces.size(), 2u);
+    for (auto* reduce : reduces) {
+        EXPECT_EQ(reduction_containers(*reduce), before);
+    }
+}
 
 TEST(ROCMMMATest, FragmentLayoutFromTensorLayoutKeepsMajorness) {
     auto s16 = symbolic::integer(16);
@@ -1239,6 +1337,229 @@ TEST(ROCMMMATest, SoftwarePipeliningRegisterStagedCoalesceFp32_gfx90a) {
     }
     EXPECT_NE(kernels.find("[16 * __tc_i + 15]"), std::string::npos) << kernels;
     EXPECT_NE(kernels.find("make_uint4("), std::string::npos) << kernels;
+}
+
+namespace {
+
+constexpr int kSkM = 16, kSkN = 128, kSkK = 256, kSkTileM = 16, kSkTileN = 32, kSkPanelBlocks = 4;
+constexpr int64_t kSkTiles = (kSkM / kSkTileM) * (kSkN / kSkTileN);
+constexpr int64_t kSkPanels = kSkK / 16 / kSkPanelBlocks;
+
+/// Expanded and K-panel tiled MMA nest over a (M/tile_m) x (N/tile_n) grid band anchored at `block_row`.
+void build_streamk_nest(builder::StructuredSDFGBuilder& builder) {
+    auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
+    auto [block, matmul_node] = build_offloaded_mma_structure(
+        builder,
+        kSkM,
+        kSkN,
+        kSkK,
+        kSkTileM,
+        kSkTileN,
+        16,
+        arch,
+        true,
+        types::PrimitiveType::BFloat,
+        types::PrimitiveType::BFloat
+    );
+    passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch));
+    strip_mine_k(builder, kSkPanelBlocks);
+}
+
+bool streamk_applies(builder::StructuredSDFGBuilder& builder, size_t num_blocks) {
+    analysis::AnalysisManager am(builder.subject());
+    transformations::StreamK xform(*find_loop(am, "block_row"), num_blocks);
+    return xform.can_be_applied(builder, am);
+}
+
+void apply_streamk(builder::StructuredSDFGBuilder& builder, size_t num_blocks) {
+    analysis::AnalysisManager am(builder.subject());
+    transformations::StreamK xform(*find_loop(am, "block_row"), num_blocks);
+    ASSERT_TRUE(xform.can_be_applied(builder, am));
+    xform.apply(builder, am);
+    EXPECT_NO_THROW(builder.subject().validate());
+}
+
+template<typename T>
+std::vector<T*> library_nodes_of(structured_control_flow::ControlFlowNode& root) {
+    std::vector<T*> found;
+    visitor::for_each_block(root, [&](structured_control_flow::Block& b) {
+        for (auto* lib : b.dataflow().library_nodes()) {
+            if (auto* node = dynamic_cast<T*>(lib)) {
+                found.push_back(node);
+            }
+        }
+    });
+    return found;
+}
+
+std::vector<structured_control_flow::Map*> grid_maps(analysis::AnalysisManager& am) {
+    std::vector<structured_control_flow::Map*> grids;
+    for (auto* loop : am.get<analysis::LoopAnalysis>().loops()) {
+        auto* map = dynamic_cast<structured_control_flow::Map*>(loop);
+        if (map && map->schedule_type().category() == structured_control_flow::ScheduleTypeCategory::Offloader) {
+            auto level = gpu::ScheduleType_GPU_Offload::target_level(map->schedule_type());
+            if (level == gpu::TargetLevel::X_GRID || level == gpu::TargetLevel::Y_GRID ||
+                level == gpu::TargetLevel::Z_GRID) {
+                grids.push_back(map);
+            }
+        }
+    }
+    return grids;
+}
+
+/// The sequence holding the K-panel reduction, i.e. the body of the innermost wave map.
+structured_control_flow::Sequence& wave_body(analysis::AnalysisManager& am) {
+    auto* panel = find_loop(am, "tile_k0_tile0");
+    return static_cast<structured_control_flow::Sequence&>(*panel->get_parent());
+}
+
+size_t count_blocks_after(structured_control_flow::Sequence& seq, structured_control_flow::ControlFlowNode& node) {
+    return seq.size() - seq.index(node) - 1;
+}
+
+int64_t as_int(const symbolic::Expression& e) {
+    return SymEngine::rcp_static_cast<const SymEngine::Integer>(e)->as_int();
+}
+
+} // namespace
+
+/// Legality: on MMA fragment accumulators StreamK applies exactly to the aligned decompositions
+/// num_blocks = tiles * S with S dividing the panel count.
+TEST(ROCMMMATest, StreamKFragmentLegalityIsAlignedSplit_gfx90a) {
+    for (size_t num_blocks = 1; num_blocks <= static_cast<size_t>(kSkTiles * kSkPanels) + 1; ++num_blocks) {
+        builder::StructuredSDFGBuilder builder("streamk_mma", FunctionType_CPU);
+        build_streamk_nest(builder);
+        bool aligned = num_blocks % kSkTiles == 0 && kSkPanels % (num_blocks / kSkTiles) == 0;
+        EXPECT_EQ(streamk_applies(builder, num_blocks), aligned) << num_blocks;
+    }
+}
+
+/// Base (S = 1): one block per tile is a pure persistent remap; the band collapses to one X_GRID map of
+/// `tiles` blocks, every K-panel range and the epilogue stay unchanged, and no merge is emitted.
+TEST(ROCMMMATest, StreamKFragmentBaseOneSplitIsRemap_gfx90a) {
+    builder::StructuredSDFGBuilder builder("streamk_mma", FunctionType_CPU);
+    build_streamk_nest(builder);
+    size_t epilogue_before;
+    {
+        analysis::AnalysisManager am(builder.subject());
+        epilogue_before = count_blocks_after(wave_body(am), *find_loop(am, "tile_k0_tile0"));
+    }
+
+    apply_streamk(builder, kSkTiles);
+
+    analysis::AnalysisManager am(builder.subject());
+    auto grids = grid_maps(am);
+    ASSERT_EQ(grids.size(), 1u);
+    EXPECT_EQ(gpu::ScheduleType_GPU_Offload::target_level(grids[0]->schedule_type()), gpu::TargetLevel::X_GRID);
+    EXPECT_EQ(gpu::ScheduleType_GPU_Offload::parallel_size(grids[0]->schedule_type())->as_int(), kSkTiles);
+    EXPECT_EQ(as_int(find_loop(am, "tile_k0_tile0")->num_iterations()), kSkPanels);
+    EXPECT_EQ(count_blocks_after(wave_body(am), *find_loop(am, "tile_k0_tile0")), epilogue_before);
+    EXPECT_TRUE(library_nodes_of<gpu::GpuTileArrivalNode>(builder.subject().root()).empty());
+    for (auto* old : {"block_row", "block_col"}) {
+        EXPECT_FALSE(builder.subject().exists(old) && find_loop(am, old) != nullptr) << old;
+    }
+}
+
+/// Step (S > 1): splitting every tile S ways shrinks each block's K-panel range to the constant P / S panels
+/// starting at its split, and adds exactly one workspace store per fragment, one arrival expecting S blocks at
+/// the tile's counter, and one election whose winner zeroes, sums the S peer slots and runs the unchanged
+/// epilogue, which is moved rather than copied.
+TEST(ROCMMMATest, StreamKFragmentStepSplitsMergeOnce_gfx90a) {
+    for (int64_t splits : {2, 4}) {
+        builder::StructuredSDFGBuilder builder("streamk_mma", FunctionType_CPU);
+        build_streamk_nest(builder);
+        size_t epilogue_before, fragments, stores_before;
+        {
+            analysis::AnalysisManager am(builder.subject());
+            epilogue_before = count_blocks_after(wave_body(am), *find_loop(am, "tile_k0_tile0"));
+            auto* panel = dynamic_cast<structured_control_flow::Reduce*>(find_loop(am, "tile_k0_tile0"));
+            ASSERT_NE(panel, nullptr);
+            fragments = panel->reductions().size();
+            stores_before = library_nodes_of<gpu::GpuMmaFragmentStoreNode>(builder.subject().root()).size();
+        }
+
+        apply_streamk(builder, kSkTiles * splits);
+
+        analysis::AnalysisManager am(builder.subject());
+        auto grids = grid_maps(am);
+        ASSERT_EQ(grids.size(), 1u);
+        EXPECT_EQ(gpu::ScheduleType_GPU_Offload::parallel_size(grids[0]->schedule_type())->as_int(), kSkTiles * splits);
+        auto bid = grids[0]->indvar();
+
+        auto* panel = find_loop(am, "tile_k0_tile0");
+        const int64_t per_block = kSkPanels / splits;
+        EXPECT_EQ(as_int(panel->num_iterations()), per_block);
+        EXPECT_TRUE(
+            symbolic::eq(
+                symbolic::expand(panel->init()),
+                symbolic::expand(
+                    symbolic::
+                        mul(symbolic::mul(symbolic::mod(bid, symbolic::integer(splits)), symbolic::integer(per_block)),
+                            panel->stride())
+                )
+            )
+        ) << panel->init()->__str__();
+
+        auto& body = wave_body(am);
+        ASSERT_EQ(count_blocks_after(body, *panel), 3u);
+        auto& store_block = dynamic_cast<structured_control_flow::Block&>(body.at(body.index(*panel) + 1));
+        auto& arrival_block = dynamic_cast<structured_control_flow::Block&>(body.at(body.index(*panel) + 2));
+        auto& election = dynamic_cast<structured_control_flow::IfElse&>(body.at(body.index(*panel) + 3));
+
+        EXPECT_EQ(library_nodes_of<gpu::GpuMmaFragmentStoreNode>(store_block).size(), fragments);
+        auto arrivals = library_nodes_of<gpu::GpuTileArrivalNode>(builder.subject().root());
+        ASSERT_EQ(arrivals.size(), 1u);
+        EXPECT_EQ(&arrivals[0]->get_parent(), &arrival_block.dataflow());
+        EXPECT_TRUE(symbolic::eq(arrivals[0]->expected(), symbolic::integer(splits)));
+        EXPECT_TRUE(symbolic::eq(arrivals[0]->index(), symbolic::div(bid, symbolic::integer(splits))));
+
+        ASSERT_EQ(election.size(), 1u);
+        auto& winner = election.at(0).first;
+        ASSERT_EQ(winner.size(), 2u + epilogue_before);
+        EXPECT_EQ(library_nodes_of<gpu::GpuMmaFillNode>(winner.at(0)).size(), fragments);
+        auto& peers = dynamic_cast<structured_control_flow::For&>(winner.at(1));
+        EXPECT_EQ(as_int(peers.num_iterations()), splits);
+        EXPECT_EQ(library_nodes_of<gpu::GpuMmaFragmentLoadNode>(peers.root()).size(), fragments);
+        EXPECT_EQ(library_nodes_of<gpu::GpuMmaFragmentEltwiseAddNode>(peers.root()).size(), fragments);
+        EXPECT_EQ(
+            library_nodes_of<gpu::GpuMmaFragmentStoreNode>(builder.subject().root()).size(), stores_before + fragments
+        );
+    }
+}
+
+/// Preservation: the split nest is still staged and pipelined like the unsplit one (constant panel trip) and
+/// generates a kernel launched on tiles * S blocks with a static workspace and one tile-arrival atomic.
+TEST(ROCMMMATest, StreamKFragmentSplitPreservesStagingAndPipelining_gfx90a) {
+    constexpr int64_t splits = 2;
+    builder::StructuredSDFGBuilder builder("streamk_mma", FunctionType_CPU);
+    build_streamk_nest(builder);
+    apply_streamk(builder, kSkTiles * splits);
+
+    localize(builder, "tile_k0");
+    {
+        analysis::AnalysisManager am(builder.subject());
+        transformations::SoftwarePipelining sp(*find_loop(am, "tile_k0_tile0"), 2, false, true);
+        ASSERT_TRUE(sp.can_be_applied(builder, am));
+        sp.apply(builder, am);
+    }
+    EXPECT_NO_THROW(builder.subject().validate());
+
+    auto out = test::utils::test_codegen(builder.subject(), "streamk_mma", true);
+    std::string kernels;
+    for (auto& [name, snippet] : out.snippets) {
+        kernels += snippet.content;
+    }
+    EXPECT_NE(
+        out.main_function.find("dim3((int)(" + std::to_string(kSkTiles * splits) + "), (int)(1), (int)(1))"),
+        std::string::npos
+    ) << out.main_function;
+    EXPECT_NE(kernels.find("static __device__ float __streamk_workspace"), std::string::npos) << kernels;
+    EXPECT_NE(kernels.find("static __device__ int __streamk_arrivals"), std::string::npos) << kernels;
+    size_t atomics = 0;
+    for (size_t pos = kernels.find("atomicAdd("); pos != std::string::npos; pos = kernels.find("atomicAdd(", pos + 1)) {
+        ++atomics;
+    }
+    EXPECT_EQ(atomics, 1u) << kernels;
 }
 
 } // namespace sdfg::rocm

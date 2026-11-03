@@ -12,6 +12,7 @@
 #include "sdfg/targets/gpu/gpu_mma_matmul_node.h"
 #include "sdfg/targets/gpu/gpu_offload_map_dispatcher.h"
 #include "sdfg/targets/gpu/gpu_offload_reduce_dispatcher.h"
+#include "sdfg/targets/gpu/gpu_tile_arrival_node.h"
 #include "sdfg/targets/gpu/gpu_tile_target.h"
 #include "sdfg/targets/rocm/rocm.h"
 #include "sdfg/targets/rocm/rocm_mma_bare_dispatcher.h"
@@ -280,6 +281,20 @@ void register_rocm_plugin(plugins::Context& context) {
             return std::make_unique<rocm::stdlib::MemcpyNodeDispatcher_ROCMWithoutTransfers>(
                 language_extension, function, data_flow_graph, dynamic_cast<const sdfg::stdlib::MemcpyNode&>(node)
             );
+        }
+    );
+
+    libNodeSerRegistry.register_library_node_serializer(gpu::LibraryNodeType_GpuTileArrival.value(), []() {
+        return std::make_unique<gpu::GpuTileArrivalNodeSerializer>();
+    });
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
+        gpu::LibraryNodeType_GpuTileArrival,
+        data_flow::ImplementationType_NONE,
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<gpu::GpuTileArrivalDispatcher>(language_extension, function, data_flow_graph, node);
         }
     );
 

@@ -137,6 +137,7 @@ set(SOURCE_FILES
     src/targets/gpu/gpu_mma_dispatcher.cpp
     src/targets/gpu/gpu_mma_expander.cpp
     src/targets/gpu/gpu_mma_fill_node.cpp
+    src/targets/gpu/gpu_tile_arrival_node.cpp
     src/targets/gpu/gpu_mma_fragment.cpp
     src/targets/gpu/gpu_mma_fragment_eltwise_add_node.cpp
     src/targets/gpu/gpu_mma_fragment_load_node.cpp
