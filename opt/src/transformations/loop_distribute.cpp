@@ -1,5 +1,7 @@
 #include "sdfg/transformations/loop_distribute.h"
 
+#include <memory>
+
 #include "sdfg/analysis/data_dependency_analysis.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/deepcopy/structured_sdfg_deep_copy.h"
@@ -172,8 +174,9 @@ bool LoopDistribute::can_be_applied(builder::StructuredSDFGBuilder& builder, ana
     // also drop these cross-piece reads from `ue_reads` (they are killed
     // intra-iter by the same-iter writer in the middle piece), so LCDA
     // never sees them as loop-carried -- we must catch them directly.
-    // The whole-program DDA is only needed for such a scalar, so it is only computed then.
-    analysis::DataDependencyAnalysis* dda = nullptr;
+    // Only reads in the body matter, which only code in the loop defines: the loop's own DDA, computed only for such
+    // a scalar, answers as the whole program's would.
+    std::unique_ptr<analysis::DataDependencyAnalysis> dda;
     auto& users = analysis_manager.get<analysis::Users>();
     analysis::UsersView body_view(users, this->loop_.root());
     for (auto* writer : body_view.writes()) {
@@ -201,7 +204,8 @@ bool LoopDistribute::can_be_applied(builder::StructuredSDFGBuilder& builder, ana
             continue;
         }
         if (!dda) {
-            dda = &analysis_manager.get<analysis::DataDependencyAnalysis>();
+            dda = std::make_unique<analysis::DataDependencyAnalysis>(builder.subject(), this->loop_);
+            dda->run(analysis_manager);
         }
         for (auto* reader : dda->defines(*writer)) {
             size_t r_piece = piece_of(reader);
