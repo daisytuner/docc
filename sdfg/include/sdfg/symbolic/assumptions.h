@@ -40,8 +40,13 @@
 
 #pragma once
 
+#include <cstddef>
+#include <initializer_list>
+#include <iterator>
 #include <memory>
+#include <stdexcept>
 #include <unordered_map>
+#include <utility>
 
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/types/type.h"
@@ -297,11 +302,297 @@ public:
 /**
  * @brief Map from symbols to their assumptions
  *
- * This type represents a collection of assumptions for multiple symbols,
- * typically used to describe the symbolic context for analyzing an SDFG region.
+ * This type represents a collection of assumptions for multiple symbols.
  * Each symbol maps to its Assumption containing bounds, constness, and evolution.
+ *
+ * It behaves as an `std::unordered_map` from symbols to assumptions, but may share an immutable base map with other
+ * instances and hold only the entries that differ from it. Looking an entry up finds it in either; writing to one
+ * of the base copies it into the instance first; iterating visits the instance's entries, then the base's others.
+ * Iterating, or erasing from, a mutable instance gives it its own copy of the base first.
  */
-typedef std::unordered_map<Symbol, Assumption, SymEngine::RCPBasicHash, SymEngine::RCPBasicKeyEq> Assumptions;
+class Assumptions {
+public:
+    using Map = std::unordered_map<Symbol, Assumption, SymEngine::RCPBasicHash, SymEngine::RCPBasicKeyEq>;
+    using key_type = Symbol;
+    using mapped_type = Assumption;
+    using value_type = Map::value_type;
+    using size_type = std::size_t;
+    using iterator = Map::iterator;
+
+    /// Visits the own entries, then the base's entries the own ones do not shadow.
+    class const_iterator {
+        friend class Assumptions;
+        const Assumptions* owner_ = nullptr;
+        Map::const_iterator own_;
+        Map::const_iterator base_;
+        bool in_base_ = false;
+
+        const_iterator(const Assumptions* owner, Map::const_iterator own, Map::const_iterator base, bool in_base)
+            : owner_(owner), own_(own), base_(base), in_base_(in_base) {
+        }
+
+        void skip_shadowed() {
+            while (base_ != owner_->base_->end() && owner_->own_.find(base_->first) != owner_->own_.end()) {
+                ++base_;
+            }
+        }
+
+    public:
+        using iterator_category = std::forward_iterator_tag;
+        using value_type = Assumptions::value_type;
+        using difference_type = std::ptrdiff_t;
+        using pointer = const value_type*;
+        using reference = const value_type&;
+
+        const_iterator() = default;
+
+        reference operator*() const {
+            return in_base_ ? *base_ : *own_;
+        }
+        pointer operator->() const {
+            return in_base_ ? &*base_ : &*own_;
+        }
+
+        const_iterator& operator++() {
+            if (in_base_) {
+                ++base_;
+                skip_shadowed();
+                return *this;
+            }
+            ++own_;
+            if (own_ == owner_->own_.end() && owner_->base_) {
+                in_base_ = true;
+                base_ = owner_->base_->begin();
+                skip_shadowed();
+            }
+            return *this;
+        }
+
+        const_iterator operator++(int) {
+            auto copy = *this;
+            ++*this;
+            return copy;
+        }
+
+        bool operator==(const const_iterator& other) const {
+            if (in_base_ != other.in_base_) {
+                return false;
+            }
+            return in_base_ ? base_ == other.base_ : own_ == other.own_;
+        }
+        bool operator!=(const const_iterator& other) const {
+            return !(*this == other);
+        }
+    };
+
+    Assumptions() = default;
+    Assumptions(std::initializer_list<value_type> entries) : own_(entries) {
+    }
+    Assumptions(const Map& entries) : own_(entries) {
+    }
+    Assumptions(Map&& entries) : own_(std::move(entries)) {
+    }
+
+    /// An instance holding no entries of its own over @p base, which it shares.
+    static Assumptions over(std::shared_ptr<const Map> base) {
+        Assumptions result;
+        result.base_ = std::move(base);
+        if (result.base_ && result.base_->empty()) {
+            result.base_.reset();
+        }
+        return result;
+    }
+
+    size_type size() const {
+        return own_.size() + (base_ ? base_->size() : 0) - shadowed_;
+    }
+    bool empty() const {
+        return size() == 0;
+    }
+
+    void clear() {
+        own_.clear();
+        base_.reset();
+        shadowed_ = 0;
+    }
+
+    const_iterator begin() const {
+        if (own_.empty() && base_) {
+            const_iterator it(this, own_.end(), base_->begin(), true);
+            it.skip_shadowed();
+            return it;
+        }
+        return const_iterator(this, own_.begin(), {}, false);
+    }
+    const_iterator end() const {
+        return base_ ? const_iterator(this, own_.end(), base_->end(), true)
+                     : const_iterator(this, own_.end(), {}, false);
+    }
+    const_iterator cbegin() const {
+        return begin();
+    }
+    const_iterator cend() const {
+        return end();
+    }
+
+    /// Mutable iteration: the base is copied in first. The end is the own entries', which mutable finds return too.
+    iterator begin() {
+        densify();
+        return own_.begin();
+    }
+    iterator end() {
+        return own_.end();
+    }
+
+    const_iterator find(const Symbol& symbol) const {
+        auto own = own_.find(symbol);
+        if (own != own_.end()) {
+            return const_iterator(this, own, {}, false);
+        }
+        if (base_) {
+            auto base = base_->find(symbol);
+            if (base != base_->end()) {
+                return const_iterator(this, own_.end(), base, true);
+            }
+        }
+        return end();
+    }
+
+    /// A mutable entry, copied from the base first if only the base holds it.
+    iterator find(const Symbol& symbol) {
+        auto own = own_.find(symbol);
+        if (own != own_.end() || !base_) {
+            return own;
+        }
+        auto base = base_->find(symbol);
+        if (base == base_->end()) {
+            return own_.end();
+        }
+        return promote(*base);
+    }
+
+    bool contains(const Symbol& symbol) const {
+        return own_.contains(symbol) || (base_ && base_->contains(symbol));
+    }
+    size_type count(const Symbol& symbol) const {
+        return contains(symbol) ? 1 : 0;
+    }
+
+    const Assumption& at(const Symbol& symbol) const {
+        auto own = own_.find(symbol);
+        if (own != own_.end()) {
+            return own->second;
+        }
+        if (base_) {
+            auto base = base_->find(symbol);
+            if (base != base_->end()) {
+                return base->second;
+            }
+        }
+        throw std::out_of_range("Assumptions::at: no assumption for " + symbol->get_name());
+    }
+
+    Assumption& at(const Symbol& symbol) {
+        auto it = find(symbol);
+        if (it == own_.end()) {
+            throw std::out_of_range("Assumptions::at: no assumption for " + symbol->get_name());
+        }
+        return it->second;
+    }
+
+    Assumption& operator[](const Symbol& symbol) {
+        auto it = find(symbol);
+        if (it != own_.end()) {
+            return it->second;
+        }
+        return own_[symbol];
+    }
+
+    /// Inserts @p entry unless its symbol has an entry, here or in the base; true if it did. The entry the symbol has
+    /// either way is a mutable one.
+    std::pair<iterator, bool> insert(const value_type& entry) {
+        auto present = find(entry.first);
+        if (present != own_.end()) {
+            return {present, false};
+        }
+        return own_.insert(entry);
+    }
+    std::pair<iterator, bool> insert(value_type&& entry) {
+        auto present = find(entry.first);
+        if (present != own_.end()) {
+            return {present, false};
+        }
+        return own_.insert(std::move(entry));
+    }
+    template<typename InputIt>
+    void insert(InputIt first, InputIt last) {
+        for (; first != last; ++first) {
+            insert(value_type(*first));
+        }
+    }
+    template<typename... Args>
+    std::pair<iterator, bool> emplace(Args&&... args) {
+        return insert(value_type(std::forward<Args>(args)...));
+    }
+    template<typename... Args>
+    std::pair<iterator, bool> try_emplace(const Symbol& symbol, Args&&... args) {
+        auto present = find(symbol);
+        if (present != own_.end()) {
+            return {present, false};
+        }
+        return own_.try_emplace(symbol, std::forward<Args>(args)...);
+    }
+    template<typename M>
+    std::pair<iterator, bool> insert_or_assign(const Symbol& symbol, M&& value) {
+        auto present = find(symbol);
+        if (present != own_.end()) {
+            present->second = std::forward<M>(value);
+            return {present, false};
+        }
+        return own_.insert_or_assign(symbol, std::forward<M>(value));
+    }
+
+    /// Node handles, as for renaming an entry's symbol, work on own entries: the base is copied in first.
+    Map::node_type extract(const Symbol& symbol) {
+        densify();
+        return own_.extract(symbol);
+    }
+    Map::insert_return_type insert(Map::node_type&& node) {
+        densify();
+        return own_.insert(std::move(node));
+    }
+
+    size_type erase(const Symbol& symbol) {
+        densify();
+        return own_.erase(symbol);
+    }
+    iterator erase(iterator position) {
+        densify();
+        return own_.erase(position);
+    }
+
+private:
+    Map own_;
+    std::shared_ptr<const Map> base_;
+    // The own entries that shadow one of the base's.
+    size_type shadowed_ = 0;
+
+    iterator promote(const value_type& base_entry) {
+        ++shadowed_;
+        return own_.insert(base_entry).first;
+    }
+
+    void densify() {
+        if (!base_) {
+            return;
+        }
+        for (auto& entry : *base_) {
+            own_.insert(entry);
+        }
+        base_.reset();
+        shadowed_ = 0;
+    }
+};
 
 bool substitute(Assumptions& assumptions, const symbolic::ExpressionMapping& replacements);
 ;
