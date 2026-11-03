@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <unordered_map>
 
 #include "sdfg/analysis/analysis.h"
@@ -28,6 +29,8 @@ private:
     std::unordered_map<Node*, symbolic::Assumptions> assumptions_with_trivial_;
     std::unordered_map<Node*, symbolic::SymbolSet> constant_symbols_;
     std::unordered_map<Node*, symbolic::SymbolSet> constant_symbols_with_trivial_;
+
+    std::shared_ptr<const symbolic::Assumptions::Map> root_with_trivial_;
 
     symbolic::SymbolSet parameters_;
 
