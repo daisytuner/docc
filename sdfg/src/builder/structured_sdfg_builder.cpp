@@ -1101,8 +1101,17 @@ void StructuredSDFGBuilder::update_loop(
     loop.reset_cache();
 };
 
-void StructuredSDFGBuilder::update_schedule_type(StructuredLoop& loop, const ScheduleType& schedule_type) {
-    loop.schedule_type_ = schedule_type;
+void StructuredSDFGBuilder::
+    update_schedule_type(StructuredLoop& loop, const ScheduleType& schedule_type, bool keep_nest_annotations) {
+    ScheduleType new_schedule = schedule_type;
+    if (keep_nest_annotations) {
+        ScheduleType_NestAnnotations::inherit(loop.schedule_type_, new_schedule);
+    }
+    loop.schedule_type_ = new_schedule;
+}
+
+void StructuredSDFGBuilder::remove_schedule_property(StructuredLoop& loop, const std::string& key) {
+    loop.schedule_type_.remove_property(key);
 }
 
 /***** Section: Dataflow Graph *****/
