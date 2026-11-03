@@ -144,18 +144,29 @@ void ROCMDataOffloadingNodeDispatcher::dispatch_code_with_edges(
 
     out.stream << "hipError_t err;" << std::endl;
 
+    // Selected by the "rocm_async_alloc" SDFG metadata (DoccOptions.rocm_async_alloc).
+    // Default (absent / "0"): synchronous hipMalloc/hipFree. "1": stream-ordered
+    // hipMallocAsync/hipFreeAsync on __daisy_stream.
+    const std::string* async_alloc_md = this->function_.metadata_if_exists("rocm_async_alloc");
+    const bool async_alloc = async_alloc_md != nullptr && *async_alloc_md == "1";
+
     std::string dev_ptr;
 
     if (offloading_node.is_alloc()) {
         auto& ptr = outputs.at(0);
         pre_allocate_output(out, ptr, offloading_node.output(0));
-        // Stream-ordered allocation on __daisy_stream so scratch alloc/free are
-        // captured as graph memory nodes instead of breaking HIP-graph capture
-        // (hipMalloc/hipFree are synchronous and illegal during capture). The
-        // async pool also makes the per-call host cost negligible.
-        out.stream << "err = hipMallocAsync(&" << *ptr.local_name << ", "
-                   << this->language_extension_.expression(offloading_node.size()) << ", __daisy_stream);"
-                   << std::endl;
+        if (async_alloc) {
+            // Stream-ordered allocation on __daisy_stream so scratch alloc/free are
+            // captured as graph memory nodes instead of breaking HIP-graph capture
+            // (hipMalloc/hipFree are synchronous and illegal during capture). The
+            // async pool also makes the per-call host cost negligible.
+            out.stream << "err = hipMallocAsync(&" << *ptr.local_name << ", "
+                       << this->language_extension_.expression(offloading_node.size()) << ", __daisy_stream);"
+                       << std::endl;
+        } else {
+            out.stream << "err = hipMalloc(&" << *ptr.local_name << ", "
+                       << this->language_extension_.expression(offloading_node.size()) << ");" << std::endl;
+        }
         rocm_error_checking(out.stream, this->language_extension_, "err");
         dev_ptr = *ptr.local_name;
     } else {
@@ -175,7 +186,11 @@ void ROCMDataOffloadingNodeDispatcher::dispatch_code_with_edges(
     }
 
     if (offloading_node.is_free()) {
-        out.stream << "err = hipFreeAsync(" << dev_ptr << ", __daisy_stream);" << std::endl;
+        if (async_alloc) {
+            out.stream << "err = hipFreeAsync(" << dev_ptr << ", __daisy_stream);" << std::endl;
+        } else {
+            out.stream << "err = hipFree(" << dev_ptr << ");" << std::endl;
+        }
         rocm_error_checking(out.stream, this->language_extension_, "err");
     }
 }
