@@ -604,8 +604,8 @@ namespace {
 using IslNameTable = std::unordered_map<std::string, std::pair<isl_dim_type, unsigned>>;
 
 isl_val* isl_val_from_integer(isl_ctx* ctx, const SymEngine::Integer& x) {
-    if (mp_fits_slong_p(x.as_integer_class())) {
-        return isl_val_int_from_si(ctx, mp_get_si(x.as_integer_class()));
+    if (SymEngine::mp_fits_slong_p(x.as_integer_class())) {
+        return isl_val_int_from_si(ctx, SymEngine::mp_get_si(x.as_integer_class()));
     }
     return isl_val_read_from_str(ctx, x.__str__().c_str());
 }
