@@ -1,4 +1,5 @@
 #include "sdfg/analysis/loop_analysis.h"
+#include <algorithm>
 #include <unordered_set>
 #include <vector>
 
@@ -9,6 +10,7 @@
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/structured_control_flow/while.h"
 #include "sdfg/symbolic/conjunctive_normal_form.h"
+#include "sdfg/visitor/structured_sdfg_walker.h"
 
 namespace sdfg {
 namespace analysis {
@@ -275,13 +277,68 @@ bool LoopAnalysis::invalidate(structured_control_flow::ControlFlowNode& changed)
                dyn_cast<structured_control_flow::Continue*>(&changed);
     }
     auto known = this->loop_infos_.find(outermost);
-    if (known == this->loop_infos_.end() || this->loop_tree_.at(outermost) != nullptr) {
+    size_t first = 0;
+    size_t end = 0;
+    if (known != this->loop_infos_.end() && this->loop_tree_.at(outermost) == nullptr) {
+        // The nest takes loops_[first, end): run adds the loops of a nest right after its outermost loop.
+        first = known->second.local.loop_id;
+        end = known->second.local.last_child_id + 1;
+    } else if (known == this->loop_infos_.end()) {
+        // A new outermost loop, as tiling puts around a loop, takes the place of the outermost nests it now holds, if
+        // they were consecutive; a loop known inside another nest would stay listed there.
+        std::vector<structured_control_flow::ControlFlowNode*> wrapped;
+        bool moved = false;
+        // The walker stops at the known loops, whose nests stay as they are, and throws on kinds of nodes it cannot
+        // look into.
+        auto exit = visitor::StructuredSDFGWalker::end();
+        if (auto* while_loop = dyn_cast<structured_control_flow::While*>(outermost)) {
+            exit = visitor::StructuredSDFGWalker::loop_exit(*while_loop);
+        } else {
+            auto& loop = *static_cast<structured_control_flow::StructuredLoop*>(outermost);
+            exit = visitor::StructuredSDFGWalker::loop_exit(loop);
+        }
+        for (auto it = visitor::StructuredSDFGWalker::from_node(*outermost); it != exit;) {
+            auto [node, scope] = *it;
+            if (&node != outermost && scope == visitor::StructuredSDFGWalker::Scope::ENTRY && is_loop(&node) &&
+                this->loop_infos_.contains(&node)) {
+                if (this->loop_tree_.at(&node) == nullptr) {
+                    wrapped.push_back(&node);
+                } else {
+                    moved = true;
+                }
+                it.next_no_descend();
+            } else {
+                it.next();
+            }
+        }
+        if (moved || wrapped.empty()) {
+            return false;
+        }
+        std::sort(wrapped.begin(), wrapped.end(), [&](auto* a, auto* b) {
+            return this->loop_infos_.at(a).local.loop_id < this->loop_infos_.at(b).local.loop_id;
+        });
+        first = this->loop_infos_.at(wrapped.front()).local.loop_id;
+        end = first;
+        for (auto* nest : wrapped) {
+            auto& local = this->loop_infos_.at(nest).local;
+            if (local.loop_id != end) {
+                return false;
+            }
+            end = local.last_child_id + 1;
+        }
+        // Among the outermost loops, it takes the place of the first it holds.
+        auto& root_loops = this->loop_children_.at(nullptr);
+        auto position = std::find(root_loops.begin(), root_loops.end(), wrapped.front());
+        if (position == root_loops.end() || static_cast<size_t>(root_loops.end() - position) < wrapped.size() ||
+            !std::equal(wrapped.begin(), wrapped.end(), position)) {
+            return false;
+        }
+        *position = outermost;
+        root_loops.erase(position + 1, position + wrapped.size());
+    } else {
         return false;
     }
 
-    // The nest takes loops_[first, end): run adds the loops of a nest right after its outermost loop.
-    auto first = known->second.local.loop_id;
-    auto end = known->second.local.last_child_id + 1;
     std::vector<structured_control_flow::ControlFlowNode*> rest(this->loops_.begin() + end, this->loops_.end());
     for (auto it = this->loops_.begin() + first; it != this->loops_.begin() + end; ++it) {
         this->loop_infos_.erase(*it);

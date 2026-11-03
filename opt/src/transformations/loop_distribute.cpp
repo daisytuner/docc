@@ -172,7 +172,8 @@ bool LoopDistribute::can_be_applied(builder::StructuredSDFGBuilder& builder, ana
     // also drop these cross-piece reads from `ue_reads` (they are killed
     // intra-iter by the same-iter writer in the middle piece), so LCDA
     // never sees them as loop-carried -- we must catch them directly.
-    auto& dda = analysis_manager.get<analysis::DataDependencyAnalysis>();
+    // The whole-program DDA is only needed for such a scalar, so it is only computed then.
+    analysis::DataDependencyAnalysis* dda = nullptr;
     auto& users = analysis_manager.get<analysis::Users>();
     analysis::UsersView body_view(users, this->loop_.root());
     for (auto* writer : body_view.writes()) {
@@ -199,7 +200,10 @@ bool LoopDistribute::can_be_applied(builder::StructuredSDFGBuilder& builder, ana
         if (w_piece == body.size()) {
             continue;
         }
-        for (auto* reader : dda.defines(*writer)) {
+        if (!dda) {
+            dda = &analysis_manager.get<analysis::DataDependencyAnalysis>();
+        }
+        for (auto* reader : dda->defines(*writer)) {
             size_t r_piece = piece_of(reader);
             if (r_piece == body.size()) {
                 continue;
@@ -278,7 +282,8 @@ void LoopDistribute::apply(builder::StructuredSDFGBuilder& builder, analysis::An
         prefix_loop.replace(indvar, symbolic::symbol(prefix_indvar));
     }
 
-    analysis_manager.invalidate_all();
+    // The new loops are siblings of the loop in its parent.
+    analysis_manager.invalidate_all(*parent);
 };
 
 void LoopDistribute::to_json(nlohmann::json& j) const {
