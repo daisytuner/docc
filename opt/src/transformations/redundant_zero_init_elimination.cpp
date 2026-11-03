@@ -23,20 +23,6 @@ namespace transformations {
 
 namespace {
 
-bool is_zero_literal(const std::string& literal) {
-    std::string s = literal;
-    while (!s.empty() && (s.back() == 'f' || s.back() == 'F' || s.back() == 'u' || s.back() == 'U' || s.back() == 'l' ||
-                          s.back() == 'L')) {
-        s.pop_back();
-    }
-    if (s.empty()) {
-        return false;
-    }
-    char* end = nullptr;
-    double value = std::strtod(s.c_str(), &end);
-    return end == s.c_str() + s.size() && value == 0.0;
-}
-
 /// The container written by @p block if it is exactly `constant 0 -> assign -> container`.
 std::optional<std::string> zero_store_container(Block& block) {
     auto& dataflow = block.dataflow();
@@ -52,7 +38,7 @@ std::optional<std::string> zero_store_container(Block& block) {
         return std::nullopt;
     }
     auto* constant = dynamic_cast<const data_flow::ConstantNode*>(&(*dataflow.in_edges(*tasklet).begin()).src());
-    if (constant == nullptr || !is_zero_literal(constant->data())) {
+    if (constant == nullptr || !data_flow::AccessNode::has_constant_value(*constant, 0)) {
         return std::nullopt;
     }
     auto& dst = (*dataflow.out_edges(*tasklet).begin()).dst();
