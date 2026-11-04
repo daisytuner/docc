@@ -1,17 +1,93 @@
 name: Release
 
+# A release is started by hand ("Run workflow"). MAJOR.MINOR comes from VERSION_BASE; the patch number
+# is allocated by the Daisytuner backend, so there is no version file to bump and no tag to push.
 on:
-  push:
-    tags:
-      - "v*.*.*"
-  # Manual runs build and test everything but skip publishing
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run: preview the next version and build everything, but allocate and publish nothing"
+        type: boolean
+        default: false
 
 jobs:
-  # Stage 1: Build docc-compiler (no dependencies)
+  # Stage 0: Get this release's version from the backend. This is the only job that talks to the release
+  # ledger; every build job receives the number through DOCC_VERSION, so all artifacts of one release
+  # carry the same version (CMake and scripts/docc_version.py read it).
+  allocate-version:
+    name: Allocate version
+    runs-on: ubuntu-24.04
+    outputs:
+      release_version: ${{ steps.allocate.outputs.release_version }}
+
+    steps:
+      # Only VERSION_BASE is needed from the checkout.
+      - uses: actions/checkout@v7
+
+      - name: Allocate release version
+        id: allocate
+        env:
+          RELEASES_API: https://europe-west1-daisy-367210.cloudfunctions.net/v1/system/releases/docc #TODO: Ideally it should be taken from secrets.
+          # Daisy admin org session token; the same one the distribution upload below uses.
+          TOKEN: ${{ secrets.DOCC_RELEASE_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+
+          # Real releases only from main, or from release/** branches for hotfixes on an older
+          # MAJOR.MINOR series. Dry runs allocate and publish nothing, so they may run from any branch.
+          if [ "$DRY_RUN" != "true" ] && [ "$GITHUB_REF" != "refs/heads/main" ] && [[ "$GITHUB_REF" != refs/heads/release/* ]]; then
+            echo "::error::Releases are only published from main or release/** (this run: $GITHUB_REF). Use dry_run to test other branches."
+            exit 1
+          fi
+
+          BASE=$(head -n 1 VERSION_BASE | tr -d '[:space:]')
+          if ! [[ "$BASE" =~ ^[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::VERSION_BASE must contain MAJOR.MINOR (e.g. 0.8), got '$BASE'"
+            exit 1
+          fi
+
+          # Dry runs only preview the next version. Real runs reserve it; the backend returns the same
+          # version again for the same run_id, so re-running this workflow run doesn't use up a patch.
+          if [ "$DRY_RUN" = "true" ]; then
+            RESPONSE=$(curl -sS --fail-with-body -H "Authorization: Token $TOKEN" \
+              "$RELEASES_API/next?base=$BASE")
+          else
+            BODY=$(jq -n --arg base "$BASE" --arg run_id "$GITHUB_RUN_ID" --arg commit "$GITHUB_SHA" \
+              '{base: $base, run_id: $run_id, commit: $commit}')
+            RESPONSE=$(curl -sS --fail-with-body -X POST -H "Authorization: Token $TOKEN" \
+              -H "Content-Type: application/json" -d "$BODY" "$RELEASES_API/allocate")
+          fi
+          VERSION=$(jq -r '.version // empty' <<< "$RESPONSE")
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Unexpected response from the release ledger: $RESPONSE"
+            exit 1
+          fi
+
+          # Sanity check before an hour of builds: a version already on PyPI means the backend ledger is
+          # out of sync (e.g. seeded too low). Skipped on re-runs, where this run may have published it.
+          if [ "$DRY_RUN" != "true" ] && [ "$GITHUB_RUN_ATTEMPT" = "1" ]; then
+            STATUS=$(curl -sS -o /dev/null -w '%{http_code}' "https://pypi.org/pypi/docc-compiler/$VERSION/json")
+            if [ "$STATUS" != "404" ]; then
+              echo "::error::docc-compiler $VERSION already exists on PyPI (HTTP $STATUS). Check releases/docc in the backend."
+              exit 1
+            fi
+          fi
+
+          echo "release_version=$VERSION" >> "$GITHUB_OUTPUT"
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "Dry run: would release docc $VERSION (commit $GITHUB_SHA)" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Releasing docc $VERSION (commit $GITHUB_SHA)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  # Stage 1: Build docc-compiler
   wheels-compiler:
     name: Compiler (${{ matrix.os }}, ${{ matrix.python }})
+    needs: [allocate-version]
     runs-on: ${{ matrix.os }}
+    env:
+      DOCC_VERSION: ${{ needs.allocate-version.outputs.release_version }}
 
     strategy:
       fail-fast: false
@@ -38,6 +114,8 @@ jobs:
         env:
           CIBW_ARCHS: ${{ matrix.cibw_archs }}
           CIBW_BUILD: "${{ matrix.python }}-*"
+          # Linux wheels build in a manylinux container, which doesn't inherit the job environment.
+          CIBW_ENVIRONMENT_PASS_LINUX: DOCC_VERSION
 
       - uses: actions/upload-artifact@v4
         with:
@@ -47,8 +125,10 @@ jobs:
   # Stage 2: Build docc-ai (depends on docc-compiler)
   wheels-ai:
     name: AI (${{ matrix.os }}, ${{ matrix.python }})
-    needs: [wheels-compiler]
+    needs: [allocate-version, wheels-compiler]
     runs-on: ${{ matrix.os }}
+    env:
+      DOCC_VERSION: ${{ needs.allocate-version.outputs.release_version }}
 
     strategy:
       fail-fast: false
@@ -71,8 +151,7 @@ jobs:
       # Pin docc-compiler version to match release
       # - name: Pin docc-compiler version
       #   run: |
-      #     VERSION=$(cat VERSION)
-      #     sed -i.bak "s/\"docc-compiler\"/\"docc-compiler==$VERSION\"/" mlir/pyproject.toml && rm mlir/pyproject.toml.bak
+      #     sed -i.bak "s/\"docc-compiler\"/\"docc-compiler==$DOCC_VERSION\"/" mlir/pyproject.toml && rm mlir/pyproject.toml.bak
 
       # Download compiler wheels into the package directory so they're available in container
       # - uses: actions/download-artifact@v4
@@ -88,6 +167,8 @@ jobs:
         env:
           CIBW_ARCHS: ${{ matrix.cibw_archs }}
           CIBW_BUILD: "${{ matrix.python }}-*"
+          # Linux wheels build in a manylinux container, which doesn't inherit the job environment.
+          CIBW_ENVIRONMENT_PASS_LINUX: DOCC_VERSION
           # Install docc-compiler before building docc-ai
           # CIBW_BEFORE_BUILD: "pip install --no-index --find-links {project}/compiler-wheels docc-compiler"
           # Make compiler wheels available for dependency resolution during test
@@ -101,10 +182,12 @@ jobs:
   # docc-pytorch is pure Python, so a single py3-none-any wheel covers all platforms
   wheels-pytorch:
     name: PyTorch
-    needs: [wheels-compiler]
+    needs: [allocate-version, wheels-compiler]
     runs-on: build-amd64-big
     container:
       image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:latest-amd64
+    env:
+      DOCC_VERSION: ${{ needs.allocate-version.outputs.release_version }}
 
     steps:
       - uses: actions/checkout@v7
@@ -115,9 +198,8 @@ jobs:
 
       - name: Pin docc-compiler version
         run: |
-          VERSION=$(cat VERSION)
-          sed -i.bak "s/\"docc-compiler\"/\"docc-compiler==$VERSION\"/" pytorch/pyproject.toml && rm pytorch/pyproject.toml.bak
-          grep -q "\"docc-compiler==$VERSION\"" pytorch/pyproject.toml
+          sed -i.bak "s/\"docc-compiler\"/\"docc-compiler==$DOCC_VERSION\"/" pytorch/pyproject.toml && rm pytorch/pyproject.toml.bak
+          grep -q "\"docc-compiler==$DOCC_VERSION\"" pytorch/pyproject.toml
 
       - name: Build wheel
         run: |
@@ -145,7 +227,7 @@ jobs:
           path: pytorch/dist/*.whl
 
   wheels-publish:
-    if: startsWith(github.ref, 'refs/tags/')
+    if: ${{ !inputs.dry_run }}
     needs: [wheels-compiler, wheels-ai, wheels-pytorch]
     runs-on: build-amd64-big
     permissions:
@@ -206,18 +288,17 @@ jobs:
             architecture: x64
             image: daisytuner/docc-build-env-llvm21-debian-13:latest-amd64
 
+    needs: [allocate-version]
     runs-on: ${{ matrix.runner }}
     container:
       image: ${{ matrix.image }}
+    env:
+      DOCC_VERSION: ${{ needs.allocate-version.outputs.release_version }}
 
     steps:
       - uses: actions/checkout@v7
         with:
           submodules: recursive
-
-      - name: Define Version
-        id: define_version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
 
       - name: Build package
         run: |
@@ -233,7 +314,6 @@ jobs:
             -DLLVM_BUILD_TESTS=OFF \
             -DBUILD_BENCHMARKS:BOOL=OFF \
             -DBUILD_BENCHMARKS_GOOGLE:BOOL=OFF \
-            -DRELEASE_PACKAGE=ON \
             -DPACKAGE_WITH_TOOL_DEPS=ON \
             ..
           ninja -j$(nproc)
@@ -246,11 +326,11 @@ jobs:
           path: "build/*.${{ matrix.package-format }}"
 
       - name: Upload docc package to Firebase
-        if: startsWith(github.ref, 'refs/tags/')
+        if: ${{ !inputs.dry_run }}
         uses: daisytuner/upload-distribution-action@main
         with:
           file: "build/*.${{ matrix.package-format }}"
-          version: ${{ steps.define_version.outputs.VERSION }}
+          version: ${{ env.DOCC_VERSION }}
           architecture: ${{ matrix.architecture }}
           dist-id: ${{ matrix.upload-dist-id }}
           dist-version: ${{ matrix.upload-dist-version }}

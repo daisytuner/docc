@@ -12,6 +12,7 @@ get them merged.
 - [Coding Standards](#coding-standards)
 - [Testing](#testing)
 - [Submitting Changes](#submitting-changes)
+- [Versioning and Releases](#versioning-and-releases)
 - [Reporting Issues](#reporting-issues)
 
 ## Code of Conduct
@@ -104,6 +105,20 @@ When relevant, test against the supported targets (`sequential`, `openmp`,
 3. Link any related issues (e.g. `Closes #123`).
 4. Ensure CI passes and address review feedback.
 5. A maintainer will merge once the PR is approved and green.
+
+## Versioning and Releases
+Versions are `MAJOR.MINOR.PATCH`. There is no version file to bump and no tag to push for a release:
+- [`VERSION_BASE`](VERSION_BASE) holds `MAJOR.MINOR` (e.g. `0.8`). Edit it only for a minor or major
+  bump; the first release after the change is `MAJOR.MINOR.0`.
+- The patch number is allocated by the Daisytuner backend when a release runs.
+- Local and CI builds that are not releases report `MAJOR.MINOR.0` with the commit hash, e.g.
+  `docc version: 0.8.0+gabc1234` (Python wheels: `0.8.0.dev0+gabc1234`). They never contact the backend.
+
+To release, run the **Release** workflow (`.github/workflows/release.yml`) from `main`
+(Actions → Release → Run workflow). Its first job allocates the next patch, e.g. `0.8.4`, and all wheels
+and packages of that run are built with it. Tick **dry_run** to preview the version and build everything
+without publishing; dry runs also work from other branches. A hotfix for an older series runs from a
+`release/**` branch whose `VERSION_BASE` still names that series.
 
 ## Reporting Issues
 Before opening a new issue, search existing issues to avoid duplicates. Then use

@@ -4,22 +4,9 @@
 # It allows us to calculate architecture-dependent filenames without requiring
 # dpkg/rpm to be present during the initial CMake configuration step.
 
-if(CPACK_RELEASE_PACKAGE)
-    set(CPACK_PACKAGE_FILE_VERSION ${CPACK_PACKAGE_VERSION})
-else()
-    execute_process(
-        COMMAND git rev-parse --short HEAD
-        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-        OUTPUT_VARIABLE GIT_HASH
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        ERROR_QUIET
-        RESULT_VARIABLE GIT_RESULT
-    )
-    if(NOT GIT_RESULT EQUAL 0)
-        set(GIT_HASH "dev")
-    endif()
-    set(CPACK_PACKAGE_FILE_VERSION "${CPACK_PACKAGE_VERSION}-${GIT_HASH}")
-endif()
+# The package version already marks dev builds (MAJOR.MINOR.0+g<hash>, see docc's top-level
+# CMakeLists.txt), so the file name uses it unchanged.
+set(CPACK_PACKAGE_FILE_VERSION ${CPACK_PACKAGE_VERSION})
 
 if(CPACK_GENERATOR MATCHES "DEB")
     # Resolve architecture dynamically if not already set

@@ -20,7 +20,7 @@ on:
       - "docs.config.json"
       - "python/README.md"
       - "tutorial/printf_target/target_tutorial.md"
-      - "VERSION"
+      - "VERSION_BASE"
       - "sdfg/include/**"
       - "opt/include/**"
       - "llvm/include/**"
