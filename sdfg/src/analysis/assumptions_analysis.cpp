@@ -1,5 +1,9 @@
 #include "sdfg/analysis/assumptions_analysis.h"
 
+#include <cstdio>
+#include <cstdlib>
+#include <functional>
+#include <string>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -373,20 +377,25 @@ void AssumptionsAnalysis::run(analysis::AnalysisManager& analysis_manager) {
     this->assumptions_.insert({&root, this->additional_assumptions_});
     auto& initial = this->assumptions_[&root];
 
-    this->assumptions_with_trivial_.insert({&root, initial});
-    auto& initial_with_trivial = this->assumptions_with_trivial_[&root];
+    symbolic::Assumptions::Map initial_with_trivial;
+    for (auto& entry : initial) {
+        initial_with_trivial.insert(entry);
+    }
     for (auto& entry : sdfg_.assumptions()) {
-        if (initial_with_trivial.find(entry.first) == initial_with_trivial.end()) {
+        auto present = initial_with_trivial.find(entry.first);
+        if (present == initial_with_trivial.end()) {
             initial_with_trivial.insert({entry.first, entry.second});
         } else {
             for (auto& lb : entry.second.lower_bounds()) {
-                initial_with_trivial.at(entry.first).add_lower_bound(lb);
+                present->second.add_lower_bound(lb);
             }
             for (auto& ub : entry.second.upper_bounds()) {
-                initial_with_trivial.at(entry.first).add_upper_bound(ub);
+                present->second.add_upper_bound(ub);
             }
         }
     }
+    this->root_with_trivial_ = std::make_shared<const symbolic::Assumptions::Map>(std::move(initial_with_trivial));
+    this->assumptions_with_trivial_.insert({&root, symbolic::Assumptions::over(this->root_with_trivial_)});
 
     this->traverse(root, root);
 };
@@ -689,6 +698,24 @@ const symbolic::Assumptions& AssumptionsAnalysis::materialize(Node& scope, bool 
     auto it = cache.find(&scope);
     if (it != cache.end()) {
         return it->second;
+    }
+    if (include_trivial_bounds) {
+        const auto& own = this->materialize(scope, false);
+        auto merged = symbolic::Assumptions::over(this->root_with_trivial_);
+        for (auto& [symbol, assumption] : own) {
+            symbolic::Assumption combined = assumption;
+            auto root = this->root_with_trivial_->find(symbol);
+            if (root != this->root_with_trivial_->end()) {
+                for (auto& lb : root->second.lower_bounds()) {
+                    combined.add_lower_bound(lb);
+                }
+                for (auto& ub : root->second.upper_bounds()) {
+                    combined.add_upper_bound(ub);
+                }
+            }
+            merged[symbol] = std::move(combined);
+        }
+        return cache.emplace(&scope, std::move(merged)).first->second;
     }
     // Node-based map: `outer` stays valid while the recursion inserts other scopes.
     const auto& outer = this->materialize(*this->parent_scope_.at(&scope), include_trivial_bounds);

@@ -15,12 +15,15 @@ inline data_flow::LibraryNodeCode LibraryNodeType_GpuMmaFragmentLoad("gpu::MmaFr
  * Reads a tile from the base pointer behind its "ptr" input (following the given
  * MmaFromMemoryLayout) into the fragment behind its "frag" input, which is treated like a pointer
  * to the fragment storage. The fragment itself is declared elsewhere (by the fragment container).
+ *
+ * A coherent load is the counterpart of a coherent @ref GpuMmaFragmentStoreNode (see there).
  */
 class GpuMmaFragmentLoadNode : public data_flow::LibraryNode {
     MmaBlockSize block_size_;
     MmaFragmentType fragment_type_;
     GpuMmaFromMemoryLayout layout_;
     types::PrimitiveType element_type_;
+    bool coherent_;
 
 public:
     static constexpr auto FRAG_INPUT_IDX = 0;
@@ -35,7 +38,8 @@ public:
         MmaFragmentType fragment_type,
         const GpuMmaFromMemoryLayout& layout,
         types::PrimitiveType element_type,
-        const data_flow::ImplementationType& impl_type
+        const data_flow::ImplementationType& impl_type,
+        bool coherent = false
     );
 
     const GpuMmaFromMemoryLayout& layout() const {
@@ -49,6 +53,10 @@ public:
     }
     types::PrimitiveType element_type() const {
         return element_type_;
+    }
+    /// Lane-ordered, device-coherent transfer (see class documentation).
+    bool coherent() const {
+        return coherent_;
     }
 
     void validate(const Function& function) const override;

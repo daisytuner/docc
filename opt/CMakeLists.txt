@@ -67,6 +67,7 @@ set(SOURCE_FILES
     src/passes/code_motion/extended_block_hoisting.cpp
     src/passes/code_motion/extended_block_sorting.cpp
     src/passes/collapse_pass.cpp
+    src/passes/redundant_zero_init_elimination_pass.cpp
     src/passes/trivial_loop_elimination_pass.cpp
     src/passes/tiling_pass.cpp
     src/passes/dot_expansion_pass.cpp
@@ -136,6 +137,7 @@ set(SOURCE_FILES
     src/targets/gpu/gpu_mma_dispatcher.cpp
     src/targets/gpu/gpu_mma_expander.cpp
     src/targets/gpu/gpu_mma_fill_node.cpp
+    src/targets/gpu/gpu_tile_arrival_node.cpp
     src/targets/gpu/gpu_mma_fragment.cpp
     src/targets/gpu/gpu_mma_fragment_eltwise_add_node.cpp
     src/targets/gpu/gpu_mma_fragment_load_node.cpp
@@ -209,6 +211,7 @@ set(SOURCE_FILES
     src/transformations/recorder.cpp
     src/transformations/replayer.cpp
     src/transformations/stream_k.cpp
+    src/transformations/redundant_zero_init_elimination.cpp
     src/transformations/trivial_loop_elimination.cpp
     src/transformations/transformation_schema.cpp
     src/transformations/unroll_transform.cpp

@@ -245,6 +245,12 @@ passes::LibNodeExpander::ExpandOutcome GEMMNode::
             builder.add_computational_memlet(
                 init_blk, t, "_out", c_write, {c_idx}, iedge_c->base_type(), iedge_c->debug_info()
             );
+
+            // Certify the nest as a pure zero init of exactly the compute nest's output, so it may be
+            // eliminated once that nest is lowered to MMA. Not for beta * C, which reads C.
+            auto init_schedule = i_loop.schedule_type();
+            structured_control_flow::ScheduleType_ZeroInit::set(init_schedule);
+            builder.update_schedule_type(i_loop, init_schedule);
         } else {
             auto& c_read = standalone->add_indirect_read_access(init_blk, C_INPUT_IDX);
             auto& beta_node = standalone->add_scalar_input_access(init_blk, BETA_INPUT_IDX);

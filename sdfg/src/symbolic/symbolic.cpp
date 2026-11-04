@@ -88,11 +88,11 @@ bool int64_operands(const Expression& lhs, const Expression& rhs, int64_t& a, in
     }
     const auto& x = SymEngine::down_cast<const SymEngine::Integer&>(*lhs).as_integer_class();
     const auto& y = SymEngine::down_cast<const SymEngine::Integer&>(*rhs).as_integer_class();
-    if (!mp_fits_slong_p(x) || !mp_fits_slong_p(y)) {
+    if (!SymEngine::mp_fits_slong_p(x) || !SymEngine::mp_fits_slong_p(y)) {
         return false;
     }
-    a = mp_get_si(x);
-    b = mp_get_si(y);
+    a = SymEngine::mp_get_si(x);
+    b = SymEngine::mp_get_si(y);
     return true;
 }
 

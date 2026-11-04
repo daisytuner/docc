@@ -1675,6 +1675,36 @@ TEST(JSONSerializerTest, SerializeDeserialize_MapKeepsNoFusion) {
     EXPECT_TRUE(structured_control_flow::ScheduleType_NoFusion::is_set(des_map.schedule_type()));
 }
 
+TEST(JSONSerializerTest, SerializeDeserialize_MapKeepsZeroInit) {
+    sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+    types::Scalar base_desc(types::PrimitiveType::Int32);
+    builder.add_container("i", base_desc);
+    auto i = symbolic::symbol("i");
+    auto schedule = structured_control_flow::ScheduleType_Sequential::create();
+    EXPECT_FALSE(structured_control_flow::ScheduleType_ZeroInit::is_set(schedule));
+    structured_control_flow::ScheduleType_ZeroInit::set(schedule);
+    auto& map = builder.add_map(
+        builder.subject().root(),
+        i,
+        symbolic::Lt(i, symbolic::integer(4)),
+        symbolic::zero(),
+        symbolic::add(i, symbolic::one()),
+        schedule
+    );
+    builder.add_block(map.root());
+
+    sdfg::serializer::JSONSerializer serializer;
+    nlohmann::json j;
+    serializer.structured_loop_to_json(j, map);
+    EXPECT_EQ(j["schedule_type"]["properties"]["init"], "zero");
+
+    auto des_builder = sdfg::builder::StructuredSDFGBuilder("test_sdfg", FunctionType_CPU);
+    des_builder.add_container("i", base_desc);
+    serializer.json_to_structured_loop_node(j, des_builder, des_builder.subject().root());
+    auto& des_map = sdfg::dyn_cast<sdfg::structured_control_flow::Map&>(des_builder.subject().root().at(0));
+    EXPECT_TRUE(structured_control_flow::ScheduleType_ZeroInit::is_set(des_map.schedule_type()));
+}
+
 TEST(JSONSerializerTest, SerializeDeserialize_ifelse) {
     // Create a sample IfElse node
     sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);

@@ -1,5 +1,7 @@
 #include "sdfg/transformations/loop_distribute.h"
 
+#include <memory>
+
 #include "sdfg/analysis/data_dependency_analysis.h"
 #include "sdfg/analysis/users.h"
 #include "sdfg/deepcopy/structured_sdfg_deep_copy.h"
@@ -172,7 +174,9 @@ bool LoopDistribute::can_be_applied(builder::StructuredSDFGBuilder& builder, ana
     // also drop these cross-piece reads from `ue_reads` (they are killed
     // intra-iter by the same-iter writer in the middle piece), so LCDA
     // never sees them as loop-carried -- we must catch them directly.
-    auto& dda = analysis_manager.get<analysis::DataDependencyAnalysis>();
+    // Only reads in the body matter, which only code in the loop defines: the loop's own DDA, computed only for such
+    // a scalar, answers as the whole program's would.
+    std::unique_ptr<analysis::DataDependencyAnalysis> dda;
     auto& users = analysis_manager.get<analysis::Users>();
     analysis::UsersView body_view(users, this->loop_.root());
     for (auto* writer : body_view.writes()) {
@@ -199,7 +203,11 @@ bool LoopDistribute::can_be_applied(builder::StructuredSDFGBuilder& builder, ana
         if (w_piece == body.size()) {
             continue;
         }
-        for (auto* reader : dda.defines(*writer)) {
+        if (!dda) {
+            dda = std::make_unique<analysis::DataDependencyAnalysis>(builder.subject(), this->loop_);
+            dda->run(analysis_manager);
+        }
+        for (auto* reader : dda->defines(*writer)) {
             size_t r_piece = piece_of(reader);
             if (r_piece == body.size()) {
                 continue;
@@ -278,7 +286,8 @@ void LoopDistribute::apply(builder::StructuredSDFGBuilder& builder, analysis::An
         prefix_loop.replace(indvar, symbolic::symbol(prefix_indvar));
     }
 
-    analysis_manager.invalidate_all();
+    // The new loops are siblings of the loop in its parent.
+    analysis_manager.invalidate_all(*parent);
 };
 
 void LoopDistribute::to_json(nlohmann::json& j) const {

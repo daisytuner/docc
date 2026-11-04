@@ -677,7 +677,7 @@ Interval BoundAnalysis::visit_add(const SymEngine::RCP<const SymEngine::Add>& ad
                     const auto& base = dict.begin()->first;
                     if (SymEngine::is_a<SymEngine::Min>(*base) || SymEngine::is_a<SymEngine::Max>(*base)) {
                         auto c = SymEngine::rcp_static_cast<const SymEngine::Integer>(mul->get_coef());
-                        if (!mp_fits_slong_p(c->as_integer_class())) {
+                        if (!SymEngine::mp_fits_slong_p(c->as_integer_class())) {
                             return false;
                         }
                         ext = base;

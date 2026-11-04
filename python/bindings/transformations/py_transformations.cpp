@@ -29,6 +29,7 @@
 #include <sdfg/transformations/offloading/rocm_offload_transform.h>
 #include <sdfg/transformations/omp_transform.h>
 #include <sdfg/transformations/recorder.h>
+#include <sdfg/transformations/redundant_zero_init_elimination.h>
 #include <sdfg/transformations/stream_k.h>
 #include <sdfg/transformations/transformation.h>
 #include <sdfg/transformations/trivial_loop_elimination.h>
@@ -403,6 +404,23 @@ void register_transformations(py::module& m) {
             return oss.str();
         });
 
+    // RedundantZeroInitElimination transformation
+    py::class_<RedundantZeroInitElimination, Transformation>(m, "RedundantZeroInitElimination")
+        .def(
+            py::init<StructuredLoop&>(),
+            py::arg("loop"),
+            "Create a redundant zero-init elimination transformation.\n\n"
+            "Removes a zero-initialization nest annotated as such (e.g. by the naive MatMul expansion) that is\n"
+            "directly followed by a GPU MMA nest, replacing the MMA's C-fragment loads of the output by zero fills.\n\n"
+            "Args:\n"
+            "    loop: The outermost loop of the annotated zero-init nest"
+        )
+        .def("__repr__", [](const RedundantZeroInitElimination& t) {
+            std::ostringstream oss;
+            oss << "<RedundantZeroInitElimination name='" << t.name() << "'>";
+            return oss.str();
+        });
+
     // SoftwarePipelining transformation (cp.async double-buffer a panel loop)
     py::class_<SoftwarePipelining, Transformation>(m, "SoftwarePipelining")
         .def(
@@ -466,7 +484,10 @@ void register_transformations(py::module& m) {
             "        as a direct child.\n"
             "    num_blocks: Fixed persistent grid size (absolute). Pick a multiple\n"
             "        of the device multiprocessor/CU count (e.g. 336 = 84*4 on an\n"
-            "        RTX 5080).\n"
+            "        RTX 5080).\n\n"
+            "MMA fragment accumulators (after GpuMmaEinsumTransform) are merged through a\n"
+            "static workspace by the last arriving block; only aligned splits are accepted:\n"
+            "num_blocks = tiles * S with S dividing the K-panel count.\n"
         )
         .def("__repr__", [](const StreamK& t) {
             std::ostringstream oss;
