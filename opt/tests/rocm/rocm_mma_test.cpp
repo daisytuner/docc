@@ -1506,9 +1506,14 @@ TEST(ROCMMMATest, StreamKFragmentStepSplitsMergeOnce_gfx90a) {
         auto& arrival_block = dynamic_cast<structured_control_flow::Block&>(body.at(body.index(*panel) + 2));
         auto& election = dynamic_cast<structured_control_flow::IfElse&>(body.at(body.index(*panel) + 3));
 
-        EXPECT_EQ(library_nodes_of<gpu::GpuMmaFragmentStoreNode>(store_block).size(), fragments);
+        auto partial_stores = library_nodes_of<gpu::GpuMmaFragmentStoreNode>(store_block);
+        EXPECT_EQ(partial_stores.size(), fragments);
+        for (auto* store : partial_stores) {
+            EXPECT_TRUE(store->coherent());
+        }
         auto arrivals = library_nodes_of<gpu::GpuTileArrivalNode>(builder.subject().root());
         ASSERT_EQ(arrivals.size(), 1u);
+        EXPECT_EQ(arrivals[0]->synchronization_strategy(), gpu::SynchronizationStrategy::CoherentStores);
         EXPECT_EQ(&arrivals[0]->get_parent(), &arrival_block.dataflow());
         EXPECT_TRUE(symbolic::eq(arrivals[0]->expected(), symbolic::integer(splits)));
         EXPECT_TRUE(symbolic::eq(arrivals[0]->index(), symbolic::div(bid, symbolic::integer(splits))));
@@ -1519,7 +1524,11 @@ TEST(ROCMMMATest, StreamKFragmentStepSplitsMergeOnce_gfx90a) {
         EXPECT_EQ(library_nodes_of<gpu::GpuMmaFillNode>(winner.at(0)).size(), fragments);
         auto& peers = dynamic_cast<structured_control_flow::For&>(winner.at(1));
         EXPECT_EQ(as_int(peers.num_iterations()), splits);
-        EXPECT_EQ(library_nodes_of<gpu::GpuMmaFragmentLoadNode>(peers.root()).size(), fragments);
+        auto partial_loads = library_nodes_of<gpu::GpuMmaFragmentLoadNode>(peers.root());
+        EXPECT_EQ(partial_loads.size(), fragments);
+        for (auto* load : partial_loads) {
+            EXPECT_TRUE(load->coherent());
+        }
         EXPECT_EQ(library_nodes_of<gpu::GpuMmaFragmentEltwiseAddNode>(peers.root()).size(), fragments);
         EXPECT_EQ(
             library_nodes_of<gpu::GpuMmaFragmentStoreNode>(builder.subject().root()).size(), stores_before + fragments
@@ -1528,7 +1537,8 @@ TEST(ROCMMMATest, StreamKFragmentStepSplitsMergeOnce_gfx90a) {
 }
 
 /// Preservation: the split nest is still staged and pipelined like the unsplit one (constant panel trip) and
-/// generates a kernel launched on tiles * S blocks with a static workspace and one tile-arrival atomic.
+/// generates a kernel launched on tiles * S blocks with a static workspace and one tile-arrival atomic. The partials
+/// go through device-coherent stores/loads and the arrival avoids full device fences.
 TEST(ROCMMMATest, StreamKFragmentSplitPreservesStagingAndPipelining_gfx90a) {
     constexpr int64_t splits = 2;
     builder::StructuredSDFGBuilder builder("streamk_mma", FunctionType_CPU);
@@ -1560,6 +1570,12 @@ TEST(ROCMMMATest, StreamKFragmentSplitPreservesStagingAndPipelining_gfx90a) {
         ++atomics;
     }
     EXPECT_EQ(atomics, 1u) << kernels;
+    EXPECT_NE(kernels.find("__hip_atomic_store((reinterpret_cast<float *>(__streamk_workspace"), std::string::npos)
+        << kernels;
+    EXPECT_NE(kernels.find("= __hip_atomic_load((reinterpret_cast<float *>(__streamk_workspace"), std::string::npos)
+        << kernels;
+    EXPECT_EQ(kernels.find("store_matrix_sync(__streamk_workspace"), std::string::npos) << kernels;
+    EXPECT_NE(kernels.find("#if defined(__GFX9__)\n"), std::string::npos) << kernels;
 }
 
 } // namespace sdfg::rocm

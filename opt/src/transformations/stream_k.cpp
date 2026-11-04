@@ -598,15 +598,16 @@ void StreamK::build_fragment_merge(
     auto& store_block = builder.add_block_after(parent, reduce, debug_info);
     for (int64_t f = 0; f < num_fragments; ++f) {
         auto& store = builder.add_library_node<gpu::GpuMmaFragmentStoreNode>(
-            store_block, debug_info, block_size, gpu::MmaFragmentType::C, slot(bid, f), acc_type, impl_type
+            store_block, debug_info, block_size, gpu::MmaFragmentType::C, slot(bid, f), acc_type, impl_type, true
         );
         connect(store_block, reductions[f].container, store, gpu::GpuMmaFragmentStoreNode::FRAG_INPUT_IDX, acc_pointer);
         connect(store_block, ws_name, store, gpu::GpuMmaFragmentStoreNode::PTR_INPUT_IDX, ws_type);
     }
 
     auto& arrival_block = builder.add_block_after(parent, store_block, debug_info);
-    auto& arrival =
-        builder.add_library_node<gpu::GpuTileArrivalNode>(arrival_block, debug_info, tile, sym::integer(splits));
+    auto& arrival = builder.add_library_node<gpu::GpuTileArrivalNode>(
+        arrival_block, debug_info, tile, sym::integer(splits), gpu::SynchronizationStrategy::CoherentStores
+    );
     connect(arrival_block, cnt_name, arrival, gpu::GpuTileArrivalNode::COUNTER_INPUT_IDX, cnt_type);
     auto& last_access = builder.add_access(arrival_block, last->get_name(), debug_info);
     builder.add_computational_memlet(arrival_block, arrival, "_last", last_access, {}, i32, debug_info);
@@ -634,7 +635,7 @@ void StreamK::build_fragment_merge(
     auto peer_block = sym::add(sym::mul(tile, sym::integer(splits)), peer);
     for (int64_t f = 0; f < num_fragments; ++f) {
         auto& load = builder.add_library_node<gpu::GpuMmaFragmentLoadNode>(
-            load_block, debug_info, block_size, gpu::MmaFragmentType::C, slot(peer_block, f), acc_type, impl_type
+            load_block, debug_info, block_size, gpu::MmaFragmentType::C, slot(peer_block, f), acc_type, impl_type, true
         );
         connect(load_block, partials[f], load, gpu::GpuMmaFragmentLoadNode::FRAG_INPUT_IDX, acc_pointer);
         connect(load_block, ws_name, load, gpu::GpuMmaFragmentLoadNode::PTR_INPUT_IDX, ws_type);

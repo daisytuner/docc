@@ -19,6 +19,8 @@ void ArgumentsAnalysis::find_arguments_and_locals(
     auto& type_analysis = this->type_analysis(analysis_manager, node);
 
     std::unordered_map<std::string, DataRwFlags> all_containers;
+    // Each container's uses in the scope, counted here rather than by a scan of the scope per container.
+    std::unordered_map<std::string, size_t> scope_counts;
     for (auto& user : scope_users.uses()) {
         if (user->container() == symbolic::__nullptr__()->get_name() ||
             symbolic::is_nv(symbolic::symbol(user->container()))) {
@@ -38,6 +40,7 @@ void ArgumentsAnalysis::find_arguments_and_locals(
             default:
                 meta.found_analysis_escape();
         }
+        ++scope_counts[user->container()];
         auto it = all_containers.insert({user->container(), meta});
         if (!it.second) {
             it.first->second.merge(meta);
@@ -75,7 +78,7 @@ void ArgumentsAnalysis::find_arguments_and_locals(
         }
 
         size_t total_uses = users.uses(container).size();
-        size_t scope_uses = scope_users.uses(container).size();
+        size_t scope_uses = scope_counts.at(container);
 
         if (scope_uses < total_uses) {
             arguments.insert({container, {rwFlags, is_scalar, is_ptr}});

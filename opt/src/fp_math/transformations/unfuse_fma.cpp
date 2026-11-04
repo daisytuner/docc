@@ -77,7 +77,7 @@ void UnfuseFMA::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
 
     multiply_ = &multiply;
     add_ = &add;
-    analysis_manager.invalidate_all();
+    analysis_manager.invalidate_all(block);
 }
 
 void UnfuseFMA::to_json(nlohmann::json& j) const {
