@@ -30,7 +30,7 @@ classifiers = [
 keywords = ["pytorch", "sdfg", "compiler", "optimization"]
 dependencies = [
     "docc-compiler",
-    "torch>=2.13",
+    "torch",
     "numpy>=1.19.0",
     "ml_dtypes>=0.5.4",
     "sympy>=1.14.0"
