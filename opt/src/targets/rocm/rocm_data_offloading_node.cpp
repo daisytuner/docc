@@ -154,9 +154,27 @@ void ROCMDataOffloadingNodeDispatcher::dispatch_code_with_edges(
     if (offloading_node.is_alloc()) {
         auto& ptr = outputs.at(0);
         pre_allocate_output(out, ptr, offloading_node.output(0));
-        dispatch_hip_malloc(
-            out.stream, this->language_extension_, *ptr.local_name, offloading_node.size(), "err", async_alloc
-        );
+        if (async_alloc) {
+            const std::string scratch = "__daisy_scratch_" + std::to_string(offloading_node.element_id());
+            const std::string scratch_size = scratch + "_size";
+            const std::string size_str = this->language_extension_.expression(offloading_node.size());
+            out.stream << "static void *" << scratch << " = nullptr;" << std::endl
+                       << "static int64_t " << scratch_size << " = 0;" << std::endl
+                       << "if (" << scratch_size << " < " << size_str << ") {" << std::endl;
+            out.stream.changeIndent(+4);
+            out.stream << "if (" << scratch << " != nullptr) {" << std::endl;
+            out.stream.changeIndent(+4);
+            dispatch_hip_free(out.stream, this->language_extension_, scratch, "err", true);
+            out.stream.changeIndent(-4);
+            out.stream << "}" << std::endl;
+            dispatch_hip_malloc(out.stream, this->language_extension_, scratch, offloading_node.size(), "err", true);
+            out.stream << scratch_size << " = " << size_str << ";" << std::endl;
+            out.stream.changeIndent(-4);
+            out.stream << "}" << std::endl
+                       << *ptr.local_name << " = (decltype(" << *ptr.local_name << "))" << scratch << ";" << std::endl;
+        } else {
+            dispatch_hip_malloc(out.stream, this->language_extension_, *ptr.local_name, offloading_node.size(), "err");
+        }
         dev_ptr = *ptr.local_name;
     } else {
         dev_ptr = inputs.at(offloading_node.dev_ptr_input_idx()).expr;
@@ -187,7 +205,11 @@ void ROCMDataOffloadingNodeDispatcher::dispatch_code_with_edges(
     }
 
     if (offloading_node.is_free()) {
-        dispatch_hip_free(out.stream, this->language_extension_, dev_ptr, "err", async_alloc);
+        if (async_alloc) {
+            out.stream << "// No free in graph capture mode" << std::endl;
+        } else {
+            dispatch_hip_free(out.stream, this->language_extension_, dev_ptr, "err");
+        }
     }
 }
 
