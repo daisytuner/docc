@@ -337,3 +337,23 @@ jobs:
           dist-platform-id: ${{ matrix.upload-dist-platform-id }}
           token: ${{ secrets.DOCC_RELEASE_TOKEN }}
           url: /v1/system/docc-distributions/upload
+
+  # Stage 3: Publish the docs of this release. Runs after the wheels and packages are published, so the site
+  # never shows a version that can't be installed yet. Only main deploys: a hotfix release from release/**
+  # would replace the docs of a newer series with older content (and the deploy's Google Cloud identity only
+  # accepts main anyway). Dry runs build the docs as a smoke test, with the previewed version, and deploy
+  # nothing.
+  docs:
+    needs: [allocate-version, wheels-publish, packages-llvm]
+    # wheels-publish is skipped in dry runs, which would skip this job too unless its condition uses a
+    # status function; !cancelled() && !failure() still stops it when a build or publish job failed.
+    if: ${{ !cancelled() && !failure() && (inputs.dry_run || github.ref == 'refs/heads/main') }}
+    # A called workflow gets at most the permissions of its calling job; the deploy logs in to Google Cloud
+    # keylessly (OIDC), so no secret is passed.
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/docs.yml
+    with:
+      version: ${{ needs.allocate-version.outputs.release_version }}
+      deploy: ${{ !inputs.dry_run }}

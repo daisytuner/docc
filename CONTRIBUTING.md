@@ -120,6 +120,12 @@ and packages of that run are built with it. Tick **dry_run** to preview the vers
 without publishing; dry runs also work from other branches. A hotfix for an older series runs from a
 `release/**` branch whose `VERSION_BASE` still names that series.
 
+A release from `main` also deploys the docs (docs.daisytuner.com/docc) once its packages are published,
+so the site shows the released version and matches the released code. Docs changes merged to `main` go
+live with the next release. To redeploy in between, e.g. for an urgent fix, run Actions → Docs → Run
+workflow on `main` with the currently released version (PyPI or the last Release run shows it). Hotfix
+releases do not deploy the docs, and pull requests only build them.
+
 ## Reporting Issues
 Before opening a new issue, search existing issues to avoid duplicates. Then use
 the appropriate template and provide as much detail as possible (environment,
