@@ -43,10 +43,35 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      latest: ${{ steps.backend.outputs.latest }}
+    steps:
+      # Releases no longer commit a version file; the backend's release ledger holds the newest version.
+      # Skipped for pull requests: PR builds are never deployed, so they don't need the release version, and
+      # fork PRs get no secrets (the call would only 401). Not a security boundary: a same-repo PR can edit
+      # this line. Only the step is skipped, as skipping the job would also skip `build`, which needs it.
+      # Empty output (backend down, never released) makes the docs fall back to VERSION_BASE instead of
+      # failing the deploy; the run summary says which one was used.
+      - id: backend
+        if: github.event_name != 'pull_request'
+        env:
+          TOKEN: ${{ secrets.DOCC_RELEASE_TOKEN }}
+        run: |
+          v=$(curl -fsS --retry 3 -H "Authorization: Token $TOKEN" \
+                https://europe-west1-daisy-367210.cloudfunctions.net/v1/system/releases/docc/latest \
+              | jq -r '.version // empty') || v=
+          [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || v=
+          echo "latest=$v" >> "$GITHUB_OUTPUT"
+          echo "Docs version: ${v:-VERSION_BASE fallback}" >> "$GITHUB_STEP_SUMMARY"
+
   build:
+    needs: version
     uses: daisytuner/docs-platform/.github/workflows/build-project.yml@main
     with:
       export-image: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+      version: ${{ needs.version.outputs.latest }}
 
   deploy:
     needs: build
