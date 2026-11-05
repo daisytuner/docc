@@ -8,13 +8,11 @@
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/access_node.h"
 #include "sdfg/data_flow/library_node.h"
+#include "sdfg/data_flow/library_nodes/math/blas/blas_node.h"
 #include "sdfg/data_flow/library_nodes/math/blas/dot_node.h"
-#include "sdfg/data_flow/library_nodes/math/math.h"
 #include "sdfg/einsum/einsum_node.h"
-#include "sdfg/optimization_report/pass_report_consumer.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/symbolic/symbolic.h"
-#include "sdfg/targets/cuda/cuda.h"
 #include "sdfg/transformations/transformation.h"
 #include "sdfg/types/type.h"
 #include "sdfg/types/utils.h"
@@ -86,14 +84,9 @@ void Einsum2Dot::apply(builder::StructuredSDFGBuilder& builder, analysis::Analys
     symbolic::Expression n = this->einsum_node_.bound(0);
 
     // Determine the BLAS precision
-    math::blas::BLAS_Precision precision;
     auto& datatype_oedge = *dfg.out_edges(this->einsum_node_).begin();
     types::PrimitiveType data_type = datatype_oedge.base_type().primitive_type();
-    if (data_type == types::PrimitiveType::Float) {
-        precision = math::blas::BLAS_Precision::s;
-    } else {
-        precision = math::blas::BLAS_Precision::d;
-    }
+    math::blas::BLAS_Precision precision = math::blas::primitive_type_to_BLAS_Precision(data_type);
 
     // Add the dot node
     auto& libnode = builder.add_library_node<

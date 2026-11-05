@@ -1,20 +1,19 @@
 #include "py_structured_sdfg_builder.h"
+
 #include <memory>
-#include <sdfg/data_flow/tasklet.h>
-#include <sdfg/einsum/einsum.h>
-#include <sdfg/structured_control_flow/map.h>
-#include <sdfg/symbolic/symbolic.h>
 #include <sstream>
 #include <symengine/add.h>
 #include <symengine/functions.h>
 #include <symengine/integer.h>
 #include <symengine/logic.h>
 #include <symengine/real_double.h>
+
 #include "py_structured_sdfg.h"
 #include "sdfg/data_flow/access_node.h"
 #include "sdfg/data_flow/library_nodes/atomic_op_node.h"
 #include "sdfg/data_flow/library_nodes/barrier_local_node.h"
 #include "sdfg/data_flow/library_nodes/load_const_node.h"
+#include "sdfg/data_flow/library_nodes/math/blas/blas_node.h"
 #include "sdfg/data_flow/library_nodes/math/cmath/cmath_node.h"
 #include "sdfg/data_flow/library_nodes/math/math.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/arange_node.h"
@@ -29,9 +28,13 @@
 #include "sdfg/data_flow/library_nodes/stdlib/malloc.h"
 #include "sdfg/data_flow/library_nodes/stdlib/memcpy.h"
 #include "sdfg/data_flow/library_nodes/stdlib/memset.h"
+#include "sdfg/data_flow/tasklet.h"
+#include "sdfg/einsum/einsum_node.h"
 #include "sdfg/exceptions.h"
 #include "sdfg/fp_math/library_nodes/ozaki_matmul_node.h"
 #include "sdfg/passes/debug_info_propagation.h"
+#include "sdfg/structured_control_flow/map.h"
+#include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/cuda/cuda_data_offloading_node.h"
 #include "sdfg/targets/rocm/rocm_data_offloading_node.h"
 #include "sdfg/tiles/library_nodes/tile_copy_node.h"
@@ -1066,10 +1069,8 @@ void PyStructuredSDFGBuilder::add_gemm(
     auto& type_b = dynamic_cast<const sdfg::types::Pointer&>(builder_.subject().type(B));
     auto& type_c = dynamic_cast<const sdfg::types::Pointer&>(builder_.subject().type(C));
 
-    auto precision = sdfg::math::blas::BLAS_Precision::d;
-    if (type_c.primitive_type() == sdfg::types::PrimitiveType::Float) {
-        precision = sdfg::math::blas::BLAS_Precision::s;
-    }
+    const sdfg::math::blas::BLAS_Precision precision =
+        sdfg::math::blas::primitive_type_to_BLAS_Precision(type_c.primitive_type());
 
     auto& gemm_node = builder_.add_library_node<sdfg::math::blas::GEMMNode>(
         block,
@@ -1172,10 +1173,8 @@ void PyStructuredSDFGBuilder::add_dot(
     auto& type_y = dynamic_cast<const sdfg::types::Pointer&>(builder_.subject().type(Y));
     auto& type_result = dynamic_cast<const sdfg::types::Scalar&>(builder_.subject().type(result));
 
-    auto precision = sdfg::math::blas::BLAS_Precision::d;
-    if (type_result.primitive_type() == sdfg::types::PrimitiveType::Float) {
-        precision = sdfg::math::blas::BLAS_Precision::s;
-    }
+    const sdfg::math::blas::BLAS_Precision precision =
+        sdfg::math::blas::primitive_type_to_BLAS_Precision(type_result.primitive_type());
 
     auto& dot_node = builder_.add_library_node<sdfg::math::blas::DotNode>(
         block, debug_info, sdfg::math::blas::ImplementationType_BLAS, precision, sym_n, sym_incx, sym_incy

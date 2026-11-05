@@ -21,6 +21,10 @@ from docc.pytorch.pytorch_program import PyTorchProgram
 # Qwen2.5-1.5B MLP dimensions. gate_up_proj fuses gate and up.
 HIDDEN_SIZE = 1536
 INTERMEDIATE_SIZE = 8960
+RELATIVE_ERROR: dict[torch.dtype, float] = {
+    torch.bfloat16: 0.2,
+    torch.float32: 5e-7,
+}
 
 
 class _StaticMLP(torch.nn.Module):
@@ -58,14 +62,20 @@ def _relative_error(out: torch.Tensor, ref: torch.Tensor) -> float:
 
 @pytest.mark.supported_targets("rocm")
 @pytest.mark.parametrize("tokens", [1, 16])
-def test_qwen2_mlp_hip_graph_capture(target: str, tokens: int) -> None:
-    if not torch.cuda.is_available():
-        pytest.skip("No GPU visible to torch")
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pytest.param(torch.bfloat16, id="bfloat16"),
+        pytest.param(torch.float32, id="float32"),
+    ],
+)
+def test_qwen2_mlp_hip_graph_capture(
+    target: str, tokens: int, dtype: torch.dtype
+) -> None:
     if not _async_alloc_works():
         pytest.skip("hipMallocAsync is not functional on this GPU")
 
     device = torch.device("cuda")
-    dtype = torch.bfloat16
     torch.manual_seed(0)
 
     x = torch.randn((tokens, HIDDEN_SIZE), dtype=dtype, device=device)
@@ -113,4 +123,4 @@ def test_qwen2_mlp_hip_graph_capture(target: str, tokens: int) -> None:
 
             ref = _StaticMLP()(x.float(), w_gate_up.float(), w_down.float())
             assert captured_out.device.type == "cuda"
-            assert _relative_error(captured_out, ref) < 3e-2
+            assert _relative_error(captured_out, ref) < RELATIVE_ERROR[dtype]

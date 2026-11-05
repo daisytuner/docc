@@ -19,7 +19,7 @@ from docc.sdfg import StructuredSDFG, DoccMetrics
 from docc.pytorch.graph_parser import GraphParser
 
 
-def _strip_guards_fn(model) -> None:
+def _strip_guards_fn(model: torch.nn.Module) -> None:
     """Remove dynamo's ``_guards_fn`` node from an FX graph.
 
     Recent PyTorch embeds a ``_guards_fn`` call (dynamo's guard checks) in the
@@ -30,12 +30,12 @@ def _strip_guards_fn(model) -> None:
     if not isinstance(model, torch.fx.GraphModule):
         return
 
-    graph = model.graph
-    removed = False
+    graph: torch.fx.Graph = model.graph
+    removed: bool = False
     for node in list(graph.nodes):
         if node.op == "call_module" and node.target == "_guards_fn" and not node.users:
             graph.erase_node(node)
-            removed = True
+            removed: bool = True
 
     if not removed:
         return
@@ -61,18 +61,21 @@ def _disable_export_guards():
     """
     import inspect
 
-    patches = []
+    patches: list[tuple[object, str, object]] = []
     try:
         from torch.export.exported_program import ExportedProgram
 
         original_module = ExportedProgram.module
         try:
-            has_flag = "check_guards" in inspect.signature(original_module).parameters
+            has_flag: bool = (
+                "check_guards" in inspect.signature(original_module).parameters
+            )
         except (TypeError, ValueError):
-            has_flag = False
+            has_flag: bool = False
+
         if has_flag:
 
-            def _module_no_guards(self, check_guards=False):
+            def _module_no_guards(self, check_guards: bool = False):
                 return original_module(self, check_guards=False)
 
             ExportedProgram.module = _module_no_guards
@@ -103,7 +106,7 @@ class PyTorchProgram(DoccProgram):
 
     def __init__(
         self,
-        gm: torch.fx.GraphModule,
+        gm: torch.nn.Module,
         example_input: Any = None,
         options: Optional[DoccOptions] = None,
         force_rebuild: bool = False,
@@ -128,7 +131,7 @@ class PyTorchProgram(DoccProgram):
             options=options or DoccOptions(),
         )
 
-        self.gm: torch.fx.GraphModule = gm
+        self.gm: torch.nn.Module = gm
         if example_input is None:
             self.example_input: tuple[Any, ...] | None = None
         elif isinstance(example_input, tuple):
@@ -238,7 +241,7 @@ class PyTorchProgram(DoccProgram):
             # - Regular nn.Modules (from compile_torch): use forward() source
             model_code: str = ""
             try:
-                model_code: str = self.gm.graph.python_code("self").src
+                model_code: str = getattr(self.gm, "graph").python_code("self").src
             except Exception:
                 pass
             if not model_code:

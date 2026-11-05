@@ -70,6 +70,7 @@ void ROCMOffloadDispatcherStrategy::emit_target_global_includes(codegen::CodeSni
     // invocation; during HIP-graph capture that is the capture stream, so the
     // whole region records into the graph instead of stalling the host.
     library_snippet_factory.add_global(
+        "#include <hip/hip_runtime.h>\n"
         "static hipStream_t __daisy_stream = (hipStream_t)0;\n"
         "extern \"C\" void __daisy_set_stream(void* __s) { __daisy_stream = (hipStream_t)__s; }"
     );

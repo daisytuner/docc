@@ -1,7 +1,14 @@
 #include "sdfg/targets/rocm/blas/gemm.h"
+#include <algorithm>
+#include <cctype>
+#include <string>
+
+#include "sdfg/data_flow/library_nodes/math/blas/blas_node.h"
 #include "sdfg/data_flow/library_nodes/math/blas/gemm_node.h"
+#include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/rocm/blas/utils.h"
 #include "sdfg/targets/rocm/rocm.h"
+#include "sdfg/targets/rocm/rocm_data_offloading_node.h"
 
 namespace sdfg::rocm::blas {
 
@@ -14,8 +21,7 @@ GEMMNodeDispatcher_ROCMBLASWithTransfers::GEMMNodeDispatcher_ROCMBLASWithTransfe
     : codegen::LibraryNodeDispatcher(language_extension, function, data_flow_graph, node) {
 }
 
-
-void add_guard_clause(
+static void add_guard_clause(
     codegen::PrettyPrinter& stream,
     codegen::LanguageExtension& language_extension,
     const math::blas::GEMMNode& gemm_node
@@ -23,11 +29,11 @@ void add_guard_clause(
     stream << "if (" << language_extension.expression(gemm_node.m()) << " != 0 && "
            << language_extension.expression(gemm_node.n()) << " != 0 && "
            << language_extension.expression(gemm_node.k()) << " != 0) {" << std::endl;
-    stream.setIndent(stream.indent() + 4);
+    stream.changeIndent(+4);
 }
 
-void remove_guard_clause(codegen::PrettyPrinter& stream) {
-    stream.setIndent(stream.indent() - 4);
+static void remove_guard_clause(codegen::PrettyPrinter& stream) {
+    stream.changeIndent(-4);
     stream << "}" << std::endl;
 }
 
@@ -40,63 +46,39 @@ void GEMMNodeDispatcher_ROCMBLASWithTransfers::dispatch_code(
 
     library_snippet_factory.add_global("#include <hipblas/hipblas.h>");
 
-    std::string type, type2;
-    switch (gemm_node.precision()) {
-        case sdfg::math::blas::BLAS_Precision::h:
-            type = "_Float16";
-            break;
-        case sdfg::math::blas::BLAS_Precision::s:
-            type = "float";
-            break;
-        case sdfg::math::blas::BLAS_Precision::d:
-            type = "double";
-            break;
-        default:
-            throw std::runtime_error("Invalid precision for ROCMBLAS GEMM node");
-    }
-
-    std::string size_A = "(" + this->language_extension_.expression(symbolic::mul(gemm_node.m(), gemm_node.k())) +
-                         ") * sizeof(" + type + ")";
-
-    std::string size_B = "(" + this->language_extension_.expression(symbolic::mul(gemm_node.k(), gemm_node.n())) +
-                         ") * sizeof(" + type + ")";
-
-    std::string size_C = "(" + this->language_extension_.expression(symbolic::mul(gemm_node.m(), gemm_node.n())) +
-                         ") * sizeof(" + type + ")";
+    types::Scalar base_type(math::blas::BLAS_Precision_to_primitive_type(gemm_node.precision()));
+    const symbolic::Expression size_A =
+        symbolic::mul(symbolic::mul(gemm_node.m(), gemm_node.k()), symbolic::size_of_type(base_type));
+    const symbolic::Expression size_B =
+        symbolic::mul(symbolic::mul(gemm_node.k(), gemm_node.n()), symbolic::size_of_type(base_type));
+    const symbolic::Expression size_C =
+        symbolic::mul(symbolic::mul(gemm_node.m(), gemm_node.n()), symbolic::size_of_type(base_type));
 
     add_guard_clause(stream, this->language_extension_, gemm_node);
 
+    const std::string* async_alloc_md = this->function_.metadata_if_exists("rocm_async_alloc");
+    const bool async_alloc = async_alloc_md != nullptr && *async_alloc_md == "1";
+
     stream << "hipError_t err_hip;" << std::endl;
+    stream << this->language_extension_.primitive_type(base_type.primitive_type()) << " *dA, *dB, *dC;" << std::endl;
 
-    stream << type << " *dA, *dB, *dC;" << std::endl;
+    dispatch_hip_malloc(stream, this->language_extension_, "dA", size_A, "err_hip", async_alloc);
+    dispatch_hip_malloc(stream, this->language_extension_, "dB", size_B, "err_hip", async_alloc);
+    dispatch_hip_malloc(stream, this->language_extension_, "dC", size_C, "err_hip", async_alloc);
 
-    stream << "err_hip = hipMalloc((void**) &dA, " << size_A << ");" << std::endl;
-    rocm_error_checking(stream, this->language_extension_, "err_hip");
-    stream << "err_hip = hipMalloc((void**) &dB, " << size_B << ");" << std::endl;
-    rocm_error_checking(stream, this->language_extension_, "err_hip");
-    stream << "err_hip = hipMalloc((void**) &dC, " << size_C << ");" << std::endl;
-    rocm_error_checking(stream, this->language_extension_, "err_hip");
+    dispatch_hip_memcpy(stream, this->language_extension_, "dA", "__A", size_A, "hipMemcpyHostToDevice", "err_hip");
+    dispatch_hip_memcpy(stream, this->language_extension_, "dB", "__B", size_B, "hipMemcpyHostToDevice", "err_hip");
+    dispatch_hip_memcpy(stream, this->language_extension_, "dC", "__C", size_C, "hipMemcpyHostToDevice", "err_hip");
 
-    stream << "err_hip = hipMemcpy(dA, __A, " << size_A << ", hipMemcpyHostToDevice);" << std::endl;
-    rocm_error_checking(stream, this->language_extension_, "err_hip");
-    stream << "err_hip = hipMemcpy(dB, __B, " << size_B << ", hipMemcpyHostToDevice);" << std::endl;
-    rocm_error_checking(stream, this->language_extension_, "err_hip");
-    stream << "err_hip = hipMemcpy(dC, __C, " << size_C << ", hipMemcpyHostToDevice);" << std::endl;
-    rocm_error_checking(stream, this->language_extension_, "err_hip");
-
-    setup_blas_handle(library_snippet_factory, this->language_extension_);
+    setup_blas_handle(library_snippet_factory, this->language_extension_, async_alloc);
 
     generate_kernel_gemm(stream, this->language_extension_, gemm_node);
 
-    stream << "err_hip = hipMemcpy(__C, dC, " << size_C << ", hipMemcpyDeviceToHost);" << std::endl;
-    rocm_error_checking(stream, this->language_extension_, "err_hip");
+    dispatch_hip_memcpy(stream, this->language_extension_, "__C", "dC", size_C, "hipMemcpyDeviceToHost", "err_hip");
 
-    stream << "err_hip = hipFree(dA);" << std::endl;
-    rocm_error_checking(stream, this->language_extension_, "err_hip");
-    stream << "err_hip = hipFree(dB);" << std::endl;
-    rocm_error_checking(stream, this->language_extension_, "err_hip");
-    stream << "err_hip = hipFree(dC);" << std::endl;
-    rocm_error_checking(stream, this->language_extension_, "err_hip");
+    dispatch_hip_free(stream, this->language_extension_, "dA", "err_hip", async_alloc);
+    dispatch_hip_free(stream, this->language_extension_, "dB", "err_hip", async_alloc);
+    dispatch_hip_free(stream, this->language_extension_, "dC", "err_hip", async_alloc);
 
     remove_guard_clause(stream);
 }
@@ -133,7 +115,10 @@ void GEMMNodeDispatcher_ROCMBLASWithoutTransfers::dispatch_code(
 
     add_guard_clause(stream, this->language_extension_, gemm_node);
 
-    setup_blas_handle(library_snippet_factory, this->language_extension_);
+    const std::string* async_alloc_md = this->function_.metadata_if_exists("rocm_async_alloc");
+    const bool async_alloc = async_alloc_md != nullptr && *async_alloc_md == "1";
+
+    setup_blas_handle(library_snippet_factory, this->language_extension_, async_alloc);
 
     generate_kernel_gemm(stream, this->language_extension_, gemm_node);
 
@@ -145,20 +130,8 @@ void generate_kernel_gemm(
     codegen::LanguageExtension& language_extension,
     const math::blas::GEMMNode& gemm_node
 ) {
-    std::string type;
-    switch (gemm_node.precision()) {
-        case sdfg::math::blas::BLAS_Precision::h:
-            type = "H";
-            break;
-        case sdfg::math::blas::BLAS_Precision::s:
-            type = "S";
-            break;
-        case sdfg::math::blas::BLAS_Precision::d:
-            type = "D";
-            break;
-        default:
-            throw std::runtime_error("Invalid precision for ROCMBLAS GEMM node");
-    }
+    std::string precision_str(math::blas::BLAS_Precision_to_string(gemm_node.precision()));
+    std::transform(precision_str.begin(), precision_str.end(), precision_str.begin(), ::toupper);
 
     auto first_dim = gemm_node.m();
     auto second_dim = gemm_node.n();
@@ -209,7 +182,7 @@ void generate_kernel_gemm(
     }
 
     stream << "hipblasStatus_t err;" << std::endl;
-    stream << "err = hipblas" << type << "gemm(handle, " << trans_first_str << ", " << trans_second_str << ", "
+    stream << "err = hipblas" << precision_str << "gemm(handle, " << trans_first_str << ", " << trans_second_str << ", "
            << language_extension.expression(first_dim) << ", " << language_extension.expression(second_dim) << ", "
            << language_extension.expression(gemm_node.k()) << ", " << alpha_arg << ", " << a_arg << ", "
            << language_extension.expression(ld_first) << ", " << b_arg << ", "

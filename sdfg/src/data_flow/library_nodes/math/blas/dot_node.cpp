@@ -1,10 +1,10 @@
 #include "sdfg/data_flow/library_nodes/math/blas/dot_node.h"
+
 #include <stdexcept>
 #include <string>
 
-#include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
-
+#include "sdfg/data_flow/library_nodes/math/blas/blas_node.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/types/utils.h"
 
@@ -251,21 +251,8 @@ void DotNodeDispatcher_BLAS::dispatch_code_with_edges(
 ) {
     auto& dot_node = static_cast<const DotNode&>(this->node_);
 
-    sdfg::types::Scalar base_type(types::PrimitiveType::Void);
     BLAS_Precision precision = dot_node.precision();
-    switch (precision) {
-        case BLAS_Precision::h:
-            base_type = types::Scalar(types::PrimitiveType::Half);
-            break;
-        case BLAS_Precision::s:
-            base_type = types::Scalar(types::PrimitiveType::Float);
-            break;
-        case BLAS_Precision::d:
-            base_type = types::Scalar(types::PrimitiveType::Double);
-            break;
-        default:
-            throw std::runtime_error("Invalid BLAS_Precision value");
-    }
+    sdfg::types::Scalar base_type(BLAS_Precision_to_primitive_type(precision));
 
     out.library_snippet_factory.require_dependency(BLASLibDependency::instance());
 

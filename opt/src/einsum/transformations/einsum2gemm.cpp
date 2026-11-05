@@ -4,15 +4,14 @@
 #include <cassert>
 #include <cstddef>
 #include <nlohmann/json_fwd.hpp>
-#include <optional>
 #include <string>
 #include <vector>
 
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/library_node.h"
+#include "sdfg/data_flow/library_nodes/math/blas/blas_node.h"
 #include "sdfg/data_flow/library_nodes/math/blas/gemm_node.h"
-#include "sdfg/data_flow/library_nodes/math/math.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/transformations/transformation.h"
 #include "sdfg/types/scalar.h"
@@ -163,14 +162,9 @@ void Einsum2Gemm::apply(builder::StructuredSDFGBuilder& builder, analysis::Analy
     assert(block);
 
     // Determine the BLAS precision
-    math::blas::BLAS_Precision precision;
     auto& datatype_oedge = *dfg.out_edges(this->einsum_node_).begin();
     types::PrimitiveType data_type = datatype_oedge.base_type().primitive_type();
-    if (data_type == types::PrimitiveType::Float) {
-        precision = math::blas::BLAS_Precision::s;
-    } else {
-        precision = math::blas::BLAS_Precision::d;
-    }
+    math::blas::BLAS_Precision precision = math::blas::primitive_type_to_BLAS_Precision(data_type);
 
     // Determine indvars
     symbolic::Symbol indvar_outer_1 = SymEngine::null, indvar_outer_2 = SymEngine::null, indvar_inner = SymEngine::null;

@@ -1,7 +1,7 @@
 #include "sdfg/data_flow/library_nodes/math/blas/gemm_node.h"
 
-#include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/data_flow/library_nodes/math/blas/blas_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/tensor_layout.h"
 #include "sdfg/types/utils.h"
 
@@ -547,20 +547,7 @@ void GEMMNodeDispatcher_BLAS::dispatch_code_with_edges(
 ) {
     auto& gemm_node = static_cast<const GEMMNode&>(this->node_);
 
-    sdfg::types::Scalar base_type(types::PrimitiveType::Void);
-    switch (gemm_node.precision()) {
-        case BLAS_Precision::h:
-            base_type = types::Scalar(types::PrimitiveType::Half);
-            break;
-        case BLAS_Precision::s:
-            base_type = types::Scalar(types::PrimitiveType::Float);
-            break;
-        case BLAS_Precision::d:
-            base_type = types::Scalar(types::PrimitiveType::Double);
-            break;
-        default:
-            throw std::runtime_error("Invalid BLAS_Precision value");
-    }
+    sdfg::types::Scalar base_type(BLAS_Precision_to_primitive_type(gemm_node.precision()));
 
     out.library_snippet_factory.require_dependency(BLASLibDependency::instance());
 

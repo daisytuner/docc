@@ -1024,7 +1024,7 @@ TEST(CuBlasTest, GemmNodeWithDataTransfers_HalfPrecisionUsesHalfBuffers) {
 
     const std::string code = stream.str();
     // Device buffers mirror the half type so cudaMemcpy stays type-consistent.
-    EXPECT_NE(code.find("half *dA, *dB, *dC;"), std::string::npos);
+    EXPECT_NE(code.find("_Float16 *dA, *dB, *dC;"), std::string::npos);
     // The cublas call still goes through cublasHgemm with correctly-typed device pointers.
     EXPECT_NE(code.find("cublasHgemm"), std::string::npos);
     EXPECT_NE(code.find("const __half* A_h = reinterpret_cast<const __half*>(dB);"), std::string::npos);

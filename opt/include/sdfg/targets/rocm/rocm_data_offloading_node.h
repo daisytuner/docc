@@ -1,15 +1,17 @@
 #pragma once
 
 #include <cstddef>
+#include <string>
 
 #include "sdfg/codegen/dispatchers/block_dispatcher.h"
+#include "sdfg/codegen/language_extension.h"
+#include "sdfg/codegen/utils.h"
 #include "sdfg/data_flow/data_flow_graph.h"
 #include "sdfg/data_flow/data_flow_node.h"
 #include "sdfg/data_flow/library_node.h"
 #include "sdfg/element.h"
 #include "sdfg/function.h"
 #include "sdfg/graph/graph.h"
-#include "sdfg/serializer/json_serializer.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/offloading/data_offloading_node.h"
 
@@ -82,6 +84,34 @@ public:
         sdfg::structured_control_flow::Block& parent
     ) override;
 };
+
+void dispatch_hip_malloc(
+    codegen::PrettyPrinter& stream,
+    codegen::LanguageExtension& language_extension,
+    const std::string& var_name,
+    const symbolic::Expression& size,
+    const std::string& err_var_name,
+    bool async = false
+);
+
+void dispatch_hip_free(
+    codegen::PrettyPrinter& stream,
+    codegen::LanguageExtension& language_extension,
+    const std::string& var_name,
+    const std::string& err_var_name,
+    bool async = false
+);
+
+void dispatch_hip_memcpy(
+    codegen::PrettyPrinter& stream,
+    codegen::LanguageExtension& language_extension,
+    const std::string& src_var_name,
+    const std::string& dst_var_name,
+    const symbolic::Expression& size,
+    const std::string& direction,
+    const std::string& err_var_name,
+    bool async = false
+);
 
 } // namespace rocm
 } // namespace sdfg

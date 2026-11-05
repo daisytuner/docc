@@ -30,9 +30,11 @@
 #pragma once
 
 #include <optional>
+#include <stdexcept>
 
 #include "sdfg/codegen/code_snippet_factory.h"
 #include "sdfg/data_flow/library_nodes/math/math_node.h"
+#include "sdfg/types/type.h"
 
 namespace sdfg {
 namespace math {
@@ -72,6 +74,32 @@ constexpr std::string_view BLAS_Precision_to_string(BLAS_Precision precision) {
             return "z";
         default:
             throw std::runtime_error("Invalid BLAS_Precision value");
+    }
+}
+
+constexpr types::PrimitiveType BLAS_Precision_to_primitive_type(BLAS_Precision precision) {
+    switch (precision) {
+        case BLAS_Precision::h:
+            return types::PrimitiveType::Half;
+        case BLAS_Precision::s:
+            return types::PrimitiveType::Float;
+        case BLAS_Precision::d:
+            return types::PrimitiveType::Double;
+        default:
+            throw std::runtime_error("Invalid BLAS_Precision value");
+    }
+}
+
+constexpr BLAS_Precision primitive_type_to_BLAS_Precision(types::PrimitiveType primitive_type) {
+    switch (primitive_type) {
+        case types::PrimitiveType::Half:
+            return BLAS_Precision::h;
+        case types::PrimitiveType::Float:
+            return BLAS_Precision::s;
+        case types::PrimitiveType::Double:
+            return BLAS_Precision::d;
+        default:
+            return BLAS_Precision::invalid;
     }
 }
 
