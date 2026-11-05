@@ -110,6 +110,7 @@ set(SOURCE_FILES
     src/data_flow/library_nodes/math/tensor/elu_node.cpp
     src/data_flow/library_nodes/math/tensor/embedding_node.cpp
     src/data_flow/library_nodes/math/tensor/embedding_renorm_node.cpp
+    src/data_flow/library_nodes/math/tensor/attention_node.cpp
     src/data_flow/library_nodes/math/tensor/index_node.cpp
     src/data_flow/library_nodes/math/tensor/layernorm_node.cpp
     src/data_flow/library_nodes/math/tensor/leaky_relu_node.cpp
