@@ -387,4 +387,176 @@ TEST(RocBlasTest, GemmNodeWithDataTransfers_HalfPrecisionUsesFloat16Buffers) {
     EXPECT_NE(code.find("hipblasHalf* C_h = reinterpret_cast<hipblasHalf*>(dC);"), std::string::npos);
 }
 
+TEST(RocBlasTest, GemmNodeWithoutDataTransfers_BFloat16EmitsGemmEx) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+
+    int dim_i = 10;
+    int dim_j = 20;
+    int dim_k = 30;
+
+    types::Scalar desc(types::PrimitiveType::BFloat);
+    types::Array arr_a_type(desc, symbolic::mul(symbolic::integer(dim_k), symbolic::integer(dim_i)));
+    types::Array arr_b_type(desc, symbolic::mul(symbolic::integer(dim_j), symbolic::integer(dim_k)));
+    types::Array arr_res_type(desc, symbolic::mul(symbolic::integer(dim_j), symbolic::integer(dim_i)));
+
+    builder.add_container("arr_a", arr_a_type);
+    builder.add_container("arr_b", arr_b_type);
+    builder.add_container("output", arr_res_type);
+
+    auto& block = builder.add_block(sdfg.root());
+
+    auto& input_a_node = builder.add_access(block, "arr_a");
+    auto& input_b_node = builder.add_access(block, "arr_b");
+    auto& dummy_input_node = builder.add_access(block, "output");
+    auto& gemm_node = static_cast<math::blas::GEMMNode&>(builder.add_library_node<math::blas::GEMMNode>(
+        block,
+        DebugInfo(),
+        rocm::ImplementationType_ROCMWithoutTransfers,
+        math::blas::BLAS_Precision::b,
+        math::blas::BLAS_Layout::RowMajor,
+        math::blas::BLAS_Transpose::No,
+        math::blas::BLAS_Transpose::No,
+        symbolic::integer(dim_i),
+        symbolic::integer(dim_j),
+        symbolic::integer(dim_k),
+        symbolic::integer(dim_j),
+        symbolic::integer(dim_k),
+        symbolic::integer(dim_j)
+    ));
+
+    auto& alpha_node = builder.add_constant(block, "2.0", desc);
+    auto& beta_node = builder.add_constant(block, "1.0", desc);
+
+    builder.add_computational_memlet(block, input_a_node, gemm_node, "__A", {symbolic::integer(0)}, arr_a_type);
+    builder.add_computational_memlet(block, input_b_node, gemm_node, "__B", {symbolic::integer(0)}, arr_b_type);
+    builder.add_computational_memlet(block, dummy_input_node, gemm_node, "__C", {symbolic::integer(0)}, arr_res_type);
+    builder.add_computational_memlet(block, alpha_node, gemm_node, "__alpha", {}, desc);
+    builder.add_computational_memlet(block, beta_node, gemm_node, "__beta", {}, desc);
+
+    // Use a local registry so the test is isolated from global plugin state.
+    codegen::LibraryNodeDispatcherRegistry local_registry;
+    plugins::Context ctx{
+        serializer::LibraryNodeSerializerRegistry::instance(),
+        codegen::NodeDispatcherRegistry::instance(),
+        codegen::MapDispatcherRegistry::instance(),
+        codegen::ReduceDispatcherRegistry::instance(),
+        local_registry,
+        passes::scheduler::SchedulerRegistry::instance(),
+        tiles::TileTargetRegistry::instance()
+    };
+    rocm::register_rocm_plugin(ctx);
+
+    auto dispatcher_fn = local_registry.get_library_node_dispatcher(
+        math::blas::LibraryNodeType_GEMM.value() + "::" + rocm::ImplementationType_ROCMWithoutTransfers.value()
+    );
+    ASSERT_NE(dispatcher_fn, nullptr);
+
+    codegen::CLanguageExtension language_extension(sdfg);
+    auto dispatcher = dispatcher_fn(language_extension, sdfg, block.dataflow(), gemm_node);
+
+    codegen::PrettyPrinter stream;
+    codegen::PrettyPrinter globals_stream;
+    codegen::CodeSnippetFactory snippet_factory;
+
+    ASSERT_NO_THROW(dispatcher->dispatch(stream, globals_stream, snippet_factory));
+
+    const std::string code = stream.str();
+    // bfloat16 has no dedicated hipblas<T>gemm entry point, so it must go through hipblasGemmEx ...
+    EXPECT_NE(code.find("hipblasGemmEx"), std::string::npos);
+    // ... with bfloat16 (HIP_R_16BF) operands and fp32 (HIPBLAS_COMPUTE_32F) accumulation.
+    EXPECT_NE(code.find("HIP_R_16BF"), std::string::npos);
+    EXPECT_NE(code.find("HIPBLAS_COMPUTE_32F"), std::string::npos);
+    EXPECT_NE(code.find("HIPBLAS_GEMM_DEFAULT"), std::string::npos);
+    // alpha/beta are promoted to fp32 host scalars for the fp32 compute type.
+    EXPECT_NE(code.find("const float alpha_f = static_cast<float>(__alpha);"), std::string::npos);
+    EXPECT_NE(code.find("const float beta_f = static_cast<float>(__beta);"), std::string::npos);
+    // It must NOT fall back to a naive hipblas<T>gemm entry point.
+    EXPECT_EQ(code.find("hipblasHgemm"), std::string::npos);
+}
+
+TEST(RocBlasTest, GemmNodeWithDataTransfers_BFloat16UsesBFloat16Buffers) {
+    builder::StructuredSDFGBuilder builder("sdfg_1", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+
+    int dim_i = 10;
+    int dim_j = 20;
+    int dim_k = 30;
+
+    types::Scalar desc(types::PrimitiveType::BFloat);
+    types::Array arr_a_type(desc, symbolic::mul(symbolic::integer(dim_k), symbolic::integer(dim_i)));
+    types::Array arr_b_type(desc, symbolic::mul(symbolic::integer(dim_j), symbolic::integer(dim_k)));
+    types::Array arr_res_type(desc, symbolic::mul(symbolic::integer(dim_j), symbolic::integer(dim_i)));
+
+    builder.add_container("arr_a", arr_a_type);
+    builder.add_container("arr_b", arr_b_type);
+    builder.add_container("output", arr_res_type);
+
+    auto& block = builder.add_block(sdfg.root());
+
+    auto& input_a_node = builder.add_access(block, "arr_a");
+    auto& input_b_node = builder.add_access(block, "arr_b");
+    auto& dummy_input_node = builder.add_access(block, "output");
+    auto& gemm_node = static_cast<math::blas::GEMMNode&>(builder.add_library_node<math::blas::GEMMNode>(
+        block,
+        DebugInfo(),
+        rocm::ImplementationType_ROCMWithTransfers,
+        math::blas::BLAS_Precision::b,
+        math::blas::BLAS_Layout::RowMajor,
+        math::blas::BLAS_Transpose::No,
+        math::blas::BLAS_Transpose::No,
+        symbolic::integer(dim_i),
+        symbolic::integer(dim_j),
+        symbolic::integer(dim_k),
+        symbolic::integer(dim_j),
+        symbolic::integer(dim_k),
+        symbolic::integer(dim_j)
+    ));
+
+    auto& alpha_node = builder.add_constant(block, "2.0", desc);
+    auto& beta_node = builder.add_constant(block, "1.0", desc);
+
+    builder.add_computational_memlet(block, input_a_node, gemm_node, "__A", {symbolic::integer(0)}, arr_a_type);
+    builder.add_computational_memlet(block, input_b_node, gemm_node, "__B", {symbolic::integer(0)}, arr_b_type);
+    builder.add_computational_memlet(block, dummy_input_node, gemm_node, "__C", {symbolic::integer(0)}, arr_res_type);
+    builder.add_computational_memlet(block, alpha_node, gemm_node, "__alpha", {}, desc);
+    builder.add_computational_memlet(block, beta_node, gemm_node, "__beta", {}, desc);
+
+    // Use a local registry so the test is isolated from global plugin state.
+    codegen::LibraryNodeDispatcherRegistry local_registry;
+    plugins::Context ctx{
+        serializer::LibraryNodeSerializerRegistry::instance(),
+        codegen::NodeDispatcherRegistry::instance(),
+        codegen::MapDispatcherRegistry::instance(),
+        codegen::ReduceDispatcherRegistry::instance(),
+        local_registry,
+        passes::scheduler::SchedulerRegistry::instance(),
+        tiles::TileTargetRegistry::instance()
+    };
+    rocm::register_rocm_plugin(ctx);
+
+    auto dispatcher_fn = local_registry.get_library_node_dispatcher(
+        math::blas::LibraryNodeType_GEMM.value() + "::" + rocm::ImplementationType_ROCMWithTransfers.value()
+    );
+    ASSERT_NE(dispatcher_fn, nullptr);
+
+    codegen::CLanguageExtension language_extension(sdfg);
+    auto dispatcher = dispatcher_fn(language_extension, sdfg, block.dataflow(), gemm_node);
+
+    codegen::PrettyPrinter stream;
+    codegen::PrettyPrinter globals_stream;
+    codegen::CodeSnippetFactory snippet_factory;
+
+    ASSERT_NO_THROW(dispatcher->dispatch(stream, globals_stream, snippet_factory));
+
+    const std::string code = stream.str();
+    // Device buffers mirror the hip_bfloat16 host type so hipMemcpy stays type-consistent.
+    EXPECT_NE(code.find("hip_bfloat16 *dA, *dB, *dC;"), std::string::npos);
+    // The hipblas call goes through hipblasGemmEx with bfloat16 device pointers.
+    EXPECT_NE(code.find("hipblasGemmEx"), std::string::npos);
+    EXPECT_NE(code.find("HIP_R_16BF"), std::string::npos);
+    EXPECT_NE(code.find("dB, HIP_R_16BF"), std::string::npos);
+    EXPECT_NE(code.find("dC, HIP_R_16BF"), std::string::npos);
+}
+
 } // namespace sdfg::rocm

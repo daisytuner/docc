@@ -821,6 +821,13 @@ passes::LibNodeExpander::ExpandOutcome MatMulBlasExpander::handle_expand(
             }
             precision = blas::BLAS_Precision::h;
             break;
+        case types::PrimitiveType::BFloat:
+            if (!this->supports_bf16_) {
+                DEBUG_PRINTLN("MatMulBlasExpander: No support for BLAS call with bf16 precision");
+                return context.unable();
+            }
+            precision = blas::BLAS_Precision::b;
+            break;
         case types::PrimitiveType::Float:
             precision = blas::BLAS_Precision::s;
             break;
