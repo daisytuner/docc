@@ -834,6 +834,16 @@ MATMUL = NodeSpec(
         ("2d_f32", dict(a=(8, 16), b=(16, 12), dtype=f32)),
         ("batched_f32", dict(a=(3, 8, 16), b=(3, 16, 12), dtype=f32)),
         ("2d_f64", dict(a=(8, 16), b=(16, 12), dtype=f64)),
+        (
+            "2d_bf16",
+            dict(
+                a=(8, 16),
+                b=(16, 12),
+                dtype=ml_dtypes.bfloat16,
+                rtol=4e-2,
+                atol=4e-2,
+            ),
+        ),
     ),
     rtol=1e-4,
     atol=1e-4,

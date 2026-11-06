@@ -28,6 +28,8 @@ types::PrimitiveType BLASNode::scalar_primitive() const {
             return types::PrimitiveType::Double;
         case BLAS_Precision::h:
             return types::PrimitiveType::Half;
+        case BLAS_Precision::b:
+            return types::PrimitiveType::BFloat;
         default:
             return types::PrimitiveType::Void;
     }

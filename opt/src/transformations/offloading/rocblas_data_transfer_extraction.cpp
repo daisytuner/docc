@@ -241,6 +241,9 @@ void ROCBLASDataTransferExtraction::
         case math::blas::h:
             precision = types::PrimitiveType::Half;
             break;
+        case math::blas::b:
+            precision = types::PrimitiveType::BFloat;
+            break;
         case math::blas::s:
             precision = types::PrimitiveType::Float;
             break;
