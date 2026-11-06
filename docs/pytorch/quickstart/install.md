@@ -15,7 +15,7 @@ docc plugs into PyTorch as a `torch.compile` backend. You keep your model as it 
 | Operating system | Linux (x86-64, arm64), macOS ≥ 14 (Apple silicon, CPU only)                                                     |
 | PyTorch          | 2.8.0 – 2.13.0; 2.13.0 recommended; other might work, but are untested                                          |
 | C++ compiler     | Linux: `clang++-21` from the [official LLVM repository](https://apt.llvm.org/); macOS: Xcode Command Line Tools |
-| NVIDIA GPUs      | CUDA 12 and [CuPy](https://cupy.dev/) (`cupy-cuda12x`)                                                          |
+| NVIDIA GPUs      | CUDA 13.0 and [CuPy](https://cupy.dev/) (`cupy-cuda13x`)                                                        |
 | AMD GPUs         | ROCm 7 and [CuPy](https://cupy.dev/) (`cupy-rocm-7-0`)                                                          |
 
 The backend generates C++ code for your model and compiles it with Clang, which is why a C++ compiler is required at runtime.
