@@ -85,6 +85,8 @@ constexpr types::PrimitiveType BLAS_Precision_to_primitive_type(BLAS_Precision p
     switch (precision) {
         case BLAS_Precision::h:
             return types::PrimitiveType::Half;
+        case BLAS_Precision::b:
+            return types::PrimitiveType::BFloat;
         case BLAS_Precision::s:
             return types::PrimitiveType::Float;
         case BLAS_Precision::d:
@@ -98,6 +100,8 @@ constexpr BLAS_Precision primitive_type_to_BLAS_Precision(types::PrimitiveType p
     switch (primitive_type) {
         case types::PrimitiveType::Half:
             return BLAS_Precision::h;
+        case types::PrimitiveType::BFloat:
+            return BLAS_Precision::b;
         case types::PrimitiveType::Float:
             return BLAS_Precision::s;
         case types::PrimitiveType::Double:
