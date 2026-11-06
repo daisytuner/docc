@@ -9,7 +9,6 @@ import warnings
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, fields
-from functools import lru_cache
 from typing import Any, Dict, Optional, get_args, get_type_hints
 
 from docc.sdfg import (
@@ -25,11 +24,12 @@ from docc.sdfg._sdfg import (
     _statistics_report,
 )
 from docc.compiler.compiled_sdfg import CompiledSDFG
+from docc.compiler.artifacts import build_artifact
 
 
-@lru_cache(maxsize=1)
 def _pass_option_specs() -> Dict[str, dict]:
     """Registered pass options keyed by full key (empty if unavailable)."""
+    # Not cached: target plugins register their options when they are loaded.
     return {spec["key"]: spec for spec in registered_options()}
 
 
@@ -457,6 +457,7 @@ class DoccProgram(ABC):
             threads=self.options.build_thread_count,
             reuse_sources=reuse_sources,
         )
+        build_artifact(self.options.target, lib_path, sdfg.name)
 
         bin_build_time = time.perf_counter() - compile_end_time
         if metrics is not None:
