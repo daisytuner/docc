@@ -43,10 +43,14 @@ Repository = "https://github.com/daisytuner/docc"
 Issues = "https://github.com/daisytuner/docc/issues"
 
 [tool.scikit-build]
+# Required to load the local version provider scripts/docc_version.py (see metadata.version below);
+# scikit-build-core only allows its own built-in providers otherwise.
+experimental = true
 wheel.cmake = false
 wheel.packages = ["docc"]
 
+# Version: DOCC_VERSION in release builds, else VERSION_BASE + ".0.dev0+g<hash>" (see scripts/docc_version.py).
 [tool.scikit-build.metadata.version]
-provider = "scikit_build_core.metadata.regex"
-input = "../VERSION"
-regex = "(?P<value>\\d+\\.\\d+\\.\\d+)"
+provider = "docc_version"
+provider-path = "../scripts"
+input = "../VERSION_BASE"

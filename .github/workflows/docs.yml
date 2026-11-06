@@ -1,8 +1,10 @@
 name: Docs
 
 # Builds docs.daisytuner.com/docc with daisytuner/docs-platform (configured by docs.config.json).
-# PRs that touch the docs only build; main deploys to Cloud Run on changes, nightly (to pick up
-# platform changes) and on demand.
+# The site shows the docs of the latest release: the Release workflow calls this workflow after publishing
+# and passes the version it released, which no repo file records. PRs that touch the docs only build.
+# A manual run redeploys main in between releases (e.g. to pick up docs-platform changes) and needs the
+# currently released version typed in.
 
 on:
   pull_request:
@@ -12,45 +14,53 @@ on:
       - "python/README.md"
       - "tutorial/printf_target/target_tutorial.md"
       - ".github/workflows/docs.yml"
-  push:
-    branches:
-      - main
-    paths:
-      - "docs/**"
-      - "docs.config.json"
-      - "python/README.md"
-      - "tutorial/printf_target/target_tutorial.md"
-      - "VERSION"
-      - "sdfg/include/**"
-      - "opt/include/**"
-      - "llvm/include/**"
-      - "mlir/include/**"
-      - "c-compile/include/**"
-      - "rpc/include/**"
-      - "rtl/include/**"
-      - "arg-capture-io/include/**"
-      - "targets/et/include/**"
-      - ".github/workflows/docs.yml"
-  schedule:
-    - cron: "15 3 * * *"
+  # Both entry points take the same inputs. A called workflow sees the caller's event, so github.event_name
+  # is workflow_dispatch for a call from Release too; `deploy` is what tells a dry run from a real one.
+  # On pull_request runs the inputs are null: `inputs.deploy == true` is then false (`!= false` would not
+  # be, since null == false in expressions) and `inputs.version` is empty, so the docs show VERSION_BASE.
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Released version to show, e.g. 0.8.3 (the latest release, see PyPI or the last Release run)"
+        type: string
+        required: true
+      deploy:
+        description: "Deploy the site (untick to only build)"
+        type: boolean
+        default: true
+  workflow_call:
+    inputs:
+      version:
+        description: "Version being released, e.g. 0.8.3"
+        type: string
+        required: true
+      deploy:
+        description: "Deploy the site (false for release dry runs)"
+        type: boolean
+        default: true
 
 permissions:
   contents: read
 
+# Only superseded PR builds are cancelled. Deploys queue instead, so a manual run never cancels the docs
+# job of a release (which would mark the whole release run as cancelled).
 concurrency:
   group: docs-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
     uses: daisytuner/docs-platform/.github/workflows/build-project.yml@main
     with:
-      export-image: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+      # The single place that decides whether to deploy: only main, and only when asked to (not PRs, not
+      # release dry runs). The deploy job runs when this exported an image.
+      export-image: ${{ inputs.deploy == true && github.ref == 'refs/heads/main' }}
+      version: ${{ inputs.version }}
 
   deploy:
     needs: build
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    # build-project.yml names an artifact only when it exported the image.
+    if: needs.build.outputs.artifact != ''
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -59,6 +69,18 @@ jobs:
       SERVICE: docc-docs
       REGISTRY: europe-west1-docker.pkg.dev/daisy-367210/developer-docs
     steps:
+      # The release passes an already validated version; this catches typos in manual runs before
+      # anything is pushed. (The image was built with the bad value, but it is never published.)
+      - name: Check version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::version must be MAJOR.MINOR.PATCH (e.g. 0.8.3), got '$VERSION'"
+            exit 1
+          fi
+          echo "Deploying the docs of docc $VERSION" >> "$GITHUB_STEP_SUMMARY"
+
       - uses: actions/download-artifact@v4
         with:
           name: ${{ needs.build.outputs.artifact }}
@@ -69,7 +91,8 @@ jobs:
           docker load < docs-image.tar.gz
           echo "ref=${REGISTRY}/${SERVICE}:${GITHUB_RUN_ID}-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
-      # Keyless: the provider only accepts daisytuner/docc on refs/heads/main.
+      # Keyless: the provider accepts daisytuner/* repos on refs/heads/main (so hotfix releases from
+      # release/** can't deploy), and the service account's binding limits it to daisytuner/docc.
       - id: auth
         uses: google-github-actions/auth@v3
         with:
