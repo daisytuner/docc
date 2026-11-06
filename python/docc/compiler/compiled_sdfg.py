@@ -786,7 +786,7 @@ class CompiledSDFG:
 
         return device_arg
 
-    def _point_at_current_stream(self):
+    def _point_at_current_stream(self, torch_device):
         """Aim this artifact's kernel launches and scratch alloc/free at torch's
         current stream.
 
@@ -794,13 +794,20 @@ class CompiledSDFG:
         capture stream, so doing this right before the call makes the whole
         region record into the graph instead of running (and stalling the host)
         on the default stream. No-op for artifacts without the stream setter.
-        """
-        try:
-            import torch
 
-            stream = torch.cuda.current_stream().cuda_stream
-        except Exception:
-            return
+        Torch is only consulted when the caller passes torch device tensors.
+        Otherwise the default stream is used: initializing torch's CUDA/HIP
+        context here would load a second (bundled) HIP/HSA runtime next to the
+        one the artifact links against, which corrupts later HIP calls.
+        """
+        stream = 0
+        if torch_device is not None:
+            try:
+                import torch
+
+                stream = torch.cuda.current_stream(torch_device).cuda_stream
+            except Exception:
+                stream = 0
         self._set_stream(_ctypes_c_void_p(stream))
 
     def _get_persistent_torch_output(self, key_id, size, dims, primitive_type, device):
@@ -918,7 +925,7 @@ class CompiledSDFG:
 
         # 3. Call the function
         if self._set_stream is not None:
-            self._point_at_current_stream()
+            self._point_at_current_stream(torch_out_device)
         func_result = self.func(*converted_args)
 
         # 3b. Mirror device results back into host inputs that were copied to the

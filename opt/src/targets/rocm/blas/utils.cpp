@@ -24,7 +24,7 @@ void create_blas_handle(codegen::PrettyPrinter& stream, const codegen::LanguageE
                << "hipblasStatus_t status_set_stream = hipblasSetStream(handle, __daisy_stream);" << std::endl;
         rocmblas_error_checking(stream, language_extension, "status_set_stream");
     } else {
-        stream << "hibblasStatus_t status_create = hipblasCreate(&handle);" << std::endl;
+        stream << "hipblasStatus_t status_create = hipblasCreate(&handle);" << std::endl;
         rocmblas_error_checking(stream, language_extension, "status_create");
     }
     stream.changeIndent(-4);
