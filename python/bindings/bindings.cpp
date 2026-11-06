@@ -336,6 +336,13 @@ PYBIND11_MODULE(_sdfg, m) {
             "Get native pointer to StructuredSDFG for external plugin use"
         )
         .def_property_readonly(
+            "_options_ptr",
+            [](PyStructuredSDFG& self) {
+                return reinterpret_cast<uintptr_t>(&self.options());
+            },
+            "Get native pointer to the SDFG's sdfg::Options for external plugin use"
+        )
+        .def_property_readonly(
             "root",
             [](PyStructuredSDFG& self) -> sdfg::structured_control_flow::Sequence& {
                 return self.root();
@@ -1384,6 +1391,26 @@ PYBIND11_MODULE(_sdfg, m) {
             return reinterpret_cast<uintptr_t>(&docc_context);
         },
         "Get native pointer to the global plugin context"
+    );
+
+    m.def(
+        "target_artifact",
+        [](const std::string& target) -> py::object {
+            auto* handler = docc_context.get_target_handler(target);
+            auto* artifact = handler ? handler->safe_get_artifact() : nullptr;
+            if (!artifact) {
+                return py::none();
+            }
+            py::dict entry;
+            entry["file"] = artifact->file;
+            entry["kind"] = artifact->kind == docc::target::ArtifactKind::PythonModule ? "python_module"
+                                                                                       : "shared_library";
+            entry["loader"] = artifact->loader;
+            entry["build"] = artifact->build;
+            return entry;
+        },
+        py::arg("target"),
+        "The target's own artifact as a dict of file, kind, loader and build; None if docc builds a C++ library"
     );
 
     m.def(
