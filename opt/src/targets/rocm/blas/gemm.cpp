@@ -45,6 +45,9 @@ void GEMMNodeDispatcher_ROCMBLASWithTransfers::dispatch_code(
     auto& gemm_node = static_cast<const math::blas::GEMMNode&>(this->node_);
 
     library_snippet_factory.add_global("#include <hipblas/hipblas.h>");
+    if (gemm_node.precision() == sdfg::math::blas::BLAS_Precision::b) {
+        library_snippet_factory.add_global("#include <hip/hip_bfloat16.h>");
+    }
 
     types::Scalar base_type(math::blas::BLAS_Precision_to_primitive_type(gemm_node.precision()));
     const symbolic::Expression size_A =
@@ -111,6 +114,9 @@ void GEMMNodeDispatcher_ROCMBLASWithoutTransfers::dispatch_code(
     auto& gemm_node = static_cast<const math::blas::GEMMNode&>(this->node_);
 
     library_snippet_factory.add_global("#include <hip/hip_runtime.h>");
+    if (gemm_node.precision() == sdfg::math::blas::BLAS_Precision::b) {
+        library_snippet_factory.add_global("#include <hip/hip_bfloat16.h>");
+    }
     library_snippet_factory.add_global("#include <hipblas/hipblas.h>");
 
     add_guard_clause(stream, this->language_extension_, gemm_node);
@@ -160,6 +166,27 @@ void generate_kernel_gemm(
                                                                                           : "HIPBLAS_OP_T";
 
     std::string prefix = gemm_node.implementation_type() == rocm::ImplementationType_ROCMWithTransfers ? "d" : "__";
+
+    // hipBLAS has no dedicated bfloat16 GEMM entry point. Dispatch bf16 through hipblasGemmEx with
+    // HIP_R_16BF operands and HIPBLAS_COMPUTE_32F (fp32) accumulation. alpha/beta are passed as fp32
+    // host scalars, which is what the fp32 compute type expects.
+    if (gemm_node.precision() == sdfg::math::blas::BLAS_Precision::b) {
+        std::string a_arg = prefix + first_mat;
+        std::string b_arg = prefix + second_mat;
+        std::string c_arg = prefix + "C";
+        stream << "const float alpha_f = static_cast<float>(__alpha);" << std::endl;
+        stream << "const float beta_f = static_cast<float>(__beta);" << std::endl;
+        stream << "hipblasStatus_t err;" << std::endl;
+        stream << "err = hipblasGemmEx(handle, " << trans_first_str << ", " << trans_second_str << ", "
+               << language_extension.expression(first_dim) << ", " << language_extension.expression(second_dim) << ", "
+               << language_extension.expression(gemm_node.k()) << ", &alpha_f, " << a_arg << ", HIP_R_16BF, "
+               << language_extension.expression(ld_first) << ", " << b_arg << ", HIP_R_16BF, "
+               << language_extension.expression(ld_second) << ", &beta_f, " << c_arg << ", HIP_R_16BF, "
+               << language_extension.expression(ldc) << ", HIPBLAS_COMPUTE_32F, HIPBLAS_GEMM_DEFAULT);" << std::endl;
+        rocmblas_error_checking(stream, language_extension, "err");
+        check_rocm_kernel_launch_errors(stream, language_extension);
+        return;
+    }
 
     // hipblasHgemm expects hipblasHalf operands. The SDFG types the operands as _Float16, which is
     // bit-identical to hipblasHalf but a distinct C++ type, so bind correctly-typed locals once.

@@ -75,7 +75,6 @@ sudo apt-get install ./docc-llvm*.deb
 | `SDFG_SANITIZER`                | `address` | Sanitizers to use: `address`, `memory`, `undefined`, `leak`, `thread`           |
 | `SDFG_ENABLE_COVERAGE`          | `OFF`     | Build with coverage instrumentation                                             |
 | `SDFG_BUILD_DOCS`               | `OFF`     | Build the Doxygen documentation                                                 |
-| `RELEASE_PACKAGE`               | `OFF`     | Use the plain version number instead of appending the Git hash                  |
 | `PACKAGE_WITH_TOOL_DEPS`        | `OFF`     | Detect runtime dependencies and add them to the package metadata (used for releases) |
 
 ## Debug builds

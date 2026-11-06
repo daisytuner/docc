@@ -46,6 +46,7 @@ namespace blas {
  *
  * Indicates the floating-point precision of the operation:
  * - h: Half precision (16-bit)
+ * - b: Brain floating-point (bfloat16, 16-bit)
  * - s: Single precision (32-bit float)
  * - d: Double precision (64-bit double)
  * - c: Complex single precision
@@ -54,6 +55,7 @@ namespace blas {
 enum BLAS_Precision {
     invalid = 0,
     h = 'h',
+    b = 'b',
     s = 's',
     d = 'd',
     c = 'c',
@@ -64,6 +66,8 @@ constexpr std::string_view BLAS_Precision_to_string(BLAS_Precision precision) {
     switch (precision) {
         case BLAS_Precision::h:
             return "h";
+        case BLAS_Precision::b:
+            return "b";
         case BLAS_Precision::s:
             return "s";
         case BLAS_Precision::d:

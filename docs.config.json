@@ -6,7 +6,7 @@
     "visibility": "public",
     "url": "https://docs.daisytuner.com/docc",
     "docsDir": "docs",
-    "versionFile": "VERSION",
+    "versionFile": "VERSION_BASE",
     "startDoc": "intro",
     "license": "Code and documentation are published under the BSD 3-Clause license.",
     "include": [

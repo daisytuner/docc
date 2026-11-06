@@ -1,12 +1,15 @@
 cmake_minimum_required(VERSION 3.26)
 
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../VERSION" PROJECT_VERSION)
-string(STRIP "${PROJECT_VERSION}" PROJECT_VERSION)
-set(DOCC_LLVM_VERSION "${PROJECT_VERSION}")
+# The version is computed by docc's top-level CMakeLists.txt (from VERSION_BASE, or DOCC_VERSION in
+# release builds); llvm/ is only built as its subdirectory (LLVM_BUILD_FRONTEND=ON). The full version
+# names the install prefix, `docc --version` and the package, so dev builds carry their commit hash there.
+if(NOT DEFINED DOCC_VERSION_FULL)
+    message(FATAL_ERROR "llvm/ must be configured through docc's top-level CMakeLists.txt with -DLLVM_BUILD_FRONTEND=ON")
+endif()
+set(DOCC_LLVM_VERSION "${DOCC_VERSION_FULL}")
 
-project(docc-llvm VERSION ${PROJECT_VERSION} DESCRIPTION "Daisytuner Optimizing Compiler Collection")
-
-option(RELEASE_PACKAGE "Use the plain version, instead of a version suffixed with git hash" OFF)
+# project(VERSION) only accepts numbers, hence the numeric DOCC_VERSION here.
+project(docc-llvm VERSION ${DOCC_VERSION} DESCRIPTION "Daisytuner Optimizing Compiler Collection")
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/PackageDependencies.cmake")
 
@@ -193,7 +196,6 @@ set(CPACK_GENERATOR "DEB") # default. Recommended to use -G DEB or -G RPM anyway
 set(CPACK_PACKAGE_VENDOR "Daisytuner")
 set(CPACK_PACKAGE_CONTACT "support@daisytuner.com")
 set(CPACK_PACKAGE_VERSION ${DOCC_LLVM_VERSION})
-set(CPACK_RELEASE_PACKAGE ${RELEASE_PACKAGE})
 
 set(CPACK_PACKAGE_NAME "docc-llvm")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Daisytuner Optimizing Compiler Collection")

@@ -13,9 +13,9 @@ docc plugs into PyTorch as a `torch.compile` backend. You keep your model as it 
 | ---------------- | --------------------------------------------------------------------------------------------------------------- |
 | Python           | 3.11 – 3.14                                                                                                     |
 | Operating system | Linux (x86-64, arm64), macOS ≥ 14 (Apple silicon, CPU only)                                                     |
-| PyTorch          | 2.13 (the tested version)                                                                                       |
+| PyTorch          | 2.8.0 – 2.13.0; 2.13.0 recommended; other might work, but are untested                                          |
 | C++ compiler     | Linux: `clang++-21` from the [official LLVM repository](https://apt.llvm.org/); macOS: Xcode Command Line Tools |
-| NVIDIA GPUs      | CUDA 12 and [CuPy](https://cupy.dev/) (`cupy-cuda12x`)                                                          |
+| NVIDIA GPUs      | CUDA 13.0 and [CuPy](https://cupy.dev/) (`cupy-cuda13x`)                                                        |
 | AMD GPUs         | ROCm 7 and [CuPy](https://cupy.dev/) (`cupy-rocm-7-0`)                                                          |
 
 The backend generates C++ code for your model and compiles it with Clang, which is why a C++ compiler is required at runtime.
@@ -37,12 +37,16 @@ The backend generates C++ code for your model and compiles it with Clang, which 
    source .venv/bin/activate
 
    # CPU only
-   pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+   pip install torch==2.13.0+cpu torchvision==0.28.0+cpu --index-url https://download.pytorch.org/whl/cpu
    # NVIDIA GPUs (use cu129 for Blackwell GPUs such as RTX 50xx and B200)
-   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126 && pip install cupy-cuda12x
+   pip install torch==2.13.0+cu130 torchvision==0.28.0+cu130 --index-url https://download.pytorch.org/whl/cu130 && pip install cupy-cuda13x
    # AMD GPUs
-   pip install torch torchvision --index-url https://download.pytorch.org/whl/rocm7.2 && pip install cupy-rocm-7-0
+   pip install torch==2.13.0+rocm7.2 torchvision==0.28.0+rocm7.2 --index-url https://download.pytorch.org/whl/rocm7.2 && pip install cupy-rocm-7-0
    ```
+
+   :::note
+   The provided versions are a recommendation. Other versions might work but are not regularly tested.
+   :::
 
 3. Install the docc compiler and the PyTorch backend:
 
