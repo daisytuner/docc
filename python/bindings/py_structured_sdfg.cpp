@@ -625,6 +625,23 @@ std::string PyStructuredSDFG::compile(
     if (!fs::exists(build_path)) {
         fs::create_directories(build_path);
     }
+
+    // A target with its own code generator writes its artifact in place of the C++ library.
+    if (auto* handler = docc_context_.get_target_handler(target)) {
+        if (auto* artifact = handler->safe_get_artifact()) {
+            docc::target::CodegenRequest request{
+                .output_folder = output_folder,
+                .instrumentation_mode = instrumentation_mode,
+                .capture_args = capture_args,
+                .debug_build = debug_build,
+                .threads = threads,
+                .reuse_sources = reuse_sources,
+                .options = &options_,
+            };
+            return artifact->compile(*sdfg_, request);
+        }
+    }
+
     fs::path header_path = build_path / (sdfg_->name() + ".h");
     fs::path source_path = build_path / (sdfg_->name() + ".cpp");
 
