@@ -1,4 +1,6 @@
 #include "sdfg/targets/cuda/blas/gemm.h"
+
+#include "sdfg/data_flow/library_nodes/math/blas/blas_node.h"
 #include "sdfg/data_flow/library_nodes/math/blas/gemm_node.h"
 #include "sdfg/targets/cuda/blas/utils.h"
 #include "sdfg/targets/cuda/cuda.h"
@@ -42,21 +44,13 @@ void GEMMNodeDispatcher_CUBLASWithTransfers::dispatch_code(
     library_snippet_factory.add_global("#include <cublas_v2.h>");
     library_snippet_factory.add_global("#include <cuda_fp16.h>");
 
-    std::string type, type2;
-
-    switch (gemm_node.precision()) {
-        case sdfg::math::blas::BLAS_Precision::s:
-            type = "float";
-            break;
-        case sdfg::math::blas::BLAS_Precision::d:
-            type = "double";
-            break;
-        case sdfg::math::blas::BLAS_Precision::h:
-            type = "half";
-            break;
-        default:
-            throw std::runtime_error("Invalid precision for CUBLAS GEMM node");
+    if (gemm_node.precision() != math::blas::BLAS_Precision::h &&
+        gemm_node.precision() != math::blas::BLAS_Precision::s &&
+        gemm_node.precision() != math::blas::BLAS_Precision::d) {
+        throw std::runtime_error("Invalid precision for CUBLAS GEMM node");
     }
+    const types::PrimitiveType prim_type = math::blas::BLAS_Precision_to_primitive_type(gemm_node.precision());
+    const std::string type = this->language_extension_.primitive_type(prim_type);
 
     std::string size_A = "(" + this->language_extension_.expression(symbolic::mul(gemm_node.m(), gemm_node.k())) +
                          ") * sizeof(" + type + ")";

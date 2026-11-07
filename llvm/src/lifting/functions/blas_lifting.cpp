@@ -1,5 +1,7 @@
 #include "docc/lifting/functions/blas_lifting.h"
 
+#include "sdfg/data_flow/library_nodes/math/blas/blas_node.h"
+
 namespace docc {
 namespace lifting {
 
@@ -84,10 +86,7 @@ sdfg::control_flow::State& BLASLifting::visit_dot(
         current_state, dbg_info, sdfg::math::blas::ImplementationType_BLAS, precision, n, incx, incy
     );
 
-    sdfg::types::Scalar base_type(
-        precision == sdfg::math::blas::BLAS_Precision::d ? sdfg::types::PrimitiveType::Double
-                                                         : sdfg::types::PrimitiveType::Float
-    );
+    sdfg::types::Scalar base_type(sdfg::math::blas::BLAS_Precision_to_primitive_type(precision));
     sdfg::types::Pointer ptr_type(base_type);
     this->builder_.add_computational_memlet(current_state, x_node_in, dot_node, "__x", {}, ptr_type, dbg_info);
     this->builder_.add_computational_memlet(current_state, y_node_in, dot_node, "__y", {}, ptr_type, dbg_info);

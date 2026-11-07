@@ -551,7 +551,7 @@ TEST(RocBlasTest, GemmNodeWithDataTransfers_BFloat16UsesBFloat16Buffers) {
 
     const std::string code = stream.str();
     // Device buffers mirror the hip_bfloat16 host type so hipMemcpy stays type-consistent.
-    EXPECT_NE(code.find("hip_bfloat16 *dA, *dB, *dC;"), std::string::npos);
+    EXPECT_NE(code.find("__bf16 *dA, *dB, *dC;"), std::string::npos);
     // The hipblas call goes through hipblasGemmEx with bfloat16 device pointers.
     EXPECT_NE(code.find("hipblasGemmEx"), std::string::npos);
     EXPECT_NE(code.find("HIP_R_16BF"), std::string::npos);

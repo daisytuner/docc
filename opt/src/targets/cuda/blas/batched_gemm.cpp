@@ -1,8 +1,10 @@
 #include "sdfg/targets/cuda/blas/batched_gemm.h"
+
 #include "sdfg/data_flow/library_nodes/math/blas/batched_gemm_node.h"
+#include "sdfg/data_flow/library_nodes/math/blas/blas_node.h"
 #include "sdfg/targets/cuda/blas/utils.h"
 #include "sdfg/targets/cuda/cuda.h"
-#include "sdfg/types/scalar.h"
+#include "sdfg/types/type.h"
 
 namespace sdfg::cuda::blas {
 
@@ -25,17 +27,11 @@ void BatchedGEMMNodeDispatcher_CUBLASWithTransfers::dispatch_code_with_edges(
     out.library_snippet_factory.add_global("#include <cuda.h>");
     out.library_snippet_factory.add_global("#include <cublas_v2.h>");
 
-    std::string type;
-    switch (node.precision()) {
-        case sdfg::math::blas::BLAS_Precision::s:
-            type = "float";
-            break;
-        case sdfg::math::blas::BLAS_Precision::d:
-            type = "double";
-            break;
-        default:
-            throw std::runtime_error("Invalid precision for CUBLAS batched GEMM node");
+    if (node.precision() != math::blas::BLAS_Precision::s && node.precision() != math::blas::BLAS_Precision::d) {
+        throw std::runtime_error("Invalid precision for CUBLAS batched GEMM node");
     }
+    const types::PrimitiveType prim_type = math::blas::BLAS_Precision_to_primitive_type(node.precision());
+    const std::string type = this->language_extension_.primitive_type(prim_type);
 
     auto batch_count_expr = this->language_extension_.expression(node.batch_count());
 
@@ -56,9 +52,6 @@ void BatchedGEMMNodeDispatcher_CUBLASWithTransfers::dispatch_code_with_edges(
     auto& c_expr = inputs.at(math::blas::BatchedGEMMNode::C_INPUT_IDX).expr;
     auto& alpha_expr = inputs.at(math::blas::BatchedGEMMNode::ALPHA_INPUT_IDX).expr;
     auto& beta_expr = inputs.at(math::blas::BatchedGEMMNode::BETA_INPUT_IDX).expr;
-    types::PrimitiveType prim_type = (node.precision() == sdfg::math::blas::BLAS_Precision::s)
-                                         ? types::PrimitiveType::Float
-                                         : types::PrimitiveType::Double;
 
     // Guard clause
     out.stream << "if (" << this->language_extension_.expression(node.m()) << " != 0 && "
@@ -147,9 +140,7 @@ void BatchedGEMMNodeDispatcher_CUBLASWithoutTransfers::dispatch_code_with_edges(
     auto& c_expr = inputs.at(math::blas::BatchedGEMMNode::C_INPUT_IDX).expr;
     auto& alpha_expr = inputs.at(math::blas::BatchedGEMMNode::ALPHA_INPUT_IDX).expr;
     auto& beta_expr = inputs.at(math::blas::BatchedGEMMNode::BETA_INPUT_IDX).expr;
-    types::PrimitiveType prim_type = (node.precision() == sdfg::math::blas::BLAS_Precision::s)
-                                         ? types::PrimitiveType::Float
-                                         : types::PrimitiveType::Double;
+    const types::PrimitiveType prim_type = math::blas::BLAS_Precision_to_primitive_type(node.precision());
 
     // Guard clause
     out.stream << "if (" << this->language_extension_.expression(node.m()) << " != 0 && "

@@ -58,16 +58,9 @@ bool RocmBatchedMatMulExpander::
     if (!prim_type) {
         return false;
     }
-    math::blas::BLAS_Precision precision;
-    switch (prim_type.value()) {
-        case types::PrimitiveType::Float:
-            precision = math::blas::BLAS_Precision::s;
-            break;
-        case types::PrimitiveType::Double:
-            precision = math::blas::BLAS_Precision::d;
-            break;
-        default:
-            return false;
+    math::blas::BLAS_Precision precision = math::blas::primitive_type_to_BLAS_Precision(prim_type.value());
+    if (precision != math::blas::BLAS_Precision::s && precision != math::blas::BLAS_Precision::d) {
+        return false;
     }
 
     // Determine transpose flags

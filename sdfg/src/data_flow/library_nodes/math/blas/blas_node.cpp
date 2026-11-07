@@ -21,18 +21,7 @@ BLASNode::BLASNode(
 }
 
 types::PrimitiveType BLASNode::scalar_primitive() const {
-    switch (this->precision_) {
-        case BLAS_Precision::s:
-            return types::PrimitiveType::Float;
-        case BLAS_Precision::d:
-            return types::PrimitiveType::Double;
-        case BLAS_Precision::h:
-            return types::PrimitiveType::Half;
-        case BLAS_Precision::b:
-            return types::PrimitiveType::BFloat;
-        default:
-            return types::PrimitiveType::Void;
-    }
+    return BLAS_Precision_to_primitive_type(this->precision_);
 }
 
 BLAS_Precision BLASNode::precision() const {

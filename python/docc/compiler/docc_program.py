@@ -106,6 +106,13 @@ class DoccOptions:
     # the target's default (DoccTarget::default_contraction_precision).
     contraction_precision: Optional[str] = None
 
+    # ROCm only: allocate and free device scratch buffers with the stream-ordered
+    # hipMallocAsync/hipFreeAsync on the caller's stream instead of the synchronous
+    # hipMalloc/hipFree. Lets the allocations be captured into a HIP graph, but needs
+    # a working stream-ordered allocator (broken on some GPUs, e.g. gfx90a).
+    # Defaults to False (synchronous).
+    rocm_async_alloc: Optional[bool] = None
+
     # Frontend: parse array shapes as symbolic sizes (``_s{i}`` arguments) when
     # True, or bake in the concrete integer sizes from the example inputs when
     # False.
@@ -169,6 +176,8 @@ class DoccOptions:
             self.contraction_precision = target_default_contraction_precision(
                 self.target
             )
+        if self.rocm_async_alloc is None:
+            self.rocm_async_alloc = False
         if not _CONTRACTION_PRECISION.fullmatch(self.contraction_precision):
             raise ValueError(
                 f"Invalid contraction_precision {self.contraction_precision!r}: expected native, "
@@ -416,6 +425,11 @@ class DoccProgram(ABC):
                 self._device_resident = sdfg.promote_device_residency(
                     self.options.target == "rocm"
                 )
+
+            # Read by the ROCm offloading dispatcher during code generation.
+            sdfg.add_metadata(
+                "rocm_async_alloc", "1" if self.options.rocm_async_alloc else "0"
+            )
 
             sdfg.add_metadata("device_resident", "1" if self._device_resident else "0")
             if self._device_resident:

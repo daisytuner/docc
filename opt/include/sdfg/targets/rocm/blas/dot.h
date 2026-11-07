@@ -42,4 +42,8 @@ public:
     codegen::InstrumentationInfo instrumentation_info() const override;
 };
 
+void generate_kernel_dot(
+    codegen::PrettyPrinter& stream, codegen::LanguageExtension& language_extension, const math::blas::DotNode& dot_node
+);
+
 } // namespace sdfg::rocm::blas

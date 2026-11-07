@@ -75,6 +75,7 @@ All arrays of a call must be either NumPy or CuPy arrays. If a function cannot r
 | `einsum`                | —                   | Detect loops that implement tensor contractions and optimize them as such                                         |
 | `normalize`             | CPU targets: `True` | Normalize loops before scheduling                                                                                 |
 | `device_residency`      | GPU targets: `True` | Allow device-resident arguments, see above                                                                         |
+| `rocm_async_alloc`      | `False`             | ROCm: allocate device scratch with stream-ordered `hipMallocAsync`/`hipFreeAsync` (graph-capturable) instead of `hipMalloc`/`hipFree`. Needs a working async allocator; broken on some GPUs (for example gfx90a) |
 | `instrumentation_mode`  | `""`                | `"ols"` or `"ols_tuned"` to measure each optimized loop nest, see [C/C++ instrumentation](../c-cpp/usage.md#measure-performance) |
 | `capture_args`          | `False`             | Save the inputs and outputs of each optimized region                                                              |
 | `pass_options`          | `{}`                | Options of individual compiler passes, see below                                                                  |

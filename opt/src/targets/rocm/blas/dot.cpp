@@ -1,9 +1,16 @@
 #include "sdfg/targets/rocm/blas/dot.h"
-#include <sdfg/data_flow/library_nodes/math/blas/dot_node.h>
+
+#include <algorithm>
+#include <cctype>
+
 #include "sdfg/codegen/dispatchers/block_dispatcher.h"
+#include "sdfg/codegen/utils.h"
 #include "sdfg/data_flow/library_nodes/math/blas/blas_node.h"
+#include "sdfg/data_flow/library_nodes/math/blas/dot_node.h"
+#include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/rocm/blas/utils.h"
 #include "sdfg/targets/rocm/rocm.h"
+#include "sdfg/targets/rocm/rocm_data_offloading_node.h"
 
 namespace sdfg::rocm::blas {
 
@@ -26,56 +33,41 @@ void DotNodeDispatcher_ROCMBLASWithTransfers::dispatch_code(
     library_snippet_factory.add_global("#include <hip/hip_runtime.h>");
     library_snippet_factory.add_global("#include <hipblas/hipblas.h>");
 
-    std::string type, type2;
-    switch (dot_node.precision()) {
-        case sdfg::math::blas::BLAS_Precision::s:
-            type = "float";
-            type2 = "S";
-            break;
-        case sdfg::math::blas::BLAS_Precision::d:
-            type = "double";
-            type2 = "D";
-            break;
-        default:
-            throw std::runtime_error("Invalid precision for ROCMBLAS DOT node");
-    }
+    std::string precision_str(math::blas::BLAS_Precision_to_string(dot_node.precision()));
+    std::transform(precision_str.begin(), precision_str.end(), precision_str.begin(), ::toupper);
 
-    const std::string x_size =
-        this->language_extension_.expression(
-            symbolic::add(symbolic::mul(symbolic::sub(dot_node.n(), symbolic::one()), dot_node.incx()), symbolic::one())
-        ) +
-        " * sizeof(" + type + ")";
-    const std::string y_size =
-        this->language_extension_.expression(
-            symbolic::add(symbolic::mul(symbolic::sub(dot_node.n(), symbolic::one()), dot_node.incy()), symbolic::one())
-        ) +
-        " * sizeof(" + type + ")";
+    types::Scalar base_type(math::blas::BLAS_Precision_to_primitive_type(dot_node.precision()));
+    const symbolic::Expression x_size = symbolic::mul(
+        symbolic::add(symbolic::mul(symbolic::sub(dot_node.n(), symbolic::one()), dot_node.incx()), symbolic::one()),
+        symbolic::size_of_type(base_type)
+    );
+    const symbolic::Expression y_size = symbolic::mul(
+        symbolic::add(symbolic::mul(symbolic::sub(dot_node.n(), symbolic::one()), dot_node.incy()), symbolic::one()),
+        symbolic::size_of_type(base_type)
+    );
+
+    const std::string* async_alloc_md = this->function_.metadata_if_exists("rocm_async_alloc");
+    const bool async_alloc = async_alloc_md != nullptr && *async_alloc_md == "1";
 
     stream << "hipError_t err_hip;" << std::endl;
-    stream << type << " *dx, *dy;" << std::endl;
-    stream << "err_hip = hipMalloc((void**) &dx, " << x_size << ");" << std::endl;
-    rocm_error_checking(stream, this->language_extension_, "err_hip");
-    stream << "err_hip = hipMalloc((void**) &dy, " << y_size << ");" << std::endl;
-    rocm_error_checking(stream, this->language_extension_, "err_hip");
+    stream << this->language_extension_.primitive_type(base_type.primitive_type()) << " *dx, *dy;" << std::endl;
 
-    stream << "err_hip = hipMemcpy(dx, __x, " << x_size << ", hipMemcpyHostToDevice);" << std::endl;
-    rocm_error_checking(stream, this->language_extension_, "err_hip");
-    stream << "err_hip = hipMemcpy(dy, __y, " << y_size << ", hipMemcpyHostToDevice);" << std::endl;
-    rocm_error_checking(stream, this->language_extension_, "err_hip");
+    dispatch_hip_malloc(stream, this->language_extension_, "dx", x_size, "err_hip", async_alloc);
+    dispatch_hip_malloc(stream, this->language_extension_, "dy", y_size, "err_hip", async_alloc);
 
-    setup_blas_handle(library_snippet_factory, this->language_extension_);
-    stream << "hipblasStatus_t err;" << std::endl;
+    dispatch_hip_memcpy(
+        stream, this->language_extension_, "dx", "__x", x_size, "hipMemcpyHostToDevice", "err_hip", async_alloc
+    );
+    dispatch_hip_memcpy(
+        stream, this->language_extension_, "dy", "__y", y_size, "hipMemcpyHostToDevice", "err_hip", async_alloc
+    );
 
-    stream << "err = hipblas" << type2 << "dot(handle, " << this->language_extension_.expression(dot_node.n())
-           << ", dx, " << this->language_extension_.expression(dot_node.incx()) << ", dy, "
-           << this->language_extension_.expression(dot_node.incy()) << ", &__out);" << std::endl;
-    rocmblas_error_checking(stream, this->language_extension_, "err");
-    check_rocm_kernel_launch_errors(stream, this->language_extension_);
+    setup_blas_handle(library_snippet_factory, this->language_extension_, async_alloc);
 
-    stream << "err_hip = hipFree(dx);" << std::endl;
-    rocm_error_checking(stream, this->language_extension_, "err_hip");
-    stream << "err_hip = hipFree(dy);" << std::endl;
-    rocm_error_checking(stream, this->language_extension_, "err_hip");
+    generate_kernel_dot(stream, this->language_extension_, dot_node);
+
+    dispatch_hip_free(stream, this->language_extension_, "dx", "err_hip", async_alloc);
+    dispatch_hip_free(stream, this->language_extension_, "dy", "err_hip", async_alloc);
 }
 
 codegen::InstrumentationInfo DotNodeDispatcher_ROCMBLASWithTransfers::instrumentation_info() const {
@@ -107,28 +99,12 @@ void DotNodeDispatcher_ROCMBLASWithoutTransfers::dispatch_code(
     library_snippet_factory.add_global("#include <hip/hip_runtime.h>");
     library_snippet_factory.add_global("#include <hipblas/hipblas.h>");
 
-    setup_blas_handle(library_snippet_factory, this->language_extension_);
+    const std::string* async_alloc_md = this->function_.metadata_if_exists("rocm_async_alloc");
+    const bool async_alloc = async_alloc_md != nullptr && *async_alloc_md == "1";
 
-    stream << "hipError_t err_hip;" << std::endl;
-    stream << "hipblasStatus_t err;" << std::endl;
+    setup_blas_handle(library_snippet_factory, this->language_extension_, async_alloc);
 
-    stream << "err = hipblas";
-    switch (dot_node.precision()) {
-        case sdfg::math::blas::BLAS_Precision::s:
-            stream << "S";
-            break;
-        case sdfg::math::blas::BLAS_Precision::d:
-            stream << "D";
-            break;
-        default:
-            throw std::runtime_error("Invalid precision for ROCMBLAS DOT node");
-    }
-    stream << "dot(handle, " << this->language_extension_.expression(dot_node.n()) << ", __x, "
-           << this->language_extension_.expression(dot_node.incx()) << ", __y, "
-           << this->language_extension_.expression(dot_node.incy()) << ", &__out);" << std::endl;
-
-    rocmblas_error_checking(stream, this->language_extension_, "err");
-    check_rocm_kernel_launch_errors(stream, this->language_extension_);
+    generate_kernel_dot(stream, this->language_extension_, dot_node);
 }
 
 codegen::InstrumentationInfo DotNodeDispatcher_ROCMBLASWithoutTransfers::instrumentation_info() const {
@@ -140,6 +116,25 @@ codegen::InstrumentationInfo DotNodeDispatcher_ROCMBLASWithoutTransfers::instrum
         analysis::LoopInfo{},
         {}
     };
+}
+
+void generate_kernel_dot(
+    codegen::PrettyPrinter& stream, codegen::LanguageExtension& language_extension, const math::blas::DotNode& dot_node
+) {
+    std::string precision_str(math::blas::BLAS_Precision_to_string(dot_node.precision()));
+    std::transform(precision_str.begin(), precision_str.end(), precision_str.begin(), ::toupper);
+
+    const std::string prefix = dot_node.implementation_type() == rocm::ImplementationType_ROCMWithTransfers ? "d"
+                                                                                                            : "__";
+    const std::string x_arg = prefix + "x";
+    const std::string y_arg = prefix + "y";
+
+    stream << "hipblasStatus_t err;" << std::endl
+           << "err = hipblas" << precision_str << "dot(handle, " << language_extension.expression(dot_node.n()) << ", "
+           << x_arg << ", " << language_extension.expression(dot_node.incx()) << ", " << y_arg << ", "
+           << language_extension.expression(dot_node.incy()) << ", &__out);" << std::endl;
+    rocmblas_error_checking(stream, language_extension, "err");
+    check_rocm_kernel_launch_errors(stream, language_extension);
 }
 
 } // namespace sdfg::rocm::blas

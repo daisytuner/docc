@@ -2,10 +2,10 @@
 
 #include <cstddef>
 #include <memory>
+
 #include <nlohmann/json_fwd.hpp>
 
 #include "sdfg/analysis/loop_analysis.h"
-#include "sdfg/codegen/code_snippet_factory.h"
 #include "sdfg/codegen/dispatchers/block_dispatcher.h"
 #include "sdfg/codegen/instrumentation/instrumentation_info.h"
 #include "sdfg/codegen/language_extension.h"
@@ -18,7 +18,6 @@
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/offloading/data_offloading_node.h"
 #include "sdfg/targets/rocm/rocm.h"
-#include "symengine/symengine_rcp.h"
 
 namespace sdfg {
 namespace rocm {
@@ -144,34 +143,73 @@ void ROCMDataOffloadingNodeDispatcher::dispatch_code_with_edges(
 
     out.stream << "hipError_t err;" << std::endl;
 
+    // Selected by the "rocm_async_alloc" SDFG metadata (DoccOptions.rocm_async_alloc).
+    // Default (absent / "0"): synchronous hipMalloc/hipFree. "1": stream-ordered
+    // hipMallocAsync/hipFreeAsync on __daisy_stream.
+    const std::string* async_alloc_md = this->function_.metadata_if_exists("rocm_async_alloc");
+    const bool async_alloc = async_alloc_md != nullptr && *async_alloc_md == "1";
+
     std::string dev_ptr;
 
     if (offloading_node.is_alloc()) {
         auto& ptr = outputs.at(0);
         pre_allocate_output(out, ptr, offloading_node.output(0));
-        out.stream << "err = hipMalloc(&" << *ptr.local_name << ", "
-                   << this->language_extension_.expression(offloading_node.size()) << ");" << std::endl;
-        rocm_error_checking(out.stream, this->language_extension_, "err");
+        if (async_alloc) {
+            const std::string scratch = "__daisy_scratch_" + std::to_string(offloading_node.element_id());
+            const std::string scratch_size = scratch + "_size";
+            const std::string size_str = this->language_extension_.expression(offloading_node.size());
+            out.stream << "static void *" << scratch << " = nullptr;" << std::endl
+                       << "static int64_t " << scratch_size << " = 0;" << std::endl
+                       << "if (" << scratch_size << " < " << size_str << ") {" << std::endl;
+            out.stream.changeIndent(+4);
+            out.stream << "if (" << scratch << " != nullptr) {" << std::endl;
+            out.stream.changeIndent(+4);
+            dispatch_hip_free(out.stream, this->language_extension_, scratch, "err", true);
+            out.stream.changeIndent(-4);
+            out.stream << "}" << std::endl;
+            dispatch_hip_malloc(out.stream, this->language_extension_, scratch, offloading_node.size(), "err", true);
+            out.stream << scratch_size << " = " << size_str << ";" << std::endl;
+            out.stream.changeIndent(-4);
+            out.stream << "}" << std::endl
+                       << *ptr.local_name << " = (decltype(" << *ptr.local_name << "))" << scratch << ";" << std::endl;
+        } else {
+            dispatch_hip_malloc(out.stream, this->language_extension_, *ptr.local_name, offloading_node.size(), "err");
+        }
         dev_ptr = *ptr.local_name;
     } else {
         dev_ptr = inputs.at(offloading_node.dev_ptr_input_idx()).expr;
     }
 
     if (offloading_node.is_h2d()) {
-        out.stream << "err = hipMemcpy(" << dev_ptr << ", " << inputs.at(offloading_node.host_ptr_input_idx()).expr
-                   << ", " << this->language_extension_.expression(offloading_node.size())
-                   << ", hipMemcpyHostToDevice);" << std::endl;
-        rocm_error_checking(out.stream, this->language_extension_, "err");
+        dispatch_hip_memcpy(
+            out.stream,
+            this->language_extension_,
+            dev_ptr,
+            inputs.at(offloading_node.host_ptr_input_idx()).expr,
+            offloading_node.size(),
+            "hipMemcpyHostToDevice",
+            "err",
+            async_alloc
+        );
     } else if (offloading_node.is_d2h()) {
-        out.stream << "err = hipMemcpy(" << inputs.at(offloading_node.host_ptr_input_idx()).expr << ", " << dev_ptr
-                   << ", " << this->language_extension_.expression(offloading_node.size())
-                   << ", hipMemcpyDeviceToHost);" << std::endl;
-        rocm_error_checking(out.stream, this->language_extension_, "err");
+        dispatch_hip_memcpy(
+            out.stream,
+            this->language_extension_,
+            inputs.at(offloading_node.host_ptr_input_idx()).expr,
+            dev_ptr,
+            offloading_node.size(),
+            "hipMemcpyDeviceToHost",
+            "err",
+            async_alloc
+        );
     }
 
     if (offloading_node.is_free()) {
-        out.stream << "err = hipFree(" << dev_ptr << ");" << std::endl;
-        rocm_error_checking(out.stream, this->language_extension_, "err");
+        if (async_alloc) {
+            out.stream << "// No free in graph capture mode" << std::endl;
+        } else {
+            dispatch_hip_free(out.stream, this->language_extension_, dev_ptr, "err");
+        }
     }
 }
 
@@ -230,6 +268,68 @@ data_flow::LibraryNode& ROCMDataOffloadingNodeSerializer::deserialize(
 
     return offloading::DataOffloadingNodeSerializer::deserialize_generic_offload<
         ROCMDataOffloadingNode>(j, builder, parent, device_id);
+}
+
+void dispatch_hip_malloc(
+    codegen::PrettyPrinter& stream,
+    codegen::LanguageExtension& language_extension,
+    const std::string& var_name,
+    const symbolic::Expression& size,
+    const std::string& err_var_name,
+    bool async
+) {
+    stream << err_var_name << " = hipMalloc";
+    if (async) {
+        stream << "Async";
+    }
+    stream << "(&" << var_name << ", " << language_extension.expression(size);
+    if (async) {
+        stream << ", __daisy_stream";
+    }
+    stream << ");" << std::endl;
+    rocm_error_checking(stream, language_extension, err_var_name);
+}
+
+void dispatch_hip_free(
+    codegen::PrettyPrinter& stream,
+    codegen::LanguageExtension& language_extension,
+    const std::string& var_name,
+    const std::string& err_var_name,
+    bool async
+) {
+    stream << err_var_name << " = hipFree";
+    if (async) {
+        stream << "Async";
+    }
+    stream << "(" << var_name;
+    if (async) {
+        stream << ", __daisy_stream";
+    }
+    stream << ");" << std::endl;
+    rocm_error_checking(stream, language_extension, err_var_name);
+}
+
+void dispatch_hip_memcpy(
+    codegen::PrettyPrinter& stream,
+    codegen::LanguageExtension& language_extension,
+    const std::string& src_var_name,
+    const std::string& dst_var_name,
+    const symbolic::Expression& size,
+    const std::string& direction,
+    const std::string& err_var_name,
+    bool async
+) {
+    stream << err_var_name << " = hipMemcpy";
+    if (async) {
+        stream << "Async";
+    }
+    stream << "(" << src_var_name << ", " << dst_var_name << ", " << language_extension.expression(size) << ", "
+           << direction;
+    if (async) {
+        stream << ", __daisy_stream";
+    }
+    stream << ");" << std::endl;
+    rocm_error_checking(stream, language_extension, err_var_name);
 }
 
 } // namespace rocm

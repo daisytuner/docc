@@ -110,6 +110,16 @@ bool DeadCFGElimination::run_pass(builder::StructuredSDFGBuilder& builder, analy
                     }
                 }
 
+                // Dead loop
+                if (auto loop = dyn_cast<structured_control_flow::StructuredLoop*>(&child)) {
+                    const symbolic::Expression num_iterations = loop->num_iterations();
+                    if (!num_iterations.is_null() && symbolic::eq(num_iterations, symbolic::zero())) {
+                        builder.remove_child(*sequence_stmt, i);
+                        applied = true;
+                        continue;
+                    }
+                }
+
                 i++;
             }
 
@@ -163,9 +173,6 @@ bool DeadCFGElimination::run_pass(builder::StructuredSDFGBuilder& builder, analy
             queue.push_back(&root);
         } else if (auto sloop_stmt = dyn_cast<structured_control_flow::StructuredLoop*>(curr)) {
             auto& root = sloop_stmt->root();
-            queue.push_back(&root);
-        } else if (auto map_stmt = dyn_cast<structured_control_flow::Map*>(curr)) {
-            auto& root = map_stmt->root();
             queue.push_back(&root);
         }
     }
