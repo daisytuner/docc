@@ -1,8 +1,8 @@
 #include "sdfg/transformations/rpc_node_transform.h"
 
-#include <curl/curl.h>
 #include <cmath>
 #include <cstdlib>
+#include <curl/curl.h>
 #include <iostream>
 #include <memory>
 #include <nlohmann/json.hpp>
@@ -43,6 +43,9 @@ struct RpcEnvOptions {
     // DOCC_RPC_DISTANCE_THRESHOLD: override of the server's neighbor-distance tolerance
     // (positive number; server default if unset, warning and ignored if invalid).
     std::optional<double> distance_threshold;
+    // DOCC_RPC_SESSIONS: open a transfer-tuning session per SDFG so the server records the request
+    // (shown in the Daisytuner Dashboard). Off by default.
+    bool sessions = false;
 };
 
 RpcEnvOptions read_rpc_env_options() {
@@ -65,6 +68,11 @@ RpcEnvOptions read_rpc_env_options() {
         } else {
             std::cerr << "[WARN] Ignoring invalid DOCC_RPC_DISTANCE_THRESHOLD='" << v << "'" << std::endl;
         }
+    }
+
+    if (const char* v = std::getenv("DOCC_RPC_SESSIONS")) {
+        std::string s(v);
+        opts.sessions = !(s == "0" || s == "false" || s == "FALSE");
     }
 
     return opts;
@@ -126,15 +134,15 @@ bool RPCNodeTransform::
         "[RPC] can_be_applied for node " << get_node_id_str() << ": querying " << rpc_context_.get_remote_address()
     );
 
-    // Open a session once per SDFG.
-    // if (!this->session_id_.has_value()) {
-    //     this->session_id_ = rpc_context_.start_session();
-    // }
+    const RpcEnvOptions env_opts = read_rpc_env_options();
+
+    // Open a session once per SDFG. A failed session request only disables recording; tuning proceeds.
+    if (env_opts.sessions && !this->session_id_.has_value()) {
+        this->session_id_ = rpc_context_.start_session();
+    }
     if (this->session_id_.has_value()) {
         builder.subject().add_metadata("transfer_tuning_session_id", this->session_id_.value());
     }
-
-    const RpcEnvOptions env_opts = read_rpc_env_options();
 
     auto opt_resp = query_rpc_server(
         {.sdfg = builder.subject(),

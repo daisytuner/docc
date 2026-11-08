@@ -392,3 +392,54 @@ TEST_F(RPCNodeTransformTest, ApplyUnwrapsReferenceTypedContainersFromResponse) {
     EXPECT_EQ(added_type.type_id(), sdfg::types::TypeID::Scalar);
     EXPECT_EQ(added_type.primitive_type(), sdfg::types::PrimitiveType::Float);
 }
+
+namespace {
+
+// Context whose tuning endpoint is unreachable, so only the session handling is exercised.
+class SessionCountingContext : public passes::rpc::RpcContext {
+public:
+    int sessions_started = 0;
+
+    std::string get_remote_address() const override {
+        return "http://127.0.0.1:9/docc/transfertune_sdfg";
+    }
+    std::unordered_map<std::string, std::string> get_auth_headers() const override {
+        return {};
+    }
+    std::optional<std::string> start_session() override {
+        ++sessions_started;
+        return "session-1";
+    }
+};
+
+} // namespace
+
+TEST_F(RPCNodeTransformTest, StartsOneSessionPerSdfg) {
+    setenv("DOCC_RPC_SESSIONS", "1", /*overwrite=*/0);
+    SessionCountingContext ctx;
+    auto sdfg = builder_->subject().clone();
+    sdfg::builder::StructuredSDFGBuilder builder(sdfg);
+    sdfg::analysis::AnalysisManager analysis_manager(builder.subject());
+
+    transformations::RPCNodeTransform transform(builder.subject().root(), "sequential", "server", ctx);
+    EXPECT_FALSE(transform.can_be_applied(builder, analysis_manager));
+    EXPECT_FALSE(transform.can_be_applied(builder, analysis_manager));
+
+    EXPECT_EQ(ctx.sessions_started, 1);
+    EXPECT_EQ(builder.subject().metadata("transfer_tuning_session_id"), "session-1");
+}
+
+TEST_F(RPCNodeTransformTest, SessionsAreOffByDefault) {
+    unsetenv("DOCC_RPC_SESSIONS");
+    SessionCountingContext ctx;
+    auto sdfg = builder_->subject().clone();
+    sdfg::builder::StructuredSDFGBuilder builder(sdfg);
+    sdfg::analysis::AnalysisManager analysis_manager(builder.subject());
+
+    transformations::RPCNodeTransform transform(builder.subject().root(), "sequential", "server", ctx);
+    EXPECT_FALSE(transform.can_be_applied(builder, analysis_manager));
+
+    EXPECT_EQ(ctx.sessions_started, 0);
+    EXPECT_EQ(builder.subject().metadata().count("transfer_tuning_session_id"), 0u);
+    unsetenv("DOCC_RPC_SESSIONS");
+}
