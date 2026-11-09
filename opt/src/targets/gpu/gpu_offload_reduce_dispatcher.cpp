@@ -905,11 +905,16 @@ void GPUOffloadReduceDispatcher::dispatch_rescale_group_combine(
     }
 
     // 3. Commit. Every thread now holds the row's merged group in its registers.
-    auto dep_target = [&](const structured_control_flow::ReductionInfo& dep, const std::string& slot) {
-        const auto& buffer = reduction_buffers_.at(dep.container);
-        auto index = buffer.multi_output ? buffer.layout->unpack(symbolic::symbol(slot)) : buffer.accumulator_index;
-        return reduction_target(language_extension, dep.container, index);
+    // Targets may be narrower than the widened partials, so commits convert explicitly.
+    auto as_type = [&](const std::string& value, types::PrimitiveType type) {
+        return "(" + language_extension.primitive_type(type) + ")(" + value + ")";
     };
+    auto dep_target =
+        [&](const structured_control_flow::ReductionInfo& dep, const std::string& slot, types::PrimitiveType* element) {
+            const auto& buffer = reduction_buffers_.at(dep.container);
+            auto index = buffer.multi_output ? buffer.layout->unpack(symbolic::symbol(slot)) : buffer.accumulator_index;
+            return reduction_target(language_extension, dep.container, index, element);
+        };
     if (is_scalar_accumulator(anchor.container)) {
         // A scalar anchor is thread-private and overwritten (as for plain scalar reductions), so
         // its dependents are overwritten too: their live-in cannot be rescaled meaningfully.
@@ -927,7 +932,9 @@ void GPUOffloadReduceDispatcher::dispatch_rescale_group_combine(
             stream << "if (" << leader << ") {" << std::endl;
             stream.setIndent(stream.indent() + 4);
             for_each_slot(*dep, [&](const std::string& reg, const std::string& slot) {
-                stream << dep_target(*dep, slot) << " = " << reg << ";" << std::endl;
+                types::PrimitiveType element = prim;
+                std::string target = dep_target(*dep, slot, &element);
+                stream << target << " = " << as_type(reg, element) << ";" << std::endl;
             });
             stream.setIndent(stream.indent() - 4);
             stream << "}" << std::endl;
@@ -944,20 +951,26 @@ void GPUOffloadReduceDispatcher::dispatch_rescale_group_combine(
             throw unsupported("cannot mix an indexed anchor with a scalar dependent");
         }
     }
-    std::string anchor_target = reduction_target(language_extension, anchor.container, anchor_buffer.accumulator_index);
+    types::PrimitiveType anchor_element = prim;
+    std::string anchor_target =
+        reduction_target(language_extension, anchor.container, anchor_buffer.accumulator_index, &anchor_element);
     stream << "if (" << block_reduce_leader_condition(language_extension, anchor.container) << ") {" << std::endl;
     stream.setIndent(stream.indent() + 4);
-    stream << ctype << " " << om << " = " << anchor_target << ";" << std::endl;
+    stream << ctype << " " << om << " = " << as_type(anchor_target, prim) << ";" << std::endl;
     stream << ctype << " " << nm << " = " << combine_expr(ReductionOperation::Max, om, a_reg) << ";" << std::endl;
     stream << ctype << " " << fo << " = " << scale(om, nm) << ";" << std::endl;
     stream << ctype << " " << fs << " = " << scale(a_reg, nm) << ";" << std::endl;
     for (const auto* dep : dependents) {
         for_each_slot(*dep, [&](const std::string& reg, const std::string& slot) {
-            std::string target = dep_target(*dep, slot);
-            stream << target << " = " << fo << " * " << target << " + " << fs << " * " << reg << ";" << std::endl;
+            types::PrimitiveType element = prim;
+            std::string target = dep_target(*dep, slot, &element);
+            auto dep_prim = *reduction_buffers_.at(dep->container).primitive;
+            stream << target << " = "
+                   << as_type(fo + " * " + as_type(target, dep_prim) + " + " + fs + " * " + reg, element) << ";"
+                   << std::endl;
         });
     }
-    stream << anchor_target << " = " << nm << ";" << std::endl;
+    stream << anchor_target << " = " << as_type(nm, anchor_element) << ";" << std::endl;
     stream.setIndent(stream.indent() - 4);
     stream << "}" << std::endl;
 }
@@ -1023,7 +1036,10 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_declarations(
 }
 
 std::string GPUOffloadReduceDispatcher::reduction_target(
-    codegen::LanguageExtension& language_extension, const std::string& container, symbolic::Expression index
+    codegen::LanguageExtension& language_extension,
+    const std::string& container,
+    symbolic::Expression index,
+    types::PrimitiveType* element
 ) {
     auto& loops = analysis_manager_.get<analysis::LoopAnalysis>();
     auto& buffer_analysis = analysis_manager_.get<tiles::ReductionBufferAnalysis>();
@@ -1044,6 +1060,9 @@ std::string GPUOffloadReduceDispatcher::reduction_target(
     });
     for (auto* parent : parents) {
         const auto& buffer = buffer_analysis.require(*parent, container);
+        if (element) {
+            *element = *buffer.primitive;
+        }
         if (!buffer.private_buffer.empty()) {
             return buffer.private_buffer + "[" + language_extension.expression(buffer.layout->pack(index)) + "]";
         }
@@ -1054,7 +1073,10 @@ std::string GPUOffloadReduceDispatcher::reduction_target(
             return buffer.shared_buffer + "[" + language_extension.expression(slot) + "]";
         }
     }
-    auto primitive = *reduction_buffers_.at(container).primitive;
+    auto primitive = *reduction_buffers_.at(container).storage_primitive;
+    if (element) {
+        *element = primitive;
+    }
     return "reinterpret_cast<" + language_extension.primitive_type(primitive) + " *>(" + container + ")[" +
            language_extension.expression(index) + "]";
 }
@@ -1125,7 +1147,21 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
             shared_stride = std::to_string(layout.extent);
             shared_index = "(" + lin_tid + ") * " + shared_stride + " + " + slot;
         }
-        std::string target = reduction_target(language_extension, r.container, index);
+        types::PrimitiveType target_prim = prim;
+        std::string target = reduction_target(language_extension, r.container, index, &target_prim);
+        // Atomically fold a (possibly widened) partial into the target in its own element type.
+        auto emit_atomic_commit = [&](const std::string& value) {
+            std::string target_ctype = language_extension.primitive_type(target_prim);
+            std::string converted = target_prim == prim ? value : "(" + target_ctype + ")(" + value + ")";
+            if (r.operation == ReductionOperation::Add && has_native_atomic_add(target_prim)) {
+                stream << "atomicAdd(&" << target << ", " << converted << ");" << std::endl;
+            } else {
+                std::string type_tag = target_ctype;
+                std::replace(type_tag.begin(), type_tag.end(), ' ', '_');
+                std::string helper = "__daisy_reduce_combine_" + op_tag(r.operation) + "_" + type_tag;
+                stream << helper << "(&" << target << ", " << converted << ");" << std::endl;
+            }
+        };
 
         // A scalar accumulator is a per-thread private reduction target; it has no global
         // slot and grid-level combine (cross-block atomics) is meaningless for it. The
@@ -1183,14 +1219,7 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
                 // register (cross-warp and cross-block combine) into acc[index].
                 stream << "if (lane == 0) {" << std::endl;
                 stream.setIndent(stream.indent() + 4);
-                if (r.operation == ReductionOperation::Add && has_native_atomic_add(prim)) {
-                    stream << "atomicAdd(&" << target << ", " << reg_name << ");" << std::endl;
-                } else {
-                    std::string type_tag = ctype;
-                    std::replace(type_tag.begin(), type_tag.end(), ' ', '_');
-                    std::string helper = "__daisy_reduce_combine_" + op_tag(r.operation) + "_" + type_tag;
-                    stream << helper << "(&" << target << ", " << reg_name << ");" << std::endl;
-                }
+                emit_atomic_commit(reg_name);
                 stream.setIndent(stream.indent() - 4);
                 stream << "}" << std::endl;
             }
@@ -1324,14 +1353,7 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
                 stream << "if (" << leader << ") {" << std::endl;
                 stream.setIndent(stream.indent() + 4);
                 if (collides) {
-                    if (r.operation == ReductionOperation::Add && has_native_atomic_add(prim)) {
-                        stream << "atomicAdd(&" << target << ", " << block_src << ");" << std::endl;
-                    } else {
-                        std::string type_tag = ctype;
-                        std::replace(type_tag.begin(), type_tag.end(), ' ', '_');
-                        std::string helper = "__daisy_reduce_combine_" + op_tag(r.operation) + "_" + type_tag;
-                        stream << helper << "(&" << target << ", " << block_src << ");" << std::endl;
-                    }
+                    emit_atomic_commit(block_src);
                 } else {
                     // Always fold the block result into the accumulator's existing value
                     // instead of overwriting it. The partials are seeded with the operator
@@ -1341,7 +1363,13 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
                     // genuine live-in (read-modify-write, e.g. x[i] = x[i] + sum(...)), this
                     // preserves the incoming value rather than dropping it. The leader is the
                     // sole writer of this non-colliding slot, so no atomic is required.
-                    stream << target << " = " << combine_expr(r.operation, target, block_src) << ";" << std::endl;
+                    if (target_prim == prim) {
+                        stream << target << " = " << combine_expr(r.operation, target, block_src) << ";" << std::endl;
+                    } else {
+                        std::string current = "(" + ctype + ")(" + target + ")";
+                        stream << target << " = (" << language_extension.primitive_type(target_prim) << ")("
+                               << combine_expr(r.operation, current, block_src) << ");" << std::endl;
+                    }
                 }
                 stream.setIndent(stream.indent() - 4);
                 stream << "}" << std::endl;
@@ -1396,14 +1424,7 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
                 stream << "if (" << leader << ") {" << std::endl;
                 stream.setIndent(stream.indent() + 4);
             }
-            if (r.operation == ReductionOperation::Add && has_native_atomic_add(prim)) {
-                stream << "atomicAdd(&" << target << ", " << reg_name << ");" << std::endl;
-            } else {
-                std::string type_tag = ctype;
-                std::replace(type_tag.begin(), type_tag.end(), ' ', '_');
-                std::string helper = "__daisy_reduce_combine_" + op_tag(r.operation) + "_" + type_tag;
-                stream << helper << "(&" << target << ", " << reg_name << ");" << std::endl;
-            }
+            emit_atomic_commit(reg_name);
             if (redundant_threads) {
                 stream.setIndent(stream.indent() - 4);
                 stream << "}" << std::endl;

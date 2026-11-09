@@ -649,7 +649,12 @@ ReductionBufferInfo ReductionBufferAnalysis::
         result.multi_output = !dimensions.empty();
         result.layout.emplace(base, std::move(dimensions));
         result.accumulator_index = collector.index;
-        result.primitive = scalar->primitive_type();
+        result.storage_primitive = scalar->primitive_type();
+        result.primitive = *result.storage_primitive;
+        if (option(FLOAT_ACCUMULATION, false) &&
+            (*result.primitive == types::PrimitiveType::Half || *result.primitive == types::PrimitiveType::BFloat)) {
+            result.primitive = types::PrimitiveType::Float;
+        }
         result.element_bytes = (types::bit_width(*result.primitive) + 7) / 8;
         allocation_cost(result, reduction, container, loop_analysis);
         if (!exact) {
