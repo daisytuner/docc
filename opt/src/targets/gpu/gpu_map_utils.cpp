@@ -7,6 +7,7 @@
 #include "sdfg/analysis/assumptions_analysis.h"
 #include "sdfg/analysis/loop_analysis.h"
 #include "sdfg/analysis/users.h"
+#include "sdfg/structured_control_flow/if_else.h"
 #include "sdfg/structured_control_flow/reduce.h"
 #include "sdfg/structured_control_flow/sequence.h"
 #include "sdfg/symbolic/symbolic.h"
@@ -651,6 +652,139 @@ void validate_wave_maps(
             throw InvalidSDFGException("a WARP level loop cannot be nested in a wave-granular (lanes > 1) map");
         }
     }
+}
+
+bool is_wave_converged(
+    structured_control_flow::ControlFlowNode& node, analysis::AnalysisManager& analysis_manager, int64_t warp_size
+) {
+    auto is_offloaded = [](structured_control_flow::ControlFlowNode* n) {
+        auto* loop = dyn_cast<structured_control_flow::StructuredLoop*>(n);
+        return loop != nullptr &&
+               loop->schedule_type().category() == structured_control_flow::ScheduleTypeCategory::Offloader;
+    };
+
+    // Enclosing nodes from the parent of @p node up to the kernel root (the outermost
+    // offloaded loop), innermost first. Without an offloaded ancestor @p node is the root.
+    std::vector<structured_control_flow::ControlFlowNode*> chain;
+    size_t kernel_depth = 0;
+    for (auto* cur = node.get_parent(); cur != nullptr; cur = cur->get_parent()) {
+        chain.push_back(cur);
+        if (is_offloaded(cur)) {
+            kernel_depth = chain.size();
+        }
+    }
+    chain.resize(kernel_depth);
+    auto* kernel = kernel_depth > 0 ? chain.back() : &node;
+    if (!is_offloaded(kernel)) {
+        return false;
+    }
+    auto& kernel_loop = *dyn_cast<structured_control_flow::StructuredLoop*>(kernel);
+
+    // Launched block shape (as in the base dispatcher); it must consist of whole waves.
+    std::unordered_map<TargetLevel, structured_control_flow::ScheduleType> launch;
+    get_nested_schedule_types(kernel_loop, analysis_manager, launch);
+    auto launch_dim = [&](TargetLevel level) -> int64_t {
+        auto it = launch.find(level);
+        if (it == launch.end()) {
+            return 1;
+        }
+        return level == TargetLevel::X_BLOCK ? ScheduleType_GPU_Offload::threads(it->second)->as_int()
+                                             : ScheduleType_GPU_Offload::parallel_size(it->second)->as_int();
+    };
+    const int64_t bx = launch_dim(TargetLevel::X_BLOCK);
+    const int64_t by = launch_dim(TargetLevel::Y_BLOCK);
+    const int64_t bz = launch_dim(TargetLevel::Z_BLOCK);
+    if (bx <= 0 || by <= 0 || bz <= 0 || (bx * by * bz) % warp_size != 0) {
+        return false;
+    }
+
+    // Symbols known to hold the same value in every lane of a wave: kernel-invariant
+    // containers (never written inside the kernel) and indvars proven uniform below.
+    auto& users = analysis_manager.get<analysis::Users>();
+    analysis::UsersView kernel_users(users, *kernel);
+    symbolic::SymbolSet uniform;
+    auto is_uniform = [&](const symbolic::Expression& expr, const symbolic::Symbol& self) {
+        for (auto& atom : symbolic::atoms(expr)) {
+            if ((!self.is_null() && symbolic::eq(atom, self)) || uniform.count(atom)) {
+                continue;
+            }
+            const auto& name = atom->get_name();
+            if (!kernel_users.writes(name).empty() || !kernel_users.moves(name).empty() ||
+                !kernel_users.views(name).empty()) {
+                return false;
+            }
+        }
+        return true;
+    };
+    auto bounds_uniform = [&](structured_control_flow::StructuredLoop& loop) {
+        auto self = loop.indvar();
+        return is_uniform(loop.init(), self) && is_uniform(loop.update(), self) && is_uniform(loop.condition(), self);
+    };
+
+    // An offloaded loop's index is wave-uniform when it only changes at wave boundaries of
+    // the flat thread id: its axis advances every stride * lanes threads and wraps every
+    // stride * extent threads (stride 1/bx/bx*by for x/y/z).
+    auto index_uniform = [&](structured_control_flow::StructuredLoop& loop, TargetLevel level) {
+        if (is_grid_level(level)) {
+            return true;
+        }
+        if (!is_block_level(level)) {
+            return false;
+        }
+        const int64_t stride = level == TargetLevel::X_BLOCK ? 1 : (level == TargetLevel::Y_BLOCK ? bx : bx * by);
+        const int64_t extent = level == TargetLevel::X_BLOCK ? bx : (level == TargetLevel::Y_BLOCK ? by : bz);
+        if (extent == 1) {
+            return true;
+        }
+        const int64_t lanes = ScheduleType_GPU_Offload::lanes(loop.schedule_type())->as_int();
+        return (stride * lanes) % warp_size == 0 && (stride * extent) % warp_size == 0;
+    };
+
+    // Same rule as the dispatchers: no guard under nested_sync or for a constant trip
+    // that is a whole multiple of the parallel size.
+    auto emits_guard = [](structured_control_flow::StructuredLoop& loop) {
+        const auto& sched = loop.schedule_type();
+        if (ScheduleType_GPU_Offload::nested_sync(sched)) {
+            return false;
+        }
+        auto trip = loop.num_iterations();
+        const int64_t psize = ScheduleType_GPU_Offload::parallel_size(sched)->as_int();
+        if (trip.is_null() || !SymEngine::is_a<SymEngine::Integer>(*trip) || psize <= 0) {
+            return true;
+        }
+        return SymEngine::rcp_static_cast<const SymEngine::Integer>(trip)->as_int() % psize != 0;
+    };
+
+    for (auto it = chain.rbegin(); it != chain.rend(); ++it) {
+        auto* cur = *it;
+        if (dyn_cast<structured_control_flow::Sequence*>(cur)) {
+            continue;
+        }
+        if (auto* if_else = dyn_cast<structured_control_flow::IfElse*>(cur)) {
+            for (size_t i = 0; i < if_else->size(); ++i) {
+                if (!is_uniform(if_else->at(i).second, symbolic::Symbol())) {
+                    return false;
+                }
+            }
+            continue;
+        }
+        auto* loop = dyn_cast<structured_control_flow::StructuredLoop*>(cur);
+        if (loop == nullptr || !bounds_uniform(*loop)) {
+            return false;
+        }
+        if (is_offloaded(loop)) {
+            auto level = ScheduleType_GPU_Offload::target_level(loop->schedule_type());
+            if (!index_uniform(*loop, level)) {
+                // A lane-varying index only splits the wave through the boundary guard.
+                if (emits_guard(*loop)) {
+                    return false;
+                }
+                continue;
+            }
+        }
+        uniform.insert(loop->indvar());
+    }
+    return true;
 }
 
 bool nested_warp_dim(structured_control_flow::StructuredLoop& loop, analysis::AnalysisManager& analysis_manager) {

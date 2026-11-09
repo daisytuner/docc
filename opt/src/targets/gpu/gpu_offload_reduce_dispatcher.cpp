@@ -797,11 +797,12 @@ void GPUOffloadReduceDispatcher::dispatch_rescale_group_combine(
         return "((" + from + ") == (" + to + ") ? (" + ctype + ")1 : (" + ctype + ")" + exp_fn + "((" + ftype + ")((" +
                from + ") - (" + to + "))))";
     };
+    const bool wave_converged = is_wave_converged(node_, analysis_manager_, strategy_->get_warp_size());
     auto shuffle = [&](const std::string& value, const std::string& mask) {
         if (prim == types::PrimitiveType::Half || prim == types::PrimitiveType::BFloat) {
-            return "(" + ctype + ")" + strategy_->warp_shuffle_xor("(float)" + value, mask);
+            return "(" + ctype + ")" + strategy_->warp_shuffle_xor("(float)" + value, mask, wave_converged);
         }
-        return strategy_->warp_shuffle_xor(value, mask);
+        return strategy_->warp_shuffle_xor(value, mask, wave_converged);
     };
 
     // Run @p body once per slot of @p dep, with the slot's register and shared-slot suffix.
@@ -1075,6 +1076,7 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
 
     std::string warp_size =
         language_extension.expression(get_target_level_dim(TargetLevel::WARP, strategy_->get_warp_size()));
+    const bool wave_converged = is_wave_converged(node_, analysis_manager_, strategy_->get_warp_size());
 
     for (const auto& r : node_.reductions()) {
         if (r.rescale.empty() && in_rescale_group(r.container)) {
@@ -1101,9 +1103,9 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
         // Warp shuffles have no _Float16/__bf16 overloads; round-trip through float (lossless).
         auto shuffle_xor = [&](const std::string& value, const std::string& lane_mask) {
             if (prim == types::PrimitiveType::Half || prim == types::PrimitiveType::BFloat) {
-                return "(" + ctype + ")" + strategy_->warp_shuffle_xor("(float)" + value, lane_mask);
+                return "(" + ctype + ")" + strategy_->warp_shuffle_xor("(float)" + value, lane_mask, wave_converged);
             }
-            return strategy_->warp_shuffle_xor(value, lane_mask);
+            return strategy_->warp_shuffle_xor(value, lane_mask, wave_converged);
         };
         std::string reg_name = buffer.private_buffer;
         std::string smem_name = partials_buffer_name(r.container);

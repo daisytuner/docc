@@ -63,8 +63,14 @@ public:
     /// File extension for the kernel's include header ("cu.h"/"rocm.h").
     virtual std::string kernel_header_file_extension() const = 0;
 
-    /// Cross-lane XOR butterfly shuffle of `value` by `lane_mask` (CUDA/HIP __shfl_xor_sync).
-    virtual std::string warp_shuffle_xor(const std::string& value, const std::string& lane_mask) const = 0;
+    /// Cross-lane XOR butterfly shuffle of `value` by `lane_mask` (a power of two below
+    /// get_warp_size()) across the whole physical warp/wavefront.
+    ///
+    /// `wave_converged` states that every lane of the wave provably evaluates the
+    /// expression together (see gpu::is_wave_converged). Only then may an implementation
+    /// emit an unsynchronized shuffle; otherwise it must use the synchronized form.
+    virtual std::string
+    warp_shuffle_xor(const std::string& value, const std::string& lane_mask, bool wave_converged) const = 0;
 };
 
 /**

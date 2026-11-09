@@ -96,6 +96,7 @@ set(TEST_FILES
     targets/gpu/gpu_static_storage_test.cpp
     targets/gpu/gpu_tile_arrival_test.cpp
     targets/gpu/wave_map_test.cpp
+    targets/gpu/wave_convergence_test.cpp
     targets/omp/schedule_test.cpp
     transformations/collapse_to_depth_test.cpp
     transformations/omp_transform_test.cpp
