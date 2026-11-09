@@ -125,6 +125,7 @@ std::unique_ptr<data_flow::DataFlowNode> TileCopyNode::
         coop_lanes_
     ));
     copy->phase_ = phase_;
+    copy->streaming_ = streaming_;
     return copy;
 }
 
@@ -155,6 +156,9 @@ std::string TileCopyNode::toStr() const {
     ss << "dir: " << (direction_ == CopyDirection::In ? "in" : "out") << ", ";
     if (phase_ != CopyPhase::Full) {
         ss << "phase: " << (phase_ == CopyPhase::LoadRegs ? "load_regs" : "store_regs") << ", ";
+    }
+    if (streaming_) {
+        ss << "streaming, ";
     }
     ss << "cothr: " << coop_threads_ << ", ";
     ss << "src: " << plan_.src << ", ";
@@ -212,6 +216,9 @@ nlohmann::json TileCopyNodeSerializer::serialize(const sdfg::data_flow::LibraryN
     if (node.phase() != CopyPhase::Full) {
         j["phase"] = node.phase() == CopyPhase::LoadRegs ? "load_regs" : "store_regs";
     }
+    if (node.streaming()) {
+        j["streaming"] = true;
+    }
     return j;
 }
 
@@ -264,6 +271,7 @@ data_flow::LibraryNode& TileCopyNodeSerializer::deserialize(
     if (j.contains("phase")) {
         node.set_phase(j.at("phase").get<std::string>() == "load_regs" ? CopyPhase::LoadRegs : CopyPhase::StoreRegs);
     }
+    node.set_streaming(j.value("streaming", false));
     return node;
 }
 
@@ -986,8 +994,13 @@ void TileCopyNodeDispatcher::dispatch_code_with_edges(
         const char* vt = vec_type(node.bytes());
         const std::string dst_addr = "&(" + dcast + ")[" + doff + "]";
         const std::string src_addr = "&(" + scast + ")[" + soff + "]";
-        stmt = "*reinterpret_cast<" + std::string(vt) + "*>(" + dst_addr + ") = " + "*reinterpret_cast<const " +
-               std::string(vt) + "*>(" + src_addr + ");";
+        if (copy_in && node.streaming()) {
+            stmt = language_extension_.streaming_copy(dst_addr, src_addr, node.bytes());
+        }
+        if (stmt.empty()) {
+            stmt = "*reinterpret_cast<" + std::string(vt) + "*>(" + dst_addr + ") = " + "*reinterpret_cast<const " +
+                   std::string(vt) + "*>(" + src_addr + ");";
+        }
     } else {
         stmt = "(" + dcast + ")[" + doff + "] = (" + scast + ")[" + soff + "];";
     }

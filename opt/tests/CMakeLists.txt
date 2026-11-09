@@ -20,6 +20,7 @@ set(TEST_FILES
     tiles/library_nodes/tile_copy_node_test.cpp
     tiles/transformations/tile_fusion_test.cpp
     tiles/transformations/software_pipelining_test.cpp
+    tiles/transformations/tile_streaming_copy_test.cpp
     tiles/transformations/tile_vectorizer_test.cpp
     tiles/transformations/local_storage_test.cpp
     cuda/blas/cublas_test.cpp

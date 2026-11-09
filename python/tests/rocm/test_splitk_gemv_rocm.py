@@ -25,6 +25,7 @@ from docc.sdfg import (
     StructuredSDFGBuilder,
     TargetLevel,
     TaskletCode,
+    TileStreamingCopy,
     TileVectorizer,
 )
 from docc.compiler.compiled_sdfg import CompiledSDFG
@@ -105,6 +106,8 @@ def _schedule(builder, n, block, chunk):
     panel = _loop(builder, "k")
     _apply(builder, LocalStorage(panel, _find_access(panel.body, "W")))
     _apply(builder, TileVectorizer(_loop(builder, "j")))
+    # Each lane's weight slice is read once per launch: load it nontemporally.
+    _apply(builder, TileStreamingCopy(_loop(builder, "k_tile0")))
 
 
 @pytest.mark.parametrize("dtype", list(DTYPES))

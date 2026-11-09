@@ -14,6 +14,7 @@
 #include <sdfg/tiles/transformations/local_storage.h>
 #include <sdfg/tiles/transformations/software_pipelining.h>
 #include <sdfg/tiles/transformations/tile_fusion.h>
+#include <sdfg/tiles/transformations/tile_streaming_copy.h>
 #include <sdfg/tiles/transformations/tile_vectorizer.h>
 #include <sdfg/transformations/loop_distribute.h>
 #include <sdfg/transformations/loop_interchange.h>
@@ -466,6 +467,23 @@ void register_transformations(py::module& m) {
         .def("__repr__", [](const TileVectorizer& t) {
             std::ostringstream oss;
             oss << "<TileVectorizer name='" << t.name() << "'>";
+            return oss.str();
+        });
+
+    // TileStreamingCopy transformation (nontemporal loads for read-once per-thread copies)
+    py::class_<TileStreamingCopy, Transformation>(m, "TileStreamingCopy")
+        .def(
+            py::init<StructuredLoop&>(),
+            py::arg("loop"),
+            "Load every per-thread vector copy-in in a loop's subtree whose source is\n"
+            "provably read once per kernel launch with a nontemporal (streaming) hint.\n\n"
+            "Run after TileVectorizer. Applicable only if such a copy exists.\n\n"
+            "Args:\n"
+            "    loop: A loop enclosing the copies to stream."
+        )
+        .def("__repr__", [](const TileStreamingCopy& t) {
+            std::ostringstream oss;
+            oss << "<TileStreamingCopy name='" << t.name() << "'>";
             return oss.str();
         });
 

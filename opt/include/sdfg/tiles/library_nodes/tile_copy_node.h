@@ -46,6 +46,8 @@ class TileCopyNode : public data_flow::LibraryNode {
     /// mode: the lanes of a wave-granular slot axis, whose slot depends on the wave only.
     size_t coop_lanes_ = 1;
     CopyPhase phase_ = CopyPhase::Full;
+    /// Load the source with a nontemporal (no cache retention) hint; set by TileStreamingCopy.
+    bool streaming_ = false;
 
 public:
     TileCopyNode(
@@ -117,6 +119,13 @@ public:
     }
     void set_phase(CopyPhase phase) {
         phase_ = phase;
+    }
+
+    bool streaming() const {
+        return streaming_;
+    }
+    void set_streaming(bool streaming) {
+        streaming_ = streaming;
     }
     /// The input (0 = `_dst`, 1 = `_src`) whose pointer carries the tile element type —
     /// the non-register side of a staged phase.

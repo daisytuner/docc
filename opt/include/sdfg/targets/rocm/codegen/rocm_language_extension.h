@@ -53,6 +53,18 @@ public:
     types::PrimitiveType compute_type(const types::PrimitiveType prim_type) override {
         return prim_type == types::PrimitiveType::BFloat ? types::PrimitiveType::Float : prim_type;
     }
+
+    /// A nontemporal load. The builtin needs a native vector type; HIP's int2/int4 are structs.
+    std::string streaming_copy(const std::string& dst, const std::string& src, size_t bytes) override {
+        if (bytes != 4 && bytes != 8 && bytes != 16) {
+            return "";
+        }
+        const std::string type = "__docc_nt" + std::to_string(bytes);
+        const std::string vector = bytes == 4 ? ""
+                                              : " __attribute__((ext_vector_type(" + std::to_string(bytes / 4) + ")))";
+        return "{ typedef int " + type + vector + "; *reinterpret_cast<" + type + "*>(" + dst +
+               ") = __builtin_nontemporal_load(reinterpret_cast<const " + type + "*>(" + src + ")); }";
+    }
 };
 
 } // namespace sdfg::rocm
