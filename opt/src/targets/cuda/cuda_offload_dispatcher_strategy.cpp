@@ -85,7 +85,8 @@ void CUDAOffloadDispatcherStrategy::emit_target_global_includes(codegen::CodeSni
     library_snippet_factory.add_global("#include <cuda_bf16.h>");
 }
 
-std::string CUDAOffloadDispatcherStrategy::warp_shuffle_xor(const std::string& value, const std::string& lane_mask) const {
+std::string CUDAOffloadDispatcherStrategy::
+    warp_shuffle_xor(const std::string& value, const std::string& lane_mask, bool /*wave_converged*/) const {
     return "__shfl_xor_sync(0xffffffff, " + value + ", " + lane_mask + ")";
 }
 
