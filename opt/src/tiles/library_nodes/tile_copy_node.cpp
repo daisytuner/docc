@@ -912,13 +912,65 @@ void TileCopyNodeDispatcher::dispatch_code_with_edges(
     const std::string dcast = language_extension_.type_cast(dst, elem_ptr);
     const std::string scast = language_extension_.type_cast(src, elem_ptr);
 
+    // When TileVectorizer marked this per-thread copy VectorSync, the innermost
+    // (unit-stride) mode can move as a single wide transfer of `node.bytes()`
+    // instead of a scalar per-element loop the host compiler may fail to coalesce.
+    // This is the per-thread analogue of the cooperative VectorSync path: each
+    // thread loads its own contiguous chunk as one int2/int4 (e.g. a wvSplitK-style
+    // 128-bit per-lane weight load feeding an in-register reduction).
+    const size_t elem_bytes = types::bit_width(pt) / 8;
+    size_t factor = 1;
+    if (node.atom() == tiles::CopyAtom::VectorSync && elem_bytes > 0 && node.bytes() % elem_bytes == 0) {
+        factor = node.bytes() / elem_bytes;
+    }
+    const auto* inner_const = shape.empty() ? nullptr : dynamic_cast<const SymEngine::Integer*>(shape.back().get());
+    // Every wide access must stay `factor`-element aligned (relative to the vector-aligned base
+    // pointer): the offset and all outer strides are multiples of `factor`.
+    auto aligned = [&](const symbolic::Expression& offset, const symbolic::MultiExpression& strides) {
+        if (!provably_multiple_of(offset, static_cast<long long>(factor), node)) {
+            return false;
+        }
+        for (size_t d = 0; d + 1 < strides.size(); ++d) {
+            const auto* stride = dynamic_cast<const SymEngine::Integer*>(strides[d].get());
+            if (stride == nullptr || stride->as_int() % static_cast<long long>(factor) != 0) {
+                return false;
+            }
+        }
+        return true;
+    };
+    const bool vectorize = factor > 1 && !shape.empty() && node.guard().trivial() && plan.dst_swizzle.is_identity() &&
+                           symbolic::eq(plan.src.strides().back(), symbolic::one()) &&
+                           symbolic::eq(plan.dst.strides().back(), symbolic::one()) && inner_const != nullptr &&
+                           inner_const->as_int() % static_cast<long long>(factor) == 0 &&
+                           aligned(plan.src.offset(), plan.src.strides()) &&
+                           aligned(plan.dst.offset(), plan.dst.strides());
+    auto vec_type = [](size_t bytes) -> const char* {
+        switch (bytes) {
+            case 16:
+                return "int4";
+            case 8:
+                return "int2";
+            case 4:
+                return "int";
+            case 2:
+                return "short";
+            default:
+                throw InvalidSDFGException(
+                    "TileCopyNode: no vector type for " + std::to_string(bytes) + "-byte VectorSync copies"
+                );
+        }
+    };
+
     // Nested per-mode loops: clean per-axis indices (no idiv/imod) so the host
-    // compiler vectorizes the innermost (unit-stride) copy.
+    // compiler vectorizes the innermost (unit-stride) copy. When `vectorize`, the
+    // innermost mode strides by `factor` and moves one wide vector per step.
     std::vector<symbolic::Expression> coords;
     for (size_t d = 0; d < shape.size(); ++d) {
         const std::string iv = "__tc_i" + std::to_string(d);
+        const bool innermost = (d + 1 == shape.size());
+        const std::string incr = (innermost && vectorize) ? (iv + " += " + std::to_string(factor)) : ("++" + iv);
         out.stream << "for (long long " << iv << " = 0; " << iv << " < " << language_extension_.expression(shape[d])
-                   << "; ++" << iv << ") {" << std::endl;
+                   << "; " << incr << ") {" << std::endl;
         coords.push_back(symbolic::symbol(iv));
     }
 
@@ -926,10 +978,22 @@ void TileCopyNodeDispatcher::dispatch_code_with_edges(
     auto global_off = plan.src.resolve_element(coords, /*require_to_element=*/false);
     const std::string doff = language_extension_.expression(copy_in ? buffer_off : global_off);
     const std::string soff = language_extension_.expression(copy_in ? global_off : buffer_off);
-    std::string stmt = "(" + dcast + ")[" + doff + "] = (" + scast + ")[" + soff + "];";
+    std::string stmt;
+    if (vectorize) {
+        // One wide load/store of the contiguous `factor`-element run. Both sides are
+        // unit-stride at the innermost mode and the staging buffer is 16-byte
+        // aligned (see make_nested_array), so the reinterpret is well-defined.
+        const char* vt = vec_type(node.bytes());
+        const std::string dst_addr = "&(" + dcast + ")[" + doff + "]";
+        const std::string src_addr = "&(" + scast + ")[" + soff + "]";
+        stmt = "*reinterpret_cast<" + std::string(vt) + "*>(" + dst_addr + ") = " + "*reinterpret_cast<const " +
+               std::string(vt) + "*>(" + src_addr + ");";
+    } else {
+        stmt = "(" + dcast + ")[" + doff + "] = (" + scast + ")[" + soff + "];";
+    }
     if (!node.guard().trivial()) {
         // The guard is per-dim over the tile coordinates, so it applies directly to
-        // the nested per-mode indices.
+        // the nested per-mode indices. (A guarded tile is never vectorized above.)
         stmt = "if (" + language_extension_.expression(node.guard().predicate(coords)) + ") { " + stmt + " }";
         if (copy_in) {
             stmt += " else { (" + dcast + ")[" + doff + "] = static_cast<" + language_extension_.primitive_type(pt) +
