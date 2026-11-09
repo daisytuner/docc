@@ -214,14 +214,40 @@ bool GPUOffloadNestedLoop<
         return false;
     }
 
+    // Condition: each level indexes one hardware dimension, so an enclosing loop may not
+    // already use it (both would read the same index and cover only the diagonal).
+    if (has_ancestor_level(target_level_)) {
+        return false;
+    }
+
+    // Condition: grid levels form the kernel's outer prefix. With Y/Z blocks allowed
+    // directly under an X_GRID, a later Y/Z_GRID could otherwise land below a block
+    // level, where the dispatchers would replicate or drop per-thread work.
+    if (gpu::is_grid_level(target_level_)) {
+        for (auto& [level, size] : ancestor_levels) {
+            if (gpu::is_block_level(level)) {
+                return false;
+            }
+        }
+    }
+
     // Condition: a block dimension must be nested within its corresponding grid dimension.
     if (target_level_ == gpu::TargetLevel::X_BLOCK && !has_ancestor_level(gpu::TargetLevel::X_GRID)) {
         return false;
     }
-    if (target_level_ == gpu::TargetLevel::Y_BLOCK && !has_ancestor_level(gpu::TargetLevel::Y_GRID)) {
+    // A Y/Z block dimension is normally nested within its matching grid dimension.
+    // We additionally allow it directly under an X_GRID (with no matching grid
+    // dimension) so that a kernel with a 1-D grid can still carry a multi-wave
+    // block (gridDim.y/z default to 1). This is the wvSplitK shape: a 1-D
+    // persistent column grid (X_GRID) whose blocks hold WvPrGrp waves on the Y
+    // block dimension. The block-level map dispatcher indexes such a loop purely
+    // via blockDim.y/threadIdx.y (never gridDim.y), so a missing Y_GRID is sound.
+    if (target_level_ == gpu::TargetLevel::Y_BLOCK && !has_ancestor_level(gpu::TargetLevel::Y_GRID) &&
+        !has_ancestor_level(gpu::TargetLevel::X_GRID)) {
         return false;
     }
-    if (target_level_ == gpu::TargetLevel::Z_BLOCK && !has_ancestor_level(gpu::TargetLevel::Z_GRID)) {
+    if (target_level_ == gpu::TargetLevel::Z_BLOCK && !has_ancestor_level(gpu::TargetLevel::Z_GRID) &&
+        !has_ancestor_level(gpu::TargetLevel::X_GRID)) {
         return false;
     }
 
