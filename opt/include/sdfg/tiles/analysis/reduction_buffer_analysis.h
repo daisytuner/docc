@@ -50,7 +50,11 @@ struct ReductionBufferInfo {
     std::optional<gpu::ReductionLayout> layout;
     /// Original body index, retained after accesses are redirected to partials.
     symbolic::Expression accumulator_index = SymEngine::null;
+    /// Accumulation type of the partials; Half/BFloat accumulators are widened to Float
+    /// when ReductionBufferAnalysis::FLOAT_ACCUMULATION is set.
     std::optional<types::PrimitiveType> primitive;
+    /// Element type of the reduced container itself.
+    std::optional<types::PrimitiveType> storage_primitive;
     /// Scalar element width in bytes, rounded up from the primitive bit width.
     std::optional<int64_t> element_bytes;
     /// Per-thread private allocation, or zero when no private partial is needed.
@@ -97,6 +101,9 @@ protected:
     void run(analysis::AnalysisManager& analysis_manager) override;
 
 public:
+    /// Opt-in: accumulate Half/BFloat reductions in Float partials.
+    static constexpr OptionKey<bool> FLOAT_ACCUMULATION{"reduction.float_accumulation"};
+
     /// Bind the subject graph; AnalysisManager initializes dependencies through run().
     explicit ReductionBufferAnalysis(StructuredSDFG& sdfg);
 

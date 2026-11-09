@@ -54,6 +54,7 @@
 #include <sdfg/targets/omp/plugin.h>
 #include <sdfg/targets/rocm/plugin.h>
 #include <sdfg/targets/vectorize/plugin.h>
+#include <sdfg/tiles/analysis/reduction_buffer_analysis.h>
 #include <sdfg/tiles/plugin.h>
 
 #include <sdfg/passes/statistics.h>
@@ -89,6 +90,10 @@ void register_core_passes(plugins::Context& context) {
     context.option_registry().register_option(
         codegen::INSTRUMENTATION_ADAPTIVE_SAMPLING
             .spec(false, "Wrap instrumented regions in an adaptive (CI-based) sampling loop")
+    );
+    context.option_registry().register_option(
+        tiles::ReductionBufferAnalysis::FLOAT_ACCUMULATION
+            .spec(false, "Accumulate Half and BFloat reduction partials in Float")
     );
 }
 } // namespace passes
@@ -273,6 +278,13 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("key"),
             py::arg("value"),
             "Validate the key against the option registry and set a type-coerced value"
+        )
+        .def_property_readonly(
+            "_ptr",
+            [](sdfg::Options& self) {
+                return reinterpret_cast<uintptr_t>(&self);
+            },
+            "Get native pointer to Options for external plugin use"
         );
 
     py::class_<docc::target::TargetOptions>(m, "TargetOptions")

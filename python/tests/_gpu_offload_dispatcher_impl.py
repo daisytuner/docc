@@ -32,6 +32,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+import ml_dtypes
 import numpy as np
 import pytest
 
@@ -52,6 +53,7 @@ from docc.sdfg import (
 from docc.compiler.compiled_sdfg import CompiledSDFG
 
 FLOAT_BYTES = 4
+ELEMENT_BYTES = {PrimitiveType.Float: 4, PrimitiveType.BFloat: 2}
 
 
 # ---------------------------------------------------------------------------
@@ -70,6 +72,8 @@ class GpuBackend:
     ``_storage``       -- device ``StorageType`` factory (NV_Generic/AMD_Generic).
     ``_schedule``      -- ``ScheduleType`` offload-schedule factory.
     ``_offload_method``-- name of the builder's data-offloading-block method.
+    ``bf16_float_compute`` -- bfloat16 arithmetic and reductions are carried out
+                          in float, so long bf16 reductions stay accurate.
     """
 
     name: str
@@ -79,6 +83,7 @@ class GpuBackend:
     _storage: Callable[[], object]
     _schedule: Callable[[object, int], object]
     _offload_method: str
+    bf16_float_compute: bool = False
 
     def storage(self):
         return self._storage()
@@ -115,6 +120,7 @@ ROCM_BACKEND = GpuBackend(
     _storage=StorageType.AMD_Generic,
     _schedule=ScheduleType.rocm_offload,
     _offload_method="add_rocm_offloading_block",
+    bf16_float_compute=True,
 )
 
 
@@ -535,8 +541,10 @@ def _rng_input(op, size, seed):
     return rng.standard_normal(size).astype(np.float32)
 
 
-def _declare_common(backend, builder, host_args, device_names):
-    f = Scalar(PrimitiveType.Float)
+def _declare_common(
+    backend, builder, host_args, device_names, primitive=PrimitiveType.Float
+):
+    f = Scalar(primitive)
     host_ptr = Pointer(f)
     dev_ptr = Pointer(f, backend.storage())
     for name in host_args:
@@ -635,12 +643,20 @@ def build_map_nest(backend, specs, op):
 # "same variable on different levels" case).
 # ---------------------------------------------------------------------------
 def build_reduce_nest(
-    backend, map_specs, reduce_specs, op, *, loop_order=None, reduce_options=None
+    backend,
+    map_specs,
+    reduce_specs,
+    op,
+    *,
+    loop_order=None,
+    reduce_options=None,
+    primitive=PrimitiveType.Float,
 ):
     """Build flat acc[row] reductions; None map levels denote sequential maps.
 
     loop_order names m0, m1, ... and r0, r1, ... in outer-to-inner order.
     reduce_options maps reduction names to backend.schedule keyword arguments.
+    primitive is the element type of A and acc.
     """
     m_names = [f"m{k}" for k in range(len(map_specs))]
     r_names = [f"r{k}" for k in range(len(reduce_specs))]
@@ -669,14 +685,19 @@ def build_reduce_nest(
 
     builder = StructuredSDFGBuilder(f"reduce_nest_{op}")
     dev_ptr = _declare_common(
-        backend, builder, ("A", "acc"), ("__daisy_dev_A", "__daisy_dev_acc")
+        backend,
+        builder,
+        ("A", "acc"),
+        ("__daisy_dev_A", "__daisy_dev_acc"),
+        primitive,
     )
     i32 = Scalar(PrimitiveType.Int32)
     for name in m_names + r_names:
         builder.add_container(name, i32, is_argument=False)
 
-    nbytes_a = f"{n} * {FLOAT_BYTES}"
-    nbytes_acc = f"{rows} * {FLOAT_BYTES}"
+    element_bytes = ELEMENT_BYTES[primitive]
+    nbytes_a = f"{n} * {element_bytes}"
+    nbytes_acc = f"{rows} * {element_bytes}"
     backend.offload(
         builder,
         "__daisy_dev_A",
@@ -1805,6 +1826,16 @@ def make_reduce_nest_scenarios(ws):
     return scns
 
 
+def make_bf16_reduce_scenarios(ws):
+    """bfloat16 sum reductions whose per-lane partial sums run far past 256, where a
+    bfloat16 accumulator (8 significant bits) stops absorbing [0, 1) terms."""
+    return [
+        ("bf16_reduce_xg", [], [("xg", 16384, 8)], "add"),
+        ("bf16_reduce_xb", [("xg", 1, 1)], [("xb", 1024 * ws, ws)], "add"),
+        ("bf16_map_xg_reduce_xb", [("xg", 4, 4)], [("xb", 1024 * ws, ws)], "add"),
+    ]
+
+
 def make_reduce_first_scenarios(ws):
     """One accumulator array, with output-selecting loops inside the reduction.
 
@@ -2314,6 +2345,29 @@ def register(namespace, backend):
         )
         np.testing.assert_allclose(acc, ref.astype(np.float32), rtol=1e-4, atol=1e-4)
 
+    _bf16_scns = make_bf16_reduce_scenarios(ws)
+
+    @pytest.mark.parametrize(
+        "map_specs,reduce_specs,op",
+        [
+            pytest.param(_spec(m), _spec(r), op, id=_id)
+            for (_id, m, r, op) in _bf16_scns
+        ],
+    )
+    def test_reduce_nest_bf16(map_specs, reduce_specs, op, tmp_path):
+        sdfg, rows, cols = build_reduce_nest(
+            backend, map_specs, reduce_specs, op, primitive=PrimitiveType.BFloat
+        )
+        sdfg.set_option("reduction.float_accumulation", True)
+        compiled = _compile(backend, sdfg, tmp_path / "reduce_nest_bf16")
+
+        a = np.random.default_rng(23).random(rows * cols).astype(ml_dtypes.bfloat16)
+        acc = np.zeros(rows, dtype=ml_dtypes.bfloat16)
+        compiled(a, acc)
+
+        ref = a.astype(np.float64).reshape(rows, cols).sum(axis=1)
+        np.testing.assert_allclose(acc.astype(np.float64), ref, rtol=1e-2)
+
     _reduce_first_scns = make_reduce_first_scenarios(ws)
 
     @pytest.mark.parametrize(
@@ -2470,3 +2524,5 @@ def register(namespace, backend):
         test_reduce_different_vars=test_reduce_different_vars,
         test_sibling_nest=test_sibling_nest,
     )
+    if backend.bf16_float_compute:
+        namespace.update(test_reduce_nest_bf16=test_reduce_nest_bf16)

@@ -48,6 +48,11 @@ public:
     std::string tasklet(const data_flow::Tasklet& tasklet) override;
 
     std::string zero(const types::PrimitiveType prim_type) override;
+
+    /// hip_bfloat16 has no native arithmetic and rounds after every operator; compute in float.
+    types::PrimitiveType compute_type(const types::PrimitiveType prim_type) override {
+        return prim_type == types::PrimitiveType::BFloat ? types::PrimitiveType::Float : prim_type;
+    }
 };
 
 } // namespace sdfg::rocm

@@ -120,6 +120,53 @@ TEST(ReductionBufferAnalysisTest, SchedulePreviewIsLocalToTargetNest) {
     EXPECT_EQ(serializer.serialize(builder.subject()), materialized);
 }
 
+// With reduction.float_accumulation set, Half/BFloat partials are widened to Float; without it
+// (the default), every partial keeps the container's type.
+TEST(ReductionBufferAnalysisTest, HalfPrecisionAccumulatorsWidenToFloatWhenEnabled) {
+    const std::vector<std::tuple<types::PrimitiveType, types::PrimitiveType, int64_t>> cases = {
+        {types::PrimitiveType::BFloat, types::PrimitiveType::Float, 4},
+        {types::PrimitiveType::Half, types::PrimitiveType::Float, 4},
+        {types::PrimitiveType::Float, types::PrimitiveType::Float, 4},
+        {types::PrimitiveType::Double, types::PrimitiveType::Double, 8},
+    };
+    for (bool float_accumulation : {false, true}) {
+        Options options;
+        options.set(std::string(tiles::ReductionBufferAnalysis::FLOAT_ACCUMULATION.key), float_accumulation);
+        for (const auto& [storage, widened, widened_bytes] : cases) {
+            SCOPED_TRACE(std::to_string(static_cast<int>(storage)) + (float_accumulation ? " enabled" : " disabled"));
+            builder::StructuredSDFGBuilder builder("widened_reduction", FunctionType_CPU);
+            types::Pointer pointer{types::Scalar(storage)};
+            builder.add_container("i", types::Scalar(types::PrimitiveType::Int32));
+            builder.add_container("acc", pointer);
+            auto indvar = symbolic::symbol("i");
+            auto& reduction = builder.add_reduce(
+                builder.subject().root(),
+                indvar,
+                symbolic::Lt(indvar, symbolic::integer(8)),
+                symbolic::zero(),
+                symbolic::add(indvar, symbolic::one()),
+                {{structured_control_flow::ReductionOperation::Add, "acc"}},
+                gpu::ScheduleType_GPU_Offload::create<
+                    cuda::ScheduleType_CUDA_Offload>(gpu::TargetLevel::X_BLOCK, symbolic::integer(8))
+            );
+            auto& block = builder.add_block(reduction.root());
+            auto& input = builder.add_access(block, "acc");
+            auto& output = builder.add_access(block, "acc");
+            auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::fp_add, "out", {"left", "right"});
+            builder.add_computational_memlet(block, input, tasklet, "left", {symbolic::zero()}, pointer);
+            builder.add_computational_memlet(block, input, tasklet, "right", {symbolic::zero()}, pointer);
+            builder.add_computational_memlet(block, tasklet, "out", output, {symbolic::zero()}, pointer);
+
+            analysis::AnalysisManager manager(builder.subject(), options);
+            const auto info = manager.get<tiles::ReductionBufferAnalysis>().require(reduction, "acc");
+            const auto accumulation = float_accumulation ? widened : storage;
+            EXPECT_EQ(info.storage_primitive, storage);
+            EXPECT_EQ(info.primitive, accumulation);
+            EXPECT_EQ(info.element_bytes, float_accumulation ? widened_bytes : (types::bit_width(storage) + 7) / 8);
+        }
+    }
+}
+
 TEST(ReductionBufferAnalysisTest, FootprintGrowsOneAffineAxisAtATime) {
     builder::StructuredSDFGBuilder builder("inductive_footprint", FunctionType_CPU);
     types::Scalar integer_type(types::PrimitiveType::Int32);
