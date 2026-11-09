@@ -33,6 +33,7 @@
 #include "sdfg/types/array.h"
 #include "sdfg/types/pointer.h"
 #include "sdfg/types/scalar.h"
+#include "sdfg/types/tensor.h"
 #include "sdfg/types/type.h"
 #include "sdfg_debug_dump.h"
 
@@ -2114,6 +2115,402 @@ TEST(LocalStorageTest, Gate_EnclosingCooperativeStaging_Accepts) {
 
     LocalStorage xform(map_row, x_in1);
     EXPECT_TRUE(xform.can_be_applied(builder, am));
+}
+
+namespace {
+structured_control_flow::ScheduleType block_schedule(gpu::TargetLevel level, int64_t parallel_size) {
+    return gpu::ScheduleType_GPU_Offload::create<
+        cuda::ScheduleType_CUDA_Offload>(level, symbolic::integer(parallel_size));
+}
+
+symbolic::Expression increment(const symbolic::Symbol& indvar) {
+    return symbolic::add(indvar, symbolic::integer(1));
+}
+
+structured_control_flow::Map& add_gpu_map(
+    builder::StructuredSDFGBuilder& builder,
+    structured_control_flow::Sequence& parent,
+    const std::string& indvar_name,
+    int64_t trip_count,
+    gpu::TargetLevel level
+) {
+    auto indvar = symbolic::symbol(indvar_name);
+    return builder.add_map(
+        parent,
+        indvar,
+        symbolic::Lt(indvar, symbolic::integer(trip_count)),
+        symbolic::zero(),
+        increment(indvar),
+        block_schedule(level, trip_count)
+    );
+}
+
+// Adds `output[output_index] = X[input_index]` to @p parent and returns the X read.
+data_flow::AccessNode& add_copy_block(
+    builder::StructuredSDFGBuilder& builder,
+    structured_control_flow::Sequence& parent,
+    const std::string& output,
+    const symbolic::Expression& input_index,
+    const symbolic::Expression& output_index
+) {
+    types::Pointer pointer(types::StorageType::NV_Generic(), 0, "", types::Scalar(types::PrimitiveType::Float));
+    auto& block = builder.add_block(parent);
+    auto& input_access = builder.add_access(block, "X");
+    auto& output_access = builder.add_access(block, output);
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(block, input_access, tasklet, "_in", {input_index}, pointer);
+    builder.add_computational_memlet(block, tasklet, "_out", output_access, {output_index}, pointer);
+    return input_access;
+}
+
+// Declares R, X, Y and the int loop variables @p indvar_names, and adds the X_GRID map `row` (< R).
+structured_control_flow::Map&
+add_grid_row(builder::StructuredSDFGBuilder& builder, std::initializer_list<const char*> indvar_names) {
+    types::Scalar int_type(types::PrimitiveType::Int32);
+    types::Pointer pointer(types::StorageType::NV_Generic(), 0, "", types::Scalar(types::PrimitiveType::Float));
+    builder.add_container("R", int_type, true);
+    builder.add_container("X", pointer, true);
+    builder.add_container("Y", pointer, true);
+    builder.add_container("row", int_type);
+    for (auto* name : indvar_names) {
+        builder.add_container(name, int_type);
+    }
+    auto row = symbolic::symbol("row");
+    return builder.add_map(
+        builder.subject().root(),
+        row,
+        symbolic::Lt(row, symbolic::symbol("R")),
+        symbolic::zero(),
+        increment(row),
+        block_schedule(gpu::TargetLevel::X_GRID, 1)
+    );
+}
+
+// Grid row loop reading X[row*32 + chunk*16 + lane] through a sequential chunk loop (2) around an
+// X_BLOCK map lane (16), optionally inside a Y_BLOCK map block_row (4) directly below the grid loop.
+std::pair<structured_control_flow::Map*, data_flow::AccessNode*>
+build_split_row(builder::StructuredSDFGBuilder& builder, bool with_block_row) {
+    auto& map_row = add_grid_row(builder, {"block_row", "chunk", "lane"});
+    auto row = symbolic::symbol("row");
+    auto chunk = symbolic::symbol("chunk");
+    auto lane = symbolic::symbol("lane");
+    auto* parent = &map_row.root();
+    symbolic::Expression output_row = row;
+    if (with_block_row) {
+        auto& map_block_row = add_gpu_map(builder, *parent, "block_row", 4, gpu::TargetLevel::Y_BLOCK);
+        parent = &map_block_row.root();
+        output_row = symbolic::add(symbolic::mul(row, symbolic::integer(4)), symbolic::symbol("block_row"));
+    }
+    auto& loop_chunk =
+        builder.add_for(*parent, chunk, symbolic::Lt(chunk, symbolic::integer(2)), symbolic::zero(), increment(chunk));
+    auto& map_lane = add_gpu_map(builder, loop_chunk.root(), "lane", 16, gpu::TargetLevel::X_BLOCK);
+    auto column = symbolic::add(symbolic::mul(chunk, symbolic::integer(16)), lane);
+    auto& x_read = add_copy_block(
+        builder,
+        map_lane.root(),
+        "Y",
+        symbolic::add(symbolic::mul(row, symbolic::integer(32)), column),
+        symbolic::add(symbolic::mul(output_row, symbolic::integer(32)), column)
+    );
+    return {&map_row, &x_read};
+}
+
+void expect_tile(
+    const LocalStorage::TileInfo& tile_info,
+    const std::vector<symbolic::Expression>& expected_bases,
+    const std::vector<int64_t>& expected_extents
+) {
+    ASSERT_EQ(tile_info.bases.size(), expected_bases.size());
+    ASSERT_EQ(tile_info.dimensions.size(), expected_extents.size());
+    for (size_t dimension = 0; dimension < expected_bases.size(); ++dimension) {
+        EXPECT_TRUE(symbolic::eq(tile_info.bases[dimension], expected_bases[dimension]))
+            << "base " << dimension << ": " << tile_info.bases[dimension]->__str__();
+        EXPECT_TRUE(symbolic::eq(tile_info.dimensions[dimension], symbolic::integer(expected_extents[dimension])))
+            << "extent " << dimension << ": " << tile_info.dimensions[dimension]->__str__();
+    }
+}
+
+// True if @p block holds a TileCopyNode, none of whose symbols is in @p forbidden.
+bool has_tile_copy_without(structured_control_flow::Block& block, const std::vector<std::string>& forbidden) {
+    bool found = false;
+    for (auto& node : block.dataflow().nodes()) {
+        auto* tile_copy = dynamic_cast<tiles::TileCopyNode*>(&node);
+        if (!tile_copy) {
+            continue;
+        }
+        found = true;
+        for (const auto& symbol : tile_copy->symbols()) {
+            if (std::find(forbidden.begin(), forbidden.end(), symbol->get_name()) != forbidden.end()) {
+                ADD_FAILURE() << "staging copy uses out-of-scope symbol " << symbol->get_name();
+                return false;
+            }
+        }
+    }
+    return found;
+}
+
+const tiles::TileCopyNode* find_tile_copy(structured_control_flow::Block& block) {
+    for (auto& node : block.dataflow().nodes()) {
+        if (auto* tile_copy = dynamic_cast<const tiles::TileCopyNode*>(&node)) {
+            return tile_copy;
+        }
+    }
+    return nullptr;
+}
+
+// True if some dimension of @p tile_copy's guard is bounded by an expression using @p symbol_name.
+bool guard_uses(const tiles::TileCopyNode& tile_copy, const std::string& symbol_name) {
+    for (const auto& dimension : tile_copy.guard().dims) {
+        if (symbolic::uses(dimension.max, symbol_name)) {
+            return true;
+        }
+    }
+    return false;
+}
+} // namespace
+
+// Enclosing-cooperative staging resolves the tile at the outermost block consumer (Y_BLOCK block_row),
+// whose tile X[row*32 : row*32+32] covers the nested X_BLOCK consumer's sub-tiles.
+TEST(LocalStorageTest, Gate_EnclosingCooperative_NestedConsumers_Accepts) {
+    builder::StructuredSDFGBuilder builder("ls_enclosing_nested", FunctionType_CPU);
+    auto [map_row, x_read] = build_split_row(builder, /*with_block_row*/ true);
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    LocalStorage xform(*map_row, *x_read);
+    EXPECT_TRUE(xform.can_be_applied(builder, analysis_manager));
+}
+
+// The only block consumer's tile base depends on the sequential chunk loop inside the staging loop,
+// so the copy emitted at the grid loop could not express it.
+TEST(LocalStorageTest, CanApply_EnclosingCooperative_InnerIndvarBase_Rejects) {
+    builder::StructuredSDFGBuilder builder("ls_enclosing_inner_base", FunctionType_CPU);
+    auto [map_row, x_read] = build_split_row(builder, /*with_block_row*/ false);
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    LocalStorage xform(*map_row, *x_read);
+    EXPECT_FALSE(xform.can_be_applied(builder, analysis_manager));
+}
+
+// The staging copy for nested consumers is emitted above the Y_BLOCK loop and spans the whole
+// row, delinearized as X[row][chunk][lane] with strides (32, 16, 1); none of block_row, chunk or
+// lane (defined only inside the grid body) leaks into it.
+TEST(LocalStorageTest, Apply_EnclosingCooperative_NestedConsumers_CopyInScope) {
+    builder::StructuredSDFGBuilder builder("ls_enclosing_nested_apply", FunctionType_CPU);
+    auto [map_row, x_read] = build_split_row(builder, /*with_block_row*/ true);
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    LocalStorage xform(*map_row, *x_read);
+    ASSERT_TRUE(xform.can_be_applied(builder, analysis_manager));
+    expect_tile(xform.tile_info(), {symbolic::symbol("row"), symbolic::zero(), symbolic::zero()}, {1, 2, 16});
+
+    auto* consumer_block = dyn_cast<structured_control_flow::Block*>(x_read->get_parent().get_parent());
+    ASSERT_NE(consumer_block, nullptr);
+    xform.apply(builder, analysis_manager);
+    auto buffer = xform.local_container();
+
+    // Grid body is [copy, barrier, Y_BLOCK block_row].
+    ASSERT_EQ(map_row->root().size(), 3u);
+    auto* copy_block = dyn_cast<structured_control_flow::Block*>(&map_row->root().at(0));
+    ASSERT_NE(copy_block, nullptr);
+    EXPECT_TRUE(has_tile_copy_without(*copy_block, {"block_row", "chunk", "lane"}));
+    // The tile fits the row exactly, so the copy guard is discharged.
+    auto* tile_copy = find_tile_copy(*copy_block);
+    ASSERT_NE(tile_copy, nullptr);
+    EXPECT_TRUE(tile_copy->guard().trivial());
+    EXPECT_TRUE(block_uses(*consumer_block, buffer));
+    EXPECT_FALSE(block_uses(*consumer_block, "X"));
+}
+
+// Inside the Y_BLOCK consumer block_row, the nested X_BLOCK consumer lane reads X[row*64 + lane]
+// (columns 0..15) and the nested X_BLOCK consumer tail reads the disjoint
+// X[row*64 + 48 + block_row + tail] (columns 48..54 over all block_row). The staged tile, resolved
+// at block_row, is their union X[row][0 : 55], and every read is repointed to it.
+TEST(LocalStorageTest, Apply_EnclosingCooperative_NestedConsumersDisjointRegions_StagesUnion) {
+    builder::StructuredSDFGBuilder builder("ls_enclosing_nested_union", FunctionType_CPU);
+    auto& map_row = add_grid_row(builder, {"block_row", "lane", "tail"});
+    auto row = symbolic::symbol("row");
+    auto block_row = symbolic::symbol("block_row");
+    auto lane = symbolic::symbol("lane");
+    auto tail = symbolic::symbol("tail");
+    auto row_start = symbolic::mul(row, symbolic::integer(64));
+    auto& map_block_row = add_gpu_map(builder, map_row.root(), "block_row", 4, gpu::TargetLevel::Y_BLOCK);
+    auto& map_lane = add_gpu_map(builder, map_block_row.root(), "lane", 16, gpu::TargetLevel::X_BLOCK);
+    auto& lane_read =
+        add_copy_block(builder, map_lane.root(), "Y", symbolic::add(row_start, lane), symbolic::add(row_start, lane));
+    auto& map_tail = add_gpu_map(builder, map_block_row.root(), "tail", 4, gpu::TargetLevel::X_BLOCK);
+    auto& tail_read = add_copy_block(
+        builder,
+        map_tail.root(),
+        "Y",
+        symbolic::add(row_start, symbolic::add(symbolic::integer(48), symbolic::add(block_row, tail))),
+        symbolic::add(row_start, symbolic::add(symbolic::integer(16), symbolic::add(block_row, tail)))
+    );
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    LocalStorage xform(map_row, lane_read);
+    ASSERT_TRUE(xform.can_be_applied(builder, analysis_manager));
+    expect_tile(xform.tile_info(), {row, symbolic::zero()}, {1, 55});
+
+    auto* lane_block = dyn_cast<structured_control_flow::Block*>(lane_read.get_parent().get_parent());
+    auto* tail_block = dyn_cast<structured_control_flow::Block*>(tail_read.get_parent().get_parent());
+    ASSERT_NE(lane_block, nullptr);
+    ASSERT_NE(tail_block, nullptr);
+    xform.apply(builder, analysis_manager);
+    auto buffer = xform.local_container();
+
+    // Grid body is [copy, barrier, Y_BLOCK block_row].
+    ASSERT_EQ(map_row.root().size(), 3u);
+    auto* copy_block = dyn_cast<structured_control_flow::Block*>(&map_row.root().at(0));
+    ASSERT_NE(copy_block, nullptr);
+    EXPECT_TRUE(has_tile_copy_without(*copy_block, {"block_row", "lane", "tail"}));
+    EXPECT_TRUE(block_uses(*lane_block, buffer));
+    EXPECT_FALSE(block_uses(*lane_block, "X"));
+    EXPECT_TRUE(block_uses(*tail_block, buffer));
+    EXPECT_FALSE(block_uses(*tail_block, "X"));
+}
+
+// The Y_BLOCK consumer block_row also reads X directly in its own body. MemoryLayoutAnalysis builds
+// block_row's tile groups from its child loops only, so that direct read belongs to no group and
+// localizable_tile rejects the consumer rather than staging a tile that may not cover it.
+TEST(LocalStorageTest, CanApply_EnclosingCooperative_OuterConsumerDirectRead_Rejects) {
+    builder::StructuredSDFGBuilder builder("ls_enclosing_outer_direct", FunctionType_CPU);
+    auto& map_row = add_grid_row(builder, {"block_row", "lane"});
+    auto row_start = symbolic::mul(symbolic::symbol("row"), symbolic::integer(64));
+    auto block_row = symbolic::symbol("block_row");
+    auto lane = symbolic::symbol("lane");
+    auto& map_block_row = add_gpu_map(builder, map_row.root(), "block_row", 4, gpu::TargetLevel::Y_BLOCK);
+    auto& direct_read = add_copy_block(
+        builder,
+        map_block_row.root(),
+        "Y",
+        symbolic::add(row_start, symbolic::add(symbolic::integer(48), block_row)),
+        symbolic::add(row_start, block_row)
+    );
+    auto& map_lane = add_gpu_map(builder, map_block_row.root(), "lane", 16, gpu::TargetLevel::X_BLOCK);
+    add_copy_block(builder, map_lane.root(), "Y", symbolic::add(row_start, lane), symbolic::add(row_start, lane));
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    LocalStorage xform(map_row, direct_read);
+    EXPECT_FALSE(xform.can_be_applied(builder, analysis_manager));
+}
+
+// A ragged row: the X_BLOCK consumer lane reads X[row*16 + lane] only while row*16 + lane < N, so
+// the last row's tile is partial. The staged copy must keep the consumer's bound as a guard instead
+// of reading the full 16 columns past N.
+TEST(LocalStorageTest, Apply_EnclosingCooperative_RaggedTile_GuardsCopy) {
+    builder::StructuredSDFGBuilder builder("ls_enclosing_ragged", FunctionType_CPU);
+    builder.add_container("N", types::Scalar(types::PrimitiveType::Int32), true);
+    auto& map_row = add_grid_row(builder, {"lane"});
+    auto lane = symbolic::symbol("lane");
+    auto column = symbolic::add(symbolic::mul(symbolic::symbol("row"), symbolic::integer(16)), lane);
+    auto& map_lane = builder.add_map(
+        map_row.root(),
+        lane,
+        symbolic::And(symbolic::Lt(lane, symbolic::integer(16)), symbolic::Lt(column, symbolic::symbol("N"))),
+        symbolic::zero(),
+        increment(lane),
+        block_schedule(gpu::TargetLevel::X_BLOCK, 16)
+    );
+    auto& x_read = add_copy_block(builder, map_lane.root(), "Y", column, column);
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    LocalStorage xform(map_row, x_read);
+    ASSERT_TRUE(xform.can_be_applied(builder, analysis_manager));
+    xform.apply(builder, analysis_manager);
+
+    auto* copy_block = dyn_cast<structured_control_flow::Block*>(&map_row.root().at(0));
+    ASSERT_NE(copy_block, nullptr);
+    EXPECT_TRUE(has_tile_copy_without(*copy_block, {"lane"}));
+    auto* tile_copy = find_tile_copy(*copy_block);
+    ASSERT_NE(tile_copy, nullptr);
+    ASSERT_FALSE(tile_copy->guard().trivial());
+    EXPECT_TRUE(guard_uses(*tile_copy, "N"));
+}
+
+// Two sibling X_BLOCK consumers read the same tile X[row*16 : row*16+16] but bounded by different
+// limits (N and M). The shared copy must stage every element either consumer reads, so its guard
+// is the larger of the two bounds rather than the first consumer's.
+TEST(LocalStorageTest, Apply_EnclosingCooperative_RaggedSiblings_GuardsUnion) {
+    builder::StructuredSDFGBuilder builder("ls_enclosing_ragged_union", FunctionType_CPU);
+    types::Scalar int_type(types::PrimitiveType::Int32);
+    builder.add_container("N", int_type, true);
+    builder.add_container("M", int_type, true);
+    auto& map_row = add_grid_row(builder, {"lane", "tail"});
+    auto row_start = symbolic::mul(symbolic::symbol("row"), symbolic::integer(16));
+    std::vector<data_flow::AccessNode*> reads;
+    for (auto [indvar_name, bound_name] : {std::pair{"lane", "N"}, std::pair{"tail", "M"}}) {
+        auto indvar = symbolic::symbol(indvar_name);
+        auto column = symbolic::add(row_start, indvar);
+        auto& map_consumer = builder.add_map(
+            map_row.root(),
+            indvar,
+            symbolic::And(symbolic::Lt(indvar, symbolic::integer(16)), symbolic::Lt(column, symbolic::symbol(bound_name))),
+            symbolic::zero(),
+            increment(indvar),
+            block_schedule(gpu::TargetLevel::X_BLOCK, 16)
+        );
+        reads.push_back(&add_copy_block(builder, map_consumer.root(), "Y", column, column));
+    }
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    LocalStorage xform(map_row, *reads.front());
+    ASSERT_TRUE(xform.can_be_applied(builder, analysis_manager));
+    xform.apply(builder, analysis_manager);
+
+    auto* copy_block = dyn_cast<structured_control_flow::Block*>(&map_row.root().at(0));
+    ASSERT_NE(copy_block, nullptr);
+    auto* tile_copy = find_tile_copy(*copy_block);
+    ASSERT_NE(tile_copy, nullptr);
+    ASSERT_FALSE(tile_copy->guard().trivial());
+    EXPECT_TRUE(guard_uses(*tile_copy, "N"));
+    EXPECT_TRUE(guard_uses(*tile_copy, "M"));
+}
+
+// A tensor-typed read X[row, lane] keeps its layout offset instead of folding it into the bases,
+// so the bases [row, 0] are in scope either way. The offset must be too: an argument is accepted,
+// while a scalar assigned in the grid body or the indvar of a loop inside it is rejected.
+TEST(LocalStorageTest, CanApply_EnclosingCooperative_LayoutOffsetScope) {
+    enum class OffsetSource { Argument, AssignedInBody, InnerIndvar };
+    for (auto source : {OffsetSource::Argument, OffsetSource::AssignedInBody, OffsetSource::InnerIndvar}) {
+        SCOPED_TRACE(static_cast<int>(source));
+        builder::StructuredSDFGBuilder builder("ls_enclosing_offset_scope", FunctionType_CPU);
+        types::Scalar int_type(types::PrimitiveType::Int32);
+        builder.add_container("shift", int_type, /*is_argument*/ source == OffsetSource::Argument);
+        auto& map_row = add_grid_row(builder, {"chunk", "lane"});
+        auto row = symbolic::symbol("row");
+        auto chunk = symbolic::symbol("chunk");
+        auto lane = symbolic::symbol("lane");
+        auto shift = symbolic::symbol("shift");
+        auto* parent = &map_row.root();
+        symbolic::Expression offset = shift;
+        if (source == OffsetSource::AssignedInBody) {
+            builder.add_assignments(*parent, {{shift, symbolic::mul(row, symbolic::integer(2))}});
+        } else if (source == OffsetSource::InnerIndvar) {
+            auto& loop_chunk = builder.add_for(
+                *parent, chunk, symbolic::Lt(chunk, symbolic::integer(2)), symbolic::zero(), increment(chunk)
+            );
+            parent = &loop_chunk.root();
+            offset = symbolic::mul(chunk, symbolic::integer(16));
+        }
+        auto& map_lane = add_gpu_map(builder, *parent, "lane", 16, gpu::TargetLevel::X_BLOCK);
+
+        types::Tensor x_tensor(
+            types::Scalar(types::PrimitiveType::Float),
+            math::tensor::TensorLayout(
+                {symbolic::symbol("R"), symbolic::integer(64)}, {symbolic::integer(64), symbolic::one()}, offset
+            )
+        );
+        types::Pointer y_pointer(types::StorageType::NV_Generic(), 0, "", types::Scalar(types::PrimitiveType::Float));
+        auto& block = builder.add_block(map_lane.root());
+        auto& x_read = builder.add_access(block, "X");
+        auto& y_write = builder.add_access(block, "Y");
+        auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(block, x_read, tasklet, "_in", {row, lane}, x_tensor);
+        builder.add_computational_memlet(
+            block, tasklet, "_out", y_write, {symbolic::add(symbolic::mul(row, symbolic::integer(64)), lane)}, y_pointer
+        );
+
+        analysis::AnalysisManager analysis_manager(builder.subject());
+        LocalStorage xform(map_row, x_read);
+        EXPECT_EQ(xform.can_be_applied(builder, analysis_manager), source == OffsetSource::Argument);
+    }
 }
 
 // Register tiling (thread coarsening): a written accumulator C[iO*CY+iI] under a

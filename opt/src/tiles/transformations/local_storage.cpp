@@ -9,6 +9,7 @@
 #include "sdfg/analysis/assumptions_analysis.h"
 #include "sdfg/analysis/loop_analysis.h"
 #include "sdfg/analysis/memory_layout_analysis.h"
+#include "sdfg/analysis/users.h"
 #include "sdfg/data_flow/library_node.h"
 #include "sdfg/data_flow/library_nodes/atomic_op_node.h"
 #include "sdfg/data_flow/library_nodes/barrier_local_node.h"
@@ -127,17 +128,83 @@ std::vector<structured_control_flow::StructuredLoop*> block_scheduled_consumers(
 ) {
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
     std::vector<structured_control_flow::StructuredLoop*> consumers;
-    for (auto* desc : loop_analysis.descendants(&loop)) {
-        auto* sl = dynamic_cast<structured_control_flow::StructuredLoop*>(desc);
-        if (!sl) {
+    for (auto* descendant : loop_analysis.descendants(&loop)) {
+        auto* descendant_loop = dynamic_cast<structured_control_flow::StructuredLoop*>(descendant);
+        if (!descendant_loop) {
             continue;
         }
-        if (tiles::AxisSchedule::drives_cooperative_copy(sl->schedule_type()) &&
-            scope_reads_container(sl->root(), container)) {
-            consumers.push_back(sl);
+        if (tiles::AxisSchedule::drives_cooperative_copy(descendant_loop->schedule_type()) &&
+            scope_reads_container(descendant_loop->root(), container)) {
+            consumers.push_back(descendant_loop);
         }
     }
-    return consumers;
+    // Keep only the outermost consumers. Dropping a nested consumer loses no
+    // footprint: MemoryLayoutAnalysis builds a loop's tile bottom-up, unfolding
+    // every loop at or below it to its full range, and localizable_tile accepts the
+    // outer consumer only if its single tile group owns every memlet of the
+    // container in its body. The nested consumer's accesses are thus members of
+    // the outer group, inside its bounds, and rewritten with it. Resolving the
+    // shared tile at a nested consumer instead would leak indvars of the loops
+    // between it and @p loop into the copy emitted at @p loop.
+    std::unordered_set<structured_control_flow::ControlFlowNode*> consumer_set(consumers.begin(), consumers.end());
+    std::vector<structured_control_flow::StructuredLoop*> outermost;
+    for (auto* consumer : consumers) {
+        bool nested = false;
+        for (auto* ancestor : structured_control_flow::ControlFlowNode::parent_chain(*consumer)) {
+            if (ancestor != consumer && consumer_set.count(ancestor)) {
+                nested = true;
+                break;
+            }
+        }
+        if (!nested) {
+            outermost.push_back(consumer);
+        }
+    }
+    return outermost;
+}
+
+/// True if every symbol of @p expr is defined on entry to @p loop's body, i.e.
+/// nothing inside the body (an inner loop's indvar, a scalar assignment) writes
+/// it. A copy emitted at the top of the body can only use such symbols.
+bool is_defined_at_body_entry(
+    const symbolic::Expression& expr,
+    structured_control_flow::StructuredLoop& loop,
+    analysis::AnalysisManager& analysis_manager
+) {
+    if (expr.is_null()) {
+        return false;
+    }
+    auto& users = analysis_manager.get<analysis::Users>();
+    analysis::UsersView body_users(users, loop.root());
+    for (const auto& symbol : symbolic::atoms(expr)) {
+        if (!body_users.writes(symbol->get_name()).empty()) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/// True if the source window of a copy of @p tile emitted at the top of @p loop's
+/// body is expressible there: every base, stride and the layout offset (which
+/// tensor-typed memlets and library-node operands without immediate strides keep
+/// instead of folding it into the bases). The extents need no check;
+/// is_constant_bounded makes them integer constants.
+bool is_tile_window_defined_at_body_entry(
+    const analysis::MemoryTile& tile,
+    structured_control_flow::StructuredLoop& loop,
+    analysis::AnalysisManager& analysis_manager
+) {
+    for (const auto& base : tile.min_subset) {
+        if (!is_defined_at_body_entry(base, loop, analysis_manager)) {
+            return false;
+        }
+    }
+    for (const auto& stride : tile.layout.strides()) {
+        if (!is_defined_at_body_entry(stride, loop, analysis_manager)) {
+            return false;
+        }
+    }
+    return is_defined_at_body_entry(tile.layout.offset(), loop, analysis_manager);
 }
 
 /// True if two tiles have the same per-dimension base and extent.
@@ -519,32 +586,57 @@ bool LocalStorage::prepare(builder::StructuredSDFGBuilder& builder, analysis::An
             if (!target) {
                 return false;
             }
-            const analysis::MemoryTileGroup* ref =
+            const analysis::MemoryTileGroup* reference_group =
                 tiles::localizable_tile(*consumers.front(), container_, analysis_manager);
-            if (!ref || !tiles::is_constant_bounded(ref)) {
+            if (!reference_group || !tiles::is_constant_bounded(reference_group)) {
                 return false;
             }
-            auto count = tiles::tile_element_count(ref);
+            const auto& shared_tile = reference_group->tile;
+            // The copy is emitted at the top of loop_'s body, so its source window must
+            // not depend on anything defined inside it (e.g. an inner loop's indvar).
+            if (!is_tile_window_defined_at_body_entry(shared_tile, loop_, analysis_manager)) {
+                return false;
+            }
+            auto count = tiles::tile_element_count(reference_group);
             auto budget = symbolic::integer(static_cast<int64_t>(max_tile_elements()));
             if (count.is_null() || !symbolic::is_true(symbolic::Le(count, budget))) {
                 return false;
             }
             // Every block consumer must localize the same per-block tile; union their
             // memlets so rewrite_body repoints all of them to the shared buffer.
+            // A ragged tile (e.g. a consumer bounded by `row*16 + lane < N`) is only
+            // valid up to its max, so the copy keeps a guard against the largest max
+            // over the consumers: every element some consumer reads is in bounds.
             group_memlets_.clear();
-            for (auto* c : consumers) {
-                const analysis::MemoryTileGroup* g = tiles::localizable_tile(*c, container_, analysis_manager);
-                if (!g || !same_tile_shape(g->tile, ref->tile)) {
+            data_flow::Subset staged_maxes;
+            for (auto* consumer : consumers) {
+                const analysis::MemoryTileGroup* consumer_group =
+                    tiles::localizable_tile(*consumer, container_, analysis_manager);
+                if (!consumer_group || !same_tile_shape(consumer_group->tile, shared_tile)) {
                     return false;
                 }
-                group_memlets_.insert(g->memlets.begin(), g->memlets.end());
+                group_memlets_.insert(consumer_group->memlets.begin(), consumer_group->memlets.end());
+                const auto& consumer_maxes = consumer_group->tile.upper_subset();
+                if (staged_maxes.empty()) {
+                    staged_maxes = consumer_maxes;
+                    continue;
+                }
+                for (size_t dimension = 0; dimension < staged_maxes.size(); ++dimension) {
+                    staged_maxes[dimension] = symbolic::max(staged_maxes[dimension], consumer_maxes[dimension]);
+                }
             }
-            auto& rt = ref->tile;
-            tile_info_.dimensions = rt.extents_approx();
-            tile_info_.bases = rt.min_subset;
-            tile_info_.strides =
-                std::vector<symbolic::Expression>(rt.layout.strides().begin(), rt.layout.strides().end());
-            tile_info_.offset = rt.layout.offset();
+            // The guard is evaluated with the copy, so its bounds must be in scope there too.
+            for (const auto& max : staged_maxes) {
+                if (!is_defined_at_body_entry(max, loop_, analysis_manager)) {
+                    return false;
+                }
+            }
+            tile_info_.dimensions = shared_tile.extents_approx();
+            tile_info_.bases = shared_tile.min_subset;
+            tile_info_.maxes = staged_maxes;
+            tile_info_.strides = std::vector<
+                symbolic::Expression>(shared_tile.layout.strides().begin(), shared_tile.layout.strides().end());
+            tile_info_.offset = shared_tile.layout.offset();
             plan_ = topo;
             storage_type_ = target->storage_type(tiles::Space::Shared);
             return true;

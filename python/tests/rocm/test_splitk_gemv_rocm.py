@@ -3,7 +3,8 @@
 Starts from the plain sequential nest and applies the decode-GEMV schedule: rows on the grid
 (optionally ``WV`` rows per block on ``Y_BLOCK``), the K reduction split over ``BLOCK`` lanes on
 ``X_BLOCK`` with a contiguous ``CHUNK`` per lane, whose weight slice is staged in registers and
-vectorized. Results are checked against an fp64 reference.
+vectorized. ``stage_x`` additionally stages ``x`` once per block in LDS. Results are checked
+against an fp64 reference.
 """
 
 import ml_dtypes
@@ -96,7 +97,7 @@ def _build(n, k, primitive):
     return builder
 
 
-def _schedule(builder, n, wv, block, chunk):
+def _schedule(builder, n, wv, block, chunk, stage_x):
     if wv is None:
         grid_loop = "j"
         _apply(
@@ -119,6 +120,10 @@ def _schedule(builder, n, wv, block, chunk):
         builder,
         ROCMOffloadNestedLoop(_loop(builder, "k_tile0"), TargetLevel.X_BLOCK, block),
     )
+    if stage_x:
+        grid = _loop(builder, grid_loop)
+        _apply(builder, LocalStorage(grid, _find_access(grid.body, "x")))
+        _apply(builder, TileVectorizer(_loop(builder, grid_loop)))
     panel = _loop(builder, "k")
     _apply(builder, LocalStorage(panel, _find_access(panel.body, "W")))
     _apply(builder, TileVectorizer(_loop(builder, grid_loop)))
@@ -128,14 +133,19 @@ def _schedule(builder, n, wv, block, chunk):
 
 @pytest.mark.parametrize("dtype", list(DTYPES))
 @pytest.mark.parametrize(
-    "n,k,wv,block",
-    [(32, 1024, None, 64), (32, 2048, None, 128), (32, 1024, 4, 64)],
-    ids=["grid_rows_1wave", "grid_rows_2waves", "block_rows"],
+    "n,k,wv,block,stage_x",
+    [
+        (32, 1024, None, 64, False),
+        (32, 2048, None, 128, False),
+        (32, 1024, 4, 64, False),
+        (32, 1024, 4, 64, True),
+    ],
+    ids=["grid_rows_1wave", "grid_rows_2waves", "block_rows", "block_rows_stage_x"],
 )
-def test_splitk_gemv(dtype, n, k, wv, block, tmp_path):
+def test_splitk_gemv(dtype, n, k, wv, block, stage_x, tmp_path):
     primitive, np_dtype, chunk = DTYPES[dtype]
     builder = _build(n, k, primitive)
-    _schedule(builder, n, wv, block, chunk)
+    _schedule(builder, n, wv, block, chunk, stage_x)
     sdfg = builder.move()
     sdfg.validate()
     compiled = CompiledSDFG(sdfg._compile(str(tmp_path), "rocm"), sdfg)
