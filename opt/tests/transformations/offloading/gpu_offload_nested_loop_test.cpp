@@ -442,6 +442,109 @@ TEST(GPUOffloadNestedLoopTest, BlockNotNestedInMatchingGridRejected) {
     EXPECT_FALSE(transformation.can_be_applied(builder, analysis_manager));
 }
 
+// Y/Z block dimensions may sit directly under an X_GRID (one grid row per block); without an X_GRID
+// they still require their own grid dimension.
+TEST(GPUOffloadNestedLoopTest, YZBlockDirectlyUnderXGrid) {
+    const std::vector<std::tuple<gpu::TargetLevel, gpu::TargetLevel, bool>> cases = {
+        {gpu::TargetLevel::X_GRID, gpu::TargetLevel::Y_BLOCK, true},
+        {gpu::TargetLevel::X_GRID, gpu::TargetLevel::Z_BLOCK, true},
+        {gpu::TargetLevel::Z_GRID, gpu::TargetLevel::Y_BLOCK, false},
+        {gpu::TargetLevel::Y_GRID, gpu::TargetLevel::Z_BLOCK, false},
+    };
+    for (const auto& [grid_level, block_level, applies] : cases) {
+        SCOPED_TRACE(static_cast<int>(block_level));
+        builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+        types::Scalar int_desc(types::PrimitiveType::Int32);
+        builder.add_container("i", int_desc);
+        builder.add_container("j", int_desc);
+        builder.add_container("__daisy_cuda_A", types::Pointer(types::Scalar(types::PrimitiveType::Float)));
+
+        auto& grid = builder.add_map(
+            builder.subject().root(),
+            symbolic::symbol("i"),
+            lt("i", 128),
+            symbolic::zero(),
+            step("i"),
+            gpu_schedule(grid_level, 128)
+        );
+        auto& block = builder.add_map(
+            grid.root(),
+            symbolic::symbol("j"),
+            lt("j", 4),
+            symbolic::zero(),
+            step("j"),
+            structured_control_flow::ScheduleType_Sequential::create()
+        );
+        add_device_store(
+            builder,
+            block.root(),
+            "__daisy_cuda_A",
+            symbolic::add(symbolic::mul(symbolic::symbol("i"), symbolic::integer(4)), symbolic::symbol("j"))
+        );
+
+        Transform transformation(block, block_level, symbolic::integer(4));
+        analysis::AnalysisManager analysis_manager(builder.subject());
+        ASSERT_EQ(transformation.can_be_applied(builder, analysis_manager), applies);
+        if (applies) {
+            transformation.apply(builder, analysis_manager);
+            EXPECT_EQ(cuda::ScheduleType_CUDA_Offload::target_level(block.schedule_type()), block_level);
+        }
+    }
+}
+
+// Below an X_GRID -> Y_BLOCK nest, a grid level (under a block) or a level already used by an
+// ancestor is rejected; a distinct block level still applies.
+TEST(GPUOffloadNestedLoopTest, GridUnderBlockOrRepeatedLevelRejected) {
+    const std::vector<std::pair<gpu::TargetLevel, bool>> cases = {
+        {gpu::TargetLevel::Y_GRID, false},
+        {gpu::TargetLevel::Z_GRID, false},
+        {gpu::TargetLevel::Y_BLOCK, false},
+        {gpu::TargetLevel::X_BLOCK, true},
+    };
+    for (const auto& [inner_level, applies] : cases) {
+        SCOPED_TRACE(static_cast<int>(inner_level));
+        builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+        types::Scalar int_desc(types::PrimitiveType::Int32);
+        builder.add_container("i", int_desc);
+        builder.add_container("j", int_desc);
+        builder.add_container("k", int_desc);
+        builder.add_container("__daisy_cuda_A", types::Pointer(types::Scalar(types::PrimitiveType::Float)));
+
+        auto& grid = builder.add_map(
+            builder.subject().root(),
+            symbolic::symbol("i"),
+            lt("i", 128),
+            symbolic::zero(),
+            step("i"),
+            gpu_schedule(gpu::TargetLevel::X_GRID, 128)
+        );
+        auto& block = builder.add_map(
+            grid.root(),
+            symbolic::symbol("j"),
+            lt("j", 4),
+            symbolic::zero(),
+            step("j"),
+            gpu_schedule(gpu::TargetLevel::Y_BLOCK, 4)
+        );
+        auto& inner = builder.add_map(
+            block.root(),
+            symbolic::symbol("k"),
+            lt("k", 4),
+            symbolic::zero(),
+            step("k"),
+            structured_control_flow::ScheduleType_Sequential::create()
+        );
+        auto index = symbolic::
+            add(symbolic::mul(symbolic::symbol("i"), symbolic::integer(16)),
+                symbolic::add(symbolic::mul(symbolic::symbol("j"), symbolic::integer(4)), symbolic::symbol("k")));
+        add_device_store(builder, inner.root(), "__daisy_cuda_A", index);
+
+        Transform transformation(inner, inner_level, symbolic::integer(4));
+        analysis::AnalysisManager analysis_manager(builder.subject());
+        EXPECT_EQ(transformation.can_be_applied(builder, analysis_manager), applies);
+    }
+}
+
 TEST(GPUOffloadNestedLoopTest, WarpNotNestedInXBlockRejected) {
     builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
     auto& root = builder.subject().root();

@@ -193,7 +193,8 @@ def _validate_nest(specs, warp_size):
     ``specs`` is a list of ``(TargetLevel, parallel_size)`` pairs, outer to inner.
 
     * Each block dimension must be nested inside its corresponding grid
-      dimension (X_BLOCK<-X_GRID, Y_BLOCK<-Y_GRID, Z_BLOCK<-Z_GRID).
+      dimension (X_BLOCK<-X_GRID, Y_BLOCK<-Y_GRID, Z_BLOCK<-Z_GRID). Y/Z block
+      dimensions may instead sit under an X_GRID alone (one grid row per block).
     * Nothing may be nested inside a WARP (it must be innermost).
     * A WARP must be nested inside an X_BLOCK.
     * The product of all ancestor block dimensions of a WARP must be at least
@@ -206,7 +207,11 @@ def _validate_nest(specs, warp_size):
             raise AssertionError("nothing may be nested within WARP")
     seen = []
     for lvl in levels:
-        if lvl in _BLOCK_LEVELS and _GRID_OF[lvl] not in seen:
+        if (
+            lvl in _BLOCK_LEVELS
+            and _GRID_OF[lvl] not in seen
+            and (lvl == TargetLevel.X_BLOCK or TargetLevel.X_GRID not in seen)
+        ):
             raise AssertionError(f"{lvl} must be nested within {_GRID_OF[lvl]}")
         seen.append(lvl)
     if TargetLevel.WARP in levels:
@@ -1502,6 +1507,10 @@ def make_map_nest_scenarios(ws):
             ],
             "add",
         ),
+        # Y/Z block dimensions directly under an X_GRID, without their own grid
+        ("xg_yb_no_yg", [("xg", 6, 4), ("yb", 5, 4)], "add"),
+        ("xg_zb_no_zg", [("xg", 4, 2), ("zb", 3, 2)], "mul"),
+        ("xg_xb_yb_no_yg", [("xg", 3, 2), ("xb", ws, ws), ("yb", 4, 4)], "add"),
         # WARP must be innermost and nested under an X_BLOCK (itself under X_GRID)
         ("xg_xb_warp", [("xg", 4, 2), ("xb", ws, ws), ("w", 3, ws)], "add"),
         (
@@ -1737,6 +1746,13 @@ def make_reduce_nest_scenarios(ws):
         ("reduce_xg_min", [], [("xg", 1000, 256)], "min"),
         ("reduce_xg_xb_max_same", [], [("xg", 8, 4), ("xb", 5, 5)], "max"),
         ("map_xg_reduce_xb_min", [("xg", 8, 4)], [("xb", 16, 8)], "min"),
+        # split-K GEMV shape: rows over X_GRID x Y_BLOCK (no Y_GRID), K over X_BLOCK
+        (
+            "map_xg_yb_no_yg_reduce_xb",
+            [("xg", 8, 4), ("yb", 4, 4)],
+            [("xb", 2 * ws, ws)],
+            "add",
+        ),
         # multi-dimensional BLOCK reductions: a single reduce node folding over two
         # or three block dimensions (xb+yb[+zb]), each nested under a trivial grid.
         # The "_cover" variants use count > parallel_size so the block coverage loop

@@ -1,9 +1,9 @@
 """ROCm e2e: split-K GEMV ``y[j] = sum_k W[j, k] * x[k]`` scheduled like vLLM's wvSplitK.
 
-Starts from the plain sequential nest and applies the decode-GEMV schedule: rows on the grid,
-the K reduction split over ``BLOCK`` lanes on ``X_BLOCK`` with a contiguous ``CHUNK`` per lane,
-whose weight slice is staged in registers and vectorized. Results are checked against an fp64
-reference.
+Starts from the plain sequential nest and applies the decode-GEMV schedule: rows on the grid
+(optionally ``WV`` rows per block on ``Y_BLOCK``), the K reduction split over ``BLOCK`` lanes on
+``X_BLOCK`` with a contiguous ``CHUNK`` per lane, whose weight slice is staged in registers and
+vectorized. Results are checked against an fp64 reference.
 """
 
 import ml_dtypes
@@ -96,8 +96,24 @@ def _build(n, k, primitive):
     return builder
 
 
-def _schedule(builder, n, block, chunk):
-    _apply(builder, ROCMOffloadTransform(_loop(builder, "j"), n, TargetLevel.X_GRID))
+def _schedule(builder, n, wv, block, chunk):
+    if wv is None:
+        grid_loop = "j"
+        _apply(
+            builder, ROCMOffloadTransform(_loop(builder, "j"), n, TargetLevel.X_GRID)
+        )
+    else:
+        grid_loop = "j_tile0"
+        _apply(builder, LoopTiling(_loop(builder, "j"), wv, True))
+        _apply(
+            builder,
+            ROCMOffloadTransform(
+                _loop(builder, grid_loop), n // wv, TargetLevel.X_GRID
+            ),
+        )
+        _apply(
+            builder, ROCMOffloadNestedLoop(_loop(builder, "j"), TargetLevel.Y_BLOCK, wv)
+        )
     _apply(builder, LoopTiling(_loop(builder, "k"), chunk, True))
     _apply(
         builder,
@@ -105,21 +121,21 @@ def _schedule(builder, n, block, chunk):
     )
     panel = _loop(builder, "k")
     _apply(builder, LocalStorage(panel, _find_access(panel.body, "W")))
-    _apply(builder, TileVectorizer(_loop(builder, "j")))
+    _apply(builder, TileVectorizer(_loop(builder, grid_loop)))
     # Each lane's weight slice is read once per launch: load it nontemporally.
     _apply(builder, TileStreamingCopy(_loop(builder, "k_tile0")))
 
 
 @pytest.mark.parametrize("dtype", list(DTYPES))
 @pytest.mark.parametrize(
-    "n,k,block",
-    [(32, 1024, 64), (32, 2048, 128)],
-    ids=["grid_rows_1wave", "grid_rows_2waves"],
+    "n,k,wv,block",
+    [(32, 1024, None, 64), (32, 2048, None, 128), (32, 1024, 4, 64)],
+    ids=["grid_rows_1wave", "grid_rows_2waves", "block_rows"],
 )
-def test_splitk_gemv(dtype, n, k, block, tmp_path):
+def test_splitk_gemv(dtype, n, k, wv, block, tmp_path):
     primitive, np_dtype, chunk = DTYPES[dtype]
     builder = _build(n, k, primitive)
-    _schedule(builder, n, block, chunk)
+    _schedule(builder, n, wv, block, chunk)
     sdfg = builder.move()
     sdfg.validate()
     compiled = CompiledSDFG(sdfg._compile(str(tmp_path), "rocm"), sdfg)
