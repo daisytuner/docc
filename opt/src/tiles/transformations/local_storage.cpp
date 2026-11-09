@@ -92,9 +92,11 @@ symbolic::Assumptions build_copy_discharge_assumptions(
 std::unique_ptr<types::IType> make_nested_array(
     const std::vector<symbolic::Expression>& axes, const types::IType& scalar, const types::StorageType& storage
 ) {
-    // 16-byte alignment on shared tiles lets the cooperative float4 cp.async /
-    // LDS.128 addresses be provably aligned (emitted as __attribute__((aligned(16)))).
-    const size_t align = storage.is_nv_shared() ? 16 : 0;
+    // 16-byte alignment on the tile buffer lets the cooperative float4 cp.async /
+    // LDS.128 addresses (shared) and the per-thread int4 vector copy (register,
+    // emitted by the reference TileCopyNode dispatcher under VectorSync) be
+    // provably aligned (emitted as __attribute__((aligned(16)))).
+    const size_t align = 16;
     if (axes.empty()) {
         return std::make_unique<types::Array>(storage, align, "", scalar, symbolic::integer(1));
     }
