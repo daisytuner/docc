@@ -77,6 +77,12 @@ public:
         return prim_type;
     }
 
+    /// Statement copying @p bytes from address @p src to address @p dst, hinting that the source
+    /// is read only once (no cache retention). Empty if the language has no such hint.
+    virtual std::string streaming_copy(const std::string& dst, const std::string& src, size_t bytes) {
+        return "";
+    }
+
     /* Statements; each returns one complete statement without a trailing newline. */
 
     virtual std::string comment(const std::string& text) = 0;
