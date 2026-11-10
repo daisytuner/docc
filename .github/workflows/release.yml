@@ -97,14 +97,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [build-amd64-big, build-arm64-big, macos-14]
+        os: [build-amd64-big, build-arm64-big, macos-15]
         python: ["cp311", "cp312", "cp313", "cp314"]
         include:
           - os: build-amd64-big
             cibw_archs: x86_64
           - os: build-arm64-big
             cibw_archs: aarch64
-          - os: macos-14
+          - os: macos-15
             cibw_archs: arm64
 
     steps:
@@ -138,14 +138,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [build-amd64-big, build-arm64-big, macos-14]
+        os: [build-amd64-big, build-arm64-big, macos-15]
         python: ["cp311", "cp312"]
         include:
           - os: build-amd64-big
             cibw_archs: x86_64
           - os: build-arm64-big
             cibw_archs: aarch64
-          - os: macos-14
+          - os: macos-15
             cibw_archs: arm64
 
     steps:
@@ -353,9 +353,16 @@ jobs:
   draft-release:
     name: Draft GitHub release
     needs: [allocate-version, wheels-compiler, wheels-ai, wheels-pytorch, packages-llvm, docs]
-    # docs is skipped for releases from release/**; !cancelled() && !failure() still stops this job when a
-    # build job failed.
-    if: ${{ !cancelled() && !failure() }}
+    # Every build must have succeeded: failure() misses jobs that were cancelled (e.g. an unavailable runner)
+    # or skipped because of them. Only docs may be skipped, for releases from release/**.
+    if: >-
+      ${{ !cancelled()
+      && needs.allocate-version.result == 'success'
+      && needs.wheels-compiler.result == 'success'
+      && needs.wheels-ai.result == 'success'
+      && needs.wheels-pytorch.result == 'success'
+      && needs.packages-llvm.result == 'success'
+      && (needs.docs.result == 'success' || needs.docs.result == 'skipped') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
