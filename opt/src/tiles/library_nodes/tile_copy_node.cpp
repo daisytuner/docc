@@ -496,8 +496,8 @@ void require_constant_steps(const TileCopyNode& node) {
     }
 }
 
-// Widest access (at most the transfer width) that keeps every buffer row aligned: padded
-// rows may not be multiples of the global-side transfer.
+} // namespace
+
 size_t buffer_access_bytes(const TileCopyNode& node, size_t elem_bytes) {
     const auto& strides = node.plan().dst.strides();
     size_t width = std::max(node.bytes(), elem_bytes);
@@ -512,6 +512,8 @@ size_t buffer_access_bytes(const TileCopyNode& node, size_t elem_bytes) {
     }
     return width;
 }
+
+namespace {
 
 const char* int_type(size_t bytes) {
     switch (bytes) {

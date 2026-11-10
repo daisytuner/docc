@@ -425,11 +425,12 @@ void register_transformations(py::module& m) {
     // SoftwarePipelining transformation (cp.async double-buffer a panel loop)
     py::class_<SoftwarePipelining, Transformation>(m, "SoftwarePipelining")
         .def(
-            py::init<StructuredLoop&, size_t, bool, bool>(),
+            py::init<StructuredLoop&, size_t, bool, bool, bool>(),
             py::arg("loop"),
             py::arg("stages") = 2,
             py::arg("single_operand") = false,
             py::arg("register_staged") = false,
+            py::arg("double_buffered") = false,
             "Software-pipeline a sequential panel loop that cooperatively stages a\n"
             "shared-memory tile each iteration, overlapping the next panel's global\n"
             "load (via cp.async) with the current panel's compute.\n\n"
@@ -441,7 +442,11 @@ void register_transformations(py::module& m) {
             "        less shared memory, preserving occupancy when double-buffering\n"
             "        every operand would drop a block per SM.\n"
             "    register_staged: Keep one shared buffer; load the next panel into\n"
-            "        registers before the current compute and store it after a barrier."
+            "        registers before the current compute and store it after a barrier.\n"
+            "    double_buffered: With register_staged, use two shared buffers and two\n"
+            "        register sets: prefetch two panels ahead and store the next panel\n"
+            "        into the other buffer during the current compute (one barrier per\n"
+            "        panel). Needs a constant panel count >= 4."
         )
         .def("__repr__", [](const SoftwarePipelining& t) {
             std::ostringstream oss;
@@ -753,19 +758,22 @@ void register_transformations(py::module& m) {
 
     py::class_<sdfg::gpu::GpuMmaInterleave, Transformation>(m, "GpuMmaInterleave")
         .def(
-            py::init<StructuredLoop&, size_t, size_t, size_t>(),
+            py::init<StructuredLoop&, size_t, size_t, size_t, size_t>(),
             py::arg("loop"),
             py::arg("global_read_spacing") = 3,
             py::arg("lds_read_position") = 1,
             py::arg("lds_reads_per_step") = 0,
+            py::arg("lds_write_start") = 1,
             "Interleave the register-staged prefetch loads of a software-pipelined MMA panel loop with its\n"
             "matrix-core instructions (a PipelineScheduleNode after the k-step loop).\n\n"
-            "Apply after SoftwarePipelining(register_staged=True) and TileVectorizer.\n\n"
+            "Apply after SoftwarePipelining(register_staged=True) and TileVectorizer; double-buffered pipelines also\n"
+            "interleave the next panel's LDS writes.\n\n"
             "Args:\n"
             "    loop: The steady-state panel loop.\n"
             "    global_read_spacing: MMAs between consecutive prefetch loads (shrinks if they would not fit).\n"
             "    lds_read_position: MMA of a k-step after which the next k-step's fragments are read.\n"
             "    lds_reads_per_step: LDS read instructions per k-step; 0 derives it from the fragments.\n"
+            "    lds_write_start: First k-step that places the next panel's LDS writes (double-buffered pipelines).\n"
         )
         .def("__repr__", [](const sdfg::gpu::GpuMmaInterleave&) {
             return std::string("<GpuMmaInterleave name='GpuMmaInterleave'>");

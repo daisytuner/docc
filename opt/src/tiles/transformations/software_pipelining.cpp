@@ -1,7 +1,9 @@
 #include "sdfg/tiles/transformations/software_pipelining.h"
 
 #include <algorithm>
+#include <array>
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <set>
@@ -227,6 +229,64 @@ bool library_consumers_relocalizable(structured_control_flow::ControlFlowNode& r
     return ok;
 }
 
+// Re-address every access to @p name under @p root into stage @p stage_idx of its multi-buffered type @p staged
+// (`stage_stride` elements per stage, padding included): memlets gain a leading stage index, library consumers have
+// their operand layout biased, and TileCopyNodes (which address the buffer through their plan, not a memlet subset)
+// have their plan's destination offset biased.
+void address_stage(
+    structured_control_flow::ControlFlowNode& root,
+    const std::string& name,
+    const types::IType& staged,
+    const symbolic::Expression& stage_stride,
+    const symbolic::Expression& stage_idx
+) {
+    const auto stage_bias = symbolic::mul(stage_idx, stage_stride);
+    std::vector<tiles::TileCopyNode*> nodes_to_bias;
+    visitor::for_each_block(root, [&](structured_control_flow::Block& b) {
+        auto& dfg = b.dataflow();
+        for (auto* acc : dfg.data_nodes()) {
+            if (acc->data() != name) {
+                continue;
+            }
+            auto reindex = [&](data_flow::Memlet& m) {
+                data_flow::Subset s = m.subset();
+                s.insert(s.begin(), stage_idx);
+                m.set_subset(s);
+                m.set_base_type(staged);
+            };
+            for (auto& m : dfg.out_edges(*acc)) {
+                if (auto* tc = dynamic_cast<tiles::TileCopyNode*>(&m.dst())) {
+                    nodes_to_bias.push_back(tc);
+                } else if (auto* lib = dynamic_cast<data_flow::LibraryNode*>(&m.dst())) {
+                    auto layout = library_operand_layout(*lib, m);
+                    int idx = library_input_index(*lib, m);
+                    if (!layout || idx < 0 ||
+                        !lib->relocalize_operand(
+                            idx,
+                            math::tensor::TensorLayout(
+                                layout->shape(), layout->strides(), symbolic::add(layout->offset(), stage_bias)
+                            )
+                        )) {
+                        throw InvalidTransformationException(
+                            "SoftwarePipelining: library node cannot address the staged buffer"
+                        );
+                    }
+                } else {
+                    reindex(m);
+                }
+            }
+            for (auto& m : dfg.in_edges(*acc)) {
+                reindex(m);
+            }
+        }
+    });
+    for (auto* tc : nodes_to_bias) {
+        auto plan = tc->plan();
+        plan.dst = tiles::Layout(plan.dst.shape(), plan.dst.strides(), symbolic::add(plan.dst.offset(), stage_bias));
+        tc->set_plan(plan);
+    }
+}
+
 bool is_barrier_block(structured_control_flow::ControlFlowNode& node) {
     auto* block = dynamic_cast<structured_control_flow::Block*>(&node);
     if (block == nullptr || block->dataflow().nodes().size() != 1) {
@@ -430,6 +490,109 @@ bool peel_prefetch_tail(
 
 } // namespace
 
+namespace {
+
+/// A staging copy of a register-staged panel: the TileCopyNode and its buffer and source.
+struct StagedCopy {
+    tiles::TileCopyNode* copy;
+    std::string buffer, source;
+    std::unique_ptr<types::IType> buffer_type, source_type;
+};
+
+std::vector<StagedCopy> staged_copies(
+    const std::set<std::string>& staged_containers, structured_control_flow::Sequence& body, const StagingGroup& group
+) {
+    std::vector<StagedCopy> staged;
+    for (size_t i = group.lead + 1; i < group.trail; ++i) {
+        StagedCopy s{staging_copy(staged_containers, body.at(i))};
+        for (auto& m : s.copy->get_parent().in_edges(*s.copy)) {
+            auto& acc = static_cast<const data_flow::AccessNode&>(m.src());
+            if (m.dst_conn() == "_dst") {
+                s.buffer = acc.data();
+                s.buffer_type = m.base_type().clone();
+            } else {
+                s.source = acc.data();
+                s.source_type = m.base_type().clone();
+            }
+        }
+        staged.push_back(std::move(s));
+    }
+    return staged;
+}
+
+/// A per-thread register array holding @p s's share of one panel.
+std::string add_stage_registers(
+    builder::StructuredSDFGBuilder& builder, const StagedCopy& s, const types::StorageType& register_storage
+) {
+    const auto words = stage_words(*s.copy, staged_element_bytes(*s.copy)).value();
+    auto reg = builder.find_new_name("__daisy_stage_" + s.buffer);
+    builder.add_container(
+        reg,
+        types::Array(register_storage, 0, "", types::Scalar(types::PrimitiveType::UInt32), symbolic::integer(words))
+    );
+    return reg;
+}
+
+const types::Pointer& word_pointer() {
+    static const types::Pointer word_ptr{types::Scalar(types::PrimitiveType::UInt32)};
+    return word_ptr;
+}
+
+/// Append a block with the @p phase half of @p s's copy, for the panel at `indvar := panel`.
+tiles::TileCopyNode& add_phase_copy(
+    builder::StructuredSDFGBuilder& builder,
+    structured_control_flow::Sequence& seq,
+    const StagedCopy& s,
+    tiles::CopyPhase phase,
+    const std::string& reg,
+    const symbolic::Symbol& indvar,
+    const symbolic::Expression& panel,
+    const DebugInfo& debug_info
+) {
+    const bool load = phase == tiles::CopyPhase::LoadRegs;
+    auto& block = builder.add_block(seq, debug_info);
+    auto& dst_acc = builder.add_access(block, load ? reg : s.buffer);
+    auto& src_acc = builder.add_access(block, load ? s.source : reg);
+    auto& node = static_cast<tiles::TileCopyNode&>(builder.add_library_node<tiles::TileCopyNode>(
+        block,
+        debug_info,
+        s.copy->implementation_type(),
+        s.copy->plan(),
+        tiles::CopyDirection::In,
+        s.copy->bytes(),
+        s.copy->guard(),
+        s.copy->coop_axes(),
+        s.copy->coop_threads(),
+        s.copy->coop_lanes()
+    ));
+    node.set_phase(phase);
+    node.replace(indvar, panel);
+    builder.add_computational_memlet(
+        block, dst_acc, node, "_dst", {}, load ? static_cast<const types::IType&>(word_pointer()) : *s.buffer_type
+    );
+    builder.add_computational_memlet(
+        block, src_acc, node, "_src", {}, load ? *s.source_type : static_cast<const types::IType&>(word_pointer())
+    );
+    return node;
+}
+
+void add_barrier(builder::StructuredSDFGBuilder& builder, structured_control_flow::Sequence& seq, const DebugInfo& info) {
+    builder.add_library_node<data_flow::BarrierLocalNode>(builder.add_block(seq, info), DebugInfo());
+}
+
+std::optional<long long> constant_trip(structured_control_flow::StructuredLoop& loop) {
+    const auto trip = loop.num_iterations();
+    const auto stride = loop.stride();
+    if (trip.is_null() || stride.is_null() || !SymEngine::is_a<SymEngine::Integer>(*trip) ||
+        !SymEngine::is_a<SymEngine::Integer>(*stride) ||
+        SymEngine::rcp_static_cast<const SymEngine::Integer>(stride)->as_int() <= 0) {
+        return std::nullopt;
+    }
+    return SymEngine::rcp_static_cast<const SymEngine::Integer>(trip)->as_int();
+}
+
+} // namespace
+
 // Register-staged rewrite (see the header): prologue copy, then per panel a guarded load of
 // the next panel into per-thread registers, the compute, and a guarded store into the
 // (single) shared buffer between two barriers.
@@ -449,35 +612,11 @@ static void apply_register_staged(
     const auto next = symbolic::add(indvar, loop.stride());
     const auto guard = symbolic::Lt(next, loop.canonical_bound());
 
-    struct Staged {
-        tiles::TileCopyNode* copy;
-        std::string buffer, source;
-        std::unique_ptr<types::IType> buffer_type, source_type;
-    };
-    std::vector<Staged> staged;
+    auto staged = staged_copies(staged_containers, body, group);
     std::vector<structured_control_flow::ControlFlowNode*> replaced;
     for (size_t i = group.lead; i <= group.trail; ++i) {
         replaced.push_back(&body.at(i));
-        if (i == group.lead || i == group.trail) {
-            continue;
-        }
-        Staged s{staging_copy(staged_containers, body.at(i))};
-        for (auto& m : s.copy->get_parent().in_edges(*s.copy)) {
-            auto& acc = static_cast<const data_flow::AccessNode&>(m.src());
-            if (m.dst_conn() == "_dst") {
-                s.buffer = acc.data();
-                s.buffer_type = m.base_type().clone();
-            } else {
-                s.source = acc.data();
-                s.source_type = m.base_type().clone();
-            }
-        }
-        staged.push_back(std::move(s));
     }
-
-    auto add_barrier = [&](structured_control_flow::Sequence& seq) {
-        builder.add_library_node<data_flow::BarrierLocalNode>(builder.add_block(seq, loop.debug_info()), DebugInfo());
-    };
 
     // Prologue: the first panel, staged synchronously before the loop.
     auto& prologue = builder.add_sequence_before(*parent, loop, loop.debug_info());
@@ -486,51 +625,19 @@ static void apply_register_staged(
         auto mapping = dc.copy();
         const_cast<structured_control_flow::ControlFlowNode*>(mapping.at(&body.at(i)))->replace(indvar, loop.init());
     }
-    add_barrier(prologue);
+    add_barrier(builder, prologue, loop.debug_info());
 
     auto& load_if = builder.add_if_else_before(body, body.at(group.lead), loop.debug_info());
     auto& loads = builder.add_case(load_if, guard, loop.debug_info());
-    add_barrier(body);
+    add_barrier(builder, body, loop.debug_info());
     auto& store_if = builder.add_if_else(body, loop.debug_info());
     auto& stores = builder.add_case(store_if, guard, loop.debug_info());
-    add_barrier(body);
+    add_barrier(builder, body, loop.debug_info());
 
-    const types::Pointer word_ptr{types::Scalar(types::PrimitiveType::UInt32)};
     for (auto& s : staged) {
-        const auto words = stage_words(*s.copy, staged_element_bytes(*s.copy)).value();
-        auto reg = builder.find_new_name("__daisy_stage_" + s.buffer);
-        builder.add_container(
-            reg,
-            types::Array(register_storage, 0, "", types::Scalar(types::PrimitiveType::UInt32), symbolic::integer(words))
-        );
-        auto emit_phase = [&](structured_control_flow::Sequence& seq,
-                              tiles::CopyPhase phase,
-                              const std::string& dst,
-                              const types::IType& dst_type,
-                              const std::string& src,
-                              const types::IType& src_type) {
-            auto& block = builder.add_block(seq, loop.debug_info());
-            auto& dst_acc = builder.add_access(block, dst);
-            auto& src_acc = builder.add_access(block, src);
-            auto& node = static_cast<tiles::TileCopyNode&>(builder.add_library_node<tiles::TileCopyNode>(
-                block,
-                loop.debug_info(),
-                s.copy->implementation_type(),
-                s.copy->plan(),
-                tiles::CopyDirection::In,
-                s.copy->bytes(),
-                s.copy->guard(),
-                s.copy->coop_axes(),
-                s.copy->coop_threads(),
-                s.copy->coop_lanes()
-            ));
-            node.set_phase(phase);
-            node.replace(indvar, next);
-            builder.add_computational_memlet(block, dst_acc, node, "_dst", {}, dst_type);
-            builder.add_computational_memlet(block, src_acc, node, "_src", {}, src_type);
-        };
-        emit_phase(loads, tiles::CopyPhase::LoadRegs, reg, word_ptr, s.source, *s.source_type);
-        emit_phase(stores, tiles::CopyPhase::StoreRegs, s.buffer, *s.buffer_type, reg, word_ptr);
+        auto reg = add_stage_registers(builder, s, register_storage);
+        add_phase_copy(builder, loads, s, tiles::CopyPhase::LoadRegs, reg, indvar, next, loop.debug_info());
+        add_phase_copy(builder, stores, s, tiles::CopyPhase::StoreRegs, reg, indvar, next, loop.debug_info());
     }
 
     for (auto it = replaced.rbegin(); it != replaced.rend(); ++it) {
@@ -539,10 +646,156 @@ static void apply_register_staged(
     peel_prefetch_tail(builder, loop, {&load_if, &store_if}, 1);
 }
 
+// Double-buffered register-staged rewrite (see the header). Panel p computes from buffer p % 2 while the stores of
+// panel p + 1 fill the other buffer, so one barrier per panel suffices and both copy halves share the compute's
+// scheduling region. The loop body holds two panel steps so register sets and buffer slots are compile-time constants;
+// the 2 or 3 last panels are peeled with their guards resolved.
+static void apply_register_staged_double(
+    builder::StructuredSDFGBuilder& builder,
+    structured_control_flow::StructuredLoop& loop,
+    const std::set<std::string>& staged_containers,
+    const types::StorageType& register_storage
+) {
+    auto& sdfg = builder.subject();
+    auto& body = loop_body(loop);
+    auto group = find_staging_group(staged_containers, body).value();
+    auto* parent = dynamic_cast<structured_control_flow::Sequence*>(loop.get_parent());
+    const auto trip = constant_trip(loop);
+    if (parent == nullptr || !trip) {
+        throw InvalidTransformationException("SoftwarePipelining: double buffering needs a constant panel count");
+    }
+    const long long n = *trip;
+    const auto indvar = loop.indvar();
+    const auto init = loop.init();
+    const auto stride = loop.stride();
+    const auto& info = loop.debug_info();
+    auto panel = [&](long long i) {
+        return symbolic::add(init, symbolic::mul(symbolic::integer(i), stride));
+    };
+
+    auto staged = staged_copies(staged_containers, body, group);
+    std::vector<structured_control_flow::ControlFlowNode*> originals, compute;
+    size_t load_at = 0;
+    for (size_t i = 0; i < body.size(); ++i) {
+        originals.push_back(&body.at(i));
+        if (i < group.lead) {
+            compute.push_back(&body.at(i));
+            load_at = compute.size();
+        } else if (i > group.trail) {
+            compute.push_back(&body.at(i));
+        }
+    }
+
+    struct Buffer {
+        std::unique_ptr<types::IType> type;
+        symbolic::Expression stride;
+    };
+    std::map<std::string, Buffer> buffers;
+    for (auto& s : staged) {
+        if (!buffers.count(s.buffer)) {
+            const auto& type = sdfg.type(s.buffer);
+            buffers.emplace(s.buffer, Buffer{prepend_stage_dim(type, 2), buffer_element_count(type)});
+        }
+    }
+    auto address = [&](structured_control_flow::ControlFlowNode& root, long long slot) {
+        for (auto& [name, buffer] : buffers) {
+            address_stage(root, name, *buffer.type, buffer.stride, symbolic::integer(slot));
+        }
+    };
+    std::vector<std::array<std::string, 2>> regs;
+    for (auto& s : staged) {
+        regs.push_back(
+            {add_stage_registers(builder, s, register_storage), add_stage_registers(builder, s, register_storage)}
+        );
+    }
+
+    // One panel step at `indvar := p` (slot a = panel index % 2): [load p + 2 -> regs[a]]; compute from buf[a];
+    // [store regs[1 - a] (panel p + 1) -> buf[1 - a]]; barrier.
+    auto emit_step = [&](structured_control_flow::Sequence& seq,
+                         const symbolic::Expression& p,
+                         long long a,
+                         bool load,
+                         bool store) {
+        auto& step = builder.add_sequence(seq, info);
+        auto emit_loads = [&]() {
+            for (size_t c = 0; c < staged.size(); ++c) {
+                const auto ahead = symbolic::add(p, symbolic::mul(symbolic::integer(2), stride));
+                add_phase_copy(builder, step, staged[c], tiles::CopyPhase::LoadRegs, regs[c][a], indvar, ahead, info);
+            }
+        };
+        for (size_t i = 0; i < compute.size(); ++i) {
+            if (load && i == load_at) {
+                emit_loads();
+            }
+            deepcopy::StructuredSDFGDeepCopy dc(builder, step, *compute[i]);
+            auto mapping = dc.copy();
+            const_cast<structured_control_flow::ControlFlowNode*>(mapping.at(compute[i]))->replace(indvar, p);
+        }
+        if (load && load_at == compute.size()) {
+            emit_loads();
+        }
+        address(step, a);
+        if (store) {
+            for (size_t c = 0; c < staged.size(); ++c) {
+                auto& node =
+                    add_phase_copy(builder, step, staged[c], tiles::CopyPhase::StoreRegs, regs[c][1 - a], indvar, p, info);
+                const auto& buffer = buffers.at(staged[c].buffer);
+                auto plan = node.plan();
+                plan.dst = tiles::Layout(
+                    plan.dst.shape(),
+                    plan.dst.strides(),
+                    symbolic::add(plan.dst.offset(), symbolic::mul(symbolic::integer(1 - a), buffer.stride))
+                );
+                node.set_plan(plan);
+            }
+        }
+        add_barrier(builder, step, info);
+    };
+
+    // Prologue: panel 0 straight into buf[0], panel 1 into regs[1].
+    auto& prologue = builder.add_sequence_before(*parent, loop, info);
+    for (size_t i = group.lead + 1; i < group.trail; ++i) {
+        deepcopy::StructuredSDFGDeepCopy dc(builder, prologue, body.at(i));
+        auto mapping = dc.copy();
+        const_cast<structured_control_flow::ControlFlowNode*>(mapping.at(&body.at(i)))->replace(indvar, init);
+    }
+    address(prologue, 0);
+    for (size_t c = 0; c < staged.size(); ++c) {
+        add_phase_copy(builder, prologue, staged[c], tiles::CopyPhase::LoadRegs, regs[c][1], indvar, panel(1), info);
+    }
+    add_barrier(builder, prologue, info);
+
+    const long long steady = n - 2 - (n - 2) % 2;
+    auto& epilogue = builder.add_sequence_after(*parent, loop, info);
+    for (long long t = steady; t < n; ++t) {
+        emit_step(epilogue, panel(t), t % 2, t + 2 < n, t + 1 < n);
+    }
+    emit_step(body, indvar, 0, true, true);
+    emit_step(body, symbolic::add(indvar, stride), 1, true, true);
+    for (auto it = originals.rbegin(); it != originals.rend(); ++it) {
+        builder.remove_child(body, body.index(**it));
+    }
+    builder.update_loop(
+        loop,
+        indvar,
+        symbolic::Lt(indvar, panel(steady)),
+        init,
+        symbolic::add(indvar, symbolic::mul(symbolic::integer(2), stride))
+    );
+    for (auto& [name, buffer] : buffers) {
+        builder.change_type(name, *buffer.type);
+    }
+}
+
 SoftwarePipelining::SoftwarePipelining(
-    structured_control_flow::StructuredLoop& loop, size_t stages, bool single_operand, bool register_staged
+    structured_control_flow::StructuredLoop& loop,
+    size_t stages,
+    bool single_operand,
+    bool register_staged,
+    bool double_buffered
 )
-    : loop_(loop), stages_(stages), single_operand_(single_operand), register_staged_(register_staged) {
+    : loop_(loop), stages_(stages), single_operand_(single_operand), register_staged_(register_staged),
+      double_buffered_(double_buffered) {
 }
 
 std::string SoftwarePipelining::name() const {
@@ -609,9 +862,14 @@ bool SoftwarePipelining::
                 return false;
             }
         }
+        if (double_buffered_) {
+            auto n = constant_trip(loop_);
+            return n && *n >= 4 && dynamic_cast<structured_control_flow::Sequence*>(loop_.get_parent()) != nullptr &&
+                   library_consumers_relocalizable(loop_.root(), staged);
+        }
         return true;
     }
-    if (!library_consumers_relocalizable(loop_.root(), staged)) {
+    if (double_buffered_ || !library_consumers_relocalizable(loop_.root(), staged)) {
         return false;
     }
 
@@ -631,7 +889,11 @@ void SoftwarePipelining::apply(builder::StructuredSDFGBuilder& builder, analysis
     auto staged = staging_containers(sdfg, target);
 
     if (register_staged_) {
-        apply_register_staged(builder, loop_, staged, target->storage_type(tiles::Space::Register));
+        if (double_buffered_) {
+            apply_register_staged_double(builder, loop_, staged, target->storage_type(tiles::Space::Register));
+        } else {
+            apply_register_staged(builder, loop_, staged, target->storage_type(tiles::Space::Register));
+        }
         analysis_manager.invalidate_all();
         return;
     }
@@ -654,57 +916,7 @@ void SoftwarePipelining::apply(builder::StructuredSDFGBuilder& builder, analysis
     }
     for (const auto& name : pipelined) {
         auto staged = prepend_stage_dim(sdfg.type(name), stages_);
-        // A TileCopyNode addresses the buffer through its plan (its `_dst` memlet is a
-        // bare pointer with no subset), so double-buffering biases the node's plan
-        // offset by stage_idx * per-stage buffer stride (padding included) instead of
-        // reindexing that memlet.
-        const auto stage_stride = buffer_element_count(sdfg.type(name));
-        const auto stage_bias = symbolic::mul(stage_idx, stage_stride);
-        std::vector<tiles::TileCopyNode*> nodes_to_bias;
-        visitor::for_each_block(loop_.root(), [&](structured_control_flow::Block& b) {
-            auto& dfg = b.dataflow();
-            for (auto* acc : dfg.data_nodes()) {
-                if (acc->data() != name) {
-                    continue;
-                }
-                auto reindex = [&](data_flow::Memlet& m) {
-                    data_flow::Subset s = m.subset();
-                    s.insert(s.begin(), stage_idx);
-                    m.set_subset(s);
-                    m.set_base_type(*staged);
-                };
-                for (auto& m : dfg.out_edges(*acc)) {
-                    if (auto* tc = dynamic_cast<tiles::TileCopyNode*>(&m.dst())) {
-                        nodes_to_bias.push_back(tc); // node writes via plan, not this memlet
-                    } else if (auto* lib = dynamic_cast<data_flow::LibraryNode*>(&m.dst())) {
-                        auto layout = library_operand_layout(*lib, m);
-                        int idx = library_input_index(*lib, m);
-                        if (!layout || idx < 0 ||
-                            !lib->relocalize_operand(
-                                idx,
-                                math::tensor::TensorLayout(
-                                    layout->shape(), layout->strides(), symbolic::add(layout->offset(), stage_bias)
-                                )
-                            )) {
-                            throw InvalidTransformationException(
-                                "SoftwarePipelining: library node cannot address the staged buffer"
-                            );
-                        }
-                    } else {
-                        reindex(m);
-                    }
-                }
-                for (auto& m : dfg.in_edges(*acc)) {
-                    reindex(m);
-                }
-            }
-        });
-        for (auto* tc : nodes_to_bias) {
-            auto plan = tc->plan();
-            auto biased = symbolic::add(plan.dst.offset(), stage_bias);
-            plan.dst = tiles::Layout(plan.dst.shape(), plan.dst.strides(), biased);
-            tc->set_plan(plan);
-        }
+        address_stage(loop_.root(), name, *staged, buffer_element_count(sdfg.type(name)), stage_idx);
         builder.change_type(name, *staged);
     }
 
@@ -859,6 +1071,7 @@ void SoftwarePipelining::to_json(nlohmann::json& j) const {
     j["parameters"]["stages"] = stages_;
     j["parameters"]["single_operand"] = single_operand_;
     j["parameters"]["register_staged"] = register_staged_;
+    j["parameters"]["double_buffered"] = double_buffered_;
 
     serializer::JSONSerializer ser_flat(false);
     j["subgraph"] = nlohmann::json::object();
@@ -881,6 +1094,7 @@ SoftwarePipelining SoftwarePipelining::from_json(builder::StructuredSDFGBuilder&
     size_t stages = 2;
     bool single_operand = false;
     bool register_staged = false;
+    bool double_buffered = false;
     if (j.contains("parameters")) {
         if (j["parameters"].contains("stages")) {
             stages = j["parameters"]["stages"].get<size_t>();
@@ -891,8 +1105,9 @@ SoftwarePipelining SoftwarePipelining::from_json(builder::StructuredSDFGBuilder&
         if (j["parameters"].contains("register_staged")) {
             register_staged = j["parameters"]["register_staged"].get<bool>();
         }
+        double_buffered = j["parameters"].value("double_buffered", false);
     }
-    return SoftwarePipelining(*loop, stages, single_operand, register_staged);
+    return SoftwarePipelining(*loop, stages, single_operand, register_staged, double_buffered);
 }
 
 } // namespace transformations

@@ -177,6 +177,10 @@ bool guard_axis_aligned(const TileCopyNode& node, size_t axis, long long factor)
 /// contiguous multi-element run under @p atom, or 0. `node.bytes()` is taken as the element width.
 size_t widest_legal_transfer(const TileCopyNode& node, CopyAtom atom, const std::vector<size_t>& widths);
 
+/// Widest access (at most the transfer width) of @p node's buffer side that keeps every buffer row aligned; padded
+/// rows may not be multiples of the global-side transfer, so one transfer becomes `bytes / width` buffer accesses.
+size_t buffer_access_bytes(const TileCopyNode& node, size_t elem_bytes);
+
 /// The single-element copy statement `dst[dst_geo(index)] = src[src_geo(index)];`
 /// for the tile coordinate @p index, addressing both bare-pointer sides as flat
 /// @p elem pointers via the plan's layouts. Shared by every @ref TileCopyNode

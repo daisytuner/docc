@@ -12,6 +12,7 @@
 #include "sdfg/codegen/code_generators/cpp_code_generator.h"
 #include "sdfg/codegen/language_extensions/c_language_extension.h"
 #include "sdfg/codegen/utils.h"
+#include "sdfg/data_flow/library_nodes/barrier_local_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/matmul_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/tensor_layout.h"
 #include "sdfg/passes/expansion/library_node_expansion_pass.h"
@@ -1237,6 +1238,194 @@ TEST(ROCMMMATest, RegisterStagedPeelStepAddsOneIteration_gfx90a) {
 
 namespace {
 
+std::string copy_container(const tiles::TileCopyNode& tc, const std::string& conn) {
+    for (auto& m : tc.get_parent().in_edges(tc)) {
+        if (m.dst_conn() == conn) {
+            return static_cast<const data_flow::AccessNode&>(m.src()).data();
+        }
+    }
+    return "";
+}
+
+struct StepCopies {
+    size_t loads = 0, stores = 0, k_loops = 0, barriers = 0;
+    std::set<std::string> load_regs, store_regs;
+    std::vector<symbolic::Expression> store_offsets;
+};
+
+StepCopies step_copies(structured_control_flow::ControlFlowNode& step) {
+    StepCopies c;
+    visitor::for_each_block(step, [&](structured_control_flow::Block& b) {
+        for (auto* lib : b.dataflow().library_nodes()) {
+            c.barriers += dynamic_cast<data_flow::BarrierLocalNode*>(lib) != nullptr;
+            auto* tc = dynamic_cast<tiles::TileCopyNode*>(lib);
+            if (tc != nullptr && tc->phase() == tiles::CopyPhase::LoadRegs) {
+                ++c.loads;
+                c.load_regs.insert(copy_container(*tc, "_dst"));
+            } else if (tc != nullptr && tc->phase() == tiles::CopyPhase::StoreRegs) {
+                ++c.stores;
+                c.store_regs.insert(copy_container(*tc, "_src"));
+                c.store_offsets.push_back(tc->plan().dst.offset());
+            }
+        }
+    });
+    std::function<void(structured_control_flow::ControlFlowNode&)> find_k =
+        [&](structured_control_flow::ControlFlowNode& n) {
+            if (dynamic_cast<structured_control_flow::StructuredLoop*>(&n) != nullptr) {
+                ++c.k_loops;
+            } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&n)) {
+                for (size_t i = 0; i < seq->size(); i++) {
+                    find_k(seq->at(i));
+                }
+            }
+        };
+    find_k(step);
+    return c;
+}
+
+struct DoubleBuffered {
+    std::unique_ptr<builder::StructuredSDFGBuilder> builder;
+    structured_control_flow::StructuredLoop* panel = nullptr;
+    structured_control_flow::Sequence* prologue = nullptr;
+    structured_control_flow::Sequence* epilogue = nullptr;
+};
+
+// Double-buffered register-staged pipelining of a 64x64xK MMA nest with K = 32 * panels.
+DoubleBuffered pipeline_double_buffered(int panels) {
+    DoubleBuffered d;
+    d.builder = std::make_unique<builder::StructuredSDFGBuilder>("double_buffered", FunctionType_CPU);
+    auto& builder = *d.builder;
+    auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
+    auto [block, matmul_node] = build_offloaded_mma_structure(builder, 64, 64, 32 * panels, 32, 32, 16, arch);
+    passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch));
+    strip_mine_k(builder, 2);
+    localize(builder, "tile_k0", /*transpose_b=*/true);
+    {
+        analysis::AnalysisManager am(builder.subject());
+        transformations::SoftwarePipelining
+            sp(*find_loop(am, "tile_k0_tile0"), 2, false, true, /*double_buffered=*/true);
+        EXPECT_TRUE(sp.can_be_applied(builder, am));
+        sp.apply(builder, am);
+    }
+    EXPECT_NO_THROW(builder.subject().validate());
+    analysis::AnalysisManager am(builder.subject());
+    d.panel = find_loop(am, "tile_k0_tile0");
+    auto& parent = static_cast<structured_control_flow::Sequence&>(*d.panel->get_parent());
+    d.prologue = dynamic_cast<structured_control_flow::Sequence*>(&parent.at(parent.index(*d.panel) - 1));
+    d.epilogue = dynamic_cast<structured_control_flow::Sequence*>(&parent.at(parent.index(*d.panel) + 1));
+    return d;
+}
+
+} // namespace
+
+/// Base: with four panels the prologue fills buffer 0 with panel 0 and registers with panel 1; one branch-free
+/// steady iteration runs two panel steps whose register sets hand over (step 0 loads what step 1 stores and vice
+/// versa) and whose stores fill different buffers; the last two panels are peeled, only the first of them storing.
+TEST(ROCMMMATest, DoubleBufferedBaseFourPanels_gfx90a) {
+    auto d = pipeline_double_buffered(4);
+    ASSERT_NE(d.panel, nullptr);
+    ASSERT_NE(d.prologue, nullptr);
+    ASSERT_NE(d.epilogue, nullptr);
+    EXPECT_TRUE(symbolic::eq(d.panel->num_iterations(), symbolic::integer(1))) << d.panel->num_iterations()->__str__();
+    EXPECT_EQ(count_guards(d.panel->root()), 0u);
+
+    for (auto& name : d.builder->subject().containers()) {
+        if (name.find("__daisy_local_storage") == 0) {
+            auto* arr = dynamic_cast<const types::Array*>(&d.builder->subject().type(name));
+            ASSERT_NE(arr, nullptr) << name;
+            EXPECT_TRUE(symbolic::eq(arr->num_elements(), symbolic::integer(2))) << name;
+        }
+    }
+
+    auto prologue = step_copies(*d.prologue);
+    EXPECT_EQ(prologue.loads, 2u);
+    EXPECT_EQ(prologue.barriers, 1u);
+
+    structured_control_flow::Sequence* body_ptr = &d.panel->root();
+    while (body_ptr->size() == 1 && dynamic_cast<structured_control_flow::Sequence*>(&body_ptr->at(0)) != nullptr) {
+        body_ptr = static_cast<structured_control_flow::Sequence*>(&body_ptr->at(0));
+    }
+    auto& body = *body_ptr;
+    ASSERT_EQ(body.size(), 2u);
+    auto s0 = step_copies(body.at(0));
+    auto s1 = step_copies(body.at(1));
+    for (auto* s : {&s0, &s1}) {
+        EXPECT_EQ(s->loads, 2u);
+        EXPECT_EQ(s->stores, 2u);
+        EXPECT_EQ(s->k_loops, 1u);
+        EXPECT_EQ(s->barriers, 1u);
+    }
+    EXPECT_EQ(s0.load_regs, s1.store_regs);
+    EXPECT_EQ(s1.load_regs, s0.store_regs);
+    EXPECT_EQ(prologue.load_regs, s0.store_regs);
+    ASSERT_EQ(s0.store_offsets.size(), s1.store_offsets.size());
+    for (size_t i = 0; i < s0.store_offsets.size(); ++i) {
+        EXPECT_FALSE(symbolic::eq(s0.store_offsets[i], s1.store_offsets[i])) << s0.store_offsets[i]->__str__();
+    }
+
+    ASSERT_EQ(d.epilogue->size(), 2u);
+    auto t0 = step_copies(d.epilogue->at(0));
+    auto t1 = step_copies(d.epilogue->at(1));
+    EXPECT_EQ(t0.loads, 0u);
+    EXPECT_EQ(t0.stores, 2u);
+    EXPECT_EQ(t0.store_regs, s0.store_regs);
+    EXPECT_EQ(t1.loads + t1.stores, 0u);
+    EXPECT_EQ(t0.k_loops + t1.k_loops, 2u);
+    EXPECT_EQ(count_guards(*d.epilogue), 0u);
+}
+
+/// Step: one more panel either adds a third peeled panel (odd count: it loads and stores like a steady step) or
+/// turns the previous third peeled panel into a second steady step (even count: one more steady iteration).
+TEST(ROCMMMATest, DoubleBufferedStepAddsOnePanel_gfx90a) {
+    for (int panels = 4; panels <= 7; ++panels) {
+        auto d = pipeline_double_buffered(panels);
+        ASSERT_NE(d.panel, nullptr) << panels;
+        ASSERT_NE(d.epilogue, nullptr) << panels;
+        const int tail = 2 + panels % 2;
+        EXPECT_TRUE(symbolic::eq(d.panel->num_iterations(), symbolic::integer((panels - tail) / 2))) << panels;
+        EXPECT_EQ(count_guards(d.panel->root()), 0u) << panels;
+        ASSERT_EQ(d.epilogue->size(), static_cast<size_t>(tail)) << panels;
+        auto all = step_copies(*d.epilogue);
+        EXPECT_EQ(all.k_loops, static_cast<size_t>(tail)) << panels;
+        EXPECT_EQ(all.loads, static_cast<size_t>(2 * (panels % 2))) << panels;
+        EXPECT_EQ(all.stores, static_cast<size_t>(2 + 2 * (panels % 2))) << panels;
+        EXPECT_EQ(all.barriers, static_cast<size_t>(tail)) << panels;
+    }
+}
+
+/// Double buffering needs a register-staged pipeline over at least four panels.
+TEST(ROCMMMATest, DoubleBufferedRejectsShortOrUnstagedPanels_gfx90a) {
+    for (auto [panels, register_staged] : {std::pair{3, true}, std::pair{4, false}}) {
+        auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
+        sdfg::builder::StructuredSDFGBuilder builder("double_buffered_reject", FunctionType_CPU);
+        auto [block, matmul_node] = build_offloaded_mma_structure(builder, 64, 64, 32 * panels, 32, 32, 16, arch);
+        passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch));
+        strip_mine_k(builder, 2);
+        localize(builder, "tile_k0", /*transpose_b=*/true);
+        analysis::AnalysisManager am(builder.subject());
+        transformations::SoftwarePipelining sp(*find_loop(am, "tile_k0_tile0"), 2, false, register_staged, true);
+        EXPECT_FALSE(sp.can_be_applied(builder, am)) << panels;
+    }
+}
+
+/// The mode round-trips through JSON.
+TEST(ROCMMMATest, DoubleBufferedJsonRoundTrip_gfx90a) {
+    auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
+    sdfg::builder::StructuredSDFGBuilder builder("double_buffered_json", FunctionType_CPU);
+    auto [block, matmul_node] = build_offloaded_mma_structure(builder, 64, 64, 128, 32, 32, 16, arch);
+    passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch));
+    analysis::AnalysisManager am(builder.subject());
+    transformations::SoftwarePipelining sp(*find_loop(am, "tile_k0"), 2, false, true, true);
+    nlohmann::json j;
+    sp.to_json(j);
+    EXPECT_TRUE(j["parameters"]["double_buffered"].get<bool>());
+    nlohmann::json again;
+    transformations::SoftwarePipelining::from_json(builder, j).to_json(again);
+    EXPECT_EQ(j, again);
+}
+
+namespace {
+
 struct InterleaveCase {
     std::unique_ptr<builder::StructuredSDFGBuilder> builder;
     structured_control_flow::StructuredLoop* panel = nullptr;
@@ -1244,8 +1433,10 @@ struct InterleaveCase {
 };
 
 // 64x64 MMA tile with a (wm x wn) wave tile, K panels of @p blocks MMA blocks, register-staged and vectorized: the
-// steady-state panel loop GpuMmaInterleave targets. @p pipeline = false stops before SoftwarePipelining.
-InterleaveCase build_interleave_case(int blocks, gpu::BlockCounts wave_tile, bool pipeline = true) {
+// steady-state panel loop GpuMmaInterleave targets (four panels). @p pipeline = false stops before SoftwarePipelining;
+// @p double_buffered pipelines with two buffers (two panel steps per iteration, loads_per_thread counts one step).
+InterleaveCase
+build_interleave_case(int blocks, gpu::BlockCounts wave_tile, bool pipeline = true, bool double_buffered = false) {
     InterleaveCase c;
     c.builder = std::make_unique<builder::StructuredSDFGBuilder>("interleave", FunctionType_CPU);
     auto& builder = *c.builder;
@@ -1256,7 +1447,7 @@ InterleaveCase build_interleave_case(int blocks, gpu::BlockCounts wave_tile, boo
     localize(builder, "tile_k0");
     if (pipeline) {
         analysis::AnalysisManager am(builder.subject());
-        transformations::SoftwarePipelining sp(*find_loop(am, "tile_k0_tile0"), 2, false, /*register_staged=*/true);
+        transformations::SoftwarePipelining sp(*find_loop(am, "tile_k0_tile0"), 2, false, true, double_buffered);
         EXPECT_TRUE(sp.can_be_applied(builder, am));
         sp.apply(builder, am);
     }
@@ -1284,12 +1475,15 @@ InterleaveCase build_interleave_case(int blocks, gpu::BlockCounts wave_tile, boo
             }
         });
     }
+    if (double_buffered) {
+        c.loads_per_thread /= 2;
+    }
     return c;
 }
 
 struct RecipeCounts {
-    size_t mfma = 0, global = 0, lds_read_groups = 0, lds_reads = 0;
-    std::vector<size_t> mfma_before_global;
+    size_t mfma = 0, global = 0, lds_read_groups = 0, lds_reads = 0, lds_writes = 0;
+    std::vector<size_t> mfma_before_global, mfma_before_write;
 };
 
 RecipeCounts count_recipe(const std::vector<tiles::ScheduleGroup>& groups) {
@@ -1310,6 +1504,10 @@ RecipeCounts count_recipe(const std::vector<tiles::ScheduleGroup>& groups) {
                 r.lds_reads = g.count;
                 break;
             case tiles::InstructionClass::LdsWrite:
+                for (size_t i = 0; i < g.count; ++i) {
+                    r.mfma_before_write.push_back(r.mfma);
+                }
+                r.lds_writes += g.count;
                 break;
         }
     }
@@ -1465,6 +1663,111 @@ TEST(ROCMMMATest, InterleaveRejectsUnpipelinedPanel_gfx90a) {
     gpu::GpuMmaInterleave xform(*c.panel);
     EXPECT_FALSE(xform.recipe(*c.builder).has_value());
     EXPECT_FALSE(xform.can_be_applied(*c.builder, am));
+}
+
+/// Base (double-buffered): both panel steps of the iteration share one recipe: the single-buffered placement of
+/// MFMAs, fragment reads and prefetch loads, plus the next panel's LDS writes, each after an MFMA of a k-step >=
+/// lds_write_start (1); apply() puts one schedule right before each step's barrier, after its stores.
+TEST(ROCMMMATest, InterleaveDoubleBufferedBaseTwoSteps_gfx90a) {
+    auto single = build_interleave_case(2, {2, 2});
+    ASSERT_NE(single.panel, nullptr);
+    auto single_recipe = gpu::GpuMmaInterleave(*single.panel).recipe(*single.builder);
+    ASSERT_TRUE(single_recipe.has_value());
+    EXPECT_EQ(count_recipe(*single_recipe).lds_writes, 0u);
+
+    auto c = build_interleave_case(2, {2, 2}, true, /*double_buffered=*/true);
+    ASSERT_NE(c.panel, nullptr);
+    auto& builder = *c.builder;
+    gpu::GpuMmaInterleave xform(*c.panel);
+    auto recipe = xform.recipe(builder);
+    ASSERT_TRUE(recipe.has_value());
+    auto r = count_recipe(*recipe);
+    EXPECT_EQ(r.mfma, 8u);
+    EXPECT_EQ(r.lds_read_groups, 2u);
+    EXPECT_EQ(r.global, c.loads_per_thread);
+    EXPECT_GE(r.lds_writes, 2u);
+    for (size_t m : r.mfma_before_write) {
+        EXPECT_GE(m, 5u);
+    }
+
+    analysis::AnalysisManager am(builder.subject());
+    ASSERT_TRUE(xform.can_be_applied(builder, am));
+    xform.apply(builder, am);
+    EXPECT_NO_THROW(builder.subject().validate());
+    structured_control_flow::Sequence* body = &c.panel->root();
+    while (body->size() == 1 && dynamic_cast<structured_control_flow::Sequence*>(&body->at(0)) != nullptr) {
+        body = static_cast<structured_control_flow::Sequence*>(&body->at(0));
+    }
+    ASSERT_EQ(body->size(), 2u);
+    for (size_t s = 0; s < 2; ++s) {
+        auto& step = static_cast<structured_control_flow::Sequence&>(body->at(s));
+        size_t schedules = 0, at = 0;
+        for (size_t i = 0; i < step.size(); ++i) {
+            auto* b = dynamic_cast<structured_control_flow::Block*>(&step.at(i));
+            for (auto* lib :
+                 b == nullptr ? std::unordered_set<data_flow::LibraryNode*>{} : b->dataflow().library_nodes()) {
+                if (dynamic_cast<tiles::PipelineScheduleNode*>(lib) != nullptr) {
+                    ++schedules;
+                    at = i;
+                }
+                if (auto* tc = dynamic_cast<tiles::TileCopyNode*>(lib);
+                    tc && tc->phase() == tiles::CopyPhase::LoadRegs) {
+                    EXPECT_TRUE(tc->scheduled());
+                }
+            }
+        }
+        EXPECT_EQ(schedules, 1u) << s;
+        ASSERT_EQ(at + 2, step.size()) << s;
+        auto* barrier = dynamic_cast<structured_control_flow::Block*>(&step.at(at + 1));
+        ASSERT_NE(barrier, nullptr);
+        EXPECT_EQ(barrier->dataflow().library_nodes().size(), 1u);
+        EXPECT_NE(dynamic_cast<data_flow::BarrierLocalNode*>(*barrier->dataflow().library_nodes().begin()), nullptr);
+        auto* store = dynamic_cast<structured_control_flow::Block*>(&step.at(at - 1));
+        ASSERT_NE(store, nullptr);
+        auto* tc = dynamic_cast<tiles::TileCopyNode*>(*store->dataflow().library_nodes().begin());
+        ASSERT_NE(tc, nullptr);
+        EXPECT_EQ(tc->phase(), tiles::CopyPhase::StoreRegs);
+    }
+
+    auto out = test::utils::test_codegen(builder.subject(), "interleave_double", true);
+    std::string kernels;
+    for (auto& [name, snippet] : out.snippets) {
+        kernels += snippet.content;
+    }
+    size_t writes = 0;
+    for (size_t pos = kernels.find("sched_group_barrier(0x200"); pos != std::string::npos;
+         pos = kernels.find("sched_group_barrier(0x200", pos + 1)) {
+        ++writes;
+    }
+    size_t write_groups = 0;
+    for (const auto& g : *recipe) {
+        write_groups += g.cls == tiles::InstructionClass::LdsWrite;
+    }
+    EXPECT_EQ(writes, 2 * write_groups) << kernels;
+}
+
+/// Step: raising lds_write_start by one k-step moves every LDS write behind that k-step's MFMAs without changing
+/// their count; from the last k-step on, all writes trail the MFMAs.
+TEST(ROCMMMATest, InterleaveDoubleBufferedStepDefersWrites_gfx90a) {
+    auto c = build_interleave_case(2, {2, 2}, true, /*double_buffered=*/true);
+    ASSERT_NE(c.panel, nullptr);
+    auto base = gpu::GpuMmaInterleave(*c.panel, 3, 1, 0, 0).recipe(*c.builder);
+    ASSERT_TRUE(base.has_value());
+    const size_t writes = count_recipe(*base).lds_writes;
+    ASSERT_GT(writes, 0u);
+    for (size_t start = 0; start <= 3; ++start) {
+        auto recipe = gpu::GpuMmaInterleave(*c.panel, 3, 1, 0, start).recipe(*c.builder);
+        ASSERT_TRUE(recipe.has_value()) << start;
+        auto r = count_recipe(*recipe);
+        EXPECT_EQ(r.lds_writes, writes) << start;
+        EXPECT_EQ(r.mfma, 8u) << start;
+        for (size_t m : r.mfma_before_write) {
+            EXPECT_GE(m, std::min<size_t>(8, std::max<size_t>(1, 4 * start))) << start;
+            if (start >= 2) {
+                EXPECT_EQ(m, 8u) << start;
+            }
+        }
+    }
 }
 
 // Raw 32x32x8 MFMA atom: only CDNA offers it; fragments are register vectors and every operand

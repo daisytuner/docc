@@ -53,13 +53,21 @@ class SoftwarePipelining : public Transformation {
     //   prologue: copy panel 0; barrier
     //   for p: [p+1 < n: load p+1 -> regs]; compute p; barrier; [p+1 < n: regs -> buf]; barrier
     bool register_staged_;
+    // With register_staged_: two shared buffers and two register sets, prefetching two panels ahead so panel p's
+    // compute (from buf[p%2]) and the store of panel p+1 (into buf[(p+1)%2]) need no barrier between them:
+    //   prologue: copy panel 0 -> buf[0]; load panel 1 -> regs[1]; barrier
+    //   for p: [p+2 < n: load p+2 -> regs[p%2]]; compute buf[p%2]; [p+1 < n: regs[(p+1)%2] -> buf[(p+1)%2]]; barrier
+    // The loop body holds two panels (constant slots); the guarded last panels are peeled. Needs a constant
+    // panel count >= 4.
+    bool double_buffered_;
 
 public:
     explicit SoftwarePipelining(
         structured_control_flow::StructuredLoop& loop,
         size_t stages = 2,
         bool single_operand = false,
-        bool register_staged = false
+        bool register_staged = false,
+        bool double_buffered = false
     );
 
     virtual std::string name() const override;

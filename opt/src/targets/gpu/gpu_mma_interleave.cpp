@@ -108,16 +108,17 @@ const std::string* connector_container(const data_flow::LibraryNode& node, const
     return nullptr;
 }
 
-// Global read instructions per thread of a register-staged load.
-std::optional<long long> global_reads(const tiles::TileCopyNode& copy) {
+// Element width of the container on @p node's connector @p conn.
+long long connector_elem_bytes(const data_flow::LibraryNode& node, const std::string& conn) {
+    const auto* type = connector_type(node, conn);
+    return type == nullptr ? 0 : static_cast<long long>(types::bit_width(type->primitive_type()) / 8);
+}
+
+// Per-thread transfers of a register-staged copy half, each moving `bytes()` (or one element when scalar).
+std::optional<long long> transfers(const tiles::TileCopyNode& copy, long long elem_bytes) {
     auto total = as_constant(copy.plan().src.total_elements());
     auto threads = as_constant(copy.coop_threads());
-    const auto* src_type = connector_type(copy, "_src");
-    if (!total || !threads || *threads <= 0 || src_type == nullptr) {
-        return std::nullopt;
-    }
-    const long long elem_bytes = types::bit_width(src_type->primitive_type()) / 8;
-    if (elem_bytes <= 0) {
+    if (!total || !threads || *threads <= 0 || elem_bytes <= 0) {
         return std::nullopt;
     }
     auto ceil_div = [](long long a, long long b) {
@@ -134,26 +135,47 @@ std::optional<long long> global_reads(const tiles::TileCopyNode& copy) {
     return ceil_div(*total, *threads * factor);
 }
 
-struct PanelShape {
+// Global read instructions per thread of a register-staged load.
+std::optional<long long> global_reads(const tiles::TileCopyNode& copy) {
+    return transfers(copy, connector_elem_bytes(copy, "_src"));
+}
+
+// LDS write instructions per thread of a register-staged store: padded buffer rows split a transfer into
+// row-aligned pieces.
+std::optional<long long> lds_writes(const tiles::TileCopyNode& copy) {
+    const long long elem_bytes = connector_elem_bytes(copy, "_dst");
+    auto count = transfers(copy, elem_bytes);
+    if (!count || copy.atom() != tiles::CopyAtom::VectorSync) {
+        return count;
+    }
+    const auto chunk = static_cast<long long>(tiles::buffer_access_bytes(copy, static_cast<size_t>(elem_bytes)));
+    const auto bytes = static_cast<long long>(copy.bytes());
+    return *count * (chunk >= bytes || chunk <= 0 ? 1 : bytes / chunk);
+}
+
+// One scheduling region of a panel: the prefetch loads, the k-step loop, the stores of the next panel issued before
+// the region's barrier (double-buffered pipelines only) and that barrier.
+struct StepShape {
+    Sequence* seq = nullptr;
     std::vector<tiles::TileCopyNode*> loads;
+    std::vector<tiles::TileCopyNode*> stores;
     StructuredLoop* k_loop = nullptr;
+    ControlFlowNode* barrier = nullptr;
     long long global_reads = 0;
+    long long lds_writes = 0;
     long long mma_per_step = 0;
     long long steps = 0;
     long long lds_bytes_per_step = -1;
 };
 
-std::optional<PanelShape> analyze(builder::StructuredSDFGBuilder& builder, StructuredLoop& loop) {
-    if (dynamic_cast<structured_control_flow::Map*>(&loop) != nullptr) {
-        return std::nullopt;
-    }
+std::optional<StepShape> analyze_step(builder::StructuredSDFGBuilder& builder, Sequence& seq) {
     auto& sdfg = builder.subject();
-    auto& body = loop_body(loop);
-    PanelShape shape;
-    bool barrier_after = false;
-    for (size_t i = 0; i < body.size(); ++i) {
-        auto& child = body.at(i);
-        if (dynamic_cast<structured_control_flow::IfElse*>(&child) != nullptr) {
+    StepShape shape;
+    shape.seq = &seq;
+    for (size_t i = 0; i < seq.size(); ++i) {
+        auto& child = seq.at(i);
+        if (dynamic_cast<structured_control_flow::IfElse*>(&child) != nullptr ||
+            dynamic_cast<Sequence*>(&child) != nullptr) {
             return std::nullopt;
         }
         if (auto* block = dynamic_cast<Block*>(&child)) {
@@ -167,9 +189,14 @@ std::optional<PanelShape> analyze(builder::StructuredSDFGBuilder& builder, Struc
                         return std::nullopt;
                     }
                     shape.loads.push_back(copy);
+                } else if (copy != nullptr && copy->phase() == tiles::CopyPhase::StoreRegs && shape.k_loop != nullptr &&
+                           shape.barrier == nullptr) {
+                    shape.stores.push_back(copy);
                 }
             }
-            barrier_after |= shape.k_loop != nullptr && is_barrier_block(child);
+            if (shape.k_loop != nullptr && shape.barrier == nullptr && is_barrier_block(child)) {
+                shape.barrier = &child;
+            }
             continue;
         }
         auto* inner = dynamic_cast<StructuredLoop*>(&child);
@@ -222,7 +249,7 @@ std::optional<PanelShape> analyze(builder::StructuredSDFGBuilder& builder, Struc
             shape.lds_bytes_per_step = bytes;
         }
     }
-    if (shape.loads.empty() || shape.k_loop == nullptr || !barrier_after) {
+    if (shape.loads.empty() || shape.k_loop == nullptr || shape.barrier == nullptr) {
         return std::nullopt;
     }
     for (auto* copy : shape.loads) {
@@ -232,36 +259,80 @@ std::optional<PanelShape> analyze(builder::StructuredSDFGBuilder& builder, Struc
         }
         shape.global_reads += *reads;
     }
+    for (auto* copy : shape.stores) {
+        auto writes = lds_writes(*copy);
+        if (!writes) {
+            return std::nullopt;
+        }
+        shape.lds_writes += *writes;
+    }
     return shape;
+}
+
+// The panel steps of @p loop's body: the body itself, or (double-buffered pipelines) each of its step sequences.
+std::optional<std::vector<StepShape>> analyze(builder::StructuredSDFGBuilder& builder, StructuredLoop& loop) {
+    if (dynamic_cast<structured_control_flow::Map*>(&loop) != nullptr) {
+        return std::nullopt;
+    }
+    auto& body = loop_body(loop);
+    std::vector<Sequence*> seqs;
+    for (size_t i = 0; i < body.size(); ++i) {
+        if (auto* seq = dynamic_cast<Sequence*>(&body.at(i))) {
+            seqs.push_back(seq);
+        }
+    }
+    if (seqs.empty()) {
+        seqs.push_back(&body);
+    } else if (seqs.size() != body.size()) {
+        return std::nullopt;
+    }
+    std::vector<StepShape> steps;
+    for (auto* seq : seqs) {
+        auto step = analyze_step(builder, *seq);
+        if (!step) {
+            return std::nullopt;
+        }
+        steps.push_back(std::move(*step));
+    }
+    return steps;
 }
 
 } // namespace
 
 GpuMmaInterleave::GpuMmaInterleave(
-    StructuredLoop& loop, size_t global_read_spacing, size_t lds_read_position, size_t lds_reads_per_step
+    StructuredLoop& loop,
+    size_t global_read_spacing,
+    size_t lds_read_position,
+    size_t lds_reads_per_step,
+    size_t lds_write_start
 )
     : loop_(loop), global_read_spacing_(std::max<size_t>(1, global_read_spacing)),
-      lds_read_position_(lds_read_position), lds_reads_per_step_(lds_reads_per_step) {
+      lds_read_position_(lds_read_position), lds_reads_per_step_(lds_reads_per_step),
+      lds_write_start_(lds_write_start) {
 }
 
-std::optional<std::vector<tiles::ScheduleGroup>> GpuMmaInterleave::recipe(builder::StructuredSDFGBuilder& builder) const {
-    auto shape = analyze(builder, loop_);
-    if (!shape) {
-        return std::nullopt;
-    }
-    long long lds_reads = static_cast<long long>(lds_reads_per_step_);
+namespace {
+
+std::optional<std::vector<tiles::ScheduleGroup>> step_recipe(
+    const StepShape& shape,
+    long long global_read_spacing,
+    long long lds_read_position,
+    long long lds_reads_per_step,
+    long long lds_write_start
+) {
+    long long lds_reads = lds_reads_per_step;
     if (lds_reads == 0) {
-        if (shape->lds_bytes_per_step < 0) {
+        if (shape.lds_bytes_per_step < 0) {
             return std::nullopt;
         }
-        lds_reads = (shape->lds_bytes_per_step + 15) / 16;
+        lds_reads = (shape.lds_bytes_per_step + 15) / 16;
     }
-    const long long total_mma = shape->mma_per_step * shape->steps;
-    long long spacing = static_cast<long long>(global_read_spacing_);
-    if (shape->global_reads > 0) {
-        spacing = std::max<long long>(1, std::min(spacing, total_mma / shape->global_reads));
+    const long long total_mma = shape.mma_per_step * shape.steps;
+    long long spacing = global_read_spacing;
+    if (shape.global_reads > 0) {
+        spacing = std::max<long long>(1, std::min(spacing, total_mma / shape.global_reads));
     }
-    const long long read_at = std::min<long long>(static_cast<long long>(lds_read_position_), shape->mma_per_step - 1);
+    const long long read_at = std::min<long long>(lds_read_position, shape.mma_per_step - 1);
 
     std::vector<tiles::ScheduleGroup> groups;
     auto push = [&](tiles::InstructionClass cls, long long count) {
@@ -270,21 +341,50 @@ std::optional<std::vector<tiles::ScheduleGroup>> GpuMmaInterleave::recipe(builde
         }
     };
     push(tiles::InstructionClass::LdsRead, lds_reads);
-    long long left = shape->global_reads;
-    for (long long k = 0; k < shape->steps; ++k) {
-        for (long long m = 0; m < shape->mma_per_step; ++m) {
+    long long reads_left = shape.global_reads;
+    long long writes_left = shape.lds_writes;
+    for (long long k = 0; k < shape.steps; ++k) {
+        for (long long m = 0; m < shape.mma_per_step; ++m) {
             push(tiles::InstructionClass::Mfma, 1);
-            if (left > 0 && (k * shape->mma_per_step + m) % spacing == 0) {
+            if (reads_left > 0 && (k * shape.mma_per_step + m) % spacing == 0) {
                 push(tiles::InstructionClass::GlobalRead, 1);
-                --left;
+                --reads_left;
+            } else if (writes_left > 0 && k >= lds_write_start) {
+                push(tiles::InstructionClass::LdsWrite, 1);
+                --writes_left;
             }
-            if (k + 1 < shape->steps && m == read_at) {
+            if (k + 1 < shape.steps && m == read_at) {
                 push(tiles::InstructionClass::LdsRead, lds_reads);
             }
         }
     }
-    push(tiles::InstructionClass::GlobalRead, left);
+    push(tiles::InstructionClass::GlobalRead, reads_left);
+    push(tiles::InstructionClass::LdsWrite, writes_left);
     return groups;
+}
+
+} // namespace
+
+std::optional<std::vector<tiles::ScheduleGroup>> GpuMmaInterleave::recipe(builder::StructuredSDFGBuilder& builder) const {
+    auto steps = analyze(builder, loop_);
+    if (!steps) {
+        return std::nullopt;
+    }
+    std::optional<std::vector<tiles::ScheduleGroup>> first;
+    for (auto& step : *steps) {
+        auto groups = step_recipe(
+            step,
+            static_cast<long long>(global_read_spacing_),
+            static_cast<long long>(lds_read_position_),
+            static_cast<long long>(lds_reads_per_step_),
+            static_cast<long long>(lds_write_start_)
+        );
+        if (!groups || (first && *groups != *first)) {
+            return std::nullopt;
+        }
+        first = std::move(groups);
+    }
+    return first;
 }
 
 bool GpuMmaInterleave::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager&) {
@@ -293,18 +393,19 @@ bool GpuMmaInterleave::can_be_applied(builder::StructuredSDFGBuilder& builder, a
 
 void GpuMmaInterleave::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     auto groups = recipe(builder);
-    auto shape = analyze(builder, loop_);
+    auto steps = analyze(builder, loop_);
     const auto* target = enclosing_tile_target(loop_);
-    if (!groups || !shape || target == nullptr) {
+    if (!groups || !steps || target == nullptr) {
         throw transformations::InvalidTransformationException("GpuMmaInterleave: not applicable");
     }
-    for (auto* copy : shape->loads) {
-        copy->set_scheduled(true);
+    for (auto& step : *steps) {
+        for (auto* copy : step.loads) {
+            copy->set_scheduled(true);
+        }
+        auto& block = builder.add_block_before(*step.seq, *step.barrier, loop_.debug_info());
+        builder.add_library_node<
+            tiles::PipelineScheduleNode>(block, loop_.debug_info(), target->implementation_type(), *groups);
     }
-    auto& body = loop_body(loop_);
-    auto& block = builder.add_block_after(body, *shape->k_loop, loop_.debug_info());
-    builder.add_library_node<
-        tiles::PipelineScheduleNode>(block, loop_.debug_info(), target->implementation_type(), *groups);
     analysis_manager.invalidate_all();
 }
 
@@ -314,6 +415,7 @@ void GpuMmaInterleave::to_json(nlohmann::json& j) const {
         {"global_read_spacing", global_read_spacing_},
         {"lds_read_position", lds_read_position_},
         {"lds_reads_per_step", lds_reads_per_step_},
+        {"lds_write_start", lds_write_start_},
     };
     serializer::JSONSerializer ser_flat(false);
     j["subgraph"] = nlohmann::json::object();
@@ -334,7 +436,8 @@ GpuMmaInterleave GpuMmaInterleave::from_json(builder::StructuredSDFGBuilder& bui
         *loop,
         params.value("global_read_spacing", size_t(3)),
         params.value("lds_read_position", size_t(1)),
-        params.value("lds_reads_per_step", size_t(0))
+        params.value("lds_reads_per_step", size_t(0)),
+        params.value("lds_write_start", size_t(1))
     );
 }
 
