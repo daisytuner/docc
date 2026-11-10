@@ -515,6 +515,12 @@ size_t buffer_access_bytes(const TileCopyNode& node, size_t elem_bytes) {
 
 namespace {
 
+// @p addr annotated as @p bytes -aligned. Padded buffer rows are only piece-aligned, which the compiler cannot
+// always prove (e.g. under a rolled loop); without the hint it may merge the pieces into one misaligned wide access.
+std::string assume_aligned(const std::string& addr, size_t bytes) {
+    return "__builtin_assume_aligned(" + addr + ", " + std::to_string(bytes) + ")";
+}
+
 const char* int_type(size_t bytes) {
     switch (bytes) {
         case 16:
@@ -826,8 +832,9 @@ void emit_cooperative_copy_loop(
                 }
                 stmt += "); ";
                 for (size_t k = 0; k < node.bytes() / chunk; ++k) {
-                    stmt += std::string("reinterpret_cast<") + piece + "*>(" + dst_addr + ")[" + std::to_string(k) +
-                            "] = reinterpret_cast<const " + piece + "*>(&__tc_w)[" + std::to_string(k) + "]; ";
+                    stmt += std::string("reinterpret_cast<") + piece + "*>(" + assume_aligned(dst_addr, chunk) + ")[" +
+                            std::to_string(k) + "] = reinterpret_cast<const " + piece + "*>(&__tc_w)[" +
+                            std::to_string(k) + "]; ";
                 }
                 stmt += "}";
             } else {
@@ -869,10 +876,10 @@ void emit_cooperative_copy_loop(
                 stmt = "{ " +
                        (masked ? guarded_decl(vec, "__tc_w", node.bytes())
                                : std::string("const ") + vec + " __tc_w = " + load + ";") +
-                       " " + pieces(dst_addr, "&__tc_w") + "}";
+                       " " + pieces(assume_aligned(dst_addr, chunk), "&__tc_w") + "}";
             } else {
-                stmt = std::string("{ ") + vec + " __tc_w; " + pieces("&__tc_w", src_addr) + "*reinterpret_cast<" +
-                       vec + "*>(" + dst_addr + ") = __tc_w; }";
+                stmt = std::string("{ ") + vec + " __tc_w; " + pieces("&__tc_w", assume_aligned(src_addr, chunk)) +
+                       "*reinterpret_cast<" + vec + "*>(" + dst_addr + ") = __tc_w; }";
             }
         }
     } else if (masked) {
