@@ -110,21 +110,30 @@ When relevant, test against the supported targets (`sequential`, `openmp`,
 Versions are `MAJOR.MINOR.PATCH`. There is no version file to bump and no tag to push for a release:
 - [`VERSION_BASE`](VERSION_BASE) holds `MAJOR.MINOR` (e.g. `0.8`). Edit it only for a minor or major
   bump; the first release after the change is `MAJOR.MINOR.0`.
-- The patch number is allocated by the Daisytuner backend when a release runs.
-- Local and CI builds that are not releases report `MAJOR.MINOR.0` with the commit hash, e.g.
-  `docc version: 0.8.0+gabc1234` (Python wheels: `0.8.0.dev0+gabc1234`). They never contact the backend.
+- The patch number is allocated by the Daisytuner backend when a release runs and reaches the builds through
+  the `DOCC_RELEASE_VERSION` environment variable (parsed by `parse_version` from the `cmake` submodule).
+- Local and CI builds that are not releases report `MAJOR.MINOR` with the commit hash, e.g.
+  `docc version: 0.8+gabc1234` (Python wheels: `0.8.dev0+gabc1234`). They never contact the backend.
 
-To release, run the **Release** workflow (`.github/workflows/release.yml`) from `main`
-(Actions → Release → Run workflow). Its first job allocates the next patch, e.g. `0.8.4`, and all wheels
-and packages of that run are built with it. Tick **dry_run** to preview the version and build everything
-without publishing; dry runs also work from other branches. A hotfix for an older series runs from a
-`release/**` branch whose `VERSION_BASE` still names that series.
+A release has two steps, with a soak period in between:
+1. **Release** (`.github/workflows/release.yml`): run it from `main` (Actions → Release → Run workflow).
+   Its first job allocates the next patch, e.g. `0.8.4`, and all wheels and packages of that run are built
+   with it. Nothing is public afterwards: the wheels and native packages are attached to a draft GitHub
+   release `v0.8.4` (visible to people with write access, with release notes generated from the merged PRs
+   and grouped by label, see `.github/release.yml`), the native packages are uploaded unpublished to the
+   Daisytuner backend, and the docs image is staged as `docc-docs:0.8.4`. Tick **dry_run** to preview the
+   version and the release notes and build everything without allocating or uploading anything; dry runs
+   also work from other branches. A hotfix for an older series runs from a `release/**` branch whose
+   `VERSION_BASE` still names that series.
+2. **Promote** (`.github/workflows/promote.yml`): after testing the draft's files, edit its notes if needed
+   (e.g. add highlights) and run Promote from `main` with the version. It uploads the draft's wheels to
+   PyPI (after approval, if the `public-release` environment requires reviewers), publishes the GitHub
+   release, which creates the tag, marks it as latest unless it is a hotfix of an older series, and deploys
+   the staged docs. Then set `published` on the version's distributions in the Daisytuner backend.
 
-A release from `main` also deploys the docs (docs.daisytuner.com/docc) once its packages are published,
-so the site shows the released version and matches the released code. Docs changes merged to `main` go
-live with the next release. To redeploy in between, e.g. for an urgent fix, run Actions → Docs → Run
-workflow on `main` with the currently released version (PyPI or the last Release run shows it). Hotfix
-releases do not deploy the docs, and pull requests only build them.
+Docs changes merged to `main` go live with the next release. To redeploy in between, e.g. for an urgent fix, run Actions → Docs
+→ Run workflow on `main` with the currently released version (the latest GitHub release shows it). Hotfix
+releases from `release/**` do not change the docs, and pull requests only build them.
 
 ## Reporting Issues
 Before opening a new issue, search existing issues to avoid duplicates. Then use

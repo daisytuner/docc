@@ -1,50 +1,25 @@
 cmake_minimum_required(VERSION 3.16)
 
 # ----------------------------- Version -----------------------------
-# MAJOR.MINOR is committed in VERSION_BASE and only edited for a minor or major bump. The patch number
-# is allocated by the Daisytuner backend when the release workflow runs; the workflow passes the full
-# version in the DOCC_VERSION environment variable. Builds without it are dev builds: they use patch 0
-# plus the commit hash and never contact the backend.
-#   DOCC_VERSION       numeric MAJOR.MINOR.PATCH, as project(VERSION) and library sonames require
-#   DOCC_VERSION_FULL  DOCC_VERSION, plus "+g<hash>" for dev builds; names the docc-llvm install prefix,
+# MAJOR.MINOR is committed in VERSION_BASE and only edited for a minor or major bump. Release builds get the
+# full MAJOR.MINOR.PATCH, allocated by the Daisytuner backend, from the DOCC_RELEASE_VERSION environment
+# variable; builds without it are dev builds, identified by the commit hash (see parse_version in
+# cmake/Version.cmake). scripts/docc_version.py applies the same rule to the Python packages.
+#   DOCC_VERSION       numeric version for project() and library sonames (MAJOR.MINOR in dev builds)
+#   DOCC_VERSION_FULL  the release version, or MAJOR.MINOR+g<hash>; names the docc-llvm install prefix,
 #                      `docc --version` and the package version (see llvm/CMakeLists.txt)
+include(cmake/Version.cmake)
 file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION_BASE" DOCC_VERSION_BASE LIMIT_COUNT 1)
 string(STRIP "${DOCC_VERSION_BASE}" DOCC_VERSION_BASE)
-if(NOT DOCC_VERSION_BASE MATCHES "^[0-9]+\\.[0-9]+$")
-    message(FATAL_ERROR "VERSION_BASE must contain MAJOR.MINOR (e.g. 0.8), got '${DOCC_VERSION_BASE}'")
-endif()
 # file(STRINGS) is not tracked by the build system; re-run CMake when VERSION_BASE is edited.
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION_BASE")
-
-if(NOT "$ENV{DOCC_VERSION}" STREQUAL "")
-    # Release build: the version was allocated by the backend for VERSION_BASE of this commit.
-    set(DOCC_VERSION "$ENV{DOCC_VERSION}")
-    if(NOT DOCC_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
-        message(FATAL_ERROR "DOCC_VERSION must be MAJOR.MINOR.PATCH (e.g. 0.8.4), got '${DOCC_VERSION}'")
-    endif()
-    # Catches a stale DOCC_VERSION left in a shell, which would otherwise mislabel the build.
-    if(NOT DOCC_VERSION MATCHES "^${DOCC_VERSION_BASE}\\.")
-        message(FATAL_ERROR "DOCC_VERSION '${DOCC_VERSION}' does not belong to VERSION_BASE '${DOCC_VERSION_BASE}'")
-    endif()
-    set(DOCC_VERSION_FULL "${DOCC_VERSION}")
-else()
-    # Dev build: identify the commit by its short hash, captured at configure time.
-    set(DOCC_VERSION "${DOCC_VERSION_BASE}.0")
-    execute_process(
-        COMMAND git rev-parse --short HEAD
-        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-        OUTPUT_VARIABLE DOCC_GIT_HASH
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        ERROR_QUIET
-        RESULT_VARIABLE DOCC_GIT_RESULT
-    )
-    # No git, or git refusing the checkout (e.g. a container with a different owner).
-    if(NOT DOCC_GIT_RESULT EQUAL 0 OR DOCC_GIT_HASH STREQUAL "")
-        set(DOCC_GIT_HASH "unknown")
-    endif()
-    # "+" rather than "-": it is valid in both Debian and RPM versions, while RPM rejects "-".
-    set(DOCC_VERSION_FULL "${DOCC_VERSION}+g${DOCC_GIT_HASH}")
-endif()
+parse_version(
+    BASE "${DOCC_VERSION_BASE}"
+    RELEASE_ENV DOCC_RELEASE_VERSION
+    GIT_DIR "${CMAKE_CURRENT_SOURCE_DIR}"
+    OUT_VERSION DOCC_VERSION
+    OUT_VERSION_FULL DOCC_VERSION_FULL
+)
 message(STATUS "docc version: ${DOCC_VERSION_FULL}")
 set(SDFGLIB_VERSION "${DOCC_VERSION}")
 

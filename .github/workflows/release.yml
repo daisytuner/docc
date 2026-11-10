@@ -2,6 +2,11 @@ name: Release
 
 # A release is started by hand ("Run workflow"). MAJOR.MINOR comes from VERSION_BASE; the patch number
 # is allocated by the Daisytuner backend, so there is no version file to bump and no tag to push.
+#
+# This workflow builds and stages a release without making it public, to leave room for a soak period:
+# the wheels and native packages go into a draft GitHub release v<version> (visible only to people with
+# write access), the native packages also go to the Daisytuner backend unpublished, and the docs image is
+# pushed as docc-docs:<version>. The Promote workflow then publishes it to PyPI, GitHub and the docs site.
 on:
   workflow_dispatch:
     inputs:
@@ -12,7 +17,7 @@ on:
 
 jobs:
   # Stage 0: Get this release's version from the backend. This is the only job that talks to the release
-  # ledger; every build job receives the number through DOCC_VERSION, so all artifacts of one release
+  # ledger; every build job receives the number through DOCC_RELEASE_VERSION, so all artifacts of one release
   # carry the same version (CMake and scripts/docc_version.py read it).
   allocate-version:
     name: Allocate version
@@ -87,7 +92,7 @@ jobs:
     needs: [allocate-version]
     runs-on: ${{ matrix.os }}
     env:
-      DOCC_VERSION: ${{ needs.allocate-version.outputs.release_version }}
+      DOCC_RELEASE_VERSION: ${{ needs.allocate-version.outputs.release_version }}
 
     strategy:
       fail-fast: false
@@ -115,7 +120,7 @@ jobs:
           CIBW_ARCHS: ${{ matrix.cibw_archs }}
           CIBW_BUILD: "${{ matrix.python }}-*"
           # Linux wheels build in a manylinux container, which doesn't inherit the job environment.
-          CIBW_ENVIRONMENT_PASS_LINUX: DOCC_VERSION
+          CIBW_ENVIRONMENT_PASS_LINUX: DOCC_RELEASE_VERSION
 
       - uses: actions/upload-artifact@v4
         with:
@@ -128,7 +133,7 @@ jobs:
     needs: [allocate-version, wheels-compiler]
     runs-on: ${{ matrix.os }}
     env:
-      DOCC_VERSION: ${{ needs.allocate-version.outputs.release_version }}
+      DOCC_RELEASE_VERSION: ${{ needs.allocate-version.outputs.release_version }}
 
     strategy:
       fail-fast: false
@@ -151,7 +156,7 @@ jobs:
       # Pin docc-compiler version to match release
       # - name: Pin docc-compiler version
       #   run: |
-      #     sed -i.bak "s/\"docc-compiler\"/\"docc-compiler==$DOCC_VERSION\"/" mlir/pyproject.toml && rm mlir/pyproject.toml.bak
+      #     sed -i.bak "s/\"docc-compiler\"/\"docc-compiler==$DOCC_RELEASE_VERSION\"/" mlir/pyproject.toml && rm mlir/pyproject.toml.bak
 
       # Download compiler wheels into the package directory so they're available in container
       # - uses: actions/download-artifact@v4
@@ -168,7 +173,7 @@ jobs:
           CIBW_ARCHS: ${{ matrix.cibw_archs }}
           CIBW_BUILD: "${{ matrix.python }}-*"
           # Linux wheels build in a manylinux container, which doesn't inherit the job environment.
-          CIBW_ENVIRONMENT_PASS_LINUX: DOCC_VERSION
+          CIBW_ENVIRONMENT_PASS_LINUX: DOCC_RELEASE_VERSION
           # Install docc-compiler before building docc-ai
           # CIBW_BEFORE_BUILD: "pip install --no-index --find-links {project}/compiler-wheels docc-compiler"
           # Make compiler wheels available for dependency resolution during test
@@ -187,7 +192,7 @@ jobs:
     container:
       image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:latest-amd64
     env:
-      DOCC_VERSION: ${{ needs.allocate-version.outputs.release_version }}
+      DOCC_RELEASE_VERSION: ${{ needs.allocate-version.outputs.release_version }}
 
     steps:
       - uses: actions/checkout@v7
@@ -198,8 +203,8 @@ jobs:
 
       - name: Pin docc-compiler version
         run: |
-          sed -i.bak "s/\"docc-compiler\"/\"docc-compiler==$DOCC_VERSION\"/" pytorch/pyproject.toml && rm pytorch/pyproject.toml.bak
-          grep -q "\"docc-compiler==$DOCC_VERSION\"" pytorch/pyproject.toml
+          sed -i.bak "s/\"docc-compiler\"/\"docc-compiler==$DOCC_RELEASE_VERSION\"/" pytorch/pyproject.toml && rm pytorch/pyproject.toml.bak
+          grep -q "\"docc-compiler==$DOCC_RELEASE_VERSION\"" pytorch/pyproject.toml
 
       - name: Build wheel
         run: |
@@ -225,22 +230,6 @@ jobs:
         with:
           name: wheels-docc-pytorch
           path: pytorch/dist/*.whl
-
-  wheels-publish:
-    if: ${{ !inputs.dry_run }}
-    needs: [wheels-compiler, wheels-ai, wheels-pytorch]
-    runs-on: build-amd64-big
-    permissions:
-      id-token: write
-
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: wheels-*
-          path: dist
-          merge-multiple: true
-
-      - uses: pypa/gh-action-pypi-publish@v1.10.0
 
   packages-llvm:
     strategy:
@@ -293,7 +282,7 @@ jobs:
     container:
       image: ${{ matrix.image }}
     env:
-      DOCC_VERSION: ${{ needs.allocate-version.outputs.release_version }}
+      DOCC_RELEASE_VERSION: ${{ needs.allocate-version.outputs.release_version }}
 
     steps:
       - uses: actions/checkout@v7
@@ -325,12 +314,13 @@ jobs:
           name: docc-${{ matrix.platform }}-${{ matrix.architecture }}
           path: "build/*.${{ matrix.package-format }}"
 
+      # The backend stores new distributions unpublished; an admin publishes them after promoting.
       - name: Upload docc package to Firebase
         if: ${{ !inputs.dry_run }}
         uses: daisytuner/upload-distribution-action@main
         with:
           file: "build/*.${{ matrix.package-format }}"
-          version: ${{ env.DOCC_VERSION }}
+          version: ${{ env.DOCC_RELEASE_VERSION }}
           architecture: ${{ matrix.architecture }}
           dist-id: ${{ matrix.upload-dist-id }}
           dist-version: ${{ matrix.upload-dist-version }}
@@ -338,17 +328,14 @@ jobs:
           token: ${{ secrets.DOCC_RELEASE_TOKEN }}
           url: /v1/system/docc-distributions/upload
 
-  # Stage 3: Publish the docs of this release. Runs after the wheels and packages are published, so the site
-  # never shows a version that can't be installed yet. Only main deploys: a hotfix release from release/**
-  # would replace the docs of a newer series with older content (and the deploy's Google Cloud identity only
-  # accepts main anyway). Dry runs build the docs as a smoke test, with the previewed version, and deploy
-  # nothing.
+  # Stage 3: Build the docs of this release and stage the image as docc-docs:<version>; the Promote workflow
+  # deploys it. Only main stages: a hotfix release from release/** would replace the docs of a newer series
+  # with older content (and the push's Google Cloud identity only accepts main anyway). Dry runs build the
+  # docs as a smoke test, with the previewed version, and push nothing.
   docs:
-    needs: [allocate-version, wheels-publish, packages-llvm]
-    # wheels-publish is skipped in dry runs, which would skip this job too unless its condition uses a
-    # status function; !cancelled() && !failure() still stops it when a build or publish job failed.
-    if: ${{ !cancelled() && !failure() && (inputs.dry_run || github.ref == 'refs/heads/main') }}
-    # A called workflow gets at most the permissions of its calling job; the deploy logs in to Google Cloud
+    needs: [allocate-version]
+    if: ${{ inputs.dry_run || github.ref == 'refs/heads/main' }}
+    # A called workflow gets at most the permissions of its calling job; the push logs in to Google Cloud
     # keylessly (OIDC), so no secret is passed.
     permissions:
       contents: read
@@ -356,4 +343,113 @@ jobs:
     uses: ./.github/workflows/docs.yml
     with:
       version: ${{ needs.allocate-version.outputs.release_version }}
-      deploy: ${{ !inputs.dry_run }}
+      deploy: false
+      stage: ${{ !inputs.dry_run }}
+
+  # Stage 4: Collect the wheels and native packages into a draft GitHub release v<version>, with release notes
+  # generated from the merged PRs (grouped by .github/release.yml). Drafts are only visible to people with
+  # write access, and their tag is only created when the Promote workflow publishes them. Dry runs only show
+  # the notes.
+  draft-release:
+    name: Draft GitHub release
+    needs: [allocate-version, wheels-compiler, wheels-ai, wheels-pytorch, packages-llvm, docs]
+    # docs is skipped for releases from release/**; !cancelled() && !failure() still stops this job when a
+    # build job failed.
+    if: ${{ !cancelled() && !failure() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.allocate-version.outputs.release_version }}
+      DRY_RUN: ${{ inputs.dry_run }}
+      GH_TOKEN: ${{ github.token }}
+      # gh release has no checkout to infer the repository from.
+      GH_REPO: ${{ github.repository }}
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          path: assets
+          merge-multiple: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: docc-*
+          path: assets
+          merge-multiple: true
+
+      - name: Write checksums
+        working-directory: assets
+        run: |
+          sha256sum -- * > ../SHA256SUMS
+          mv ../SHA256SUMS .
+          cat SHA256SUMS
+
+      - name: Create draft release
+        run: |
+          set -euo pipefail
+          TAG="v$VERSION"
+
+          # A re-run of this run replaces its own draft; a published release or an existing tag means the
+          # version was already released.
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" > /dev/null 2>&1; then
+            echo "::error::Tag $TAG already exists. Check releases/docc in the backend."
+            exit 1
+          fi
+          EXISTING=$(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate \
+            --jq ".[] | select(.tag_name == \"$TAG\") | \"\(.id) \(.draft)\"")
+          if [ -n "$EXISTING" ]; then
+            read -r ID IS_DRAFT <<< "$EXISTING"
+            if [ "$IS_DRAFT" != "true" ]; then
+              echo "::error::Release $TAG is already published."
+              exit 1
+            fi
+            if [ "$DRY_RUN" != "true" ]; then
+              echo "Replacing the existing draft of $TAG"
+              gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/$ID"
+            fi
+          fi
+
+          # The notes cover the changes since the closest earlier release tag, so a hotfix of an older
+          # series is compared against its own series.
+          PREV=$( { gh api "repos/$GITHUB_REPOSITORY/tags" --paginate --jq '.[].name'; echo "$TAG"; } \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -uV | awk -v t="$TAG" '$0 == t { print p; exit } { p = $0 }')
+          ARGS=(-f "tag_name=$TAG" -f "target_commitish=$GITHUB_SHA")
+          if [ -n "$PREV" ]; then
+            ARGS+=(-f "previous_tag_name=$PREV")
+          fi
+          GENERATED=$(gh api -X POST "repos/$GITHUB_REPOSITORY/releases/generate-notes" "${ARGS[@]}" --jq .body)
+
+          {
+            echo "<!-- Soak period: edit these notes (e.g. add a Highlights section) before running the Promote workflow. -->"
+            echo "## Install"
+            echo
+            echo '```sh'
+            echo "pip install docc-compiler==$VERSION   # NumPy"
+            echo "pip install docc-ai==$VERSION         # PyTorch"
+            echo '```'
+            echo
+            echo "Native packages for Ubuntu, Debian and RHEL are attached below (\`sudo apt install ./docc-llvm_${VERSION}-<distro>_<arch>.deb\`"
+            echo "or \`sudo dnf install ./docc-llvm_${VERSION}-<distro>_<arch>.rpm\`); \`SHA256SUMS\` lists the checksums of all files."
+            echo
+            echo "$GENERATED"
+          } > notes.md
+
+          if [ "$DRY_RUN" = "true" ]; then
+            {
+              echo "### Dry run: release notes of $TAG (since ${PREV:-the first commit})"
+              echo
+              cat notes.md
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          FILES=(assets/*)
+          URL=$(gh release create "$TAG" "${FILES[@]}" --draft --target "$GITHUB_SHA" \
+            --title "docc $VERSION" --notes-file notes.md)
+          {
+            echo "Drafted [$TAG]($URL) with ${#FILES[@]} files."
+            echo
+            echo "After the soak period, run the Promote workflow with version $VERSION to publish it."
+          } >> "$GITHUB_STEP_SUMMARY"

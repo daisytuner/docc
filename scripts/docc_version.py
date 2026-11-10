@@ -8,10 +8,10 @@ The docc-compiler, docc-ai and docc-pytorch pyprojects declare ``dynamic = ["ver
 It applies the same rule as docc's top-level CMakeLists.txt, so the wheel version and the version
 compiled into the C++ libraries always agree:
 
-* Release builds: the release workflow exports ``DOCC_VERSION`` (``MAJOR.MINOR.PATCH``, allocated by
-  the Daisytuner backend), which is returned unchanged.
-* Dev builds: ``MAJOR.MINOR`` from ``VERSION_BASE`` with patch 0, marked as a PEP 440 dev release and
-  tagged with the commit hash, e.g. ``0.8.0.dev0+gabc1234``. The backend is never contacted.
+* Release builds: the release workflow exports ``DOCC_RELEASE_VERSION`` (``MAJOR.MINOR.PATCH``,
+  allocated by the Daisytuner backend), which is returned unchanged.
+* Dev builds: ``MAJOR.MINOR`` from ``VERSION_BASE``, marked as a PEP 440 dev release and tagged with
+  the commit hash, e.g. ``0.8.dev0+gabc1234`` (CMake: ``0.8+gabc1234``). The backend is never contacted.
 
 Only the standard library is used, because the isolated build environment contains nothing but the
 ``[build-system] requires`` of the package being built.
@@ -62,10 +62,10 @@ def dynamic_metadata(field: str, settings: Mapping[str, Any]) -> str:
             ``VERSION_BASE`` file, relative to the package directory (the build's working directory).
 
     Returns:
-        ``DOCC_VERSION`` for release builds, otherwise ``MAJOR.MINOR.0.dev0+g<hash>``.
+        ``DOCC_RELEASE_VERSION`` for release builds, otherwise ``MAJOR.MINOR.dev0+g<hash>``.
 
     Raises:
-        RuntimeError: If the field or settings are unsupported, or if ``DOCC_VERSION`` or
+        RuntimeError: If the field or settings are unsupported, or if ``DOCC_RELEASE_VERSION`` or
             ``VERSION_BASE`` is malformed.
     """
     # Validate the configuration first, so a typo in a pyproject fails loudly instead of being ignored.
@@ -87,19 +87,19 @@ def dynamic_metadata(field: str, settings: Mapping[str, Any]) -> str:
         )
 
     # Release build: use the version the release workflow got from the backend.
-    release = os.environ.get("DOCC_VERSION", "").strip()
+    release = os.environ.get("DOCC_RELEASE_VERSION", "").strip()
     if release:
         if not _VERSION_PATTERN.fullmatch(release):
             raise RuntimeError(
-                f"DOCC_VERSION must be MAJOR.MINOR.PATCH (e.g. 0.8.4), got {release!r}"
+                f"DOCC_RELEASE_VERSION must be MAJOR.MINOR.PATCH (e.g. 0.8.4), got {release!r}"
             )
-        # Same guard as in CMake: a stale DOCC_VERSION from another series would mislabel the wheel.
+        # Same guard as in CMake: a stale DOCC_RELEASE_VERSION from another series would mislabel the wheel.
         if not release.startswith(base + "."):
             raise RuntimeError(
-                f"DOCC_VERSION {release!r} does not belong to VERSION_BASE {base!r}"
+                f"DOCC_RELEASE_VERSION {release!r} does not belong to VERSION_BASE {base!r}"
             )
         return release
 
     # Dev build: ".dev0" sorts below the release of the same number; "+g<hash>" is a PEP 440 local
     # label identifying the commit (PyPI rejects local labels, so dev wheels can't be published by mistake).
-    return f"{base}.0.dev0+g{_git_short_hash(base_file.resolve().parent)}"
+    return f"{base}.dev0+g{_git_short_hash(base_file.resolve().parent)}"

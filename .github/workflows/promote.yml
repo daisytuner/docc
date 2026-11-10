@@ -1,0 +1,169 @@
+name: Promote
+
+# Makes a release that the Release workflow staged public, once its soak period is over:
+#   1. uploads the wheels of the draft GitHub release v<version> to PyPI; the `public-release` environment
+#      can require a reviewer's approval first (Settings → Environments),
+#   2. publishes the draft, which creates the tag at the release commit and marks the release as latest,
+#      unless it is a hotfix of an older series,
+#   3. deploys the docs image the Release run staged for that version (latest releases only).
+# PyPI goes first: it is the only step that can't be undone, and a public release must be installable.
+# The native packages in the Daisytuner backend are still published by hand (their `published` flag).
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to promote, e.g. 0.8.4 (the Release workflow must have drafted v0.8.4)"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: promote-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Find draft release
+    runs-on: ubuntu-latest
+    # Draft releases are only visible to tokens with write access.
+    permissions:
+      contents: write
+    outputs:
+      release_id: ${{ steps.find.outputs.release_id }}
+      make_latest: ${{ steps.find.outputs.make_latest }}
+    env:
+      VERSION: ${{ inputs.version }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Find draft release
+        id: find
+        run: |
+          set -euo pipefail
+
+          # The docs deploy and the `public-release` environment's branch rule only accept main.
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Run Promote from main (this run: $GITHUB_REF); it promotes hotfix releases of release/** too."
+            exit 1
+          fi
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::version must be MAJOR.MINOR.PATCH (e.g. 0.8.4), got '$VERSION'"
+            exit 1
+          fi
+
+          TAG="v$VERSION"
+          RELEASE=$(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate \
+            --jq ".[] | select(.tag_name == \"$TAG\") | \"\(.id) \(.draft)\"")
+          if [ -z "$RELEASE" ]; then
+            echo "::error::There is no release $TAG. Run the Release workflow first."
+            exit 1
+          fi
+          read -r ID IS_DRAFT <<< "$RELEASE"
+          if [ "$IS_DRAFT" != "true" ]; then
+            echo "::error::Release $TAG is already published."
+            exit 1
+          fi
+
+          # A hotfix of an older series must not replace the newer latest release (nor its docs).
+          LATEST=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2> /dev/null || true)
+          if [ -z "$LATEST" ] || [ "$(printf '%s\n' "$LATEST" "$TAG" | sort -V | tail -n 1)" = "$TAG" ]; then
+            MAKE_LATEST=true
+          else
+            MAKE_LATEST=false
+          fi
+
+          echo "release_id=$ID" >> "$GITHUB_OUTPUT"
+          echo "make_latest=$MAKE_LATEST" >> "$GITHUB_OUTPUT"
+          echo "Promoting docc $VERSION (latest: $MAKE_LATEST, current latest: ${LATEST:-none})" >> "$GITHUB_STEP_SUMMARY"
+
+  pypi:
+    name: Publish to PyPI
+    needs: [check]
+    runs-on: ubuntu-latest
+    # The approval gates the whole public release, as every later job needs this one. The URL is only the
+    # link GitHub shows for the deployment (run graph, Environments page); the next job publishes it.
+    environment:
+      name: public-release
+      url: https://github.com/${{ github.repository }}/releases/tag/v${{ inputs.version }}
+    permissions:
+      # contents: write to download the draft's assets, id-token: write for PyPI's trusted publishing.
+      contents: write
+      id-token: write
+    env:
+      VERSION: ${{ inputs.version }}
+      RELEASE_ID: ${{ needs.check.outputs.release_id }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Download wheels from the draft release
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets" --paginate \
+            --jq '.[] | select(.name == "SHA256SUMS" or (.name | endswith(".whl"))) | "\(.id) \(.name)"' |
+          while read -r ID NAME; do
+            gh api -H "Accept: application/octet-stream" "repos/$GITHUB_REPOSITORY/releases/assets/$ID" > "dist/$NAME"
+          done
+
+          cd dist
+          sha256sum --check --ignore-missing --strict SHA256SUMS
+          rm SHA256SUMS
+          for PACKAGE in docc_compiler docc_ai docc_pytorch; do
+            if ! compgen -G "${PACKAGE}-${VERSION}-*.whl" > /dev/null; then
+              echo "::error::The draft release has no ${PACKAGE} wheel of version $VERSION."
+              exit 1
+            fi
+          done
+          for WHEEL in ./*.whl; do
+            if [[ "$WHEEL" != *"-${VERSION}-"* ]]; then
+              echo "::error::The draft release has a wheel of another version: $WHEEL"
+              exit 1
+            fi
+          done
+          ls -l
+
+      # skip-existing lets a re-run finish a partially failed upload.
+      - uses: pypa/gh-action-pypi-publish@v1.14.3
+        with:
+          packages-dir: dist/
+          skip-existing: true
+
+  github-release:
+    name: Publish GitHub release
+    needs: [check, pypi]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ inputs.version }}
+      RELEASE_ID: ${{ needs.check.outputs.release_id }}
+      MAKE_LATEST: ${{ needs.check.outputs.make_latest }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Publish the draft
+        run: |
+          set -euo pipefail
+          URL=$(gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" \
+            -F draft=false -f make_latest="$MAKE_LATEST" --jq .html_url)
+          {
+            echo "Published [docc $VERSION]($URL)."
+            echo
+            echo "Remaining manual step: set \`published\` on the docc $VERSION distributions in the Daisytuner backend."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  docs:
+    needs: [check, github-release]
+    if: ${{ needs.check.outputs.make_latest == 'true' }}
+    # A called workflow gets at most the permissions of its calling job; the deploy logs in to Google Cloud
+    # keylessly (OIDC), so no secret is passed.
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/docs.yml
+    with:
+      version: ${{ inputs.version }}
+      deploy: true
+      staged: true

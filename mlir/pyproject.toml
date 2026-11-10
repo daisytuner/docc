@@ -61,7 +61,7 @@ cmake.define.BUILD_TESTS = "OFF"
 cmake.define.BUILD_BENCHMARKS = "OFF"
 cmake.define.BUILD_BENCHMARKS_GOOGLE = "OFF"
 
-# Version: DOCC_VERSION in release builds, else VERSION_BASE + ".0.dev0+g<hash>" (see scripts/docc_version.py).
+# Version: DOCC_RELEASE_VERSION in release builds, else VERSION_BASE + ".dev0+g<hash>" (see scripts/docc_version.py).
 [tool.scikit-build.metadata.version]
 provider = "docc_version"
 provider-path = "../scripts"

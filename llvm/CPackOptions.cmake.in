@@ -4,7 +4,7 @@
 # It allows us to calculate architecture-dependent filenames without requiring
 # dpkg/rpm to be present during the initial CMake configuration step.
 
-# The package version already marks dev builds (MAJOR.MINOR.0+g<hash>, see docc's top-level
+# The package version already marks dev builds (MAJOR.MINOR+g<hash>, see docc's top-level
 # CMakeLists.txt), so the file name uses it unchanged.
 set(CPACK_PACKAGE_FILE_VERSION ${CPACK_PACKAGE_VERSION})
 
@@ -18,7 +18,7 @@ if(CPACK_GENERATOR MATCHES "DEB")
                 OUTPUT_STRIP_TRAILING_WHITESPACE)
         endif()
     endif()
-    
+
     # Fallback if detection failed (e.g. cross-compiling logic might need explicit set, or defaults)
     if(NOT CPACK_DEBIAN_PACKAGE_ARCHITECTURE)
         set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "unknown")
@@ -41,7 +41,7 @@ if(CPACK_GENERATOR MATCHES "RPM")
     endif()
 
     if(NOT CPACK_RPM_PACKAGE_ARCHITECTURE)
-        execute_process(COMMAND uname -m 
+        execute_process(COMMAND uname -m
             OUTPUT_VARIABLE CPACK_RPM_PACKAGE_ARCHITECTURE
             OUTPUT_STRIP_TRAILING_WHITESPACE)
     endif()
