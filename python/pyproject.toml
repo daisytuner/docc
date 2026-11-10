@@ -95,7 +95,8 @@ before-all = [
   "brew install boost gmp isl nlohmann-json",
 ]
 
-# Ensure we build universal2 wheels for both Intel and Apple Silicon
+# The deployment target must match the runner's macOS (macos-15 in release.yml): the Homebrew libraries
+# bundled into the wheel are built for it, and the wheel repair (delocate) rejects a lower target.
 [tool.cibuildwheel.macos.environment]
-MACOSX_DEPLOYMENT_TARGET = "14.0"
+MACOSX_DEPLOYMENT_TARGET = "15.0"
 MAKEFLAGS = "-j$(sysctl -n hw.ncpu)"
