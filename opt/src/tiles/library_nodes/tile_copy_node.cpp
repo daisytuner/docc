@@ -709,16 +709,26 @@ void emit_cooperative_copy_loop(
     const bool unrolled = !node.coop_threads().is_null();
     // An exact split (size divisible by threads*factor) needs no bounds guard; dropping
     // it keeps the loads unconditional so the backend can batch them before one wait.
+    // An uneven copy-in of a constant tile clamps the surplus steps onto the last transfer
+    // instead: they copy the same elements again (identical values), so the copy stays
+    // branch-free. A copy-out keeps the guard.
     bool exact = false;
+    long long last_transfer = -1;
     if (unrolled) {
         auto total = plan.src.total_elements();
         auto threads = node.coop_threads();
         if (SymEngine::is_a<SymEngine::Integer>(*total) && SymEngine::is_a<SymEngine::Integer>(*threads)) {
             const long long t = SymEngine::rcp_static_cast<const SymEngine::Integer>(total)->as_int();
             const long long ct = SymEngine::rcp_static_cast<const SymEngine::Integer>(threads)->as_int();
-            exact = ct > 0 && t % (ct * static_cast<long long>(factor)) == 0;
+            const long long f = static_cast<long long>(factor);
+            exact = ct > 0 && t % (ct * f) == 0;
+            if (!exact && copy_in && t >= f && t % f == 0) {
+                last_transfer = t - f;
+            }
         }
     }
+    const bool clamped = unrolled && !exact && last_transfer >= 0;
+    const bool bounds_guard = unrolled && !exact && !clamped;
     if (unrolled) {
         const std::string ct = language_extension.expression(node.coop_threads());
         const std::string f = std::to_string(factor);
@@ -728,7 +738,9 @@ void emit_cooperative_copy_loop(
         stream << "for (int __tc_i = 0; __tc_i < ((" << size << ") + (" << ct << ") * " << f << " - 1) / ((" << ct
                << ") * " << f << "); __tc_i++) {" << std::endl;
         stream << "int __tc_c = " << f << " * (__tc_i * (" << ct << ") + __tc_tid);" << std::endl;
-        if (!exact) {
+        if (clamped) {
+            stream << "__tc_c = __tc_c < " << last_transfer << " ? __tc_c : " << last_transfer << ";" << std::endl;
+        } else if (bounds_guard) {
             stream << "if (__tc_c < " << size << ") {" << std::endl;
         }
     } else {
@@ -878,7 +890,7 @@ void emit_cooperative_copy_loop(
         stmt = "if (" + pred + ") { " + stmt + " } else { " + zero + " }";
     }
     stream << stmt << std::endl;
-    if (unrolled && !exact) {
+    if (bounds_guard) {
         stream << "}" << std::endl; // close the `__tc_c < size` bounds guard
     }
     stream << "}" << std::endl;

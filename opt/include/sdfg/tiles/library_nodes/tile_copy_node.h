@@ -209,8 +209,10 @@ std::string emit_predicated_guarded_load(
 /// transfer given the destination/source element addresses and the byte width (the
 /// target supplies its own primitive; e.g. CUDA `__pipeline_memcpy_async`). Guarded
 /// (ragged) copy-ins load through @p guarded_load, defaulting to
-/// @ref emit_predicated_guarded_load. Shared by the CUDA and ROCm dispatchers; the
-/// visibility barrier is the producer's.
+/// @ref emit_predicated_guarded_load. With a known thread count the loop has a constant trip
+/// count; when the threads do not split the tile evenly, a copy-in of a constant tile clamps the
+/// surplus steps onto the tile's last transfer (they copy it again, branch-free) while any other
+/// copy guards them. Shared by the CUDA and ROCm dispatchers; the visibility barrier is the producer's.
 void emit_cooperative_copy_loop(
     codegen::LanguageExtension& language_extension,
     codegen::PrettyPrinter& stream,

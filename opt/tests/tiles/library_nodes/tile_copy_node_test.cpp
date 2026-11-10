@@ -562,42 +562,99 @@ TEST(TileCopyNodeTest, CudaCooperativeDispatcherEmitsFixedCountLoopWhenThreadsKn
     EXPECT_EQ(code.find("if (__tc_c <"), std::string::npos) << code;
 }
 
-TEST(TileCopyNodeTest, CudaCooperativeDispatcherKeepsGuardWhenSplitIsRagged) {
+namespace {
+
+// CUDA code of a 1-D fp32 cooperative copy of @p size elements over @p threads threads; @p bytes > 4 renders a
+// VectorSync transfer of that width.
+std::string cooperative_copy_code(
+    const symbolic::Expression& size, long long threads, tiles::CopyDirection direction, size_t bytes = 4
+) {
     auto builder = make_builder();
     types::Scalar elem(types::PrimitiveType::Float);
     types::Pointer ptr(elem);
-    types::Array buf_type(elem, symbolic::integer(48));
+    types::Array buf_type(elem, size);
     builder.add_container("g", ptr);
     builder.add_container("buf", buf_type);
+    if (!SymEngine::is_a<SymEngine::Integer>(*size)) {
+        builder.add_container("N", types::Scalar(types::PrimitiveType::Int64), true);
+    }
 
     auto& block = builder.add_block(builder.subject().root());
     auto& g = builder.add_access(block, "g");
     auto& buf = builder.add_access(block, "buf");
     tiles::TiledCopy plan;
-    plan.src = tiles::Layout({symbolic::integer(48)}, {symbolic::integer(1)}, symbolic::integer(0));
-    plan.dst = tiles::Layout({symbolic::integer(48)}, {symbolic::integer(1)}, symbolic::integer(0));
-    plan.atom = tiles::CopyAtom::ScalarSync;
+    plan.src = tiles::Layout({size}, {symbolic::integer(1)}, symbolic::integer(0));
+    plan.dst = tiles::Layout({size}, {symbolic::integer(1)}, symbolic::integer(0));
+    plan.atom = bytes > 4 ? tiles::CopyAtom::VectorSync : tiles::CopyAtom::ScalarSync;
     auto& node = static_cast<tiles::TileCopyNode&>(builder.add_library_node<tiles::TileCopyNode>(
         block,
         DebugInfo(),
         data_flow::ImplementationType_NONE,
         plan,
-        tiles::CopyDirection::In,
-        4,
+        direction,
+        bytes,
         tiles::TileGuard{},
         std::vector<int>{},
-        symbolic::integer(32)
+        symbolic::integer(threads)
     ));
-    builder.add_computational_memlet(block, buf, node, "_dst", {}, ptr);
-    builder.add_computational_memlet(block, g, node, "_src", {}, ptr);
+    if (direction == tiles::CopyDirection::In) {
+        builder.add_computational_memlet(block, buf, node, "_dst", {}, ptr);
+        builder.add_computational_memlet(block, g, node, "_src", {}, ptr);
+    } else {
+        builder.add_computational_memlet(block, g, node, "_dst", {}, ptr);
+        builder.add_computational_memlet(block, buf, node, "_src", {}, ptr);
+    }
 
     cuda::CUDALanguageExtension le(builder.subject());
     cuda::tiles::TileCopyNodeDispatcher dispatcher(le, builder.subject(), block.dataflow(), node);
     codegen::PrettyPrinter stream, globals;
     codegen::CodeSnippetFactory snippets;
     dispatcher.dispatch(stream, globals, snippets);
+    return stream.str();
+}
 
-    EXPECT_NE(stream.str().find("if (__tc_c < 48)"), std::string::npos) << stream.str();
+std::string clamp_of(long long last_transfer) {
+    const std::string l = std::to_string(last_transfer);
+    return "__tc_c = __tc_c < " + l + " ? __tc_c : " + l + ";";
+}
+
+} // namespace
+
+// Base: an uneven copy-in (48 elements on 32 threads) clamps its surplus steps onto the last element instead of
+// guarding them, so the copy is branch-free.
+TEST(TileCopyNodeTest, CudaCooperativeCopyInUnevenSplitClampsBase) {
+    const auto code = cooperative_copy_code(symbolic::integer(48), 32, tiles::CopyDirection::In);
+    EXPECT_NE(code.find(clamp_of(47)), std::string::npos) << code;
+    EXPECT_EQ(code.find("if (__tc_c <"), std::string::npos) << code;
+}
+
+// Step: growing the tile element by element, every uneven split clamps to the last transfer and every even split
+// emits neither clamp nor guard; with 16-byte transfers the clamp lands on the last 4-element transfer.
+TEST(TileCopyNodeTest, CudaCooperativeCopyInUnevenSplitClampsStep) {
+    for (long long size = 33; size <= 96; ++size) {
+        const auto code = cooperative_copy_code(symbolic::integer(size), 32, tiles::CopyDirection::In);
+        EXPECT_EQ(code.find("if (__tc_c <"), std::string::npos) << size << "\n" << code;
+        EXPECT_EQ(code.find(clamp_of(size - 1)) != std::string::npos, size % 32 != 0) << size << "\n" << code;
+    }
+    for (long long size = 132; size <= 256; size += 4) {
+        const auto code = cooperative_copy_code(symbolic::integer(size), 32, tiles::CopyDirection::In, 16);
+        EXPECT_EQ(code.find("if (__tc_c <"), std::string::npos) << size << "\n" << code;
+        EXPECT_EQ(code.find(clamp_of(size - 4)) != std::string::npos, size % 128 != 0) << size << "\n" << code;
+    }
+}
+
+// A copy-out must not write any element twice through a clamp: its uneven split keeps the bounds guard.
+TEST(TileCopyNodeTest, CudaCooperativeCopyOutUnevenSplitKeepsGuard) {
+    const auto code = cooperative_copy_code(symbolic::integer(48), 32, tiles::CopyDirection::Out);
+    EXPECT_NE(code.find("if (__tc_c < 48)"), std::string::npos) << code;
+    EXPECT_EQ(code.find("? __tc_c :"), std::string::npos) << code;
+}
+
+// Without a constant tile size the last transfer is unknown: the copy-in keeps the bounds guard.
+TEST(TileCopyNodeTest, CudaCooperativeCopyInSymbolicSizeKeepsGuard) {
+    const auto code = cooperative_copy_code(symbolic::symbol("N"), 32, tiles::CopyDirection::In);
+    EXPECT_NE(code.find("if (__tc_c < N)"), std::string::npos) << code;
+    EXPECT_EQ(code.find("? __tc_c :"), std::string::npos) << code;
 }
 
 TEST(TileCopyNodeTest, CudaVectorAtomEmitsWidenedTransfer) {
