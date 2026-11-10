@@ -422,17 +422,6 @@ jobs:
           GENERATED=$(gh api -X POST "repos/$GITHUB_REPOSITORY/releases/generate-notes" "${ARGS[@]}" --jq .body)
 
           {
-            echo "<!-- Soak period: edit these notes (e.g. add a Highlights section) before running the Promote workflow. -->"
-            echo "## Install"
-            echo
-            echo '```sh'
-            echo "pip install docc-compiler==$VERSION   # NumPy"
-            echo "pip install docc-ai==$VERSION         # PyTorch"
-            echo '```'
-            echo
-            echo "Native packages for Ubuntu, Debian and RHEL are attached below (\`sudo apt install ./docc-llvm_${VERSION}-<distro>_<arch>.deb\`"
-            echo "or \`sudo dnf install ./docc-llvm_${VERSION}-<distro>_<arch>.rpm\`); \`SHA256SUMS\` lists the checksums of all files."
-            echo
             echo "$GENERATED"
           } > notes.md
 

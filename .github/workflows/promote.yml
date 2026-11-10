@@ -20,7 +20,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: promote-${{ inputs.version }}
+  group: promote-public-release
   cancel-in-progress: false
 
 jobs:
