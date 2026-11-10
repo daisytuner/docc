@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.26)
 
-# The version is computed by docc's top-level CMakeLists.txt (from VERSION_BASE, or DOCC_VERSION in
-# release builds); llvm/ is only built as its subdirectory (LLVM_BUILD_FRONTEND=ON). The full version
+# The version is computed by docc's top-level CMakeLists.txt (from VERSION_BASE, or DOCC_RELEASE_VERSION
+# in release builds); llvm/ is only built as its subdirectory (LLVM_BUILD_FRONTEND=ON). The full version
 # names the install prefix, `docc --version` and the package, so dev builds carry their commit hash there.
 if(NOT DEFINED DOCC_VERSION_FULL)
     message(FATAL_ERROR "llvm/ must be configured through docc's top-level CMakeLists.txt with -DLLVM_BUILD_FRONTEND=ON")
