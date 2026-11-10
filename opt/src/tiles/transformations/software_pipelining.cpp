@@ -376,6 +376,58 @@ structured_control_flow::Sequence& loop_body(structured_control_flow::Structured
     return *body;
 }
 
+void inline_case(builder::StructuredSDFGBuilder& builder, structured_control_flow::IfElse& if_else, size_t case_index) {
+    auto& parent = static_cast<structured_control_flow::Sequence&>(*if_else.get_parent());
+    if (case_index < if_else.size()) {
+        builder.move_children(if_else.at(case_index).first, parent, parent.index(if_else));
+    }
+    builder.remove_child(parent, parent.index(if_else));
+}
+
+bool peel_prefetch_tail(
+    builder::StructuredSDFGBuilder& builder,
+    structured_control_flow::StructuredLoop& loop,
+    const std::vector<structured_control_flow::IfElse*>& guards,
+    size_t lookahead
+) {
+    const auto trip = loop.num_iterations();
+    const auto stride = loop.stride();
+    if (trip.is_null() || stride.is_null() || !SymEngine::is_a<SymEngine::Integer>(*trip) ||
+        !SymEngine::is_a<SymEngine::Integer>(*stride)) {
+        return false;
+    }
+    const long long n = SymEngine::rcp_static_cast<const SymEngine::Integer>(trip)->as_int();
+    const long long s = SymEngine::rcp_static_cast<const SymEngine::Integer>(stride)->as_int();
+    auto* parent = dynamic_cast<structured_control_flow::Sequence*>(loop.get_parent());
+    if (s <= 0 || n <= static_cast<long long>(lookahead) || parent == nullptr) {
+        return false;
+    }
+    const auto indvar = loop.indvar();
+    const auto init = loop.init();
+    auto panel = [&](long long i) {
+        return symbolic::add(init, symbolic::mul(symbolic::integer(i), stride));
+    };
+
+    auto& epilogue = builder.add_sequence_after(*parent, loop, loop.debug_info());
+    for (size_t t = 0; t < lookahead; ++t) {
+        deepcopy::StructuredSDFGDeepCopy dc(builder, epilogue, loop.root());
+        auto mapping = dc.copy();
+        for (auto* guard : guards) {
+            auto* clone = dynamic_cast<const structured_control_flow::IfElse*>(mapping.at(guard));
+            inline_case(builder, *const_cast<structured_control_flow::IfElse*>(clone), 1);
+        }
+        const_cast<structured_control_flow::ControlFlowNode*>(mapping.at(&loop.root()))
+            ->replace(indvar, panel(n - static_cast<long long>(lookahead) + static_cast<long long>(t)));
+    }
+    for (auto* guard : guards) {
+        inline_case(builder, *guard, 0);
+    }
+    builder.update_loop(
+        loop, indvar, symbolic::Lt(indvar, panel(n - static_cast<long long>(lookahead))), init, loop.update()
+    );
+    return true;
+}
+
 } // namespace
 
 // Register-staged rewrite (see the header): prologue copy, then per panel a guarded load of
@@ -484,6 +536,7 @@ static void apply_register_staged(
     for (auto it = replaced.rbegin(); it != replaced.rend(); ++it) {
         builder.remove_child(body, body.index(**it));
     }
+    peel_prefetch_tail(builder, loop, {&load_if, &store_if}, 1);
 }
 
 SoftwarePipelining::SoftwarePipelining(
@@ -795,6 +848,7 @@ void SoftwarePipelining::apply(builder::StructuredSDFGBuilder& builder, analysis
         wait_node.set_loads_per_group(loads_per_group);
         drain_wait_node.set_loads_per_group(loads_per_group);
     }
+    peel_prefetch_tail(builder, loop_, {&if_else}, stages_ - 1);
 
     analysis_manager.invalidate_all();
 }

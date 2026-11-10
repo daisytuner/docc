@@ -327,3 +327,97 @@ TEST(TileVectorizerTest, CoalescedBlockCopyRequiresAlignedOffsets) {
         }
     }
 }
+
+namespace {
+
+constexpr long long kSplitCols = 64;
+constexpr long long kSplitThreads = 256;
+
+// A [rows][64] bf16 tile copied by a scalar cooperative TileCopyNode of @p threads threads under a block map;
+// TileVectorizer is applied and the chosen transfer width returned.
+size_t vectorized_width(long long rows, symbolic::Expression threads) {
+    builder::StructuredSDFGBuilder builder("tv_split", FunctionType_CPU);
+    auto& root = builder.subject().root();
+    types::Scalar bf16(types::PrimitiveType::BFloat);
+    types::Pointer ptr(bf16);
+    types::Array buf(types::StorageType::NV_Shared(), 16, "", bf16, symbolic::integer(rows * kSplitCols));
+    builder.add_container("A", ptr, true);
+    builder.add_container("buf", buf);
+    builder.add_container("b", types::Scalar(types::PrimitiveType::Int32));
+    auto b = symbolic::symbol("b");
+    auto sched = gpu::ScheduleType_GPU_Offload::create<
+        cuda::ScheduleType_CUDA_Offload>(gpu::TargetLevel::X_BLOCK, symbolic::integer(kSplitThreads));
+    auto& map = builder.add_map(
+        root,
+        b,
+        symbolic::Lt(b, symbolic::integer(kSplitThreads)),
+        symbolic::integer(0),
+        symbolic::add(b, symbolic::integer(1)),
+        sched
+    );
+
+    tiles::TiledCopy plan;
+    plan.src = tiles::Layout(
+        {symbolic::integer(rows), symbolic::integer(kSplitCols)},
+        {symbolic::integer(1536), symbolic::integer(1)},
+        symbolic::integer(0)
+    );
+    plan.dst = tiles::Layout(
+        {symbolic::integer(rows), symbolic::integer(kSplitCols)},
+        {symbolic::integer(kSplitCols), symbolic::integer(1)},
+        symbolic::integer(0)
+    );
+    plan.atom = tiles::CopyAtom::ScalarSync;
+    auto& block = builder.add_block(map.root());
+    auto& src = builder.add_access(block, "A");
+    auto& dst = builder.add_access(block, "buf");
+    auto& node = static_cast<tiles::TileCopyNode&>(builder.add_library_node<tiles::TileCopyNode>(
+        block,
+        DebugInfo(),
+        data_flow::ImplementationType_NONE,
+        plan,
+        tiles::CopyDirection::In,
+        2,
+        tiles::TileGuard{},
+        std::vector<int>{},
+        threads
+    ));
+    builder.add_computational_memlet(block, dst, node, "_dst", {}, ptr);
+    builder.add_computational_memlet(block, src, node, "_src", {}, ptr);
+
+    analysis::AnalysisManager am(builder.subject());
+    TileVectorizer tv(map);
+    EXPECT_TRUE(tv.can_be_applied(builder, am));
+    tv.apply(builder, am);
+    EXPECT_EQ(node.atom(), tiles::CopyAtom::VectorSync);
+    return node.bytes();
+}
+
+bool splits_evenly(long long rows, size_t width) {
+    const long long transfers = rows * kSplitCols * 2 / static_cast<long long>(width);
+    return transfers % kSplitThreads == 0;
+}
+
+} // namespace
+
+// Base: a tile whose 16-byte transfers already split evenly over the threads keeps the widest width.
+TEST(TileVectorizerTest, EvenSplitBaseKeepsWidest) {
+    ASSERT_TRUE(splits_evenly(64, 16));
+    EXPECT_EQ(vectorized_width(64, symbolic::integer(kSplitThreads)), 16u);
+}
+
+// Step: growing the tile row by row, the chosen width is always the widest one that splits evenly, and the widest
+// legal width when none does — e.g. 48 rows (384 16-byte transfers on 256 threads) drop to 8 bytes (768 = 3 x 256).
+TEST(TileVectorizerTest, EvenSplitStepPrefersWidestEvenWidth) {
+    for (long long rows = 8; rows <= 80; rows += 8) {
+        const size_t expected = splits_evenly(rows, 16) ? 16u : splits_evenly(rows, 8) ? 8u : 16u;
+        EXPECT_EQ(vectorized_width(rows, symbolic::integer(kSplitThreads)), expected) << rows << " rows";
+    }
+    EXPECT_EQ(vectorized_width(48, symbolic::integer(kSplitThreads)), 8u);
+    EXPECT_EQ(vectorized_width(40, symbolic::integer(kSplitThreads)), 16u);
+}
+
+// Without a constant cooperating thread count there is no split to reason about: the widest legal width is kept.
+TEST(TileVectorizerTest, EvenSplitUnknownThreadsKeepsWidest) {
+    EXPECT_EQ(vectorized_width(48, symbolic::Expression{}), 16u);
+}

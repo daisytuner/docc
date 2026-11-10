@@ -13,7 +13,10 @@ namespace transformations {
  * optionally, after SoftwarePipelining (which flips the node's atom to cp.async).
  * For each @ref tiles::TileCopyNode it widens the transfer — a ScalarSync copy
  * becomes VectorSync, a CpAsync copy keeps its atom — whenever the copied run is
- * provably contiguous and aligned (derived from the plan layouts). Pipelined
+ * provably contiguous and aligned (derived from the plan layouts). Among the legal
+ * 16- and 8-byte widths it prefers the widest one whose transfers split the tile
+ * evenly over the copy's constant cooperating thread count, so the copy needs no
+ * per-thread bounds guard; without such a width it takes the widest legal one. Pipelined
  * regions have their @ref tiles::PipelineWaitNode `loads_per_group` recomputed
  * from the widened cp.async widths so the vmcnt fence stays correct.
  *
