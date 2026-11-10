@@ -18,13 +18,28 @@ inline void register_tiles_plugin(plugins::Context& context) {
     libNodeSerRegistry.register_library_node_serializer(LibraryNodeType_PipelineWait.value(), []() {
         return std::make_unique<PipelineWaitNodeSerializer>();
     });
+    libNodeSerRegistry.register_library_node_serializer(LibraryNodeType_PipelineSchedule.value(), []() {
+        return std::make_unique<PipelineScheduleNodeSerializer>();
+    });
     libNodeSerRegistry.register_library_node_serializer(LibraryNodeType_TileCopy.value(), []() {
         return std::make_unique<TileCopyNodeSerializer>();
     });
 
+    auto& libNodeDispRegistry = context.library_node_dispatcher_registry;
+    // A schedule only hints a backend instruction scheduler: targets without one ignore it.
+    libNodeDispRegistry.register_library_node_dispatcher(
+        LibraryNodeType_PipelineSchedule,
+        data_flow::ImplementationType_NONE,
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<PipelineScheduleNodeDispatcher>(language_extension, function, data_flow_graph, node);
+        }
+    );
+
     // Reference (host / sequential) dispatcher for the whole-copy TileCopyNode. GPU
     // targets register their own impl-typed dispatcher for the cooperative/async atoms.
-    auto& libNodeDispRegistry = context.library_node_dispatcher_registry;
     libNodeDispRegistry.register_library_node_dispatcher(
         LibraryNodeType_TileCopy,
         data_flow::ImplementationType_NONE,

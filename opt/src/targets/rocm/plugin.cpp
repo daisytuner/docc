@@ -484,6 +484,21 @@ void register_rocm_plugin(plugins::Context& context) {
         }
     );
     libNodeDispatcherRegistry.register_library_node_dispatcher(
+        ::sdfg::tiles::LibraryNodeType_PipelineSchedule,
+        ImplementationType_ROCM,
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<rocm::tiles::PipelineScheduleNodeDispatcher>(
+                language_extension,
+                function,
+                data_flow_graph,
+                dynamic_cast<const ::sdfg::tiles::PipelineScheduleNode&>(node)
+            );
+        }
+    );
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
         ::sdfg::tiles::LibraryNodeType_PipelineWait,
         ImplementationType_ROCM,
         [](codegen::LanguageExtension& language_extension,

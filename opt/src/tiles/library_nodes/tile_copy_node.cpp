@@ -125,6 +125,7 @@ std::unique_ptr<data_flow::DataFlowNode> TileCopyNode::
         coop_lanes_
     ));
     copy->phase_ = phase_;
+    copy->scheduled_ = scheduled_;
     return copy;
 }
 
@@ -212,6 +213,9 @@ nlohmann::json TileCopyNodeSerializer::serialize(const sdfg::data_flow::LibraryN
     if (node.phase() != CopyPhase::Full) {
         j["phase"] = node.phase() == CopyPhase::LoadRegs ? "load_regs" : "store_regs";
     }
+    if (node.scheduled()) {
+        j["scheduled"] = true;
+    }
     return j;
 }
 
@@ -264,6 +268,7 @@ data_flow::LibraryNode& TileCopyNodeSerializer::deserialize(
     if (j.contains("phase")) {
         node.set_phase(j.at("phase").get<std::string>() == "load_regs" ? CopyPhase::LoadRegs : CopyPhase::StoreRegs);
     }
+    node.set_scheduled(j.value("scheduled", false));
     return node;
 }
 

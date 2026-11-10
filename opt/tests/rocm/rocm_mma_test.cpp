@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <gtest/gtest.h>
+#include <memory>
 #include <sdfg/serializer/json_serializer.h>
 #include <set>
 #include <strstream>
@@ -24,6 +25,7 @@
 #include "sdfg/targets/gpu/gpu_mma_fragment_eltwise_add_node.h"
 #include "sdfg/targets/gpu/gpu_mma_fragment_load_node.h"
 #include "sdfg/targets/gpu/gpu_mma_fragment_store_node.h"
+#include "sdfg/targets/gpu/gpu_mma_interleave.h"
 #include "sdfg/targets/gpu/gpu_mma_matmul_node.h"
 #include "sdfg/targets/gpu/gpu_offload_schedule_type.h"
 #include "sdfg/targets/gpu/gpu_tile_arrival_node.h"
@@ -31,6 +33,7 @@
 #include "sdfg/targets/rocm/rocm.h"
 #include "sdfg/targets/rocm/rocm_arch.h"
 #include "sdfg/targets/rocm/rocm_mma_bare_dispatcher.h"
+#include "sdfg/tiles/library_nodes/pipeline_node.h"
 #include "sdfg/tiles/library_nodes/tile_copy_node.h"
 #include "sdfg/tiles/transformations/local_storage.h"
 #include "sdfg/tiles/transformations/software_pipelining.h"
@@ -1230,6 +1233,238 @@ TEST(ROCMMMATest, RegisterStagedPeelStepAddsOneIteration_gfx90a) {
         EXPECT_TRUE(symbolic::eq(peel.epilogue_k_init, symbolic::integer(2 * (panels - 1))))
             << panels << ": " << peel.epilogue_k_init->__str__();
     }
+}
+
+namespace {
+
+struct InterleaveCase {
+    std::unique_ptr<builder::StructuredSDFGBuilder> builder;
+    structured_control_flow::StructuredLoop* panel = nullptr;
+    size_t loads_per_thread = 0;
+};
+
+// 64x64 MMA tile with a (wm x wn) wave tile, K panels of @p blocks MMA blocks, register-staged and vectorized: the
+// steady-state panel loop GpuMmaInterleave targets. @p pipeline = false stops before SoftwarePipelining.
+InterleaveCase build_interleave_case(int blocks, gpu::BlockCounts wave_tile, bool pipeline = true) {
+    InterleaveCase c;
+    c.builder = std::make_unique<builder::StructuredSDFGBuilder>("interleave", FunctionType_CPU);
+    auto& builder = *c.builder;
+    auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
+    auto [block, matmul_node] = build_offloaded_mma_structure(builder, 1024, 1024, 64 * blocks, 64, 64, 16, arch);
+    passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch, nullptr, &wave_tile));
+    strip_mine_k(builder, blocks);
+    localize(builder, "tile_k0");
+    if (pipeline) {
+        analysis::AnalysisManager am(builder.subject());
+        transformations::SoftwarePipelining sp(*find_loop(am, "tile_k0_tile0"), 2, false, /*register_staged=*/true);
+        EXPECT_TRUE(sp.can_be_applied(builder, am));
+        sp.apply(builder, am);
+    }
+    {
+        analysis::AnalysisManager am(builder.subject());
+        transformations::TileVectorizer tv(*find_loop(am, "wave_col0"));
+        if (tv.can_be_applied(builder, am)) {
+            tv.apply(builder, am);
+        }
+    }
+    analysis::AnalysisManager am(builder.subject());
+    c.panel = find_loop(am, "tile_k0_tile0");
+    for (size_t i = 0; c.panel != nullptr && i < c.panel->root().size(); ++i) {
+        visitor::for_each_block(c.panel->root().at(i), [&](structured_control_flow::Block& b) {
+            for (auto* lib : b.dataflow().library_nodes()) {
+                auto* tc = dynamic_cast<tiles::TileCopyNode*>(lib);
+                if (tc == nullptr || tc->phase() != tiles::CopyPhase::LoadRegs) {
+                    continue;
+                }
+                const auto total =
+                    SymEngine::rcp_static_cast<const SymEngine::Integer>(tc->plan().src.total_elements())->as_int();
+                const auto threads = SymEngine::rcp_static_cast<const SymEngine::Integer>(tc->coop_threads())->as_int();
+                const long factor = tc->atom() == tiles::CopyAtom::VectorSync ? tc->bytes() / 2 : 1;
+                c.loads_per_thread += (total + threads * factor - 1) / (threads * factor);
+            }
+        });
+    }
+    return c;
+}
+
+struct RecipeCounts {
+    size_t mfma = 0, global = 0, lds_read_groups = 0, lds_reads = 0;
+    std::vector<size_t> mfma_before_global;
+};
+
+RecipeCounts count_recipe(const std::vector<tiles::ScheduleGroup>& groups) {
+    RecipeCounts r;
+    for (const auto& g : groups) {
+        switch (g.cls) {
+            case tiles::InstructionClass::Mfma:
+                r.mfma += g.count;
+                break;
+            case tiles::InstructionClass::GlobalRead:
+                for (size_t i = 0; i < g.count; ++i) {
+                    r.mfma_before_global.push_back(r.mfma);
+                }
+                r.global += g.count;
+                break;
+            case tiles::InstructionClass::LdsRead:
+                ++r.lds_read_groups;
+                r.lds_reads = g.count;
+                break;
+            case tiles::InstructionClass::LdsWrite:
+                break;
+        }
+    }
+    return r;
+}
+
+} // namespace
+
+/// Base: with the smallest panel (two k-steps) the recipe reads each k-step's fragments once, issues one MFMA group
+/// per MMA and places every prefetch load of the panel after an MFMA.
+TEST(ROCMMMATest, InterleaveRecipeBaseTwoSteps_gfx90a) {
+    auto c = build_interleave_case(2, {2, 2});
+    ASSERT_NE(c.panel, nullptr);
+    ASSERT_GT(c.loads_per_thread, 0u);
+    gpu::GpuMmaInterleave xform(*c.panel);
+    auto recipe = xform.recipe(*c.builder);
+    ASSERT_TRUE(recipe.has_value());
+    auto r = count_recipe(*recipe);
+    EXPECT_EQ(r.mfma, 8u);
+    EXPECT_EQ(r.lds_read_groups, 2u);
+    EXPECT_EQ(r.global, c.loads_per_thread);
+    EXPECT_EQ(recipe->front().cls, tiles::InstructionClass::LdsRead);
+    for (size_t m : r.mfma_before_global) {
+        EXPECT_GE(m, 1u);
+    }
+}
+
+/// Step: every further k-step adds exactly its MMAs and one fragment-read group; all prefetch loads stay placed,
+/// each after an MFMA and `spacing` MFMAs apart (the spacing shrinking only when the loads would not fit).
+TEST(ROCMMMATest, InterleaveRecipeStepAddsOneKStep_gfx90a) {
+    for (int steps : {2, 4, 8}) {
+        auto c = build_interleave_case(steps, {2, 2});
+        ASSERT_NE(c.panel, nullptr) << steps;
+        for (size_t spacing : {1u, 3u}) {
+            gpu::GpuMmaInterleave xform(*c.panel, spacing);
+            auto recipe = xform.recipe(*c.builder);
+            ASSERT_TRUE(recipe.has_value()) << steps;
+            auto r = count_recipe(*recipe);
+            EXPECT_EQ(r.mfma, 4u * steps) << steps;
+            EXPECT_EQ(r.lds_read_groups, static_cast<size_t>(steps)) << steps;
+            EXPECT_EQ(r.global, c.loads_per_thread) << steps;
+            const size_t effective = std::max<size_t>(1, std::min<size_t>(spacing, r.mfma / r.global));
+            for (size_t i = 0; i < r.mfma_before_global.size(); ++i) {
+                EXPECT_EQ(r.mfma_before_global[i], 1 + i * effective) << steps << " " << spacing << " " << i;
+            }
+        }
+    }
+}
+
+/// The derived fragment reads per k-step are the bytes each lane reads from LDS per k-step over 16: a wave with
+/// (wm x wn) fp16 16x16 fragments reads 8 (wm + wn) bytes per lane.
+TEST(ROCMMMATest, InterleaveRecipeDerivesLdsReadsFromFragments_gfx90a) {
+    for (auto wave_tile : {gpu::BlockCounts{1, 1}, gpu::BlockCounts{2, 1}, gpu::BlockCounts{2, 2}}) {
+        auto c = build_interleave_case(2, wave_tile);
+        ASSERT_NE(c.panel, nullptr);
+        auto recipe = gpu::GpuMmaInterleave(*c.panel).recipe(*c.builder);
+        ASSERT_TRUE(recipe.has_value());
+        const size_t bytes = 8 * (wave_tile.blocks_m + wave_tile.blocks_n);
+        EXPECT_EQ(count_recipe(*recipe).lds_reads, (bytes + 15) / 16)
+            << wave_tile.blocks_m << "x" << wave_tile.blocks_n;
+        auto fixed = gpu::GpuMmaInterleave(*c.panel, 3, 1, 5).recipe(*c.builder);
+        ASSERT_TRUE(fixed.has_value());
+        EXPECT_EQ(count_recipe(*fixed).lds_reads, 5u);
+    }
+}
+
+/// apply() places one schedule right after the k-step loop, marks the prefetch loads scheduled (dropping their fence)
+/// and the kernel carries the recipe as sched_group_barriers; node, flag and transformation survive JSON.
+TEST(ROCMMMATest, InterleaveApplyEmitsScheduleInsteadOfFence_gfx90a) {
+    auto c = build_interleave_case(2, {2, 2});
+    ASSERT_NE(c.panel, nullptr);
+    auto& builder = *c.builder;
+    gpu::GpuMmaInterleave xform(*c.panel);
+    auto recipe = xform.recipe(builder);
+    ASSERT_TRUE(recipe.has_value());
+    {
+        nlohmann::json j;
+        xform.to_json(j);
+        EXPECT_EQ(j["transformation_type"], "GpuMmaInterleave");
+        auto restored = gpu::GpuMmaInterleave::from_json(builder, j);
+        EXPECT_EQ(restored.recipe(builder), recipe);
+    }
+    analysis::AnalysisManager am(builder.subject());
+    ASSERT_TRUE(xform.can_be_applied(builder, am));
+    xform.apply(builder, am);
+    EXPECT_NO_THROW(builder.subject().validate());
+    EXPECT_FALSE(gpu::GpuMmaInterleave(*c.panel).can_be_applied(builder, am));
+
+    auto& body = c.panel->root();
+    size_t schedules = 0, scheduled_loads = 0;
+    for (size_t i = 0; i < body.size(); ++i) {
+        auto* b = dynamic_cast<structured_control_flow::Block*>(&body.at(i));
+        if (b == nullptr) {
+            continue;
+        }
+        for (auto* lib : b->dataflow().library_nodes()) {
+            if (auto* sched = dynamic_cast<tiles::PipelineScheduleNode*>(lib)) {
+                ++schedules;
+                EXPECT_EQ(sched->groups(), *recipe);
+                ASSERT_GT(i, 0u);
+                EXPECT_NE(dynamic_cast<structured_control_flow::StructuredLoop*>(&body.at(i - 1)), nullptr);
+            }
+            if (auto* tc = dynamic_cast<tiles::TileCopyNode*>(lib); tc && tc->phase() == tiles::CopyPhase::LoadRegs) {
+                EXPECT_TRUE(tc->scheduled());
+                ++scheduled_loads;
+            }
+        }
+    }
+    EXPECT_EQ(schedules, 1u);
+    EXPECT_GT(scheduled_loads, 0u);
+
+    {
+        serializer::JSONSerializer ser;
+        auto j = ser.serialize(builder.subject());
+        auto copy = ser.deserialize(j);
+        size_t restored_schedules = 0, restored_scheduled = 0;
+        visitor::for_each_block(copy->root(), [&](structured_control_flow::Block& b) {
+            for (auto* lib : b.dataflow().library_nodes()) {
+                if (auto* sched = dynamic_cast<tiles::PipelineScheduleNode*>(lib)) {
+                    ++restored_schedules;
+                    EXPECT_EQ(sched->groups(), *recipe);
+                }
+                if (auto* tc = dynamic_cast<tiles::TileCopyNode*>(lib)) {
+                    restored_scheduled += tc->scheduled();
+                }
+            }
+        });
+        EXPECT_EQ(restored_schedules, 1u);
+        EXPECT_EQ(restored_scheduled, scheduled_loads);
+    }
+
+    auto out = test::utils::test_codegen(builder.subject(), "interleave", true);
+    std::string kernels;
+    for (auto& [name, snippet] : out.snippets) {
+        kernels += snippet.content;
+    }
+    EXPECT_EQ(kernels.find("__builtin_amdgcn_sched_barrier(0);"), std::string::npos) << kernels;
+    size_t emitted = 0;
+    for (size_t pos = kernels.find("__builtin_amdgcn_sched_group_barrier("); pos != std::string::npos;
+         pos = kernels.find("__builtin_amdgcn_sched_group_barrier(", pos + 1)) {
+        ++emitted;
+    }
+    EXPECT_EQ(emitted, recipe->size()) << kernels;
+    EXPECT_NE(kernels.find("__builtin_amdgcn_sched_group_barrier(0x8, 1, 0);"), std::string::npos) << kernels;
+    EXPECT_NE(kernels.find("__builtin_amdgcn_sched_group_barrier(0x20, 1, 0);"), std::string::npos) << kernels;
+}
+
+/// Without register-staged prefetch loads (no SoftwarePipelining) there is nothing to interleave.
+TEST(ROCMMMATest, InterleaveRejectsUnpipelinedPanel_gfx90a) {
+    auto c = build_interleave_case(2, {2, 2}, /*pipeline=*/false);
+    ASSERT_NE(c.panel, nullptr);
+    analysis::AnalysisManager am(c.builder->subject());
+    gpu::GpuMmaInterleave xform(*c.panel);
+    EXPECT_FALSE(xform.recipe(*c.builder).has_value());
+    EXPECT_FALSE(xform.can_be_applied(*c.builder, am));
 }
 
 // Raw 32x32x8 MFMA atom: only CDNA offers it; fragments are register vectors and every operand
