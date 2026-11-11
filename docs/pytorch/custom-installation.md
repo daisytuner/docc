@@ -11,7 +11,7 @@ Build the backend from source if you want the latest `main` branch, a debug buil
 The requirements of the [Python Custom Installation](../python/custom-installation.md#requirements) apply: Clang 21, CMake, Ninja, and the system libraries.
 
 :::tip
-Skip the setup with the [Docker images](../docker.md): `daisytuner/docc-build-env-llvm21-ubuntu-24.04` contains all build dependencies, and the run-env images add CUDA and ROCm. PyTorch itself is installed from the requirements files below.
+Skip the setup with the [Docker images](https://docs.daisytuner.com/reference/docker): `daisytuner/docc-build-env-llvm21-ubuntu-24.04` contains all build dependencies, and the run-env images add CUDA and ROCm. PyTorch itself is installed from the requirements files below.
 :::
 
 ## Build

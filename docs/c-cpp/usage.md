@@ -35,20 +35,48 @@ Use the same `-docc-tune` value at compile and link time. docc generates parts o
 
 ## Control the optimization
 
-| Flag                                 | Description                                                                                                                                                        |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `-docc-func-blacklist=<regex>`       | Do not optimize functions whose full symbol name (mangled for C++) matches the regex, for example `'init'` or `'.*_ref$'`.                                    |
-| `-docc-lower-invoke`                 | Remove exception-handling code before optimizing. Such code can otherwise prevent offloading.                                                                      |
-| `-docc-offload-unknown-sizes`        | Offload arrays whose size docc cannot determine, using `malloc_usable_size()` as an upper bound.                                                                   |
-| `-docc-no-offloading-transfer-opt`   | Do not remove redundant host-device transfers. Slower, but transfers stay close to the code that uses the data.                                                    |
-| `-docc-einsum`                       | Detect loops that implement tensor contractions (Einstein notation) and optimize them as such.                                                                     |
-| `-docc-plugins=<list>`               | Load a comma-separated list of [plugins](../architecture/plugins.md) with domain-specific optimizations.                                                           |
+| Flag                                      | Description                                                                                                                                                                                                                                                                                                                               |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `-docc-func-blacklist=<regex>`            | Do not optimize functions whose full symbol name (mangled for C++) matches the regex, for example `'init'` or `'.*_ref$'`.                                                                                                                                                                                                                |
+| `-docc-lower-invoke`                      | Remove exception-handling code before optimizing. Such code can otherwise prevent offloading.                                                                                                                                                                                                                                             |
+| `-docc-offload-unknown-sizes`             | Offload arrays whose size docc cannot determine, using `malloc_usable_size()` as an upper bound.                                                                                                                                                                                                                                          |
+| `-docc-no-offloading-transfer-opt`        | Do not remove redundant host-device transfers. Slower, but transfers stay close to the code that uses the data.                                                                                                                                                                                                                           |
+| `-docc-einsum`                            | Detect loops that implement tensor contractions (Einstein notation) and optimize them as such.                                                                                                                                                                                                                                            |
+| `-docc-plugins=<list>`                    | Load a comma-separated list of [plugins](../architecture/plugins.md) with domain-specific optimizations.                                                                                                                                                                                                                                  |
+| `-docc-offloading-force-synchronous`      | For supporting offloading backends, use synchronous kernel calls instead of asynchronous kernel calls. Makes host profiling include any processing time on the offloaded device at the cost of performance. Without it, host-to-device and device-to-host transfer time measurements may be meaningless as they happen in the background. |
+| `-docc-expand=none\|all` (default `none`) | Overrides when to expand library nodes.                                                                                                                                                                                                                                                                                                   |
+| `-docc-no-inline-functions`               | Disables inlining of functions during DOCC extraction.                                                                                                                                                                                                                                                                                    |
 
 For example, to offload WAXPBY but keep the initialization loop on the CPU, move the initialization into a function `init` and run:
 
 ```bash
 docc -O3 -docc-tune=cuda -docc-func-blacklist='init' waxpby.c -o waxpby
 ```
+
+## General helpers
+
+| Flag                              | Description                                                                                                                                                            |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `-docc-root=<path>`               | Root of DOCC. Can be `CMake:[path-to-cmake-build-dir]` or `Dist:[path-to-docc-dist-dir]`.                                                                              |
+| `-docc-work-dir=<path>`           | Sets a specific output directory for the intermediary files, instead of generating a unique directory underneath the `DOCC_TMP` directory. Implies `-docc-save-temps`. |
+| `-docc-save-temps`                | Stops docc from deleting its intermediate output directory.                                                                                                            |
+| `-docc-dot-scheduled`             | Dumps the scheduled graph to a DOT file.                                                                                                                               |
+| `-docc-dump-sdfg`                 | Enables output of sdfgs.                                                                                                                                               |
+| `-docc-link`                      | **Experimental**: Sets special options for how to link.                                                                                                                |
+| `-docc-combined-index=<path>`     | Thin-link `.index.bc` output file.                                                                                                                                     |
+| `-docc-combined-lib-index=<path>` | Attributes for external function from shared objects.                                                                                                                  |
+| `-docc-dot-codegen`               | Write out every SDFG for which we generate code to a DOT file for debugging purposes.                                                                                  |
+
+## Global CFG
+
+| Flag                                      | Description                                                                                                                       |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `-docc-dump-glbl-cfg=<path>`              | Path to dump global cfgs.                                                                                                         |
+| `-docc-debug-glbl`                        | Enables debug messages for global CFG analysis.                                                                                   |
+| `-docc-include-all-intrinsics`            | Add external call nodes for all intrinsics in global CFG analysis, e.g. `llvm.dbg.value`                                          |
+| `-view-globalcfg-nodes=.*`                | For each entry-point dump reachable global CFG nodes that match the regex.                                                        |
+| `-print-globalcfgs=.*`                    | Print dot files of global CFG from the entry-points that match the regex.                                                         |
+| `-docc-globalcfg-lib-entry-points=<path>` | Path to a file containing a list of function names, defining relevant entry points into the globalcfg. `main` is always included. |
 
 ## Transfer tuning
 
