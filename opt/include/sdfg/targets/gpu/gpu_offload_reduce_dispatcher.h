@@ -112,8 +112,12 @@ protected:
         TargetLevel target_level
     );
 
+    /// Lvalue the combined result of @p container folds into; @p element receives its element type.
     std::string reduction_target(
-        codegen::LanguageExtension& language_extension, const std::string& container, symbolic::Expression index
+        codegen::LanguageExtension& language_extension,
+        const std::string& container,
+        symbolic::Expression index,
+        types::PrimitiveType* element = nullptr
     );
 
     void dispatch_reduction_combine(

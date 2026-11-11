@@ -44,6 +44,7 @@ set(TEST_FILES
     parallelization/passes/auto_parallelization_test.cpp
     parallelization/transformations/loop_parallelization_test.cpp
     rocm/blas/rocblas_test.cpp
+    rocm/rocm_language_extension_test.cpp
     rocm/rocm_library_nodes_test.cpp
     rocm/rocm_mma_test.cpp
     rocm/rocm_reduce_dispatcher_test.cpp

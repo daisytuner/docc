@@ -265,7 +265,8 @@ void DataFlowDispatcher::dispatch_tasklet(PrettyPrinter& stream, const data_flow
             types::Scalar conn_type_unsigned(types::as_unsigned(conn_type_scalar.primitive_type()));
             stream << this->language_extension_.local_declaration(conn, conn_type_unsigned, value) << std::endl;
         } else {
-            stream << this->language_extension_.local_declaration(conn, conn_type_scalar, value) << std::endl;
+            types::Scalar conn_type_compute(this->language_extension_.compute_type(conn_type_scalar.primitive_type()));
+            stream << this->language_extension_.local_declaration(conn, conn_type_compute, value) << std::endl;
         }
     }
 
@@ -278,7 +279,9 @@ void DataFlowDispatcher::dispatch_tasklet(PrettyPrinter& stream, const data_flow
         types::Scalar out_conn_type_unsigned(types::as_unsigned(out_conn_type_scalar.primitive_type()));
         out_decl = this->language_extension_.local_declaration(out_conn, out_conn_type_unsigned);
     } else {
-        out_decl = this->language_extension_.local_declaration(out_conn, out_conn_type_scalar);
+        types::Scalar out_conn_type_compute(this->language_extension_
+                                                .compute_type(out_conn_type_scalar.primitive_type()));
+        out_decl = this->language_extension_.local_declaration(out_conn, out_conn_type_compute);
     }
     if (!out_decl.empty()) {
         stream << out_decl << std::endl;
