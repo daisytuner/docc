@@ -8,7 +8,8 @@ agents use.
 
 Each split count S is checked against an fp64 reference, including a non-zero initial C that must be added
 exactly once, and over repeated launches, which must reuse the static arrival counters and reproduce the
-result bit for bit.
+result bit for bit. The double-buffered pipeline (two LDS buffers, two-panel register prefetch), alone and
+with ``GpuMmaInterleave``, is checked on an even and an odd panel count per block (two and three peeled panels).
 """
 
 from pathlib import Path
@@ -23,6 +24,7 @@ from docc.sdfg import (
     BufferLifecycle,
     DataTransferDirection,
     GpuMmaEinsumTransform,
+    GpuMmaInterleave,
     IfElse,
     LocalStorage,
     LoopTiling,
@@ -152,7 +154,7 @@ def _build():
     return builder, loop_i1
 
 
-def _schedule(builder, loop_i1, splits):
+def _schedule(builder, loop_i1, splits, double_buffered=False, interleave=False):
     _apply(builder, GpuMmaEinsumTransform(loop_i1, RocmArch.get_current()))
     _apply(builder, LoopTiling(_loop(builder, "tile_k0"), PANEL_BLOCKS, True))
     _apply(builder, StreamK(_loop(builder, "_j1_tile0"), TILES * splits))
@@ -163,18 +165,26 @@ def _schedule(builder, loop_i1, splits):
         _apply(
             builder,
             SoftwarePipelining(
-                _loop(builder, "tile_k0_tile0"), stages=2, register_staged=True
+                _loop(builder, "tile_k0_tile0"),
+                stages=2,
+                register_staged=True,
+                double_buffered=double_buffered,
             ),
         )
+    if interleave:
+        _apply(builder, GpuMmaInterleave(_loop(builder, "tile_k0_tile0")))
 
 
-def _compile(splits):
+def _compile(splits, double_buffered=False, interleave=False):
     if RocmArch.current_name() not in ("gfx90a", "gfx942"):
         pytest.skip(f"no CDNA MMA device ({RocmArch.current_name()})")
-    output_dir = PYTEST_OUTPUT_DIR / f"stream_k_mma_s{splits}"
+    output_dir = (
+        PYTEST_OUTPUT_DIR
+        / f"stream_k_mma_s{splits}_d{int(double_buffered)}_i{int(interleave)}"
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
     builder, loop_i1 = _build()
-    _schedule(builder, loop_i1, splits)
+    _schedule(builder, loop_i1, splits, double_buffered, interleave)
     sdfg = builder.move()
     sdfg.validate()
     return CompiledSDFG(sdfg._compile(str(output_dir), "rocm"), sdfg)
@@ -220,3 +230,15 @@ def test_stream_k_mma_split_is_reusable_and_deterministic(splits):
         assert _rel_l2(C, ref) < 1e-2, f"seed {seed}"
         runs.append(C)
     assert np.array_equal(runs[0].view(np.uint16), runs[2].view(np.uint16))
+
+
+@pytest.mark.parametrize("interleave", [False, True])
+@pytest.mark.parametrize("splits", [1, 2])
+def test_double_buffered_pipeline_matches_reference(splits, interleave):
+    assert PANELS // splits >= 4
+    compiled = _compile(splits, double_buffered=True, interleave=interleave)
+    A, B, C0 = _operands(3)
+    ref = A.astype(np.float64) @ B.astype(np.float64).T + C0.astype(np.float64)
+
+    C = _run(compiled, A, B, C0)
+    assert _rel_l2(C, ref) < 1e-2
