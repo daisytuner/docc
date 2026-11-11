@@ -1,5 +1,6 @@
 #include "sdfg/targets/gpu/gpu_mma_expander.h"
 
+#include <functional>
 #include <gtest/gtest.h>
 #include <sdfg/serializer/json_serializer.h>
 #include <set>
@@ -906,7 +907,7 @@ TEST(ROCMMMATest, SoftwarePipeliningBiasesFragmentStage_gfx90a) {
     analysis::AnalysisManager am(builder.subject());
     auto panel = find_loop(am, "tile_k0_tile0");
     auto stage = symbolic::mod(symbolic::div(panel->indvar(), symbolic::integer(2)), symbolic::integer(2));
-    auto* a = find_local_load(builder.subject().root(), "A");
+    auto* a = find_local_load(panel->root(), "A");
     ASSERT_NE(a, nullptr);
     EXPECT_TRUE(
         symbolic::
@@ -1015,7 +1016,7 @@ TEST(ROCMMMATest, SoftwarePipeliningRegisterStaged_gfx90a) {
     sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
     auto [block, matmul_node] = build_offloaded_mma_structure(builder, 1024, 1024, 1024, 32, 32, 16, arch);
     passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch));
-    strip_mine_k(builder, 2);
+    strip_mine_k(builder, 4);
     localize(builder, "tile_k0", /*transpose_b=*/true);
     {
         analysis::AnalysisManager am(builder.subject());
@@ -1040,7 +1041,7 @@ TEST(ROCMMMATest, SoftwarePipeliningRegisterStaged_gfx90a) {
     }
     EXPECT_EQ(stages, 2u);
 
-    // Loop body: [if load; compute; barrier; if store; barrier], no full copies inside.
+    // Loop body: [load; compute; barrier; store; barrier], branch-free, no full copies inside.
     analysis::AnalysisManager am(builder.subject());
     auto* panel = find_loop(am, "tile_k0_tile0");
     size_t loads = 0, stores = 0, full = 0;
@@ -1075,10 +1076,23 @@ TEST(ROCMMMATest, SoftwarePipeliningRegisterStaged_gfx90a) {
     while (body->size() == 1 && dynamic_cast<structured_control_flow::Sequence*>(&body->at(0))) {
         body = static_cast<structured_control_flow::Sequence*>(&body->at(0));
     }
-    ASSERT_EQ(body->size(), 5u);
-    EXPECT_NE(dynamic_cast<structured_control_flow::IfElse*>(&body->at(0)), nullptr);
-    EXPECT_NE(dynamic_cast<structured_control_flow::StructuredLoop*>(&body->at(1)), nullptr);
-    EXPECT_NE(dynamic_cast<structured_control_flow::IfElse*>(&body->at(3)), nullptr);
+    ASSERT_EQ(body->size(), 7u);
+    for (size_t i = 0; i < body->size(); ++i) {
+        EXPECT_EQ(dynamic_cast<structured_control_flow::IfElse*>(&body->at(i)), nullptr) << i;
+    }
+    EXPECT_NE(dynamic_cast<structured_control_flow::StructuredLoop*>(&body->at(2)), nullptr);
+    EXPECT_TRUE(symbolic::eq(panel->num_iterations(), symbolic::integer(15)));
+
+    // The last panel is peeled after the loop: compute only, no staging copies.
+    auto& panel_parent = static_cast<structured_control_flow::Sequence&>(*panel->get_parent());
+    auto& epilogue = panel_parent.at(panel_parent.index(*panel) + 1);
+    size_t epilogue_copies = 0;
+    visitor::for_each_block(epilogue, [&](structured_control_flow::Block& b) {
+        for (auto* lib : b.dataflow().library_nodes()) {
+            epilogue_copies += dynamic_cast<tiles::TileCopyNode*>(lib) != nullptr;
+        }
+    });
+    EXPECT_EQ(epilogue_copies, 0u);
 
     {
         // Vectorize from the wave map so the prologue copies outside the panel loop widen too.
@@ -1102,11 +1116,120 @@ TEST(ROCMMMATest, SoftwarePipeliningRegisterStaged_gfx90a) {
     EXPECT_NE(kernels.find("__daisy_stage_"), std::string::npos) << kernels;
     EXPECT_NE(kernels.find("#pragma unroll"), std::string::npos) << kernels;
     EXPECT_NE(kernels.find("__builtin_amdgcn_sched_barrier(0);"), std::string::npos) << kernels;
-    // A's padded rows (36 halves) are 8- but not 16-byte aligned: 16-byte global loads,
+    // A's padded rows (68 halves) are 8- but not 16-byte aligned: 16-byte global loads,
     // stored to LDS in 8-byte pieces.
     EXPECT_NE(kernels.find("const uint4 __tc_v"), std::string::npos) << kernels;
     EXPECT_NE(kernels.find("reinterpret_cast<int2*>"), std::string::npos) << kernels;
     EXPECT_EQ(kernels.find("*reinterpret_cast<uint4*>"), std::string::npos) << kernels;
+}
+
+namespace {
+
+struct RegisterStagedPeel {
+    symbolic::Expression steady_trip;
+    size_t loop_guards = 0, loop_loads = 0, loop_stores = 0, epilogue_copies = 0, epilogue_k_loops = 0;
+    symbolic::Expression epilogue_k_init;
+};
+
+size_t count_guards(structured_control_flow::ControlFlowNode& node) {
+    size_t n = dynamic_cast<structured_control_flow::IfElse*>(&node) != nullptr;
+    if (auto* ie = dynamic_cast<structured_control_flow::IfElse*>(&node)) {
+        for (size_t i = 0; i < ie->size(); i++) {
+            n += count_guards(ie->at(i).first);
+        }
+    } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&node)) {
+        for (size_t i = 0; i < seq->size(); i++) {
+            n += count_guards(seq->at(i));
+        }
+    } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&node)) {
+        n += count_guards(loop->root());
+    }
+    return n;
+}
+
+// Register-staged pipelining of a 64x64xK MMA nest with K = 32 * panels (two 16-deep MMA blocks per panel).
+void pipeline_register_staged(int panels, RegisterStagedPeel& out) {
+    auto& arch = gpu::rocm::ROCM_ARCH_GFX90A;
+    sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+    auto [block, matmul_node] = build_offloaded_mma_structure(builder, 64, 64, 32 * panels, 32, 32, 16, arch);
+    passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch));
+    strip_mine_k(builder, 2);
+    localize(builder, "tile_k0", /*transpose_b=*/true);
+    {
+        analysis::AnalysisManager am(builder.subject());
+        transformations::SoftwarePipelining sp(*find_loop(am, "tile_k0_tile0"), 2, false, /*register_staged=*/true);
+        ASSERT_TRUE(sp.can_be_applied(builder, am));
+        sp.apply(builder, am);
+    }
+    EXPECT_NO_THROW(builder.subject().validate());
+
+    analysis::AnalysisManager am(builder.subject());
+    auto* panel = find_loop(am, "tile_k0_tile0");
+    ASSERT_NE(panel, nullptr);
+    out.steady_trip = panel->num_iterations();
+    out.loop_guards = count_guards(panel->root());
+    visitor::for_each_block(panel->root(), [&](structured_control_flow::Block& b) {
+        for (auto* lib : b.dataflow().library_nodes()) {
+            if (auto* tc = dynamic_cast<tiles::TileCopyNode*>(lib)) {
+                out.loop_loads += tc->phase() == tiles::CopyPhase::LoadRegs;
+                out.loop_stores += tc->phase() == tiles::CopyPhase::StoreRegs;
+            }
+        }
+    });
+    auto& parent = static_cast<structured_control_flow::Sequence&>(*panel->get_parent());
+    ASSERT_LT(parent.index(*panel) + 1, parent.size());
+    auto& epilogue = parent.at(parent.index(*panel) + 1);
+    visitor::for_each_block(epilogue, [&](structured_control_flow::Block& b) {
+        for (auto* lib : b.dataflow().library_nodes()) {
+            out.epilogue_copies += dynamic_cast<tiles::TileCopyNode*>(lib) != nullptr;
+        }
+    });
+    std::function<void(structured_control_flow::ControlFlowNode&)> find_k =
+        [&](structured_control_flow::ControlFlowNode& n) {
+            if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&n)) {
+                ++out.epilogue_k_loops;
+                out.epilogue_k_init = loop->init();
+            } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&n)) {
+                for (size_t i = 0; i < seq->size(); i++) {
+                    find_k(seq->at(i));
+                }
+            }
+        };
+    find_k(epilogue);
+}
+
+} // namespace
+
+/// Base: with two panels the register-staged loop runs one branch-free iteration that loads and stores the second
+/// panel, and the second panel is computed once more after the loop with no staging copies.
+TEST(ROCMMMATest, RegisterStagedPeelBaseTwoPanels_gfx90a) {
+    RegisterStagedPeel peel;
+    pipeline_register_staged(2, peel);
+    EXPECT_TRUE(symbolic::eq(peel.steady_trip, symbolic::integer(1))) << peel.steady_trip->__str__();
+    EXPECT_EQ(peel.loop_guards, 0u);
+    EXPECT_EQ(peel.loop_loads, 2u);
+    EXPECT_EQ(peel.loop_stores, 2u);
+    EXPECT_EQ(peel.epilogue_copies, 0u);
+    EXPECT_EQ(peel.epilogue_k_loops, 1u);
+    ASSERT_FALSE(peel.epilogue_k_init.is_null());
+    EXPECT_TRUE(symbolic::eq(peel.epilogue_k_init, symbolic::integer(2))) << peel.epilogue_k_init->__str__();
+}
+
+/// Step: one more panel adds one steady-state iteration and moves the peeled computation to the new last panel.
+TEST(ROCMMMATest, RegisterStagedPeelStepAddsOneIteration_gfx90a) {
+    for (int panels = 2; panels <= 4; ++panels) {
+        RegisterStagedPeel peel;
+        pipeline_register_staged(panels, peel);
+        EXPECT_TRUE(symbolic::eq(peel.steady_trip, symbolic::integer(panels - 1))) << panels;
+        EXPECT_EQ(peel.loop_guards, 0u) << panels;
+        EXPECT_EQ(peel.loop_loads, 2u) << panels;
+        EXPECT_EQ(peel.loop_stores, 2u) << panels;
+        EXPECT_EQ(peel.epilogue_copies, 0u) << panels;
+        EXPECT_EQ(peel.epilogue_k_loops, 1u) << panels;
+        ASSERT_FALSE(peel.epilogue_k_init.is_null());
+        EXPECT_TRUE(symbolic::eq(peel.epilogue_k_init, symbolic::integer(2 * (panels - 1))))
+            << panels << ": " << peel.epilogue_k_init->__str__();
+    }
 }
 
 // Raw 32x32x8 MFMA atom: only CDNA offers it; fragments are register vectors and every operand
@@ -1206,7 +1329,7 @@ TEST(ROCMMMATest, LocalStorageKMajorBCopyIsCoalesced_gfx90a) {
     auto [block, matmul_node] =
         build_offloaded_mma_structure(builder, 1024, 1024, 1024, 32, 32, 16, arch, /*b_k_major=*/true);
     passes::expansion::expand_single_node(builder, block, matmul_node, gpu::GpuMmaExpander(&arch));
-    strip_mine_k(builder, 2);
+    strip_mine_k(builder, 4);
     localize(builder, "tile_k0");
     EXPECT_NO_THROW(builder.subject().validate());
 

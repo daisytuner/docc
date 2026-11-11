@@ -34,14 +34,39 @@ tiles::TileCopyNode* tile_copy_node_in(Block& block) {
     return nullptr;
 }
 
-// Widen a scalar/async TileCopyNode to the widest legal 16/8-byte transfer (see
-// tiles::widest_legal_transfer). A ScalarSync copy becomes VectorSync; a (pipelined) CpAsync
-// copy keeps its atom and only widens the transfer. Mutates atom/bytes; true if widened.
+// The widest legal 16/8-byte transfer for @p node (see tiles::widest_legal_transfer), preferring a width whose
+// transfers split the tile evenly over the node's constant cooperating thread count, so the emitted copy needs no
+// per-thread bounds guard. Falls back to the widest legal width when no legal width splits evenly; 0 if none is legal.
+size_t choose_transfer_width(const tiles::TileCopyNode& node) {
+    const size_t widest = tiles::widest_legal_transfer(node, node.atom(), {16, 8});
+    const auto total = node.plan().src.total_elements();
+    const auto& threads = node.coop_threads();
+    if (widest == 0 || threads.is_null() || !SymEngine::is_a<SymEngine::Integer>(*total) ||
+        !SymEngine::is_a<SymEngine::Integer>(*threads)) {
+        return widest;
+    }
+    const long long n = SymEngine::rcp_static_cast<const SymEngine::Integer>(total)->as_int();
+    const long long t = SymEngine::rcp_static_cast<const SymEngine::Integer>(threads)->as_int();
+    for (size_t width : {size_t(16), size_t(8)}) {
+        if (width > widest || tiles::widest_legal_transfer(node, node.atom(), {width}) != width) {
+            continue;
+        }
+        const long long factor = static_cast<long long>(width / node.bytes());
+        if (t > 0 && n % (t * factor) == 0) {
+            return width;
+        }
+    }
+    return widest;
+}
+
+// Widen a scalar/async TileCopyNode to the transfer width chosen by choose_transfer_width. A ScalarSync copy becomes
+// VectorSync; a (pipelined) CpAsync copy keeps its atom and only widens the transfer. Mutates atom/bytes; true if
+// widened.
 bool widen_tile_copy_node(tiles::TileCopyNode& node) {
     if (node.atom() != tiles::CopyAtom::ScalarSync && node.atom() != tiles::CopyAtom::CpAsync) {
         return false;
     }
-    const size_t width = tiles::widest_legal_transfer(node, node.atom(), {16, 8});
+    const size_t width = choose_transfer_width(node);
     if (width == 0) {
         return false;
     }

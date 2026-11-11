@@ -24,6 +24,7 @@
 #include "sdfg/transformations/recorder.h"
 #include "sdfg/transformations/replayer.h"
 #include "sdfg/types/array.h"
+#include "sdfg/visitor/for_each.h"
 
 using namespace sdfg;
 
@@ -475,8 +476,12 @@ TEST(SoftwarePipeliningTest, WrapperSequenceDoesNotShiftCompute) {
                 scan(loop->root());
             }
         };
-    scan(static_cast<structured_control_flow::Sequence&>(*kloop.get_parent()));
-    EXPECT_EQ(writes_C, 1u) << "the compute must stay in the loop, not be cloned into the prologue";
+    auto& map_body = static_cast<structured_control_flow::Sequence&>(*kloop.get_parent());
+    ASSERT_EQ(map_body.index(kloop), 1u);
+    scan(map_body.at(0));
+    EXPECT_EQ(writes_C, 0u) << "the compute must not be cloned into the prologue";
+    scan(kloop.root());
+    EXPECT_EQ(writes_C, 1u) << "the compute must stay in the loop";
 }
 
 TEST(SoftwarePipeliningTest, RejectsTooFewPanels) {
@@ -511,10 +516,11 @@ TEST(SoftwarePipeliningTest, StagesFourBuffersAndWaits) {
     ASSERT_NE(outer, nullptr);
     EXPECT_TRUE(symbolic::eq(outer->num_elements(), symbolic::integer(4)));
 
-    ASSERT_EQ(map_body.size(), 2u);
+    ASSERT_EQ(map_body.size(), 3u);
     auto* prologue = dynamic_cast<structured_control_flow::Sequence*>(&map_body.at(0));
     ASSERT_NE(prologue, nullptr);
     EXPECT_EQ(count_cp_async(*prologue), 3u);
+    EXPECT_TRUE(symbolic::eq(kloop.num_iterations(), symbolic::integer(5)));
 
     size_t commits = 0;
     std::vector<size_t> keeps;
@@ -549,8 +555,163 @@ TEST(SoftwarePipeliningTest, StagesFourBuffersAndWaits) {
     scan(kloop.root());
     EXPECT_EQ(count_cp_async(kloop.root()), 1u);
     EXPECT_EQ(commits, 1u);
-    std::sort(keeps.begin(), keeps.end());
-    EXPECT_EQ(keeps, (std::vector<size_t>{0, 3}));
+    EXPECT_EQ(keeps, (std::vector<size_t>{3}));
+
+    // The last stages-1 = 3 panels are peeled after the loop: each only drains (keep 0), nothing is prefetched.
+    auto* epilogue = dynamic_cast<structured_control_flow::Sequence*>(&map_body.at(2));
+    ASSERT_NE(epilogue, nullptr);
+    EXPECT_EQ(epilogue->size(), 3u);
+    commits = 0;
+    keeps.clear();
+    scan(*epilogue);
+    EXPECT_EQ(count_cp_async(*epilogue), 0u);
+    EXPECT_EQ(commits, 0u);
+    EXPECT_EQ(keeps, (std::vector<size_t>{0, 0, 0}));
+}
+
+namespace {
+
+struct PeelShape {
+    long long steady_trip = -1;
+    size_t loop_guards = 0, loop_prefetches = 0, epilogue_iterations = 0, epilogue_prefetches = 0;
+    std::vector<size_t> epilogue_keeps;
+    std::vector<symbolic::Expression> epilogue_stages;
+};
+
+size_t count_if_else(structured_control_flow::ControlFlowNode& node) {
+    size_t n = dynamic_cast<structured_control_flow::IfElse*>(&node) != nullptr;
+    if (auto* ie = dynamic_cast<structured_control_flow::IfElse*>(&node)) {
+        for (size_t i = 0; i < ie->size(); i++) {
+            n += count_if_else(ie->at(i).first);
+        }
+    } else if (auto* seq = dynamic_cast<structured_control_flow::Sequence*>(&node)) {
+        for (size_t i = 0; i < seq->size(); i++) {
+            n += count_if_else(seq->at(i));
+        }
+    } else if (auto* loop = dynamic_cast<structured_control_flow::StructuredLoop*>(&node)) {
+        n += count_if_else(loop->root());
+    }
+    return n;
+}
+
+// Pipeline `build(K)` with @p stages and describe the result: the steady-state loop and, per peeled iteration, the
+// drain waits and the stage slot its compute reads.
+PeelShape pipeline_and_describe(int K, size_t stages) {
+    builder::StructuredSDFGBuilder builder("sp_peel", FunctionType_CPU);
+    auto& kloop = build(builder, K, true, 1, false, 0, types::PrimitiveType::Int64);
+    auto& map_body = static_cast<structured_control_flow::Sequence&>(*kloop.get_parent());
+    analysis::AnalysisManager am(builder.subject());
+    transformations::SoftwarePipelining sp(kloop, stages);
+    EXPECT_TRUE(sp.can_be_applied(builder, am));
+    sp.apply(builder, am);
+    EXPECT_NO_THROW(builder.subject().validate());
+
+    PeelShape shape;
+    auto trip = kloop.num_iterations();
+    if (SymEngine::is_a<SymEngine::Integer>(*trip)) {
+        shape.steady_trip = SymEngine::rcp_static_cast<const SymEngine::Integer>(trip)->as_int();
+    }
+    shape.loop_guards = count_if_else(kloop.root());
+    shape.loop_prefetches = count_cp_async(kloop.root());
+    const size_t loop_index = map_body.index(kloop);
+    if (loop_index + 1 < map_body.size()) {
+        auto& epilogue = static_cast<structured_control_flow::Sequence&>(map_body.at(loop_index + 1));
+        shape.epilogue_iterations = epilogue.size();
+        shape.epilogue_prefetches = count_cp_async(epilogue);
+        for (size_t t = 0; t < epilogue.size(); ++t) {
+            visitor::for_each_block(epilogue.at(t), [&](structured_control_flow::Block& b) {
+                for (auto& node : b.dataflow().nodes()) {
+                    if (auto* w = dynamic_cast<tiles::PipelineWaitNode*>(&node)) {
+                        shape.epilogue_keeps.push_back(w->keep_outstanding());
+                    }
+                }
+                for (auto* acc : b.dataflow().data_nodes()) {
+                    if (acc->data() != "buf") {
+                        continue;
+                    }
+                    for (auto& m : b.dataflow().out_edges(*acc)) {
+                        if (m.subset().size() == 2u) {
+                            shape.epilogue_stages.push_back(m.subset().at(0));
+                        }
+                    }
+                }
+            });
+        }
+    }
+    return shape;
+}
+
+// The stage slot `k mod stages` the compute of panel @p panel reads.
+symbolic::Expression stage_of(long long panel, size_t stages) {
+    auto k = symbolic::symbol("k");
+    return symbolic::subs(symbolic::mod(k, symbolic::integer(static_cast<long long>(stages))), k, symbolic::integer(panel));
+}
+
+} // namespace
+
+// Base: with the minimal trip count n = stages, the steady-state loop runs exactly one branch-free iteration that
+// prefetches, and the remaining stages-1 panels are peeled, in order, as drain-only iterations reading their own slots.
+TEST(SoftwarePipeliningTest, PeelBaseMinimalTripCount) {
+    for (size_t stages : {2u, 4u}) {
+        auto shape = pipeline_and_describe(static_cast<int>(stages), stages);
+        EXPECT_EQ(shape.steady_trip, 1) << stages;
+        EXPECT_EQ(shape.loop_guards, 0u) << stages;
+        EXPECT_EQ(shape.loop_prefetches, 1u) << stages;
+        EXPECT_EQ(shape.epilogue_iterations, stages - 1) << stages;
+        EXPECT_EQ(shape.epilogue_prefetches, 0u) << stages;
+        EXPECT_EQ(shape.epilogue_keeps, std::vector<size_t>(stages - 1, 0)) << stages;
+        ASSERT_EQ(shape.epilogue_stages.size(), stages - 1) << stages;
+        for (size_t t = 0; t < stages - 1; ++t) {
+            EXPECT_TRUE(symbolic::eq(shape.epilogue_stages[t], stage_of(static_cast<long long>(1 + t), stages)))
+                << stages << " " << t << ": " << shape.epilogue_stages[t]->__str__();
+        }
+    }
+}
+
+// Step: one more panel adds exactly one steady-state iteration; the peeled tail keeps its size and shape and moves
+// to the next panels.
+TEST(SoftwarePipeliningTest, PeelStepAddsOneSteadyIteration) {
+    for (size_t stages : {2u, 4u}) {
+        for (int K = static_cast<int>(stages); K < static_cast<int>(stages) + 3; ++K) {
+            auto shape = pipeline_and_describe(K, stages);
+            EXPECT_EQ(shape.steady_trip, K - static_cast<long long>(stages - 1)) << stages << " " << K;
+            EXPECT_EQ(shape.loop_guards, 0u);
+            EXPECT_EQ(shape.epilogue_iterations, stages - 1);
+            EXPECT_EQ(shape.epilogue_prefetches, 0u);
+            ASSERT_EQ(shape.epilogue_stages.size(), stages - 1);
+            for (size_t t = 0; t < stages - 1; ++t) {
+                const long long panel = K - static_cast<long long>(stages - 1) + static_cast<long long>(t);
+                EXPECT_TRUE(symbolic::eq(shape.epilogue_stages[t], stage_of(panel, stages)))
+                    << stages << " " << K << " " << t << ": " << shape.epilogue_stages[t]->__str__();
+            }
+        }
+    }
+}
+
+// Without an exact trip count (the panel count is only bounded by a constant) the prefetch guard is kept and
+// nothing is peeled.
+TEST(SoftwarePipeliningTest, PeelKeepsGuardWithoutExactTripCount) {
+    builder::StructuredSDFGBuilder builder("sp_peel", FunctionType_CPU);
+    auto& kloop = build(builder, 4, true, 1, false, 0, types::PrimitiveType::Int64);
+    builder.add_container("N", types::Scalar(types::PrimitiveType::Int64), true);
+    auto k = symbolic::symbol("k");
+    builder.update_loop(
+        kloop,
+        k,
+        symbolic::And(symbolic::Lt(k, symbolic::integer(4)), symbolic::Lt(k, symbolic::symbol("N"))),
+        symbolic::integer(0),
+        symbolic::add(k, symbolic::integer(1))
+    );
+    auto& map_body = static_cast<structured_control_flow::Sequence&>(*kloop.get_parent());
+    analysis::AnalysisManager am(builder.subject());
+    transformations::SoftwarePipelining sp(kloop, 2);
+    ASSERT_TRUE(sp.can_be_applied(builder, am));
+    sp.apply(builder, am);
+    EXPECT_NO_THROW(builder.subject().validate());
+
+    EXPECT_EQ(map_body.size(), 2u);
+    EXPECT_EQ(count_if_else(kloop.root()), 1u);
+    EXPECT_EQ(count_cp_async(kloop.root()), 1u);
 }
 
 TEST(SoftwarePipeliningTest, ReplaysFromRecordedHistory) {
@@ -626,8 +787,8 @@ TEST(SoftwarePipeliningTest, StagesBufferAndReindexes) {
     ASSERT_NE(inner, nullptr);
     EXPECT_TRUE(symbolic::eq(inner->num_elements(), symbolic::integer(TILE)));
 
-    // A prologue sequence was inserted before the loop.
-    ASSERT_EQ(map_body.size(), 2u);
+    // A prologue sequence was inserted before the loop and the last panel peeled after it.
+    ASSERT_EQ(map_body.size(), 3u);
     auto* prologue = dynamic_cast<structured_control_flow::Sequence*>(&map_body.at(0));
     ASSERT_NE(prologue, nullptr);
 
@@ -656,8 +817,8 @@ TEST(SoftwarePipeliningTest, StagesBufferAndReindexes) {
     EXPECT_EQ(prologue_async, 1u);
     EXPECT_EQ(prologue_commit, 1u);
 
-    // The in-loop prefetch is guarded (IfElse) and followed by commit + wait;
-    // the compute block still reads buf at the current stage mod(k,2).
+    // The in-loop prefetch is unconditional (the trip count is exact) and followed by
+    // commit + wait; the compute block still reads buf at the current stage mod(k,2).
     auto& loop_body = kloop.root();
     bool has_guarded_copy = false;
     size_t loop_async = count_cp_async(loop_body);
@@ -700,12 +861,19 @@ TEST(SoftwarePipeliningTest, StagesBufferAndReindexes) {
         }
         scan(loop_body.at(i));
     }
-    EXPECT_TRUE(has_guarded_copy);
+    EXPECT_FALSE(has_guarded_copy);
     EXPECT_EQ(loop_async, 1u);
     EXPECT_EQ(loop_commit, 1u);
-    // Two waits: the guarded prefetch's wait (keep stages-1 in flight) in the
-    // `then` branch, and the tail drain wait (keep 0) in the `else` branch.
-    EXPECT_EQ(loop_wait, 2u);
+    EXPECT_EQ(loop_wait, 1u);
+    EXPECT_TRUE(symbolic::eq(kloop.num_iterations(), symbolic::integer(3)));
+
+    // The peeled last panel only drains (one wait, no prefetch).
+    loop_async = count_cp_async(map_body.at(2));
+    loop_commit = loop_wait = 0;
+    scan(map_body.at(2));
+    EXPECT_EQ(loop_async, 0u);
+    EXPECT_EQ(loop_commit, 0u);
+    EXPECT_EQ(loop_wait, 1u);
 }
 
 // Regression: a Padded double-buffer's stage bias must use the buffer's per-stage
