@@ -794,15 +794,13 @@ jobs:
         run: |
           pytest -v python/tests mlir/integration -m "tenstorrent"
 
-  cuda-tests-linux-arm64:
+  py-tests-linux-arm64:
     runs-on:
       group: aster
-      labels: nvidia_l4
     container:
-      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04-cuda12.8:latest-arm64
+      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04-host:latest-arm64
       options: >-
         --cap-add=PERFMON
-        --gpus=all
     strategy:
       fail-fast: false
       matrix:
@@ -822,7 +820,6 @@ jobs:
         run: |
           python -m venv .venv
           echo "$PWD/.venv/bin" >> $GITHUB_PATH
-          echo "PYTHONPATH=$PWD/python:$PWD/mlir" >> $GITHUB_ENV
 
       - name: Mark GitHub Actions workdir as safe
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -830,57 +827,38 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pybind11 coverage build scikit-build-core
-          pip install pytest pytest-xdist
-          pip install numpy scipy ml_dtypes jsonschema cupy-cuda12x transformers
+          # Covers the python frontend's dependencies too
+          pip install -r pytorch/requirements.txt
 
-          pip install -r mlir/requirements-cuda.txt
-
-      - name: Build
+      - name: Build frontends
         run: |
-          mkdir build
-          cd build
-          cmake -G Ninja \
-            -DCMAKE_C_COMPILER=clang-21 \
-            -DCMAKE_CXX_COMPILER=clang++-21 \
-            -DCMAKE_BUILD_TYPE=Debug \
-            -DPYTHON_BUILD_FRONTEND=ON \
-            -Dpybind11_DIR=$GITHUB_WORKSPACE/.venv/lib/python${{ matrix.python-version }}/site-packages/pybind11/share/cmake/pybind11 \
-            -DMLIR_BUILD_FRONTEND=ON \
-            -DMLIR_DIR=/usr/lib/llvm-21/lib/cmake/mlir \
-            -DLLVM_EXTERNAL_LIT=/usr/lib/llvm-21/build/utils/lit/lit.py \
-            -DINSTALL_GTEST=OFF \
-            -DBUILD_TESTS:BOOL=OFF \
-            -DBUILD_BENCHMARKS:BOOL=OFF \
-            -DBUILD_BENCHMARKS_GOOGLE:BOOL=OFF \
-            ..
-          ninja -j$(nproc)
+          pip install --no-build-isolation \
+            -Ccmake.build-type=Debug \
+            -v -e python/
+          pip install --no-build-isolation \
+            -v -e pytorch/
 
-      - name: Python & MLIR Tests
+      - name: Python Tests
         env:
           DOCC_ACCESS_TOKEN: ${{ secrets.DOCC_CI_TOKEN }}
         run: |
-          nvidia-smi
           export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 
-          pytest -v python/tests/cuda -m "cuda"
-          pytest -v python/tests/python/ -m "cuda"
-          pytest -v python/tests/sdfg/ -m "cuda"
+          pytest -v -n auto python/tests -m "unmarked"
 
-          pytest -v python/benchmarks/ -k cuda
-          pytest -v mlir/integration -m "cuda"
-
-          # Segformer correctness test
-          # pytest -v mlir/benchmarks/torch/model_zoo/segformer.py -k "cuda"
+          pytest -v -n auto python/benchmarks/ -k none
+          pytest -v -n auto python/benchmarks/ -k sequential
+          pytest -v -n auto python/benchmarks/ -k openmp
 
       - name: PyTorch Tests
+        env:
+          DOCC_ACCESS_TOKEN: ${{ secrets.DOCC_CI_TOKEN }}
         run: |
-          python -m venv .venv-pytorch
-          .venv-pytorch/bin/python -m pip install --upgrade pip
-          .venv-pytorch/bin/pip install -r pytorch/requirements-cuda.txt
-          export PYTHONPATH=$PWD/python:$PWD/pytorch
+          export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 
-          .venv-pytorch/bin/pytest -v pytorch/tests --target=cuda
+          pytest -v -n auto pytorch/tests
+          pytest -v -n auto pytorch/tests --target=sequential
+          pytest -v -n auto pytorch/tests --target=openmp
 
   finish:
     needs: [cpp-tests-linux, python-tests-linux, mlir-tests-linux, llvm-tests-linux, pytorch-tests-linux,]
