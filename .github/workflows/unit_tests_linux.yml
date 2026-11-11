@@ -228,7 +228,7 @@ jobs:
       group: dahlia
       labels: Linux
     container:
-      image: daisytuner/docc-build-env-llvm21-ubuntu-24.04:latest-amd64
+      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04-host:latest-amd64
 
     steps:
       - uses: actions/checkout@v7
@@ -308,7 +308,7 @@ jobs:
       group: dahlia
       labels: Linux
     container:
-      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:latest-amd64
+      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04-host:latest-amd64
     strategy:
       fail-fast: false
       matrix:
@@ -471,7 +471,7 @@ jobs:
       group: dahlia
       labels: Linux
     container:
-      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:latest-amd64
+      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04-host:latest-amd64
       options: >-
         --cap-add=PERFMON
     strategy:
@@ -546,7 +546,7 @@ jobs:
       group: dahlia
       labels: RTX5060
     container:
-      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:latest-amd64
+      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04-cuda12.8:latest-amd64
       options: >-
         --cap-add=PERFMON
         --gpus=all
@@ -636,7 +636,7 @@ jobs:
       group: dahlia
       labels: rocm
     container:
-      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:latest-amd64
+      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04-rocm7.2:latest-amd64
       options: >-
         --cap-add=PERFMON
         --device /dev/kfd
@@ -733,7 +733,7 @@ jobs:
       group: dahlia
       labels: tenstorrent
     container:
-      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:latest-amd64
+      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04-tenstorrent:latest-0.63.0-amd64
       options: >-
         --cap-add=PERFMON
     strategy:
@@ -794,8 +794,96 @@ jobs:
         run: |
           pytest -v python/tests mlir/integration -m "tenstorrent"
 
+  cuda-tests-linux-arm64:
+    runs-on:
+      group: aster
+      labels: nvidia_l4
+    container:
+      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04-cuda12.8:latest-arm64
+      options: >-
+        --cap-add=PERFMON
+        --gpus=all
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12"]
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Create virtual environment
+        run: |
+          python -m venv .venv
+          echo "$PWD/.venv/bin" >> $GITHUB_PATH
+          echo "PYTHONPATH=$PWD/python:$PWD/mlir" >> $GITHUB_ENV
+
+      - name: Mark GitHub Actions workdir as safe
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pybind11 coverage build scikit-build-core
+          pip install pytest pytest-xdist
+          pip install numpy scipy ml_dtypes jsonschema cupy-cuda12x transformers
+
+          pip install -r mlir/requirements-cuda.txt
+
+      - name: Build
+        run: |
+          mkdir build
+          cd build
+          cmake -G Ninja \
+            -DCMAKE_C_COMPILER=clang-21 \
+            -DCMAKE_CXX_COMPILER=clang++-21 \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DPYTHON_BUILD_FRONTEND=ON \
+            -Dpybind11_DIR=$GITHUB_WORKSPACE/.venv/lib/python${{ matrix.python-version }}/site-packages/pybind11/share/cmake/pybind11 \
+            -DMLIR_BUILD_FRONTEND=ON \
+            -DMLIR_DIR=/usr/lib/llvm-21/lib/cmake/mlir \
+            -DLLVM_EXTERNAL_LIT=/usr/lib/llvm-21/build/utils/lit/lit.py \
+            -DINSTALL_GTEST=OFF \
+            -DBUILD_TESTS:BOOL=OFF \
+            -DBUILD_BENCHMARKS:BOOL=OFF \
+            -DBUILD_BENCHMARKS_GOOGLE:BOOL=OFF \
+            ..
+          ninja -j$(nproc)
+
+      - name: Python & MLIR Tests
+        env:
+          DOCC_ACCESS_TOKEN: ${{ secrets.DOCC_CI_TOKEN }}
+        run: |
+          nvidia-smi
+          export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+
+          pytest -v python/tests/cuda -m "cuda"
+          pytest -v python/tests/python/ -m "cuda"
+          pytest -v python/tests/sdfg/ -m "cuda"
+
+          pytest -v python/benchmarks/ -k cuda
+          pytest -v mlir/integration -m "cuda"
+
+          # Segformer correctness test
+          # pytest -v mlir/benchmarks/torch/model_zoo/segformer.py -k "cuda"
+
+      - name: PyTorch Tests
+        run: |
+          python -m venv .venv-pytorch
+          .venv-pytorch/bin/python -m pip install --upgrade pip
+          .venv-pytorch/bin/pip install -r pytorch/requirements-cuda.txt
+          export PYTHONPATH=$PWD/python:$PWD/pytorch
+
+          .venv-pytorch/bin/pytest -v pytorch/tests --target=cuda
+
   finish:
-    needs: [cpp-tests-linux, python-tests-linux, mlir-tests-linux, llvm-tests-linux, pytorch-tests-linux]
+    needs: [cpp-tests-linux, python-tests-linux, mlir-tests-linux, llvm-tests-linux, pytorch-tests-linux,]
     runs-on: ubuntu-latest
     steps:
       - name: Coveralls Finished

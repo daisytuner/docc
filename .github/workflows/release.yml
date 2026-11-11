@@ -190,7 +190,7 @@ jobs:
     needs: [allocate-version, wheels-compiler]
     runs-on: build-amd64-big
     container:
-      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:latest-amd64
+      image: daisytuner/docc-build-env-llvm21-ubuntu-24.04:latest-amd64
     env:
       DOCC_RELEASE_VERSION: ${{ needs.allocate-version.outputs.release_version }}
 

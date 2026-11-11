@@ -6,7 +6,7 @@ on:
     types: [opened, reopened, synchronize]
 
 parameters:
-  container: daisytuner/docc-run-env-llvm21-ubuntu-24.04:latest-amd64
+  container: daisytuner/docc-run-env-llvm21-ubuntu-24.04-cuda12.8:latest-amd64
   timeout: 120
   docc_telemetry: true
   docc_version: ~
