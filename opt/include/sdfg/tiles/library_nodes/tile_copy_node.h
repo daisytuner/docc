@@ -46,6 +46,7 @@ class TileCopyNode : public data_flow::LibraryNode {
     /// mode: the lanes of a wave-granular slot axis, whose slot depends on the wave only.
     size_t coop_lanes_ = 1;
     CopyPhase phase_ = CopyPhase::Full;
+    bool scheduled_ = false;
 
 public:
     TileCopyNode(
@@ -117,6 +118,16 @@ public:
     }
     void set_phase(CopyPhase phase) {
         phase_ = phase;
+    }
+
+    /// Whether a @ref PipelineScheduleNode places this copy's instructions. A scheduled
+    /// register-staged load is emitted without its own scheduling fence, so the schedule
+    /// can interleave it with the surrounding compute.
+    bool scheduled() const {
+        return scheduled_;
+    }
+    void set_scheduled(bool scheduled) {
+        scheduled_ = scheduled;
     }
     /// The input (0 = `_dst`, 1 = `_src`) whose pointer carries the tile element type —
     /// the non-register side of a staged phase.

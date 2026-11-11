@@ -18,6 +18,7 @@
 #include <sdfg/fp_math/transformations/unfuse_fma.h>
 #include <sdfg/parallelization/transformations/loop_parallelization.h>
 #include <sdfg/targets/gpu/gpu_mma_einsum_transform.h>
+#include <sdfg/targets/gpu/gpu_mma_interleave.h>
 #include <sdfg/tiles/transformations/local_storage.h>
 #include <sdfg/tiles/transformations/software_pipelining.h>
 #include <sdfg/tiles/transformations/tile_fusion.h>
@@ -206,6 +207,8 @@ dispatch_transformation(const std::string& transformation_name, const nlohmann::
         return detail::invoke_for<fp_math::OzakiContraction>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "GpuMmaEinsumTransform") {
         return detail::invoke_for<gpu::GpuMmaEinsumTransform>(std::forward<Visitor>(visitor));
+    } else if (transformation_name == "GpuMmaInterleave") {
+        return detail::invoke_for<gpu::GpuMmaInterleave>(std::forward<Visitor>(visitor));
     } else {
         throw transformations::InvalidTransformationDescriptionException("Unknown transformation: " + transformation_name);
     }

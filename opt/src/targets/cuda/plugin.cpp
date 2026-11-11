@@ -419,6 +419,17 @@ void register_cuda_plugin(plugins::Context& context) {
         }
     );
     libNodeDispatcherRegistry.register_library_node_dispatcher(
+        ::sdfg::tiles::LibraryNodeType_PipelineSchedule,
+        ImplementationType_CUDA,
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<
+                ::sdfg::tiles::PipelineScheduleNodeDispatcher>(language_extension, function, data_flow_graph, node);
+        }
+    );
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
         ::sdfg::tiles::LibraryNodeType_PipelineWait,
         ImplementationType_CUDA,
         [](codegen::LanguageExtension& language_extension,

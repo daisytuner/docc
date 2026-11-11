@@ -8,6 +8,7 @@
 #include <sdfg/symbolic/symbolic.h>
 #include <sdfg/targets/cuda/cuda.h>
 #include <sdfg/targets/gpu/gpu_mma_einsum_transform.h>
+#include <sdfg/targets/gpu/gpu_mma_interleave.h>
 #include <sdfg/targets/rocm/rocm.h>
 #include <sdfg/targets/rocm/rocm_arch.h>
 #include <sdfg/targets/rocm/rocm_mma_transform.h>
@@ -748,6 +749,26 @@ void register_transformations(py::module& m) {
         )
         .def("__repr__", [](const sdfg::gpu::GpuMmaEinsumTransform&) {
             return std::string("<GpuMmaEinsumTransform name='GpuMmaEinsumTransform'>");
+        });
+
+    py::class_<sdfg::gpu::GpuMmaInterleave, Transformation>(m, "GpuMmaInterleave")
+        .def(
+            py::init<StructuredLoop&, size_t, size_t, size_t>(),
+            py::arg("loop"),
+            py::arg("global_read_spacing") = 3,
+            py::arg("lds_read_position") = 1,
+            py::arg("lds_reads_per_step") = 0,
+            "Interleave the register-staged prefetch loads of a software-pipelined MMA panel loop with its\n"
+            "matrix-core instructions (a PipelineScheduleNode after the k-step loop).\n\n"
+            "Apply after SoftwarePipelining(register_staged=True) and TileVectorizer.\n\n"
+            "Args:\n"
+            "    loop: The steady-state panel loop.\n"
+            "    global_read_spacing: MMAs between consecutive prefetch loads (shrinks if they would not fit).\n"
+            "    lds_read_position: MMA of a k-step after which the next k-step's fragments are read.\n"
+            "    lds_reads_per_step: LDS read instructions per k-step; 0 derives it from the fragments.\n"
+        )
+        .def("__repr__", [](const sdfg::gpu::GpuMmaInterleave&) {
+            return std::string("<GpuMmaInterleave name='GpuMmaInterleave'>");
         });
 
     // InvalidTransformationException

@@ -127,8 +127,9 @@ void TileCopyNodeDispatcher::dispatch_code_with_edges(
     ::sdfg::tiles::emit_cooperative_copy_loop(
         language_extension_, out.stream, node, dst, src, pt, async_stmt, buffer_guarded_load
     );
-    // Keep the scheduler from sinking prefetch loads to their LDS store, which exposes their latency.
-    if (node.phase() == ::sdfg::tiles::CopyPhase::LoadRegs) {
+    // Keep the scheduler from sinking prefetch loads to their LDS store, which exposes their latency,
+    // unless a PipelineScheduleNode places them.
+    if (node.phase() == ::sdfg::tiles::CopyPhase::LoadRegs && !node.scheduled()) {
         out.stream << "__builtin_amdgcn_sched_barrier(0);" << std::endl;
     }
 }
