@@ -5,6 +5,7 @@
 namespace sdfg {
 namespace data_flow {
 
+
 CallNode::CallNode(
     size_t element_id,
     const DebugInfo& debug_info,
@@ -185,7 +186,8 @@ void CallNodeDispatcher::dispatch_code_with_edges(
     for (size_t i = 0; i < inputs.size(); ++i) {
         auto& input = inputs.at(i);
         auto in_type = input.edge.result_type(function_);
-        bool is_aggregate = in_type->type_id() == types::TypeID::Array || in_type->type_id() == types::TypeID::Structure;
+        bool is_aggregate = in_type->type_id() == types::TypeID::Array ||
+                            in_type->type_id() == types::TypeID::Structure;
         if (is_aggregate && dynamic_cast<const data_flow::ConstantNode*>(&input.edge.src())) {
             std::string tmp = "_call_arg_" + std::to_string(node.element_id()) + "_" + std::to_string(i);
             out.stream << language_extension_.local_declaration(tmp, *in_type, input.expr) << std::endl;
