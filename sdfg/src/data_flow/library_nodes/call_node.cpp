@@ -1,5 +1,7 @@
 #include "sdfg/data_flow/library_nodes/call_node.h"
 
+#include "sdfg/data_flow/access_node.h"
+
 namespace sdfg {
 namespace data_flow {
 
@@ -176,6 +178,23 @@ void CallNodeDispatcher::dispatch_code_with_edges(
 ) {
     auto& node = static_cast<const CallNode&>(node_);
 
+    // Constant aggregates (e.g. `{0.5}`) are not valid C expressions, so they are
+    // materialized as typed locals before the call is emitted.
+    std::vector<std::string> arg_exprs;
+    arg_exprs.reserve(inputs.size());
+    for (size_t i = 0; i < inputs.size(); ++i) {
+        auto& input = inputs.at(i);
+        auto in_type = input.edge.result_type(function_);
+        bool is_aggregate = in_type->type_id() == types::TypeID::Array || in_type->type_id() == types::TypeID::Structure;
+        if (is_aggregate && dynamic_cast<const data_flow::ConstantNode*>(&input.edge.src())) {
+            std::string tmp = "_call_arg_" + std::to_string(node.element_id()) + "_" + std::to_string(i);
+            out.stream << language_extension_.local_declaration(tmp, *in_type, input.expr) << std::endl;
+            arg_exprs.push_back(tmp);
+        } else {
+            arg_exprs.push_back(input.expr);
+        }
+    }
+
     codegen::DispatchOutput* output = nullptr;
     if (!node.is_void(function_)) {
         output = &outputs.at(0);
@@ -211,7 +230,7 @@ void CallNodeDispatcher::dispatch_code_with_edges(
         out.stream << this->language_extension_.external_prefix() << node.callee_name() << "(";
     }
     for (size_t i = 0; i < inputs.size(); ++i) {
-        out.stream << inputs.at(i).expr;
+        out.stream << arg_exprs.at(i);
         if (i < node.inputs().size() - 1) {
             out.stream << ", ";
         }
