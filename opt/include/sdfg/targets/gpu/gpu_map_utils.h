@@ -210,6 +210,16 @@ void validate_wave_maps(
     structured_control_flow::StructuredLoop& node, analysis::AnalysisManager& analysis_manager, int64_t warp_size
 );
 
+// Whether every lane of each physical wave (@p warp_size lanes) of the enclosing kernel
+// reaches the point right after @p node together: the launched block holds whole waves
+// only, and no control flow enclosing @p node inside the kernel can split a wave
+// (boundary guards and loop bounds of lane-varying indices, data-dependent branches).
+// A full-wave cross-lane op emitted there then reads only active lanes. Conservative:
+// false unless proven.
+bool is_wave_converged(
+    structured_control_flow::ControlFlowNode& node, analysis::AnalysisManager& analysis_manager, int64_t warp_size
+);
+
 structured_control_flow::StructuredLoop* find_x_block_owning_warp_level(
     structured_control_flow::StructuredLoop& node, analysis::AnalysisManager& analysis_manager
 );
