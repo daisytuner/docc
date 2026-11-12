@@ -541,13 +541,39 @@ std::unique_ptr<sdfg::types::IType> get_type(
         auto sdfg_function_type = std::make_unique<
             sdfg::types::Function>(storage_type, alignment, initializer, *return_type, function_type->isVarArg());
         for (auto param : function_type->params()) {
-            auto param_type = get_type(builder, anonymous_types_mapping, DL, param, storage_type);
+            auto param_type = get_call_param_type(builder, anonymous_types_mapping, DL, param, storage_type);
             sdfg_function_type->add_param(*param_type);
         }
         return sdfg_function_type;
     }
 
     throw NotImplementedException("Unsupported type", sdfg::DebugInfo(), docc::utils::toIRString(*type));
+}
+
+std::unique_ptr<sdfg::types::IType> get_call_param_type(
+    sdfg::builder::SDFGBuilder& builder,
+    std::unordered_map<const llvm::Type*, std::string>& anonymous_types_mapping,
+    const llvm::DataLayout& DL,
+    llvm::Type* type,
+    sdfg::types::StorageType storage_type
+) {
+    if (!type->isArrayTy()) {
+        return get_type(builder, anonymous_types_mapping, DL, type, storage_type);
+    }
+
+    if (anonymous_types_mapping.find(type) == anonymous_types_mapping.end()) {
+        anonymous_types_mapping[type] = "__daisy_byval_array" + std::to_string(anonymous_types_mapping.size());
+    }
+    auto structure_name = anonymous_types_mapping[type];
+
+    auto defined_structures = builder.subject().structures();
+    if (std::find(defined_structures.begin(), defined_structures.end(), structure_name) == defined_structures.end()) {
+        auto& structure_definition = builder.add_structure(structure_name, false);
+        structure_definition.add_member(*get_type(builder, anonymous_types_mapping, DL, type, storage_type));
+    }
+
+    size_t alignment = DL.getABITypeAlign(type).value();
+    return std::make_unique<sdfg::types::Structure>(storage_type, alignment, "", structure_name);
 }
 
 sdfg::types::StorageType get_storage_type(sdfg::FunctionType target_type, size_t address_space) {

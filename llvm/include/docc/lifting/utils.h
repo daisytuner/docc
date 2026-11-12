@@ -59,6 +59,14 @@ std::unique_ptr<sdfg::types::IType> get_type(
     const std::string& initializer = ""
 );
 
+std::unique_ptr<sdfg::types::IType> get_call_param_type(
+    sdfg::builder::SDFGBuilder& builder,
+    std::unordered_map<const llvm::Type*, std::string>& anonymous_types_mapping,
+    const llvm::DataLayout& DL,
+    llvm::Type* type,
+    sdfg::types::StorageType storage_type
+);
+
 sdfg::types::StorageType get_storage_type(sdfg::FunctionType target_type, size_t address_space);
 
 std::pair<std::string, sdfg::data_flow::Subset>
