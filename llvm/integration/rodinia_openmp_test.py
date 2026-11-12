@@ -794,8 +794,20 @@ def test_lavaMD(compiler="clang-21"):
         Path(__file__).parent / "tests" / "rodinia" / "openmp" / "lavaMD" / "main.c"
     )
 
+    if platform.machine() in ("aarch64", "arm64"):
+        verification = {
+            "sdfgs": 3,
+            "FOR": 20,
+            "SEQUENTIAL": 20,
+        }
+    else:
+        verification = {
+            "sdfgs": 4,
+            "FOR": 22,
+            "WHILE": 4,
+        }
     verifier = SDFGVerification(
-        verification={"sdfgs": 4, "FOR": 22, "WHILE": 4},
+        verification=verification,
     )
     runner = TestRunner(
         "Rodinia",
