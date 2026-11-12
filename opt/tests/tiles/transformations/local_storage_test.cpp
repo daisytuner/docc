@@ -2815,6 +2815,10 @@ TEST(LocalStorageTest, Gate_GpuPerThread_Accepts) {
     LocalStorage xform(loop_k, a_in);
     EXPECT_TRUE(xform.can_be_applied(builder, am));
     EXPECT_TRUE(xform.storage_type().is_cpu_stack());
+
+    // The register tile is 16-byte aligned so its copy-in can move as whole vectors.
+    xform.apply(builder, am);
+    EXPECT_EQ(builder.subject().type(xform.local_container()).alignment(), 16u);
 }
 
 /**
