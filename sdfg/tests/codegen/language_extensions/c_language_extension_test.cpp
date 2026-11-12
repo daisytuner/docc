@@ -265,3 +265,12 @@ TEST(CLanguageExtensionTest, Expression_External) {
     auto result = generator.expression(sym);
     EXPECT_EQ(result, "((uintptr_t) (&EXT1))");
 }
+
+TEST(CLanguageExtensionTest, ComputeType_Identity) {
+    builder::SDFGBuilder builder("sdfg", FunctionType_CPU);
+    codegen::CLanguageExtension generator(builder.subject());
+
+    for (auto prim : {types::PrimitiveType::BFloat, types::PrimitiveType::Half, types::PrimitiveType::Float}) {
+        EXPECT_EQ(generator.compute_type(prim), prim);
+    }
+}

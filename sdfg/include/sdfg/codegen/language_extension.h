@@ -72,6 +72,11 @@ public:
 
     virtual std::string zero(const types::PrimitiveType prim_type) = 0;
 
+    /// Type in which tasklet connectors of @p prim_type are held and computed.
+    virtual types::PrimitiveType compute_type(const types::PrimitiveType prim_type) {
+        return prim_type;
+    }
+
     /* Statements; each returns one complete statement without a trailing newline. */
 
     virtual std::string comment(const std::string& text) = 0;
