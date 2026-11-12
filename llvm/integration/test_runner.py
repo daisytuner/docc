@@ -162,13 +162,14 @@ class TestRunner:
                 assert reference_file.is_file()
                 test_file, stdout, stderr = self._compile(self._test_case, False)
                 assert test_file.is_file()
-                self._evaluation_function(reference_file, test_file)
 
                 if self._sdfg_verification is not None:
                     self._sdfg_verification.verify(stderr)
 
                 if self._transformation_verification is not None:
                     self._transformation_verification.verify(self.output_dir_, stderr)
+
+                self._evaluation_function(reference_file, test_file)
             except Exception as e:
                 exception_bucket.append(e)
 
