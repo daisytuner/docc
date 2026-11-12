@@ -705,7 +705,7 @@ std::string PyStructuredSDFG::compile(
     compile_builder.add_library_path("/opt/homebrew/lib");
     compile_builder.add_link_option("-framework Accelerate");
 #else
-    compile_builder.add_link_option("-lblas");
+    compile_builder.add_link_option("-lopenblas");
 #endif
 
     if (auto* target_handler = docc_context_.get_target_handler(target)) {
