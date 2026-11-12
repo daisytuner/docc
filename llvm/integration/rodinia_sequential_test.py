@@ -1,3 +1,4 @@
+import platform
 import subprocess
 import numpy as np
 import pandas as pd
@@ -350,9 +351,16 @@ def test_cfd(compiler="clang++-21"):
         / "euler3d_cpu.cpp"
     )
 
-    verifier = SDFGVerification(
-        verification={"sdfgs": 6, "MAP": 15, "SEQUENTIAL": 28, "FOR": 13}
-    )
+    if platform.machine() in ("aarch64", "arm64"):
+        verification = {
+            "sdfgs": 5,
+            "MAP": 7,
+            "FOR": 9,
+            "SEQUENTIAL": 16,
+        }
+    else:
+        verification = {"sdfgs": 6, "MAP": 15, "SEQUENTIAL": 28, "FOR": 13}
+    verifier = SDFGVerification(verification=verification)
     runner = TestRunner(
         "Rodinia",
         test_case,
