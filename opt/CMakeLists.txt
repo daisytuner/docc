@@ -63,6 +63,7 @@ set(SOURCE_FILES
     src/tiles/transformations/software_pipelining.cpp
     src/tiles/transformations/tile_fusion.cpp
     src/tiles/transformations/tile_guard_normalization.cpp
+    src/tiles/transformations/tile_streaming_copy.cpp
     src/tiles/transformations/tile_vectorizer.cpp
     src/passes/code_motion/extended_block_hoisting.cpp
     src/passes/code_motion/extended_block_sorting.cpp

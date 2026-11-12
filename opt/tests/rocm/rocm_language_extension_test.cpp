@@ -15,4 +15,16 @@ TEST(ROCMLanguageExtensionTest, ComputeType_BFloatInFloat) {
     EXPECT_EQ(generator.compute_type(types::PrimitiveType::Float), types::PrimitiveType::Float);
 }
 
+TEST(ROCMLanguageExtensionTest, StreamingCopy_NativeWidthsOnly) {
+    builder::SDFGBuilder builder("sdfg", FunctionType_CPU);
+    ROCMLanguageExtension generator(builder.subject());
+
+    for (size_t bytes : {4, 8, 16}) {
+        EXPECT_FALSE(generator.streaming_copy("dst", "src", bytes).empty()) << bytes;
+    }
+    for (size_t bytes : {1, 2, 12, 32}) {
+        EXPECT_TRUE(generator.streaming_copy("dst", "src", bytes).empty()) << bytes;
+    }
+}
+
 } // namespace sdfg::rocm

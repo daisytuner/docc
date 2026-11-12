@@ -47,6 +47,8 @@ class TileCopyNode : public data_flow::LibraryNode {
     size_t coop_lanes_ = 1;
     CopyPhase phase_ = CopyPhase::Full;
     bool scheduled_ = false;
+    /// Load the source with a nontemporal (no cache retention) hint; set by TileStreamingCopy.
+    bool streaming_ = false;
 
 public:
     TileCopyNode(
@@ -118,6 +120,13 @@ public:
     }
     void set_phase(CopyPhase phase) {
         phase_ = phase;
+    }
+
+    bool streaming() const {
+        return streaming_;
+    }
+    void set_streaming(bool streaming) {
+        streaming_ = streaming;
     }
 
     /// Whether a @ref PipelineScheduleNode places this copy's instructions. A scheduled

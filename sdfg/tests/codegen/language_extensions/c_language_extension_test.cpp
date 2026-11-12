@@ -274,3 +274,10 @@ TEST(CLanguageExtensionTest, ComputeType_Identity) {
         EXPECT_EQ(generator.compute_type(prim), prim);
     }
 }
+
+TEST(CLanguageExtensionTest, StreamingCopy_Unsupported) {
+    builder::SDFGBuilder builder("sdfg", FunctionType_CPU);
+    codegen::CLanguageExtension generator(builder.subject());
+
+    EXPECT_TRUE(generator.streaming_copy("dst", "src", 16).empty());
+}
