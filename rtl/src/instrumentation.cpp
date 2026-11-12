@@ -115,15 +115,21 @@ static int (*_PAPI_read)(int, long long*) = nullptr;
 static const char* (*_PAPI_strerror)(int) = nullptr;
 static long long (*_PAPI_get_real_nsec)(void) = nullptr;
 
-static void load_papi_symbols() {
+// Only used to report which counter targets are available
+static int (*_PAPI_num_components)(void) = nullptr;
+static const void* (*_PAPI_get_component_info)(int) = nullptr;
+static int (*_PAPI_enum_cmp_event)(int*, int, int) = nullptr;
+
+// Returns an error message, or an empty string if libpapi was loaded.
+static std::string load_papi_symbols() {
     const char* papi_lib = std::getenv("DAISY_PAPI_PATH");
     if (!papi_lib) {
         papi_lib = "libpapi.so";
     }
     void* handle = dlopen(papi_lib, RTLD_LAZY);
     if (!handle) {
-        std::fprintf(stderr, "[daisy-rtl] Failed to load %s: %s\n", papi_lib, dlerror());
-        return; // PAPI not available – we will fall back to time based measurement
+        const char* reason = dlerror();
+        return std::string("Failed to load ") + papi_lib + ": " + (reason ? reason : "unknown error");
     }
     _PAPI_library_init = reinterpret_cast<int (*)(int)>(dlsym(handle, "PAPI_library_init"));
     _PAPI_create_eventset = reinterpret_cast<int (*)(int*)>(dlsym(handle, "PAPI_create_eventset"));
@@ -137,7 +143,28 @@ static void load_papi_symbols() {
     _PAPI_read = reinterpret_cast<int (*)(int, long long*)>(dlsym(handle, "PAPI_read"));
     _PAPI_strerror = reinterpret_cast<const char* (*) (int)>(dlsym(handle, "PAPI_strerror"));
     _PAPI_get_real_nsec = reinterpret_cast<long long (*)(void)>(dlsym(handle, "PAPI_get_real_nsec"));
+    _PAPI_num_components = reinterpret_cast<int (*)(void)>(dlsym(handle, "PAPI_num_components"));
+    _PAPI_get_component_info = reinterpret_cast<const void* (*) (int)>(dlsym(handle, "PAPI_get_component_info"));
+    _PAPI_enum_cmp_event = reinterpret_cast<int (*)(int*, int, int)>(dlsym(handle, "PAPI_enum_cmp_event"));
+    return {};
 }
+
+// Leading fields of PAPI_component_info_t (unchanged since PAPI 7.0); only read through PAPI's pointer.
+struct PapiComponentInfoPrefix {
+    char name[128];
+    char short_name[64];
+    char description[128];
+    char version[64];
+    char support_version[64];
+    char kernel_version[64];
+    char disabled_reason[1024];
+    int disabled;
+};
+
+constexpr int PAPI_OK_CODE = 0;
+constexpr int PAPI_EDELAY_INIT_CODE = -26;
+constexpr int PAPI_NATIVE_MASK_CODE = 0x40000000;
+constexpr int PAPI_ENUM_FIRST_CODE = 1;
 } // namespace
 
 enum class EventCaptureType { NONE = 0, CUDA_EVT = 1, ROCM_EVT = 2 };
@@ -343,7 +370,9 @@ private:
     std::unordered_map<std::string, size_t> sleeping_regions_id_lookup;
 
     __daisy_instrumentation_mode_t instrumentation_mode = __DAISY_MODE_TRACE;
-    bool papi_available = false;
+    // False if PAPI or the requested events are unavailable; init_error holds the reason.
+    bool ready = false;
+    std::string init_error;
     bool no_async_event_capture = false;
     std::string output_file;
     bool output_file_pid_suffix = false;
@@ -851,43 +880,57 @@ private:
         std::fprintf(f, "%s", entry.str().c_str());
     }
 
-    void verify_events_exist(const std::vector<std::string>& list) {
+    // Returns an error message for the first requested event PAPI does not know, or an empty string.
+    std::string find_missing_event(const std::vector<std::string>& list) {
         for (const auto& event_name : list) {
-            int event_code;
             if (_PAPI_query_named_event(event_name.c_str()) != 0) {
-                std::fprintf(stderr, "[daisy-rtl] PAPI event '%s' not found.\n", event_name.c_str());
-                exit(EXIT_FAILURE);
+                return "PAPI event '" + event_name + "' not found";
             }
         }
+        return {};
     }
 
-public:
-    DaisyInstrumentationState() {
-        load_papi_symbols();
-
-        this->papi_available = _PAPI_library_init && _PAPI_create_eventset && _PAPI_add_named_event && _PAPI_start &&
-                               _PAPI_stop && _PAPI_reset && _PAPI_read && _PAPI_get_real_nsec && _PAPI_strerror &&
-                               _PAPI_cleanup_eventset && _PAPI_destroy_eventset;
-        if (!this->papi_available) {
-            std::fprintf(stderr, "[daisy-rtl] PAPI not available.\n");
-            exit(EXIT_FAILURE);
+    // Loads and initializes PAPI and checks the requested events. Returns an error message,
+    // or an empty string if the runtime can collect everything that was requested.
+    std::string initialize_papi() {
+        std::string error = load_papi_symbols();
+        if (!error.empty()) {
+            return error;
+        }
+        bool has_symbols = _PAPI_library_init && _PAPI_create_eventset && _PAPI_add_named_event && _PAPI_start &&
+                           _PAPI_stop && _PAPI_reset && _PAPI_read && _PAPI_get_real_nsec && _PAPI_strerror &&
+                           _PAPI_cleanup_eventset && _PAPI_destroy_eventset && _PAPI_query_named_event;
+        if (!has_symbols) {
+            return "libpapi is missing required PAPI functions";
         }
 
-        // Initialise PAPI
         const char* ver_str = std::getenv("__DAISY_PAPI_VERSION");
         if (!ver_str) {
-            std::fprintf(stderr, "[daisy-rtl] __DAISY_PAPI_VERSION not set.\n");
-            exit(EXIT_FAILURE);
+            return "__DAISY_PAPI_VERSION not set";
         }
         int ver = std::strtol(ver_str, nullptr, 0);
         int retval = _PAPI_library_init(ver);
         if (retval != ver) {
-            std::fprintf(
-                stderr, "[daisy-rtl] PAPI init failed: %s.\n", _PAPI_strerror ? _PAPI_strerror(retval) : "unknown"
-            );
-            exit(EXIT_FAILURE);
+            if (retval > 0) {
+                std::ostringstream msg;
+                msg << "PAPI version mismatch: __DAISY_PAPI_VERSION is " << std::hex << std::showbase << ver
+                    << ", libpapi is " << retval;
+                return msg.str();
+            }
+            return std::string("PAPI init failed for __DAISY_PAPI_VERSION=") + ver_str + ": " + _PAPI_strerror(retval);
         }
 
+        error = find_missing_event(this->event_names_cpu);
+        if (!error.empty()) {
+            return error;
+        }
+        return find_missing_event(this->event_names_cuda);
+    }
+
+public:
+    // Never terminates the process: failures are recorded in init_error, and instrumented
+    // code aborts on its first region instead (see require_ready).
+    DaisyInstrumentationState() {
         // Aggregate events
         const char* aggregate_events_env = std::getenv("__DAISY_INSTRUMENTATION_MODE");
         if (aggregate_events_env && std::strcmp(aggregate_events_env, "aggregate") == 0) {
@@ -910,14 +953,12 @@ public:
         const char* env_events_cpu = std::getenv("__DAISY_INSTRUMENTATION_EVENTS");
         if (env_events_cpu) {
             split_string(env_events_cpu, this->event_names_cpu);
-            verify_events_exist(this->event_names_cpu);
         }
 
         // Events - CUDA
         const char* env_events_cuda = std::getenv("__DAISY_INSTRUMENTATION_EVENTS_CUDA");
         if (env_events_cuda) {
             split_string(env_events_cuda, this->event_names_cuda);
-            verify_events_exist(this->event_names_cuda);
         }
 
         const char* env_events_async_capture = std::getenv("__DAISY_INSTRUMENTATION_ASYNC_CAPTURE");
@@ -927,9 +968,12 @@ public:
             }
         }
 
+        this->init_error = initialize_papi();
+        this->ready = this->init_error.empty();
+
         // Processes writing per-pid traces are commonly terminated by a parent (e.g. worker
         // pools), which skips the destructor; dump their trace on termination signals instead.
-        if (this->output_file_pid_suffix) {
+        if (this->ready && this->output_file_pid_suffix) {
             signal_dump_state.store(this);
             install_dump_signal_handlers();
         }
@@ -939,6 +983,11 @@ public:
         restore_dump_signal_handlers();
         signal_dump_state.store(nullptr);
 
+        // Nothing was measured, as instrumented code aborts when the runtime is not ready.
+        if (!this->ready) {
+            return;
+        }
+
         // Cleanup cached regions
         for (auto& region_uuid : this->sleeping_regions_by_name) {
             size_t region_id = this->sleeping_regions_id_lookup[region_uuid];
@@ -947,11 +996,11 @@ public:
             if (region.papi_eventset != -1) {
                 if (_PAPI_cleanup_eventset(region.papi_eventset) != 0) {
                     std::fprintf(stderr, "[daisy-rtl] Failed to clean up PAPI eventset.\n");
-                    exit(EXIT_FAILURE);
+                    std::abort();
                 }
                 if (_PAPI_destroy_eventset(&region.papi_eventset) != 0) {
                     std::fprintf(stderr, "[daisy-rtl] Failed to destroy PAPI eventset.\n");
-                    exit(EXIT_FAILURE);
+                    std::abort();
                 }
                 region.papi_eventset = -1;
             }
@@ -968,12 +1017,12 @@ public:
                     "[daisy-rtl] Region %s has unresolved pending events. Call process_async\n",
                     region.metadata.region_uuid
                 );
-                exit(EXIT_FAILURE);
+                std::abort();
             }
         }
 
         if (!write_trace()) {
-            exit(EXIT_FAILURE);
+            std::abort();
         }
     }
 
@@ -1032,7 +1081,11 @@ public:
     }
 
     // Write the trace now, e.g. before a process ends without running destructors (_exit).
+    // Returns false without writing if the runtime is not ready.
     bool dump() {
+        if (!this->ready) {
+            return false;
+        }
         StateLock lock(mutex);
         post_process_regions();
         return write_trace();
@@ -1087,7 +1140,7 @@ public:
                 "groups.\n",
                 _PAPI_strerror ? _PAPI_strerror(rc) : "unknown error"
             );
-            exit(EXIT_FAILURE);
+            std::abort();
         }
     }
 
@@ -1195,14 +1248,14 @@ public:
             if (this->has_events(region.event_set)) {
                 if (_PAPI_create_eventset(&region.papi_eventset) != 0) {
                     std::fprintf(stderr, "[daisy-rtl] Failed to create PAPI eventset.\n");
-                    exit(EXIT_FAILURE);
+                    std::abort();
                 }
                 if (region.event_set == __DAISY_EVENT_SET_CPU) {
                     for (const auto& ev : this->event_names_cpu) {
                         auto papi_result = _PAPI_add_named_event(region.papi_eventset, ev.c_str());
                         if (papi_result != 0) {
                             std::fprintf(stderr, "[daisy-rtl] Could not add event %s (%d).\n", ev.c_str(), papi_result);
-                            exit(EXIT_FAILURE);
+                            std::abort();
                         }
                     }
                 } else if (region.event_set == __DAISY_EVENT_SET_CUDA) {
@@ -1210,7 +1263,7 @@ public:
                         auto papi_result = _PAPI_add_named_event(region.papi_eventset, ev.c_str());
                         if (papi_result != 0) {
                             std::fprintf(stderr, "[daisy-rtl] Could not add event %s (%d).\n", ev.c_str(), papi_result);
-                            exit(EXIT_FAILURE);
+                            std::abort();
                         }
                     }
                 }
@@ -1232,14 +1285,14 @@ public:
         if (this->has_events(region.event_set)) {
             if (_PAPI_create_eventset(&region.papi_eventset) != 0) {
                 std::fprintf(stderr, "[daisy-rtl] Failed to create PAPI eventset.\n");
-                exit(EXIT_FAILURE);
+                std::abort();
             }
             if (region.event_set == __DAISY_EVENT_SET_CPU) {
                 for (const auto& ev : this->event_names_cpu) {
                     auto papi_result = _PAPI_add_named_event(region.papi_eventset, ev.c_str());
                     if (papi_result != 0) {
                         std::fprintf(stderr, "[daisy-rtl] Could not add event %s (%d).\n", ev.c_str(), papi_result);
-                        exit(EXIT_FAILURE);
+                        std::abort();
                     }
                 }
             } else if (region.event_set == __DAISY_EVENT_SET_CUDA) {
@@ -1247,7 +1300,7 @@ public:
                     auto papi_result = _PAPI_add_named_event(region.papi_eventset, ev.c_str());
                     if (papi_result != 0) {
                         std::fprintf(stderr, "[daisy-rtl] Could not add event %s (%d).\n", ev.c_str(), papi_result);
-                        exit(EXIT_FAILURE);
+                        std::abort();
                     } else {
                         DEBUG_PRINTLN("[daisy-rtl] Added PAPI event " << ev << " to region " << metadata->region_uuid);
                     }
@@ -1274,7 +1327,7 @@ public:
         auto it = regions.find(region_id);
         if (it == regions.end()) {
             std::fprintf(stderr, "[daisy-rtl] Warning: entering unknown region %zu\n", region_id);
-            exit(EXIT_FAILURE);
+            std::abort();
         }
 
         DaisyRegion& region = it->second;
@@ -1336,7 +1389,7 @@ public:
         auto it = regions.find(region_id);
         if (it == regions.end()) {
             std::fprintf(stderr, "[daisy-rtl] Warning: exiting unknown region %zu\n", region_id);
-            exit(EXIT_FAILURE);
+            std::abort();
         }
 
         DaisyRegion& region = it->second;
@@ -1504,7 +1557,7 @@ public:
         auto it = regions.find(region_id);
         if (it == regions.end()) {
             std::fprintf(stderr, "[daisy-rtl] Warning: metric for unknown region %zu\n", region_id);
-            exit(EXIT_FAILURE);
+            std::abort();
         }
 
         DaisyRegion& region = it->second;
@@ -1557,7 +1610,7 @@ public:
         auto it = regions.find(region_id);
         if (it == regions.end()) {
             std::fprintf(stderr, "[daisy-rtl] Warning: finalizing unknown region %zu\n", region_id);
-            exit(EXIT_FAILURE);
+            std::abort();
         }
 
         DaisyRegion& region = it->second;
@@ -1592,11 +1645,11 @@ public:
             if (evict_region.papi_eventset != -1) {
                 if (_PAPI_cleanup_eventset(evict_region.papi_eventset) != 0) {
                     std::fprintf(stderr, "[daisy-rtl] EFailed to clean up PAPI eventset.\n");
-                    exit(EXIT_FAILURE);
+                    std::abort();
                 }
                 if (_PAPI_destroy_eventset(&evict_region.papi_eventset) != 0) {
                     std::fprintf(stderr, "[daisy-rtl] Failed to destroy PAPI eventset.\n");
-                    exit(EXIT_FAILURE);
+                    std::abort();
                 }
                 evict_region.papi_eventset = -1;
             }
@@ -1789,6 +1842,96 @@ public:
     __daisy_instrumentation_mode_t get_instrumentation_mode() const {
         return this->instrumentation_mode;
     }
+
+    bool is_ready() const {
+        return this->ready;
+    }
+
+    const char* error() const {
+        return this->ready ? nullptr : this->init_error.c_str();
+    }
+
+    // Called by instrumented code, which has no way to handle a missing runtime.
+    void require_ready() const {
+        if (!this->ready) {
+            std::fprintf(stderr, "[daisy-rtl] Instrumentation runtime not ready: %s\n", this->init_error.c_str());
+            std::fflush(stderr);
+            std::abort();
+        }
+    }
+
+    enum __daisy_counter_status counter_status(enum __daisy_counter_target target, bool force_init, const char** reason) {
+        const char* unused_reason;
+        if (!reason) {
+            reason = &unused_reason;
+        }
+        *reason = nullptr;
+        if (!this->ready) {
+            *reason = this->init_error.c_str();
+            return __DAISY_COUNTER_UNAVAILABLE;
+        }
+        if (!_PAPI_num_components || !_PAPI_get_component_info || !_PAPI_enum_cmp_event) {
+            *reason = "libpapi does not report its components";
+            return __DAISY_COUNTER_UNAVAILABLE;
+        }
+
+        std::vector<const char*> component_names;
+        switch (target) {
+            case __DAISY_COUNTER_TARGET_CPU:
+                component_names = {"perf_event"};
+                break;
+            case __DAISY_COUNTER_TARGET_CUDA:
+                component_names = {"cuda"};
+                break;
+            case __DAISY_COUNTER_TARGET_ROCM:
+                component_names = {"rocm", "rocp_sdk"};
+                break;
+            default:
+                *reason = "Unknown counter target";
+                return __DAISY_COUNTER_UNAVAILABLE;
+        }
+
+        StateLock lock(mutex);
+        int num_components = _PAPI_num_components();
+        const PapiComponentInfoPrefix* disabled_component = nullptr;
+        bool found_delayed = false;
+        for (int cid = 0; cid < num_components; ++cid) {
+            auto* info = static_cast<const PapiComponentInfoPrefix*>(_PAPI_get_component_info(cid));
+            if (!info) {
+                continue;
+            }
+            bool matches = false;
+            for (const char* name : component_names) {
+                matches |= std::strcmp(info->name, name) == 0;
+            }
+            if (!matches) {
+                continue;
+            }
+            // PAPI initializes components like cuda and rocm only when their events are first accessed
+            if (info->disabled == PAPI_EDELAY_INIT_CODE && force_init) {
+                int event_code = 0 | PAPI_NATIVE_MASK_CODE;
+                _PAPI_enum_cmp_event(&event_code, PAPI_ENUM_FIRST_CODE, cid);
+            }
+            if (info->disabled == PAPI_OK_CODE) {
+                return __DAISY_COUNTER_AVAILABLE;
+            }
+            if (info->disabled == PAPI_EDELAY_INIT_CODE) {
+                found_delayed = true;
+            } else if (!disabled_component) {
+                disabled_component = info;
+            }
+        }
+        if (found_delayed) {
+            *reason = "PAPI initializes this component on first use";
+            return __DAISY_COUNTER_NOT_INITIALIZED;
+        }
+        if (disabled_component) {
+            *reason = disabled_component->disabled_reason;
+            return __DAISY_COUNTER_UNAVAILABLE;
+        }
+        *reason = "libpapi was built without a component for this target";
+        return __DAISY_COUNTER_UNAVAILABLE;
+    }
 };
 
 static DaisyInstrumentationState& get_daisy_state() {
@@ -1815,7 +1958,9 @@ size_t __daisy_instrumentation_init(__daisy_metadata* metadata, enum __daisy_eve
     if (!metadata) {
         return 0;
     }
-    return get_daisy_state().register_region(metadata, event_set);
+    auto& state = get_daisy_state();
+    state.require_ready();
+    return state.register_region(metadata, event_set);
 }
 
 void __daisy_instrumentation_enter(size_t region_id) {
@@ -1880,6 +2025,19 @@ void __daisy_instrumentation_finalize_all(void) {
 
 bool __daisy_instrumentation_dump(void) {
     return get_daisy_state().dump();
+}
+
+bool __daisy_instrumentation_is_ready(void) {
+    return get_daisy_state().is_ready();
+}
+
+const char* __daisy_instrumentation_error(void) {
+    return get_daisy_state().error();
+}
+
+enum __daisy_counter_status
+__daisy_instrumentation_counter_status(enum __daisy_counter_target target, bool force_init, const char** reason) {
+    return get_daisy_state().counter_status(target, force_init, reason);
 }
 
 #ifdef __cplusplus

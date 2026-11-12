@@ -134,10 +134,40 @@ void __daisy_instrumentation_finalize_all(void);
 
 // Write the trace file now. The trace is otherwise only written at normal process exit, so call
 // this before ending a process without running destructors (e.g. _exit or os._exit in forked
-// workers). Returns false if the trace file could not be written.
+// workers). Returns false if the trace file could not be written or the runtime is not ready.
 bool __daisy_instrumentation_dump(void);
 
 __daisy_instrumentation_mode_t __daisy_instrumentation_mode(void);
+
+// Whether the runtime can measure: PAPI is loaded and initialized and all requested events
+// (__DAISY_INSTRUMENTATION_EVENTS*) exist. The first call to any __daisy_instrumentation_* function
+// initializes the runtime; initialization never terminates the process. Instrumented code
+// (__daisy_instrumentation_init) aborts with the reason if the runtime is not ready.
+bool __daisy_instrumentation_is_ready(void);
+
+// Why the runtime is not ready, or NULL if it is ready.
+const char* __daisy_instrumentation_error(void);
+
+enum __daisy_counter_target {
+    __DAISY_COUNTER_TARGET_CPU = 0,
+    __DAISY_COUNTER_TARGET_CUDA = 1,
+    __DAISY_COUNTER_TARGET_ROCM = 2,
+};
+
+enum __daisy_counter_status {
+    __DAISY_COUNTER_AVAILABLE = 0,
+    __DAISY_COUNTER_UNAVAILABLE = 1,
+    // PAPI initializes the component (e.g. cuda, rocm) when its events are first used
+    __DAISY_COUNTER_NOT_INITIALIZED = 2,
+};
+
+// Whether hardware counters of a target can be collected, i.e. PAPI's component for it is enabled.
+// Without force_init this is cheap, but reports components PAPI initializes lazily as
+// __DAISY_COUNTER_NOT_INITIALIZED. force_init initializes them now, which can take a while
+// (~0.4s for cuda) and terminates the process if the GPU tooling aborts during initialization.
+// If reason is not NULL, it is set to an explanation unless the counters are available.
+enum __daisy_counter_status
+__daisy_instrumentation_counter_status(enum __daisy_counter_target target, bool force_init, const char** reason);
 
 typedef struct __daisy_capture __daisy_capture_t;
 

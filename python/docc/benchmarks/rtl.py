@@ -27,10 +27,12 @@ from __future__ import annotations
 
 import copy
 import ctypes
+import enum
 import functools
 import json
 import os
 import sys
+import warnings
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
@@ -55,7 +57,12 @@ __all__ = [
     "dump_instrumentation",
     "ensure_instrumentation_ready",
     "try_ensure_instrumentation_ready",
+    "instrumentation_is_ready",
+    "instrumentation_error",
     "InstrumentationNotReady",
+    "CounterStatus",
+    "CounterTargetStatus",
+    "counter_status",
     "total_stats",
     "RtlTotalStats",
     "GpuRegion",
@@ -80,6 +87,9 @@ _RTL_STOP_SYMBOL = "__daisy_instrumentation_stop"
 _RTL_IS_ENABLED_SYMBOL = "__daisy_instrumentation_is_enabled"
 _RTL_MODE_SYMBOL = "__daisy_instrumentation_mode"
 _RTL_DUMP_SYMBOL = "__daisy_instrumentation_dump"
+_RTL_IS_READY_SYMBOL = "__daisy_instrumentation_is_ready"
+_RTL_ERROR_SYMBOL = "__daisy_instrumentation_error"
+_RTL_COUNTER_STATUS_SYMBOL = "__daisy_instrumentation_counter_status"
 
 
 def _rtl_lib_names() -> tuple[str, str]:
@@ -309,7 +319,7 @@ def dump_instrumentation() -> bool:
     The trace is otherwise only written at normal interpreter exit. Call this
     before a process ends without running exit handlers, e.g. forked
     ``multiprocessing`` workers, which leave via ``os._exit``. Returns False when
-    the RTL is statically linked or the trace could not be written.
+    the RTL is statically linked, not ready, or the trace could not be written.
     """
     lib = _rtl_lib()
     if lib is None:
@@ -324,7 +334,61 @@ def dump_instrumentation() -> bool:
 
 
 class InstrumentationNotReady(RuntimeError):
-    """Raised when the daisy RTL cannot be loaded or initialized eagerly."""
+    """Raised when the daisy RTL cannot be loaded or cannot measure."""
+
+
+def _rtl_symbol(symbol: str, restype: Any, argtypes: Sequence[Any] = ()) -> Any:
+    """Return an RTL entry point, or None if the shared RTL or the symbol is missing."""
+    lib = _rtl_lib()
+    if lib is None:
+        return None
+    try:
+        # Subscript access bypasses ctypes' dunder-name guard.
+        fn = lib[symbol]
+    except (AttributeError, KeyError, ValueError):
+        return None
+    fn.restype = restype
+    fn.argtypes = list(argtypes)
+    return fn
+
+
+def instrumentation_is_ready() -> Optional[bool]:
+    """Whether the shared RTL can measure, or None if there is no shared RTL.
+
+    The RTL is ready when PAPI is loaded and initialized (``__DAISY_PAPI_VERSION``
+    matches the library) and all requested events (``__DAISY_INSTRUMENTATION_EVENTS*``)
+    exist. The first call to the RTL initializes it and reads this configuration
+    from the environment, so later changes to it have no effect. Instrumented code
+    aborts the process when it runs while the RTL is not ready.
+    """
+    fn = _rtl_symbol(_RTL_IS_READY_SYMBOL, ctypes.c_bool)
+    if fn is None:
+        return None
+    return bool(fn())
+
+
+def instrumentation_error() -> Optional[str]:
+    """Why the shared RTL is not ready, or None if it is ready or not queryable."""
+    fn = _rtl_symbol(_RTL_ERROR_SYMBOL, ctypes.c_char_p)
+    if fn is None:
+        return None
+    error = fn()
+    return error.decode(errors="replace") if error is not None else None
+
+
+def _instrumentation_not_ready_reason() -> Optional[str]:
+    """Initialize the shared RTL; return why it cannot measure, or None if it is ready."""
+    if _rtl_lib() is None:
+        return (
+            "Could not locate or load libdaisy_rtl; set DAISY_RTL_LIB or ensure "
+            "the shared RTL is on the library search path."
+        )
+    ready = instrumentation_is_ready()
+    if ready is None:
+        return f"RTL is missing the {_RTL_IS_READY_SYMBOL} entry point."
+    if not ready:
+        return f"Instrumentation runtime not ready: {instrumentation_error()}"
+    return None
 
 
 def ensure_instrumentation_ready() -> None:
@@ -337,47 +401,89 @@ def ensure_instrumentation_ready() -> None:
     underlying PAPI/ROCm libraries now instead of lazily on the first measured
     region.
 
-    Raises :class:`InstrumentationNotReady` if the shared RTL cannot be located,
-    loaded, or its entry point invoked. Note the native initializer aborts the
-    process when ``__DAISY_PAPI_VERSION`` is unset or PAPI is unavailable; use
-    :func:`try_ensure_instrumentation_ready` when that must be avoided.
+    Raises :class:`InstrumentationNotReady` if the shared RTL cannot be located or
+    loaded, or if it cannot measure (e.g. PAPI is unavailable, ``__DAISY_PAPI_VERSION``
+    is unset or a requested event does not exist). Never terminates the process.
     """
-    lib = _rtl_lib()
-    if lib is None:
-        raise InstrumentationNotReady(
-            "Could not locate or load libdaisy_rtl; set DAISY_RTL_LIB or ensure "
-            "the shared RTL is on the library search path."
-        )
-    try:
-        # Subscript access bypasses ctypes' dunder-name guard.
-        fn = lib[_RTL_IS_ENABLED_SYMBOL]
-    except (AttributeError, KeyError, ValueError) as exc:
-        raise InstrumentationNotReady(
-            f"RTL is missing the {_RTL_IS_ENABLED_SYMBOL} entry point."
-        ) from exc
-    fn.restype = ctypes.c_bool
-    fn.argtypes = []
-    # The call triggers construction of the process-global state, readying PAPI/ROCm.
-    fn()
+    reason = _instrumentation_not_ready_reason()
+    if reason is not None:
+        raise InstrumentationNotReady(reason)
 
 
 def try_ensure_instrumentation_ready() -> bool:
-    """Best-effort :func:`ensure_instrumentation_ready` that never raises.
+    """Like :func:`ensure_instrumentation_ready`, but warns instead of raising.
 
-    Returns ``True`` if the RTL was readied, ``False`` otherwise. Initialization is
-    only attempted when ``__DAISY_PAPI_VERSION`` is set (the native initializer
-    aborts the process if it is missing) and the RTL library can be located, so on a
-    machine without instrumentation configured this is a cheap no-op.
+    Returns ``True`` if the RTL was readied, ``False`` otherwise, and warns if
+    instrumentation is configured but the RTL cannot measure. Initialization is only
+    attempted when ``__DAISY_PAPI_VERSION`` is set and the RTL library can be
+    located: the RTL reads its configuration once, so initializing it before the
+    environment is configured would leave it unable to measure.
     """
     if not os.environ.get("__DAISY_PAPI_VERSION"):
         return False
     if _find_rtl_lib() is None:
         return False
-    try:
-        ensure_instrumentation_ready()
-        return True
-    except Exception:
+    reason = _instrumentation_not_ready_reason()
+    if reason is not None:
+        warnings.warn(
+            f"{reason}. Instrumented code will abort.", RuntimeWarning, stacklevel=2
+        )
         return False
+    return True
+
+
+class CounterStatus(enum.IntEnum):
+    """Mirror of ``__daisy_counter_status`` in ``daisy_rtl.h``."""
+
+    AVAILABLE = 0
+    UNAVAILABLE = 1
+    #: PAPI initializes the component (e.g. cuda, rocm) when its events are first used.
+    NOT_INITIALIZED = 2
+
+
+_COUNTER_TARGETS = {"cpu": 0, "cuda": 1, "rocm": 2}
+
+
+@dataclass(frozen=True)
+class CounterTargetStatus:
+    """Whether hardware counters of a target can be collected."""
+
+    status: CounterStatus
+    #: Explanation unless the counters are available.
+    reason: Optional[str]
+
+
+def counter_status(
+    target: str, force_init: bool = False
+) -> Optional[CounterTargetStatus]:
+    """Whether hardware counters of ``target`` ("cpu", "cuda" or "rocm") can be collected.
+
+    Reports whether PAPI's component for the target is enabled. Without
+    ``force_init`` this takes microseconds, but GPU components PAPI initializes
+    lazily are reported as :attr:`CounterStatus.NOT_INITIALIZED`. ``force_init``
+    initializes them now, which takes a while (~0.4 s for cuda) and terminates the
+    process if the GPU tooling aborts during initialization. Returns None if there
+    is no shared RTL.
+    """
+    if target not in _COUNTER_TARGETS:
+        raise ValueError(
+            f"Unknown counter target {target!r}; expected one of {sorted(_COUNTER_TARGETS)}"
+        )
+    fn = _rtl_symbol(
+        _RTL_COUNTER_STATUS_SYMBOL,
+        ctypes.c_int,
+        (ctypes.c_int, ctypes.c_bool, ctypes.POINTER(ctypes.c_char_p)),
+    )
+    if fn is None:
+        return None
+    reason = ctypes.c_char_p()
+    status = fn(_COUNTER_TARGETS[target], force_init, ctypes.byref(reason))
+    return CounterTargetStatus(
+        status=CounterStatus(status),
+        reason=(
+            reason.value.decode(errors="replace") if reason.value is not None else None
+        ),
+    )
 
 
 @dataclass(frozen=True)
@@ -471,13 +577,13 @@ class GpuRegion:
             torch.mm(a, b, out=c)
 
     The RTL must be a shared library loaded into this process (the GPU runtime is
-    resolved from the already-loaded one), and ``__DAISY_PAPI_VERSION`` must be set.
+    resolved from the already-loaded one) and ready to measure, see
+    :func:`ensure_instrumentation_ready`, which raises otherwise.
     """
 
     def __init__(self, name: str, target_type: str = "ROCM"):
+        ensure_instrumentation_ready()
         lib = _rtl_lib()
-        if lib is None:
-            raise InstrumentationNotReady("Could not locate or load libdaisy_rtl.")
         self._init = lib["__daisy_instrumentation_init"]
         self._init.restype = ctypes.c_size_t
         self._init.argtypes = [ctypes.POINTER(_DaisyMetadata), ctypes.c_int]
