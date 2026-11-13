@@ -329,6 +329,7 @@ def _primitive_to_torch_dtype(primitive_type):
         raise TypeError(f"No torch dtype mapping for primitive type {primitive_type}")
     return dtype
 
+
 def _load_python_module(path):
     """Import the Python module a target generated at ``path``."""
     name = "_docc_module_" + os.path.splitext(os.path.basename(path))[0]
