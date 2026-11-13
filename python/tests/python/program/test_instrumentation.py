@@ -1,4 +1,5 @@
 import os
+import signal
 import pytest
 import numpy as np
 import tempfile
@@ -279,3 +280,69 @@ def test_instrumentation_mode_reports_the_selected_mode(mode, expected):
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == expected
+
+
+_REPORT_READINESS = """
+import warnings
+
+with warnings.catch_warnings(record=True) as caught:
+    warnings.simplefilter("always")
+    import docc.python
+
+from docc.benchmarks.rtl import (
+    InstrumentationNotReady,
+    ensure_instrumentation_ready,
+    instrumentation_is_ready,
+)
+
+print("ready:", instrumentation_is_ready())
+print("warned:", any("not ready" in str(w.message) for w in caught))
+try:
+    ensure_instrumentation_ready()
+except InstrumentationNotReady as exc:
+    print("raised:", exc)
+"""
+
+
+@_requires_linux
+@pytest.mark.parametrize(
+    "variable, value, reason",
+    [
+        ("DAISY_PAPI_PATH", "/nonexistent/libpapi.so", "Failed to load"),
+        (
+            "__DAISY_INSTRUMENTATION_EVENTS",
+            "NOT_AN_EVENT",
+            "PAPI event 'NOT_AN_EVENT' not found",
+        ),
+    ],
+)
+def test_unready_rtl_raises_instead_of_exiting(variable, value, reason):
+    assert _find_rtl_lib() is not None
+    env = os.environ.copy()
+    env["__DAISY_PAPI_VERSION"] = "0x07020000"
+    env[variable] = value
+
+    result = _run_python(_REPORT_READINESS, env)
+
+    assert result.returncode == 0, result.stderr
+    lines = result.stdout.splitlines()
+    assert lines[0] == "ready: False"
+    assert lines[1] == "warned: True"
+    assert lines[2].startswith("raised: Instrumentation runtime not ready")
+    assert reason in lines[2]
+
+
+@_requires_linux
+def test_instrumented_code_aborts_when_rtl_not_ready():
+    assert _find_rtl_lib() is not None
+    env = os.environ.copy()
+    env["DOCC_CI"] = "regions"
+    env["__DAISY_PAPI_VERSION"] = "0x07020000"
+    env["DAISY_PAPI_PATH"] = "/nonexistent/libpapi.so"
+
+    result = _run_python(_TWO_SDFGS, env)
+
+    assert result.returncode == -signal.SIGABRT, result.stderr
+    assert "[daisy-rtl] Instrumentation runtime not ready: Failed to load" in (
+        result.stderr
+    )

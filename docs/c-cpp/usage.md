@@ -131,6 +131,8 @@ Runtime settings for instrumented programs:
 | `__DAISY_CAPTURE_BASE_DIR`              | Output directory of `-docc-capture-args`, default `arg_captures`                    |
 | `__DAISY_CAPTURE_STRATEGY_DEFAULT`      | Which executions to capture: `once` (default), `all`, or `never`                    |
 
+If the PAPI library cannot be loaded, `__DAISY_PAPI_VERSION` is unset or does not match it, or a listed event does not exist, the instrumented program stops at its first measured region with `[daisy-rtl] Instrumentation runtime not ready: <reason>` (SIGABRT, exit code 134).
+
 ## Environment variables
 
 | Variable          | Description                                                                         |
