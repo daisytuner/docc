@@ -193,7 +193,7 @@ void Lifting::collect_globals(llvm::Function& function, llvm::Value* V, std::uno
 void Lifting::visit_arguments() {
     for (auto& llvm_arg : this->function_.args()) {
         std::string arg = utils::get_name(&llvm_arg);
-        auto arg_type = utils::get_type(
+        auto arg_type = utils::get_call_param_type(
             this->builder_,
             this->anonymous_types_mapping_,
             this->DL_,

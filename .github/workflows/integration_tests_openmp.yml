@@ -15,7 +15,7 @@ jobs:
       group: dahlia
       labels: openmp
     container:
-      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04:latest-amd64
+      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04-host:latest-amd64
 
     steps:
       - uses: actions/checkout@v7
@@ -62,6 +62,70 @@ jobs:
 
           # Plugin
           # LD_LIBRARY_PATH=../../build/llvm/integration/tests/plugins/simple:$LD_LIBRARY_PATH pytest -v -s plugin_test.py
+
+          # Polybench
+          pytest -n auto -v -rx polybench_none_test.py
+          pytest -n auto -v -rx polybench_sequential_test.py
+          pytest -n auto -v -rx polybench_openmp_test.py
+
+          # Rodinia
+          pytest -v -rx rodinia_none_test.py
+          pytest -v -rx rodinia_sequential_test.py
+          pytest -v -rx rodinia_openmp_test.py
+
+      - name: Integration tests - Apps (nightly only)
+        if: github.event_name == 'schedule'
+        run: |
+          export LLVM_SYMBOLIZER_PATH=$(which llvm-symbolizer-21)
+
+          cd llvm/integration
+
+          # Apps
+          pytest -v -rx apps_none_test.py
+          pytest -v -rx apps_sequential_test.py
+          pytest -v -rx apps_openmp_test.py
+
+  integration-test-openmp-arm64:
+    runs-on:
+      group: aster
+    container:
+      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04-host:latest-arm64
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          lfs: true
+
+      - name: Build
+        run: |
+          mkdir build
+          cd build
+          cmake -G Ninja \
+             -DCMAKE_C_COMPILER=clang-21 \
+             -DCMAKE_CXX_COMPILER=clang++-21 \
+             -DCMAKE_BUILD_TYPE=Debug \
+             -DLLVM_BUILD_FRONTEND=ON \
+             -DLLVM_BUILD_TESTS=ON \
+             -DSDFG_BUILD_TESTS=OFF \
+             -DINSTALL_GTEST=OFF \
+             -DBUILD_TESTS:BOOL=OFF \
+             -DBUILD_BENCHMARKS:BOOL=OFF \
+             -DBUILD_BENCHMARKS_GOOGLE:BOOL=OFF \
+             ..
+          ninja -j$(nproc)
+          cpack -G DEB
+
+          apt-get install -y ./docc*.deb
+          apt-get install -y libhdf5-dev
+
+      - name: Integration tests - OpenMP
+        run: |
+          export LLVM_SYMBOLIZER_PATH=$(which llvm-symbolizer-21)
+
+          pip install pytest pytest-xdist --break-system-packages
+
+          cd llvm/integration
 
           # Polybench
           pytest -n auto -v -rx polybench_none_test.py

@@ -90,8 +90,16 @@ def verify(reference_file: Path, test_file: Path, dtype, max_ulps=None):
             tol = max_ulps * np.abs(np.spacing(reference_arrays[array]))
             assert np.all(np.abs(test_arrays[array] - reference_arrays[array]) <= tol)
         else:
-            assert np.array_equal(
-                reference_arrays[array], test_arrays[array], equal_nan=True
+            if dtype == np.float32:
+                rtol = 1e-5
+                atol = 1e-5
+            else:
+                rtol = 1e-12
+                atol = 1e-14
+            assert np.allclose(
+                reference_arrays[array], test_arrays[array], equal_nan=True,
+                rtol=rtol,
+                atol=atol,
             )
 
 

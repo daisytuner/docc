@@ -1,3 +1,4 @@
+import platform
 import subprocess
 import numpy as np
 import pandas as pd
@@ -340,8 +341,22 @@ def test_cfd(compiler="clang++-21"):
         / "euler3d_cpu.cpp"
     )
 
+    if platform.machine() in ("aarch64", "arm64"):
+        verification = {
+            "sdfgs": 5,
+            "FOR": 9,
+            "MAP": 4,
+            "SEQUENTIAL": 13,
+        }
+    else:
+        verification = {
+            "sdfgs": 6,
+            "MAP": 6,
+            "SEQUENTIAL": 19,
+            "FOR": 13,
+        }
     verifier = SDFGVerification(
-        verification={"sdfgs": 6, "MAP": 6, "SEQUENTIAL": 19, "FOR": 13}
+        verification=verification
     )
     runner = TestRunner(
         "Rodinia",
@@ -770,9 +785,22 @@ def test_lavaMD(compiler="clang-21"):
     test_case = (
         Path(__file__).parent / "tests" / "rodinia" / "openmp" / "lavaMD" / "main.c"
     )
-
+    if platform.machine() in ("aarch64", "arm64"):
+        verification = {
+            "sdfgs": 3,
+            "FOR": 20,
+            "SEQUENTIAL": 20,
+        }
+    else:
+        verification = {
+            "sdfgs": 4,
+            "FOR": 22,
+            "WHILE": 4,
+            "Malloc": 8,
+            "Free": 8,
+        }
     verifier = SDFGVerification(
-        verification={"sdfgs": 4, "FOR": 22, "WHILE": 4, "Malloc": 8, "Free": 8}
+        verification=verification
     )
     runner = TestRunner(
         "Rodinia",

@@ -201,7 +201,7 @@ sdfg::control_flow::State& FunctionLifting::visit_call(
     for (auto& op : instruction->args()) {
         std::string conn = "_arg" + std::to_string(i);
 
-        auto op_type = utils::get_type(
+        auto op_type = utils::get_call_param_type(
             this->builder_,
             this->anonymous_types_mapping_,
             this->DL_,
@@ -326,7 +326,7 @@ sdfg::control_flow::State& FunctionLifting::visit_invoke(
     for (auto& op : instruction->args()) {
         std::string conn = "_arg" + std::to_string(i);
 
-        auto op_type = utils::get_type(
+        auto op_type = utils::get_call_param_type(
             this->builder_,
             this->anonymous_types_mapping_,
             this->DL_,
