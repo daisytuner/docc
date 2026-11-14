@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import pytest
 
 from tests import check
 
@@ -203,14 +204,15 @@ def test_pow_tensor_tensor(target: str) -> None:
     )
 
 
-def test_pow_tensor_scalar(target: str) -> None:
+@pytest.mark.parametrize("exponent", [2, 3, -2, 2.5])
+def test_pow_tensor_scalar(target: str, exponent: float) -> None:
     class PointwiseCMathPowScalarNet(nn.Module):
         def forward(self, input: torch.Tensor, other: float) -> torch.Tensor:
             return torch.pow(input, other)
 
     check(
         PointwiseCMathPowScalarNet(),
-        *(torch.abs(torch.randn(4)), 2.5),
+        *(torch.tensor([-2.0, -0.5, 0.0, 0.5, 2.0]), exponent),
         target=target,
         equal_nan=True
     )

@@ -71,7 +71,7 @@ All arrays of a call must be either NumPy or CuPy arrays. If a function cannot r
 | `symbolic_shapes`       | `True`              | Compile for arbitrary array sizes. With `False`, the sizes of the first call are compiled in.                     |
 | `default_float`         | target default, else `"float64"` | Python floating-point literals and inferred scalar expressions: `"float32"` or `"float64"`                      |
 | `default_int`           | target default, else `"int64"` | Python integer literals: `"int32"` or `"int64"`; out-of-range literals are rejected                                |
-| `approximate_math`      | `False`             | Use fast, approximate math functions on GPUs (for example `__expf`)                                               |
+| `approximate_math`      | `False`             | Use fast, approximate math functions on GPUs (for example `__expf`); `pow` retains its negative-base domain via `powf` |
 | `fp_contract`           | `True`              | Fuse multiplications and additions into fused multiply-adds, like `-ffp-contract=fast`                            |
 | `contraction_precision` | target default      | Precision of float matrix multiplications: `native`, `int2` … `int8` (quantized), `ozaki`, `ozaki1[:s]`, `ozaki2[:L]` (emulated on Int8 units) |
 | `einsum`                | —                   | Detect loops that implement tensor contractions and optimize them as such                                         |
