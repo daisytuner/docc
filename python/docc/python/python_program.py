@@ -215,12 +215,12 @@ class PythonProgram(DoccProgram):
         pass_options = sorted(self.options.pass_options.items())
         mem_cache_key = (
             f"{signature}|{self.options.capture_args}|{self.options.instrumentation_mode}|"
-            f"{self.options.remote_tuning}|{self.options.fp_contract}|{self.options.contraction_precision}|{self.options.rocm_async_alloc}|{pass_options}"
+            f"{self.options.remote_tuning}|{self.options.fp_contract}|{self.options.contraction_precision}|{self.options.rocm_async_alloc}|{self.options.default_float}|{self.options.default_int}|{pass_options}"
         )
 
         if output_folder is None:
             source_path = inspect.getsourcefile(self.func)
-            hash_input = f"{source_path}|{self.name}|{self.options.target}|{self.options.category}|{self.options.capture_args}|{self.options.instrumentation_mode}|{self.options.remote_tuning}|{self.options.approximate_math}|{self.options.fp_contract}|{self.options.contraction_precision}|{self.options.rocm_async_alloc}|{pass_options}|{signature}".encode(
+            hash_input = f"{source_path}|{self.name}|{self.options.target}|{self.options.category}|{self.options.capture_args}|{self.options.instrumentation_mode}|{self.options.remote_tuning}|{self.options.approximate_math}|{self.options.fp_contract}|{self.options.contraction_precision}|{self.options.rocm_async_alloc}|{self.options.default_float}|{self.options.default_int}|{pass_options}|{signature}".encode(
                 "utf-8"
             )
             stable_id = hashlib.sha256(hash_input).hexdigest()[:16]
@@ -732,6 +732,8 @@ class PythonProgram(DoccProgram):
             infer_return_type=infer_return_type,
             globals_dict=combined_globals,
             structure_member_info=structure_member_info,
+            default_float=self.options.default_float,
+            default_int=self.options.default_int,
         )
         for node in func_def.body:
             parser.visit(node)

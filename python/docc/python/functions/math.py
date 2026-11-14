@@ -1,6 +1,4 @@
 from docc.sdfg import (
-    Scalar,
-    PrimitiveType,
     CMathFunction,
 )
 
@@ -64,8 +62,8 @@ class MathHandler:
     def container_table(self):
         return self._ev.container_table
 
-    def _add_read(self, block, expr_str, debug_info=None):
-        return self._ev._add_read(block, expr_str, debug_info)
+    def _add_read(self, block, expr_str, debug_info=None, literal_type=None):
+        return self._ev._add_read(block, expr_str, debug_info, literal_type)
 
     def visit(self, node):
         return self._ev.visit(node)
@@ -81,8 +79,8 @@ class MathHandler:
 
         args = [self.visit(arg) for arg in node.args]
         # Result precision follows the first concrete operand; bare literals
-        # keep the default double (see TypeSystem for the shared rules).
-        dtype = Scalar(PrimitiveType.Double)
+        # keep the configured default (see TypeSystem for the shared rules).
+        dtype = self._ev.type_system.default_float
         for arg in args:
             if not self._ev.type_system.is_weak_literal(arg):
                 dtype = self._ev.type_system.element_type(arg)
@@ -100,7 +98,7 @@ class MathHandler:
         )
 
         for i, arg in enumerate(args):
-            t_arg, arg_sub = self._add_read(block, arg)
+            t_arg, arg_sub = self._add_read(block, arg, literal_type=dtype)
             self.builder.add_memlet(block, t_arg, "void", t_task, f"_in{i+1}", arg_sub)
 
         self.builder.add_memlet(block, t_task, "_out", t_out, "void", "")

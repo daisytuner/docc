@@ -69,6 +69,8 @@ All arrays of a call must be either NumPy or CuPy arrays. If a function cannot r
 | `category`              | `"server"`          | Hardware class: `edge`, `desktop`, `server`                                                                       |
 | `remote_tuning`         | `False`             | Query the Daisytuner optimization database for known-good optimizations (transfer tuning)                         |
 | `symbolic_shapes`       | `True`              | Compile for arbitrary array sizes. With `False`, the sizes of the first call are compiled in.                     |
+| `default_float`         | target default, else `"float64"` | Python floating-point literals and inferred scalar expressions: `"float32"` or `"float64"`                      |
+| `default_int`           | target default, else `"int64"` | Python integer literals: `"int32"` or `"int64"`; out-of-range literals are rejected                                |
 | `approximate_math`      | `False`             | Use fast, approximate math functions on GPUs (for example `__expf`)                                               |
 | `fp_contract`           | `True`              | Fuse multiplications and additions into fused multiply-adds, like `-ffp-contract=fast`                            |
 | `contraction_precision` | target default      | Precision of float matrix multiplications: `native`, `int2` … `int8` (quantized), `ozaki`, `ozaki1[:s]`, `ozaki2[:L]` (emulated on Int8 units) |
@@ -81,6 +83,24 @@ All arrays of a call must be either NumPy or CuPy arrays. If a function cannot r
 | `pass_options`          | `{}`                | Options of individual compiler passes, see below                                                                  |
 
 Options for debugging are described in [Debug Options](./debugging.md). Unknown options are ignored with a warning.
+
+### Python scalar defaults
+
+Targets may declare defaults for untyped Python numbers. Explicit `default_float` and `default_int` options take
+precedence; CPU targets use float64/int64 unless overridden:
+
+```python
+@native(default_float="float32")
+def total(a):
+    s = 0.0  # float32 accumulator, including in inlined helper functions
+    for i in range(a.shape[0]):
+        s = s + a[i]
+    return s
+```
+
+These options do not change argument types, explicit casts or annotations, NumPy's array-creation defaults, or
+compiler-generated loop indices and shape arguments. A weak literal combined with a typed floating-point operand
+still adopts that operand's precision, so `float32_array + 1.0` stays float32 even with `default_float="float64"`.
 
 ### Pass options
 

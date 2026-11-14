@@ -18,6 +18,7 @@ from docc.sdfg import (
     DoccMetrics,
     registered_options,
     target_default_contraction_precision,
+    target_default_scalar_types,
 )
 from docc.sdfg._sdfg import (
     _enable_statistics,
@@ -118,6 +119,12 @@ class DoccOptions:
     # False.
     symbolic_shapes: Optional[bool] = None
 
+    # Python frontend: untyped numeric literals and inferred scalar expressions.
+    # Unset takes the target's default, otherwise float64/int64. Explicit dtypes,
+    # argument types and compiler-generated index types are unaffected.
+    default_float: Optional[str] = None
+    default_int: Optional[str] = None
+
     # Overrides for registered options ({full_key: value}); see
     # registered_options(). Forwarded to the SDFG in sdfg_pipe.
     pass_options: Optional[Dict[str, Any]] = None
@@ -170,6 +177,19 @@ class DoccOptions:
             self.device_residency = self.target in ("cuda", "rocm")
         if self.symbolic_shapes is None:
             self.symbolic_shapes = True
+        default_float, default_int = target_default_scalar_types(self.target)
+        if self.default_float is None:
+            self.default_float = default_float
+        if self.default_int is None:
+            self.default_int = default_int
+        if self.default_float not in ("float32", "float64"):
+            raise ValueError(
+                f"Invalid default_float {self.default_float!r}: expected float32 or float64"
+            )
+        if self.default_int not in ("int32", "int64"):
+            raise ValueError(
+                f"Invalid default_int {self.default_int!r}: expected int32 or int64"
+            )
         if self.fp_contract is None:
             self.fp_contract = True
         if self.contraction_precision is None:

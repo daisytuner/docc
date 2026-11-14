@@ -23,6 +23,7 @@ from docc.python.type_system import (
     sdfg_type_from_type,
     element_type_from_sdfg_type,
     FLOAT_PRIMITIVE_TYPES,
+    INT_PRIMITIVE_TYPES,
     TypeSystem,
 )
 from docc.python.functions.numpy import NumPyHandler
@@ -54,6 +55,8 @@ class ASTParser(ast.NodeVisitor):
         unique_counter_ref=None,
         structure_member_info=None,
         memory_handler=None,
+        default_float="float64",
+        default_int="int64",
     ):
         self.builder = builder
 
@@ -62,7 +65,9 @@ class ASTParser(ast.NodeVisitor):
         self.container_table = container_table
 
         # Single authority for scalar type inference, shared with all handlers.
-        self.type_system = TypeSystem(self.container_table, self.tensor_table)
+        self.type_system = TypeSystem(
+            self.container_table, self.tensor_table, default_float, default_int
+        )
 
         # Debug info
         self.filename = filename
@@ -104,6 +109,27 @@ class ASTParser(ast.NodeVisitor):
         if isinstance(node.value, bool):
             return "true" if node.value else "false"
         return str(node.value)
+
+    def _visit_scalar(self, node):
+        value = self.visit(node)
+        is_shape = (
+            isinstance(node, ast.Subscript)
+            and isinstance(node.value, ast.Attribute)
+            and node.value.attr == "shape"
+        ) or (isinstance(node, ast.Attribute) and node.attr == "size")
+        if (
+            is_shape
+            and value not in self.container_table
+            and self.type_system.default_int.primitive_type != PrimitiveType.Int64
+        ):
+            # Specialized shape constants must not acquire the literal integer width.
+            name = self.builder.find_new_name("_shape_")
+            dtype = Scalar(PrimitiveType.Int64)
+            self.builder.add_container(name, dtype, False)
+            self.container_table[name] = dtype
+            self.builder.add_assignment(name, value)
+            return name
+        return value
 
     def visit_Name(self, node):
         name = node.id
@@ -218,7 +244,7 @@ class ASTParser(ast.NodeVisitor):
             return f"-{node.operand.value}"
 
         op = self.visit(node.op)
-        operand = self.visit(node.operand)
+        operand = self._visit_scalar(node.operand)
 
         if operand in self.tensor_table and op == "-":
             return self.numpy_visitor.handle_array_negate(operand)
@@ -244,7 +270,7 @@ class ASTParser(ast.NodeVisitor):
             self.builder.add_memlet(block, t_const, "void", t_task, "_in2", "")
             self.builder.add_memlet(block, t_task, "_out", t_dst, "void", "")
         elif op == "-":
-            if dtype.primitive_type == PrimitiveType.Int64:
+            if dtype.primitive_type in INT_PRIMITIVE_TYPES:
                 t_const = self.builder.add_constant(block, "0", dtype)
                 t_task = self.builder.add_tasklet(
                     block, TaskletCode.int_sub, ["_in1", "_in2"], ["_out"]
@@ -259,9 +285,7 @@ class ASTParser(ast.NodeVisitor):
                 self.builder.add_memlet(block, t_src, "void", t_task, "_in", src_sub)
                 self.builder.add_memlet(block, t_task, "_out", t_dst, "void", "")
         elif op == "~":
-            t_const = self.builder.add_constant(
-                block, "-1", Scalar(PrimitiveType.Int64)
-            )
+            t_const = self.builder.add_constant(block, "-1", dtype)
             t_task = self.builder.add_tasklet(
                 block, TaskletCode.int_xor, ["_in1", "_in2"], ["_out"]
             )
@@ -281,9 +305,9 @@ class ASTParser(ast.NodeVisitor):
         if isinstance(node.op, ast.MatMult):
             return self.numpy_visitor.handle_numpy_matmul_op(node.left, node.right)
 
-        left = self.visit(node.left)
+        left = self._visit_scalar(node.left)
         op = self.visit(node.op)
-        right = self.visit(node.right)
+        right = self._visit_scalar(node.right)
 
         left_is_array = left in self.tensor_table
         right_is_array = right in self.tensor_table
@@ -348,8 +372,8 @@ class ASTParser(ast.NodeVisitor):
 
         if op == "**":
             block = self.builder.add_block()
-            t_left, left_sub = self._add_read(block, real_left)
-            t_right, right_sub = self._add_read(block, real_right)
+            t_left, left_sub = self._add_read(block, real_left, literal_type=dtype)
+            t_right, right_sub = self._add_read(block, real_right, literal_type=dtype)
             t_out = self.builder.add_access(block, tmp_name)
 
             t_task = self.builder.add_cmath(
@@ -362,11 +386,11 @@ class ASTParser(ast.NodeVisitor):
             return tmp_name
         elif op == "%":
             block = self.builder.add_block()
-            t_left, left_sub = self._add_read(block, real_left)
-            t_right, right_sub = self._add_read(block, real_right)
+            t_left, left_sub = self._add_read(block, real_left, literal_type=dtype)
+            t_right, right_sub = self._add_read(block, real_right, literal_type=dtype)
             t_out = self.builder.add_access(block, tmp_name)
 
-            if dtype.primitive_type == PrimitiveType.Int64:
+            if dtype.primitive_type in INT_PRIMITIVE_TYPES:
                 t_rem1 = self.builder.add_tasklet(
                     block, TaskletCode.int_srem, ["_in1", "_in2"], ["_out"]
                 )
@@ -442,7 +466,7 @@ class ASTParser(ast.NodeVisitor):
                 return tmp_name
 
         tasklet_code = None
-        if dtype.primitive_type == PrimitiveType.Int64:
+        if dtype.primitive_type in INT_PRIMITIVE_TYPES:
             if op == "+":
                 tasklet_code = TaskletCode.int_add
             elif op == "-":
@@ -478,8 +502,8 @@ class ASTParser(ast.NodeVisitor):
                 raise NotImplementedError(f"Operation {op} not supported for floats")
 
         block = self.builder.add_block()
-        t_left, left_sub = self._add_read(block, real_left)
-        t_right, right_sub = self._add_read(block, real_right)
+        t_left, left_sub = self._add_read(block, real_left, literal_type=dtype)
+        t_right, right_sub = self._add_read(block, real_right, literal_type=dtype)
         t_out = self.builder.add_access(block, tmp_name)
 
         t_task = self.builder.add_tasklet(
@@ -551,7 +575,7 @@ class ASTParser(ast.NodeVisitor):
 
             if val:
                 tmp_name = self.builder.find_new_name()
-                dtype = Scalar(PrimitiveType.Double)
+                dtype = self.type_system.default_float
                 self.builder.add_container(tmp_name, dtype, False)
                 self.container_table[tmp_name] = dtype
                 self._add_assign_constant(tmp_name, val, dtype)
@@ -571,7 +595,7 @@ class ASTParser(ast.NodeVisitor):
             val = const_map.get(node.attr, "")
             if val:
                 tmp_name = self.builder.find_new_name()
-                dtype = Scalar(PrimitiveType.Double)
+                dtype = self.type_system.default_float
                 self.builder.add_container(tmp_name, dtype, False)
                 self.container_table[tmp_name] = dtype
                 self._add_assign_constant(tmp_name, val, dtype)
@@ -1135,7 +1159,7 @@ class ASTParser(ast.NodeVisitor):
             raise NotImplementedError("Only assignment to variables supported")
 
         target_name = target.id
-        rhs_tmp = self.visit(node.value)
+        rhs_tmp = self._visit_scalar(node.value)
         debug_info = get_debug_info(node, self.filename, self.function_name)
 
         if not self.builder.exists(target_name):
@@ -1147,6 +1171,16 @@ class ASTParser(ast.NodeVisitor):
             elif rhs_tmp not in self.container_table and _is_int_literal(rhs_tmp):
                 # e.g. `N = A.shape[0]` with a shape specialized to a literal
                 dtype = self.type_system.constant_type(int(rhs_tmp))
+                self.builder.add_container(target_name, dtype, False)
+                self.container_table[target_name] = dtype
+            elif rhs_tmp not in self.container_table and (
+                isinstance(node.value, ast.UnaryOp)
+                or (
+                    isinstance(node.value, ast.Name)
+                    and isinstance(self.globals_dict.get(node.value.id), float)
+                )
+            ):
+                dtype = self.type_system.constant_type(float(rhs_tmp))
                 self.builder.add_container(target_name, dtype, False)
                 self.container_table[target_name] = dtype
             else:
@@ -1414,18 +1448,19 @@ class ASTParser(ast.NodeVisitor):
         else:
             values = [node.value]
 
-        parsed_values = [self.visit(v) for v in values]
+        parsed_values = [self._visit_scalar(v) for v in values]
         debug_info = get_debug_info(node, self.filename, self.function_name)
 
         if self.infer_return_type:
             for i, res in enumerate(parsed_values):
                 ret_name = f"_docc_ret_{i}"
                 if not self.builder.exists(ret_name):
-                    dtype = Scalar(PrimitiveType.Double)
                     if res in self.container_table:
                         dtype = self.container_table[res]
                     elif isinstance(values[i], ast.Constant):
                         dtype = self.type_system.constant_type(values[i].value)
+                    else:
+                        dtype = self.type_system.literal_string_type(res)
 
                     # Wrap Scalar in Pointer. Keep Arrays/Pointers as is.
                     arg_type = dtype
@@ -1663,7 +1698,7 @@ class ASTParser(ast.NodeVisitor):
                 substitutions[arg_def.arg] = arg
                 arg_vars.append(None)
             else:
-                arg_vars.append(self.visit(arg))
+                arg_vars.append(self._visit_scalar(arg))
 
         suffix = f"_{func_obj.__name__}_{self._get_unique_id()}"
         res_name = f"_res{suffix}"
@@ -1759,14 +1794,10 @@ class ASTParser(ast.NodeVisitor):
 
         # Inject closure constants as assignments
         for name, val in closure_constants.items():
-            if isinstance(val, int):
-                self.container_table[name] = Scalar(PrimitiveType.Int64)
-                self.builder.add_container(name, Scalar(PrimitiveType.Int64), False)
-                val_node = ast.Constant(value=val)
-            else:
-                self.container_table[name] = Scalar(PrimitiveType.Double)
-                self.builder.add_container(name, Scalar(PrimitiveType.Double), False)
-                val_node = ast.Constant(value=val)
+            dtype = self.type_system.constant_type(val)
+            self.container_table[name] = dtype
+            self.builder.add_container(name, dtype, False)
+            val_node = ast.Constant(value=val)
             assign = ast.Assign(
                 targets=[ast.Name(id=name, ctx=ast.Store())], value=val_node
             )
@@ -1785,18 +1816,16 @@ class ASTParser(ast.NodeVisitor):
                 )
                 val_node = ast.Name(id=arg_val, ctx=ast.Load())
             elif self._is_int(arg_val):
-                self.container_table[param_name] = Scalar(PrimitiveType.Int64)
-                self.builder.add_container(
-                    param_name, Scalar(PrimitiveType.Int64), False
-                )
+                dtype = self.type_system.constant_type(int(arg_val))
+                self.container_table[param_name] = dtype
+                self.builder.add_container(param_name, dtype, False)
                 val_node = ast.Constant(value=int(arg_val))
             else:
                 try:
                     val = float(arg_val)
-                    self.container_table[param_name] = Scalar(PrimitiveType.Double)
-                    self.builder.add_container(
-                        param_name, Scalar(PrimitiveType.Double), False
-                    )
+                    dtype = self.type_system.constant_type(val)
+                    self.container_table[param_name] = dtype
+                    self.builder.add_container(param_name, dtype, False)
                     val_node = ast.Constant(value=val)
                 except ValueError:
                     val_node = ast.Name(id=arg_val, ctx=ast.Load())
@@ -1818,6 +1847,8 @@ class ASTParser(ast.NodeVisitor):
             unique_counter_ref=self._unique_counter_ref,
             structure_member_info=self.structure_member_info,
             memory_handler=self.memory_handler,
+            default_float=self.type_system.default_float,
+            default_int=self.type_system.default_int,
         )
 
         for stmt in final_body:
@@ -3650,10 +3681,15 @@ class ASTParser(ast.NodeVisitor):
     def _is_int(self, operand):
         return self.type_system.is_int(operand)
 
-    def _add_read(self, block, expr_str, debug_info=None):
+    def _add_read(self, block, expr_str, debug_info=None, literal_type=None):
+        cache_key = (
+            block,
+            expr_str,
+            literal_type.primitive_type if literal_type is not None else None,
+        )
         try:
-            if (block, expr_str) in self._access_cache:
-                return self._access_cache[(block, expr_str)]
+            if cache_key in self._access_cache:
+                return self._access_cache[cache_key]
         except TypeError:
             pass
 
@@ -3665,7 +3701,7 @@ class ASTParser(ast.NodeVisitor):
             subset = expr_str[expr_str.find("(") + 1 : -1]
             access = self.builder.add_access(block, name, debug_info)
             try:
-                self._access_cache[(block, expr_str)] = (access, subset)
+                self._access_cache[cache_key] = (access, subset)
             except TypeError:
                 pass
             return access, subset
@@ -3683,16 +3719,16 @@ class ASTParser(ast.NodeVisitor):
                     else:
                         subset = "0"
             try:
-                self._access_cache[(block, expr_str)] = (access, subset)
+                self._access_cache[cache_key] = (access, subset)
             except TypeError:
                 pass
             return access, subset
 
-        dtype = self.type_system.literal_string_type(expr_str)
+        dtype = literal_type or self.type_system.literal_string_type(expr_str)
 
         const_node = self.builder.add_constant(block, expr_str, dtype, debug_info)
         try:
-            self._access_cache[(block, expr_str)] = (const_node, "")
+            self._access_cache[cache_key] = (const_node, "")
         except TypeError:
             pass
         return const_node, ""

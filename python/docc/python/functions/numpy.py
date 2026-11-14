@@ -3594,8 +3594,17 @@ class NumPyHandler:
         Returns:
             Name of the casted scalar (or original if no cast needed)
         """
-        current_type = self._ev._element_type(name)
-        if current_type.primitive_type == target_type.primitive_type:
+        ts = self._ev.type_system
+        literal_type = (
+            ts.literal_string_type(name, use_defaults=False)
+            if ts.is_weak_literal(name)
+            else None
+        )
+        current_type = literal_type or self._ev._element_type(name)
+        if (
+            literal_type is None
+            and current_type.primitive_type == target_type.primitive_type
+        ):
             return name
 
         cast_name = f"_cast_{self._get_unique_id()}"
@@ -3604,7 +3613,11 @@ class NumPyHandler:
         self.tensor_table[cast_name] = Tensor(target_type, [])
 
         block = self.builder.add_block()
-        t_src, src_sub = self._add_read(block, name)
+        if literal_type is not None:
+            t_src = self.builder.add_constant(block, name, literal_type)
+            src_sub = ""
+        else:
+            t_src, src_sub = self._add_read(block, name)
         t_dst = self.builder.add_access(block, cast_name)
         t_task = self.builder.add_tasklet(block, TaskletCode.assign, ["_in"], ["_out"])
         self.builder.add_memlet(block, t_src, "void", t_task, "_in", src_sub)
