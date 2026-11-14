@@ -157,11 +157,13 @@ std::vector<symbolic::Expression> EinsumIndexing::get_strides(
 
 std::pair<data_flow::AccessNode*, const data_flow::Subset&> EinsumCluster::get_input_for(size_t input_idx) {
     auto* input_src = dyn_cast<data_flow::AccessNode*>(input_nodes.at(inputs.at(input_idx)));
-    return {input_src, in_edges.at(input_idx)->subset()};
+    return {input_src, get_input_subset(input_idx)};
 }
 
 const data_flow::Subset& EinsumCluster::get_input_subset(size_t input_idx) const {
-    return in_edges.at(input_idx)->subset();
+    static const data_flow::Subset scalar_indices;
+    auto& edge = in_edges.at(input_idx);
+    return edge ? edge->subset() : scalar_indices;
 }
 
 const EinsumIndexing& EinsumCluster::get_output_indexing() const {
@@ -446,10 +448,11 @@ bool EinsumDetection::try_extend(BlockState& state, EinsumCluster& cluster) {
         auto* access = dynamic_cast<data_flow::AccessNode*>(node);
 
         data_flow::Tasklet* mul = nullptr;
-        if (access && !is_constant(access) && dfg.in_degree(*access) > 0) {
+        if (access && !is_constant(access) && dfg.in_degree(*access) == 1 && dfg.out_degree(*access) == 1 &&
+            !state.consumed_nodes.contains(access)) {
             for (auto& aedge : dfg.in_edges(*access)) {
                 auto* tasklet = dynamic_cast<data_flow::Tasklet*>(&aedge.src());
-                if (tasklet && tasklet->code() == data_flow::TaskletCode::fp_mul) {
+                if (tasklet && tasklet->code() == data_flow::TaskletCode::fp_mul && dfg.out_degree(*tasklet) == 1) {
                     mul = tasklet;
                     break;
                 }

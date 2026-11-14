@@ -284,9 +284,18 @@ public:
         auto edge = [&](int idx) {
             return dataflow.in_edge_for_connector(node, node.input(idx));
         };
-        a_type_ = edge(GEMMNode::A_INPUT_IDX)->base_type().clone();
-        b_type_ = edge(GEMMNode::B_INPUT_IDX)->base_type().clone();
-        c_type_ = edge(GEMMNode::C_INPUT_IDX)->base_type().clone();
+        auto linear_type = [&](int idx) -> std::unique_ptr<types::IType> {
+            const auto& type = edge(idx)->base_type();
+            if (auto* tensor = dynamic_cast<const types::Tensor*>(&type)) {
+                // BLAS indices are linear offsets, not coordinates in the source tensor.
+                return std::make_unique<
+                    types::Pointer>(type.storage_type(), type.alignment(), type.initializer(), tensor->element_type());
+            }
+            return type.clone();
+        };
+        a_type_ = linear_type(GEMMNode::A_INPUT_IDX);
+        b_type_ = linear_type(GEMMNode::B_INPUT_IDX);
+        c_type_ = linear_type(GEMMNode::C_INPUT_IDX);
         alpha_one_ = edge(GEMMNode::ALPHA_INPUT_IDX)->is_src_constant(1.0);
         beta_zero_ = edge(GEMMNode::BETA_INPUT_IDX)->is_src_constant(0.0);
     }
