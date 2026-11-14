@@ -58,14 +58,14 @@ jobs:
           nvidia-smi
 
           # Basic tests
-          pytest -v -rx basic_test.py
-          pytest -v -rx rtl_test.py
+          pytest -v -n auto -rx basic_test.py
+          pytest -v -n auto -rx rtl_test.py
 
           # PolyBench
-          pytest -v -rx polybench_cuda_test.py
+          pytest -v -n auto -rx polybench_cuda_test.py
 
           # Rodinia
-          pytest -v -rx rodinia_cuda_test.py
+          pytest -v -n auto -rx rodinia_cuda_test.py
 
       - name: Integration tests - Apps (nightly only)
         if: github.event_name == 'schedule'
@@ -80,4 +80,4 @@ jobs:
           cd llvm/integration
 
           # Apps
-          pytest -v -rx apps_cuda_test.py
+          pytest -v -n auto -rx apps_cuda_test.py
