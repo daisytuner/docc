@@ -8,7 +8,11 @@ on:
     types: [opened, reopened, synchronize]
 
 jobs:
+  checks:
+    uses: ./.github/workflows/format_and_typecheck.yml
+
   sanitizer-macos-asan:
+    needs: checks
     runs-on:
       group: dahlia
       labels: macOS

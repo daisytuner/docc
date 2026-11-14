@@ -1,0 +1,88 @@
+name: Format and Type Checks
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+jobs:
+  formatting:
+    runs-on:
+      group: dahlia
+      labels: Linux
+    container:
+      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04-host:latest-amd64
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Mark GitHub Actions workdir as safe
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install formatters
+        run: pip install black==25.9.0
+
+      - name: C++ Formatting
+        shell: bash
+        run: |
+          shopt -s globstar
+          clang-format-21 -style=file --dry-run --Werror sdfg/include/**/*.h sdfg/src/**/*.cpp sdfg/tests/**/*.cpp
+          clang-format-21 -style=file --dry-run --Werror opt/include/**/*.h opt/src/**/*.cpp opt/tests/**/*.cpp
+          clang-format-21 -style=file --dry-run --Werror llvm/include/**/*.h llvm/src/**/*.cpp llvm/tests/**/*.cpp llvm/driver/**/*.cpp
+          clang-format-21 -style=file --dry-run --Werror python/bindings/**/*.h python/bindings/**/*.cpp
+
+      - name: Python Formatting
+        run: |
+          black --check python/docc/ python/tests/ pytorch/
+
+  typing:
+    runs-on:
+      group: dahlia
+      labels: Linux
+    container:
+      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04-host:latest-amd64
+      options: >-
+        --cap-add=PERFMON
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Create virtual environment
+        run: |
+          python -m venv .venv
+          echo "$PWD/.venv/bin" >> $GITHUB_PATH
+
+      - name: Mark GitHub Actions workdir as safe
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r pytorch/requirements.txt
+
+      - name: Build frontends
+        run: |
+          pip install --no-build-isolation \
+            -Ccmake.build-type=Debug \
+            -v -e python/
+          pip install --no-build-isolation \
+            -v -e pytorch/
+
+      - name: Check Typing
+        run: |
+          pip install pybind11-stubgen
+          ./scripts/generate-pybind-stubs.py
+          pyright -p pytorch/

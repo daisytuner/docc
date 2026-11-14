@@ -10,7 +10,11 @@ on:
     - cron: "0 4 * * *"
 
 jobs:
+  checks:
+    uses: ./.github/workflows/format_and_typecheck.yml
+
   cpp-tests-linux:
+    needs: checks
     runs-on:
       group: dahlia
       labels: RTX5060
@@ -27,13 +31,6 @@ jobs:
 
       - name: Mark GitHub Actions workdir as safe
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-
-      - name: Formatting
-        shell: bash
-        run: |
-          shopt -s globstar
-          clang-format-21 -style=file --dry-run --Werror sdfg/include/**/*.h sdfg/src/**/*.cpp sdfg/tests/**/*.cpp
-          clang-format-21 -style=file --dry-run --Werror opt/include/**/*.h opt/src/**/*.cpp opt/tests/**/*.cpp
 
       - name: Build
         run: |
@@ -140,6 +137,7 @@ jobs:
           ./rpc/tests/sdfgrpc_daisytuner_rpc_test
 
   inference-tests-linux:
+    needs: checks
     runs-on:
       group: dahlia
       labels: rocm
@@ -224,6 +222,7 @@ jobs:
   ##### FRONTENDS #####
 
   llvm-tests-linux:
+    needs: checks
     runs-on:
       group: dahlia
       labels: Linux
@@ -237,12 +236,6 @@ jobs:
 
       - name: Mark GitHub Actions workdir as safe
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-
-      - name: Formatting
-        shell: bash
-        run: |
-          shopt -s globstar
-          clang-format-21 -style=file --dry-run --Werror llvm/include/**/*.h llvm/src/**/*.cpp llvm/tests/**/*.cpp llvm/driver/**/*.cpp
 
       - name: Build
         run: |
@@ -304,6 +297,7 @@ jobs:
           pytest -v llvm_test_suite.py
 
   mlir-tests-linux:
+    needs: checks
     runs-on:
       group: dahlia
       labels: Linux
@@ -385,6 +379,7 @@ jobs:
       #     python fasterrcnn_resnet50.py
 
   python-tests-linux:
+    needs: checks
     runs-on:
       group: dahlia
       labels: Linux
@@ -421,13 +416,6 @@ jobs:
           pip install pybind11 coverage black==25.9.0 build scikit-build-core
           pip install pytest pytest-xdist pytest-cov
           pip install sympy numpy ml_dtypes scipy
-
-      - name: Formatting
-        shell: bash
-        run: |
-          shopt -s globstar
-          clang-format-21 -style=file --dry-run --Werror python/bindings/**/*.h python/bindings/**/*.cpp
-          black --check python/docc/ python/tests/
 
       - name: Build
         run: |
@@ -467,6 +455,7 @@ jobs:
           file: coverage.xml
 
   pytorch-tests-linux:
+    needs: checks
     runs-on:
       group: dahlia
       labels: Linux
@@ -502,10 +491,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r pytorch/requirements.txt
 
-      - name: Check Formatting
-        run: |
-          black --check pytorch/
-
       - name: Build frontends
         run: |
           pip install --no-build-isolation \
@@ -513,12 +498,6 @@ jobs:
             -v -e python/
           pip install --no-build-isolation \
             -v -e pytorch/
-
-      - name: Check Typing
-        run: |
-          pip install pybind11-stubgen
-          ./scripts/generate-pybind-stubs.py
-          pyright -p pytorch/
 
       - name: Unit Tests
         env:
@@ -542,6 +521,7 @@ jobs:
   ##### TARGETS #####
 
   cuda-tests-linux:
+    needs: checks
     runs-on:
       group: dahlia
       labels: RTX5060
@@ -632,6 +612,7 @@ jobs:
           .venv-pytorch/bin/pytest -v pytorch/tests --target=cuda
 
   rocm-tests-linux:
+    needs: checks
     runs-on:
       group: dahlia
       labels: rocm
@@ -729,6 +710,7 @@ jobs:
           .venv-pytorch/bin/pytest -v pytorch/tests --target=rocm
 
   tenstorrent-tests-linux:
+    needs: checks
     runs-on:
       group: dahlia
       labels: tenstorrent
@@ -795,6 +777,7 @@ jobs:
           pytest -v python/tests mlir/integration -m "tenstorrent"
 
   py-tests-linux-arm64:
+    needs: checks
     runs-on:
       group: aster
     container:

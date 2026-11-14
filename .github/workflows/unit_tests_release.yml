@@ -10,7 +10,11 @@ on:
     - cron: "0 4 * * *"
 
 jobs:
+  checks:
+    uses: ./.github/workflows/format_and_typecheck.yml
+
   release-linux:
+    needs: checks
     runs-on:
       group: dahlia
       labels: RTX5060
@@ -27,13 +31,6 @@ jobs:
 
       - name: Mark GitHub Actions workdir as safe
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-
-      - name: Formatting
-        shell: bash
-        run: |
-          shopt -s globstar
-          clang-format-21 -style=file --dry-run --Werror sdfg/include/**/*.h sdfg/src/**/*.cpp sdfg/tests/**/*.cpp
-          clang-format-21 -style=file --dry-run --Werror opt/include/**/*.h opt/src/**/*.cpp opt/tests/**/*.cpp
 
       - name: Build and test
         run: |
@@ -74,6 +71,7 @@ jobs:
           pytest -v -s rtl_tests.py
 
   release-macos:
+    needs: checks
     runs-on:
       group: dahlia
       labels: macOS
