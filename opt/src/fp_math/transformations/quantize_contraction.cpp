@@ -30,10 +30,11 @@ bool QuantizeContraction::can_be_applied(builder::StructuredSDFGBuilder&, analys
 
 void QuantizeContraction::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     const double q = static_cast<double>((int64_t{1} << (bits_ - 1)) - 1);
+    auto& oriented = rescaling_ == Rescaling::Direct ? row_vector_result(builder, node_) : node_;
     // Scales of B's columns then reduce along rows, and B quantizes row-major, as targets of direct rescaling need.
-    auto& node = rescaling_ == Rescaling::Direct && b_stored_transposed(node_)
-                     ? read_b_row_major(builder, node_).contraction
-                     : node_;
+    auto& node = rescaling_ == Rescaling::Direct && b_stored_transposed(oriented)
+                     ? read_b_row_major(builder, oriented).contraction
+                     : oriented;
     detail::expand_contraction(builder, node, [&](KernelBuilder& kb, detail::ContractionOperands& operands) {
         auto m = operands.m, n = operands.n, k = operands.k;
         // Each matrix of a batch gets scales of its own; every buffer holds one matrix after the other.
