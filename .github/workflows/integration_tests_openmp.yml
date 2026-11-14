@@ -1,20 +1,10 @@
 name: Integration Tests - OpenMP
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    types: [opened, reopened, synchronize]
-  schedule:
-    - cron: "0 5 * * *"
+  workflow_call:
 
 jobs:
-  checks:
-    uses: ./.github/workflows/format_and_typecheck.yml
-
   integration-test-openmp:
-    needs: checks
     runs-on:
       group: dahlia
       labels: openmp
@@ -90,7 +80,6 @@ jobs:
           pytest -v -rx apps_openmp_test.py
 
   integration-test-openmp-arm64:
-    needs: checks
     runs-on:
       group: aster
     container:

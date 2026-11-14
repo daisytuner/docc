@@ -1,20 +1,10 @@
 name: Unit Tests (macOS)
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    types: [opened, reopened, synchronize]
-  schedule:
-    - cron: "0 4 * * *"
+  workflow_call:
 
 jobs:
-  checks:
-    uses: ./.github/workflows/format_and_typecheck.yml
-
   primary-tests-macos:
-    needs: checks
     runs-on:
       group: dahlia
       labels: macOS

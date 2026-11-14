@@ -1,20 +1,10 @@
 name: Unit Tests - Release
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    types: [opened, reopened, synchronize]
-  schedule:
-    - cron: "0 4 * * *"
+  workflow_call:
 
 jobs:
-  checks:
-    uses: ./.github/workflows/format_and_typecheck.yml
-
   release-linux:
-    needs: checks
     runs-on:
       group: dahlia
       labels: RTX5060
@@ -71,7 +61,6 @@ jobs:
           pytest -v -s rtl_tests.py
 
   release-macos:
-    needs: checks
     runs-on:
       group: dahlia
       labels: macOS

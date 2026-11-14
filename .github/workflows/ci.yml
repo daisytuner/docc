@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, reopened, synchronize]
+  schedule:
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+
+jobs:
+  checks:
+    uses: ./.github/workflows/format_and_typecheck.yml
+
+  unit-tests-linux:
+    needs: checks
+    uses: ./.github/workflows/unit_tests_linux.yml
+    secrets: inherit
+
+  unit-tests-macos:
+    needs: checks
+    uses: ./.github/workflows/unit_tests_macos.yml
+    secrets: inherit
+
+  unit-tests-release:
+    needs: checks
+    uses: ./.github/workflows/unit_tests_release.yml
+    secrets: inherit
+
+  sanitizer-tests-linux:
+    needs: checks
+    uses: ./.github/workflows/sanitizer_tests_linux.yml
+    secrets: inherit
+
+  sanitizer-tests-macos:
+    needs: checks
+    uses: ./.github/workflows/sanitizer_tests_macos.yml
+    secrets: inherit
+
+  integration-tests-cuda:
+    needs: checks
+    uses: ./.github/workflows/integration_tests_cuda.yml
+    secrets: inherit
+
+  integration-tests-openmp:
+    needs: checks
+    uses: ./.github/workflows/integration_tests_openmp.yml
+    secrets: inherit

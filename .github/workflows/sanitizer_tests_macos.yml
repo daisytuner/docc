@@ -1,18 +1,10 @@
 name: Sanitizer Tests (macOS)
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    types: [opened, reopened, synchronize]
+  workflow_call:
 
 jobs:
-  checks:
-    uses: ./.github/workflows/format_and_typecheck.yml
-
   sanitizer-macos-asan:
-    needs: checks
     runs-on:
       group: dahlia
       labels: macOS

@@ -1,20 +1,10 @@
 name: Unit Tests (Linux)
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    types: [opened, reopened, synchronize]
-  schedule:
-    - cron: "0 4 * * *"
+  workflow_call:
 
 jobs:
-  checks:
-    uses: ./.github/workflows/format_and_typecheck.yml
-
   cpp-tests-linux:
-    needs: checks
     runs-on:
       group: dahlia
       labels: RTX5060
@@ -137,7 +127,6 @@ jobs:
           ./rpc/tests/sdfgrpc_daisytuner_rpc_test
 
   inference-tests-linux:
-    needs: checks
     runs-on:
       group: dahlia
       labels: rocm
@@ -222,7 +211,6 @@ jobs:
   ##### FRONTENDS #####
 
   llvm-tests-linux:
-    needs: checks
     runs-on:
       group: dahlia
       labels: Linux
@@ -297,7 +285,6 @@ jobs:
           pytest -v llvm_test_suite.py
 
   mlir-tests-linux:
-    needs: checks
     runs-on:
       group: dahlia
       labels: Linux
@@ -379,7 +366,6 @@ jobs:
       #     python fasterrcnn_resnet50.py
 
   python-tests-linux:
-    needs: checks
     runs-on:
       group: dahlia
       labels: Linux
@@ -455,7 +441,6 @@ jobs:
           file: coverage.xml
 
   pytorch-tests-linux:
-    needs: checks
     runs-on:
       group: dahlia
       labels: Linux
@@ -521,7 +506,6 @@ jobs:
   ##### TARGETS #####
 
   cuda-tests-linux:
-    needs: checks
     runs-on:
       group: dahlia
       labels: RTX5060
@@ -612,7 +596,6 @@ jobs:
           .venv-pytorch/bin/pytest -v pytorch/tests --target=cuda
 
   rocm-tests-linux:
-    needs: checks
     runs-on:
       group: dahlia
       labels: rocm
@@ -710,7 +693,6 @@ jobs:
           .venv-pytorch/bin/pytest -v pytorch/tests --target=rocm
 
   tenstorrent-tests-linux:
-    needs: checks
     runs-on:
       group: dahlia
       labels: tenstorrent
@@ -777,7 +759,6 @@ jobs:
           pytest -v python/tests mlir/integration -m "tenstorrent"
 
   py-tests-linux-arm64:
-    needs: checks
     runs-on:
       group: aster
     container:
