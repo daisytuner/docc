@@ -209,7 +209,7 @@ jobs:
           #     op with device=torch.device("cuda").
           #   - test_clamp_nan_min / test_clamp_nan_max: docc clamp NaN-bound
           #     codegen mismatch.
-          python -m pytest -v pytorch/tests --target=rocm \
+          python -m pytest -v -n 4pytorch/tests --target=rocm \
             -k "not _gpu and not test_clamp_nan_min and not test_clamp_nan_max"
 
 
