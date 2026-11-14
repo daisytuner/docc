@@ -31,8 +31,8 @@ def torch_allclose(
 
 
 def compare(
-    res: None | int | float | np.ndarray | torch.Tensor | tuple,
-    ref: None | int | float | np.ndarray | torch.Tensor | tuple,
+    res: None | int | bool | float | np.ndarray | torch.Tensor | tuple,
+    ref: None | int | bool | float | np.ndarray | torch.Tensor | tuple,
     rtol: float = 1e-4,
     atol: float = 1e-5,
     equal_nan: bool = False,
@@ -40,6 +40,8 @@ def compare(
     if res is None and ref is None:
         pass  # This is valid
     if type(res) == int and type(ref) == int:
+        assert res == ref
+    elif type(res) == bool and type(ref) == bool:
         assert res == ref
     elif type(res) == float and type(ref) == float:
         if isnan(res):

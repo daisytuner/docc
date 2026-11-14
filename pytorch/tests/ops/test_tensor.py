@@ -4,6 +4,229 @@ import pytest
 
 from tests import check
 
+# --- is_tensor ---
+
+
+def test_is_tensor_simple(target: str) -> None:
+    class IsTensorSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> bool:
+            return torch.is_tensor(input)
+
+    check(IsTensorSimpleNet(), torch.tensor([1, 2, 3]), target=target)
+
+
+def test_is_tensor_int(target: str) -> None:
+    class IsTensorIntNet(nn.Module):
+        def forward(self, input: int) -> bool:
+            return torch.is_tensor(input)
+
+    check(IsTensorIntNet(), 1, target=target)
+
+
+# --- is_storage ---
+
+
+def test_is_storage_simple(target: str) -> None:
+    class IsStorageSimpleNet(nn.Module):
+        def forward(self, input: torch.UntypedStorage) -> bool:
+            return torch.is_storage(input)
+
+    check(
+        IsStorageSimpleNet(), torch.tensor([1, 2, 3]).untyped_storage(), target=target
+    )
+
+
+def test_is_storage_typed_storage(target: str) -> None:
+    class IsStorageTypedStorageNet(nn.Module):
+        def forward(self, input: torch.TypedStorage) -> bool:
+            return torch.is_storage(input)
+
+    check(
+        IsStorageTypedStorageNet(),
+        torch.TypedStorage(5, dtype=torch.float32),
+        target=target,
+    )
+
+
+def test_is_storage_tensor(target: str) -> None:
+    class IsStorageTensorNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> bool:
+            return torch.is_storage(input)
+
+    check(IsStorageTensorNet(), torch.tensor([1, 2, 3]), target=target)
+
+
+def test_is_storage_list(target: str) -> None:
+    class IsStorageListNet(nn.Module):
+        def forward(self, input: list) -> bool:
+            return torch.is_storage(input)
+
+    check(IsStorageListNet(), [1, 2, 3], target=target)
+
+
+# --- is_floating_point ---
+
+
+def test_is_floating_point_simple(target: str) -> None:
+    class IsFloatingPointSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> bool:
+            return torch.is_floating_point(input)
+
+    check(IsFloatingPointSimpleNet(), torch.tensor([1.0, 2.0, 3.0]), target=target)
+
+
+def test_is_floating_point_int32(target: str) -> None:
+    class IsFloatingPointInt32Net(nn.Module):
+        def forward(self, input: torch.Tensor) -> bool:
+            return torch.is_floating_point(input)
+
+    check(
+        IsFloatingPointInt32Net(),
+        torch.tensor([1, 2, 3], dtype=torch.int32),
+        target=target,
+    )
+
+
+def test_is_floating_point_float16(target: str) -> None:
+    class IsFloatingPointFloat16Net(nn.Module):
+        def forward(self, input: torch.Tensor) -> bool:
+            return torch.is_floating_point(input)
+
+    check(
+        IsFloatingPointFloat16Net(),
+        torch.tensor([1.0, 2.0, 3.0], dtype=torch.float16),
+        target=target,
+    )
+
+
+# --- is_nonzero ---
+
+
+def test_is_nonzero_simple(target: str) -> None:
+    class IsNonzeroSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> bool:
+            return torch.is_nonzero(input)
+
+    check(IsNonzeroSimpleNet(), torch.tensor([0.0]), target=target)
+
+
+def test_is_nonzero_float(target: str) -> None:
+    class IsNonzeroFloatNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> bool:
+            return torch.is_nonzero(input)
+
+    check(IsNonzeroFloatNet(), torch.tensor([1.5]), target=target)
+
+
+def test_is_nonzero_bool(target: str) -> None:
+    class IsNonzeroBoolNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> bool:
+            return torch.is_nonzero(input)
+
+    check(IsNonzeroBoolNet(), torch.tensor([False]), target=target)
+
+
+def test_is_nonzero_int(target: str) -> None:
+    class IsNonzeroIntNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> bool:
+            return torch.is_nonzero(input)
+
+    check(IsNonzeroIntNet(), torch.tensor([3]), target=target)
+
+
+# --- is_same_size ---
+
+
+def test_is_same_size_simple(target: str) -> None:
+    class IsSameSizeSimpleNet(nn.Module):
+        def forward(self, input1: torch.Tensor, input2: torch.Tensor) -> bool:
+            return torch.is_same_size(input1, input2)
+
+    check(
+        IsSameSizeSimpleNet(),
+        *(torch.tensor([1.0, 2.0]), torch.tensor([2.0, 1.0])),
+        target=target,
+    )
+
+
+def test_is_same_size_not(target: str) -> None:
+    class IsSameSizeNotNet(nn.Module):
+        def forward(self, input1: torch.Tensor, input2: torch.Tensor) -> bool:
+            return torch.is_same_size(input1, input2)
+
+    check(
+        IsSameSizeNotNet(),
+        *(torch.tensor([1.0, 2.0]), torch.tensor([2.0])),
+        target=target,
+    )
+
+
+# --- is_signed ---
+
+
+def test_is_signed_simple(target: str) -> None:
+    class IsSignedSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> bool:
+            return torch.is_signed(input)
+
+    check(IsSignedSimpleNet(), torch.tensor([1.0, 2.0, 3.0]), target=target)
+
+
+def test_is_signed_int32(target: str) -> None:
+    class IsSignedInt32Net(nn.Module):
+        def forward(self, input: torch.Tensor) -> bool:
+            return torch.is_signed(input)
+
+    check(
+        IsSignedInt32Net(),
+        torch.tensor([1, 2, 3], dtype=torch.int32),
+        target=target,
+    )
+
+
+def test_is_signed_uint32(target: str) -> None:
+    class IsSignedUInt32Net(nn.Module):
+        def forward(self, input: torch.Tensor) -> bool:
+            return torch.is_signed(input)
+
+    check(
+        IsSignedUInt32Net(),
+        torch.tensor([1, 2, 3], dtype=torch.uint32),
+        target=target,
+    )
+
+
+def test_is_signed_float16(target: str) -> None:
+    class IsSignedFloat16Net(nn.Module):
+        def forward(self, input: torch.Tensor) -> bool:
+            return torch.is_signed(input)
+
+    check(
+        IsSignedFloat16Net(),
+        torch.tensor([1.0, 2.0, 3.0], dtype=torch.float16),
+        target=target,
+    )
+
+
+# --- numel ---
+
+
+def test_numel_simple(target: str) -> None:
+    class NumelSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> int:
+            return torch.numel(input)
+
+    check(NumelSimpleNet(), torch.randn(1, 2, 3, 4, 5), target=target)
+
+
+def test_numel_quadratic(target: str) -> None:
+    class NumelQuadraticNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> int:
+            return torch.numel(input)
+
+    check(NumelQuadraticNet(), torch.zeros(4, 4), target=target)
+
+
 # --- alias ---
 
 
