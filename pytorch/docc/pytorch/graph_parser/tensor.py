@@ -380,8 +380,11 @@ class SlicingParser(GraphParserModule):
                 )
         else:
             end: int = size
-        if end == 9_223_372_036_854_775_807:
+        if end == 9_223_372_036_854_775_807 or end > size:
             end: int = size
+
+        if start > end:
+            start: int = end
 
         if len(node.args) == 5:
             step_arg: Argument = node.args[4]

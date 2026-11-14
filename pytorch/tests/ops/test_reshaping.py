@@ -5,6 +5,17 @@ import pytest
 
 from tests import check
 
+# --- alias_copy ---
+
+
+def test_alias_copy_simple(target: str) -> None:
+    class AliasCopySimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.alias_copy(input)
+
+    check(AliasCopySimpleNet(), torch.randn(2, 3), target=target)
+
+
 # --- argwhere ---
 
 
@@ -76,6 +87,122 @@ def test_cat_empty(target: str) -> None:
     check(CatEmptyNet(), *(torch.rand(2, 3), torch.randn(0)), target=target)
 
 
+# --- concat ---
+
+
+def test_concat_simple(target: str) -> None:
+    class ConcatSimpleNet(nn.Module):
+        def forward(self, input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
+            return torch.concat((input1, input2), 0)
+
+    check(ConcatSimpleNet(), *(torch.randn(2, 3), torch.randn(2, 3)), target=target)
+
+
+# --- concatenate ---
+
+
+def test_concatenate_simple(target: str) -> None:
+    class ConcatenateSimpleNet(nn.Module):
+        def forward(self, input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
+            return torch.concatenate((input1, input2), 0)
+
+    check(
+        ConcatenateSimpleNet(), *(torch.randn(2, 3), torch.randn(2, 3)), target=target
+    )
+
+
+# --- chunk ---
+
+
+def test_chunk_simple(target: str) -> None:
+    class ChunkSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> tuple[torch.Tensor, ...]:
+            return torch.chunk(input, 6)
+
+    check(ChunkSimpleNet(), torch.arange(11), target=target)
+
+
+def test_chunk_evenly(target: str) -> None:
+    class ChunkEvenlyNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> tuple[torch.Tensor, ...]:
+            return torch.chunk(input, 6)
+
+    check(ChunkEvenlyNet(), torch.arange(12), target=target)
+
+
+# --- dsplit ---
+
+
+def test_dsplit_simple(target: str) -> None:
+    class DSplitSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> tuple[torch.Tensor, ...]:
+            return torch.dsplit(input, 2)
+
+    check(DSplitSimpleNet(), torch.arange(16.0).reshape(2, 2, 4), target=target)
+
+
+def test_dsplit_list(target: str) -> None:
+    class DSplitListNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> tuple[torch.Tensor, ...]:
+            return torch.dsplit(input, [3, 6])
+
+    check(DSplitListNet(), torch.arange(16.0).reshape(2, 2, 4), target=target)
+
+
+# --- column_stack ---
+
+
+def test_column_stack_simple(target: str) -> None:
+    class ColumnStackSimpleNet(nn.Module):
+        def forward(self, input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
+            return torch.column_stack((input1, input2))
+
+    check(
+        ColumnStackSimpleNet(),
+        *(torch.tensor([1, 2, 3]), torch.tensor([4, 5, 6])),
+        target=target,
+    )
+
+
+def test_column_stack_complex(target: str) -> None:
+    class ColumnStackComplexNet(nn.Module):
+        def forward(self, input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
+            return torch.column_stack((input1, input2, input2))
+
+    check(
+        ColumnStackComplexNet(),
+        *(torch.arange(5), torch.arange(10).reshape(5, 2)),
+        target=target,
+    )
+
+
+# --- dstack ---
+
+
+def test_dstack_simple(target: str) -> None:
+    class DStackSimpleNet(nn.Module):
+        def forward(self, input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
+            return torch.dstack((input1, input2))
+
+    check(
+        DStackSimpleNet(),
+        *(torch.tensor([1, 2, 3]), torch.tensor([4, 5, 6])),
+        target=target,
+    )
+
+
+def test_dstack_higher_dim(target: str) -> None:
+    class DStackHigherDimNet(nn.Module):
+        def forward(self, input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
+            return torch.dstack((input1, input2))
+
+    check(
+        DStackHigherDimNet(),
+        *(torch.tensor([[1], [2], [3]]), torch.tensor([[4], [5], [6]])),
+        target=target,
+    )
+
+
 # --- expand_copy ---
 
 
@@ -113,6 +240,218 @@ def test_fill_simple(target: str) -> None:
             return torch.fill(input, 3.141592)
 
     check(FillSimpleNet(), torch.ones(2, 3), target=target)
+
+
+# --- gather ---
+
+
+@pytest.mark.skip(reason="Needs support for aten.gather.default")
+def test_gather_simple(target: str) -> None:
+    class GatherSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.gather(input, 1, torch.tensor([[0, 0], [1, 0]]))
+
+    check(GatherSimpleNet(), torch.tensor([[1, 2], [3, 4]]), target=target)
+
+
+# --- hsplit ---
+
+
+def test_hsplit_simple(target: str) -> None:
+    class HSplitSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> tuple[torch.Tensor, ...]:
+            return torch.hsplit(input, 2)
+
+    check(HSplitSimpleNet(), torch.arange(16.0).reshape(4, 4), target=target)
+
+
+def test_hsplit_list(target: str) -> None:
+    class HSplitListNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> tuple[torch.Tensor, ...]:
+            return torch.hsplit(input, [3, 6])
+
+    check(HSplitListNet(), torch.arange(16.0).reshape(4, 4), target=target)
+
+
+# --- hstack ---
+
+
+def test_hstack_simple(target: str) -> None:
+    class HStackSimpleNet(nn.Module):
+        def forward(self, input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
+            return torch.hstack((input1, input2))
+
+    check(
+        HStackSimpleNet(),
+        *(torch.tensor([1, 2, 3]), torch.tensor([4, 5, 6])),
+        target=target,
+    )
+
+
+def test_hstack_higher_dim(target: str) -> None:
+    class HStackHigherDimNet(nn.Module):
+        def forward(self, input1: torch.Tensor, input2: torch.Tensor) -> torch.Tensor:
+            return torch.hstack((input1, input2))
+
+    check(
+        HStackHigherDimNet(),
+        *(torch.tensor([[1], [2], [3]]), torch.tensor([[4], [5], [6]])),
+        target=target,
+    )
+
+
+# --- index_add ---
+
+
+@pytest.mark.skip(reason="Needs support for aten.index_put.default")
+def test_index_add_simple(target: str) -> None:
+    class IndexAddSimpleNet(nn.Module):
+        def forward(
+            self, input: torch.Tensor, index: torch.Tensor, source: torch.Tensor
+        ) -> torch.Tensor:
+            return torch.index_add(input, 0, index, source)
+
+    check(
+        IndexAddSimpleNet(),
+        *(
+            torch.ones(5, 3),
+            torch.tensor([0, 4, 2]),
+            torch.tensor([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=torch.float),
+        ),
+        target=target,
+    )
+
+
+@pytest.mark.skip(reason="Needs support for aten.index_put.default")
+def test_index_add_alpha_neg(target: str) -> None:
+    class IndexAddAlphaNegNet(nn.Module):
+        def forward(
+            self, input: torch.Tensor, index: torch.Tensor, source: torch.Tensor
+        ) -> torch.Tensor:
+            return torch.index_add(input, 0, index, source, alpha=-1)
+
+    check(
+        IndexAddAlphaNegNet(),
+        *(
+            torch.ones(5, 3),
+            torch.tensor([0, 4, 2]),
+            torch.tensor([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=torch.float),
+        ),
+        target=target,
+    )
+
+
+# --- index_copy ---
+
+
+@pytest.mark.skip(reason="Needs support for aten.index_put.default")
+def test_index_copy_simple(target: str) -> None:
+    class IndexCopySimpleNet(nn.Module):
+        def forward(
+            self, input: torch.Tensor, index: torch.Tensor, source: torch.Tensor
+        ) -> torch.Tensor:
+            return torch.index_copy(input, 0, index, source)
+
+    check(
+        IndexCopySimpleNet(),
+        *(
+            torch.ones(5, 3),
+            torch.tensor([0, 4, 2]),
+            torch.tensor([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=torch.float),
+        ),
+        target=target,
+    )
+
+
+# --- index_put_ ---
+
+
+@pytest.mark.skip(reason="Needs support for aten.index_put.default")
+def test_index_put__simple(target: str) -> None:
+    class IndexPut_SimpleNet(nn.Module):
+        def forward(
+            self, input: torch.Tensor, indices: torch.Tensor, values: torch.Tensor
+        ):
+            return torch.index_put_(input, (indices,), values)
+
+    check(
+        IndexPut_SimpleNet(),
+        *(
+            torch.ones(5, 3),
+            torch.tensor([0, 4, 2]),
+            torch.tensor([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=torch.float),
+        ),
+        target=target,
+    )
+
+
+@pytest.mark.skip(reason="Needs support for aten.index_put.default")
+def test_index_put__accumulate(target: str) -> None:
+    class IndexPut_AccumulateNet(nn.Module):
+        def forward(
+            self, input: torch.Tensor, indices: torch.Tensor, values: torch.Tensor
+        ):
+            return torch.index_put_(input, (indices,), values, accumulate=True)
+
+    check(
+        IndexPut_AccumulateNet(),
+        *(
+            torch.ones(5, 3),
+            torch.tensor([0, 4, 2]),
+            torch.tensor([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=torch.float),
+        ),
+        target=target,
+    )
+
+
+@pytest.mark.skip(reason="Needs support for aten.index_put.default")
+def test_index_put_multi_indices(target: str) -> None:
+    class IndexPut_MultiIndicesNet(nn.Module):
+        def forward(
+            self,
+            input: torch.Tensor,
+            indices1: torch.Tensor,
+            indices2: torch.Tensor,
+            values: torch.Tensor,
+        ):
+            return torch.index_put_(input, (indices1, indices2), values)
+
+    check(
+        IndexPut_MultiIndicesNet(),
+        *(
+            torch.ones(5, 3, 3),
+            torch.tensor([0, 4, 2]),
+            torch.tensor([2, 1, 2]),
+            torch.tensor([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=torch.float),
+        ),
+        target=target,
+    )
+
+
+@pytest.mark.skip(reason="Needs support for aten.index_put.default")
+def test_index_put_multi_indices_accumulate(target: str) -> None:
+    class IndexPut_MultiIndicesAccumulateNet(nn.Module):
+        def forward(
+            self,
+            input: torch.Tensor,
+            indices1: torch.Tensor,
+            indices2: torch.Tensor,
+            values: torch.Tensor,
+        ):
+            return torch.index_put_(
+                input, (indices1, indices2), values, accumulate=True
+            )
+
+    check(
+        IndexPut_MultiIndicesAccumulateNet(),
+        *(
+            torch.ones(5, 3, 3),
+            torch.tensor([0, 4, 2]),
+            torch.tensor([2, 1, 2]),
+            torch.tensor([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=torch.float),
+        ),
+        target=target,
+    )
 
 
 # --- index_select ---
