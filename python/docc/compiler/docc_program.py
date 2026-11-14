@@ -19,6 +19,7 @@ from docc.sdfg import (
     registered_options,
     target_default_contraction_precision,
     target_default_scalar_types,
+    target_default_einsum,
 )
 from docc.sdfg._sdfg import (
     _enable_statistics,
@@ -171,6 +172,8 @@ class DoccOptions:
             self.debug_dump = True
 
         # Compiler Passes
+        if self.einsum is None:
+            self.einsum = target_default_einsum(self.target)
         if self.normalize is None:
             self.normalize = self.target in ("sequential", "openmp")
         if self.device_residency is None:

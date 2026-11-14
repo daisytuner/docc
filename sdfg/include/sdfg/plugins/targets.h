@@ -121,6 +121,13 @@ struct DoccTarget {
     [[nodiscard]] std::string safe_get_default_int() const {
         return api_ver >= 4 ? default_int : "int64";
     }
+
+    /// Python contraction detection when the user leaves einsum unset.
+    bool default_einsum = false;
+
+    [[nodiscard]] bool safe_get_default_einsum() const {
+        return api_ver >= 4 && default_einsum;
+    }
 };
 
 } // namespace docc::target
