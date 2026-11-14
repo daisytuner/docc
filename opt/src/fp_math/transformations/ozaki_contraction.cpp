@@ -495,8 +495,9 @@ void OzakiContraction::apply(builder::StructuredSDFGBuilder& builder, analysis::
     auto splits = effective_splits();
     auto variant = variant_;
     auto direct = rescaling_ == Rescaling::Direct;
+    auto& oriented = direct ? row_vector_result(builder, node_) : node_;
     // Scales of B's columns then reduce along rows, and the slices are row-major, as targets of direct rescaling need.
-    auto& node = direct && b_stored_transposed(node_) ? read_b_row_major(builder, node_).contraction : node_;
+    auto& node = direct && b_stored_transposed(oriented) ? read_b_row_major(builder, oriented).contraction : oriented;
     detail::expand_contraction(builder, node, [&](KernelBuilder& kb, detail::ContractionOperands& operands) {
         if (direct) {
             build_slicing_direct(kb, operands, splits);
