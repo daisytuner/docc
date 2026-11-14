@@ -21,6 +21,16 @@ public:
     virtual bool run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
 };
 
+/// Detect clusters without rewriting the graph, then materialize them for the existing node converters.
+class EinsumClusterDetectionPass : public passes::Pass {
+public:
+    std::string name() override {
+        return "EinsumClusterDetectionPass";
+    }
+
+    bool run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
+};
+
 class EinsumConversion : public visitor::NonStoppingStructuredSDFGVisitor {
 private:
     PassReportConsumer* report_;

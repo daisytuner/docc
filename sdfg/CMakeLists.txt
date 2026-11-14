@@ -158,6 +158,7 @@ set(SOURCE_FILES
     src/passes/dataflow/dead_data_elimination.cpp
     src/passes/dataflow/dead_reference_elimination.cpp
     src/passes/dataflow/memlet_linearization.cpp
+    src/passes/dataflow/matmul_batch_flattening.cpp
     src/passes/dataflow/memlet_simplification.cpp
     src/passes/dataflow/reference_propagation.cpp
     src/passes/dataflow/tasklet_fusion.cpp

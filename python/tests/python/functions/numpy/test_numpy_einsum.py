@@ -1,12 +1,108 @@
 from docc.python import native
+import json
 import pytest
 import numpy as np
 import math
 
+from docc.compiler.docc_program import DoccOptions
 
-def test_einsum_dot_product():
 
-    @native
+@pytest.mark.parametrize(
+    "default,override,expected",
+    [
+        (True, None, True),
+        (True, False, False),
+        (False, None, False),
+        (False, True, True),
+    ],
+)
+def test_target_einsum_default_can_be_overridden(
+    monkeypatch, default, override, expected
+):
+    monkeypatch.setattr(
+        "docc.compiler.docc_program.target_default_einsum", lambda target: default
+    )
+    assert DoccOptions(einsum=override).einsum is expected
+
+
+def _library_codes(value):
+    if isinstance(value, dict):
+        if "code" in value:
+            yield value["code"]
+        for item in value.values():
+            yield from _library_codes(item)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _library_codes(item)
+
+
+@pytest.mark.parametrize("precision", ["native", "ozaki1"])
+def test_cluster_detection_preserves_scaled_gemm_accumulation(precision):
+    @native(einsum=True, symbolic_shapes=False, contraction_precision=precision)
+    def accumulate(alpha, a, b, out):
+        for i in range(3):
+            for j in range(5):
+                for k in range(4):
+                    out[i, j] += alpha * a[i, k] * b[k, j]
+
+    a = np.arange(12.0).reshape(3, 4) / 8
+    b = np.arange(20.0).reshape(4, 5) / 16
+    out = np.full((3, 5), 2.5)
+    sdfg = accumulate.to_sdfg(1.5, a, b, out)
+    sdfg.einsum()
+    sdfg.validate()
+    assert "GEMM" in list(_library_codes(json.loads(sdfg.to_json())))
+    sdfg.einsum()
+    sdfg.validate()
+    assert list(_library_codes(json.loads(sdfg.to_json()))) == ["GEMM"]
+    accumulate(1.5, a, b, out)
+    np.testing.assert_allclose(out, 2.5 + 1.5 * (a @ b))
+
+
+@pytest.mark.parametrize("subtract", [False, True])
+def test_cluster_detection_preserves_reduction_initial_value(subtract):
+    @native(einsum=True)
+    def add(a, b):
+        total = 2.5
+        for i in range(7):
+            total += a[i] * b[i]
+        return total
+
+    @native(einsum=True)
+    def sub(a, b):
+        total = 2.5
+        for i in range(7):
+            total -= a[i] * b[i]
+        return total
+
+    a, b = np.arange(7.0) / 8, np.arange(7.0) / 16
+    program = sub if subtract else add
+    expected = 2.5 + (-1 if subtract else 1) * (a @ b)
+    assert program(a, b) == pytest.approx(expected)
+
+
+def test_cluster_detection_keeps_shared_products_and_neighboring_operations():
+    @native(einsum=True)
+    def reductions(a, b, out):
+        left = 2.0
+        right = 3.0
+        for i in range(7):
+            product = a[i] * b[i]
+            left += product
+            right -= product
+            out[i] = product + 1.0
+        return left + right
+
+    a, b = np.arange(7.0) / 8, np.arange(7.0) / 16
+    out = np.zeros(7)
+    assert reductions(a, b, out) == pytest.approx(5.0)
+    np.testing.assert_allclose(out, a * b + 1.0)
+
+
+@pytest.mark.parametrize("detect", [False, True])
+def test_einsum_dot_product(detect):
+
+    @native(einsum=detect)
     def dot_product(a, b) -> float:
         return np.einsum("i,i->", a, b)
 
@@ -77,9 +173,10 @@ def test_einsum_matrix_vector_mul():
     assert np.allclose(result, expected)
 
 
-def test_einsum_matrix_mul():
+@pytest.mark.parametrize("detect", [False, True])
+def test_einsum_matrix_mul(detect):
 
-    @native
+    @native(einsum=detect)
     def matmul(a, b):
         return np.einsum("ij,jk->ik", a, b)
 
@@ -156,9 +253,10 @@ def test_einsum_batch_matmul():
     assert np.allclose(result, expected)
 
 
-def test_einsum_3d_contract():
+@pytest.mark.parametrize("detect", [False, True])
+def test_einsum_3d_contract(detect):
 
-    @native
+    @native(einsum=detect)
     def contract_middle(a, b):
         return np.einsum("ijk,jl->ikl", a, b)
 
