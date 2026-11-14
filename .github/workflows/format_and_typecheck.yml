@@ -42,6 +42,7 @@ jobs:
           black --check python/docc/ python/tests/ pytorch/
 
   typing:
+    needs: formatting
     runs-on:
       group: dahlia
       labels: Linux
