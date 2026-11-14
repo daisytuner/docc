@@ -72,6 +72,14 @@ def test_sub_scalar(target: str) -> None:
     check(PointwiseSubSimpleNet(), *(torch.randn(4), 0.2), target=target)
 
 
+def test_sub_scalar_overload(target: str) -> None:
+    class PointwiseSubScalarOverloadNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.ops.aten.sub.Scalar(input, 0.2)
+
+    check(PointwiseSubScalarOverloadNet(), torch.randn(4), target=target)
+
+
 def test_sub_scalar_float_alpha(target: str) -> None:
     class PointwiseSubSimpleNet(nn.Module):
         def forward(

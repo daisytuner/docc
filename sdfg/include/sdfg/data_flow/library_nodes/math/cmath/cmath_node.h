@@ -459,13 +459,14 @@ inline std::string get_cmath_intrinsic_name(CMathFunction func, types::Primitive
 }
 
 /**
- * @brief Fast, approximate CUDA/HIP device intrinsic for a function, if one exists
+ * @brief Fast, approximate CUDA/HIP device intrinsic with the same input domain, if one exists
  * @return The intrinsic name (e.g. "__expf"), or an empty string if there is none for this type
  */
 inline std::string get_cmath_approximate_intrinsic_name(CMathFunction func, types::PrimitiveType prim_type) {
     if (prim_type != types::PrimitiveType::Float) {
         return "";
     }
+    // __powf uses log2(x), losing valid negative-base integer powers.
     switch (func) {
         case CMathFunction::exp:
         case CMathFunction::exp10:
@@ -475,7 +476,6 @@ inline std::string get_cmath_approximate_intrinsic_name(CMathFunction func, type
         case CMathFunction::sin:
         case CMathFunction::cos:
         case CMathFunction::tan:
-        case CMathFunction::pow:
             return std::string("__") + cmath_function_to_stem(func) + "f";
         default:
             return "";
