@@ -355,6 +355,26 @@ def _log(a):
     return np.log(a)
 
 
+def _log10(a):
+    return np.log10(a)
+
+
+def _log1p(a):
+    return np.log1p(a)
+
+
+def _expm1(a):
+    return np.expm1(a)
+
+
+def _sinh(a):
+    return np.sinh(a)
+
+
+def _cosh(a):
+    return np.cosh(a)
+
+
 @pytest.mark.parametrize(
     "fn, reference",
     [
@@ -364,8 +384,25 @@ def _log(a):
         (_log2, np.log2),
         (_exp2, np.exp2),
         (_log, np.log),
+        (_log10, np.log10),
+        (_log1p, np.log1p),
+        (_expm1, np.expm1),
+        (_sinh, np.sinh),
+        (_cosh, np.cosh),
     ],
-    ids=["sin", "cos", "tan", "log2", "exp2", "log"],
+    ids=[
+        "sin",
+        "cos",
+        "tan",
+        "log2",
+        "exp2",
+        "log",
+        "log10",
+        "log1p",
+        "expm1",
+        "sinh",
+        "cosh",
+    ],
 )
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
 def test_numpy_cmath_ufunc(fn, reference, dtype):
@@ -375,6 +412,44 @@ def test_numpy_cmath_ufunc(fn, reference, dtype):
         assert result.shape == a.shape
         assert result.dtype == dtype
         assert np.allclose(result, reference(a), rtol=1e-5)
+
+
+def _hypot(a, b):
+    return np.hypot(a, b)
+
+
+def _hypot_literal(a):
+    return np.hypot(a, 2.0)
+
+
+@pytest.mark.parametrize("dtype", [np.float32, np.float64])
+def test_numpy_hypot(dtype):
+    a = np.linspace(-3.0, 4.0, 12, dtype=dtype).reshape(2, 6)
+    b = np.linspace(0.5, 2.0, 6, dtype=dtype)
+    result = native(_hypot)(a, b)
+    assert result.shape == a.shape
+    assert result.dtype == dtype
+    assert np.allclose(result, np.hypot(a, b), rtol=1e-5)
+
+    result = native(_hypot_literal)(a)
+    assert result.dtype == dtype
+    assert np.allclose(result, np.hypot(a, 2.0), rtol=1e-5)
+
+
+def test_numpy_hypot_of_integers_is_float64():
+    a = np.arange(6, dtype=np.int64)
+    b = np.arange(6, 12, dtype=np.int32)
+    result = native(_hypot)(a, b)
+    assert result.dtype == np.float64
+    assert np.allclose(result, np.hypot(a, b))
+
+
+def _hypot_scalars(x, y):
+    return np.hypot(x, y)
+
+
+def test_numpy_hypot_of_scalars():
+    assert np.isclose(native(_hypot_scalars)(3.0, 4.0), 5.0)
 
 
 def test_numpy_minimum():
