@@ -7,6 +7,7 @@
 #include "sdfg/data_flow/memlet.h"
 #include "sdfg/data_flow/tasklet.h"
 #include "sdfg/function.h"
+#include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/types/array.h"
 #include "sdfg/types/pointer.h"
@@ -15,10 +16,6 @@
 #include "sdfg/types/type.h"
 
 namespace sdfg {
-namespace structured_control_flow {
-class StructuredLoop;
-}
-
 namespace codegen {
 
 /// Loop properties a language may be able to express (e.g. clang loop pragmas in C).
@@ -83,11 +80,31 @@ public:
         return "";
     }
 
+    /// Implementation type whose dispatcher emits @p node in this language.
+    virtual std::string library_node_implementation(const data_flow::LibraryNode& node) const {
+        return node.implementation_type().value();
+    }
+
+    /// Schedule whose map/reduce dispatcher emits a loop with @p schedule in this language.
+    virtual std::string loop_schedule(const structured_control_flow::ScheduleType& schedule) const {
+        return schedule.value();
+    }
+
+    /// Spells a tasklet connector as a local identifier, e.g. escaping reserved words.
+    virtual std::string identifier(const std::string& name) const {
+        return name;
+    }
+
     /* Statements; each returns one complete statement without a trailing newline. */
 
     virtual std::string comment(const std::string& text) = 0;
 
     virtual std::string assignment(const std::string& lhs, const std::string& rhs) = 0;
+
+    /// Assigns @p rhs to the scalar @p lhs, converting it to @p type as C's implicit conversion does.
+    virtual std::string converting_assignment(const std::string& lhs, const types::Scalar& type, const std::string& rhs) {
+        return assignment(lhs, rhs);
+    }
 
     /// Declares a local, initialized if @p init is non-empty. Empty if the language needs no declaration.
     virtual std::string
@@ -109,6 +126,12 @@ public:
     virtual std::string null_literal() = 0;
 
     virtual std::string address_of(const std::string& expr) = 0;
+
+    /// Address of the element at @p indices of @p base, whose type is @p base_type.
+    virtual std::string
+    element_address(const std::string& base, const types::IType& base_type, const data_flow::Subset& indices) {
+        return address_of(base + subset(base_type, indices));
+    }
 
     virtual std::string dereference(const std::string& expr) = 0;
 
