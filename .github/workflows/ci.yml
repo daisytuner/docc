@@ -55,3 +55,31 @@ jobs:
     needs: [checks, sanitizer-tests-linux]
     uses: ./.github/workflows/integration_tests_openmp.yml
     secrets: inherit
+
+  ci-summary:
+    if: always()
+    needs:
+      - checks
+      - unit-tests-linux
+      - unit-tests-macos
+      - unit-tests-release
+      - sanitizer-tests-linux
+      - sanitizer-tests-macos
+      - integration-tests-cuda
+      - integration-tests-openmp
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fail if any required job did not succeed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS" | python3 -c '
+          import json, sys
+          needs = json.load(sys.stdin)
+          bad = {job: n["result"] for job, n in needs.items() if n["result"] not in ("success", "skipped")}
+          if bad:
+              print("Jobs not successful:", bad)
+              sys.exit(1)
+          print("All jobs successful")
+          '
