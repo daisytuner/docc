@@ -682,14 +682,14 @@ jobs:
           export ROCM_HOME=/opt/rocm
           export LD_LIBRARY_PATH=/opt/rocm/lib:$LD_LIBRARY_PATH
 
-          pytest -v -n auto python/tests/rocm -m "rocm"
-          pytest -v -n auto python/tests/python/ -m "rocm"
-          pytest -v -n auto python/tests/sdfg/ -m "rocm"
+          pytest -v -n 10 python/tests/rocm -m "rocm"
+          pytest -v -n 10 python/tests/python/ -m "rocm"
+          pytest -v -n 10 python/tests/sdfg/ -m "rocm"
 
-          pytest -v -n auto python/benchmarks/ -k rocm
-          pytest -v -n auto mlir/integration -m "rocm"
+          pytest -v -n 10 python/benchmarks/ -k rocm
+          pytest -v -n 10 mlir/integration -m "rocm"
 
-          # pytest -v -n auto mlir/benchmarks/torch/model_zoo/segformer.py -k "rocm"
+          # pytest -v -n 10 mlir/benchmarks/torch/model_zoo/segformer.py -k "rocm"
 
       - name: PyTorch Tests
         run: |
@@ -701,7 +701,7 @@ jobs:
 
           .venv-pytorch/bin/pip install cupy-rocm-7-0
 
-          .venv-pytorch/bin/pytest -v -n auto pytorch/tests --target=rocm
+          .venv-pytorch/bin/pytest -v -n 10 pytorch/tests --target=rocm
 
   tenstorrent-tests-linux:
     timeout-minutes: 30
