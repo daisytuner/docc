@@ -53,6 +53,12 @@ class NumPyHandler:
             "log2": self._handle_numpy_unary_op,
             "exp2": self._handle_numpy_unary_op,
             "log": self._handle_numpy_unary_op,
+            "log10": self._handle_numpy_unary_op,
+            "log1p": self._handle_numpy_unary_op,
+            "expm1": self._handle_numpy_unary_op,
+            "sinh": self._handle_numpy_unary_op,
+            "cosh": self._handle_numpy_unary_op,
+            "hypot": self._handle_numpy_hypot,
             "cbrt": self._handle_numpy_cbrt,
             "sum": self._handle_numpy_reduce,
             "max": self._handle_numpy_reduce,
@@ -1404,6 +1410,11 @@ class NumPyHandler:
             "log2": CMathFunction.log2,
             "exp2": CMathFunction.exp2,
             "log": CMathFunction.log,
+            "log10": CMathFunction.log10,
+            "log1p": CMathFunction.log1p,
+            "expm1": CMathFunction.expm1,
+            "sinh": CMathFunction.sinh,
+            "cosh": CMathFunction.cosh,
         }
 
         if len(tensor.shape) == 0:
@@ -1447,10 +1458,15 @@ class NumPyHandler:
 
         return tmp_name
 
-    def handle_array_binary_op(self, op_type, left, right):
+    def handle_array_binary_op(self, op_type, left, right, cmath_func=None):
+        """Elementwise ``op_type`` of ``left`` and ``right``, broadcast as NumPy does, or
+        the binary C math function ``cmath_func``, which computes in floats as NumPy's
+        float ufuncs do."""
         # NumPy promotion (scalars adapt to arrays) via the shared TypeSystem.
         # 0-d arrays count as arrays; only literals/Python scalars adapt.
         dtype = self._ev.type_system.array_result_type(left, right)
+        if cmath_func is not None and dtype.primitive_type not in FLOAT_PRIMITIVE_TYPES:
+            dtype = Scalar(PrimitiveType.Double)
 
         # Cast operands to result type if needed
         real_left = self._cast_to_type(left, dtype)
@@ -1521,6 +1537,34 @@ class NumPyHandler:
             output_strides = self._compute_strides(output_shape, "C")
         tmp_name = self._create_array_temp(output_shape, dtype, strides=output_strides)
         tmp_tensor = self.tensor_table[tmp_name]
+
+        if cmath_func is not None:
+            if not output_shape:
+                block = self.builder.add_block()
+                t_task = self.builder.add_cmath(block, cmath_func, dtype.primitive_type)
+                for connector, operand in (("_in1", real_left), ("_in2", real_right)):
+                    t_src, src_sub = self._add_read(block, operand)
+                    self.builder.add_memlet(
+                        block, t_src, "void", t_task, connector, src_sub, dtype
+                    )
+                t_dst = self.builder.add_access(block, tmp_name)
+                self.builder.add_memlet(block, t_task, "_out", t_dst, "void", "", dtype)
+                return tmp_name
+            # The C math tensor node reads its operands from containers.
+            if real_left not in self.tensor_table:
+                real_left = self._scalar_container(real_left, dtype)
+            if real_right not in self.tensor_table:
+                real_right = self._scalar_container(real_right, dtype)
+            self.builder.add_elementwise_cmath_op(
+                cmath_func,
+                real_left,
+                real_left_tensor,
+                real_right,
+                real_right_tensor,
+                tmp_name,
+                tmp_tensor,
+            )
+            return tmp_name
 
         self.builder.add_elementwise_op(
             op_type,
@@ -2071,6 +2115,32 @@ class NumPyHandler:
             "maximum": "max",
         }
         return self.handle_array_binary_op(op_map[func_name], args[0], args[1])
+
+    def _handle_numpy_hypot(self, node, func_name):
+        """Handle np.hypot, elementwise sqrt(a**2 + b**2) with broadcasting."""
+        args = [self.visit(arg) for arg in node.args]
+        if len(args) != 2:
+            raise NotImplementedError(
+                f"Numpy function {func_name} requires 2 arguments"
+            )
+        return self.handle_array_binary_op(
+            "hypot", args[0], args[1], cmath_func=CMathFunction.hypot
+        )
+
+    def _scalar_container(self, value, dtype):
+        """A scalar container holding the literal or Python scalar ``value``."""
+        name = f"_tmp_{self._get_unique_id()}"
+        self.builder.add_container(name, dtype, False)
+        self.container_table[name] = dtype
+        self.tensor_table[name] = Tensor(dtype, [])
+
+        block = self.builder.add_block()
+        t_src, src_sub = self._add_read(block, value)
+        t_dst = self.builder.add_access(block, name)
+        t_task = self.builder.add_tasklet(block, TaskletCode.assign, ["_in"], ["_out"])
+        self.builder.add_memlet(block, t_src, "void", t_task, "_in", src_sub)
+        self.builder.add_memlet(block, t_task, "_out", t_dst, "void", "")
+        return name
 
     def _handle_numpy_unary_op(self, node, func_name):
         """Handle np.exp, np.sqrt, np.abs, etc."""
