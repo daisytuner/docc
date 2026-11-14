@@ -159,6 +159,37 @@ def test_matmul_broadcasting():
     assert np.allclose(res, np.matmul(a, b))
 
 
+@pytest.mark.parametrize("shape,transposed", [((2, 3, 4), False), ((2, 3, 1, 4), True)])
+def test_matmul_shared_weights(shape, transposed):
+    @native
+    def matmul(a, b):
+        return a @ b
+
+    @native
+    def matmul_transposed(a, b):
+        return a @ b.T
+
+    rng = np.random.default_rng(42)
+    a = rng.standard_normal(shape)
+    b = rng.standard_normal((5, 4) if transposed else (4, 5))
+    result = matmul_transposed(a, b) if transposed else matmul(a, b)
+    np.testing.assert_allclose(
+        result, a @ (b.T if transposed else b), rtol=1e-12, atol=1e-12
+    )
+
+
+def test_matmul_runtime_reshape_sizes():
+    @native(symbolic_shapes=False)
+    def contract(nr, nq, p, a, b):
+        a[:] = np.reshape(np.reshape(a, (nr, nq, 1, p)) @ b, (nr, nq, p))
+
+    rng = np.random.default_rng(42)
+    a, b = rng.standard_normal((2, 3, 4)), rng.standard_normal((4, 4))
+    expected = a @ b
+    contract(2, 3, 4, a, b)
+    np.testing.assert_allclose(a, expected, rtol=1e-12, atol=1e-12)
+
+
 def test_matmul_matvec():
     @native
     def matmul_mv(a, b):

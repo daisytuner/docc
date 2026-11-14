@@ -3,6 +3,9 @@
 This module contains the PyTorch GraphModule Parser.
 """
 
+import json
+import math
+
 import numpy as np
 import torch
 import torch.export
@@ -225,6 +228,23 @@ class GraphParser(GraphParserBase):
             if isinstance(self.metadata.container(name).sdfg_type(), Pointer):
                 self.builder.add_free_block(name)
             self.metadata.dead(name)
+
+        # Element counts of the arguments whose shapes are concrete, as the Python frontend records them: a target
+        # that holds arguments in buffers of its own needs them where no access bounds the extent, e.g. the
+        # matrices of a stacked parameter that data selects.
+        elements: dict[str, int] = {}
+        for node in nodes:
+            if node.op != "placeholder":
+                continue
+            info: TensorInfo = self.metadata.tensor(node.name)
+            try:
+                elements[info.container()] = math.prod(
+                    int(extent) for extent in info.shape()
+                )
+            except (TypeError, ValueError):
+                continue
+        if elements:
+            self.builder.add_metadata("argument_elements", json.dumps(elements))
 
     def parse_placeholder(self, node: torch.fx.Node) -> None:
         """

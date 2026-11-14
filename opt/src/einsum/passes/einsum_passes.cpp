@@ -1,8 +1,10 @@
 #include "sdfg/einsum/passes/einsum_passes.h"
 
 #include "sdfg/analysis/analysis.h"
+#include "sdfg/analysis/users.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/library_node.h"
+#include "sdfg/einsum/einsum_detection.h"
 #include "sdfg/einsum/einsum_node.h"
 #include "sdfg/einsum/transformations/einsum2dot.h"
 #include "sdfg/einsum/transformations/einsum2gemm.h"
@@ -12,10 +14,123 @@
 #include "sdfg/exceptions.h"
 #include "sdfg/helpers/helpers.h"
 #include "sdfg/structured_control_flow/block.h"
+#include "sdfg/structured_control_flow/sequence.h"
+#include "sdfg/types/scalar.h"
 #include "sdfg/visitor/structured_sdfg_visitor.h"
 
 namespace sdfg {
 namespace einsum {
+
+bool EinsumClusterDetectionPass::
+    run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+    EinsumDetection detector;
+    detector.run(builder.subject().root());
+    auto& users = analysis_manager.get<analysis::Users>();
+    std::unordered_set<const EinsumCluster*> shared_intermediates;
+    for (auto& found : detector.einsums()) {
+        for (auto* consumed : found->consumed_nodes) {
+            auto* access = dynamic_cast<data_flow::AccessNode*>(consumed);
+            if (!access) {
+                continue;
+            }
+            // Local dataflow degree does not account for reads in other blocks.
+            if (builder.subject().is_argument(access->data())) {
+                shared_intermediates.insert(found.get());
+            }
+            for (auto* user : users.uses(access->data())) {
+                if (user->element() != access) {
+                    shared_intermediates.insert(found.get());
+                }
+            }
+        }
+    }
+    bool applied = false;
+    for (auto& found : detector.einsums()) {
+        auto& cluster = *found;
+        if (shared_intermediates.contains(&cluster)) {
+            continue;
+        }
+        if (cluster.consumed_loops.empty() && cluster.consumed_nodes.size() == 1 &&
+            dynamic_cast<EinsumNode*>(cluster.consumed_nodes.front())) {
+            continue;
+        }
+        auto& original = *cluster.block;
+        auto* block = &original;
+        if (!cluster.consumed_loops.empty()) {
+            auto& loop = *cluster.consumed_loops.front();
+            auto& parent = static_cast<structured_control_flow::Sequence&>(*loop.get_parent());
+            block = &builder.add_block_after(parent, loop, original.debug_info());
+        }
+        std::vector<data_flow::Subset> indices;
+        for (size_t i = 0; i < cluster.inputs.size(); ++i) {
+            indices.push_back(cluster.get_input_subset(i));
+        }
+        auto& node = builder.add_library_node<
+            EinsumNode>(*block, original.debug_info(), cluster.inputs, cluster.dims, cluster.out_indices(), indices);
+        for (size_t i = 0; i < cluster.inputs.size(); ++i) {
+            auto* source = cluster.input_nodes.at(cluster.inputs[i]);
+            if (!source) {
+                // Subtraction is represented by a synthetic multiplicative -1.
+                const types::Scalar type(cluster.output_edge->base_type().primitive_type());
+                auto& constant = builder.add_constant(*block, "-1.0", type, original.debug_info());
+                builder.add_computational_memlet(*block, constant, node, cluster.inputs[i], {}, type);
+                continue;
+            }
+            auto& access = block == &original ? *source : builder.copy_node(*block, *source);
+            builder.add_memlet(
+                *block,
+                access,
+                "void",
+                node,
+                cluster.inputs[i],
+                {},
+                cluster.in_edges[i]->base_type(),
+                original.debug_info()
+            );
+        }
+        data_flow::AccessNode* read = nullptr;
+        if (block == &original) {
+            for (auto& edge : original.dataflow().in_edges(*cluster.consumed_nodes.front())) {
+                if (auto* access = dynamic_cast<data_flow::AccessNode*>(&edge.src());
+                    access && access->data() == cluster.output_node->data() && edge.subset() == cluster.out_indices()) {
+                    read = access;
+                    break;
+                }
+            }
+        }
+        if (!read) {
+            read = &builder.add_access(*block, cluster.output_node->data(), original.debug_info());
+        }
+        auto& write = block == &original
+                          ? *cluster.output_node
+                          : builder.add_access(*block, cluster.output_node->data(), original.debug_info());
+        auto& type = cluster.output_edge->base_type();
+        builder.add_memlet(*block, *read, "void", node, "__einsum_out", {}, type, original.debug_info());
+        builder.add_memlet(*block, node, "__einsum_out", write, "void", {}, type, original.debug_info());
+
+        if (!cluster.consumed_loops.empty()) {
+            auto& loop = *cluster.consumed_loops.front();
+            auto& parent = static_cast<structured_control_flow::Sequence&>(*loop.get_parent());
+            builder.remove_child(parent, parent.index(loop));
+        } else {
+            auto& dataflow = original.dataflow();
+            for (auto* consumed : cluster.consumed_nodes) {
+                while (dataflow.in_degree(*consumed)) {
+                    builder.remove_memlet(original, *dataflow.in_edges(*consumed).begin());
+                }
+                while (dataflow.out_degree(*consumed)) {
+                    builder.remove_memlet(original, *dataflow.out_edges(*consumed).begin());
+                }
+                builder.remove_node(original, *consumed);
+            }
+        }
+        applied = true;
+    }
+    if (applied) {
+        analysis_manager.invalidate_all();
+    }
+    return applied;
+}
 
 class BlockFinder : public visitor::NonStoppingStructuredSDFGVisitor {
 private:

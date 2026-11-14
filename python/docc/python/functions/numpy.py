@@ -2580,16 +2580,15 @@ class NumPyHandler:
             tmp_name = self._create_array_temp(output_shape, dtype)
 
         if (
-            narrow
-            and ndim_a == 2
+            (ndim_a > 2 or (narrow and ndim_a == 2 and not is_scalar))
             and ndim_b == 2
-            and not is_scalar
             and not subset_a
             and not subset_b
             and str(real_shape_a[-1]) == str(real_shape_b[-2])
         ):
-            # Products of narrow floats, which BLAS does not compute, are MatMuls of operands in their own type, which
-            # a contraction precision slices by it.
+            # Keep shared-weight batches intact for layout-checked flattening before precision lowering. Products of
+            # narrow floats, which BLAS does not compute, are MatMuls too, of operands in their own type, which a
+            # contraction precision slices by it.
             tensor_a = self._cast_to_type(name_a, operand_type)
             tensor_b = self._cast_to_type(name_b, operand_type)
             self.builder.add_matmul_op(

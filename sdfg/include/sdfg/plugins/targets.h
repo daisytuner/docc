@@ -164,6 +164,17 @@ struct DoccTarget {
         return api_ver >= 5 ? frontend : defaults;
     }
 
+    /// Prepares tensor/contraction layouts before precision lowering introduces scales and slices.
+    bool (*apply_pre_precision_mapping)(
+        sdfg::builder::StructuredSDFGBuilder& builder,
+        sdfg::analysis::AnalysisManager& analysis_manager,
+        const TargetOptions& options
+    ) = nullptr;
+
+    [[nodiscard]] auto safe_apply_pre_precision_mapping_fn_get() const {
+        return api_ver >= 5 ? apply_pre_precision_mapping : nullptr;
+    }
+
     /// How contractions compute and which float types the target stores.
     TargetPrecision precision;
 

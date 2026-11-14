@@ -27,6 +27,7 @@
 #include <sdfg/passes/dataflow/dead_data_elimination.h>
 #include <sdfg/passes/dataflow/float_widening.h>
 #include <sdfg/passes/dataflow/local_buffer_reuse.h>
+#include <sdfg/passes/dataflow/matmul_batch_flattening.h>
 #include <sdfg/passes/dataflow/tensor_to_pointer_conversion.h>
 #include <sdfg/passes/dataflow/view_copy_elimination.h>
 #include <sdfg/passes/dot_expansion_pass.h>
@@ -188,8 +189,8 @@ void PyStructuredSDFG::einsum() {
     sdfg::passes::Pipeline dataflow_simplification = sdfg::passes::Pipeline::dataflow_simplification(true);
     dataflow_simplification.run(builder_opt, analysis_manager);
 
-    // Lift Einsum nodes to detect more library nodes (offloading)
-    sdfg::einsum::EinsumDetectionPass einsum_detection_pass;
+    // Detect read-only clusters, retaining EinsumNode as the bridge to the existing DOT/GEMM converters.
+    sdfg::einsum::EinsumClusterDetectionPass einsum_detection_pass;
     einsum_detection_pass.run(builder_opt, analysis_manager);
 
     // Convert einsum into blas nodes (best-effort)
@@ -237,6 +238,15 @@ void PyStructuredSDFG::expand(const docc::target::TargetOptions& options) {
     // Tensor layouts are lost on expansion, so record buffer sizes for offloading first
     sdfg::passes::TensorAllocationSizeInference tensor_allocation_size_inference;
     tensor_allocation_size_inference.run(builder_opt, analysis_manager);
+
+    sdfg::passes::MatMulBatchFlatteningPass matmul_batch_flattening;
+    matmul_batch_flattening.run(builder_opt, analysis_manager);
+
+    if (target) {
+        if (auto prepare = target->safe_apply_pre_precision_mapping_fn_get()) {
+            prepare(builder_opt, analysis_manager, options);
+        }
+    }
 
     // Matmuls with prepared Ozaki slices of B leave Int8 matmuls as the precision pass does, before the targets map
     // them.

@@ -745,6 +745,22 @@ class PythonProgram(DoccProgram):
         parser.memory_handler.emit_allocations()
 
         sdfg = builder.move()
+        # Element counts of array arguments whose shapes are concrete. A target that holds arguments in buffers of
+        # their own needs them where no access bounds the extent, e.g. rows that data selects.
+        if not self.options.symbolic_shapes:
+            elements = {}
+            for name in sdfg.arguments:
+                tensor = tensor_table.get(name)
+                if tensor is None or not tensor.shape:
+                    continue
+                try:
+                    elements[name] = int(
+                        np.prod([int(extent) for extent in tensor.shape])
+                    )
+                except (TypeError, ValueError):
+                    continue
+            if elements:
+                sdfg.add_metadata("argument_elements", json.dumps(elements))
         # Mark return arguments metadata
         out_args = []
         for name in sdfg.arguments:
