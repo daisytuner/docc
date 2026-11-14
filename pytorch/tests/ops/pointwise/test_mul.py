@@ -52,3 +52,11 @@ def test_mul_broadcast_2(target: str) -> None:
         *(torch.randn(1, 3, 15), torch.randn(1, 3, 1)),
         target=target
     )
+
+
+def test_mul_scalar(target: str) -> None:
+    class MulScalarNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.mul(input, 1.75)
+
+    check(MulScalarNet(), torch.randn(5), target=target)

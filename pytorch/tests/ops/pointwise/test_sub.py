@@ -65,31 +65,41 @@ def test_sub_int_alpha(target: str) -> None:
 
 
 def test_sub_scalar(target: str) -> None:
-    class PointwiseSubSimpleNet(nn.Module):
+    class PointwiseSubScalarNet(nn.Module):
         def forward(self, input: torch.Tensor, other: float) -> torch.Tensor:
             return torch.sub(input, other)
 
-    check(PointwiseSubSimpleNet(), *(torch.randn(4), 0.2), target=target)
+    check(PointwiseSubScalarNet(), *(torch.randn(4), 0.2), target=target)
+
+
+def test_sub_scalar_first(target: str) -> None:
+    class PointwiseSubScalarFirstNet(nn.Module):
+        def forward(self, other: torch.Tensor) -> torch.Tensor:
+            return torch.sub(4, other)
+
+    check(PointwiseSubScalarFirstNet(), torch.arange(0, 5), target=target)
 
 
 def test_sub_scalar_float_alpha(target: str) -> None:
-    class PointwiseSubSimpleNet(nn.Module):
+    class PointwiseSubScalarFloatAlphaNet(nn.Module):
         def forward(
             self, input: torch.Tensor, other: float, alpha: float
         ) -> torch.Tensor:
             return torch.sub(input, other, alpha=alpha)
 
-    check(PointwiseSubSimpleNet(), *(torch.randn(4), 0.2, 10.0), target=target)
+    check(
+        PointwiseSubScalarFloatAlphaNet(), *(torch.randn(4), 0.2, 10.0), target=target
+    )
 
 
 def test_sub_scalar_int_alpha(target: str) -> None:
-    class PointwiseSubSimpleNet(nn.Module):
+    class PointwiseSubScalarIntAlphaNet(nn.Module):
         def forward(
             self, input: torch.Tensor, other: float, alpha: int
         ) -> torch.Tensor:
             return torch.sub(input, other, alpha=alpha)
 
-    check(PointwiseSubSimpleNet(), *(torch.randn(4), 0.2, 10), target=target)
+    check(PointwiseSubScalarIntAlphaNet(), *(torch.randn(4), 0.2, 10), target=target)
 
 
 def test_sub_broadcast(target: str) -> None:

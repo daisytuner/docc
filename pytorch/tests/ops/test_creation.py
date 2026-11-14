@@ -65,6 +65,66 @@ def test_tensor_empty(target: str) -> None:
 #     check(TensorSimpleNet(), *(), target=target)
 
 
+# --- zeros ---
+
+
+def test_zeros_simple(target: str) -> None:
+    class ZerosSimpleNet(nn.Module):
+        def forward(self) -> torch.Tensor:
+            return torch.zeros(5)
+
+    check(ZerosSimpleNet(), *(), target=target)
+
+
+def test_zeros_multi_dim(target: str) -> None:
+    class ZerosMultiDimNet(nn.Module):
+        def forward(self) -> torch.Tensor:
+            return torch.zeros(2, 3)
+
+    check(ZerosMultiDimNet(), *(), target=target)
+
+
+# --- zeros_like ---
+
+
+def test_zeros_like_simple(target: str) -> None:
+    class ZerosLikeSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.zeros_like(input)
+
+    check(ZerosLikeSimpleNet(), torch.empty(2, 3), target=target)
+
+
+# --- ones ---
+
+
+def test_ones_simple(target: str) -> None:
+    class OnesSimpleNet(nn.Module):
+        def forward(self) -> torch.Tensor:
+            return torch.ones(5)
+
+    check(OnesSimpleNet(), *(), target=target)
+
+
+def test_ones_multi_dim(target: str) -> None:
+    class OnesMultiDimNet(nn.Module):
+        def forward(self) -> torch.Tensor:
+            return torch.ones(2, 3)
+
+    check(OnesMultiDimNet(), *(), target=target)
+
+
+# --- ones_like ---
+
+
+def test_ones_like_simple(target: str) -> None:
+    class OnesLikeSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.ones_like(input)
+
+    check(OnesLikeSimpleNet(), torch.empty(2, 3), target=target)
+
+
 # --- arange ---
 
 
@@ -148,6 +208,79 @@ def test_arange_gpu(target: str) -> None:
     check(ArangeGPUNet(), *(), target=target)
 
 
+# --- linspace ---
+
+
+def test_linspace_simple(target: str) -> None:
+    class LinspaceSimpleNet(nn.Module):
+        def forward(self):
+            return torch.linspace(3, 10, steps=5)
+
+    check(LinspaceSimpleNet(), *(), target=target)
+
+
+def test_linspace_neg_start(target: str) -> None:
+    class LinspaceNegStartNet(nn.Module):
+        def forward(self):
+            return torch.linspace(-10, 10, steps=5)
+
+    check(LinspaceNegStartNet(), *(), target=target)
+
+
+def test_linspace_steps_one(target: str) -> None:
+    class LinspaceStepsOneNet(nn.Module):
+        def forward(self):
+            return torch.linspace(3, 10, steps=1)
+
+    check(LinspaceStepsOneNet(), *(), target=target)
+
+
+# --- logspace ---
+
+
+def test_logspace_simple(target: str) -> None:
+    class LogspaceSimpleNet(nn.Module):
+        def forward(self):
+            return torch.logspace(-10, 10, steps=5)
+
+    check(LogspaceSimpleNet(), *(), target=target)
+
+
+def test_logspace_float(target: str) -> None:
+    class LogspaceFloatNet(nn.Module):
+        def forward(self):
+            return torch.logspace(0.1, 1.0, steps=5)
+
+    check(LogspaceFloatNet(), *(), target=target)
+
+
+def test_logspace_float_step_one(target: str) -> None:
+    class LogspaceFloatStepOneNet(nn.Module):
+        def forward(self):
+            return torch.logspace(0.1, 1.0, steps=1)
+
+    check(LogspaceFloatStepOneNet(), *(), target=target)
+
+
+def test_logspace_base_two(target: str) -> None:
+    class LogspaceBaseTwoNet(nn.Module):
+        def forward(self):
+            return torch.logspace(2, 2, steps=1, base=2)
+
+    check(LogspaceBaseTwoNet(), *(), target=target)
+
+
+# --- eye ---
+
+
+def test_eye_simple(target: str) -> None:
+    class EyeSimpleNet(nn.Module):
+        def forward(self) -> torch.Tensor:
+            return torch.eye(3)
+
+    check(EyeSimpleNet(), *(), target=target)
+
+
 # --- empty ---
 
 
@@ -181,6 +314,63 @@ def test_empty_gpu(target: str) -> None:
             ).fill_(0.0)
 
     check(EmptyGPUNet(), *(), target=target)
+
+
+# --- empty_like ---
+
+
+def test_empty_like_simple(target: str) -> None:
+    class EmptyLikeSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.empty_like(input).fill_(0)
+
+    check(EmptyLikeSimpleNet(), torch.empty((2, 3), dtype=torch.int32), target=target)
+
+
+@pytest.mark.supported_targets("cuda", "rocm")
+def test_empty_like_gpu(target: str) -> None:
+    class EmptyLikeGPUNet(nn.Module):
+        is_docc = None
+
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.empty_like(
+                input,
+                device=(
+                    torch.device("cuda") if self.is_docc else torch.get_default_device()
+                ),
+            ).fill_(0)
+
+    check(EmptyLikeGPUNet(), torch.empty((2, 3), dtype=torch.int32), target=target)
+
+
+# --- empty_permuted ---
+
+
+def test_empty_permuted_simple(target: str) -> None:
+    class EmptyPermutedSimpleNet(nn.Module):
+        def forward(self) -> torch.Tensor:
+            return torch.empty_permuted((2, 3, 5, 7), (0, 1, 2, 3)).fill_(0.0)
+
+    check(EmptyPermutedSimpleNet(), *(), target=target)
+
+
+def test_empty_permuted_permuted(target: str) -> None:
+    class EmptyPermutedPermutedNet(nn.Module):
+        def forward(self) -> torch.Tensor:
+            return torch.empty_permuted((2, 3, 5, 7), (0, 2, 3, 1)).fill_(0.0)
+
+    check(EmptyPermutedPermutedNet(), *(), target=target)
+
+
+# --- empty_strided ---
+
+
+def test_empty_strided_simple(target: str) -> None:
+    class EmptyStridedSimpleNet(nn.Module):
+        def forward(self) -> torch.Tensor:
+            return torch.empty_strided((2, 3), (1, 2)).fill_(0.0)
+
+    check(EmptyStridedSimpleNet(), *(), target=target)
 
 
 # --- full ---

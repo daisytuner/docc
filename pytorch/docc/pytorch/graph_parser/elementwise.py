@@ -10,6 +10,8 @@ from docc.sdfg import (
     Tensor,
     CMathFunction,
     TaskletCode,
+    Scalar,
+    Pointer,
 )
 
 from docc.pytorch.graph_parser.utils import (
@@ -226,19 +228,23 @@ class ElementwiseTensorOpParser(GraphParserModule):
             raise GraphParserError(
                 self, node, "Unsupported kwargs: " + str(node.kwargs)
             )
-        self_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 0)
-        other_info_or_const: TensorInfo | TensorConstant = (
+        result_info: TensorInfo = self.get_result_tensor_info(node, builder, metadata)
+        self_info_or_const: TensorInfo | TensorConstant = (
             self.get_arg_tensor_info_or_constant(
-                node, metadata, 1, align_constant_type=self_info.element_type()
+                node, metadata, 0, align_constant_type=result_info.element_type()
             )
         )
-        result_info: TensorInfo = self.get_result_tensor_info(node, builder, metadata)
+        other_info_or_const: TensorInfo | TensorConstant = (
+            self.get_arg_tensor_info_or_constant(
+                node, metadata, 1, align_constant_type=result_info.element_type()
+            )
+        )
         debug_info: DebugInfo = self.get_debug_info(node)
 
         builder.add_elementwise_op(
             self.op_type,
-            self_info.container(),
-            self_info.broadcast(result_info),
+            self_info_or_const.container(),
+            self_info_or_const.broadcast(result_info),
             other_info_or_const.container(),
             other_info_or_const.broadcast(result_info),
             result_info.container(),
@@ -250,6 +256,7 @@ class ElementwiseTensorOpParser(GraphParserModule):
 register_module("aten.div.Tensor", ElementwiseTensorOpParser("div"))
 register_module("aten.mul.Tensor", ElementwiseTensorOpParser("mul"))
 register_module("aten.mul.Scalar", ElementwiseTensorOpParser("mul"))
+register_module("aten.pow.Scalar", ElementwiseTensorOpParser("pow"))
 register_module("aten.pow.Tensor_Scalar", ElementwiseTensorOpParser("pow"))
 register_module("aten.pow.Tensor_Tensor", ElementwiseTensorOpParser("pow"))
 
@@ -280,21 +287,81 @@ class ElementwiseTaskletOpParser(GraphParserModule):
             )
         self_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 0)
         other_info_or_const: TensorInfo | TensorConstant = (
-            self.get_arg_tensor_info_or_constant(
-                node, metadata, 1, align_constant_type=self_info.element_type()
-            )
+            self.get_arg_tensor_info_or_constant(node, metadata, 1)
         )
         result_info: TensorInfo = self.get_result_tensor_info(node, builder, metadata)
         debug_info: DebugInfo = self.get_debug_info(node)
 
         is_float = primitive_type_is_floating_point(
             self_info.element_type().primitive_type
+        ) or primitive_type_is_floating_point(
+            other_info_or_const.element_type().primitive_type
         )
-        is_integer = primitive_type_is_integer(self_info.element_type().primitive_type)
+        is_integer = primitive_type_is_integer(
+            self_info.element_type().primitive_type
+        ) and primitive_type_is_integer(
+            other_info_or_const.element_type().primitive_type
+        )
         if is_float:
-            tasklet_code = self.fp_code
+            tasklet_code: TaskletCode = self.fp_code
+            if not primitive_type_is_floating_point(
+                self_info.element_type().primitive_type
+            ):
+                float_scalar: Scalar = other_info_or_const.element_type()
+                intermediate_shape: list[str] = self_info.shape()
+                if len(intermediate_shape) == 0:
+                    intermediate_shape: list[str] = ["1"]
+                intermediate_info: TensorInfo = self.create_intermediate_tensor_info(
+                    node,
+                    builder,
+                    metadata,
+                    Pointer(float_scalar),
+                    Tensor(float_scalar, intermediate_shape),
+                    [self_info],
+                )
+                builder.add_cast_op(
+                    self_info.container(),
+                    self_info.sdfg_tensor_type(),
+                    intermediate_info.container(),
+                    intermediate_info.sdfg_tensor_type(),
+                    debug_info,
+                )
+                self_info: TensorInfo = intermediate_info
+            if not primitive_type_is_floating_point(
+                other_info_or_const.element_type().primitive_type
+            ):
+                float_scalar: Scalar = self_info.element_type()
+                if isinstance(other_info_or_const, TensorConstant):
+                    other_info_or_const: TensorInfo | TensorConstant = TensorConstant(
+                        other_info_or_const.value(),
+                        self.align_constant_type(
+                            node, other_info_or_const, float_scalar
+                        ),
+                    )
+                else:
+                    intermediate_shape: list[str] = other_info_or_const.shape()
+                    if len(intermediate_shape) == 0:
+                        intermediate_shape: list[str] = ["1"]
+                    intermediate_info: TensorInfo = (
+                        self.create_intermediate_tensor_info(
+                            node,
+                            builder,
+                            metadata,
+                            Pointer(float_scalar),
+                            Tensor(float_scalar, intermediate_shape),
+                            [other_info_or_const],
+                        )
+                    )
+                    builder.add_cast_op(
+                        other_info_or_const.container(),
+                        other_info_or_const.sdfg_tensor_type(),
+                        intermediate_info.container(),
+                        intermediate_info.sdfg_tensor_type(),
+                        debug_info,
+                    )
+                    other_info_or_const: TensorInfo | TensorConstant = intermediate_info
         elif is_integer:
-            tasklet_code = self.int_code
+            tasklet_code: TaskletCode = self.int_code
         else:
             raise GraphParserError(
                 self, node, "Unsupported primitive type for elementwise tasklet"
@@ -328,6 +395,10 @@ register_module(
     ElementwiseTaskletOpParser(TaskletCode.fp_ole, TaskletCode.int_sle),
 )
 register_module(
+    "aten.lt.Scalar",
+    ElementwiseTaskletOpParser(TaskletCode.fp_olt, TaskletCode.int_slt),
+)
+register_module(
     "aten.bitwise_and.Tensor",
     ElementwiseTaskletOpParser(TaskletCode.int_and, TaskletCode.int_and),
 )
@@ -351,18 +422,29 @@ class ElementwiseTensorOpParserWithAlpha(GraphParserModule):
                 node,
                 "Expected exactly 2 arguments but got " + str(len(node.args)),
             )
-        self_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 0)
+        result_info: TensorInfo = self.get_result_tensor_info(node, builder, metadata)
+        self_info_or_const: TensorInfo | TensorConstant = (
+            self.get_arg_tensor_info_or_constant(
+                node, metadata, 0, align_constant_type=result_info.element_type()
+            )
+        )
         debug_info: DebugInfo = self.get_debug_info(node)
         if len(node.kwargs) == 0:
             intermediate_info_or_const: TensorInfo | TensorConstant = (
                 self.get_arg_tensor_info_or_constant(
-                    node, metadata, 1, align_constant_type=self_info.element_type()
+                    node,
+                    metadata,
+                    1,
+                    align_constant_type=result_info.element_type(),
                 )
             )
         elif len(node.kwargs) == 1:
             other_info_or_const: TensorInfo | TensorConstant = (
                 self.get_arg_tensor_info_or_constant(
-                    node, metadata, 1, align_constant_type=self_info.element_type()
+                    node,
+                    metadata,
+                    1,
+                    align_constant_type=result_info.element_type(),
                 )
             )
             if not "alpha" in node.kwargs:
@@ -407,11 +489,10 @@ class ElementwiseTensorOpParserWithAlpha(GraphParserModule):
                 self, node, "Unsupported number of kwargs: " + str(len(node.kwargs))
             )
 
-        result_info: TensorInfo = self.get_result_tensor_info(node, builder, metadata)
         builder.add_elementwise_op(
             self.op_type,
-            self_info.container(),
-            self_info.broadcast(result_info),
+            self_info_or_const.container(),
+            self_info_or_const.broadcast(result_info),
             intermediate_info_or_const.container(),
             intermediate_info_or_const.broadcast(result_info),
             result_info.container(),

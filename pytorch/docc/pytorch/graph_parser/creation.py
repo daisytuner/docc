@@ -248,3 +248,42 @@ class EmptyParser(GraphParserModule):
 
 
 register_module("aten.empty.memory_format", EmptyParser())
+
+
+class EmptyPermutedOrStridedParser(GraphParserModule):
+    def parse(
+        self,
+        node: torch.fx.Node,
+        builder: StructuredSDFGBuilder,
+        metadata: TensorMetadata,
+    ) -> None:
+        if len(node.args) != 2:
+            raise GraphParserError(
+                self,
+                node,
+                "Expected exactly two arguments but got: " + str(len(node.args)),
+            )
+        if not set(node.kwargs.keys()).issubset(
+            {"dtype", "layout", "device", "pin_memory"}
+        ):
+            raise GraphParserError(
+                self, node, "Unsupported kwargs: " + str(node.kwargs)
+            )
+
+        self.get_arg_multi_expr(node, 0)
+        self.get_arg_multi_expr(node, 1)
+        self.get_kwarg_dtype(node)
+        self.get_kwarg_layout(node)
+        self.get_kwarg_device(node)
+        self.get_kwarg_pin_memory(node)
+
+        result_info: TensorInfo = self.get_result_tensor_info(node, builder, metadata)
+        container_info: ContainerInfo = metadata.container(result_info.container())
+        if container_info.memory_managed():
+            container_info.set_memory(ContainerMemory.UNMANAGED)
+        elif isinstance(container_info.sdfg_type(), Pointer):
+            self.allocate_memory(node, builder, metadata, result_info)
+
+
+register_module("aten.empty_permuted.default", EmptyPermutedOrStridedParser())
+register_module("aten.empty_strided.default", EmptyPermutedOrStridedParser())
