@@ -19,17 +19,17 @@ jobs:
     uses: ./.github/workflows/format_and_typecheck.yml
 
   unit-tests-linux:
-    needs: checks
+    needs: [checks, sanitizer-tests-linux]
     uses: ./.github/workflows/unit_tests_linux.yml
     secrets: inherit
 
   unit-tests-macos:
-    needs: checks
+    needs: [checks, sanitizer-tests-macos]
     uses: ./.github/workflows/unit_tests_macos.yml
     secrets: inherit
 
   unit-tests-release:
-    needs: checks
+    needs: [checks, sanitizer-tests-linux, sanitizer-tests-macos]
     uses: ./.github/workflows/unit_tests_release.yml
     secrets: inherit
 
@@ -44,11 +44,11 @@ jobs:
     secrets: inherit
 
   integration-tests-cuda:
-    needs: checks
+    needs: [checks, sanitizer-tests-linux]
     uses: ./.github/workflows/integration_tests_cuda.yml
     secrets: inherit
 
   integration-tests-openmp:
-    needs: checks
+    needs: [checks, sanitizer-tests-linux]
     uses: ./.github/workflows/integration_tests_openmp.yml
     secrets: inherit
