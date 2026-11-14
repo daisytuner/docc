@@ -29,7 +29,7 @@ struct TargetOptions {
 };
 
 struct DoccTarget {
-    static constexpr int NEWEST_API_VER = 3;
+    static constexpr int NEWEST_API_VER = 4;
 
     int api_ver = NEWEST_API_VER;
     std::string short_name;
@@ -108,6 +108,18 @@ struct DoccTarget {
 
     [[nodiscard]] bool safe_get_direct_contraction_rescaling() const {
         return api_ver >= 3 && direct_contraction_rescaling;
+    }
+
+    /// Python frontend defaults for untyped numeric literals, not explicit dtypes or argument types.
+    std::string default_float = "float64";
+    std::string default_int = "int64";
+
+    [[nodiscard]] std::string safe_get_default_float() const {
+        return api_ver >= 4 ? default_float : "float64";
+    }
+
+    [[nodiscard]] std::string safe_get_default_int() const {
+        return api_ver >= 4 ? default_int : "int64";
     }
 };
 

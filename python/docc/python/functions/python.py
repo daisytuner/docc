@@ -153,7 +153,14 @@ class PythonHandler:
 
         # Use tasklet assign opcode for casting (as specified in problem statement)
         block = self.builder.add_block()
-        t_src, src_sub = self._add_read(block, arg)
+        if self._ev.type_system.is_weak_literal(arg):
+            source_dtype = self._ev.type_system.literal_string_type(
+                arg, use_defaults=False
+            )
+            t_src = self.builder.add_constant(block, arg, source_dtype)
+            src_sub = ""
+        else:
+            t_src, src_sub = self._add_read(block, arg)
         t_dst = self.builder.add_access(block, tmp_name)
         t_task = self.builder.add_tasklet(block, TaskletCode.assign, ["_in"], ["_out"])
         self.builder.add_memlet(block, t_src, "void", t_task, "_in", src_sub)
