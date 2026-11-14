@@ -13,6 +13,7 @@ permissions:
 
 jobs:
   llvm-tests-linux-san:
+    timeout-minutes: 60
     runs-on:
       group: dahlia
       labels: Linux

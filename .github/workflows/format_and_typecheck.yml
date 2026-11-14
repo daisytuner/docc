@@ -9,6 +9,7 @@ permissions:
 
 jobs:
   formatting:
+    timeout-minutes: 10
     runs-on:
       group: dahlia
       labels: Linux
@@ -46,6 +47,7 @@ jobs:
 
   typing:
     needs: formatting
+    timeout-minutes: 30
     runs-on:
       group: dahlia
       labels: Linux

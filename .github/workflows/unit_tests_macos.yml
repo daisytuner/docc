@@ -8,6 +8,7 @@ permissions:
 
 jobs:
   primary-tests-macos:
+    timeout-minutes: 30
     runs-on:
       group: dahlia
       labels: macOS

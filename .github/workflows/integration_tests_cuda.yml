@@ -8,6 +8,7 @@ permissions:
 
 jobs:
   integration-test-cuda:
+    timeout-minutes: 60
     runs-on:
       group: dahlia
       labels: RTX5060

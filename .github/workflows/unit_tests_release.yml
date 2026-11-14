@@ -8,6 +8,7 @@ permissions:
 
 jobs:
   release-linux:
+    timeout-minutes: 30
     runs-on:
       group: dahlia
       labels: RTX5060
@@ -64,6 +65,7 @@ jobs:
           pytest -v -s rtl_tests.py
 
   release-macos:
+    timeout-minutes: 30
     runs-on:
       group: dahlia
       labels: macOS

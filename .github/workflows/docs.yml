@@ -74,6 +74,7 @@ jobs:
 
   push:
     needs: build
+    timeout-minutes: 30
     # build-project.yml names an artifact only when it exported the image.
     if: needs.build.outputs.artifact != ''
     runs-on: ubuntu-latest
@@ -136,6 +137,7 @@ jobs:
 
   deploy:
     needs: [build, push]
+    timeout-minutes: 30
     # Staged deploys skip build and push, so this job can't simply require them to succeed.
     if: ${{ !cancelled() && inputs.deploy == true && github.ref == 'refs/heads/main' && (inputs.staged == true || needs.push.result == 'success') }}
     runs-on: ubuntu-latest

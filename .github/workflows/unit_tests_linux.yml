@@ -8,6 +8,7 @@ permissions:
 
 jobs:
   cpp-tests-linux:
+    timeout-minutes: 60
     runs-on:
       group: dahlia
       labels: RTX5060
@@ -130,6 +131,7 @@ jobs:
           ./rpc/tests/sdfgrpc_daisytuner_rpc_test
 
   inference-tests-linux:
+    timeout-minutes: 60
     runs-on:
       group: dahlia
       labels: rocm
@@ -214,6 +216,7 @@ jobs:
   ##### FRONTENDS #####
 
   llvm-tests-linux:
+    timeout-minutes: 60
     runs-on:
       group: dahlia
       labels: Linux
@@ -288,6 +291,7 @@ jobs:
           pytest -v llvm_test_suite.py
 
   mlir-tests-linux:
+    timeout-minutes: 60
     runs-on:
       group: dahlia
       labels: Linux
@@ -369,6 +373,7 @@ jobs:
       #     python fasterrcnn_resnet50.py
 
   python-tests-linux:
+    timeout-minutes: 60
     runs-on:
       group: dahlia
       labels: Linux
@@ -444,6 +449,7 @@ jobs:
           file: coverage.xml
 
   pytorch-tests-linux:
+    timeout-minutes: 60
     runs-on:
       group: dahlia
       labels: Linux
@@ -509,6 +515,7 @@ jobs:
   ##### TARGETS #####
 
   cuda-tests-linux:
+    timeout-minutes: 60
     runs-on:
       group: dahlia
       labels: RTX5060
@@ -599,6 +606,7 @@ jobs:
           .venv-pytorch/bin/pytest -v -n auto pytorch/tests --target=cuda
 
   rocm-tests-linux:
+    timeout-minutes: 60
     runs-on:
       group: dahlia
       labels: rocm
@@ -696,6 +704,7 @@ jobs:
           .venv-pytorch/bin/pytest -v -n auto pytorch/tests --target=rocm
 
   tenstorrent-tests-linux:
+    timeout-minutes: 30
     runs-on:
       group: dahlia
       labels: tenstorrent
@@ -762,6 +771,7 @@ jobs:
           pytest -v python/tests mlir/integration -m "tenstorrent"
 
   py-tests-linux-arm64:
+    timeout-minutes: 30
     runs-on:
       group: aster
     container:
@@ -829,6 +839,7 @@ jobs:
 
   finish:
     needs: [cpp-tests-linux, python-tests-linux, mlir-tests-linux, llvm-tests-linux, pytorch-tests-linux,]
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
       - name: Coveralls Finished

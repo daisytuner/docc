@@ -8,6 +8,7 @@ permissions:
 
 jobs:
   sanitizer-linux:
+    timeout-minutes: 30
     runs-on:
       group: dahlia
       labels: openmp

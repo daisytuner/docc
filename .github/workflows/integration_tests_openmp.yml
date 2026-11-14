@@ -8,6 +8,7 @@ permissions:
 
 jobs:
   integration-test-openmp:
+    timeout-minutes: 60
     runs-on:
       group: dahlia
       labels: openmp
@@ -83,6 +84,7 @@ jobs:
           pytest -v -rx apps_openmp_test.py
 
   integration-test-openmp-arm64:
+    timeout-minutes: 120
     runs-on:
       group: aster
     container:
