@@ -430,3 +430,19 @@ def test_layernorm3d_eps(target: str) -> None:
             return self.layernorm(input)
 
     check(LayerNorm3dEpsNet().eval(), torch.randn(2, 3, 16, 16, 16), target=target)
+
+
+# --- RMSNorm ---
+
+
+def test_rmsnorm_eps(target: str) -> None:
+    # PyTorch decomposes rms_norm with aten.add.Scalar for the epsilon.
+    class RMSNormEpsNet(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.rmsnorm: nn.RMSNorm = nn.RMSNorm(16, eps=1e-06)
+
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return self.rmsnorm(input)
+
+    check(RMSNormEpsNet().eval(), torch.randn(2, 3, 16), target=target)
