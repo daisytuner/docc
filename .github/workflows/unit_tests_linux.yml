@@ -576,15 +576,15 @@ jobs:
           nvidia-smi
           export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 
-          pytest -v python/tests/cuda -m "cuda"
-          pytest -v python/tests/python/ -m "cuda"
-          pytest -v python/tests/sdfg/ -m "cuda"
+          pytest -v -n auto python/tests/cuda -m "cuda"
+          pytest -v -n auto python/tests/python/ -m "cuda"
+          pytest -v -n auto python/tests/sdfg/ -m "cuda"
 
-          pytest -v python/benchmarks/ -k cuda
-          pytest -v mlir/integration -m "cuda"
+          pytest -v -n auto python/benchmarks/ -k cuda
+          pytest -v -n auto mlir/integration -m "cuda"
 
           # Segformer correctness test
-          # pytest -v mlir/benchmarks/torch/model_zoo/segformer.py -k "cuda"
+          # pytest -v -n auto mlir/benchmarks/torch/model_zoo/segformer.py -k "cuda"
 
       - name: PyTorch Tests
         run: |
@@ -593,7 +593,7 @@ jobs:
           .venv-pytorch/bin/pip install -r pytorch/requirements-cuda.txt
           export PYTHONPATH=$PWD/python:$PWD/pytorch
 
-          .venv-pytorch/bin/pytest -v pytorch/tests --target=cuda
+          .venv-pytorch/bin/pytest -v -n auto pytorch/tests --target=cuda
 
   rocm-tests-linux:
     runs-on:
@@ -671,14 +671,14 @@ jobs:
           export ROCM_HOME=/opt/rocm
           export LD_LIBRARY_PATH=/opt/rocm/lib:$LD_LIBRARY_PATH
 
-          pytest -v python/tests/rocm -m "rocm"
-          pytest -v python/tests/python/ -m "rocm"
-          pytest -v python/tests/sdfg/ -m "rocm"
+          pytest -v -n auto python/tests/rocm -m "rocm"
+          pytest -v -n auto python/tests/python/ -m "rocm"
+          pytest -v -n auto python/tests/sdfg/ -m "rocm"
 
-          pytest -v python/benchmarks/ -k rocm
-          pytest -v mlir/integration -m "rocm"
+          pytest -v -n auto python/benchmarks/ -k rocm
+          pytest -v -n auto mlir/integration -m "rocm"
 
-          # pytest -v mlir/benchmarks/torch/model_zoo/segformer.py -k "rocm"
+          # pytest -v -n auto mlir/benchmarks/torch/model_zoo/segformer.py -k "rocm"
 
       - name: PyTorch Tests
         run: |
@@ -690,7 +690,7 @@ jobs:
 
           .venv-pytorch/bin/pip install cupy-rocm-7-0
 
-          .venv-pytorch/bin/pytest -v pytorch/tests --target=rocm
+          .venv-pytorch/bin/pytest -v -n auto pytorch/tests --target=rocm
 
   tenstorrent-tests-linux:
     runs-on:
