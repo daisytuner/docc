@@ -3,6 +3,9 @@ name: Unit Tests (Linux)
 on:
   workflow_call:
 
+permissions:
+  contents: read
+
 jobs:
   cpp-tests-linux:
     runs-on:
@@ -76,7 +79,7 @@ jobs:
           pytest -v -s rtl_tests.py
 
       - name: Coveralls
-        uses: coverallsapp/github-action@v2
+        uses: coverallsapp/github-action@8d6379e14d29928660c4ba802d8e85393440b329 # v2
         with:
           flag-name: sdfg
           parallel: true
@@ -257,7 +260,7 @@ jobs:
           lcov --ignore-errors unused --extract build/coverage_full.lcov '*/llvm/src/*' '*/llvm/include/*' --output-file build/coverage.lcov
 
       - name: Coveralls
-        uses: coverallsapp/github-action@v2
+        uses: coverallsapp/github-action@8d6379e14d29928660c4ba802d8e85393440b329 # v2
         with:
           flag-name: llvm
           parallel: true
@@ -433,7 +436,7 @@ jobs:
           pytest -v -n auto python/benchmarks/ -k openmp
 
       - name: Coveralls
-        uses: coverallsapp/github-action@v2
+        uses: coverallsapp/github-action@8d6379e14d29928660c4ba802d8e85393440b329 # v2
         with:
           flag-name: python-${{ matrix.python-version }}
           parallel: true
@@ -496,7 +499,7 @@ jobs:
 
       - name: Coveralls
         if: matrix.python-version == '3.14'
-        uses: coverallsapp/github-action@v2
+        uses: coverallsapp/github-action@8d6379e14d29928660c4ba802d8e85393440b329 # v2
         with:
           flag-name: pytorch
           parallel: true
@@ -829,6 +832,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Coveralls Finished
-        uses: coverallsapp/github-action@v2
+        uses: coverallsapp/github-action@8d6379e14d29928660c4ba802d8e85393440b329 # v2
         with:
           parallel-finished: true

@@ -3,6 +3,9 @@ name: Integration Tests - CUDA
 on:
   workflow_call:
 
+permissions:
+  contents: read
+
 jobs:
   integration-test-cuda:
     runs-on:

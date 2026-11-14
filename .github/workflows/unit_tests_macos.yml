@@ -3,6 +3,9 @@ name: Unit Tests (macOS)
 on:
   workflow_call:
 
+permissions:
+  contents: read
+
 jobs:
   primary-tests-macos:
     runs-on:

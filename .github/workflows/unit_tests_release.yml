@@ -3,6 +3,9 @@ name: Unit Tests - Release
 on:
   workflow_call:
 
+permissions:
+  contents: read
+
 jobs:
   release-linux:
     runs-on:

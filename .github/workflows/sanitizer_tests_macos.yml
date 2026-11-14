@@ -3,6 +3,9 @@ name: Sanitizer Tests (macOS)
 on:
   workflow_call:
 
+permissions:
+  contents: read
+
 jobs:
   sanitizer-macos-asan:
     runs-on:

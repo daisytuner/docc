@@ -3,6 +3,9 @@ name: Sanitizer Tests (Linux)
 on:
   workflow_call:
 
+permissions:
+  contents: read
+
 jobs:
   sanitizer-linux:
     runs-on:

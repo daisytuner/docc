@@ -3,6 +3,9 @@ name: Integration Tests - OpenMP
 on:
   workflow_call:
 
+permissions:
+  contents: read
+
 jobs:
   integration-test-openmp:
     runs-on:
