@@ -38,25 +38,38 @@ def kernel(alpha, beta, A, u1, v1, u2, v2, w, x, y, z):
 
 @pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda", "rocm"])
 def test_gemver(target):
+    # Outer products are elementwise; only the two matvecs are contractions.
     if target == "none":
-        verifier = SDFGVerification(verification={"SEQUENTIAL": 3, "MAP": 3, "GEMM": 4})
+        verifier = SDFGVerification(verification={"SEQUENTIAL": 7, "MAP": 7, "GEMM": 2})
     elif target == "sequential":
-        verifier = SDFGVerification(verification={"VECTORIZE": 3, "MAP": 3, "GEMM": 4})
+        verifier = SDFGVerification(
+            verification={"VECTORIZE": 5, "SEQUENTIAL": 2, "MAP": 7, "GEMM": 2}
+        )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "CPU_PARALLEL": 3,
-                "MAP": 3,
-                "GEMM": 4,
+                "CPU_PARALLEL": 5,
+                "MAP": 5,
+                "GEMM": 2,
             }
         )
     elif target == "cuda":
         verifier = SDFGVerification(
-            verification={"CUDA_Offload": 6, "MAP": 6, "CUDAOffloading": 4, "GEMM": 4},
+            verification={
+                "CUDA_Offload": 10,
+                "MAP": 10,
+                "CUDAOffloading": 4,
+                "GEMM": 2,
+            },
         )
     elif target == "rocm":
         verifier = SDFGVerification(
-            verification={"ROCM_Offload": 6, "MAP": 6, "ROCMOffloading": 4, "GEMM": 4},
+            verification={
+                "ROCM_Offload": 10,
+                "MAP": 10,
+                "ROCMOffloading": 4,
+                "GEMM": 2,
+            },
         )
     run_pytest(initialize, kernel, PARAMETERS, target, verifier=verifier)
 
