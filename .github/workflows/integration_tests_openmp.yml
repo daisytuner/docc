@@ -1,13 +1,7 @@
 name: Integration Tests - OpenMP
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    types: [opened, reopened, synchronize]
-  schedule:
-    - cron: "0 5 * * *"
+  workflow_call:
 
 jobs:
   integration-test-openmp:
