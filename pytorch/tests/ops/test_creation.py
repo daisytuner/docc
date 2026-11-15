@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import numpy as np
 
 import pytest
 
@@ -63,6 +64,90 @@ def test_tensor_empty(target: str) -> None:
 #             )
 
 #     check(TensorSimpleNet(), *(), target=target)
+
+
+# --- asarray ---
+
+
+def test_asarray_simple(target: str) -> None:
+    class AsarraySimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.asarray(input)
+
+    check(AsarraySimpleNet(), torch.tensor([1, 2, 3]), target=target)
+
+
+def test_asarray_copy(target: str) -> None:
+    class AsarrayCopyNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.asarray(input, copy=True)
+
+    check(AsarrayCopyNet(), torch.tensor([1, 2, 3]), target=target)
+
+
+def test_asarray_numpy(target: str) -> None:
+    class AsarrayNumpyNet(nn.Module):
+        def forward(self, input: np.ndarray) -> torch.Tensor:
+            return torch.asarray(input)
+
+    check(AsarrayNumpyNet(), np.array([1, 2, 3]), target=target)
+
+
+def test_asarray_numpy_dtype(target: str) -> None:
+    class AsarrayNumpyDtypeNet(nn.Module):
+        def forward(self, input: np.ndarray) -> torch.Tensor:
+            return torch.asarray(input, dtype=torch.float32)
+
+    check(AsarrayNumpyDtypeNet(), np.array([1, 2, 3]), target=target)
+
+
+def test_asarray_numpy_scalar(target: str) -> None:
+    class AsarrayNumpyScalarNet(nn.Module):
+        def forward(self, input: np.ndarray) -> torch.Tensor:
+            return torch.asarray(input, dtype=torch.float64)
+
+    check(AsarrayNumpyScalarNet(), np.float64(0.5), target=target)
+
+
+# --- as_tensor ---
+
+
+def test_as_tensor_simple(target: str) -> None:
+    class AsTensorSimpleNet(nn.Module):
+        def forward(self, input: np.ndarray) -> torch.Tensor:
+            return torch.as_tensor(input)
+
+    check(AsTensorSimpleNet(), np.array([1, 2, 3]), target=target)
+
+
+# --- as_strided ---
+
+
+def test_as_strided_simple(target: str) -> None:
+    class AsStridedSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.as_strided(input, (2, 2), (1, 2))
+
+    check(AsStridedSimpleNet(), torch.randn(3, 3), target=target)
+
+
+def test_as_strided_offset(target: str) -> None:
+    class AsStridedOffsetNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.as_strided(input, (2, 2), (1, 2), 1)
+
+    check(AsStridedOffsetNet(), torch.randn(3, 3), target=target)
+
+
+# --- from_numpy ---
+
+
+def test_from_numpy_simple(target: str) -> None:
+    class FromNumpySimpleNet(nn.Module):
+        def forward(self, input: np.ndarray) -> torch.Tensor:
+            return torch.from_numpy(input)
+
+    check(FromNumpySimpleNet(), np.array([1, 2, 3]), target=target)
 
 
 # --- zeros ---
@@ -528,3 +613,32 @@ def test_scalar_tensor_gpu(target: str) -> None:
             )
 
     check(ScalarTensorGPUNet(), target=target)
+
+
+# --- heaviside ---
+
+
+@pytest.mark.skip(reason="Needs support for aten.logical_or.default")
+def test_heaviside_simple(target: str) -> None:
+    class HeavisideSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor, values: torch.Tensor) -> torch.Tensor:
+            return torch.heaviside(input, values)
+
+    check(
+        HeavisideSimpleNet(),
+        *(torch.tensor([-1.5, 0.0, 2.0]), torch.tensor([0.5])),
+        target=target
+    )
+
+
+@pytest.mark.skip(reason="Needs support for aten.logical_or.default")
+def test_heaviside_multi_values(target: str) -> None:
+    class HeavisideSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor, values: torch.Tensor) -> torch.Tensor:
+            return torch.heaviside(input, values)
+
+    check(
+        HeavisideSimpleNet(),
+        *(torch.tensor([-1.5, 0.0, 2.0]), torch.tensor([1.2, -2.0, 3.5])),
+        target=target
+    )

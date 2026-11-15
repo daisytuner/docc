@@ -12,6 +12,7 @@ from docc.sdfg import (
     Tasklet,
     TaskletCode,
     Pointer,
+    Tensor,
 )
 
 from docc.pytorch.graph_parser.utils import (
@@ -287,3 +288,34 @@ class EmptyPermutedOrStridedParser(GraphParserModule):
 
 register_module("aten.empty_permuted.default", EmptyPermutedOrStridedParser())
 register_module("aten.empty_strided.default", EmptyPermutedOrStridedParser())
+
+
+class AsStridedParser(GraphParserModule):
+    def parse(
+        self,
+        node: torch.fx.Node,
+        builder: StructuredSDFGBuilder,
+        metadata: TensorMetadata,
+    ) -> None:
+        if len(node.args) < 3 or len(node.args) > 4:
+            raise GraphParserError(
+                self,
+                node,
+                "Expected between 3 and 4 arguments but got: " + str(len(node.args)),
+            )
+        if len(node.kwargs) != 0:
+            raise GraphParserError(
+                self, node, "Unsupported kwargs: " + str(node.kwargs)
+            )
+
+        self_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 0)
+        self.get_arg_multi_expr(node, 1)
+        self.get_arg_multi_expr(node, 2)
+        if len(node.args) == 4:
+            if not node.args[3] is None:
+                self.get_arg_expr(node, 3)
+
+        self.create_result_view(node, builder, metadata, self_info)
+
+
+register_module("aten.as_strided.default", AsStridedParser())

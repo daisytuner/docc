@@ -546,3 +546,46 @@ class ElementwiseCMathTensorOpParser(GraphParserModule):
 register_module(
     "aten.atan2.default", ElementwiseCMathTensorOpParser(CMathFunction.atan2)
 )
+
+
+class IsNaNParser(GraphParserModule):
+    def parse(
+        self,
+        node: torch.fx.Node,
+        builder: StructuredSDFGBuilder,
+        metadata: TensorMetadata,
+    ) -> None:
+        if len(node.args) != 1:
+            raise GraphParserError(
+                self,
+                node,
+                "Expected exactly one argument but got " + str(len(node.args)),
+            )
+        if len(node.kwargs) != 0:
+            raise GraphParserError(
+                self, node, "Unsupported kwargs: " + str(node.kwargs)
+            )
+
+        self_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 0)
+        if not primitive_type_is_floating_point(
+            self_info.element_type().primitive_type
+        ):
+            raise GraphParserError(
+                self, node, "Element type must be floating point for comparison to NaN"
+            )
+        nan_const: TensorConstant = TensorConstant("NAN", self_info.element_type())
+
+        result_info: TensorInfo = self.get_result_tensor_info(node, builder, metadata)
+        debug_info: DebugInfo = self.get_debug_info(node)
+
+        builder.add_elementwise_tasklet_op(
+            TaskletCode.fp_oeq,
+            [self_info.container(), nan_const.value()],
+            [self_info.sdfg_tensor_type(), nan_const.sdfg_tensor_type()],
+            result_info.container(),
+            result_info.sdfg_tensor_type(),
+            debug_info,
+        )
+
+
+register_module("aten.isnan.default", IsNaNParser())

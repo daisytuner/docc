@@ -1012,9 +1012,15 @@ class GraphParserBase:
                 subset="0",
                 debug_info=debug_info,
             )
-        elif not src_info.is_tight() and dst_info.is_tight():
-            # This means that the model would return a non-contiguous tensor. We need to perform a
-            # copy to make it contiguous.
+        elif (not src_info.is_tight() and dst_info.is_tight()) or (
+            metadata.container(src_info.container()).in_argument()
+            and metadata.container(dst_info.container()).out_argument()
+        ):
+            # This means that (either ... or ...):
+            # A) the model would return a non-contiguous tensor. We need to perform a copy to make
+            #    it contiguous.
+            # B) the model would have a tensor that is an in argument and out argument. We need to
+            #    perform a copy to remap it.
             builder.add_copy_op(
                 src_info.container(),
                 src_info.sdfg_tensor_type(),

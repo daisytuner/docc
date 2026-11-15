@@ -159,13 +159,13 @@ class GraphParser(GraphParserBase):
                     # FX names like "sin" would shadow C math functions in generated code.
                     out_container: str = f"__daisy__{out_name}"
 
-                    if self.metadata.has_container(
-                        out_name
-                    ) or self.metadata.has_container(out_container):
-                        continue
-
-                    if not self.metadata.tensor(out_name).is_tight() or isinstance(
-                        sdfg_type, Scalar
+                    if (
+                        not self.metadata.tensor(out_name).is_tight()
+                        or isinstance(sdfg_type, Scalar)
+                        or (
+                            self.metadata.has_container(out_name)
+                            and self.metadata.container(out_name).in_argument()
+                        )
                     ):
                         if not isinstance(sdfg_type, Pointer):
                             sdfg_type: Type = Pointer(sdfg_type)
