@@ -46,6 +46,7 @@ set(SOURCE_FILES
     src/fp_math/transformations/fuse_fma.cpp
     src/fp_math/transformations/unfuse_fma.cpp
     src/parallelization/analysis/loop_carried_dependency_analysis.cpp
+    src/parallelization/analysis/parallel_patterns.cpp
     src/parallelization/passes/auto_parallelization.cpp
     src/parallelization/transformations/loop_parallelization.cpp
     src/tiles/analysis/tile_analysis.cpp
