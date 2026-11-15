@@ -299,6 +299,31 @@ class NumPyHandler:
 
     def handle_gemm(self, target, value_node):
         """Handle GEMM (General Matrix Multiply) operations: C = alpha * A @ B + beta * C."""
+
+        def static_scaling(node):
+            if not isinstance(node, ast.BinOp):
+                return True
+            if isinstance(node.op, ast.Mult):
+                for factor, operand in (
+                    (node.left, node.right),
+                    (node.right, node.left),
+                ):
+                    try:
+                        value = ast.literal_eval(factor)
+                    except (ValueError, TypeError):
+                        continue
+                    if type(value) in (int, float) and value != 0:
+                        return static_scaling(operand)
+                return False
+            if isinstance(node.op, (ast.Add, ast.MatMult)):
+                return static_scaling(node.left) and static_scaling(node.right)
+            return True
+
+        # BLAS skips operands for zero coefficients; NumPy multiplication still reads them.
+        # Keep dynamic or zero scaling explicit rather than absorbing it into alpha/beta.
+        if not static_scaling(value_node):
+            return False
+
         target_name = None
         target_subset = []
 

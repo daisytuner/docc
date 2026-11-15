@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 from docc.python import native
 
 
@@ -100,6 +101,25 @@ def test_matmul_accumulates_into_scaled_target():
     expected = 0.5 * out + a @ w
     accumulate(a, w, out)
     assert np.allclose(out, expected)
+
+
+@pytest.mark.parametrize(
+    "alpha,beta,nan_operand", [(1.5, -0.75, None), (0.0, 1.0, "a"), (1.0, 0.0, "out")]
+)
+def test_runtime_scaled_matmul_preserves_numpy_multiplication(alpha, beta, nan_operand):
+    @native
+    def accumulate(alpha, beta, a, b, out):
+        out[:] = alpha * a @ b + beta * out
+
+    rng = np.random.default_rng(42)
+    a, b, out = rng.random((5, 3)), rng.random((3, 7)), rng.random((5, 7))
+    if nan_operand == "a":
+        a[0, :] = np.nan
+    elif nan_operand == "out":
+        out[0, :] = np.nan
+    expected = alpha * a @ b + beta * out
+    accumulate(alpha, beta, a, b, out)
+    np.testing.assert_allclose(out, expected, rtol=1e-12, atol=1e-12)
 
 
 def test_matmul_broadcasting():
