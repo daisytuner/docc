@@ -161,7 +161,7 @@ class NumPyHandler:
                 name = node.value.id
                 indices = []
                 if isinstance(node.slice, ast.Tuple):
-                    indices = node.slice.elts
+                    indices = list(node.slice.elts)
                 else:
                     indices = [node.slice]
 
@@ -191,6 +191,13 @@ class NumPyHandler:
                             return None, None, None, None
                         val = self._ev.visit(idx)
                         start_indices.append(val)
+
+                # Missing trailing indices select whole dimensions, as in NumPy: W[e] is W[e, :, :].
+                shapes = self.tensor_table[name].shape
+                for dim_size in shapes[len(indices) :]:
+                    start_indices.append("0")
+                    slice_shape.append(dim_size)
+                    indices.append(ast.Slice())
 
                 return name, start_indices, slice_shape, indices
 
