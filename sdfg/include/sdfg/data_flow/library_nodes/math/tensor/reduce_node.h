@@ -16,6 +16,7 @@
  * - Sum, mean, std: Statistical reductions
  * - Min, max: Value reductions
  * - Softmax: Exponential normalization
+ * - ArgMax, ArgSort: Indices along one axis
  *
  * Reductions can operate on:
  * - Specific axes (e.g., reduce along dimension 1)
@@ -140,6 +141,25 @@ public:
         return keepdims_;
     }
 
+    /**
+     * @brief The reduction axes made non-negative and sorted
+     * @throws InvalidSDFGException if an axis is out of bounds
+     */
+    std::vector<int64_t> normalized_axes() const;
+
+    /**
+     * @brief The one reduction axis, made non-negative, of a node that takes exactly one
+     * @throws InvalidSDFGException if there is not exactly one axis, or it is out of bounds
+     */
+    int64_t single_axis() const;
+
+    /**
+     * @brief The shape of Y: the input shape with the reduced axes removed, or kept as 1 with keepdims
+     *
+     * Nodes whose output is not a reduction of X (such as ArgSort) override it.
+     */
+    virtual std::vector<symbolic::Expression> output_shape() const;
+
     symbolic::SymbolSet symbols() const override;
 
     void replace(const symbolic::Expression old_expression, const symbolic::Expression new_expression) override;
@@ -224,6 +244,67 @@ protected:
         const std::vector<symbolic::Expression>& output_shape,
         const std::vector<int64_t>& sorted_axes
     );
+
+    /**
+     * @brief Checks that X has the input shape and Y the output shape
+     *
+     * Memlets lowered to pointers no longer carry a shape; they are not checked.
+     */
+    void validate_shapes() const;
+
+    /**
+     * @brief Sequential maps over every dimension of the input shape but @p axes, nested in @p scope
+     * @return The innermost body, and the indices of X: the maps' counters, null at @p axes
+     */
+    std::pair<structured_control_flow::Sequence*, std::vector<symbolic::Expression>> add_outer_maps(
+        builder::StructuredSDFGBuilder& builder,
+        structured_control_flow::Sequence& scope,
+        const std::vector<int64_t>& axes
+    ) const;
+
+    /**
+     * @brief A new scalar container of @p type named after @p base
+     */
+    static std::string
+    add_scalar(builder::StructuredSDFGBuilder& builder, const std::string& base, types::PrimitiveType type);
+
+    /**
+     * @brief A loop over [@p init, @p limit) in @p scope, a sequential map if @p map, else a for
+     * @return Its Int64 counter and its body
+     */
+    std::pair<symbolic::Symbol, structured_control_flow::Sequence*> add_counted_loop(
+        builder::StructuredSDFGBuilder& builder,
+        structured_control_flow::Sequence& scope,
+        const symbolic::Expression& init,
+        const symbolic::Expression& limit,
+        bool map
+    ) const;
+
+    /**
+     * @brief target[subset] = value in @p block, where value is an Int64 constant or scalar container
+     */
+    void add_index_assignment(
+        builder::StructuredSDFGBuilder& builder,
+        structured_control_flow::Block& block,
+        data_flow::AccessNode& target,
+        const data_flow::Subset& subset,
+        const types::IType& target_type,
+        const std::string& value,
+        bool constant
+    ) const;
+
+    /**
+     * @brief code(X[left], X[right]) in @p block, into a new Bool scalar
+     * @return The Bool scalar
+     */
+    std::string add_input_comparison(
+        passes::LibNodeExpander::AccessNodeExpand& expansion,
+        structured_control_flow::Block& block,
+        data_flow::TaskletCode code,
+        const data_flow::Subset& left,
+        const data_flow::Subset& right,
+        const types::IType& input_type
+    ) const;
 };
 
 template<typename T>

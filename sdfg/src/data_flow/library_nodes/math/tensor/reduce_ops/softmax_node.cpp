@@ -52,20 +52,7 @@ passes::LibNodeExpander::ExpandOutcome SoftmaxNode::expand(passes::LibNodeExpand
         return context.unable();
     }
 
-    // Normalize and validate axes
-    std::vector<int64_t> sorted_axes = axes_;
-    for (auto& axis : sorted_axes) {
-        if (axis < 0) {
-            axis = static_cast<int64_t>(shape_.size()) + axis;
-        }
-        if (axis < 0 || axis >= static_cast<int64_t>(shape_.size())) {
-            throw InvalidSDFGException(
-                "Library Node: Axis value out of bounds. Axis: " + std::to_string(axis) +
-                " Shape size: " + std::to_string(shape_.size())
-            );
-        }
-    }
-    std::sort(sorted_axes.begin(), sorted_axes.end());
+    auto sorted_axes = normalized_axes();
 
     // Partition dimensions: non-reduced (outer, parallel) vs. reduced (inner, sequential)
     std::vector<size_t> outer_dims;

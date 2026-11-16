@@ -965,3 +965,67 @@ def test_numpy_any_in_branch():
     out2 = np.zeros(1)
     flag_negative(np.array([1.0, 2.0, 3.0]), out2)
     assert out2[0] == 0.0
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        np.array([1.0, 3.0, 2.0, 3.0], np.float32),  # ties: the first
+        np.array([1.0, np.nan, 5.0, np.nan], np.float32),  # NaN: the first
+        np.array([3, -2, 7, 7, 0], np.int64),
+    ],
+)
+def test_numpy_argmax_1d(values):
+    @native
+    def argmax_1d(a):
+        return np.argmax(a)
+
+    assert argmax_1d(values) == np.argmax(values)
+
+
+def test_numpy_argmax_axis():
+    @native
+    def argmax_rows(a):
+        return np.argmax(a, axis=1)
+
+    @native
+    def argmax_columns_keepdims(a):
+        return np.argmax(a, axis=0, keepdims=True)
+
+    a = np.random.default_rng(0).standard_normal((4, 6))
+    np.testing.assert_array_equal(argmax_rows(a), np.argmax(a, axis=1))
+    np.testing.assert_array_equal(
+        argmax_columns_keepdims(a), np.argmax(a, axis=0, keepdims=True)
+    )
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        np.array([1.0, 3.0, 3.0, 0.0, 3.0, -1.0], np.float32),  # ties keep their order
+        np.array([1.0, np.nan, 5.0, np.nan, 2.0], np.float32),  # NaNs last
+        np.array([3, -2, 7, 7, 0], np.int64),
+    ],
+)
+def test_numpy_argsort_is_stable(values):
+    @native
+    def argsort_1d(a):
+        return np.argsort(a)
+
+    np.testing.assert_array_equal(argsort_1d(values), np.argsort(values, kind="stable"))
+
+
+def test_numpy_argsort_axis_and_top_k():
+    @native
+    def argsort_columns(a):
+        return np.argsort(a, axis=0)
+
+    @native
+    def top_two(a):
+        return np.argsort(a)[-2:]
+
+    a = np.random.default_rng(1).standard_normal((4, 6))
+    np.testing.assert_array_equal(
+        argsort_columns(a), np.argsort(a, axis=0, kind="stable")
+    )
+    np.testing.assert_array_equal(top_two(a[0]), np.argsort(a[0])[-2:])

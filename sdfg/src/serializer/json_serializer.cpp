@@ -1802,6 +1802,14 @@ void register_default_serializers() {
             return std::make_unique<math::tensor::SoftmaxNodeSerializer>();
         });
     LibraryNodeSerializerRegistry::instance()
+        .register_library_node_serializer(math::tensor::LibraryNodeType_ArgMax.value(), []() {
+            return std::make_unique<math::tensor::ArgMaxNodeSerializer>();
+        });
+    LibraryNodeSerializerRegistry::instance()
+        .register_library_node_serializer(math::tensor::LibraryNodeType_ArgSort.value(), []() {
+            return std::make_unique<math::tensor::ArgSortNodeSerializer>();
+        });
+    LibraryNodeSerializerRegistry::instance()
         .register_library_node_serializer(math::tensor::LibraryNodeType_Mean.value(), []() {
             return std::make_unique<math::tensor::MeanNodeSerializer>();
         });
