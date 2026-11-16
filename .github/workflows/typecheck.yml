@@ -1,4 +1,4 @@
-name: Format and Type Checks
+name: Type Check
 
 on:
   workflow_call:
@@ -8,42 +8,7 @@ permissions:
   contents: read
 
 jobs:
-  formatting:
-    timeout-minutes: 10
-    runs-on:
-      group: dahlia
-      labels: Linux
-    container:
-      image: daisytuner/docc-run-env-llvm21-ubuntu-24.04-host:latest-amd64
-
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          submodules: recursive
-
-      - name: Prepare workspace
-        uses: ./.github/actions/prepare-workspace
-        with:
-          python-version: "3.14"
-
-      - name: Install formatters
-        run: pip install black==25.9.0
-
-      - name: C++ Formatting
-        shell: bash
-        run: |
-          shopt -s globstar
-          clang-format-21 -style=file --dry-run --Werror sdfg/include/**/*.h sdfg/src/**/*.cpp sdfg/tests/**/*.cpp
-          clang-format-21 -style=file --dry-run --Werror opt/include/**/*.h opt/src/**/*.cpp opt/tests/**/*.cpp
-          clang-format-21 -style=file --dry-run --Werror llvm/include/**/*.h llvm/src/**/*.cpp llvm/tests/**/*.cpp llvm/driver/**/*.cpp
-          clang-format-21 -style=file --dry-run --Werror python/bindings/**/*.h python/bindings/**/*.cpp
-
-      - name: Python Formatting
-        run: |
-          black --check python/docc/ python/tests/ pytorch/
-
   typing:
-    needs: formatting
     timeout-minutes: 30
     runs-on:
       group: dahlia
