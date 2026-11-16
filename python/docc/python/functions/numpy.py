@@ -53,6 +53,12 @@ class NumPyHandler:
             "log2": self._handle_numpy_unary_op,
             "exp2": self._handle_numpy_unary_op,
             "log": self._handle_numpy_unary_op,
+            "log10": self._handle_numpy_unary_op,
+            "log1p": self._handle_numpy_unary_op,
+            "expm1": self._handle_numpy_unary_op,
+            "sinh": self._handle_numpy_unary_op,
+            "cosh": self._handle_numpy_unary_op,
+            "hypot": self._handle_numpy_hypot,
             "cbrt": self._handle_numpy_cbrt,
             "sum": self._handle_numpy_reduce,
             "max": self._handle_numpy_reduce,
@@ -155,7 +161,7 @@ class NumPyHandler:
                 name = node.value.id
                 indices = []
                 if isinstance(node.slice, ast.Tuple):
-                    indices = node.slice.elts
+                    indices = list(node.slice.elts)
                 else:
                     indices = [node.slice]
 
@@ -185,6 +191,13 @@ class NumPyHandler:
                             return None, None, None, None
                         val = self._ev.visit(idx)
                         start_indices.append(val)
+
+                # Missing trailing indices select whole dimensions, as in NumPy: W[e] is W[e, :, :].
+                shapes = self.tensor_table[name].shape
+                for dim_size in shapes[len(indices) :]:
+                    start_indices.append("0")
+                    slice_shape.append(dim_size)
+                    indices.append(ast.Slice())
 
                 return name, start_indices, slice_shape, indices
 
@@ -293,6 +306,31 @@ class NumPyHandler:
 
     def handle_gemm(self, target, value_node):
         """Handle GEMM (General Matrix Multiply) operations: C = alpha * A @ B + beta * C."""
+
+        def static_scaling(node):
+            if not isinstance(node, ast.BinOp):
+                return True
+            if isinstance(node.op, ast.Mult):
+                for factor, operand in (
+                    (node.left, node.right),
+                    (node.right, node.left),
+                ):
+                    try:
+                        value = ast.literal_eval(factor)
+                    except (ValueError, TypeError):
+                        continue
+                    if type(value) in (int, float) and value != 0:
+                        return static_scaling(operand)
+                return False
+            if isinstance(node.op, (ast.Add, ast.MatMult)):
+                return static_scaling(node.left) and static_scaling(node.right)
+            return True
+
+        # BLAS skips operands for zero coefficients; NumPy multiplication still reads them.
+        # Keep dynamic or zero scaling explicit rather than absorbing it into alpha/beta.
+        if not static_scaling(value_node):
+            return False
+
         target_name = None
         target_subset = []
 
@@ -768,6 +806,14 @@ class NumPyHandler:
                 return False
 
             parsed_outers.append((res_a, res_b))
+
+        if all(
+            not subset and len(shape) == 1
+            for operands in parsed_outers
+            for _, subset, shape, _ in operands
+        ):
+            # Keep expression order when lowering outer products as elementwise multiplies.
+            return False
 
         alpha = "1.0"
         beta = "1.0" if target_found else "0.0"
@@ -1404,6 +1450,11 @@ class NumPyHandler:
             "log2": CMathFunction.log2,
             "exp2": CMathFunction.exp2,
             "log": CMathFunction.log,
+            "log10": CMathFunction.log10,
+            "log1p": CMathFunction.log1p,
+            "expm1": CMathFunction.expm1,
+            "sinh": CMathFunction.sinh,
+            "cosh": CMathFunction.cosh,
         }
 
         if len(tensor.shape) == 0:
@@ -1447,10 +1498,15 @@ class NumPyHandler:
 
         return tmp_name
 
-    def handle_array_binary_op(self, op_type, left, right):
+    def handle_array_binary_op(self, op_type, left, right, cmath_func=None):
+        """Elementwise ``op_type`` of ``left`` and ``right``, broadcast as NumPy does, or
+        the binary C math function ``cmath_func``, which computes in floats as NumPy's
+        float ufuncs do."""
         # NumPy promotion (scalars adapt to arrays) via the shared TypeSystem.
         # 0-d arrays count as arrays; only literals/Python scalars adapt.
         dtype = self._ev.type_system.array_result_type(left, right)
+        if cmath_func is not None and dtype.primitive_type not in FLOAT_PRIMITIVE_TYPES:
+            dtype = Scalar(PrimitiveType.Double)
 
         # Cast operands to result type if needed
         real_left = self._cast_to_type(left, dtype)
@@ -1521,6 +1577,34 @@ class NumPyHandler:
             output_strides = self._compute_strides(output_shape, "C")
         tmp_name = self._create_array_temp(output_shape, dtype, strides=output_strides)
         tmp_tensor = self.tensor_table[tmp_name]
+
+        if cmath_func is not None:
+            if not output_shape:
+                block = self.builder.add_block()
+                t_task = self.builder.add_cmath(block, cmath_func, dtype.primitive_type)
+                for connector, operand in (("_in1", real_left), ("_in2", real_right)):
+                    t_src, src_sub = self._add_read(block, operand)
+                    self.builder.add_memlet(
+                        block, t_src, "void", t_task, connector, src_sub, dtype
+                    )
+                t_dst = self.builder.add_access(block, tmp_name)
+                self.builder.add_memlet(block, t_task, "_out", t_dst, "void", "", dtype)
+                return tmp_name
+            # The C math tensor node reads its operands from containers.
+            if real_left not in self.tensor_table:
+                real_left = self._scalar_container(real_left, dtype)
+            if real_right not in self.tensor_table:
+                real_right = self._scalar_container(real_right, dtype)
+            self.builder.add_elementwise_cmath_op(
+                cmath_func,
+                real_left,
+                real_left_tensor,
+                real_right,
+                real_right_tensor,
+                tmp_name,
+                tmp_tensor,
+            )
+            return tmp_name
 
         self.builder.add_elementwise_op(
             op_type,
@@ -2072,6 +2156,32 @@ class NumPyHandler:
         }
         return self.handle_array_binary_op(op_map[func_name], args[0], args[1])
 
+    def _handle_numpy_hypot(self, node, func_name):
+        """Handle np.hypot, elementwise sqrt(a**2 + b**2) with broadcasting."""
+        args = [self.visit(arg) for arg in node.args]
+        if len(args) != 2:
+            raise NotImplementedError(
+                f"Numpy function {func_name} requires 2 arguments"
+            )
+        return self.handle_array_binary_op(
+            "hypot", args[0], args[1], cmath_func=CMathFunction.hypot
+        )
+
+    def _scalar_container(self, value, dtype):
+        """A scalar container holding the literal or Python scalar ``value``."""
+        name = f"_tmp_{self._get_unique_id()}"
+        self.builder.add_container(name, dtype, False)
+        self.container_table[name] = dtype
+        self.tensor_table[name] = Tensor(dtype, [])
+
+        block = self.builder.add_block()
+        t_src, src_sub = self._add_read(block, value)
+        t_dst = self.builder.add_access(block, name)
+        t_task = self.builder.add_tasklet(block, TaskletCode.assign, ["_in"], ["_out"])
+        self.builder.add_memlet(block, t_src, "void", t_task, "_in", src_sub)
+        self.builder.add_memlet(block, t_task, "_out", t_dst, "void", "")
+        return name
+
     def _handle_numpy_unary_op(self, node, func_name):
         """Handle np.exp, np.sqrt, np.abs, etc."""
         args = [self.visit(arg) for arg in node.args]
@@ -2557,6 +2667,21 @@ class NumPyHandler:
         dtype = self._ev.type_system.promote(name_a, name_b)
 
         tmp_name = self._create_array_temp([m_expr, n_expr], dtype)
+
+        if len(shape_a) == len(shape_b) == 1 and not subset_a and not subset_b:
+            name_a = self._cast_to_type(name_a, dtype)
+            name_b = self._cast_to_type(name_b, dtype)
+            a, b = self.tensor_table[name_a], self.tensor_table[name_b]
+            self.builder.add_elementwise_op(
+                "mul",
+                name_a,
+                Tensor(dtype, [m_expr, n_expr], [a.strides[0], "0"], a.offset),
+                name_b,
+                Tensor(dtype, [m_expr, n_expr], ["0", b.strides[0]], b.offset),
+                tmp_name,
+                self.tensor_table[tmp_name],
+            )
+            return tmp_name
 
         new_call_node = ast.Call(
             func=node.func, args=[arg0, arg1], keywords=node.keywords
@@ -3524,8 +3649,17 @@ class NumPyHandler:
         Returns:
             Name of the casted scalar (or original if no cast needed)
         """
-        current_type = self._ev._element_type(name)
-        if current_type.primitive_type == target_type.primitive_type:
+        ts = self._ev.type_system
+        literal_type = (
+            ts.literal_string_type(name, use_defaults=False)
+            if ts.is_weak_literal(name)
+            else None
+        )
+        current_type = literal_type or self._ev._element_type(name)
+        if (
+            literal_type is None
+            and current_type.primitive_type == target_type.primitive_type
+        ):
             return name
 
         cast_name = f"_cast_{self._get_unique_id()}"
@@ -3534,7 +3668,11 @@ class NumPyHandler:
         self.tensor_table[cast_name] = Tensor(target_type, [])
 
         block = self.builder.add_block()
-        t_src, src_sub = self._add_read(block, name)
+        if literal_type is not None:
+            t_src = self.builder.add_constant(block, name, literal_type)
+            src_sub = ""
+        else:
+            t_src, src_sub = self._add_read(block, name)
         t_dst = self.builder.add_access(block, cast_name)
         t_task = self.builder.add_tasklet(block, TaskletCode.assign, ["_in"], ["_out"])
         self.builder.add_memlet(block, t_src, "void", t_task, "_in", src_sub)

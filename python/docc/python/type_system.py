@@ -227,7 +227,7 @@ def _adapt_weak_to_concrete(weak_type, concrete_type):
     Follows NEP 50: a Python scalar takes the *kind* of its literal but the
     *precision* of the concrete operand.
       - weak float  + concrete float  -> concrete float  (1.0 + f32 -> f32)
-      - weak float  + concrete int    -> default float64 (1.0 + i32 -> f64)
+      - weak float  + concrete int    -> weak float's default precision
       - weak int    + concrete float  -> concrete float  (1   + f32 -> f32)
       - weak int    + concrete int    -> concrete int    (1   + i32 -> i32)
     """
@@ -237,7 +237,7 @@ def _adapt_weak_to_concrete(weak_type, concrete_type):
 
     if weak_is_float and not concrete_is_float:
         # A weak float combined with a concrete integer yields the default float.
-        return Scalar(PrimitiveType.Double)
+        return weak_type
     # Otherwise the result adopts the concrete operand's precision/kind.
     return Scalar(concrete_pt)
 
@@ -345,9 +345,27 @@ class TypeSystem:
     are mutated in place as the SDFG is built.
     """
 
-    def __init__(self, container_table, tensor_table=None):
+    def __init__(
+        self,
+        container_table,
+        tensor_table=None,
+        default_float="float64",
+        default_int="int64",
+    ):
         self.container_table = container_table
         self.tensor_table = tensor_table if tensor_table is not None else {}
+        self.default_float = sdfg_type_from_type(default_float)
+        self.default_int = sdfg_type_from_type(default_int)
+        if self.default_float is None or self.default_float.primitive_type not in (
+            PrimitiveType.Float,
+            PrimitiveType.Double,
+        ):
+            raise ValueError(f"Invalid default_float {default_float!r}")
+        if self.default_int is None or self.default_int.primitive_type not in (
+            PrimitiveType.Int32,
+            PrimitiveType.Int64,
+        ):
+            raise ValueError(f"Invalid default_int {default_int!r}")
 
     @staticmethod
     def _base_name(operand):
@@ -400,17 +418,19 @@ class TypeSystem:
         if lookup in self.container_table:
             return element_type_from_sdfg_type(self.container_table[lookup])
         # Bare literal constant.
-        if self.is_int(name):
-            return Scalar(PrimitiveType.Int64)
-        return Scalar(PrimitiveType.Double)
+        return self.literal_string_type(name)
 
-    def literal_string_type(self, literal):
-        """Element type of a bare literal token (`"2"`, `"3.0"`, `"true"`)."""
+    def literal_string_type(self, literal, *, use_defaults=True):
+        """Type of a bare literal; explicit casts read it at Python's precision."""
         if self.is_int(literal):
-            return Scalar(PrimitiveType.Int64)
+            return (
+                self.constant_type(int(literal))
+                if use_defaults
+                else Scalar(PrimitiveType.Int64)
+            )
         if literal in ("true", "false"):
             return Scalar(PrimitiveType.Bool)
-        return Scalar(PrimitiveType.Double)
+        return self.default_float if use_defaults else Scalar(PrimitiveType.Double)
 
     def constant_type(self, value):
         """Element type of a Python constant value.
@@ -418,12 +438,25 @@ class TypeSystem:
         ``bool`` is checked before ``int`` because ``bool`` is a subclass of
         ``int`` in Python.
         """
-        if isinstance(value, (bool, np.bool_)):
+        if isinstance(value, np.generic):
+            dtype = scalar_type_for_dtype(value.dtype)
+            if dtype is not None:
+                return dtype
+        if isinstance(value, bool):
             return Scalar(PrimitiveType.Bool)
-        if isinstance(value, (int, np.integer)):
-            return Scalar(PrimitiveType.Int64)
-        if isinstance(value, (float, np.floating)):
-            return Scalar(PrimitiveType.Double)
+        if isinstance(value, int):
+            limits = np.iinfo(
+                np.int32
+                if self.default_int.primitive_type == PrimitiveType.Int32
+                else np.int64
+            )
+            if not limits.min <= value <= limits.max:
+                raise OverflowError(
+                    f"Integer literal {value} is outside the range of {limits.dtype}"
+                )
+            return self.default_int
+        if isinstance(value, float):
+            return self.default_float
         raise NotImplementedError(f"Cannot infer type for constant {value!r}")
 
     def result_type(self, left, right, op):
@@ -433,8 +466,17 @@ class TypeSystem:
         if left_is_int and right_is_int:
             # true division / power of integers yields a float (NumPy semantics).
             if op in ("/", "**"):
-                return Scalar(PrimitiveType.Double)
-            return Scalar(PrimitiveType.Int64)
+                return self.default_float
+
+        if (
+            self.is_weak_literal(left)
+            and self.is_weak_literal(right)
+            and (
+                self.element_type(left).primitive_type in FLOAT_PRIMITIVE_TYPES
+                or self.element_type(right).primitive_type in FLOAT_PRIMITIVE_TYPES
+            )
+        ):
+            return self.default_float
 
         dtype = promote_scalar_types(
             self.element_type(left),
@@ -444,7 +486,7 @@ class TypeSystem:
         )
         # A float division/power of an otherwise-integer result is still float.
         if op in ("/", "**") and dtype.primitive_type in INT_PRIMITIVE_TYPES:
-            return Scalar(PrimitiveType.Double)
+            return self.default_float
         return dtype
 
     def is_array(self, operand):

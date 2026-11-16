@@ -10,6 +10,13 @@ namespace fp_math {
 /// Whether the k x n B of the MatMul or GEMM @p node is stored transposed, its rows along its columns' elements.
 bool b_stored_transposed(const data_flow::LibraryNode& node);
 
+/**
+ * Reexpresses an unbatched contraction with a contiguous column-vector result as its transpose:
+ * (A B)^T = B^T A^T. The result occupies the same storage, but its elements run along columns, as
+ * accelerators with vector output lanes require. Other contractions are returned unchanged.
+ */
+data_flow::LibraryNode& row_vector_result(builder::StructuredSDFGBuilder& builder, data_flow::LibraryNode& node);
+
 /// The copy read_b_row_major() makes of B, and the contraction that reads it.
 struct RowMajorB {
     math::tensor::TensorCopyNode& copy;

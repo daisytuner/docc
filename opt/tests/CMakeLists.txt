@@ -42,6 +42,7 @@ set(TEST_FILES
     fp_math/transformations/fuse_fma_test.cpp
     fp_math/transformations/unfuse_fma_test.cpp
     parallelization/analysis/loop_carried_dependency_analysis_test.cpp
+    parallelization/analysis/parallel_patterns_test.cpp
     parallelization/passes/auto_parallelization_test.cpp
     parallelization/transformations/loop_parallelization_test.cpp
     rocm/blas/rocblas_test.cpp

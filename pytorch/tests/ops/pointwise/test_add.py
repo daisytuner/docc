@@ -100,6 +100,14 @@ def test_add_scalar_int(target: str) -> None:
     check(PointwiseAddScalarIntNet(), torch.randn(5), target=target)
 
 
+def test_add_scalar_overload(target: str) -> None:
+    class PointwiseAddScalarOverloadNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.ops.aten.add.Scalar(input, 0.2)
+
+    check(PointwiseAddScalarOverloadNet(), torch.randn(4), target=target)
+
+
 def test_add_scalar_float_alpha(target: str) -> None:
     class PointwiseAddScalarFloatAlphaNet(nn.Module):
         def forward(

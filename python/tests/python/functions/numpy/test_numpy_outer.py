@@ -15,6 +15,7 @@ def test_outer():
     res = np_outer(a, b)
     expected = np.outer(a, b)
     assert np.allclose(res, expected), f"Expected {expected}, got {res}"
+    assert np_outer.last_sdfg.loop_report().get("GEMM", 0) == 0
 
 
 def test_outer_float32():
@@ -256,6 +257,7 @@ class TestOuterCombined:
         res = outer_plus_outer(a, b, c, d)
         expected = np.outer(a, b) + np.outer(c, d)
         assert np.allclose(res, expected)
+        assert outer_plus_outer.last_sdfg.loop_report().get("GEMM", 0) == 0
 
     def test_outer_accumulate(self):
         """Outer product accumulated into existing array."""
@@ -823,6 +825,25 @@ class TestMultipleUfuncOuter:
         expected = np.minimum(expected, np.add.outer(expected[:, 1], expected[1, :]))
 
         assert np.allclose(result, expected)
+
+
+@pytest.mark.parametrize(
+    "a,b",
+    [
+        (np.arange(12.0)[::2], np.arange(5.0)[::-1]),
+        (np.arange(4, dtype=np.int32), np.linspace(0.1, 0.9, 5, dtype=np.float32)),
+    ],
+    ids=["strided", "mixed-types"],
+)
+def test_outer_preserves_operand_layouts_and_promotion(a, b):
+    @native
+    def outer(a, b):
+        return np.outer(a, b)
+
+    result = outer(a, b)
+    expected = np.outer(a, b)
+    assert result.dtype == expected.dtype
+    np.testing.assert_allclose(result, expected, rtol=1e-12, atol=1e-12)
 
 
 if __name__ == "__main__":

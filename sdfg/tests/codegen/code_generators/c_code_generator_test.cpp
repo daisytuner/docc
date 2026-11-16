@@ -192,7 +192,7 @@ TEST(CCodeGeneratorTest, DispatchStructures_Basic) {
     EXPECT_EQ(result, R"(typedef struct MyStructA MyStructA;
 typedef struct MyStructA
 {
-char member_0;
+unsigned char member_0;
 } MyStructA;
 )");
 }
@@ -219,7 +219,7 @@ TEST(CCodeGeneratorTest, DispatchStructures_Nested) {
 typedef struct MyStructA MyStructA;
 typedef struct MyStructA
 {
-char member_0;
+unsigned char member_0;
 } MyStructA;
 typedef struct MyStructB
 {

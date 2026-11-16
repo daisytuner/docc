@@ -1408,6 +1408,29 @@ PYBIND11_MODULE(_sdfg, m) {
         "How Float and Double matmuls compute for the target when no contraction_precision is selected"
     );
 
+    m.def(
+        "target_default_scalar_types",
+        [](const std::string& target) {
+            auto* handler = docc_context.get_target_handler(target);
+            return std::make_pair(
+                handler ? handler->safe_get_default_float() : "float64",
+                handler ? handler->safe_get_default_int() : "int64"
+            );
+        },
+        py::arg("target"),
+        "Python literal (float, int) defaults for the target"
+    );
+
+    m.def(
+        "target_default_einsum",
+        [](const std::string& target) {
+            auto* handler = docc_context.get_target_handler(target);
+            return handler && handler->safe_get_default_einsum();
+        },
+        py::arg("target"),
+        "Whether Python contraction detection is enabled by default for the target"
+    );
+
     // Statistics
     m.def(
         "_enable_statistics",
