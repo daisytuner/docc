@@ -47,6 +47,31 @@ def test_matmul_slicing():
     assert np.allclose(res, a[:10, :10] @ b[:10, :10])
 
 
+def test_matmul_operand_with_implicit_trailing_dimensions():
+    # w[e] is w[e, :, :]: a matrix at offset e * 16 * 8, which a constant or a loaded index selects.
+    @native
+    def constant_expert(x, w, out):
+        out[:] = x @ w[2]
+
+    @native
+    def selected_expert(x, w, idx, out):
+        out[:] = x @ w[idx[0]]
+
+    @native
+    def returned_expert(x, w, idx):
+        return x @ w[idx[0]]
+
+    x = np.random.rand(4, 16)
+    w = np.random.rand(3, 16, 8)
+    out = np.zeros((4, 8))
+    constant_expert(x, w, out)
+    assert np.allclose(out, x @ w[2])
+    out = np.zeros((4, 8))
+    selected_expert(x, w, np.array([1]), out)
+    assert np.allclose(out, x @ w[1])
+    assert np.allclose(returned_expert(x, w, np.array([2])), x @ w[2])
+
+
 def test_matmul_transposed_operands_into_temporary():
     @native
     def matmul_transposed(a, b):
