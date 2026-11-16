@@ -66,7 +66,7 @@ TEST(CUDALanguageExtensionTest, PrimitiveType_UInt8) {
 
     cuda::CUDALanguageExtension generator(sdfg);
     auto result = generator.primitive_type(types::PrimitiveType::UInt8);
-    EXPECT_EQ(result, "char");
+    EXPECT_EQ(result, "unsigned char");
 }
 
 TEST(CUDALanguageExtensionTest, PrimitiveType_UInt16) {

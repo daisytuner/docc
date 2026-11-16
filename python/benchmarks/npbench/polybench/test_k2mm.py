@@ -35,20 +35,21 @@ def kernel(alpha, beta, A, B, C, D):
 
 @pytest.mark.parametrize("target", ["none", "sequential", "openmp", "cuda", "rocm"])
 def test_k2mm(target):
+    # Runtime scaling remains elementwise to preserve NumPy's zero/NaN semantics.
     if target == "none":
         verifier = SDFGVerification(
             verification={
-                "MAP": 2,
-                "SEQUENTIAL": 2,
+                "MAP": 6,
+                "SEQUENTIAL": 6,
                 "GEMM": 2,
             }
         )
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
-                "MAP": 2,
-                "SEQUENTIAL": 1,
-                "VECTORIZE": 1,
+                "MAP": 6,
+                "SEQUENTIAL": 3,
+                "VECTORIZE": 3,
                 "GEMM": 2,
             }
         )
@@ -56,15 +57,15 @@ def test_k2mm(target):
         verifier = SDFGVerification(
             verification={
                 "GEMM": 2,
-                "CPU_PARALLEL": 1,
-                "MAP": 1,
+                "CPU_PARALLEL": 3,
+                "MAP": 3,
             }
         )
     elif target == "cuda":
         verifier = SDFGVerification(
             verification={
-                "MAP": 2,
-                "CUDA_Offload": 2,
+                "MAP": 6,
+                "CUDA_Offload": 6,
                 "CUDAOffloading": 4,
                 "GEMM": 2,
             },
@@ -73,8 +74,8 @@ def test_k2mm(target):
     elif target == "rocm":
         verifier = SDFGVerification(
             verification={
-                "MAP": 2,
-                "ROCM_Offload": 2,
+                "MAP": 6,
+                "ROCM_Offload": 6,
                 "ROCMOffloading": 4,
                 "GEMM": 2,
             },

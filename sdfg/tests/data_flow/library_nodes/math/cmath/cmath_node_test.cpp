@@ -294,3 +294,23 @@ TEST(CMathNodeTest, Approximate_NoIntrinsicFallsBackToPrecise) {
     EXPECT_NE(code.find("exp("), std::string::npos);
     EXPECT_EQ(code.find("__exp"), std::string::npos);
 }
+
+TEST(CMathNodeTest, Approximate_PowPreservesNegativeBaseDomain) {
+    builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
+    types::Scalar desc(types::PrimitiveType::Float);
+    builder.add_container("x", desc);
+    builder.add_container("y", desc);
+    auto& block = builder.add_block(builder.subject().root());
+    auto& node = static_cast<math::cmath::CMathNode&>(builder.add_library_node<math::cmath::CMathNode>(
+        block, DebugInfo(), math::cmath::CMathFunction::pow, types::PrimitiveType::Float, true
+    ));
+    builder.add_computational_memlet(block, builder.add_access(block, "x"), node, "_in1", {}, desc);
+    builder.add_computational_memlet(block, builder.add_constant(block, "2.0", desc), node, "_in2", {}, desc);
+    builder.add_computational_memlet(block, node, "_out", builder.add_access(block, "y"), {}, desc);
+
+    for (const auto& language : {"CUDA", "ROCM"}) {
+        auto code = dispatch_cmath(builder, node, language);
+        EXPECT_NE(code.find("= powf("), std::string::npos);
+        EXPECT_EQ(code.find("__powf("), std::string::npos);
+    }
+}

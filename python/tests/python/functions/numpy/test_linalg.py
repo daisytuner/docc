@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 from docc.python import native
 
 
@@ -44,6 +45,31 @@ def test_matmul_slicing():
     b = np.random.rand(20, 20)
     res = matmul_slice(a, b)
     assert np.allclose(res, a[:10, :10] @ b[:10, :10])
+
+
+def test_matmul_operand_with_implicit_trailing_dimensions():
+    # w[e] is w[e, :, :]: a matrix at offset e * 16 * 8, which a constant or a loaded index selects.
+    @native
+    def constant_expert(x, w, out):
+        out[:] = x @ w[2]
+
+    @native
+    def selected_expert(x, w, idx, out):
+        out[:] = x @ w[idx[0]]
+
+    @native
+    def returned_expert(x, w, idx):
+        return x @ w[idx[0]]
+
+    x = np.random.rand(4, 16)
+    w = np.random.rand(3, 16, 8)
+    out = np.zeros((4, 8))
+    constant_expert(x, w, out)
+    assert np.allclose(out, x @ w[2])
+    out = np.zeros((4, 8))
+    selected_expert(x, w, np.array([1]), out)
+    assert np.allclose(out, x @ w[1])
+    assert np.allclose(returned_expert(x, w, np.array([2])), x @ w[2])
 
 
 def test_matmul_transposed_operands_into_temporary():
@@ -100,6 +126,25 @@ def test_matmul_accumulates_into_scaled_target():
     expected = 0.5 * out + a @ w
     accumulate(a, w, out)
     assert np.allclose(out, expected)
+
+
+@pytest.mark.parametrize(
+    "alpha,beta,nan_operand", [(1.5, -0.75, None), (0.0, 1.0, "a"), (1.0, 0.0, "out")]
+)
+def test_runtime_scaled_matmul_preserves_numpy_multiplication(alpha, beta, nan_operand):
+    @native
+    def accumulate(alpha, beta, a, b, out):
+        out[:] = alpha * a @ b + beta * out
+
+    rng = np.random.default_rng(42)
+    a, b, out = rng.random((5, 3)), rng.random((3, 7)), rng.random((5, 7))
+    if nan_operand == "a":
+        a[0, :] = np.nan
+    elif nan_operand == "out":
+        out[0, :] = np.nan
+    expected = alpha * a @ b + beta * out
+    accumulate(alpha, beta, a, b, out)
+    np.testing.assert_allclose(out, expected, rtol=1e-12, atol=1e-12)
 
 
 def test_matmul_broadcasting():

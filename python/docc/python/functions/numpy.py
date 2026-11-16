@@ -161,7 +161,7 @@ class NumPyHandler:
                 name = node.value.id
                 indices = []
                 if isinstance(node.slice, ast.Tuple):
-                    indices = node.slice.elts
+                    indices = list(node.slice.elts)
                 else:
                     indices = [node.slice]
 
@@ -191,6 +191,13 @@ class NumPyHandler:
                             return None, None, None, None
                         val = self._ev.visit(idx)
                         start_indices.append(val)
+
+                # Missing trailing indices select whole dimensions, as in NumPy: W[e] is W[e, :, :].
+                shapes = self.tensor_table[name].shape
+                for dim_size in shapes[len(indices) :]:
+                    start_indices.append("0")
+                    slice_shape.append(dim_size)
+                    indices.append(ast.Slice())
 
                 return name, start_indices, slice_shape, indices
 
@@ -299,6 +306,31 @@ class NumPyHandler:
 
     def handle_gemm(self, target, value_node):
         """Handle GEMM (General Matrix Multiply) operations: C = alpha * A @ B + beta * C."""
+
+        def static_scaling(node):
+            if not isinstance(node, ast.BinOp):
+                return True
+            if isinstance(node.op, ast.Mult):
+                for factor, operand in (
+                    (node.left, node.right),
+                    (node.right, node.left),
+                ):
+                    try:
+                        value = ast.literal_eval(factor)
+                    except (ValueError, TypeError):
+                        continue
+                    if type(value) in (int, float) and value != 0:
+                        return static_scaling(operand)
+                return False
+            if isinstance(node.op, (ast.Add, ast.MatMult)):
+                return static_scaling(node.left) and static_scaling(node.right)
+            return True
+
+        # BLAS skips operands for zero coefficients; NumPy multiplication still reads them.
+        # Keep dynamic or zero scaling explicit rather than absorbing it into alpha/beta.
+        if not static_scaling(value_node):
+            return False
+
         target_name = None
         target_subset = []
 
@@ -774,6 +806,14 @@ class NumPyHandler:
                 return False
 
             parsed_outers.append((res_a, res_b))
+
+        if all(
+            not subset and len(shape) == 1
+            for operands in parsed_outers
+            for _, subset, shape, _ in operands
+        ):
+            # Keep expression order when lowering outer products as elementwise multiplies.
+            return False
 
         alpha = "1.0"
         beta = "1.0" if target_found else "0.0"
@@ -2627,6 +2667,21 @@ class NumPyHandler:
         dtype = self._ev.type_system.promote(name_a, name_b)
 
         tmp_name = self._create_array_temp([m_expr, n_expr], dtype)
+
+        if len(shape_a) == len(shape_b) == 1 and not subset_a and not subset_b:
+            name_a = self._cast_to_type(name_a, dtype)
+            name_b = self._cast_to_type(name_b, dtype)
+            a, b = self.tensor_table[name_a], self.tensor_table[name_b]
+            self.builder.add_elementwise_op(
+                "mul",
+                name_a,
+                Tensor(dtype, [m_expr, n_expr], [a.strides[0], "0"], a.offset),
+                name_b,
+                Tensor(dtype, [m_expr, n_expr], ["0", b.strides[0]], b.offset),
+                tmp_name,
+                self.tensor_table[tmp_name],
+            )
+            return tmp_name
 
         new_call_node = ast.Call(
             func=node.func, args=[arg0, arg1], keywords=node.keywords

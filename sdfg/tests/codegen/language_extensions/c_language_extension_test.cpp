@@ -69,7 +69,7 @@ TEST(CLanguageExtensionTest, PrimitiveType_UInt8) {
     codegen::CLanguageExtension generator(sdfg);
 
     auto result = generator.primitive_type(types::PrimitiveType::UInt8);
-    EXPECT_EQ(result, "char");
+    EXPECT_EQ(result, "unsigned char");
 }
 
 TEST(CLanguageExtensionTest, PrimitiveType_UInt16) {
