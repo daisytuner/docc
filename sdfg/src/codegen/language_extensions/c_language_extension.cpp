@@ -28,7 +28,7 @@ std::string CLanguageExtension::primitive_type(const types::PrimitiveType prim_t
         case types::PrimitiveType::Int128:
             return "__int128";
         case types::PrimitiveType::UInt8:
-            return "char";
+            return "unsigned char";
         case types::PrimitiveType::UInt16:
             return "unsigned short";
         case types::PrimitiveType::UInt32:
