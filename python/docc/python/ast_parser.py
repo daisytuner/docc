@@ -235,6 +235,20 @@ class ASTParser(ast.NodeVisitor):
         self.container_table[tmp_name] = dtype
         return tmp_name
 
+    @staticmethod
+    def _numeric_literal(operand):
+        """The int or float ``operand`` spells, if it is a numeric literal rather than a container."""
+        if not isinstance(operand, str):
+            return None
+        try:
+            return int(operand)
+        except ValueError:
+            pass
+        try:
+            return float(operand)
+        except ValueError:
+            return None
+
     def visit_UnaryOp(self, node):
         if (
             isinstance(node.op, ast.USub)
@@ -245,6 +259,18 @@ class ASTParser(ast.NodeVisitor):
 
         op = self.visit(node.op)
         operand = self._visit_scalar(node.operand)
+
+        # Operands that fold to numbers, such as globals, fold here too.
+        literal = (
+            None
+            if operand in self.container_table or operand in self.tensor_table
+            else self._numeric_literal(operand)
+        )
+        if literal is not None and op in ("-", "+", "~"):
+            if op == "~" and isinstance(literal, int):
+                return str(~literal)
+            if op != "~":
+                return str(-literal if op == "-" else literal)
 
         if operand in self.tensor_table and op == "-":
             return self.numpy_visitor.handle_array_negate(operand)
