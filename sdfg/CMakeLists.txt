@@ -116,6 +116,8 @@ set(SOURCE_FILES
     src/data_flow/library_nodes/math/tensor/matmul_node.cpp
     src/data_flow/library_nodes/math/tensor/pooling_node.cpp
     src/data_flow/library_nodes/math/tensor/reduce_node.cpp
+    src/data_flow/library_nodes/math/tensor/reduce_ops/argmax_node.cpp
+    src/data_flow/library_nodes/math/tensor/reduce_ops/argsort_node.cpp
     src/data_flow/library_nodes/math/tensor/reduce_ops/max_node.cpp
     src/data_flow/library_nodes/math/tensor/reduce_ops/mean_node.cpp
     src/data_flow/library_nodes/math/tensor/reduce_ops/min_node.cpp

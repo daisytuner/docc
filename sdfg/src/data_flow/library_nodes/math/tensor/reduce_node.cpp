@@ -27,54 +27,168 @@ ReduceNode::ReduceNode(
 
 void ReduceNode::validate(const Function& function) const {
     TensorNode::validate(function);
+    validate_shapes();
+}
 
-    auto& graph = this->get_parent();
-
-    auto* iedge = graph.in_edge_for_connector(*this, inputs_.at(1));
-    auto& tensor_input = static_cast<const types::Tensor&>(iedge->base_type());
-    validate_shape_matches(shape_, tensor_input.layout(), "input");
-
-    // Calculate expected output shape based on axes and keepdims
-    std::vector<int64_t> sorted_axes = axes_;
-    // Normalize negative axes
-    for (auto& axis : sorted_axes) {
+std::vector<int64_t> ReduceNode::normalized_axes() const {
+    auto rank = static_cast<int64_t>(shape_.size());
+    std::vector<int64_t> axes = axes_;
+    for (auto& axis : axes) {
         if (axis < 0) {
-            axis = static_cast<int64_t>(shape_.size()) + axis;
+            axis += rank;
         }
-        // Validate axis is in bounds
-        if (axis < 0 || axis >= static_cast<int64_t>(shape_.size())) {
+        if (axis < 0 || axis >= rank) {
             throw InvalidSDFGException(
                 "Library Node: Axis value out of bounds. Axis: " + std::to_string(axis) +
                 " Shape size: " + std::to_string(shape_.size())
             );
         }
     }
-    std::sort(sorted_axes.begin(), sorted_axes.end());
-
-    std::vector<symbolic::Expression> expected_output_shape;
-    for (size_t i = 0; i < shape_.size(); ++i) {
-        bool is_axis = false;
-        for (auto axis : sorted_axes) {
-            if (axis == (int64_t) i) {
-                is_axis = true;
-                break;
-            }
-        }
-
-        if (is_axis) {
-            if (keepdims_) {
-                expected_output_shape.push_back(symbolic::one());
-            }
-        } else {
-            expected_output_shape.push_back(shape_[i]);
-        }
-    }
-
-    auto* iedge_result = graph.in_edge_for_connector(*this, inputs_.at(0));
-    auto& tensor_output = static_cast<const types::Tensor&>(iedge_result->base_type());
-    validate_shape_matches(expected_output_shape, tensor_output.layout(), "output");
+    std::sort(axes.begin(), axes.end());
+    return axes;
 }
 
+int64_t ReduceNode::single_axis() const {
+    if (axes_.size() != 1) {
+        throw InvalidSDFGException("Library Node: " + code().value() + " takes exactly one axis");
+    }
+    return normalized_axes().front();
+}
+
+std::vector<symbolic::Expression> ReduceNode::output_shape() const {
+    auto axes = normalized_axes();
+    std::vector<symbolic::Expression> shape;
+    for (size_t i = 0; i < shape_.size(); ++i) {
+        if (std::find(axes.begin(), axes.end(), static_cast<int64_t>(i)) == axes.end()) {
+            shape.push_back(shape_[i]);
+        } else if (keepdims_) {
+            shape.push_back(symbolic::one());
+        }
+    }
+    return shape;
+}
+
+void ReduceNode::validate_shapes() const {
+    auto& graph = this->get_parent();
+    auto* iedge_input = graph.in_edge_for_connector(*this, inputs_.at(X_INPUT_IDX));
+    auto* iedge_result = graph.in_edge_for_connector(*this, inputs_.at(RESULT_PTR_IDX));
+    if (!iedge_input || !iedge_result) {
+        throw InvalidSDFGException("Library Node: " + code().value() + " needs X and Y");
+    }
+    if (auto* tensor = dynamic_cast<const types::Tensor*>(&iedge_input->base_type())) {
+        validate_shape_matches(shape_, tensor->layout(), "input");
+    }
+    if (auto* tensor = dynamic_cast<const types::Tensor*>(&iedge_result->base_type())) {
+        validate_shape_matches(output_shape(), tensor->layout(), "output");
+    }
+}
+
+std::pair<structured_control_flow::Sequence*, std::vector<symbolic::Expression>> ReduceNode::add_outer_maps(
+    builder::StructuredSDFGBuilder& builder, structured_control_flow::Sequence& scope, const std::vector<int64_t>& axes
+) const {
+    std::vector<symbolic::Expression> index(shape_.size(), SymEngine::null);
+    auto* body = &scope;
+    for (size_t i = 0; i < shape_.size(); ++i) {
+        if (std::find(axes.begin(), axes.end(), static_cast<int64_t>(i)) != axes.end()) {
+            continue;
+        }
+        auto& limit = shape_[i];
+        auto indvar = symbolic::symbol(add_scalar(builder, "_i", types::get_primitive_type_to_hold_upper_bound(limit)));
+        auto& map = builder.add_map(
+            *body,
+            indvar,
+            symbolic::Lt(indvar, limit),
+            symbolic::zero(),
+            symbolic::add(indvar, symbolic::one()),
+            structured_control_flow::ScheduleType_Sequential::create(),
+            this->debug_info()
+        );
+        body = &map.root();
+        index[i] = indvar;
+    }
+    return {body, index};
+}
+
+std::string ReduceNode::
+    add_scalar(builder::StructuredSDFGBuilder& builder, const std::string& base, types::PrimitiveType type) {
+    auto name = builder.find_new_name(base);
+    builder.add_container(name, types::Scalar(type));
+    return name;
+}
+
+std::pair<symbolic::Symbol, structured_control_flow::Sequence*> ReduceNode::add_counted_loop(
+    builder::StructuredSDFGBuilder& builder,
+    structured_control_flow::Sequence& scope,
+    const symbolic::Expression& init,
+    const symbolic::Expression& limit,
+    bool map
+) const {
+    auto indvar = symbolic::symbol(add_scalar(builder, map ? "_i" : "_k", types::PrimitiveType::Int64));
+    auto condition = symbolic::Lt(indvar, limit);
+    auto update = symbolic::add(indvar, symbolic::one());
+    if (map) {
+        auto& node = builder.add_map(
+            scope,
+            indvar,
+            condition,
+            init,
+            update,
+            structured_control_flow::ScheduleType_Sequential::create(),
+            this->debug_info()
+        );
+        return {indvar, &node.root()};
+    }
+    auto& node = builder.add_for(scope, indvar, condition, init, update, this->debug_info());
+    return {indvar, &node.root()};
+}
+
+void ReduceNode::add_index_assignment(
+    builder::StructuredSDFGBuilder& builder,
+    structured_control_flow::Block& block,
+    data_flow::AccessNode& target,
+    const data_flow::Subset& subset,
+    const types::IType& target_type,
+    const std::string& value,
+    bool constant
+) const {
+    auto& debug_info = this->debug_info();
+    types::Scalar index(types::PrimitiveType::Int64);
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"}, debug_info);
+    auto& source = constant ? static_cast<data_flow::AccessNode&>(builder.add_constant(block, value, index, debug_info))
+                            : builder.add_access(block, value, debug_info);
+    builder.add_computational_memlet(block, source, tasklet, "_in", {}, index, debug_info);
+    builder.add_computational_memlet(block, tasklet, "_out", target, subset, target_type, debug_info);
+}
+
+std::string ReduceNode::add_input_comparison(
+    passes::LibNodeExpander::AccessNodeExpand& expansion,
+    structured_control_flow::Block& block,
+    data_flow::TaskletCode code,
+    const data_flow::Subset& left,
+    const data_flow::Subset& right,
+    const types::IType& input_type
+) const {
+    auto& builder = expansion.builder();
+    auto& debug_info = this->debug_info();
+    auto result = add_scalar(builder, "_cmp", types::PrimitiveType::Bool);
+    auto& tasklet = builder.add_tasklet(block, code, "_out", {"_in1", "_in2"}, debug_info);
+    builder.add_computational_memlet(
+        block, expansion.add_indirect_read_access(block, X_INPUT_IDX), tasklet, "_in1", left, input_type, debug_info
+    );
+    builder.add_computational_memlet(
+        block, expansion.add_indirect_read_access(block, X_INPUT_IDX), tasklet, "_in2", right, input_type, debug_info
+    );
+    builder.add_computational_memlet(
+        block,
+        tasklet,
+        "_out",
+        builder.add_access(block, result, debug_info),
+        {},
+        types::Scalar(types::PrimitiveType::Bool),
+        debug_info
+    );
+    return result;
+}
 
 symbolic::SymbolSet ReduceNode::symbols() const {
     symbolic::SymbolSet syms;
@@ -198,54 +312,21 @@ passes::LibNodeExpander::ExpandOutcome ReduceNode::expand_inner(
         data_flow::Subset input_subset;
         data_flow::Subset output_subset;
 
-        structured_control_flow::Sequence* last_scope = &new_sequence;
+        // Outer parallel loops (Maps) over the dimensions that are not reduced
+        auto [outer_scope, outer_index] = add_outer_maps(builder, new_sequence, sorted_axes);
+        structured_control_flow::Sequence* last_scope = outer_scope;
         structured_control_flow::StructuredLoop* last_loop = nullptr;
 
         std::map<size_t, symbolic::Expression> loop_vars_map;
-        std::vector<size_t> outer_dims;
-        std::vector<size_t> inner_dims;
-
-        // Partition dimensions
-        for (size_t i = 0; i < shape_.size(); ++i) {
-            bool is_axis = false;
-            for (auto axis : sorted_axes) {
-                if (axis == (int64_t) i) {
-                    is_axis = true;
-                    break;
-                }
-            }
-            if (is_axis) {
-                inner_dims.push_back(i);
-            } else {
-                outer_dims.push_back(i);
+        for (size_t i = 0; i < outer_index.size(); ++i) {
+            if (!outer_index[i].is_null()) {
+                loop_vars_map[i] = outer_index[i];
             }
         }
 
-        // Generate outer parallel loops (Maps)
-        for (size_t dim_idx : outer_dims) {
-            std::string indvar_str = builder.find_new_name("_i");
-            auto& limit = shape_[dim_idx];
-            builder.add_container(indvar_str, types::Scalar(types::get_primitive_type_to_hold_upper_bound(limit)));
-
-            auto indvar = symbolic::symbol(indvar_str);
-            auto init = symbolic::zero();
-            auto update = symbolic::add(indvar, symbolic::one());
-            auto condition = symbolic::Lt(indvar, limit);
-
-            auto& map = builder.add_map(
-                *last_scope,
-                indvar,
-                condition,
-                init,
-                update,
-                structured_control_flow::ScheduleType_Sequential::create(),
-                block.debug_info()
-            );
-            last_scope = &map.root();
-            loop_vars_map[dim_idx] = indvar;
-        }
-
-        // Generate inner sequential loops (Fors / Reduces)
+        // Inner sequential loops (Fors / Reduces) over the reduced dimensions
+        std::vector<size_t> inner_dims(sorted_axes.begin(), sorted_axes.end());
+        inner_dims.erase(std::unique(inner_dims.begin(), inner_dims.end()), inner_dims.end());
         auto reduction_operation = this->reduction_operation();
         for (size_t dim_idx : inner_dims) {
             std::string indvar_str = builder.find_new_name("_k");
@@ -321,41 +402,8 @@ passes::LibNodeExpander::ExpandOutcome ReduceNode::expand(passes::LibNodeExpande
     auto* iedge_input = dataflow.in_edge_for_connector(*this, inputs_.at(1));
     auto* iedge_result = dataflow.in_edge_for_connector(*this, inputs_.at(0));
 
-    // Calculate output shape
-    std::vector<symbolic::Expression> output_shape;
-    std::vector<int64_t> sorted_axes = axes_;
-    // Normalize negative axes
-    for (auto& axis : sorted_axes) {
-        if (axis < 0) {
-            axis = static_cast<int64_t>(shape_.size()) + axis;
-        }
-        // Validate axis is in bounds
-        if (axis < 0 || axis >= static_cast<int64_t>(shape_.size())) {
-            throw InvalidSDFGException(
-                "Library Node: Axis value out of bounds. Axis: " + std::to_string(axis) +
-                " Shape size: " + std::to_string(shape_.size())
-            );
-        }
-    }
-    std::sort(sorted_axes.begin(), sorted_axes.end());
-
-    for (size_t i = 0; i < shape_.size(); ++i) {
-        bool is_axis = false;
-        for (auto axis : sorted_axes) {
-            if (axis == (int64_t) i) {
-                is_axis = true;
-                break;
-            }
-        }
-
-        if (is_axis) {
-            if (keepdims_) {
-                output_shape.push_back(symbolic::one());
-            }
-        } else {
-            output_shape.push_back(shape_[i]);
-        }
-    }
+    auto sorted_axes = normalized_axes();
+    auto output_shape = this->output_shape();
 
     auto expansion = context.replacement_requires_access_nodes(
         {passes::LibNodeExpander::InputUse::IndirectReadWrite, passes::LibNodeExpander::InputUse::IndirectRead}

@@ -712,6 +712,71 @@ class ASTParser(ast.NodeVisitor):
         tmp_name = self.builder.find_new_name()
         dtype = Scalar(PrimitiveType.Bool)
         self.builder.add_container(tmp_name, dtype, False)
+        self.container_table[tmp_name] = dtype
+
+        # Floats are not totally ordered: a condition and its complement are both false for NaN, so a float comparison
+        # is a tasklet with IEEE semantics (ordered, except != which NaN satisfies) rather than a symbolic branch.
+        fp_codes = {
+            ">": TaskletCode.fp_ogt,
+            ">=": TaskletCode.fp_oge,
+            "<": TaskletCode.fp_olt,
+            "<=": TaskletCode.fp_ole,
+            "==": TaskletCode.fp_oeq,
+            "!=": TaskletCode.fp_une,
+        }
+
+        def readable(operand):
+            if self.type_system._base_name(operand) in self.container_table:
+                return True
+            try:
+                float(operand)
+                return True
+            except ValueError:
+                return False
+
+        operand_type = (
+            self.type_system.promote(left, right)
+            if readable(left) and readable(right)
+            else None
+        )
+        if (
+            op in fp_codes
+            and operand_type is not None
+            and operand_type.primitive_type in FLOAT_PRIMITIVE_TYPES
+        ):
+            block = self.builder.add_block()
+            t_left, left_sub = self._add_read(block, left, literal_type=operand_type)
+            t_right, right_sub = self._add_read(block, right, literal_type=operand_type)
+            t_task = self.builder.add_tasklet(
+                block, fp_codes[op], ["_in1", "_in2"], ["_out"]
+            )
+            self.builder.add_memlet(
+                block,
+                t_left,
+                "void",
+                t_task,
+                "_in1",
+                left_sub,
+                self._get_memlet_type_for_access(left, left_sub),
+            )
+            self.builder.add_memlet(
+                block,
+                t_right,
+                "void",
+                t_task,
+                "_in2",
+                right_sub,
+                self._get_memlet_type_for_access(right, right_sub),
+            )
+            self.builder.add_memlet(
+                block,
+                t_task,
+                "_out",
+                self.builder.add_access(block, tmp_name),
+                "void",
+                "",
+            )
+            return tmp_name
 
         self.builder.begin_if(expr_str)
         self.builder.add_assignments(tmp_name, "true")
@@ -719,7 +784,6 @@ class ASTParser(ast.NodeVisitor):
         self.builder.add_assignments(tmp_name, "false")
         self.builder.end_if()
 
-        self.container_table[tmp_name] = dtype
         return tmp_name
 
     def visit_Subscript(self, node):
@@ -1242,15 +1306,37 @@ class ASTParser(ast.NodeVisitor):
     def visit_IfExp(self, node):
         # Conditional expression: `body if test else orelse`.
         # Lower it to an if/else that assigns both branches to a temporary,
-        # reusing the statement-level if and assignment handling.
+        # reusing the statement-level if and assignment handling. The
+        # temporary is declared (or the test evaluated) before anything else
+        # takes a new name, which would otherwise reuse the temporary's.
+        def scalar(branch):
+            if isinstance(branch, ast.Constant) and isinstance(
+                branch.value, (bool, int, float)
+            ):
+                return self.visit_Constant(branch)
+            if isinstance(branch, ast.Name) and isinstance(
+                self.container_table.get(branch.id), Scalar
+            ):
+                return branch.id
+            return None
+
+        test = node.test
+        branches = [scalar(node.body), scalar(node.orelse)]
         tmp_name = self.builder.find_new_name()
+        if None not in branches:
+            dtype = self.type_system.promote(*branches)
+            self.builder.add_container(tmp_name, dtype, False)
+            self.container_table[tmp_name] = dtype
+        else:
+            test = ast.Name(id=self.visit(node.test), ctx=ast.Load())
+            tmp_name = self.builder.find_new_name()
         assign_body = ast.Assign(
             targets=[ast.Name(id=tmp_name, ctx=ast.Store())], value=node.body
         )
         assign_else = ast.Assign(
             targets=[ast.Name(id=tmp_name, ctx=ast.Store())], value=node.orelse
         )
-        if_node = ast.If(test=node.test, body=[assign_body], orelse=[assign_else])
+        if_node = ast.If(test=test, body=[assign_body], orelse=[assign_else])
         ast.copy_location(if_node, node)
         ast.fix_missing_locations(if_node)
         self.visit(if_node)
@@ -3290,9 +3376,6 @@ class ASTParser(ast.NodeVisitor):
                 # intermediate computations are placed outside the loops
                 idx_str = self.visit(normalized_idx)
                 new_target_indices.append(ast.Name(id=idx_str, ctx=ast.Load()))
-
-        rewriter = SliceRewriter(loop_vars, self.tensor_table, self)
-        new_value = rewriter.visit(copy.deepcopy(value))
 
         new_target = copy.deepcopy(target)
         if len(new_target_indices) == 1:

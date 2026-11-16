@@ -2088,6 +2088,14 @@ void PyStructuredSDFGBuilder::add_reduce_op(
         node = static_cast<sdfg::math::tensor::ReduceNode*>(&builder_.add_library_node<sdfg::math::tensor::SoftmaxNode>(
             block, debug_info, input_type.shape(), axes, keepdims
         ));
+    } else if (op_type == "argmax") {
+        node = static_cast<sdfg::math::tensor::ReduceNode*>(&builder_.add_library_node<sdfg::math::tensor::ArgMaxNode>(
+            block, debug_info, input_type.shape(), axes, keepdims
+        ));
+    } else if (op_type == "argsort") {
+        node = static_cast<sdfg::math::tensor::ReduceNode*>(&builder_.add_library_node<sdfg::math::tensor::ArgSortNode>(
+            block, debug_info, input_type.shape(), axes, keepdims
+        ));
     } else {
         throw std::runtime_error("Unsupported reduce operation: " + op_type);
     }
