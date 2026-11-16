@@ -6,7 +6,11 @@ import torch.fx
 from torch.fx.node import Argument
 
 from docc.sdfg import (
+    AccessNode,
+    Block,
     StructuredSDFGBuilder,
+    Tasklet,
+    TaskletCode,
     Tensor,
     Scalar,
     DebugInfo,
@@ -231,10 +235,14 @@ register_module("aten.any.dim", AnyParser())
 register_module("aten.any.dims", AnyParser())
 
 
-class MeanParser(GraphParserModule):
+class AxesReductionParser(GraphParserModule):
+    """Reductions taking ``(self, dim=None, keepdim=False, *, dtype=None)``, such as mean and sum."""
+
+    _op_type: str
     _has_dims: bool
 
-    def __init__(self, has_dims: bool) -> None:
+    def __init__(self, op_type: str, has_dims: bool) -> None:
+        self._op_type: str = op_type
         self._has_dims: bool = has_dims
 
     def parse(
@@ -303,7 +311,10 @@ class MeanParser(GraphParserModule):
         else:
             self_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 0)
 
-        if self._has_dims:
+        # None and the empty list both reduce every dimension.
+        if self._has_dims and (arg_2 is None or arg_2 == []):
+            axes: list[int] = [i for i in range(len(self_info.shape()))]
+        elif self._has_dims:
             if not isinstance(arg_2, list):
                 raise GraphParserError(
                     self,
@@ -327,7 +338,7 @@ class MeanParser(GraphParserModule):
         result_info: TensorInfo = self.get_result_tensor_info(node, builder, metadata)
 
         builder.add_reduce_op(
-            "mean",
+            self._op_type,
             self_info.container(),
             self_info.sdfg_tensor_type(),
             result_info.container(),
@@ -338,5 +349,149 @@ class MeanParser(GraphParserModule):
         )
 
 
-register_module("aten.mean.default", MeanParser(False))
-register_module("aten.mean.dim", MeanParser(True))
+register_module("aten.mean.default", AxesReductionParser("mean", False))
+register_module("aten.mean.dim", AxesReductionParser("mean", True))
+register_module("aten.sum.default", AxesReductionParser("sum", False))
+register_module("aten.sum.dim_IntList", AxesReductionParser("sum", True))
+
+
+class TopKParser(GraphParserModule):
+    """``values, indices = topk(x, k, dim, largest, sorted)``: the indices are the last k of a stable argsort along
+    ``dim``, largest first (the first k for ``largest=False``), and the values the elements of ``x`` they select.
+    The results are always sorted, as ``sorted=False`` allows; among equal elements the later comes first, an order
+    PyTorch leaves unspecified."""
+
+    def parse(
+        self,
+        node: torch.fx.Node,
+        builder: StructuredSDFGBuilder,
+        metadata: TensorMetadata,
+    ) -> None:
+        if len(node.args) < 2 or len(node.args) > 5:
+            raise GraphParserError(
+                self,
+                node,
+                f"Expected between 2 and 5 arguments but got {len(node.args)}",
+            )
+        if len(node.kwargs) != 0:
+            raise GraphParserError(self, node, f"Unsupported kwargs: {node.kwargs}")
+        k: Argument = node.args[1]
+        dim: Argument = node.args[2] if len(node.args) > 2 else -1
+        largest: Argument = node.args[3] if len(node.args) > 3 else True
+        if not isinstance(k, int) or not isinstance(dim, int):
+            raise GraphParserError(self, node, "Expected k and dim to be int constants")
+        if not isinstance(largest, bool):
+            raise GraphParserError(self, node, "Expected largest to be a bool constant")
+
+        self_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 0)
+        values_info, indices_info = self.get_result_tensor_infos(
+            2, node, builder, metadata
+        )
+        shape: list[str] = self_info.shape()
+        rank: int = len(shape)
+        if rank == 0 or not -rank <= dim < rank:
+            raise GraphParserError(
+                self, node, f"dim {dim} is out of bounds for rank {rank}"
+            )
+        dim %= rank
+        debug_info: DebugInfo = self.get_debug_info(node)
+
+        index_scalar: Scalar = Scalar(PrimitiveType.Int64)
+        order_tensor: Tensor = Tensor(index_scalar, shape)
+        order_info: TensorInfo = self.create_intermediate_tensor_info(
+            node, builder, metadata, Pointer(index_scalar), order_tensor, [self_info]
+        )
+        builder.add_reduce_op(
+            "argsort",
+            self_info.container(),
+            self_info.sdfg_tensor_type(),
+            order_info.container(),
+            order_tensor,
+            [dim],
+            False,
+            debug_info,
+        )
+
+        def int64(base: str) -> str:
+            name: str = builder.find_new_name(base)
+            builder.add_container(name, index_scalar, False)
+            return name
+
+        def address(info: TensorInfo, index: list[str]) -> str:
+            terms = [f"({i})*({s})" for i, s in zip(index, info.strides())]
+            return " + ".join([f"({info.offset()})"] + terms)
+
+        # One sequential loop per dimension, k along dim: small loops the targets may unroll into scalar loads.
+        counters: list[str] = []
+        for d in range(rank):
+            counter: str = int64("_topk_i")
+            builder.begin_for(
+                counter, "0", str(k) if d == dim else shape[d], "1", debug_info
+            )
+            counters.append(counter)
+        position: str = (
+            f"({shape[dim]}) - 1 - {counters[dim]}" if largest else counters[dim]
+        )
+        source: list[str] = list(counters)
+        source[dim] = position
+        selected: str = int64("_topk_index")
+
+        def assign(
+            src: AccessNode,
+            src_subset: str,
+            dst: AccessNode,
+            dst_subset: str,
+            block: Block,
+        ) -> None:
+            tasklet: Tasklet = builder.add_tasklet(
+                block, TaskletCode.assign, ["_in"], ["_out"], debug_info
+            )
+            builder.add_memlet(
+                block,
+                src,
+                "void",
+                tasklet,
+                "_in",
+                subset=src_subset,
+                debug_info=debug_info,
+            )
+            builder.add_memlet(
+                block,
+                tasklet,
+                "_out",
+                dst,
+                "void",
+                subset=dst_subset,
+                debug_info=debug_info,
+            )
+
+        block: Block = builder.add_block(debug_info)
+        assign(
+            builder.add_access(block, order_info.container(), debug_info),
+            address(order_info, source),
+            builder.add_access(block, selected, debug_info),
+            "",
+            block,
+        )
+        block = builder.add_block(debug_info)
+        assign(
+            builder.add_access(block, selected, debug_info),
+            "",
+            builder.add_access(block, indices_info.container(), debug_info),
+            address(indices_info, counters),
+            block,
+        )
+        source[dim] = selected
+        block = builder.add_block(debug_info)
+        assign(
+            builder.add_access(block, self_info.container(), debug_info),
+            address(self_info, source),
+            builder.add_access(block, values_info.container(), debug_info),
+            address(values_info, counters),
+            block,
+        )
+        for _ in range(rank):
+            builder.end_for()
+
+
+register_module("aten.topk.default", TopKParser())

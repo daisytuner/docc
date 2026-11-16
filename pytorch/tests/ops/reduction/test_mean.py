@@ -82,3 +82,11 @@ def test_tuple_dim_keepdim_dtype(target: str) -> None:
             return torch.mean(input, (0, 1), keepdim=True, dtype=torch.float64)
 
     check(ReductionMeanTupleDimKeepdimDtypeNet(), torch.randn(4, 4), target=target)
+
+
+def test_empty_dim(target: str) -> None:
+    class ReductionMeanEmptyDimNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.mean(input, [])
+
+    check(ReductionMeanEmptyDimNet(), torch.randn(4, 4), target=target)
