@@ -93,7 +93,7 @@ from __future__ import annotations
 
 import os
 import sys
-from contextlib import contextmanager, suppress
+from contextlib import contextmanager
 from typing import IO, Any, Callable, Iterable, Iterator, Mapping, Optional
 
 __all__ = ["PerfControl"]
@@ -147,6 +147,8 @@ class PerfControl:
         failing that, ``PERF_CTL_FIFO`` / ``PERF_ACK_FIFO`` (named-pipe paths).
         Returns an inert instance when neither is set or the channel cannot be
         opened, so callers never need to special-case the non-perf run.
+        If channel setup and cleanup both fail, raise an ``ExceptionGroup``
+        containing the setup error followed by each cleanup error.
         """
         # Determine mode from environment
         env = os.environ if env is None else env
@@ -206,15 +208,22 @@ class PerfControl:
                 ctl_file = open(ctl_fifo, "w")
                 if ack_fifo is not None:
                     ack_file = open(ack_fifo, "r")
-        except (OSError, ValueError, TypeError, OverflowError) as exc:
-            # Parsing an invalid inherited descriptor can fail before an
-            # OS-level open. Close any channel already acquired as well.
+        except (OSError, ValueError, TypeError, OverflowError) as setup_error:
+            # Keep the setup error and any cleanup failures together.
+            cleanup_errors: list[Exception] = []
             for handle in (ctl_file, ack_file):
                 if handle is not None:
-                    with suppress(OSError):
+                    try:
                         handle.close()
+                    except Exception as cleanup_error:
+                        cleanup_errors.append(cleanup_error)
+            if cleanup_errors:
+                raise ExceptionGroup(
+                    "Perf control setup failed and cleanup also failed",
+                    [setup_error, *cleanup_errors],
+                ) from None
             print(
-                f"perf control unavailable ({exc}); measurement not gated",
+                f"perf control unavailable ({setup_error}); measurement not gated",
                 file=sys.stderr,
             )
             return cls(None, None, mode="control", verbose=False)
