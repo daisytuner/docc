@@ -1,7 +1,9 @@
+import os
 from io import StringIO
 
-from docc.benchmarks import PerfControl
+import pytest
 
+from docc.benchmarks import PerfControl
 
 MARKER = "#### DAISYTUNER Marker ####"
 
@@ -145,3 +147,55 @@ def test_manual_mode_write_measurements_separates_each_block(tmp_path):
         "energy-pkg,Joules,0.11",
         MARKER,
     ]
+
+
+@pytest.mark.parametrize(
+    "descriptor", ["not-a-descriptor", "", "-1", str(1 << 100), str(1 << 30)]
+)
+def test_invalid_control_descriptors_disable_measurement(descriptor, capsys):
+    perf = PerfControl.from_env({"PERF_CTL_FD": descriptor}, verbose=False)
+    assert not perf.enabled
+    with perf.measure():
+        pass
+    assert "perf control unavailable" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "descriptor", ["not-a-descriptor", "", "-1", str(1 << 100), str(1 << 30)]
+)
+def test_invalid_ack_descriptors_close_control_channel(descriptor, tmp_path, capsys):
+    # A real inherited control descriptor opens successfully before the
+    # malformed acknowledgement descriptor is encountered.
+    fd = os.open(tmp_path / "control", os.O_WRONLY | os.O_CREAT, 0o600)
+    try:
+        perf = PerfControl.from_env(
+            {"PERF_CTL_FD": str(fd), "PERF_ACK_FD": descriptor}, verbose=False
+        )
+        assert not perf.enabled
+        assert "perf control unavailable" in capsys.readouterr().err
+        with pytest.raises(OSError):
+            os.fstat(fd)
+    finally:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+
+
+def test_valid_inherited_descriptors_send_commands_and_close(tmp_path):
+    control = tmp_path / "control"
+    acknowledgement = tmp_path / "ack"
+    acknowledgement.write_text("ack\nack\n")
+    ctl_fd = os.open(control, os.O_WRONLY | os.O_CREAT, 0o600)
+    ack_fd = os.open(acknowledgement, os.O_RDONLY)
+    with PerfControl.from_env(
+        {"PERF_CTL_FD": str(ctl_fd), "PERF_ACK_FD": str(ack_fd)}, verbose=False
+    ) as perf:
+        assert perf.enabled
+        with perf.measure():
+            assert perf.active
+        assert not perf.active
+    assert control.read_text().splitlines() == ["enable", "disable"]
+    for fd in (ctl_fd, ack_fd):
+        with pytest.raises(OSError):
+            os.fstat(fd)
