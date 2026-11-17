@@ -93,7 +93,7 @@ from __future__ import annotations
 
 import os
 import sys
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from typing import IO, Any, Callable, Iterable, Iterator, Mapping, Optional
 
 __all__ = ["PerfControl"]
@@ -206,7 +206,13 @@ class PerfControl:
                 ctl_file = open(ctl_fifo, "w")
                 if ack_fifo is not None:
                     ack_file = open(ack_fifo, "r")
-        except OSError as exc:
+        except (OSError, ValueError, TypeError, OverflowError) as exc:
+            # Parsing an invalid inherited descriptor can fail before an
+            # OS-level open. Close any channel already acquired as well.
+            for handle in (ctl_file, ack_file):
+                if handle is not None:
+                    with suppress(OSError):
+                        handle.close()
             print(
                 f"perf control unavailable ({exc}); measurement not gated",
                 file=sys.stderr,
