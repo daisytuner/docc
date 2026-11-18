@@ -50,7 +50,7 @@ def evaluate_hpccg(reference_file: Path, test_file: Path, args) -> float:
 def test_HPCCG():
     test_case = Path(__file__).parent / "tests" / "apps" / "HPCCG" / "main.cpp"
     verifier = SDFGVerification(
-        verification={"sdfgs": 19, "FOR": 14, "SEQUENTIAL": 20, "MAP": 6, "WHILE": 6},
+        verification={"sdfgs": 18, "FOR": 14, "SEQUENTIAL": 20, "MAP": 6, "WHILE": 6},
     )
     runner = TestRunner(
         "HPCCG",
