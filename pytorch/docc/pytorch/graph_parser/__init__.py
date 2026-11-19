@@ -204,6 +204,8 @@ class GraphParser(GraphParserBase):
                         )
                         self.metadata.tensor(out_name).set_container(out_container)
 
+        self.update_in_place(nodes)
+
         for node in nodes:
             if node.op == "placeholder":
                 self.metadata.live(self.metadata.tensor(node.name).container())
@@ -340,17 +342,85 @@ class GraphParser(GraphParserBase):
                 self, node, "Unsupported desc metadata type: " + str(desc)
             )
 
+    def mutated_inputs(self) -> dict[TensorName, TensorName]:
+        """
+        The inputs the program updates in place, such as a KV cache's ``index_copy_``: per output that holds an
+        input's new value, as torch.export functionalizes the update, the input's placeholder.
+        """
+        signature = torch.export.graph_signature
+        placeholders: dict[str, TensorName] = {}
+        for spec in self.ep.graph_signature.input_specs:
+            if spec.kind == signature.InputKind.BUFFER and spec.target is not None:
+                placeholders[spec.target] = spec.arg.name
+        mutated: dict[TensorName, TensorName] = {}
+        for spec in self.ep.graph_signature.output_specs:
+            if spec.target is None:
+                continue
+            if spec.kind == signature.OutputKind.USER_INPUT_MUTATION:
+                mutated[spec.arg.name] = spec.target
+            elif (
+                spec.kind == signature.OutputKind.BUFFER_MUTATION
+                and spec.target in placeholders
+            ):
+                mutated[spec.arg.name] = placeholders[spec.target]
+        return mutated
+
+    def update_in_place(self, nodes) -> None:
+        """
+        An input's new value that writes into a copy of the input, which nothing else reads, such as
+        ``index_put(cache, ...)`` for a cache's ``index_copy_``, is computed in the input's own container: the
+        program updates the input in place rather than copying all of it.
+        """
+        by_name: dict[str, torch.fx.Node] = {node.name: node for node in nodes}
+        for output, placeholder in self.mutated_inputs().items():
+            producer = by_name.get(output)
+            source = by_name.get(placeholder)
+            if (
+                producer is None
+                or source is None
+                or producer.op != "call_function"
+                or get_node_target_name(producer.target) != "aten.index_put.default"
+                or producer.args[0] is not source
+                or set(source.users) != {producer}
+                or not self.metadata.has_tensor(output)
+                or self.metadata.tensor(output).has_container()
+            ):
+                continue
+            result: TensorInfo = self.metadata.tensor(output)
+            original: TensorInfo = self.metadata.tensor(placeholder)
+            if (
+                not result.has_sdfg_tensor_type()
+                or not original.has_sdfg_tensor_type()
+                or result.shape() != original.shape()
+                or result.strides() != original.strides()
+            ):
+                continue
+            result.set_container(original.container())
+
     def parse_output(self, node: torch.fx.Node) -> None:
         """
         Parses a PyTorch output operation by setting the SDFG metadata about output arguments and
         their shape information.
         """
         outputs: list[TensorName] = self.get_tensors_from_arg(node.args)
+        mutated: dict[TensorName, TensorName] = self.mutated_inputs()
         non_user_outputs: list[int] = []
         for i in range(len(outputs)):
             output: TensorName = outputs[i]
             if not output in self.ep.graph_signature.user_outputs:
                 non_user_outputs.append(i)
+                # An input's new value, unless computed in place, is written back to it.
+                if output in mutated:
+                    output_info: TensorInfo = self.metadata.tensor(output)
+                    input_info: TensorInfo = self.metadata.tensor(mutated[output])
+                    if output_info.container() != input_info.container():
+                        self.builder.add_copy_op(
+                            output_info.container(),
+                            output_info.sdfg_tensor_type(),
+                            input_info.container(),
+                            input_info.sdfg_tensor_type(),
+                            self.get_debug_info(node),
+                        )
                 continue
 
             if output in self.result_copy:
@@ -362,7 +432,8 @@ class GraphParser(GraphParserBase):
                 )
                 outputs[i] = new_output
 
-        for non_user_output in non_user_outputs:
+        # Backwards, so that each deletion leaves the positions of those before it.
+        for non_user_output in reversed(non_user_outputs):
             del outputs[non_user_output]
 
         output_containers: list[str] = [
