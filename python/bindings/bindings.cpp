@@ -259,7 +259,18 @@ PYBIND11_MODULE(_sdfg, m) {
         .def_property_readonly("start_line", &sdfg::DebugInfo::start_line)
         .def_property_readonly("start_column", &sdfg::DebugInfo::start_column)
         .def_property_readonly("end_line", &sdfg::DebugInfo::end_line)
-        .def_property_readonly("end_column", &sdfg::DebugInfo::end_column);
+        .def_property_readonly("end_column", &sdfg::DebugInfo::end_column)
+        // A Python expression, as stub generators print the default arguments of the builder's functions.
+        .def("__repr__", [](const sdfg::DebugInfo& self) {
+            if (self.filename().empty() && self.function().empty() && self.start_line() == 0 &&
+                self.start_column() == 0 && self.end_line() == 0 && self.end_column() == 0) {
+                return std::string("DebugInfo()");
+            }
+            return "DebugInfo(" + py::repr(py::str(self.filename())).cast<std::string>() + ", " +
+                   py::repr(py::str(self.function())).cast<std::string>() + ", " + std::to_string(self.start_line()) +
+                   ", " + std::to_string(self.start_column()) + ", " + std::to_string(self.end_line()) + ", " +
+                   std::to_string(self.end_column()) + ")";
+        });
 
     py::class_<sdfg::Options>(m, "Options")
         .def("has", &sdfg::Options::has, py::arg("key"), "Check whether a value is set for the given option")
