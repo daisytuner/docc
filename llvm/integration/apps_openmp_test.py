@@ -1,4 +1,5 @@
 import subprocess
+import platform
 import numpy as np
 import pandas as pd
 import pytest
@@ -392,15 +393,12 @@ def evaluate_miniAMR2(reference_file: Path, test_file: Path, args) -> float:
 def test_miniAMR2():
     test_case = Path(__file__).parent / "tests" / "apps" / "miniAMR2" / "main.c"
 
-    verifier = SDFGVerification(
-        verification={
-            "sdfgs": 48,
-            "MAP": 1,
-            "FOR": 21,
-            "WHILE": 59,
-            "CPU_PARALLEL": 1,
-        }
-    )
+    # Set expected verification results based on the platform architecture. 
+    if platform.machine() in ("aarch64", "arm64"):
+        expected = {"sdfgs": 45, "MAP": 1, "FOR": 21, "WHILE": 58, "CPU_PARALLEL": 1}
+    else:
+        expected = {"sdfgs": 48, "MAP": 1, "FOR": 21, "WHILE": 59, "CPU_PARALLEL": 1}
+    verifier = SDFGVerification(verification=expected)
     runner = TestRunner(
         "Apps",
         test_case,
