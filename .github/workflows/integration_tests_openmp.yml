@@ -73,8 +73,8 @@ jobs:
           pytest -v -rx rodinia_sequential_test.py
           pytest -v -rx rodinia_openmp_test.py
 
-      - name: Integration tests - Apps (nightly only)
-        if: github.event_name == 'schedule'
+      - name: Integration tests - Apps (nightly and on pull request)
+        if: github.event_name == 'schedule' || github.event_name == 'pull_request'
         run: |
           export LLVM_SYMBOLIZER_PATH=$(which llvm-symbolizer-21)
 
