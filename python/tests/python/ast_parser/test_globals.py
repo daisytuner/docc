@@ -9,6 +9,7 @@ GLOBAL_INT = 42
 SCALE_FACTOR = 0.25
 BET_M = 0.5
 BET_P = 0.5
+GLOBAL_TWO = 2
 
 
 def test_global_float_constant():
@@ -208,3 +209,17 @@ def test_global_dict_constant_inlined():
     out = np.zeros(4, dtype=np.int64)
     use_region(bc_mask.copy(), out)
     assert np.array_equal(out, bc_mask & 0x038)
+
+
+def test_negated_global_constants():
+    """Unary operators on global constants fold like those on literals (top-k pattern: x[-K:])."""
+
+    @native
+    def last_two(arr, out):
+        out[:] = arr[-GLOBAL_TWO:]
+        out[0] = out[0] + (-GLOBAL_FLOAT) + (+GLOBAL_FLOAT) + (~GLOBAL_TWO)
+
+    arr = np.arange(6, dtype=np.float64)
+    out = np.zeros(2, dtype=np.float64)
+    last_two(arr, out)
+    assert np.array_equal(out, [4.0 - 3.0, 5.0])

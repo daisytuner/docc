@@ -65,6 +65,8 @@ class NumPyHandler:
             "min": self._handle_numpy_reduce,
             "mean": self._handle_numpy_reduce,
             "std": self._handle_numpy_reduce,
+            "argmax": self._handle_numpy_arg,
+            "argsort": self._handle_numpy_arg,
             "any": self._handle_numpy_any,
             "all": self._handle_numpy_all,
             "matmul": self._handle_numpy_matmul,
@@ -1688,7 +1690,8 @@ class NumPyHandler:
                 "<": TaskletCode.fp_olt,
                 "<=": TaskletCode.fp_ole,
                 "==": TaskletCode.fp_oeq,
-                "!=": TaskletCode.fp_one,
+                # NumPy's != is true when either operand is NaN.
+                "!=": TaskletCode.fp_une,
             }
 
         if op not in cmp_ops:
@@ -2987,6 +2990,75 @@ class NumPyHandler:
             func_name, array_name, input_tensor, tmp_name, output_tensor, axes, keepdims
         )
 
+        return tmp_name
+
+    def _handle_numpy_arg(self, node, func_name):
+        """Handle np.argmax(a, axis=None, keepdims=False) and np.argsort(a, axis=-1, kind=...), into Int64 indices.
+
+        argsort sorts stably, a valid result for every kind, with NaNs last. Without an axis, both take a 1-D array.
+        """
+        keywords = {kw.arg: kw.value for kw in node.keywords}
+        array_name = self.visit(node.args[0])
+        if array_name not in self.tensor_table:
+            raise ValueError(f"np.{func_name} input must be an array, got {array_name}")
+        input_tensor = self.tensor_table[array_name]
+        input_shape = input_tensor.shape
+        ndim = len(input_shape)
+
+        axis = node.args[1] if len(node.args) > 1 else keywords.get("axis")
+        if axis is None and func_name == "argsort":
+            axis = ast.Constant(value=-1)
+        if axis is None or (isinstance(axis, ast.Constant) and axis.value is None):
+            if ndim != 1:
+                raise NotImplementedError(
+                    f"np.{func_name} over a flattened {ndim}-D array"
+                )
+            axis_value = 0
+        else:
+            try:
+                axis_value = int(ast.literal_eval(axis))
+            except (TypeError, ValueError):
+                raise NotImplementedError(f"np.{func_name} along a dynamic axis")
+        if not -ndim <= axis_value < ndim:
+            raise ValueError(
+                f"np.{func_name}: axis {axis_value} is out of bounds for {ndim} dimensions"
+            )
+        axis_value %= ndim
+
+        keepdims = False
+        if func_name == "argmax" and "keepdims" in keywords:
+            if not isinstance(keywords["keepdims"], ast.Constant):
+                raise NotImplementedError("np.argmax with a dynamic keepdims")
+            keepdims = bool(keywords["keepdims"].value)
+
+        if func_name == "argsort":
+            output_shape = list(input_shape)
+        else:
+            output_shape = [
+                ("1" if keepdims else None) if i == axis_value else dim
+                for i, dim in enumerate(input_shape)
+            ]
+            output_shape = [dim for dim in output_shape if dim is not None]
+
+        dtype = Scalar(PrimitiveType.Int64)
+        if not output_shape:
+            tmp_name = f"_tmp_{self._get_unique_id()}"
+            self.builder.add_container(tmp_name, dtype, False)
+            self.container_table[tmp_name] = dtype
+            self.tensor_table[tmp_name] = Tensor(dtype, [])
+        else:
+            tmp_name = self._create_array_temp(
+                output_shape, dtype, strides=self._compute_strides(output_shape, "C")
+            )
+        self.builder.add_reduce_op(
+            func_name,
+            array_name,
+            input_tensor,
+            tmp_name,
+            self.tensor_table[tmp_name],
+            [axis_value],
+            keepdims,
+        )
         return tmp_name
 
     # ========== Einsum Operations ==========

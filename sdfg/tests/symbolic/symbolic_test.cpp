@@ -46,6 +46,13 @@ TEST(SymbolicTest, GpuBuiltinExpressionsRoundTrip) {
     EXPECT_THROW(symbolic::parse("threadIdx.xx"), SymEngine::SymEngineException);
 }
 
+TEST(SymbolicTest, IdentifiersNamedLikeConstantsParseAsSymbols) {
+    for (auto name : {"e", "E", "pi", "I"}) {
+        auto parsed = symbolic::parse(std::string(name) + " + j");
+        EXPECT_TRUE(symbolic::eq(parsed, symbolic::add(symbolic::symbol(name), symbolic::symbol("j"))));
+    }
+}
+
 TEST(SymbolicTest, Integers) {
     auto num = symbolic::integer(-2);
     EXPECT_EQ(num->as_int(), -2);

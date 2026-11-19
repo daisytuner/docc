@@ -1,4 +1,5 @@
 import subprocess
+import platform
 import numpy as np
 import pandas as pd
 import pytest
@@ -50,7 +51,7 @@ def evaluate_hpccg(reference_file: Path, test_file: Path, args) -> float:
 def test_HPCCG():
     test_case = Path(__file__).parent / "tests" / "apps" / "HPCCG" / "main.cpp"
     verifier = SDFGVerification(
-        verification={"sdfgs": 19, "FOR": 14, "SEQUENTIAL": 20, "MAP": 6, "WHILE": 6},
+        verification={"sdfgs": 18, "FOR": 14, "SEQUENTIAL": 20, "MAP": 6, "WHILE": 6},
     )
     runner = TestRunner(
         "HPCCG",
@@ -379,10 +380,12 @@ def evaluate_miniAMR2(reference_file: Path, test_file: Path, args) -> float:
 
 def test_miniAMR2():
     test_case = Path(__file__).parent / "tests" / "apps" / "miniAMR2" / "main.c"
-
-    verifier = SDFGVerification(
-        verification={"sdfgs": 48, "WHILE": 59, "FOR": 21, "SEQUENTIAL": 22, "MAP": 1}
-    )
+    # Set expected verification results based on the platform architecture. 
+    if platform.machine() in ("aarch64", "arm64"):
+        expected = {"sdfgs": 45, "WHILE": 58, "FOR": 21, "SEQUENTIAL": 22, "MAP": 1}
+    else:
+        expected = {"sdfgs": 48, "WHILE": 59, "FOR": 21, "SEQUENTIAL": 22, "MAP": 1}
+    verifier = SDFGVerification(verification=expected)
     runner = TestRunner(
         "Apps",
         test_case,

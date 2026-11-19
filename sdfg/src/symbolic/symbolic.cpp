@@ -1186,6 +1186,10 @@ Expression parse(const std::string& expr_str) {
         position = match->position() + match->length();
     }
     parsed_text.append(expr_str, position, std::string::npos);
+    // Identifiers are program symbols: SymEngine would read a variable named e or pi as a mathematical constant.
+    for (auto name : {"e", "E", "pi", "I", "EulerGamma", "Catalan", "GoldenRatio"}) {
+        constants.emplace(name, symbolic::symbol(name));
+    }
     auto expr = SymEngine::parse(parsed_text, true, constants);
     expr = symbolic::subs(expr, symbolic::symbol("true"), symbolic::one());
     expr = symbolic::subs(expr, symbolic::symbol("false"), symbolic::zero());

@@ -1,0 +1,60 @@
+#pragma once
+
+#include "sdfg/data_flow/library_nodes/math/tensor/reduce_node.h"
+
+namespace sdfg {
+namespace math {
+namespace tensor {
+
+inline data_flow::LibraryNodeCode LibraryNodeType_ArgMax("ml::ArgMax");
+
+/**
+ * @brief The index of the largest element along one axis (np.argmax): the first on ties, the first NaN if any.
+ *
+ * Y holds Int64 indices in the shape of X with the axis removed (or kept as 1 with keepdims).
+ */
+class ArgMaxNode : public ReduceNode {
+public:
+    ArgMaxNode(
+        size_t element_id,
+        const DebugInfo& debug_info,
+        const graph::Vertex vertex,
+        data_flow::DataFlowGraph& parent,
+        const std::vector<symbolic::Expression>& shape,
+        const std::vector<int64_t>& axes,
+        bool keepdims
+    );
+
+    void validate(const Function& function) const override;
+
+    passes::LibNodeExpander::ExpandOutcome expand(passes::LibNodeExpander::ExpandContext& context, Block& block) override;
+
+    bool expand_reduction(
+        passes::LibNodeExpander::AccessNodeExpand& expansion,
+        builder::StructuredSDFGBuilder& builder,
+        structured_control_flow::Sequence& body,
+        const types::Tensor& input_type,
+        const types::Tensor& output_type,
+        const data_flow::Subset& input_subset,
+        const data_flow::Subset& output_subset
+    ) override {
+        return false;
+    }
+
+    std::string identity(types::PrimitiveType primitive_type) const override {
+        return "0";
+    }
+
+    bool supports_integer_types() const override {
+        return true;
+    }
+
+    std::unique_ptr<data_flow::DataFlowNode>
+    clone(size_t element_id, const graph::Vertex vertex, data_flow::DataFlowGraph& parent) const override;
+};
+
+typedef ReduceNodeSerializer<ArgMaxNode> ArgMaxNodeSerializer;
+
+} // namespace tensor
+} // namespace math
+} // namespace sdfg

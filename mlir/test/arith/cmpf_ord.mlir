@@ -8,7 +8,7 @@ func.func @test(%a : f32, %b : f32) -> i1 {
     // CHECK: float [[in1:.*]] = [[a]];
     // CHECK: float [[in2:.*]] = [[b]];
     // CHECK: bool [[out:.*]];
-    // CHECK: [[out]] = isnan([[in1]]) && isnan([[in2]]);
+    // CHECK: [[out]] = !isnan([[in1]]) && !isnan([[in2]]);
     // CHECK: [[c]] = [[out]];
     // CHECK: }
     %c = arith.cmpf ord, %a, %b : f32

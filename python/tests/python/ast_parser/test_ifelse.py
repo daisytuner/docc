@@ -1,5 +1,6 @@
 import pytest
 
+import numpy as np
 from docc.python import native
 
 
@@ -81,3 +82,52 @@ def test_raise_bare_is_noop():
         return a + 1
 
     assert maybe(10) == 11
+
+
+def test_conditional_expression_keeps_its_branches_type():
+    # The comparison's temporary must not take the conditional's name.
+    @native
+    def pick(a, out):
+        first = 0
+        for j in range(1, 4):
+            if a[j] > a[first]:
+                first = j
+        out[0] = 5 if first == 0 else 2
+        out[1] = 0.5 if a[first] > 2.0 else 1
+
+    out = np.zeros(2)
+    pick(np.array([3.0, 1.0, 2.0, 0.0]), out)
+    np.testing.assert_array_equal(out, [5, 0.5])
+
+
+def test_variables_named_like_math_constants():
+    @native
+    def skip_one(a, out):
+        for e in range(4):
+            if e != 2:
+                out[e] = a[e]
+
+    out = np.zeros(4)
+    skip_one(np.arange(4.0), out)
+    np.testing.assert_array_equal(out, [0.0, 1.0, 0.0, 3.0])
+
+
+@pytest.mark.parametrize("a", [[1.0, 2.0], [np.nan, 2.0], [1.0, np.nan], [3.0, 3.0]])
+def test_float_comparisons_follow_ieee_with_nan(a):
+    @native
+    def compare(a, out):
+        out[0] = 1.0 if a[0] < a[1] else 0.0
+        out[1] = 1.0 if a[0] >= a[1] else 0.0
+        out[2] = 1.0 if a[0] != a[1] else 0.0
+        out[3] = 1.0 if a[0] == a[1] else 0.0
+
+    x = np.array(a)
+    out = np.full(4, -1.0)
+    compare(x, out)
+    expected = [
+        float(x[0] < x[1]),
+        float(x[0] >= x[1]),
+        float(x[0] != x[1]),
+        float(x[0] == x[1]),
+    ]
+    np.testing.assert_array_equal(out, expected)
