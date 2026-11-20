@@ -14,6 +14,7 @@ import contextlib
 from typing import Any, Callable, Optional
 
 from docc.compiler import DoccProgram, DoccOptions, CompiledSDFG
+from docc.compiler.artifacts import artifact_file
 from docc.sdfg import StructuredSDFG, DoccMetrics
 
 from docc.pytorch.graph_parser import GraphParser
@@ -300,7 +301,7 @@ class PyTorchProgram(DoccProgram):
             shutil.rmtree(output_folder_path)
 
         if docc_reuse_binaries:
-            lib_path = f"{output_folder_path}/lib__docc_{self.name}.so"
+            lib_path = f"{output_folder_path}/{artifact_file(self.options.target, f'__docc_{self.name}')}"
             if not os.path.exists(lib_path):
                 raise ValueError(
                     f"Tried reusing binary '{lib_path}' but does not exist"
