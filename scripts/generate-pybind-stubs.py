@@ -33,6 +33,8 @@ def run_pybind11_stubgen(python_path: Path) -> None:
             str(python_path),
             "--ignore-unresolved-names",
             unresolved_names_regex,
+            "--enum-class-locations",
+            "TargetLevel:docc.sdfg._sdfg",
             "docc.sdfg",
         ]
     )
