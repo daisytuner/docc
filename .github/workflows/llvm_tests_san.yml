@@ -8,8 +8,12 @@ on:
   schedule:
     - cron: "0 4 * * *"
 
+permissions:
+  contents: read
+
 jobs:
   llvm-tests-linux-san:
+    timeout-minutes: 60
     runs-on:
       group: dahlia
       labels: Linux
@@ -25,8 +29,8 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Mark GitHub Actions workdir as safe
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Prepare workspace
+        uses: ./.github/actions/prepare-workspace
 
       - name: Build
         run: |

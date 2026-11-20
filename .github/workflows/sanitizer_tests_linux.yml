@@ -1,14 +1,14 @@
 name: Sanitizer Tests (Linux)
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    types: [opened, reopened, synchronize]
+  workflow_call:
+
+permissions:
+  contents: read
 
 jobs:
   sanitizer-linux:
+    timeout-minutes: 30
     runs-on:
       group: dahlia
       labels: openmp
@@ -23,13 +23,6 @@ jobs:
       - uses: actions/checkout@v7
         with:
           submodules: recursive
-
-      - name: Formatting
-        shell: bash
-        run: |
-          shopt -s globstar
-          clang-format-21 -style=file --dry-run --Werror sdfg/include/**/*.h sdfg/src/**/*.cpp sdfg/tests/**/*.cpp
-          clang-format-21 -style=file --dry-run --Werror opt/include/**/*.h opt/src/**/*.cpp opt/tests/**/*.cpp
 
       - name: Build
         run: |

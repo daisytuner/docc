@@ -1,14 +1,14 @@
 name: Sanitizer Tests (macOS)
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    types: [opened, reopened, synchronize]
+  workflow_call:
+
+permissions:
+  contents: read
 
 jobs:
   sanitizer-macos-asan:
+    timeout-minutes: 30
     runs-on:
       group: dahlia
       labels: macOS

@@ -74,6 +74,7 @@ jobs:
 
   push:
     needs: build
+    timeout-minutes: 30
     # build-project.yml names an artifact only when it exported the image.
     if: needs.build.outputs.artifact != ''
     runs-on: ubuntu-latest
@@ -104,14 +105,14 @@ jobs:
       # Keyless: the provider accepts daisytuner/* repos on refs/heads/main (so hotfix releases from
       # release/** can't deploy), and the service account's binding limits it to daisytuner/docc.
       - id: auth
-        uses: google-github-actions/auth@v3
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
           workload_identity_provider: projects/1080482399950/locations/global/workloadIdentityPools/github-pool/providers/github-provider
           service_account: gh-docc-docs-publisher@daisy-367210.iam.gserviceaccount.com
           token_format: access_token
 
       - name: Docker auth for Google Artifact Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: europe-west1-docker.pkg.dev
           username: oauth2accesstoken
@@ -136,6 +137,7 @@ jobs:
 
   deploy:
     needs: [build, push]
+    timeout-minutes: 30
     # Staged deploys skip build and push, so this job can't simply require them to succeed.
     if: ${{ !cancelled() && inputs.deploy == true && github.ref == 'refs/heads/main' && (inputs.staged == true || needs.push.result == 'success') }}
     runs-on: ubuntu-latest
@@ -153,7 +155,7 @@ jobs:
           fi
 
       - id: auth
-        uses: google-github-actions/auth@v3
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
           workload_identity_provider: projects/1080482399950/locations/global/workloadIdentityPools/github-pool/providers/github-provider
           service_account: gh-docc-docs-publisher@daisy-367210.iam.gserviceaccount.com
@@ -182,7 +184,7 @@ jobs:
       - name: Deploy to Cloud Run
         id: deploy
         if: steps.image.outputs.ref != ''
-        uses: google-github-actions/deploy-cloudrun@v3
+        uses: google-github-actions/deploy-cloudrun@2028e2d7d30a78c6910e0632e48dd561b064884d # v3
         with:
           service: ${{ env.SERVICE }}
           image: ${{ steps.image.outputs.ref }}
