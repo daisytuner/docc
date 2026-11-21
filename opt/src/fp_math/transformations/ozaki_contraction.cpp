@@ -397,13 +397,15 @@ std::vector<std::string> slice_direct(
     bool transposed,
     const detail::MatrixRead& read,
     const std::string& scales,
-    bool per_row
+    bool per_row,
+    const std::vector<std::string>& into = {}
 ) {
     const double q = (1 << SLICE_BITS) - 1;
     auto size = symbolic::mul(rows, columns);
     std::vector<std::string> digits;
     for (int t = 0; t < slices; t++) {
-        auto digit = kb.buffer(prefix, PrimitiveType::Int8, symbolic::mul(batch.count(), size));
+        auto digit = into.empty() ? kb.buffer(prefix, PrimitiveType::Int8, symbolic::mul(batch.count(), size))
+                                  : into.at(t);
         auto matrices = batch.maps(kb, kb.scope());
         auto& entry = matrices.second;
         auto position = batch.position(entry);
@@ -546,7 +548,23 @@ void build_slicing_direct_prepared(
     auto slices = a_slices > 0 ? a_slices : static_cast<int>(b_slices.size());
     auto a_digits =
         slice_direct(kb, operands.batch, type, slices, "_oz_a_slice", m, k, operands.a_transposed, read_a, scales_a, true);
-    direct_products(kb, operands, a_digits, scales_a, b_slices, scales_b, false);
+    direct_products(kb, operands, a_digits, scales_a, b_slices, scales_b, operands.b_transposed);
+}
+
+void build_row_slices(
+    KernelBuilder& kb,
+    const Batch& batch,
+    PrimitiveType type,
+    const symbolic::Expression& rows,
+    const symbolic::Expression& columns,
+    const MatrixRead& read,
+    const std::string& scales,
+    const std::vector<std::string>& slices
+) {
+    absmax(kb, "_oz_scale_rows", read, rows, columns, smallest_normal(type), type, batch, scales);
+    slice_direct(
+        kb, batch, type, static_cast<int>(slices.size()), "_oz_row_slice", rows, columns, false, read, scales, true, slices
+    );
 }
 
 } // namespace detail

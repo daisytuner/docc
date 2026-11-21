@@ -2198,6 +2198,11 @@ sdfg::data_flow::LibraryNode& PyStructuredSDFGBuilder::add_ozaki_matmul_op(
     const sdfg::types::Tensor& Y_type,
     const sdfg::DebugInfo& debug_info
 ) {
+    // A slice stored column-major, unit stride along its rows, holds B transposed, as a cache holds a row per token.
+    auto& slice_layout = slice_type.layout();
+    bool b_transposed = slice_layout.dims() >= 2 &&
+                        sdfg::symbolic::eq(slice_layout.get_stride(slice_layout.dims() - 2), sdfg::symbolic::one()) &&
+                        !sdfg::symbolic::eq(slice_layout.get_stride(slice_layout.dims() - 1), sdfg::symbolic::one());
     auto& block = builder_.add_block(current_sequence(), {}, debug_info);
     auto& libnode = builder_.add_library_node<sdfg::fp_math::OzakiMatMulNode>(
         block,
@@ -2205,7 +2210,8 @@ sdfg::data_flow::LibraryNode& PyStructuredSDFGBuilder::add_ozaki_matmul_op(
         A_type.layout(),
         Y_type.layout(),
         Y_type.element_type().primitive_type(),
-        static_cast<int>(slices.size())
+        static_cast<int>(slices.size()),
+        b_transposed
     );
     auto connect = [&](const std::string& container, const std::string& connector, const sdfg::types::Tensor& type) {
         builder_.add_computational_memlet(
@@ -2217,6 +2223,32 @@ sdfg::data_flow::LibraryNode& PyStructuredSDFGBuilder::add_ozaki_matmul_op(
     connect(scales, "SB", scales_type);
     for (size_t t = 0; t < slices.size(); t++) {
         connect(slices[t], "B" + std::to_string(t), slice_type);
+    }
+    return libnode;
+}
+
+sdfg::data_flow::LibraryNode& PyStructuredSDFGBuilder::add_ozaki_slice_op(
+    const std::string& X,
+    const sdfg::types::Tensor& X_type,
+    const std::string& scales,
+    const sdfg::types::Tensor& scales_type,
+    const std::vector<std::string>& slices,
+    const sdfg::types::Tensor& slice_type,
+    const sdfg::DebugInfo& debug_info
+) {
+    auto& block = builder_.add_block(current_sequence(), {}, debug_info);
+    auto& libnode = builder_.add_library_node<sdfg::fp_math::OzakiSliceNode>(
+        block, debug_info, X_type.layout(), X_type.element_type().primitive_type(), static_cast<int>(slices.size())
+    );
+    auto connect = [&](const std::string& container, const std::string& connector, const sdfg::types::Tensor& type) {
+        builder_.add_computational_memlet(
+            block, builder_.add_access(block, container, debug_info), libnode, connector, {}, type, debug_info
+        );
+    };
+    connect(X, "X", X_type);
+    connect(scales, "S", scales_type);
+    for (size_t t = 0; t < slices.size(); t++) {
+        connect(slices[t], "D" + std::to_string(t), slice_type);
     }
     return libnode;
 }
