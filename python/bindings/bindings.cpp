@@ -1123,6 +1123,18 @@ PYBIND11_MODULE(_sdfg, m) {
             py::return_value_policy::reference
         )
         .def(
+            "add_ozaki_slice_op",
+            &PyStructuredSDFGBuilder::add_ozaki_slice_op,
+            py::arg("X"),
+            py::arg("X_type"),
+            py::arg("scales"),
+            py::arg("scales_type"),
+            py::arg("slices"),
+            py::arg("slice_type"),
+            py::arg("debug_info") = sdfg::DebugInfo(),
+            py::return_value_policy::reference
+        )
+        .def(
             "add_tile_copy_node",
             &PyStructuredSDFGBuilder::add_tile_copy_node,
             py::arg("buffer_name"),
