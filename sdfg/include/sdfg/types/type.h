@@ -51,7 +51,9 @@ enum PrimitiveType {
     Double, ///< 64-bit floating-point (IEEE 754 double precision)
     X86_FP80, ///< 80-bit extended precision floating-point (x86)
     FP128, ///< 128-bit floating-point (IEEE 754 quadruple precision)
-    PPC_FP128 ///< 128-bit floating-point (PowerPC double-double)
+    PPC_FP128, ///< 128-bit floating-point (PowerPC double-double)
+    Float8E4M3, ///< 8-bit floating-point, 4 exponent and 3 mantissa bits, finite only (OCP FP8 E4M3, "e4m3fn")
+    Float8E5M2 ///< 8-bit floating-point, 5 exponent and 2 mantissa bits (OCP FP8 E5M2)
 };
 
 /**
@@ -371,6 +373,10 @@ constexpr const char* primitive_type_to_string(PrimitiveType e) {
             return "FP128";
         case PrimitiveType::PPC_FP128:
             return "PPC_FP128";
+        case PrimitiveType::Float8E4M3:
+            return "Float8E4M3";
+        case PrimitiveType::Float8E5M2:
+            return "Float8E5M2";
     }
     throw std::invalid_argument("Invalid primitive type");
 };
@@ -420,6 +426,10 @@ constexpr PrimitiveType primitive_type_from_string(std::string_view e) {
         return PrimitiveType::FP128;
     } else if (e == "PPC_FP128") {
         return PrimitiveType::PPC_FP128;
+    } else if (e == "Float8E4M3") {
+        return PrimitiveType::Float8E4M3;
+    } else if (e == "Float8E5M2") {
+        return PrimitiveType::Float8E5M2;
     }
     throw std::invalid_argument("Invalid primitive type");
 };
@@ -470,8 +480,42 @@ constexpr size_t bit_width(PrimitiveType e) {
             return 128;
         case PrimitiveType::PPC_FP128:
             return 128;
+        case PrimitiveType::Float8E4M3:
+        case PrimitiveType::Float8E5M2:
+            return 8;
     }
     throw std::invalid_argument("Invalid primitive type");
+};
+
+/**
+ * @brief Returns the bits of the significand of a floating-point PrimitiveType, the implicit bit included: the
+ * precision of its values, 2^-(bits - 1) relative
+ * @param e The PrimitiveType to query
+ * @return The significand bits, 0 for types that are not floating-point
+ */
+constexpr int significand_bits(PrimitiveType e) noexcept {
+    switch (e) {
+        case PrimitiveType::Float8E5M2:
+            return 3;
+        case PrimitiveType::Float8E4M3:
+            return 4;
+        case PrimitiveType::BFloat:
+            return 8;
+        case PrimitiveType::Half:
+            return 11;
+        case PrimitiveType::Float:
+            return 24;
+        case PrimitiveType::Double:
+            return 53;
+        case PrimitiveType::X86_FP80:
+            return 64;
+        case PrimitiveType::FP128:
+            return 113;
+        case PrimitiveType::PPC_FP128:
+            return 106;
+        default:
+            return 0;
+    }
 };
 
 /**
@@ -488,6 +532,8 @@ constexpr bool is_floating_point(PrimitiveType e) noexcept {
         case PrimitiveType::X86_FP80:
         case PrimitiveType::FP128:
         case PrimitiveType::PPC_FP128:
+        case PrimitiveType::Float8E4M3:
+        case PrimitiveType::Float8E5M2:
             return true;
         default:
             return false;

@@ -450,6 +450,8 @@ inline std::string get_cmath_intrinsic_name(CMathFunction func, types::Primitive
             return base_name + "l";
         case types::PrimitiveType::Half:
         case types::PrimitiveType::BFloat:
+        case types::PrimitiveType::Float8E4M3:
+        case types::PrimitiveType::Float8E5M2:
             // Half and BFloat are typically promoted to float for C math operations
             // as there are no standard Half/BFloat intrinsics in C math library
             return base_name + "f";
@@ -502,6 +504,7 @@ public:
 
     CMathFunction function() const;
     types::PrimitiveType primitive_type() const;
+    void set_primitive_type(types::PrimitiveType primitive_type);
     std::string name() const;
 
     bool approximate() const;

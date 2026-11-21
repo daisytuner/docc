@@ -93,7 +93,10 @@ static DoccTarget cuda_target = {
         std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> schedulers;
         schedulers.push_back(std::make_shared<sdfg::passes::scheduler::CUDAOffloadScheduler>());
         return schedulers;
-    }
+    },
+    // No FP8 storage in the generated kernels: FP8 computes in Float.
+    .precision =
+        {.widened_float_types = {sdfg::types::PrimitiveType::Float8E4M3, sdfg::types::PrimitiveType::Float8E5M2}},
 };
 
 static DoccTarget rocm_target = {
@@ -174,7 +177,10 @@ static DoccTarget rocm_target = {
         std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> schedulers;
         schedulers.push_back(std::make_shared<sdfg::passes::scheduler::ROCMOffloadScheduler>());
         return schedulers;
-    }
+    },
+    // No FP8 storage in the generated kernels: FP8 computes in Float.
+    .precision =
+        {.widened_float_types = {sdfg::types::PrimitiveType::Float8E4M3, sdfg::types::PrimitiveType::Float8E5M2}},
 };
 
 static DoccTarget sequential_target = {

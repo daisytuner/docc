@@ -78,8 +78,12 @@ std::string unsupported_matmul(const MatMulNode& node, bool batched) {
             }
         }
     }
-    if (node.input_type() != node.output_type() || node.accumulator_type() != node.output_type()) {
-        return "inputs, accumulator and output must share their type";
+    // Inputs may be floats narrower than the output, as FP8 matmuls return Float; they widen as they are read.
+    auto input = node.input_type(), output = node.output_type();
+    bool widening = types::is_floating_point(input) && types::is_floating_point(output) &&
+                    types::significand_bits(input) < types::significand_bits(output);
+    if ((input != output && !widening) || node.accumulator_type() != output) {
+        return "inputs, accumulator and output must share their type, or the inputs be narrower floats";
     }
     return "";
 }
@@ -127,8 +131,11 @@ std::string unsupported_contraction(const data_flow::LibraryNode& node, int64_t 
         return why;
     }
     auto type = contraction_type(node);
-    if (type != PrimitiveType::Float && type != PrimitiveType::Double) {
-        return "only Float and Double contractions are supported";
+    // Narrower floats compute in Float (see compute_type), only for MatMuls, whose operands convert as they are read.
+    bool narrow = dynamic_cast<const MatMulNode*>(&node) && types::is_floating_point(type) &&
+                  types::significand_bits(type) < types::significand_bits(PrimitiveType::Float);
+    if (type != PrimitiveType::Float && type != PrimitiveType::Double && !narrow) {
+        return "only Float and Double contractions, and MatMuls of narrower floats, are supported";
     }
     if (!SymEngine::is_a<SymEngine::Integer>(*contraction_k(node))) {
         return "the reduction K must be a constant";
@@ -143,6 +150,10 @@ std::string unsupported_contraction(const data_flow::LibraryNode& node, int64_t 
 
 int64_t constant_k(const data_flow::LibraryNode& node) {
     return SymEngine::down_cast<const SymEngine::Integer&>(*contraction_k(node)).as_int();
+}
+
+PrimitiveType compute_type(PrimitiveType type) {
+    return type == PrimitiveType::Double ? PrimitiveType::Double : PrimitiveType::Float;
 }
 
 double smallest_normal(PrimitiveType type) {
@@ -219,11 +230,12 @@ class MatMulOperands : public ContractionOperands {
 public:
     MatMulOperands(passes::LibNodeExpander::AccessNodeExpand& standalone, const MatMulNode& node)
         : standalone_(standalone), layout_a_(node.layout_a()), layout_b_(node.layout_b()), layout_y_(node.layout_y()),
-          pointer_(types::Scalar(node.output_type())) {
+          pointer_(types::Scalar(node.output_type())), storage_(node.output_type()),
+          input_pointer_(types::Scalar(node.input_type())) {
         m = node.m();
         n = node.n();
         k = node.k();
-        element = node.output_type();
+        element = compute_type(storage_);
         a_transposed = stored_transposed(layout_a_);
         b_transposed = stored_transposed(layout_b_);
         auto& shape = layout_y_.shape();
@@ -241,7 +253,7 @@ public:
       const symbolic::Expression& row,
       const symbolic::Expression& column) override {
         auto& access = standalone_.add_indirect_read_access(block.block(), MatMulNode::A_INPUT_IDX);
-        return block.read(access, {element_of(layout_a_, entry, row, column)}, pointer_);
+        return widened(block, block.read(access, {element_of(layout_a_, entry, row, column)}, input_pointer_));
     }
 
     KernelValue
@@ -250,7 +262,7 @@ public:
       const symbolic::Expression& row,
       const symbolic::Expression& column) override {
         auto& access = standalone_.add_indirect_read_access(block.block(), MatMulNode::B_INPUT_IDX);
-        return block.read(access, {element_of(layout_b_, entry, row, column)}, pointer_);
+        return widened(block, block.read(access, {element_of(layout_b_, entry, row, column)}, input_pointer_));
     }
 
     void store(
@@ -261,7 +273,17 @@ public:
         const symbolic::Expression& column
     ) override {
         auto& access = standalone_.add_indirect_write_access(block.block(), MatMulNode::Y_INPUT_IDX);
-        block.store(block.convert(value, element), access, {element_of(layout_y_, entry, row, column)}, pointer_);
+        block.store(block.convert(value, storage_), access, {element_of(layout_y_, entry, row, column)}, pointer_);
+    }
+
+private:
+    /// The element type of the result, which the emulation computes in compute_type of.
+    types::PrimitiveType storage_;
+    /// The element type of A and B, the result's or a narrower float.
+    types::Pointer input_pointer_;
+
+    KernelValue widened(BlockBuilder& block, const KernelValue& value) {
+        return input_pointer_.primitive_type() == element ? value : block.convert(value, element);
     }
 };
 

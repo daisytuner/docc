@@ -221,3 +221,22 @@ TEST(PrimitiveTypeTest, AsSigned) {
     EXPECT_EQ(types::as_signed(types::PrimitiveType::FP128), types::PrimitiveType::FP128);
     EXPECT_EQ(types::as_signed(types::PrimitiveType::PPC_FP128), types::PrimitiveType::PPC_FP128);
 }
+
+TEST(PrimitiveTypeTest, Float8) {
+    for (auto type : {types::PrimitiveType::Float8E4M3, types::PrimitiveType::Float8E5M2}) {
+        EXPECT_EQ(types::primitive_type_from_string(types::primitive_type_to_string(type)), type);
+        EXPECT_EQ(types::bit_width(type), 8);
+        EXPECT_TRUE(types::is_floating_point(type));
+        EXPECT_FALSE(types::is_integer(type));
+    }
+}
+
+TEST(PrimitiveTypeTest, SignificandBits) {
+    EXPECT_EQ(types::significand_bits(types::PrimitiveType::Float8E5M2), 3);
+    EXPECT_EQ(types::significand_bits(types::PrimitiveType::Float8E4M3), 4);
+    EXPECT_EQ(types::significand_bits(types::PrimitiveType::BFloat), 8);
+    EXPECT_EQ(types::significand_bits(types::PrimitiveType::Half), 11);
+    EXPECT_EQ(types::significand_bits(types::PrimitiveType::Float), 24);
+    EXPECT_EQ(types::significand_bits(types::PrimitiveType::Double), 53);
+    EXPECT_EQ(types::significand_bits(types::PrimitiveType::Int8), 0);
+}

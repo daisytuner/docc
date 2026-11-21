@@ -49,6 +49,13 @@ std::string ROCMLanguageExtension::primitive_type(const types::PrimitiveType pri
             return "__float128";
         case types::PrimitiveType::PPC_FP128:
             return "__float128";
+        case types::PrimitiveType::Float8E4M3:
+        case types::PrimitiveType::Float8E5M2:
+            // No standard C type: a target converts FP8 containers to a type it stores before generating code.
+            throw InvalidSDFGException(
+                std::string("Unsupported primitive type ") + types::primitive_type_to_string(prim_type) +
+                ": FP8 has no C type"
+            );
     }
 
     throw std::runtime_error("Unknown primitive type");
@@ -397,6 +404,9 @@ std::string ROCMLanguageExtension::zero(const types::PrimitiveType prim_type) {
             return "0.0";
         case types::PPC_FP128:
             return "0.0";
+        case types::Float8E4M3:
+        case types::Float8E5M2:
+            throw InvalidSDFGException("Currently unsupported");
     }
 }
 

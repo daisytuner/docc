@@ -388,6 +388,12 @@ PYBIND11_MODULE(_sdfg, m) {
             "Marks all CMath nodes approximate, allowing fast device intrinsics (e.g. __expf)"
         )
         .def(
+            "widen_floats",
+            &PyStructuredSDFG::widen_floats,
+            py::arg("types"),
+            "Widens the given float types to Float, as expansion does for the types a target does not store"
+        )
+        .def(
             "expand",
             static_cast<void (PyStructuredSDFG::*)()>(&PyStructuredSDFG::expand),
             "Expand step w/o target support for backwards compatibility"
@@ -1440,7 +1446,7 @@ PYBIND11_MODULE(_sdfg, m) {
         "target_default_contraction_precision",
         [](const std::string& target) -> std::string {
             auto* handler = docc_context.get_target_handler(target);
-            return handler ? handler->safe_get_default_contraction_precision() : "native";
+            return handler ? handler->safe_get_precision().default_contraction : "native";
         },
         py::arg("target"),
         "How Float and Double matmuls compute for the target when no contraction_precision is selected"
@@ -1451,8 +1457,8 @@ PYBIND11_MODULE(_sdfg, m) {
         [](const std::string& target) {
             auto* handler = docc_context.get_target_handler(target);
             return std::make_pair(
-                handler ? handler->safe_get_default_float() : "float64",
-                handler ? handler->safe_get_default_int() : "int64"
+                handler ? handler->safe_get_frontend().default_float : "float64",
+                handler ? handler->safe_get_frontend().default_int : "int64"
             );
         },
         py::arg("target"),
@@ -1463,7 +1469,7 @@ PYBIND11_MODULE(_sdfg, m) {
         "target_default_einsum",
         [](const std::string& target) {
             auto* handler = docc_context.get_target_handler(target);
-            return handler && handler->safe_get_default_einsum();
+            return handler && handler->safe_get_frontend().einsum;
         },
         py::arg("target"),
         "Whether Python contraction detection is enabled by default for the target"

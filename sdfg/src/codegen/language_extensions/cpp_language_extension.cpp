@@ -46,6 +46,11 @@ std::string CPPLanguageExtension::primitive_type(const types::PrimitiveType prim
             return "__float128";
         case types::PrimitiveType::PPC_FP128:
             return "__float128";
+        // One byte each, computed with as float (daisy_rtl/float8.h).
+        case types::PrimitiveType::Float8E4M3:
+            return "__daisy_float8_e4m3";
+        case types::PrimitiveType::Float8E5M2:
+            return "__daisy_float8_e5m2";
     }
 
     throw std::runtime_error("Unknown primitive type");
@@ -351,6 +356,10 @@ std::string CPPLanguageExtension::zero(const types::PrimitiveType prim_type) {
             throw InvalidSDFGException("Currently unsupported");
         case types::PPC_FP128:
             throw InvalidSDFGException("Currently unsupported");
+        case types::Float8E4M3:
+            return "__daisy_float8_e4m3(0.0f)";
+        case types::Float8E5M2:
+            return "__daisy_float8_e5m2(0.0f)";
     }
 }
 

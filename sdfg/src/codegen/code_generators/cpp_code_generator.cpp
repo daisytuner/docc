@@ -48,6 +48,7 @@ void CPPCodeGenerator::dispatch_header_includes(PrettyPrinter& out) {
     out << "#include <cstdint>" << std::endl;
 
     out << "#include <daisy_rtl/daisy_rtl.h>" << std::endl;
+    out << "#include <daisy_rtl/float8.h>" << std::endl;
 }
 
 void CPPCodeGenerator::dispatch_header_structures(PrettyPrinter& out) {
