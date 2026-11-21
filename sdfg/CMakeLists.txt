@@ -153,6 +153,7 @@ set(SOURCE_FILES
     src/passes/dataflow/byte_reference_elimination.cpp
     src/passes/dataflow/approximate_math.cpp
     src/passes/dataflow/constant_propagation.cpp
+    src/passes/dataflow/float_widening.cpp
     src/passes/dataflow/dead_data_elimination.cpp
     src/passes/dataflow/dead_reference_elimination.cpp
     src/passes/dataflow/memlet_linearization.cpp

@@ -37,6 +37,8 @@ void register_types(py::module& m) {
         .value("X86_FP80", PrimitiveType::X86_FP80)
         .value("FP128", PrimitiveType::FP128)
         .value("PPC_FP128", PrimitiveType::PPC_FP128)
+        .value("Float8E4M3", PrimitiveType::Float8E4M3)
+        .value("Float8E5M2", PrimitiveType::Float8E5M2)
         .export_values();
 
     // StorageType

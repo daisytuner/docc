@@ -25,6 +25,7 @@
 #include <sdfg/parallelization/passes/auto_parallelization.h>
 #include <sdfg/passes/dataflow/approximate_math.h>
 #include <sdfg/passes/dataflow/dead_data_elimination.h>
+#include <sdfg/passes/dataflow/float_widening.h>
 #include <sdfg/passes/dataflow/local_buffer_reuse.h>
 #include <sdfg/passes/dataflow/tensor_to_pointer_conversion.h>
 #include <sdfg/passes/dot_expansion_pass.h>
@@ -203,6 +204,13 @@ void PyStructuredSDFG::approximate_math() {
     pass.run(builder, analysis_manager);
 }
 
+void PyStructuredSDFG::widen_floats(const std::vector<sdfg::types::PrimitiveType>& types) {
+    sdfg::builder::StructuredSDFGBuilder builder(*sdfg_);
+    sdfg::analysis::AnalysisManager analysis_manager(*sdfg_, options_);
+    sdfg::passes::FloatWidening pass({types.begin(), types.end()});
+    pass.run(builder, analysis_manager);
+}
+
 void PyStructuredSDFG::expand() {
     docc::target::TargetOptions opt{.target = "none", .category = "", .remote_tuning = false};
     expand(opt);
@@ -217,6 +225,9 @@ void PyStructuredSDFG::expand(const docc::target::TargetOptions& options) {
     sdfg::passes::CompileStatistics::enter_stage_if_enabled("expand");
     sdfg::builder::StructuredSDFGBuilder builder_opt(*sdfg_);
     sdfg::analysis::AnalysisManager analysis_manager(*sdfg_, options_);
+    auto* target = docc_context_.get_target_handler(options.target);
+    static const docc::target::TargetPrecision native;
+    const auto& target_precision = target ? target->safe_get_precision() : native;
 
     // Tensor layouts are lost on expansion, so record buffer sizes for offloading first
     sdfg::passes::TensorAllocationSizeInference tensor_allocation_size_inference;
@@ -224,23 +235,29 @@ void PyStructuredSDFG::expand(const docc::target::TargetOptions& options) {
 
     // Matmuls with prepared Ozaki slices of B leave Int8 matmuls as the precision pass does, before the targets map
     // them.
-    sdfg::fp_math::expand_ozaki_matmuls(builder_opt, analysis_manager);
+    sdfg::fp_math::expand_ozaki_matmuls(builder_opt, analysis_manager, target_precision.contraction_bits);
 
     // Before the targets map matmuls, e.g. to BLAS; they map the Int8 matmuls the emulation leaves instead.
     if (options.contraction_precision != "native") {
         auto precision = sdfg::fp_math::ContractionPrecision::parse(options.contraction_precision);
-        if (auto* target = docc_context_.get_target_handler(options.target);
-            target && target->safe_get_direct_contraction_rescaling()) {
+        if (target_precision.direct_rescaling) {
             precision.rescaling = sdfg::fp_math::Rescaling::Direct;
             if (precision.kind == sdfg::fp_math::ContractionPrecision::Kind::Ozaki) {
                 precision.variant = sdfg::fp_math::OzakiVariant::Slicing;
             }
         }
+        precision.max_bits = target_precision.contraction_bits;
         sdfg::fp_math::ContractionPrecisionPass contraction_precision_pass(precision);
         contraction_precision_pass.run(builder_opt, analysis_manager);
     }
 
-    if (auto* target = docc_context_.get_target_handler(options.target)) {
+    // After the contraction precision, which slices by the operands' own types: the float types the target does not
+    // store compute in Float.
+    const auto& widened = target_precision.widened_float_types;
+    sdfg::passes::FloatWidening widening({widened.begin(), widened.end()});
+    widening.run(builder_opt, analysis_manager);
+
+    if (target) {
         if (auto target_expand = target->safe_apply_expand_time_mapping_fn_get()) {
             target_expand(builder_opt, analysis_manager, options);
         }
