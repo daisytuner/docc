@@ -105,7 +105,7 @@ class DoccOptions:
     # quantizes them with a scale per row and column, losing accuracy; "ozaki", "ozaki1[:s]"
     # (slices) and "ozaki2[:L]" (moduli) emulate them on exact Int8 matmuls at the native
     # precision. Pays off only where Int8 matrix units are much faster than the native type. Unset takes
-    # the target's default (DoccTarget::default_contraction_precision).
+    # the target's default (TargetPrecision::default_contraction).
     contraction_precision: Optional[str] = None
 
     # ROCm only: allocate and free device scratch buffers with the stream-ordered

@@ -4,7 +4,6 @@ import torch._dynamo
 import torch.export
 import torch.utils._pytree
 import numpy as np
-import ml_dtypes
 import os
 import time
 import hashlib
@@ -14,6 +13,7 @@ import contextlib
 from typing import Any, Callable, Optional
 
 from docc.compiler import DoccProgram, DoccOptions, CompiledSDFG
+from docc.compiler.compiled_sdfg import numpy_to_torch_tensor, torch_tensor_to_numpy
 from docc.compiler.artifacts import artifact_file
 from docc.sdfg import StructuredSDFG, DoccMetrics
 
@@ -529,14 +529,7 @@ class PyTorchProgram(DoccProgram):
             if isinstance(arg, torch.Tensor):
                 # Ensure contiguous and convert to numpy
                 contiguous_arg: torch.Tensor = arg.detach().cpu().contiguous()
-                if arg.dtype == torch.bfloat16:
-                    arr = (
-                        contiguous_arg.view(dtype=torch.uint16)
-                        .numpy()
-                        .view(dtype=ml_dtypes.bfloat16)
-                    )
-                else:
-                    arr: np.ndarray = contiguous_arg.numpy()
+                arr: np.ndarray = torch_tensor_to_numpy(contiguous_arg)
                 converted.append(arr)
             elif isinstance(arg, np.ndarray):
                 converted.append(arg)
@@ -568,12 +561,7 @@ class PyTorchProgram(DoccProgram):
                 # For non-CPU devices, .to(device) creates a copy anyway
                 # For CPU, the shared memory is fine since CompiledSDFG
                 # allocates new buffers on each call
-                if val.dtype == ml_dtypes.bfloat16:
-                    t = torch.from_numpy(val.view(dtype=np.uint16)).view(
-                        dtype=torch.bfloat16
-                    )
-                else:
-                    t = torch.from_numpy(val)
+                t = numpy_to_torch_tensor(val)
                 if not is_cpu:
                     t = t.to(device)
                 return t

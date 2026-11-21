@@ -21,9 +21,13 @@ namespace {
 
 constexpr int SLICE_BITS = 7;
 
+/// Guard bits beyond a type's significand: a row's largest magnitude is a few times its typical one.
+constexpr int GUARD_BITS = 2;
+
 /// Bits of the output's significand plus guard bits, which the emulation keeps per row and column.
 int target_bits(PrimitiveType type) {
-    return type == PrimitiveType::Float ? 26 : 55;
+    auto significand = types::significand_bits(type);
+    return significand > 0 ? significand + GUARD_BITS : 55;
 }
 
 /// The inverse of @p value modulo @p modulus.
@@ -51,8 +55,44 @@ const std::vector<int64_t>& OzakiContraction::moduli() {
     return primes;
 }
 
-OzakiContraction::OzakiContraction(data_flow::LibraryNode& node, OzakiVariant variant, int splits, Rescaling rescaling)
-    : node_(node), variant_(variant), splits_(splits), rescaling_(rescaling) {
+OzakiContraction::
+    OzakiContraction(data_flow::LibraryNode& node, OzakiVariant variant, int splits, Rescaling rescaling, int max_bits)
+    : node_(node), variant_(variant), splits_(splits), rescaling_(rescaling), max_bits_(max_bits) {
+}
+
+int OzakiContraction::operand_bits(const std::string& connector) const {
+    auto& graph = node_.get_parent();
+    for (auto& edge : graph.in_edges(node_)) {
+        if (edge.dst_conn() != connector && edge.dst_conn() != "__" + connector) {
+            continue;
+        }
+        auto type = edge.base_type().primitive_type();
+        if (types::is_floating_point(type)) {
+            return types::significand_bits(type) + GUARD_BITS;
+        }
+        if (types::is_integer(type) && type != PrimitiveType::Bool) {
+            // Exact: an integer of up to 8 bits fits one slice.
+            return static_cast<int>(types::bit_width(type)) - (types::is_signed(type) ? 1 : 0);
+        }
+        return 0;
+    }
+    return 0;
+}
+
+std::pair<int, int> OzakiContraction::operand_splits() const {
+    if (splits_ != 0) {
+        return {splits_, splits_};
+    }
+    auto result = target_bits(detail::contraction_type(node_));
+    if (max_bits_ > 0) {
+        result = std::min(result, max_bits_);
+    }
+    auto slices = [&](const std::string& connector) {
+        auto bits = operand_bits(connector);
+        bits = bits > 0 ? std::min(bits, result) : result;
+        return std::max(1, (bits + SLICE_BITS - 1) / SLICE_BITS);
+    };
+    return {slices("A"), slices("B")};
 }
 
 std::string OzakiContraction::name() const {
@@ -73,9 +113,13 @@ int OzakiContraction::effective_splits() const {
     if (splits_ != 0) {
         return splits_;
     }
-    auto target = target_bits(detail::contraction_type(node_));
     if (variant_ == OzakiVariant::Slicing) {
-        return (target + SLICE_BITS - 1) / SLICE_BITS;
+        auto [a, b] = operand_splits();
+        return std::max(a, b);
+    }
+    auto target = target_bits(detail::contraction_type(node_));
+    if (max_bits_ > 0) {
+        target = std::min(target, max_bits_);
     }
     auto k_expression = detail::contraction_k(node_);
     if (k_expression.is_null() || !SymEngine::is_a<SymEngine::Integer>(*k_expression)) {
@@ -91,8 +135,21 @@ int OzakiContraction::effective_splits() const {
 }
 
 int OzakiContraction::matmuls() const {
-    auto splits = effective_splits();
-    return variant_ == OzakiVariant::Slicing ? splits * (splits + 1) / 2 : splits;
+    if (variant_ != OzakiVariant::Slicing) {
+        return effective_splits();
+    }
+    auto [a, b] = operand_splits();
+    // Only direct rescaling slices the operands differently; the others slice both as the larger.
+    if (rescaling_ != Rescaling::Direct) {
+        a = b = std::max(a, b);
+    }
+    int count = 0;
+    for (int t = 1; t <= a; t++) {
+        for (int u = 1; u <= b; u++) {
+            count += t + u <= std::max(a, b) + 1;
+        }
+    }
+    return count;
 }
 
 bool OzakiContraction::can_be_applied(builder::StructuredSDFGBuilder&, analysis::AnalysisManager&) {
@@ -380,7 +437,6 @@ std::vector<std::string> slice_direct(
 void direct_products(
     KernelBuilder& kb,
     detail::ContractionOperands& operands,
-    int slices,
     const std::vector<std::string>& a_slices,
     const std::string& scales_a,
     const std::vector<std::string>& b_slices,
@@ -392,11 +448,14 @@ void direct_products(
     auto type = operands.element;
     const double q = (1 << SLICE_BITS) - 1;
 
-    // The products of slice pairs (t, u), 1-based, t + u <= s + 1, each with its weight (2q)^(2-t-u); smallest first.
+    // The products of slice pairs (t, u), 1-based, t <= s_A, u <= s_B and t + u <= max(s_A, s_B) + 1, each with its
+    // weight (2q)^(2-t-u); smallest first.
     auto size = symbolic::mul(batch.count(), symbolic::mul(m, n));
     std::vector<std::pair<std::string, double>> products;
+    int a_count = static_cast<int>(a_slices.size()), b_count = static_cast<int>(b_slices.size());
+    int slices = std::max(a_count, b_count);
     for (int g = slices + 1; g >= 2; g--) {
-        for (int t = std::max(1, g - slices); t <= std::min(slices, g - 1); t++) {
+        for (int t = std::max(1, g - b_count); t <= std::min(a_count, g - 1); t++) {
             auto product = kb.buffer("_oz_p", PrimitiveType::Int32, size);
             detail::int8_matmul(
                 kb,
@@ -443,7 +502,7 @@ void direct_products(
 }
 
 /// Slicing with direct rescaling, in the contraction's own type; see OzakiContraction.
-void build_slicing_direct(KernelBuilder& kb, detail::ContractionOperands& operands, int slices) {
+void build_slicing_direct(KernelBuilder& kb, detail::ContractionOperands& operands, int a_count, int b_count) {
     auto m = operands.m, n = operands.n, k = operands.k;
     // Each matrix of a batch gets scales of its own; every buffer holds one matrix after the other.
     auto& batch = operands.batch;
@@ -461,10 +520,10 @@ void build_slicing_direct(KernelBuilder& kb, detail::ContractionOperands& operan
     auto scales_a = detail::absmax(kb, "_oz_scale_a", read_a, m, k, tiny, type, batch);
     auto scales_b = detail::absmax(kb, "_oz_scale_b", read_b_t, n, k, tiny, type, batch);
     auto a_slices =
-        slice_direct(kb, batch, type, slices, "_oz_a_slice", m, k, operands.a_transposed, read_a, scales_a, true);
+        slice_direct(kb, batch, type, a_count, "_oz_a_slice", m, k, operands.a_transposed, read_a, scales_a, true);
     auto b_slices =
-        slice_direct(kb, batch, type, slices, "_oz_b_slice", k, n, operands.b_transposed, read_b, scales_b, false);
-    direct_products(kb, operands, slices, a_slices, scales_a, b_slices, scales_b, operands.b_transposed);
+        slice_direct(kb, batch, type, b_count, "_oz_b_slice", k, n, operands.b_transposed, read_b, scales_b, false);
+    direct_products(kb, operands, a_slices, scales_a, b_slices, scales_b, operands.b_transposed);
 }
 
 } // namespace
@@ -475,7 +534,8 @@ void build_slicing_direct_prepared(
     KernelBuilder& kb,
     ContractionOperands& operands,
     const std::vector<std::string>& b_slices,
-    const std::string& scales_b
+    const std::string& scales_b,
+    int a_slices
 ) {
     auto m = operands.m, k = operands.k;
     auto type = operands.element;
@@ -483,16 +543,17 @@ void build_slicing_direct_prepared(
         return operands.a(block, entry, row, column);
     };
     auto scales_a = absmax(kb, "_oz_scale_a", read_a, m, k, smallest_normal(type), type, operands.batch);
-    auto slices = static_cast<int>(b_slices.size());
-    auto a_slices =
+    auto slices = a_slices > 0 ? a_slices : static_cast<int>(b_slices.size());
+    auto a_digits =
         slice_direct(kb, operands.batch, type, slices, "_oz_a_slice", m, k, operands.a_transposed, read_a, scales_a, true);
-    direct_products(kb, operands, slices, a_slices, scales_a, b_slices, scales_b, false);
+    direct_products(kb, operands, a_digits, scales_a, b_slices, scales_b, false);
 }
 
 } // namespace detail
 
 void OzakiContraction::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     auto splits = effective_splits();
+    auto [a_count, b_count] = operand_splits();
     auto variant = variant_;
     auto direct = rescaling_ == Rescaling::Direct;
     auto& oriented = direct ? row_vector_result(builder, node_) : node_;
@@ -500,7 +561,7 @@ void OzakiContraction::apply(builder::StructuredSDFGBuilder& builder, analysis::
     auto& node = direct && b_stored_transposed(oriented) ? read_b_row_major(builder, oriented).contraction : oriented;
     detail::expand_contraction(builder, node, [&](KernelBuilder& kb, detail::ContractionOperands& operands) {
         if (direct) {
-            build_slicing_direct(kb, operands, splits);
+            build_slicing_direct(kb, operands, a_count, b_count);
         } else if (variant == OzakiVariant::Slicing) {
             build_slicing(kb, operands, splits);
         } else {
@@ -517,6 +578,7 @@ void OzakiContraction::to_json(nlohmann::json& j) const {
         {"variant", variant_ == OzakiVariant::Slicing ? "slicing" : "modular"},
         {"splits", splits_},
         {"rescaling", rescaling_ == Rescaling::Direct ? "direct" : "exponents"},
+        {"max_bits", max_bits_},
     };
 }
 
@@ -526,7 +588,13 @@ OzakiContraction OzakiContraction::from_json(builder::StructuredSDFGBuilder& bui
                                                                                     : OzakiVariant::Modular;
     auto rescaling = parameters.value("rescaling", std::string("exponents")) == "direct" ? Rescaling::Direct
                                                                                          : Rescaling::Exponents;
-    return OzakiContraction(detail::contraction_from_json(builder, j), variant, parameters.value("splits", 0), rescaling);
+    return OzakiContraction(
+        detail::contraction_from_json(builder, j),
+        variant,
+        parameters.value("splits", 0),
+        rescaling,
+        parameters.value("max_bits", 0)
+    );
 }
 
 } // namespace fp_math
