@@ -31,7 +31,11 @@ symbolic::Expression contraction_k(const data_flow::LibraryNode& node);
 /// K of a supported contraction.
 int64_t constant_k(const data_flow::LibraryNode& node);
 
-/// The Float or Double element type of a contraction.
+/// The type the emulation of a contraction of @p type computes in: Double for Double, else Float, which holds every
+/// value of the narrower floats exactly.
+types::PrimitiveType compute_type(types::PrimitiveType type);
+
+/// The element type of a contraction: its result's.
 types::PrimitiveType contraction_type(const data_flow::LibraryNode& node);
 
 /// The smallest positive normal value of @p type.
@@ -140,12 +144,14 @@ void int8_matmul(
 
 /// Slicing with direct rescaling (see OzakiContraction) of A only: B's slices and the scales of its columns were
 /// prepared before, as slicing with direct rescaling computes them, each slice an Int8 buffer holding the row-major
-/// k x n matrix (one after the other per matrix of a batch), the scales a buffer of n per matrix in A's type.
+/// k x n matrix (one after the other per matrix of a batch), the scales a buffer of n per matrix in A's type. A takes
+/// @p a_slices slices, as many as B if 0.
 void build_slicing_direct_prepared(
     KernelBuilder& kb,
     ContractionOperands& operands,
     const std::vector<std::string>& b_slices,
-    const std::string& scales_b
+    const std::string& scales_b,
+    int a_slices = 0
 );
 
 /// The MatMul or GEMM node a transformation description refers to as its subgraph node "0".

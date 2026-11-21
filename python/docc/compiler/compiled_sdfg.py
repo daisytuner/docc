@@ -1,5 +1,6 @@
 import ctypes
 import importlib.util
+import json
 import os
 import re
 import warnings
@@ -234,6 +235,8 @@ _PRIMITIVE_TO_NP_DTYPE = {
     PrimitiveType.Bool: np.bool_,
     PrimitiveType.Half: np.float16,
     PrimitiveType.BFloat: ml_dtypes.bfloat16,
+    PrimitiveType.Float8E4M3: ml_dtypes.float8_e4m3fn,
+    PrimitiveType.Float8E5M2: ml_dtypes.float8_e5m2,
 }
 
 # Pre-computed dtype map for numpy conversion
@@ -251,7 +254,15 @@ _NUMPY_DTYPE_MAP = {
     PrimitiveType.Bool: np.bool_,
     PrimitiveType.Half: np.float16,
     PrimitiveType.BFloat: ml_dtypes.bfloat16,
+    PrimitiveType.Float8E4M3: ml_dtypes.float8_e4m3fn,
+    PrimitiveType.Float8E5M2: ml_dtypes.float8_e5m2,
 }
+
+# Types whose ctypes arrays numpy cannot view (no PEP 3118 buffer format), read with np.frombuffer instead.
+_BUFFER_FORMATLESS = (
+    PrimitiveType.Half,
+    PrimitiveType.BFloat,
+)
 
 _CTYPES_MAP = {
     PrimitiveType.Bool: ctypes.c_bool,
@@ -271,24 +282,44 @@ _CTYPES_MAP = {
 }
 
 
-def torch_tensor_to_numpy(tensor) -> np.ndarray:
-    """Helper method to convert a torch.tensor to an numpy.ndarray that supports ml_dtypes"""
+def _ml_dtypes_of_torch():
+    """Torch's dtypes that NumPy holds only as ml_dtypes, with the integer type of their bits."""
     import torch
 
-    if tensor.dtype == torch.bfloat16:
-        return tensor.view(dtype=torch.uint16).numpy().view(dtype=ml_dtypes.bfloat16)
-    else:
+    return {
+        torch.bfloat16: (ml_dtypes.bfloat16, torch.uint16, np.uint16),
+        torch.float8_e4m3fn: (ml_dtypes.float8_e4m3fn, torch.uint8, np.uint8),
+        torch.float8_e5m2: (ml_dtypes.float8_e5m2, torch.uint8, np.uint8),
+    }
+
+
+def torch_tensor_to_numpy(tensor) -> np.ndarray:
+    """Helper method to convert a torch.tensor to an numpy.ndarray that supports ml_dtypes"""
+    found = _ml_dtypes_of_torch().get(tensor.dtype)
+    if found is None:
         return tensor.numpy()
+    dtype, torch_bits, _ = found
+    return tensor.view(dtype=torch_bits).numpy().view(dtype=dtype)
 
 
 def numpy_to_torch_tensor(array: np.ndarray):
     """Helper method to convert an numpy.ndarray to a torch.tensor that supports ml_dtypes"""
     import torch
 
-    if array.dtype == ml_dtypes.bfloat16:
-        return torch.from_numpy(array.view(dtype=np.uint16)).view(dtype=torch.bfloat16)
-    else:
-        return torch.from_numpy(array)
+    for torch_dtype, (dtype, _, bits) in _ml_dtypes_of_torch().items():
+        if array.dtype == dtype:
+            return torch.from_numpy(array.view(dtype=bits)).view(dtype=torch_dtype)
+    return torch.from_numpy(array)
+
+
+def _numpy_to_torch_dtype(dtype):
+    """The torch dtype of the NumPy or ml_dtypes ``dtype``."""
+    import torch
+
+    for torch_dtype, (ml_dtype, _, _) in _ml_dtypes_of_torch().items():
+        if np.dtype(dtype) == ml_dtype:
+            return torch_dtype
+    return torch.from_numpy(np.empty(0, dtype)).dtype
 
 
 _PRIMITIVE_TO_TORCH_DTYPE_CACHE = None
@@ -370,6 +401,22 @@ def _reshape_output(arr, dims, compiled_strides, shape_symbol_values):
         except:
             pass
     return arr.reshape(dims)
+
+
+def _float32_like(array):
+    """A float32 copy of ``array`` with its strides in elements, which a program specialized on them reads."""
+    item = array.dtype.itemsize
+    if array.size == 0 or any(stride % item for stride in array.strides):
+        return array.astype(np.float32)
+    strides = [stride // item for stride in array.strides]
+    low = sum(min(0, (n - 1) * s) for n, s in zip(array.shape, strides))
+    high = sum(max(0, (n - 1) * s) for n, s in zip(array.shape, strides))
+    buffer = np.empty(high - low + 1, np.float32)
+    wide = np.lib.stride_tricks.as_strided(
+        buffer[-low:], array.shape, [s * buffer.itemsize for s in strides]
+    )
+    wide[...] = array
+    return wide
 
 
 class CompiledSDFG:
@@ -624,6 +671,21 @@ class CompiledSDFG:
         # Map from _arg_info index to result position (for O(1) lookup)
         self._output_pos_map = {idx: pos for pos, idx in enumerate(self._output_order)}
 
+        # Arguments whose float type the target does not store, widened to Float (passes::FloatWidening): the
+        # caller's arrays of their original types are converted at the boundary, by user position and result position.
+        widened = self.sdfg.metadata("widened_argument_types")
+        widened = json.loads(widened) if widened else {}
+        self._widened_inputs = []
+        self._widened_results = {}
+        for i, info in enumerate(self._arg_info):
+            if info[0] == _ARG_TYPE_USER_ARRAY and info[2] in widened:
+                self._widened_inputs.append(info[1])
+            elif info[0] == _ARG_TYPE_OUTPUT_ARRAY and info[1] in widened:
+                primitive = getattr(PrimitiveType, widened[info[1]])
+                self._widened_results[self._output_pos_map[i]] = _PRIMITIVE_TO_NP_DTYPE[
+                    primitive
+                ]
+
     def _convert_to_python_syntax(self, expr_str):
         result = expr_str
 
@@ -735,11 +797,8 @@ class CompiledSDFG:
                         arr_type = ct_type * total_size
                         # For Half/BFloat, use np.frombuffer since np.ctypeslib.as_array
                         # doesn't support these types (PEP 3118 buffer format limitation)
-                        if pointee.primitive_type in (
-                            PrimitiveType.Half,
-                            PrimitiveType.BFloat,
-                        ):
-                            byte_size = total_size * 2  # Half and BFloat are 2 bytes
+                        if pointee.primitive_type in _BUFFER_FORMATLESS:
+                            byte_size = total_size * np.dtype(dtype).itemsize
                             arr = np.frombuffer(
                                 (ctypes.c_char * byte_size).from_address(
                                     ctypes.cast(func_result, ctypes.c_void_p).value
@@ -778,13 +837,8 @@ class CompiledSDFG:
                                 arr_type = ct_type * total_size
                                 # For Half/BFloat, use np.frombuffer since np.ctypeslib.as_array
                                 # doesn't support these types (PEP 3118 buffer format limitation)
-                                if pointee.primitive_type in (
-                                    PrimitiveType.Half,
-                                    PrimitiveType.BFloat,
-                                ):
-                                    byte_size = (
-                                        total_size * 2
-                                    )  # Half and BFloat are 2 bytes
+                                if pointee.primitive_type in _BUFFER_FORMATLESS:
+                                    byte_size = total_size * np.dtype(dtype).itemsize
                                     arr = np.frombuffer(
                                         (ctypes.c_char * byte_size).from_address(
                                             ctypes.cast(
@@ -1077,7 +1131,9 @@ class CompiledSDFG:
         # Host inputs are copied to the device inside _call_device (with a
         # one-time warning); device inputs are consumed zero-copy.
         if self.device_resident:
-            return self._call_device(*args)
+            if not self._widened_inputs and not self._widened_results:
+                return self._call_device(*args)
+            return self._call_widened(self._call_device, args)
 
         # Host execution path. CPU torch tensors are converted to numpy views so
         # the ctypes boundary can take their data pointer.
@@ -1096,9 +1152,51 @@ class CompiledSDFG:
                 )
                 for a in args
             )
-        if self._pythonic:
-            return self._call_python(*args)
-        return self._call_host(*args)
+        call = self._call_python if self._pythonic else self._call_host
+        if not self._widened_inputs and not self._widened_results:
+            return call(*args)
+        return self._call_widened(call, args)
+
+    def _call_widened(self, call, args):
+        """``call`` with the widened arguments (see __init__) in float32, written back into the caller's arrays, which the
+        program may update, and the widened results in their original types. NumPy arrays and torch tensors, on any
+        device, are converted; CuPy has no such types to convert. A Python module takes the caller's arrays as they are
+        and converts them itself, as it may keep arguments across calls by their arrays.
+        """
+        args = list(args)
+        written = []
+        for position in [] if self._pythonic else self._widened_inputs:
+            arg = args[position]
+            if isinstance(arg, np.ndarray) and arg.dtype != np.float32:
+                wide = _float32_like(arg)
+                written.append((arg, wide))
+                args[position] = wide
+            elif (
+                _is_torch_tensor(arg)
+                and arg.is_floating_point()
+                and arg.element_size() < 4
+            ):
+                import torch
+
+                wide = arg.detach().to(torch.float32).contiguous()
+                written.append((arg, wide))
+                args[position] = wide
+        result = call(*args)
+        for arg, wide in written:
+            if isinstance(arg, np.ndarray):
+                np.copyto(arg, wide, casting="unsafe")
+            else:
+                arg.detach().copy_(wide)
+        if not self._widened_results:
+            return result
+        results = list(result) if isinstance(result, tuple) else [result]
+        for position, dtype in self._widened_results.items():
+            value = results[position]
+            if _is_torch_tensor(value):
+                results[position] = value.to(_numpy_to_torch_dtype(dtype))
+            elif isinstance(value, np.ndarray) or np.isscalar(value):
+                results[position] = np.asarray(value).astype(dtype)
+        return tuple(results) if isinstance(result, tuple) else results[0]
 
     def _call_host(self, *args):
         # Ultra-fast path using pre-computed tuple-based argument info

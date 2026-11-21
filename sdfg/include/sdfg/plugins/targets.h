@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/passes/scheduler/loop_scheduler.h"
@@ -60,8 +61,30 @@ struct TargetArtifact {
     std::string (*compile)(sdfg::StructuredSDFG& sdfg, const CodegenRequest& request) = nullptr;
 };
 
+/// The precision a target computes in: of untyped literals, of floating-point contractions (see fp_math), and which
+/// float types it stores.
+struct TargetPrecision {
+    /// Types of untyped numeric literals, as the Python frontends type them; not of explicit dtypes or arguments.
+    std::string literal_float = "float64";
+    std::string literal_int = "int64";
+    /// How Float and Double matmuls compute when the user selects nothing, as TargetOptions::contraction_precision
+    /// spells it, e.g. an Ozaki emulation for a target that multiplies only integers.
+    std::string default_contraction = "native";
+    /// Whether quantized and Ozaki contractions multiply by their scales and compute in the contraction's own type, as
+    /// a target without Double, floor or exact powers of two needs (fp_math::Rescaling::Direct); Ozaki then slices.
+    bool direct_rescaling = false;
+    /// The significand bits, guard bits included, in which the target computes the results of emulated contractions,
+    /// e.g. 13 for a unit computing in a float of 11 bits; Ozaki slices no operand finer. 0 for the result type's own.
+    int contraction_bits = 0;
+    /// Float types the target does not store, such as bfloat16 on a unit without it, besides FP8, which no code
+    /// generator stores: after the contraction precision, which slices by the operands' own types,
+    /// passes::FloatWidening turns them into Float, and the runtime converts the arguments of these types at the
+    /// boundary.
+    std::vector<sdfg::types::PrimitiveType> widened_float_types = {};
+};
+
 struct DoccTarget {
-    static constexpr int NEWEST_API_VER = 4;
+    static constexpr int NEWEST_API_VER = 5;
 
     int api_ver = NEWEST_API_VER;
     std::string short_name;
@@ -126,46 +149,29 @@ struct DoccTarget {
         }
     }
 
-    /// How Float and Double matmuls compute when the user selects nothing, as TargetOptions::contraction_precision
-    /// spells it, e.g. an Ozaki emulation for a target that multiplies only integers.
-    std::string default_contraction_precision = "native";
+    // Since API version 5, the target's properties are grouped by the stage reading them, in pipeline order. Plugins
+    // of earlier versions get the defaults.
 
-    [[nodiscard]] std::string safe_get_default_contraction_precision() const {
-        return api_ver >= 3 ? default_contraction_precision : "native";
+    /// Whether docc lifts contractions from loops into einsums before expansion, when the user leaves einsum unset.
+    bool lift_einsums = false;
+
+    [[nodiscard]] bool safe_get_lift_einsums() const {
+        return api_ver >= 5 && lift_einsums;
     }
 
-    /// Whether quantized and Ozaki contractions multiply by their scales and compute in the contraction's own type, as
-    /// a target without Double, floor or exact powers of two needs (fp_math::Rescaling::Direct); Ozaki then slices.
-    bool direct_contraction_rescaling = false;
+    /// How contractions compute and which float types the target stores.
+    TargetPrecision precision;
 
-    [[nodiscard]] bool safe_get_direct_contraction_rescaling() const {
-        return api_ver >= 3 && direct_contraction_rescaling;
-    }
-
-    /// Python frontend defaults for untyped numeric literals, not explicit dtypes or argument types.
-    std::string default_float = "float64";
-    std::string default_int = "int64";
-
-    [[nodiscard]] std::string safe_get_default_float() const {
-        return api_ver >= 4 ? default_float : "float64";
-    }
-
-    [[nodiscard]] std::string safe_get_default_int() const {
-        return api_ver >= 4 ? default_int : "int64";
-    }
-
-    /// Python contraction detection when the user leaves einsum unset.
-    bool default_einsum = false;
-
-    [[nodiscard]] bool safe_get_default_einsum() const {
-        return api_ver >= 4 && default_einsum;
+    [[nodiscard]] const TargetPrecision& safe_get_precision() const {
+        static const TargetPrecision defaults;
+        return api_ver >= 5 ? precision : defaults;
     }
 
     /// The target's own artifact; without a compile hook, docc generates and builds C++.
     TargetArtifact artifact;
 
     [[nodiscard]] const TargetArtifact* safe_get_artifact() const {
-        return api_ver >= 4 && artifact.compile ? &artifact : nullptr;
+        return api_ver >= 5 && artifact.compile ? &artifact : nullptr;
     }
 };
 

@@ -229,6 +229,10 @@ types::PrimitiveType CMathNode::primitive_type() const {
     return this->primitive_type_;
 }
 
+void CMathNode::set_primitive_type(types::PrimitiveType primitive_type) {
+    this->primitive_type_ = primitive_type;
+}
+
 std::string CMathNode::name() const {
     return get_cmath_intrinsic_name(this->function_, this->primitive_type_);
 }
