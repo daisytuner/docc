@@ -644,6 +644,138 @@ TEST(OzakiContractionTest, Prepared_MatchesSlicingInTheGraph) {
     }
 }
 
+TEST(OzakiContractionTest, Prepared_BatchedTransposed) {
+    // Two matrices, B stored transposed, its N rows of K, as a cache holds a row per token per head.
+    constexpr int64_t BATCH = 2;
+    builder::StructuredSDFGBuilder builder("ozaki_matmul_prepared_batched", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    types::Pointer f32{types::Scalar(PrimitiveType::Float)};
+    types::Pointer i8{types::Scalar(PrimitiveType::Int8)};
+    for (auto name : {"a", "sb", "y"}) {
+        builder.add_container(name, f32, true);
+    }
+    builder.add_container("b0", i8, true);
+    builder.add_container("b1", i8, true);
+    auto& block = builder.add_block(sdfg.root());
+    auto batched = [](int64_t rows, int64_t columns) {
+        return math::tensor::TensorLayout({symbolic::integer(BATCH), symbolic::integer(rows), symbolic::integer(columns)});
+    };
+    auto& node = builder.add_library_node<
+        fp_math::OzakiMatMulNode>(block, DebugInfo(), batched(M, K), batched(M, N), PrimitiveType::Float, 2, true);
+    for (auto [container, connector] : {std::pair{"y", "Y"}, {"a", "A"}, {"sb", "SB"}, {"b0", "B0"}, {"b1", "B1"}}) {
+        auto& type = container[0] == 'b' ? i8 : f32;
+        builder.add_computational_memlet(block, builder.add_access(block, container), node, connector, {}, type);
+    }
+    analysis::AnalysisManager analysis_manager(sdfg);
+    EXPECT_TRUE(fp_math::expand_ozaki_matmuls(builder, analysis_manager));
+    auto function =
+        reinterpret_cast<void (*)(float*, float*, float*, int8_t*, int8_t*)>(test::compile_and_load(builder));
+
+    std::vector<float> a, scales;
+    std::vector<std::vector<float>> b(BATCH);
+    std::vector<int8_t> digits0, digits1;
+    for (int64_t e = 0; e < BATCH; e++) {
+        std::vector<float> a_e;
+        fill(a_e, b[e]);
+        for (auto& value : b[e]) {
+            value *= static_cast<float>(e + 1);
+        }
+        a.insert(a.end(), a_e.begin(), a_e.end());
+        auto [d, s] = prepare_b(b[e], 2);
+        scales.insert(scales.end(), s.begin(), s.end());
+        // Transposed: element (k, j) of B at j * K + k.
+        for (int64_t j = 0; j < N; j++) {
+            for (int64_t k = 0; k < K; k++) {
+                digits0.push_back(d[0][k * N + j]);
+                digits1.push_back(d[1][k * N + j]);
+            }
+        }
+    }
+    std::vector<float> y(BATCH * M * N, -7.0f);
+    function(a.data(), scales.data(), y.data(), digits0.data(), digits1.data());
+    for (int64_t e = 0; e < BATCH; e++) {
+        for (int64_t i = 0; i < M; i++) {
+            for (int64_t j = 0; j < N; j++) {
+                long double exact = 0, magnitude = 0;
+                for (int64_t k = 0; k < K; k++) {
+                    long double term = static_cast<long double>(a[(e * M + i) * K + k]) * b[e][k * N + j];
+                    exact += term;
+                    magnitude += std::fabs(term);
+                }
+                // Two slices keep about 14 bits of each operand.
+                EXPECT_LE(std::fabs(y[(e * M + i) * N + j] - exact), 1e-4 * magnitude) << e << " " << i << " " << j;
+            }
+        }
+    }
+}
+
+TEST(OzakiContractionTest, Prepared_SlicedRows) {
+    // q @ K^T from K's rows sliced by OzakiSlice, as a cache slices each token's keys when it stores them.
+    constexpr int64_t BATCH = 2;
+    builder::StructuredSDFGBuilder builder("ozaki_slice_rows", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    types::Pointer f32{types::Scalar(PrimitiveType::Float)};
+    types::Pointer i8{types::Scalar(PrimitiveType::Int8)};
+    for (auto name : {"q", "keys", "y"}) {
+        builder.add_container(name, f32, true);
+    }
+    for (auto name : {"s", "d0", "d1"}) {
+        builder.add_container(name, name[0] == 's' ? static_cast<const types::IType&>(f32) : i8, true);
+    }
+    auto batched = [](int64_t rows, int64_t columns) {
+        return math::tensor::TensorLayout({symbolic::integer(BATCH), symbolic::integer(rows), symbolic::integer(columns)});
+    };
+    auto& slice_block = builder.add_block(sdfg.root());
+    auto& slice =
+        builder
+            .add_library_node<fp_math::OzakiSliceNode>(slice_block, DebugInfo(), batched(N, K), PrimitiveType::Float, 2);
+    for (auto [container, connector] : {std::pair{"keys", "X"}, {"s", "S"}, {"d0", "D0"}, {"d1", "D1"}}) {
+        auto& type = container[0] == 'd' ? i8 : f32;
+        builder
+            .add_computational_memlet(slice_block, builder.add_access(slice_block, container), slice, connector, {}, type);
+    }
+    auto& block = builder.add_block(sdfg.root());
+    auto& node = builder.add_library_node<
+        fp_math::OzakiMatMulNode>(block, DebugInfo(), batched(M, K), batched(M, N), PrimitiveType::Float, 2, true);
+    for (auto [container, connector] : {std::pair{"y", "Y"}, {"q", "A"}, {"s", "SB"}, {"d0", "B0"}, {"d1", "B1"}}) {
+        auto& type = container[0] == 'd' ? i8 : f32;
+        builder.add_computational_memlet(block, builder.add_access(block, container), node, connector, {}, type);
+    }
+    analysis::AnalysisManager analysis_manager(sdfg);
+    EXPECT_TRUE(fp_math::expand_ozaki_matmuls(builder, analysis_manager));
+    auto function =
+        reinterpret_cast<void (*)(float*, float*, float*, float*, int8_t*, int8_t*)>(test::compile_and_load(builder));
+
+    std::vector<float> q, keys;
+    for (int64_t e = 0; e < BATCH; e++) {
+        std::vector<float> a, b;
+        fill(a, b);
+        q.insert(q.end(), a.begin(), a.end());
+        // Keys as rows: element (j, k) of the cache is B's (k, j).
+        for (int64_t j = 0; j < N; j++) {
+            for (int64_t k = 0; k < K; k++) {
+                keys.push_back(b[k * N + j] * static_cast<float>(e + 1));
+            }
+        }
+    }
+    std::vector<float> y(BATCH * M * N, -7.0f), scales(BATCH * N);
+    std::vector<int8_t> d0(BATCH * N * K), d1(BATCH * N * K);
+    function(q.data(), keys.data(), y.data(), scales.data(), d0.data(), d1.data());
+    for (int64_t e = 0; e < BATCH; e++) {
+        for (int64_t i = 0; i < M; i++) {
+            for (int64_t j = 0; j < N; j++) {
+                long double exact = 0, magnitude = 0;
+                for (int64_t k = 0; k < K; k++) {
+                    long double term = static_cast<long double>(q[(e * M + i) * K + k]) * keys[(e * N + j) * K + k];
+                    exact += term;
+                    magnitude += std::fabs(term);
+                }
+                EXPECT_LE(std::fabs(y[(e * M + i) * N + j] - exact), 1e-4 * magnitude) << e << " " << i << " " << j;
+            }
+        }
+    }
+}
+
 TEST(OzakiContractionTest, Prepared_OneSliceB) {
     // B prepared in one slice, as FP8 weights are; for a target computing in 13 bits, Float A takes two, and the two
     // products A_1 B_1 and A_2 B_1 compute A times B's slice to about A's two-slice precision.

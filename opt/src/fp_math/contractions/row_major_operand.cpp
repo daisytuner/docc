@@ -148,7 +148,9 @@ RowMajorB read_b_row_major(builder::StructuredSDFGBuilder& builder, data_flow::L
         }
     }
     auto& source = static_cast<data_flow::AccessNode&>(read_b->src());
-    types::Scalar element(detail::contraction_type(node));
+    // B's own type, which an Int8 MatMul accumulates into Int32 from.
+    auto* b_matmul = dynamic_cast<const MatMulNode*>(&node);
+    types::Scalar element(b_matmul ? b_matmul->input_type() : detail::contraction_type(node));
     types::Pointer pointer(element);
     auto copy = builder.find_new_name(source.data() + "_t");
     builder.add_container(copy, pointer);
