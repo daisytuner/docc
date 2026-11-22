@@ -17,6 +17,8 @@
 #include <sdfg/fp_math/transformations/quantize_contraction.h>
 #include <sdfg/fp_math/transformations/unfuse_fma.h>
 #include <sdfg/parallelization/transformations/loop_parallelization.h>
+#include <sdfg/reordering/transformations/loop_distribute.h>
+#include <sdfg/reordering/transformations/loop_interchange.h>
 #include <sdfg/targets/gpu/gpu_mma_einsum_transform.h>
 #include <sdfg/targets/gpu/gpu_mma_interleave.h>
 #include <sdfg/tiles/transformations/local_storage.h>
@@ -24,8 +26,6 @@
 #include <sdfg/tiles/transformations/tile_fusion.h>
 #include <sdfg/tiles/transformations/tile_streaming_copy.h>
 #include <sdfg/tiles/transformations/tile_vectorizer.h>
-#include <sdfg/transformations/loop_distribute.h>
-#include <sdfg/transformations/loop_interchange.h>
 #include <sdfg/transformations/loop_peeling.h>
 #include <sdfg/transformations/loop_shift.h>
 #include <sdfg/transformations/loop_skewing.h>
@@ -126,9 +126,9 @@ dispatch_transformation(const std::string& transformation_name, const nlohmann::
     } else if (transformation_name == "MultiLevelTiling") {
         return detail::invoke_for<transformations::MultiLevelTiling>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "LoopDistribute") {
-        return detail::invoke_for<transformations::LoopDistribute>(std::forward<Visitor>(visitor));
+        return detail::invoke_for<reordering::transformations::LoopDistribute>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "LoopInterchange") {
-        return detail::invoke_for<transformations::LoopInterchange>(std::forward<Visitor>(visitor));
+        return detail::invoke_for<reordering::transformations::LoopInterchange>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "LocalStorage") {
         return detail::invoke_for<transformations::LocalStorage>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "SoftwarePipelining") {

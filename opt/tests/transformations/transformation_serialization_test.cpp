@@ -15,9 +15,9 @@
 #include <sdfg/structured_sdfg.h>
 #include <sdfg/symbolic/symbolic.h>
 
+#include <sdfg/reordering/transformations/loop_distribute.h>
+#include <sdfg/reordering/transformations/loop_interchange.h>
 #include <sdfg/tiles/transformations/local_storage.h>
-#include <sdfg/transformations/loop_distribute.h>
-#include <sdfg/transformations/loop_interchange.h>
 #include <sdfg/transformations/loop_skewing.h>
 #include <sdfg/transformations/loop_tiling.h>
 #include <sdfg/transformations/transformation_schema.h>
@@ -145,22 +145,22 @@ TEST(TransformationSerializationTest, CoreLoopTransformationsShape) {
     ASSERT_EQ(tiling2.name(), tiling.name());
 
     // LoopDistribute
-    transformations::LoopDistribute distribute(*f.outer_map);
+    reordering::transformations::LoopDistribute distribute(*f.outer_map);
     nlohmann::json jd;
     distribute.to_json(jd);
     ValidateSerialization(jd, 1);
-    auto distribute2 = transformations::LoopDistribute::from_json(f.builder, jd);
+    auto distribute2 = reordering::transformations::LoopDistribute::from_json(f.builder, jd);
     ASSERT_EQ(distribute2.name(), distribute.name());
 
     // LoopInterchange
-    transformations::LoopInterchange interchange(*f.outer_map, *f.inner_map);
+    reordering::transformations::LoopInterchange interchange(*f.outer_map, *f.inner_map);
     nlohmann::json ji;
     interchange.to_json(ji);
     ValidateSerialization(ji, 2);
-    auto interchange2 = transformations::LoopInterchange::from_json(f.builder, ji);
+    auto interchange2 = reordering::transformations::LoopInterchange::from_json(f.builder, ji);
     ASSERT_EQ(interchange2.name(), interchange.name());
 
-    // LocalStorag
+    // LocalStorage
     transformations::LocalStorage ils(*f.outer_map, *f.access_A);
     nlohmann::json jils;
     ils.to_json(jils);

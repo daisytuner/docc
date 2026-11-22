@@ -29,8 +29,6 @@
 #include <sdfg/passes/dataflow/tensor_to_pointer_conversion.h>
 #include <sdfg/passes/dot_expansion_pass.h>
 #include <sdfg/passes/normalization/loop_normal_form.h>
-#include <sdfg/passes/normalization/normalization.h>
-#include <sdfg/passes/normalization/normalize.h>
 #include <sdfg/passes/offloading/cuda_library_node_rewriter_pass.h>
 #include <sdfg/passes/offloading/device_buffer_reuse_pass.h>
 #include <sdfg/passes/offloading/reduction_shared_memory_delinearization.h>
@@ -49,6 +47,7 @@
 #include <sdfg/passes/symbolic/symbol_promotion.h>
 #include <sdfg/passes/symbolic/symbol_propagation.h>
 #include <sdfg/passes/targets/device_residency.h>
+#include <sdfg/reordering/reordering.h>
 #include <sdfg/serializer/json_serializer.h>
 
 #include <sdfg/helpers/helpers.h>
@@ -62,7 +61,6 @@
 #include "docc/compile/src_file_compiler_builder.h"
 #include "docc/util/docc_paths.h"
 #include "sdfg/passes/dataflow/tasklet_fusion.h"
-#include "sdfg/passes/loop_fusion/loop_fusion_pass.h"
 #include "sdfg/passes/memory/tensor_allocation_size_inference.h"
 #include "sdfg/passes/offloading/code_motion/block_hoisting.h"
 #include "sdfg/passes/offloading/code_motion/block_sorting.h"
@@ -76,6 +74,7 @@
 #include "sdfg/passes/scheduler/vectorize_scheduler.h"
 #include "sdfg/passes/schedules/expansion_pass.h"
 #include "sdfg/passes/targets/target_mapping_pass.h"
+#include "sdfg/reordering/passes/loop_fusion/loop_fusion_pass.h"
 #include "sdfg/targets/omp/schedule.h"
 #include "sdfg/util/offloading_instrumentation_plan.h"
 #include "targets/target_mapping.h"
@@ -390,7 +389,7 @@ void PyStructuredSDFG::simplify(const docc::target::TargetOptions& options) {
         dump_debug("py3.1.pre-fusion");
 
         // New Map Fusion, simpler than previous, but what it can do should be cheaper to do
-        sdfg::passes::loop_fusion::LoopFusionPass map_fusion_by_domain_pass({.allow_init_hoist = false});
+        sdfg::reordering::loop_fusion::LoopFusionPass map_fusion_by_domain_pass({.allow_init_hoist = false});
         map_fusion_by_domain_pass.run(builder_opt, analysis_manager);
 
         dump_debug("py3.2.post-fusion");
@@ -413,7 +412,7 @@ void PyStructuredSDFG::simplify(const docc::target::TargetOptions& options) {
 
     // Fuse maps (no init-into-reduction hoisting in simplify; reserved for the final
     // normalize() map-fusion run so loop distribution and fusion do not fight)
-    auto map_fusion = sdfg::passes::normalization::map_fusion(false, false);
+    auto map_fusion = sdfg::reordering::map_fusion(false, false);
     map_fusion.run(builder_opt, analysis_manager);
 
     // Contract multiplications feeding additions into FMAs (-ffp-contract=fast)
@@ -484,7 +483,7 @@ void PyStructuredSDFG::dump(
 }
 
 void PyStructuredSDFG::normalize(const docc::target::TargetOptions& options) {
-    sdfg::passes::normalization::normalize(*sdfg_, options.enable_fusion_in_normalize);
+    sdfg::reordering::normalize(*sdfg_, options.enable_fusion_in_normalize);
 }
 
 void PyStructuredSDFG::schedule(const std::string& target, const std::string& category, bool remote_tuning) {

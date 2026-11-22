@@ -5,6 +5,9 @@
 
 #include <sdfg/data_flow/access_node.h>
 #include <sdfg/parallelization/transformations/loop_parallelization.h>
+#include <sdfg/reordering/transformations/loop_distribute.h>
+#include <sdfg/reordering/transformations/loop_interchange.h>
+#include <sdfg/reordering/transformations/map_fusion.h>
 #include <sdfg/symbolic/symbolic.h>
 #include <sdfg/targets/cuda/cuda.h>
 #include <sdfg/targets/gpu/gpu_mma_einsum_transform.h>
@@ -17,13 +20,10 @@
 #include <sdfg/tiles/transformations/tile_fusion.h>
 #include <sdfg/tiles/transformations/tile_streaming_copy.h>
 #include <sdfg/tiles/transformations/tile_vectorizer.h>
-#include <sdfg/transformations/loop_distribute.h>
-#include <sdfg/transformations/loop_interchange.h>
 #include <sdfg/transformations/loop_peeling.h>
 #include <sdfg/transformations/loop_skewing.h>
 #include <sdfg/transformations/loop_tiling.h>
 #include <sdfg/transformations/map_collapse.h>
-#include <sdfg/transformations/map_fusion.h>
 #include <sdfg/transformations/offloading/cuda_offload_transform.h>
 #include <sdfg/transformations/offloading/cuda_parallelize_nested_map.h>
 #include <sdfg/transformations/offloading/cuda_transform.h>
@@ -119,7 +119,7 @@ void register_transformations(py::module& m) {
         });
 
     // LoopInterchange transformation
-    py::class_<LoopInterchange, Transformation>(m, "LoopInterchange")
+    py::class_<sdfg::reordering::transformations::LoopInterchange, Transformation>(m, "LoopInterchange")
         .def(
             py::init<StructuredLoop&, StructuredLoop&>(),
             py::arg("outer_loop"),
@@ -129,14 +129,14 @@ void register_transformations(py::module& m) {
             "    outer_loop: The outer loop to interchange\n"
             "    inner_loop: The inner loop to interchange"
         )
-        .def("__repr__", [](const LoopInterchange& t) {
+        .def("__repr__", [](const sdfg::reordering::transformations::LoopInterchange& t) {
             std::ostringstream oss;
             oss << "<LoopInterchange name='" << t.name() << "'>";
             return oss.str();
         });
 
     // LoopDistribute transformation
-    py::class_<LoopDistribute, Transformation>(m, "LoopDistribute")
+    py::class_<sdfg::reordering::transformations::LoopDistribute, Transformation>(m, "LoopDistribute")
         .def(
             py::init<StructuredLoop&>(),
             py::arg("loop"),
@@ -144,7 +144,7 @@ void register_transformations(py::module& m) {
             "Args:\n"
             "    loop: The loop to distribute"
         )
-        .def("__repr__", [](const LoopDistribute& t) {
+        .def("__repr__", [](const sdfg::reordering::transformations::LoopDistribute& t) {
             std::ostringstream oss;
             oss << "<LoopDistribute name='" << t.name() << "'>";
             return oss.str();
@@ -193,7 +193,7 @@ void register_transformations(py::module& m) {
         });
 
     // MapFusion transformation
-    py::class_<MapFusion, Transformation>(m, "MapFusion")
+    py::class_<sdfg::reordering::transformations::MapFusion, Transformation>(m, "MapFusion")
         .def(
             py::init<Map&, StructuredLoop&>(),
             py::arg("first_map"),
@@ -203,7 +203,7 @@ void register_transformations(py::module& m) {
             "    first_map: The first (producer) map\n"
             "    second_loop: The second (consumer) loop"
         )
-        .def("__repr__", [](const MapFusion& t) {
+        .def("__repr__", [](const sdfg::reordering::transformations::MapFusion& t) {
             std::ostringstream oss;
             oss << "<MapFusion name='" << t.name() << "'>";
             return oss.str();

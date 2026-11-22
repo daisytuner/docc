@@ -1,8 +1,8 @@
 #include "sdfg/tiles/analysis/reduction_analysis.h"
 #include "sdfg/passes/offloading/reduction_shared_memory_delinearization.h"
+#include "sdfg/reordering/transformations/loop_interchange.h"
 #include "sdfg/serializer/json_serializer.h"
 #include "sdfg/tiles/analysis/reduction_buffer_analysis.h"
-#include "sdfg/transformations/loop_interchange.h"
 #include "sdfg/transformations/loop_tiling.h"
 #include "sdfg/transformations/multi_level_tiling.h"
 
@@ -448,7 +448,7 @@ TEST(ReductionBufferAnalysisTest, NestedSharedOwnersGrowWithoutDoubleCounting) {
         if (reductions.size() > 1) {
             auto& outer = *reductions.front();
             auto& inner = *reductions.at(1);
-            transformations::LoopInterchange interchange(outer, inner);
+            reordering::transformations::LoopInterchange interchange(outer, inner);
             const auto proposal = interchange.proposal();
             serializer::JSONSerializer serializer;
             const auto unchanged = serializer.serialize(builder.subject());
@@ -556,7 +556,7 @@ TEST(ReductionBufferAnalysisTest, DependentInterchangePreservesScalarFootprint) 
     analysis::AnalysisManager manager(builder.subject());
     serializer::JSONSerializer serializer;
     const auto unchanged = serializer.serialize(builder.subject());
-    transformations::LoopInterchange interchange(outer, reduction);
+    reordering::transformations::LoopInterchange interchange(outer, reduction);
     ASSERT_TRUE(interchange.can_be_applied(builder, manager));
     EXPECT_EQ(serializer.serialize(builder.subject()), unchanged);
     interchange.apply(builder, manager);
@@ -816,7 +816,7 @@ TEST(ReductionBufferAnalysisTest, DenseFootprintAndInvalidation) {
     EXPECT_EQ(schedule_serializer.serialize(builder.subject()), before_schedule_preview);
     transformations::LoopTiling column_tiling(cols, 2, true);
     EXPECT_TRUE(column_tiling.can_be_applied(builder, manager));
-    transformations::LoopInterchange interchange(reduction, rows);
+    reordering::transformations::LoopInterchange interchange(reduction, rows);
     serializer::JSONSerializer serializer;
     const auto before_preview = serializer.serialize(builder.subject());
     const auto interchanged = manager.get<tiles::ReductionBufferAnalysis>()
@@ -849,7 +849,7 @@ TEST(ReductionBufferAnalysisTest, DenseFootprintAndInvalidation) {
     EXPECT_EQ(actual.layout->extent, 2);
     EXPECT_TRUE(symbolic::eq(actual.layout->base, expected_origin));
     EXPECT_TRUE(symbolic::eq(actual.layout->base, interchanged.layout->base));
-    transformations::LoopInterchange reverse(*interchange.new_outer_loop(), *interchange.new_inner_loop());
+    reordering::transformations::LoopInterchange reverse(*interchange.new_outer_loop(), *interchange.new_inner_loop());
     EXPECT_TRUE(manager.get<tiles::ReductionBufferAnalysis>().supports_interchange(reverse.proposal()));
     builder.add_container("unknown_bound", integer_type, true);
     auto& new_rows = *interchange.new_outer_loop();
