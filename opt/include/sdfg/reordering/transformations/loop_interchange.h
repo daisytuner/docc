@@ -1,8 +1,8 @@
 #pragma once
 
+#include "sdfg/loops/loop_header.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/tiles/analysis/reduction_buffer_analysis.h"
-#include "sdfg/transformations/loop_header.h"
 #include "sdfg/transformations/transformation.h"
 
 namespace sdfg {
@@ -67,7 +67,7 @@ public:
      * @param analysis_manager Optional; enables floor-division bounds whose numerator is provably non-negative
      * @return Original loop IDs and the proposed outer and inner headers
      */
-    ::sdfg::transformations::LoopSwap proposal(analysis::AnalysisManager* analysis_manager = nullptr) const;
+    ::sdfg::loops::LoopSwap proposal(analysis::AnalysisManager* analysis_manager = nullptr) const;
 
     /**
      * @brief Check if this transformation can be applied

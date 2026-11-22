@@ -30,11 +30,11 @@ public:
 
 ```cpp
 // Explicit: Create transformation with target and parameters
-transformations::LoopTiling tiling(loop, tile_size);
+loops::transformations::LoopTiling tiling(loop, tile_size);
 if (tiling.can_be_applied(builder, am)) {
     tiling.apply(builder, am);
 }
 
 // Recorder:
-recorder.apply<transformations::LoopTiling>(builder, am, false, loop, tile_size);
+recorder.apply<loops::transformations::LoopTiling>(builder, am, false, loop, tile_size);
 ```

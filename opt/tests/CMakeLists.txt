@@ -41,6 +41,23 @@ set(TEST_FILES
     fp_math/passes/fp_contraction_test.cpp
     fp_math/transformations/fuse_fma_test.cpp
     fp_math/transformations/unfuse_fma_test.cpp
+    loops/passes/loop_normal_form_test.cpp
+    loops/passes/tiling_pass_test.cpp
+    loops/transformations/collapse_to_depth_test.cpp
+    loops/transformations/map_collapse_test.cpp
+    loops/transformations/map_delinearize_test.cpp
+    loops/transformations/loop_condition_normalize_test.cpp
+    loops/transformations/loop_indvar_finalize_test.cpp
+    loops/transformations/loop_rotate_test.cpp
+    loops/transformations/loop_shift_test.cpp
+    loops/transformations/loop_skewing_test.cpp
+    loops/transformations/loop_peeling_test.cpp
+    loops/transformations/loop_split_test.cpp
+    loops/transformations/loop_tiling_test.cpp
+    loops/transformations/loop_unit_stride_test.cpp
+    loops/transformations/multi_level_tiling_test.cpp
+    loops/transformations/trivial_loop_elimination_test.cpp
+    loops/transformations/unroll_transform_test.cpp
     parallelization/analysis/parallel_patterns_test.cpp
     parallelization/passes/auto_parallelization_test.cpp
     parallelization/transformations/loop_parallelization_test.cpp
@@ -59,7 +76,6 @@ set(TEST_FILES
     rocm/rocm_mma_test.cpp
     rocm/rocm_reduce_dispatcher_test.cpp
     passes/expansion/matmul_naive_expansion_test.cpp
-    passes/normalization/loop_normal_form_test.cpp
     passes/offloading/code_motion/block_hoisting_test.cpp
     passes/offloading/code_motion/block_sorting_test.cpp
     passes/offloading/data_transfer_minimization_pass_test.cpp
@@ -67,7 +83,6 @@ set(TEST_FILES
     passes/offloading/gpu_control_flow_offload_pass_test.cpp
     passes/offloading/gpu_nested_offload_pass_test.cpp
     analysis/data_dependency_tile_copy_test.cpp
-    passes/tiling_pass_test.cpp
     transformations/offloading/cuda_parallelize_nested_map_test.cpp
     transformations/offloading/rocm_parallelize_nested_map_test.cpp
     transformations/offloading/rocm_transform_test.cpp
@@ -104,27 +119,12 @@ set(TEST_FILES
     targets/gpu/wave_map_test.cpp
     targets/gpu/wave_convergence_test.cpp
     targets/omp/schedule_test.cpp
-    transformations/collapse_to_depth_test.cpp
     transformations/omp_transform_test.cpp
-    transformations/map_collapse_test.cpp
-    transformations/map_delinearize_test.cpp
-    transformations/loop_condition_normalize_test.cpp
-    transformations/loop_indvar_finalize_test.cpp
-    transformations/loop_rotate_test.cpp
-    transformations/loop_shift_test.cpp
-    transformations/loop_skewing_test.cpp
-    transformations/loop_peeling_test.cpp
-    transformations/loop_split_test.cpp
-    transformations/loop_tiling_test.cpp
-    transformations/loop_unit_stride_test.cpp
     transformations/nest_annotations_test.cpp
     transformations/redundant_zero_init_elimination_test.cpp
-    transformations/multi_level_tiling_test.cpp
     transformations/stream_k_test.cpp
-    transformations/trivial_loop_elimination_test.cpp
     transformations/recorder_test.cpp
     transformations/vectorize_transform_test.cpp
-    transformations/unroll_transform_test.cpp
     transformations/transformation_serialization_test.cpp
     test.cpp
 )

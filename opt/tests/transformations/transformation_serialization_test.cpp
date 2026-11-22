@@ -15,11 +15,11 @@
 #include <sdfg/structured_sdfg.h>
 #include <sdfg/symbolic/symbolic.h>
 
+#include <sdfg/loops/transformations/loop_skewing.h>
+#include <sdfg/loops/transformations/loop_tiling.h>
 #include <sdfg/reordering/transformations/loop_distribute.h>
 #include <sdfg/reordering/transformations/loop_interchange.h>
 #include <sdfg/tiles/transformations/local_storage.h>
-#include <sdfg/transformations/loop_skewing.h>
-#include <sdfg/transformations/loop_tiling.h>
 #include <sdfg/transformations/transformation_schema.h>
 #include <sdfg/types/type.h>
 
@@ -136,12 +136,12 @@ TEST(TransformationSerializationTest, CoreLoopTransformationsShape) {
     LoopFixture f;
 
     // LoopTiling
-    transformations::LoopTiling tiling(*f.outer_map, 4);
+    loops::transformations::LoopTiling tiling(*f.outer_map, 4);
     nlohmann::json j;
     tiling.to_json(j);
     ValidateSerialization(j, 1);
 
-    auto tiling2 = transformations::LoopTiling::from_json(f.builder, j);
+    auto tiling2 = loops::transformations::LoopTiling::from_json(f.builder, j);
     ASSERT_EQ(tiling2.name(), tiling.name());
 
     // LoopDistribute
@@ -169,11 +169,11 @@ TEST(TransformationSerializationTest, CoreLoopTransformationsShape) {
     ASSERT_EQ(ils2.name(), ils.name());
 
     // LoopSkewing
-    transformations::LoopSkewing skew(*f.outer_map, *f.inner_map, 1);
+    loops::transformations::LoopSkewing skew(*f.outer_map, *f.inner_map, 1);
     nlohmann::json js;
     skew.to_json(js);
     ValidateSerialization(js, 2);
-    auto skew2 = transformations::LoopSkewing::from_json(f.builder, js);
+    auto skew2 = loops::transformations::LoopSkewing::from_json(f.builder, js);
     ASSERT_EQ(skew2.name(), skew.name());
 }
 
