@@ -41,22 +41,25 @@ set(TEST_FILES
     fp_math/passes/fp_contraction_test.cpp
     fp_math/transformations/fuse_fma_test.cpp
     fp_math/transformations/unfuse_fma_test.cpp
-    parallelization/analysis/loop_carried_dependency_analysis_test.cpp
     parallelization/analysis/parallel_patterns_test.cpp
     parallelization/passes/auto_parallelization_test.cpp
     parallelization/transformations/loop_parallelization_test.cpp
+    reordering/analysis/loop_carried_dependency_analysis_test.cpp
+    reordering/passes/loop_fusion/loop_fusion_by_domain_pass_test.cpp
+    reordering/passes/loop_fusion/loop_fusion_pass_test.cpp
+    reordering/passes/map_fusion_test.cpp
+    reordering/passes/perfect_loop_distribution_test.cpp
+    reordering/passes/stride_minimization_test.cpp
+    reordering/transformations/map_fusion_test.cpp
+    reordering/transformations/loop_distribute_test.cpp
+    reordering/transformations/loop_interchange_test.cpp
     rocm/blas/rocblas_test.cpp
     rocm/rocm_language_extension_test.cpp
     rocm/rocm_library_nodes_test.cpp
     rocm/rocm_mma_test.cpp
     rocm/rocm_reduce_dispatcher_test.cpp
     passes/expansion/matmul_naive_expansion_test.cpp
-    passes/loop_fusion/loop_fusion_by_domain_pass_test.cpp
-    passes/loop_fusion/loop_fusion_pass_test.cpp
     passes/normalization/loop_normal_form_test.cpp
-    passes/normalization/map_fusion_test.cpp
-    passes/normalization/perfect_loop_distribution_test.cpp
-    passes/normalization/stride_minimization_test.cpp
     passes/offloading/code_motion/block_hoisting_test.cpp
     passes/offloading/code_motion/block_sorting_test.cpp
     passes/offloading/data_transfer_minimization_pass_test.cpp
@@ -106,9 +109,7 @@ set(TEST_FILES
     transformations/map_collapse_test.cpp
     transformations/map_delinearize_test.cpp
     transformations/loop_condition_normalize_test.cpp
-    transformations/loop_distribute_test.cpp
     transformations/loop_indvar_finalize_test.cpp
-    transformations/loop_interchange_test.cpp
     transformations/loop_rotate_test.cpp
     transformations/loop_shift_test.cpp
     transformations/loop_skewing_test.cpp
@@ -116,7 +117,6 @@ set(TEST_FILES
     transformations/loop_split_test.cpp
     transformations/loop_tiling_test.cpp
     transformations/loop_unit_stride_test.cpp
-    transformations/map_fusion_test.cpp
     transformations/nest_annotations_test.cpp
     transformations/redundant_zero_init_elimination_test.cpp
     transformations/multi_level_tiling_test.cpp

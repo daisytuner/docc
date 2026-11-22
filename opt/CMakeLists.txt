@@ -45,10 +45,18 @@ set(SOURCE_FILES
     src/fp_math/transformations/quantize_contraction.cpp
     src/fp_math/transformations/fuse_fma.cpp
     src/fp_math/transformations/unfuse_fma.cpp
-    src/parallelization/analysis/loop_carried_dependency_analysis.cpp
     src/parallelization/analysis/parallel_patterns.cpp
     src/parallelization/passes/auto_parallelization.cpp
     src/parallelization/transformations/loop_parallelization.cpp
+    src/reordering/analysis/loop_carried_dependency_analysis.cpp
+    src/reordering/passes/loop_fusion/loop_fusion_by_access.cpp
+    src/reordering/passes/loop_fusion/loop_fusion_pass.cpp
+    src/reordering/passes/map_fusion.cpp
+    src/reordering/passes/perfect_loop_distribution.cpp
+    src/reordering/passes/stride_minimization.cpp
+    src/reordering/transformations/loop_interchange.cpp
+    src/reordering/transformations/loop_distribute.cpp
+    src/reordering/transformations/map_fusion.cpp
     src/tiles/analysis/tile_analysis.cpp
     src/tiles/analysis/reduction_analysis.cpp
     src/tiles/analysis/reduction_buffer_analysis.cpp
@@ -73,14 +81,8 @@ set(SOURCE_FILES
     src/passes/trivial_loop_elimination_pass.cpp
     src/passes/tiling_pass.cpp
     src/passes/dot_expansion_pass.cpp
-    src/passes/loop_fusion/loop_fusion_by_access.cpp
-    src/passes/loop_fusion/loop_fusion_pass.cpp
     src/passes/normalization/loop_normal_form.cpp
     src/passes/normalization/map_delinearization.cpp
-    src/passes/normalization/map_fusion.cpp
-    src/passes/normalization/normalize.cpp
-    src/passes/normalization/perfect_loop_distribution.cpp
-    src/passes/normalization/stride_minimization.cpp
     src/passes/offloading/code_motion/block_hoisting.cpp
     src/passes/offloading/code_motion/block_sorting.cpp
     src/passes/offloading/cuda_library_node_expansion_pass.cpp
@@ -180,9 +182,7 @@ set(SOURCE_FILES
     src/targets/vectorize/codegen/vectorize_dispatcher.cpp
     src/transformations/collapse_to_depth.cpp
     src/transformations/loop_condition_normalize.cpp
-    src/transformations/loop_distribute.cpp
     src/transformations/loop_indvar_finalize.cpp
-    src/transformations/loop_interchange.cpp
     src/transformations/loop_peeling.cpp
     src/transformations/loop_rotate.cpp
     src/transformations/loop_shift.cpp
@@ -192,7 +192,6 @@ set(SOURCE_FILES
     src/transformations/loop_unit_stride.cpp
     src/transformations/map_collapse.cpp
     src/transformations/map_delinearize.cpp
-    src/transformations/map_fusion.cpp
     src/transformations/multi_level_tiling.cpp
     src/transformations/offloading/cublas_data_transfer_extraction.cpp
     src/transformations/offloading/cuda_offload_transform.cpp
