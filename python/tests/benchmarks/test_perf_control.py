@@ -191,7 +191,16 @@ def test_invalid_control_descriptors_disable_measurement(descriptor, capsys):
 @pytest.mark.parametrize(
     "descriptor", ["not-a-descriptor", "", "-1", str(1 << 100), str(1 << 30)]
 )
-def test_invalid_ack_descriptors_close_control_channel(descriptor, capsys):
+def test_invalid_ack_descriptors_close_control_channel(descriptor, capsys, monkeypatch):
+    fdopen = os.fdopen
+    handles = []
+
+    def keep_handle(fd, mode):
+        handle = fdopen(fd, mode)
+        handles.append(handle)
+        return handle
+
+    monkeypatch.setattr(perf_module.os, "fdopen", keep_handle)
     read_fd, write_fd = os.pipe()
     try:
         perf = PerfControl.from_env(
@@ -206,6 +215,8 @@ def test_invalid_ack_descriptors_close_control_channel(descriptor, capsys):
         finally:
             perf.close()
     finally:
+        for handle in handles:
+            handle.close()
         close_if_open(write_fd)
         os.close(read_fd)
 
