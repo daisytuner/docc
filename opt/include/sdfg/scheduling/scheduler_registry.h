@@ -1,11 +1,11 @@
 #pragma once
 
 #include <memory>
-#include "sdfg/passes/scheduler/loop_scheduler.h"
+
+#include <sdfg/passes/scheduler/loop_scheduler.h>
 
 namespace sdfg {
-namespace passes {
-namespace scheduler {
+namespace scheduling {
 
 /**
  * @deprecated Global state and superfluous, do not use
@@ -13,7 +13,7 @@ namespace scheduler {
 class SchedulerRegistry {
 private:
     mutable std::mutex mutex_;
-    std::unordered_map<std::string, std::unique_ptr<LoopScheduler>> scheduler_map_;
+    std::unordered_map<std::string, std::unique_ptr<::sdfg::passes::scheduler::LoopScheduler>> scheduler_map_;
 
 public:
     static SchedulerRegistry& instance() {
@@ -29,7 +29,7 @@ public:
         }
         scheduler_map_[target] = std::make_unique<T>(std::forward<Args>(args)...);
     }
-    LoopScheduler* get_loop_scheduler(std::string target) const {
+    ::sdfg::passes::scheduler::LoopScheduler* get_loop_scheduler(std::string target) const {
         auto it = scheduler_map_.find(target);
         if (it != scheduler_map_.end()) {
             return it->second.get();
@@ -42,8 +42,7 @@ public:
     }
 };
 
-std::unique_ptr<LoopScheduler> create_loop_scheduler(const std::string target);
+std::unique_ptr<::sdfg::passes::scheduler::LoopScheduler> create_loop_scheduler(const std::string target);
 
-} // namespace scheduler
-} // namespace passes
+} // namespace scheduling
 } // namespace sdfg

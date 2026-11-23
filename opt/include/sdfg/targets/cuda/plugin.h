@@ -12,7 +12,7 @@
 
 #include "sdfg/codegen/language_extension.h"
 #include "sdfg/passes/scheduler/cuda_scheduler.h"
-#include "sdfg/passes/scheduler/scheduler_registry.h"
+#include "sdfg/scheduling/scheduler_registry.h"
 #include "sdfg/targets/cuda/blas/batched_gemm.h"
 #include "sdfg/targets/cuda/blas/dot.h"
 #include "sdfg/targets/cuda/blas/gemm.h"

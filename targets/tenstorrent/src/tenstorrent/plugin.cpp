@@ -4,10 +4,10 @@
 #include "docc/target/tenstorrent/math_node_implementation_override_pass.h"
 #include "docc/target/tenstorrent/target.h"
 #include "docc/target/tenstorrent/tenstorrent_scheduler.h"
-#include "sdfg/passes/scheduler/scheduler_registry.h"
 #include "sdfg/passes/targets/target_mapping_pass.h"
 #include "sdfg/plugins/target_mapping.h"
 #include "sdfg/plugins/targets.h"
+#include "sdfg/scheduling/scheduler_registry.h"
 
 namespace sdfg::tenstorrent {
 bool tt_emit_full_metrics = false;
@@ -15,7 +15,7 @@ bool tt_force_close_devices_after_kernel = false;
 
 docc::target::DoccTarget tenstorrent_target = {
     .short_name = "tenstorrent",
-    .apply_additional_compile_options = [](docc::compile::SrcFileCompilerBuilder &builder) -> bool {
+    .apply_additional_compile_options = [](docc::compile::SrcFileCompilerBuilder& builder) -> bool {
         auto tt_metal_path = std::getenv("TT_METAL_HOME");
         if (!tt_metal_path) {
             throw std::runtime_error("TT_METAL_HOME not set");
@@ -37,15 +37,15 @@ docc::target::DoccTarget tenstorrent_target = {
         return true;
     },
     .apply_expand_time_mapping = nullptr,
-    .apply_sched_time_mapping = [](sdfg::builder::StructuredSDFGBuilder &builder,
-                                   sdfg::analysis::AnalysisManager &analysis_manager,
-                                   const docc::target::TargetOptions &options) -> bool {
+    .apply_sched_time_mapping = [](sdfg::builder::StructuredSDFGBuilder& builder,
+                                   sdfg::analysis::AnalysisManager& analysis_manager,
+                                   const docc::target::TargetOptions& options) -> bool {
         std::vector<std::shared_ptr<plugins::TargetMapper>> mappers{std::make_shared<TTLibNodeMapper>()};
         passes::TargetMappingPass mappingPass(mappers);
         return mappingPass.run_pass(builder, analysis_manager);
     },
-    .get_target_loop_schedulers = [](const docc::target::TargetOptions &options
-                                  ) -> std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> {
+    .get_target_loop_schedulers = [](const docc::target::TargetOptions& options)
+        -> std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> {
         std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> schedulers;
         schedulers.push_back(std::make_shared<sdfg::passes::scheduler::TenstorrentScheduler>());
         return schedulers;
@@ -66,15 +66,15 @@ namespace docc::target::tenstorrent {
 using namespace sdfg::tenstorrent;
 using namespace sdfg;
 
-void register_plugin(sdfg::plugins::Context &context) {
+void register_plugin(sdfg::plugins::Context& context) {
     context.map_dispatcher_registry.register_map_dispatcher(
         ScheduleType_Tenstorrent_Device::value(),
-        [](codegen::LanguageExtension &language_extension,
-           StructuredSDFG &sdfg,
-           analysis::AnalysisManager &analysis_manager,
-           Map &node,
-           codegen::InstrumentationPlan &instrumentation_plan,
-           codegen::ArgCapturePlan &arg_capture_plan) {
+        [](codegen::LanguageExtension& language_extension,
+           StructuredSDFG& sdfg,
+           analysis::AnalysisManager& analysis_manager,
+           Map& node,
+           codegen::InstrumentationPlan& instrumentation_plan,
+           codegen::ArgCapturePlan& arg_capture_plan) {
             return std::make_unique<TenstorrentMapDispatcher>(
                 language_extension, sdfg, analysis_manager, node, instrumentation_plan, arg_capture_plan
             );
@@ -85,10 +85,10 @@ void register_plugin(sdfg::plugins::Context &context) {
     context.library_node_dispatcher_registry.register_library_node_dispatcher(
         LibraryNodeType_Tenstorrent_Offloading,
         data_flow::ImplementationType_NONE,
-        [](codegen::LanguageExtension &language_extension,
-           const Function &function,
-           const data_flow::DataFlowGraph &data_flow_graph,
-           const data_flow::LibraryNode &node) {
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
             return std::make_unique<TTDataOffloadingNodeDispatcher>(language_extension, function, data_flow_graph, node);
         }
     );
@@ -101,10 +101,10 @@ void register_plugin(sdfg::plugins::Context &context) {
     context.library_node_dispatcher_registry.register_library_node_dispatcher(
         LibraryNodeType_Tenstorrent_CreateDevice,
         data_flow::ImplementationType_NONE,
-        [](codegen::LanguageExtension &language_extension,
-           const Function &function,
-           const data_flow::DataFlowGraph &data_flow_graph,
-           const data_flow::LibraryNode &node) {
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
             return std::make_unique<TTCreateDeviceDispatcher>(language_extension, function, data_flow_graph, node);
         }
     );
@@ -119,12 +119,12 @@ void register_plugin(sdfg::plugins::Context &context) {
     context.library_node_dispatcher_registry.register_library_node_dispatcher(
         math::blas::LibraryNodeType_GEMM,
         ImplementationType_Tenstorrent_WithTransfers,
-        [](codegen::LanguageExtension &language_extension,
-           const Function &function,
-           const data_flow::DataFlowGraph &data_flow_graph,
-           const data_flow::LibraryNode &node) {
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
             return std::make_unique<blas::GEMMNodeDispatcher_Tenstorrent>(
-                language_extension, function, data_flow_graph, dynamic_cast<const math::blas::GEMMNode &>(node)
+                language_extension, function, data_flow_graph, dynamic_cast<const math::blas::GEMMNode&>(node)
             );
         }
     );
@@ -132,12 +132,12 @@ void register_plugin(sdfg::plugins::Context &context) {
     context.library_node_dispatcher_registry.register_library_node_dispatcher(
         math::blas::LibraryNodeType_DOT,
         ImplementationType_Tenstorrent_WithTransfers,
-        [](codegen::LanguageExtension &language_extension,
-           const Function &function,
-           const data_flow::DataFlowGraph &data_flow_graph,
-           const data_flow::LibraryNode &node) {
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
             return std::make_unique<blas::DotNodeDispatcher_Tenstorrent>(
-                language_extension, function, data_flow_graph, dynamic_cast<const math::blas::DotNode &>(node)
+                language_extension, function, data_flow_graph, dynamic_cast<const math::blas::DotNode&>(node)
             );
         }
     );

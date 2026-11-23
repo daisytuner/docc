@@ -3,8 +3,8 @@
 #include <string>
 
 #include "sdfg/codegen/dispatchers/node_dispatcher_registry.h"
-#include "sdfg/passes/scheduler/scheduler_registry.h"
 #include "sdfg/passes/scheduler/vectorize_scheduler.h"
+#include "sdfg/scheduling/scheduler_registry.h"
 #include "sdfg/targets/vectorize/codegen/vectorize_dispatcher.h"
 #include "sdfg/targets/vectorize/schedule.h"
 
@@ -40,7 +40,7 @@ inline void register_vectorize_plugin() {
         }
     );
 
-    passes::scheduler::SchedulerRegistry::instance()
+    scheduling::SchedulerRegistry::instance()
         .register_loop_scheduler<passes::scheduler::VectorizeScheduler>(passes::scheduler::VectorizeScheduler::target());
 }
 

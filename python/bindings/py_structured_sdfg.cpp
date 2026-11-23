@@ -36,9 +36,7 @@
 #include <sdfg/passes/pipeline.h>
 #include <sdfg/passes/rpc/rpc_scheduling_pass.h>
 #include <sdfg/passes/scheduler/cuda_scheduler.h>
-#include <sdfg/passes/scheduler/loop_scheduling_pass.h>
 #include <sdfg/passes/scheduler/omp_scheduler.h>
-#include <sdfg/passes/scheduler/scheduler_registry.h>
 #include <sdfg/passes/structured_control_flow/common_assignment_elimination.h>
 #include <sdfg/passes/structured_control_flow/condition_elimination.h>
 #include <sdfg/passes/structured_control_flow/pointer_evolution.h>
@@ -48,6 +46,8 @@
 #include <sdfg/passes/symbolic/symbol_propagation.h>
 #include <sdfg/passes/targets/device_residency.h>
 #include <sdfg/reordering/reordering.h>
+#include <sdfg/scheduling/loops/loop_scheduling_pass.h>
+#include <sdfg/scheduling/scheduler_registry.h>
 #include <sdfg/serializer/json_serializer.h>
 
 #include <sdfg/helpers/helpers.h>
@@ -542,7 +542,7 @@ void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options, bool
                   });
     std::vector<sdfg::passes::scheduler::LoopScheduler*> unwrapped_schedulers(mapped.begin(), mapped.end());
 
-    sdfg::passes::scheduler::LoopSchedulingPass loop_scheduling_pass(unwrapped_schedulers, nullptr);
+    sdfg::scheduling::loops::LoopSchedulingPass loop_scheduling_pass(unwrapped_schedulers, nullptr);
     loop_scheduling_pass.run(builder, analysis_manager);
 
     if (options.target == "cuda" || options.target == "rocm") {

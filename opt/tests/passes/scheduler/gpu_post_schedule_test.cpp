@@ -7,9 +7,9 @@
 #include "sdfg/data_flow/library_nodes/stdlib/memset.h"
 #include "sdfg/passes/scheduler/cuda_offload_scheduler.h"
 #include "sdfg/passes/scheduler/cuda_scheduler.h"
-#include "sdfg/passes/scheduler/loop_scheduling_pass.h"
 #include "sdfg/passes/scheduler/rocm_offload_scheduler.h"
 #include "sdfg/passes/scheduler/rocm_scheduler.h"
+#include "sdfg/scheduling/loops/loop_scheduling_pass.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/targets/cuda/cuda.h"
 #include "sdfg/targets/rocm/rocm.h"
@@ -108,7 +108,7 @@ protected:
 
     bool run_scheduling() {
         analysis::AnalysisManager analysis_manager(builder_.subject());
-        passes::scheduler::LoopSchedulingPass pass({&scheduler_}, nullptr);
+        scheduling::loops::LoopSchedulingPass pass({&scheduler_}, nullptr);
         return pass.run(builder_, analysis_manager);
     }
 
@@ -251,7 +251,7 @@ TEST(CUDAOffloadPostScheduleTest, ExtractsSoftmaxTransfersWithoutLoops) {
 
     analysis::AnalysisManager analysis_manager(sdfg);
     passes::scheduler::CUDAOffloadScheduler scheduler;
-    passes::scheduler::LoopSchedulingPass pass({&scheduler}, nullptr);
+    scheduling::loops::LoopSchedulingPass pass({&scheduler}, nullptr);
 
     EXPECT_TRUE(pass.run(builder, analysis_manager));
     EXPECT_EQ(softmax_node.implementation_type().value(), cuda::ImplementationType_CUDAWithoutTransfers.value());

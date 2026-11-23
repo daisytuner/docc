@@ -7,8 +7,8 @@
 #include "sdfg/codegen/dispatchers/map_dispatcher.h"
 #include "sdfg/codegen/dispatchers/node_dispatcher_registry.h"
 #include "sdfg/codegen/dispatchers/reduce_dispatcher.h"
-#include "sdfg/passes/scheduler/scheduler_registry.h"
 #include "sdfg/plugins/targets.h"
+#include "sdfg/scheduling/scheduler_registry.h"
 #include "sdfg/serializer/json_serializer.h"
 #include "sdfg/structured_sdfg.h"
 #include "sdfg/tiles/tile_target_registry.h"
@@ -59,8 +59,8 @@ struct Context {
 
     // Schedulers
     /// @deprecated
-    passes::scheduler::SchedulerRegistry& scheduler_registry;
-    passes::scheduler::SchedulerRegistry& get_scheduler_registry() {
+    scheduling::SchedulerRegistry& scheduler_registry;
+    scheduling::SchedulerRegistry& get_scheduler_registry() {
         return scheduler_registry;
     }
 
@@ -86,7 +86,7 @@ public:
         codegen::MapDispatcherRegistry& map_dispatcher_registry,
         codegen::ReduceDispatcherRegistry& reduce_dispatcher_registry,
         codegen::LibraryNodeDispatcherRegistry& library_node_dispatcher_registry,
-        passes::scheduler::SchedulerRegistry& scheduler_registry,
+        scheduling::SchedulerRegistry& scheduler_registry,
         tiles::TileTargetRegistry& tile_target_registry
     )
         : library_node_serializer_registry(library_node_serializer_registry),
@@ -103,7 +103,7 @@ public:
             codegen::MapDispatcherRegistry::instance(),
             codegen::ReduceDispatcherRegistry::instance(),
             codegen::LibraryNodeDispatcherRegistry::instance(),
-            passes::scheduler::SchedulerRegistry::instance(),
+            scheduling::SchedulerRegistry::instance(),
             tiles::TileTargetRegistry::instance()
         };
     }

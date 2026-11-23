@@ -76,7 +76,7 @@ extern "C" LLVM_ATTRIBUTE_WEAK ::llvm::PassPluginLibraryInfo llvmGetPassPluginIn
         .RegisterPassBuilderCallbacks = [](llvm::PassBuilder& PB) {
             docc::register_sdfg_dispatchers();
 
-            auto& sched_registry = sdfg::passes::scheduler::SchedulerRegistry::instance();
+            auto& sched_registry = sdfg::scheduling::SchedulerRegistry::instance();
 
             // Compile-Time Pass Registration
             PB.registerPipelineStartEPCallback([&sched_registry](

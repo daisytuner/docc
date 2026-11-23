@@ -12,7 +12,7 @@ namespace passes {
 
 class SchedulingPass : public llvm::PassInfoMixin<SchedulingPass> {
 private:
-    const sdfg::passes::scheduler::SchedulerRegistry& scheduler_registry_;
+    const sdfg::scheduling::SchedulerRegistry& scheduler_registry_;
     const bool dump_visualization_;
     const bool force_synchronous_;
     bool transfer_opt_;
@@ -20,7 +20,7 @@ private:
 
 public:
     SchedulingPass(
-        const sdfg::passes::scheduler::SchedulerRegistry& scheduler_registry,
+        const sdfg::scheduling::SchedulerRegistry& scheduler_registry,
         bool force_synchronous = false,
         bool dump_visualization = false,
         bool transfer_opt = true,
