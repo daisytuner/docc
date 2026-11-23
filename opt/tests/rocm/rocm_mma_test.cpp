@@ -15,6 +15,7 @@
 #include "sdfg/data_flow/library_nodes/barrier_local_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/matmul_node.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/tensor_layout.h"
+#include "sdfg/loops/transformations/loop_tiling.h"
 #include "sdfg/passes/expansion/library_node_expansion_pass.h"
 #include "sdfg/structured_control_flow/for.h"
 #include "sdfg/structured_control_flow/if_else.h"
@@ -39,7 +40,6 @@
 #include "sdfg/tiles/transformations/local_storage.h"
 #include "sdfg/tiles/transformations/software_pipelining.h"
 #include "sdfg/tiles/transformations/tile_vectorizer.h"
-#include "sdfg/transformations/loop_tiling.h"
 #include "sdfg/transformations/stream_k.h"
 #include "sdfg/types/array.h"
 #include "sdfg/types/tensor.h"
@@ -520,7 +520,7 @@ void strip_mine_k(builder::StructuredSDFGBuilder& builder, size_t blocks) {
     analysis::AnalysisManager am(builder.subject());
     auto* k = find_loop(am, "tile_k0");
     ASSERT_NE(k, nullptr);
-    transformations::LoopTiling tiling(*k, blocks, /*simplify_bounds=*/true);
+    loops::transformations::LoopTiling tiling(*k, blocks, /*simplify_bounds=*/true);
     ASSERT_TRUE(tiling.can_be_applied(builder, am));
     tiling.apply(builder, am);
 }

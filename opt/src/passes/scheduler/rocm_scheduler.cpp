@@ -1,6 +1,7 @@
 #include "sdfg/passes/scheduler/rocm_scheduler.h"
 
-#include "sdfg/passes/collapse_pass.h"
+#include "sdfg/loops/passes/collapse_pass.h"
+#include "sdfg/loops/passes/trivial_loop_elimination_pass.h"
 #include "sdfg/passes/dataflow/dead_data_elimination.h"
 #include "sdfg/passes/dataflow/memlet_simplification.h"
 #include "sdfg/passes/offloading/gpu_loop_reordering_pass.h"
@@ -8,7 +9,6 @@
 #include "sdfg/passes/offloading/rocm_library_node_transfer_extraction_pass.h"
 #include "sdfg/passes/structured_control_flow/dead_cfg_elimination.h"
 #include "sdfg/passes/symbolic/symbol_propagation.h"
-#include "sdfg/passes/trivial_loop_elimination_pass.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/transformations/offloading/rocm_transform.h"
 
@@ -94,7 +94,7 @@ void ROCMScheduler::pre_schedule(
         return;
     }
 
-    TrivialLoopEliminationPass trivial_loop_elimination_pass(applicable_maps);
+    loops::TrivialLoopEliminationPass trivial_loop_elimination_pass(applicable_maps);
     trivial_loop_elimination_pass.run(builder, analysis_manager);
     analysis_manager.invalidate_all();
     if (applicable_maps.empty()) {
@@ -102,7 +102,7 @@ void ROCMScheduler::pre_schedule(
         return;
     }
 
-    CollapsePass collapse_pass(applicable_maps, 2);
+    loops::CollapsePass collapse_pass(applicable_maps, 2);
     collapse_pass.run(builder, analysis_manager);
     analysis_manager.invalidate_all();
 

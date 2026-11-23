@@ -22,13 +22,13 @@
 #include <sdfg/fp_math/library_nodes/ozaki_matmul_node.h>
 #include <sdfg/fp_math/passes/contraction_precision.h>
 #include <sdfg/fp_math/passes/fp_contraction.h>
+#include <sdfg/loops/passes/loop_normal_form.h>
 #include <sdfg/parallelization/passes/auto_parallelization.h>
 #include <sdfg/passes/dataflow/approximate_math.h>
 #include <sdfg/passes/dataflow/dead_data_elimination.h>
 #include <sdfg/passes/dataflow/local_buffer_reuse.h>
 #include <sdfg/passes/dataflow/tensor_to_pointer_conversion.h>
 #include <sdfg/passes/dot_expansion_pass.h>
-#include <sdfg/passes/normalization/loop_normal_form.h>
 #include <sdfg/passes/offloading/cuda_library_node_rewriter_pass.h>
 #include <sdfg/passes/offloading/device_buffer_reuse_pass.h>
 #include <sdfg/passes/offloading/reduction_shared_memory_delinearization.h>
@@ -332,7 +332,7 @@ void PyStructuredSDFG::simplify(const docc::target::TargetOptions& options) {
     }
 
     // Normalize loop condition and update (run twice)
-    sdfg::passes::normalization::LoopNormalFormPass loop_normalization_pass;
+    sdfg::loops::LoopNormalFormPass loop_normalization_pass;
     loop_normalization_pass.run(builder_opt, analysis_manager);
 
     // Dead code elimination
