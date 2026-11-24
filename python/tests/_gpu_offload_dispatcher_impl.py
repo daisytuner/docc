@@ -43,6 +43,7 @@ from docc.sdfg import (
     Pointer,
     PrimitiveType,
     ReduceStrategy,
+    RocmArch,
     Scalar,
     ScheduleType,
     StorageType,
@@ -83,19 +84,31 @@ class GpuBackend:
     _storage: Callable[[], object]
     _schedule: Callable[[object, int], object]
     _offload_method: str
+    _lane_width: Callable[[], int]
     bf16_float_compute: bool = False
+
+    def lane_width(self):
+        """Wave width of the device a lanes > 1 schedule must use (queried lazily,
+        so collecting the suite needs no GPU)."""
+        return self._lane_width()
 
     def storage(self):
         return self._storage()
 
     def schedule(
-        self, target_level, parallel_size, partial_storage=None, partial_container=None
+        self,
+        target_level,
+        parallel_size,
+        partial_storage=None,
+        partial_container=None,
+        lanes=None,
     ):
         return self._schedule(
             target_level,
             parallel_size,
             partial_storage=partial_storage,
             partial_container=partial_container,
+            lanes=lanes,
         )
 
     def offload(self, builder, *args, **kwargs):
@@ -110,6 +123,7 @@ CUDA_BACKEND = GpuBackend(
     _storage=StorageType.NV_Generic,
     _schedule=ScheduleType.cuda_offload,
     _offload_method="add_cuda_offloading_block",
+    _lane_width=lambda: 32,
 )
 
 ROCM_BACKEND = GpuBackend(
@@ -120,6 +134,7 @@ ROCM_BACKEND = GpuBackend(
     _storage=StorageType.AMD_Generic,
     _schedule=ScheduleType.rocm_offload,
     _offload_method="add_rocm_offloading_block",
+    _lane_width=lambda: 32 if RocmArch.current_name().startswith("gfx1") else 64,
     bf16_float_compute=True,
 )
 
@@ -1946,6 +1961,59 @@ def make_reduce_first_scenarios(ws):
     return scenarios
 
 
+def make_lanes_reduce_scenarios():
+    """X_BLOCK reductions with wave-sized lanes.
+
+    Every launched thread (parallel_size * lanes) takes its own iteration and each
+    lane group combines by warp shuffle: Register partials commit from the group
+    leader, Shared partials fold the groups of a row through shared memory. The
+    lanes reduce stands alone, sits under an enclosing Y_BLOCK reduce of the same
+    accumulator (the leader publishes into its shared slot), or under an X_GRID
+    reduce (the groups feed the grid's thread-local partial and atomics).
+
+    The lane width is the device's wave size, known only at run time, so each
+    scenario is a recipe resolved by ``lanes_reduce_tables``.
+    """
+    scenarios = []
+    for parallel_size in (1, 2):
+        for strategy_name in ("shared", "register"):
+            for relation in ("smaller", "equals", "multiple", "ragged"):
+                for placement in ("standalone", "under_yb", "under_xg"):
+                    scenarios.append(
+                        dict(
+                            id=f"lanes_{placement}_p{parallel_size}_{strategy_name}_{relation}",
+                            placement=placement,
+                            parallel_size=parallel_size,
+                            strategy=strategy_name,
+                            relation=relation,
+                        )
+                    )
+    return scenarios
+
+
+def lanes_reduce_tables(scn, lanes):
+    """(map_specs, reduce_specs, reduce_options) of a lanes-reduce recipe."""
+    parallel_size = scn["parallel_size"]
+    width = parallel_size * lanes
+    count = {
+        "smaller": width - 5,
+        "equals": width,
+        "multiple": 3 * width,
+        "ragged": width + lanes // 2 + 3,
+    }[scn["relation"]]
+    strategy = {"shared": ReduceStrategy.Shared, "register": ReduceStrategy.Register}[
+        scn["strategy"]
+    ]
+    lanes_reduce = ("xb", count, parallel_size)
+    maps, reductions, name = {
+        "standalone": ([("xg", 3, 2)], [lanes_reduce], "r0"),
+        "under_yb": ([("xg", 3, 2)], [("yb", 2, 2), lanes_reduce], "r1"),
+        "under_xg": ([], [("xg", 4, 2), lanes_reduce], "r1"),
+    }[scn["placement"]]
+    options = {name: {"partial_storage": strategy, "lanes": lanes}}
+    return _spec(maps), _spec(reductions), options
+
+
 # ---------------------------------------------------------------------------
 # Multiple reductions in ONE node (several accumulators at one level).
 # ---------------------------------------------------------------------------
@@ -2413,6 +2481,27 @@ def register(namespace, backend):
         }[op](axis=1)
         np.testing.assert_allclose(accumulator, expected, rtol=1e-4, atol=1e-4)
 
+    _lanes_reduce_scns = make_lanes_reduce_scenarios()
+
+    @pytest.mark.parametrize(
+        "scn", _lanes_reduce_scns, ids=[scn["id"] for scn in _lanes_reduce_scns]
+    )
+    @pytest.mark.parametrize("op", ["add", "max"])
+    def test_lanes_reduce(scn, op, tmp_path):
+        map_specs, reduce_specs, options = lanes_reduce_tables(
+            scn, backend.lane_width()
+        )
+        sdfg, rows, cols = build_reduce_nest(
+            backend, map_specs, reduce_specs, op, reduce_options=options
+        )
+        compiled = _compile(backend, sdfg, tmp_path / "lanes_reduce")
+        values = _rng_input(op, rows * cols, 22)
+        accumulator = np.full(rows, _identity(op), dtype=np.float32)
+        compiled(values, accumulator)
+        matrix = values.reshape(rows, cols)
+        expected = {"add": matrix.sum, "max": matrix.max}[op](axis=1)
+        np.testing.assert_allclose(accumulator, expected, rtol=1e-4, atol=1e-4)
+
     @pytest.mark.parametrize(
         "guarded", [True, False], ids=["debug_test_1_guarded", "debug_test_2_exact"]
     )
@@ -2535,6 +2624,7 @@ def register(namespace, backend):
         test_map_nest=test_map_nest,
         test_reduce_nest=test_reduce_nest,
         test_reduce_first_multi_output=test_reduce_first_multi_output,
+        test_lanes_reduce=test_lanes_reduce,
         test_tiled_matmul=test_tiled_matmul,
         test_multi_reduction_one_node=test_multi_reduction_one_node,
         test_reduce_different_vars=test_reduce_different_vars,
