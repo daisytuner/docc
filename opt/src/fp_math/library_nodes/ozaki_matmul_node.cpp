@@ -1,5 +1,6 @@
 #include "sdfg/fp_math/library_nodes/ozaki_matmul_node.h"
 
+#include <algorithm>
 #include <sstream>
 
 #include <nlohmann/json.hpp>
@@ -30,15 +31,18 @@ class PreparedOperands : public detail::ContractionOperands {
     passes::LibNodeExpander::AccessNodeExpand& standalone_;
     TensorLayout layout_a_, layout_y_;
     types::Pointer pointer_;
+    /// A's and the result's element type, which the emulation computes in compute_type of.
+    types::PrimitiveType storage_;
 
 public:
     PreparedOperands(passes::LibNodeExpander::AccessNodeExpand& standalone, const OzakiMatMulNode& node)
         : standalone_(standalone), layout_a_(node.layout_a()), layout_y_(node.layout_y()),
-          pointer_(types::Scalar(node.element())) {
+          pointer_(types::Scalar(node.element())), storage_(node.element()) {
         m = node.m();
         n = node.n();
         k = node.k();
-        element = node.element();
+        // Narrower floats, such as bfloat16 activations, compute in Float.
+        element = detail::compute_type(storage_);
         a_transposed = TensorLayout::is_last_dims_col_or_row_major(layout_a_.strides()) ==
                        TensorLayout::LAYOUT_COL_MAJOR;
     }
@@ -49,7 +53,8 @@ public:
       const symbolic::Expression& row,
       const symbolic::Expression& column) override {
         auto& access = standalone_.add_indirect_read_access(block.block(), OzakiMatMulNode::A_INPUT_IDX);
-        return block.read(access, {layout_a_.resolve_element({row, column})}, pointer_);
+        auto value = block.read(access, {layout_a_.resolve_element({row, column})}, pointer_);
+        return storage_ == element ? value : block.convert(value, element);
     }
 
     KernelValue b(
@@ -66,7 +71,7 @@ public:
         const symbolic::Expression& column
     ) override {
         auto& access = standalone_.add_indirect_write_access(block.block(), OzakiMatMulNode::Y_INPUT_IDX);
-        block.store(block.convert(value, element), access, {layout_y_.resolve_element({row, column})}, pointer_);
+        block.store(block.convert(value, storage_), access, {layout_y_.resolve_element({row, column})}, pointer_);
     }
 };
 
@@ -109,8 +114,10 @@ void OzakiMatMulNode::validate(const Function& function) const {
     if (layout_a_.dims() != 2 || layout_y_.dims() != 2) {
         throw InvalidSDFGException("OzakiMatMul: A and Y must be matrices");
     }
-    if (element_ != types::PrimitiveType::Float && element_ != types::PrimitiveType::Double) {
-        throw InvalidSDFGException("OzakiMatMul: A and Y must be Float or Double");
+    // Floats narrower than Float compute in it (see detail::compute_type).
+    if (!types::is_floating_point(element_) ||
+        types::significand_bits(element_) > types::significand_bits(types::PrimitiveType::Double)) {
+        throw InvalidSDFGException("OzakiMatMul: A and Y must be floats of at most Double's precision");
     }
     auto& graph = get_parent();
     if (graph.in_degree(*this) != inputs_.size() || graph.out_degree(*this) != 0) {
@@ -217,12 +224,20 @@ passes::LibNodeExpander::ExpandOutcome OzakiMatMulExpander::handle_expand(
     PreparedOperands operands(*standalone, node);
     auto& sequence = standalone->replace_with_sequence();
     KernelBuilder kb(standalone->builder(), sequence, node.debug_info());
-    detail::build_slicing_direct_prepared(kb, operands, slices, scales);
+    int a_slices = 0;
+    if (max_bits_ > 0) {
+        // A's own precision (significand and 2 guard bits), at most what the target's results keep, in 7-bit slices.
+        int bits = std::min(types::significand_bits(node.element()) + 2, max_bits_);
+        a_slices = std::max(1, (bits + 6) / 7);
+    }
+    detail::build_slicing_direct_prepared(kb, operands, slices, scales, a_slices);
     kb.finish();
     return standalone->successfully_expanded();
 }
 
-bool expand_ozaki_matmuls(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+bool expand_ozaki_matmuls(
+    builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager, int max_bits
+) {
     std::vector<std::pair<structured_control_flow::Block*, OzakiMatMulNode*>> found;
     visitor::for_each_block(builder.subject().root(), [&](structured_control_flow::Block& block) {
         for (auto* node : block.dataflow().library_nodes()) {
@@ -231,7 +246,7 @@ bool expand_ozaki_matmuls(builder::StructuredSDFGBuilder& builder, analysis::Ana
             }
         }
     });
-    OzakiMatMulExpander expander;
+    OzakiMatMulExpander expander(max_bits);
     for (auto& [block, node] : found) {
         if (!passes::expansion::expand_single_node(builder, *block, *node, expander).expanded) {
             throw InvalidSDFGException("OzakiMatMul: the node's operands could not be isolated from its block");

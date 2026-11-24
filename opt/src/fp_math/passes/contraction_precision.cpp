@@ -107,8 +107,9 @@ bool ContractionPrecisionPass::
                         QuantizeContraction transformation(*node, precision_.parameter, precision_.rescaling);
                         done = transformation.try_apply(builder, analysis_manager);
                     } else {
-                        OzakiContraction
-                            transformation(*node, precision_.variant, precision_.parameter, precision_.rescaling);
+                        OzakiContraction transformation(
+                            *node, precision_.variant, precision_.parameter, precision_.rescaling, precision_.max_bits
+                        );
                         done = transformation.try_apply(builder, analysis_manager);
                     }
                 } catch (const transformations::InvalidTransformationException&) {

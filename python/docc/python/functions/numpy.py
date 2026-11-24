@@ -10,6 +10,8 @@ from docc.sdfg import (
 )
 from docc.python.type_system import (
     FLOAT_PRIMITIVE_TYPES,
+    MATMUL_TO_FLOAT_PRIMITIVE_TYPES,
+    NARROW_FLOAT_PRIMITIVE_TYPES,
     element_type_from_ast_node,
 )
 from docc.python.ast_utils import get_debug_info
@@ -2563,7 +2565,12 @@ class NumPyHandler:
                 f"Matmul with ranks {ndim_a} and {ndim_b} not supported"
             )
 
-        dtype = self._ev.type_system.promote(name_a, name_b)
+        # The operands' common type; bfloat16 and FP8 products return Float, as ml_dtypes' matmul does.
+        operand_type = self._ev.type_system.promote(name_a, name_b)
+        dtype = operand_type
+        narrow = operand_type.primitive_type in NARROW_FLOAT_PRIMITIVE_TYPES
+        if operand_type.primitive_type in MATMUL_TO_FLOAT_PRIMITIVE_TYPES:
+            dtype = Scalar(PrimitiveType.Float)
 
         if is_scalar:
             tmp_name = f"_tmp_{self._get_unique_id()}"
@@ -2572,7 +2579,28 @@ class NumPyHandler:
         else:
             tmp_name = self._create_array_temp(output_shape, dtype)
 
-        if ndim_a > 2 or ndim_b > 2:
+        if (
+            narrow
+            and ndim_a == 2
+            and ndim_b == 2
+            and not is_scalar
+            and not subset_a
+            and not subset_b
+            and str(real_shape_a[-1]) == str(real_shape_b[-2])
+        ):
+            # Products of narrow floats, which BLAS does not compute, are MatMuls of operands in their own type, which
+            # a contraction precision slices by it.
+            tensor_a = self._cast_to_type(name_a, operand_type)
+            tensor_b = self._cast_to_type(name_b, operand_type)
+            self.builder.add_matmul_op(
+                tensor_a,
+                self.tensor_table[tensor_a],
+                tensor_b,
+                self.tensor_table[tensor_b],
+                tmp_name,
+                self.tensor_table[tmp_name],
+            )
+        elif ndim_a > 2 or ndim_b > 2:
             batch_dims = len(output_shape) - 2
             batch_shape = output_shape[:batch_dims]
 
