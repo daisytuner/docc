@@ -305,7 +305,7 @@ static std::optional<int64_t> positive_stride(const structured_control_flow::Str
 ///   for o = o_init; o < o_bound; o += S_o:  for j = max_l(v_l(o)); j < min_k(v_k(o)); j += S_j
 /// with pieces v(o) = floor((a*o + b) / q), a >= 0, q >= 1. Returns the new outer (j) and inner (o)
 /// headers, or nullopt if unsupported.
-static std::optional<::sdfg::transformations::LoopSwap> dependent_interchange(
+static std::optional<::sdfg::loops::LoopSwap> dependent_interchange(
     structured_control_flow::StructuredLoop& outer_loop,
     structured_control_flow::StructuredLoop& inner_loop,
     const NonNegProof& nonneg
@@ -331,7 +331,7 @@ static std::optional<::sdfg::transformations::LoopSwap> dependent_interchange(
         return std::nullopt;
     }
 
-    ::sdfg::transformations::LoopSwap result{
+    ::sdfg::loops::LoopSwap result{
         outer_loop,
         inner_loop,
         {inner_loop.init(), inner_loop.condition(), inner_loop.update()},
@@ -420,8 +420,8 @@ std::string LoopInterchange::name() const {
 };
 
 // Build the loop headers shared by footprint preview and apply without mutating the graph.
-::sdfg::transformations::LoopSwap LoopInterchange::proposal(analysis::AnalysisManager* analysis_manager) const {
-    ::sdfg::transformations::LoopSwap result{
+::sdfg::loops::LoopSwap LoopInterchange::proposal(analysis::AnalysisManager* analysis_manager) const {
+    ::sdfg::loops::LoopSwap result{
         outer_loop_,
         inner_loop_,
         {inner_loop_.init(), inner_loop_.condition(), inner_loop_.update()},

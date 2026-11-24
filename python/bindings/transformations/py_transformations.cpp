@@ -4,6 +4,12 @@
 #include <sstream>
 
 #include <sdfg/data_flow/access_node.h>
+#include <sdfg/loops/transformations/loop_peeling.h>
+#include <sdfg/loops/transformations/loop_skewing.h>
+#include <sdfg/loops/transformations/loop_tiling.h>
+#include <sdfg/loops/transformations/map_collapse.h>
+#include <sdfg/loops/transformations/trivial_loop_elimination.h>
+#include <sdfg/loops/transformations/unroll_transform.h>
 #include <sdfg/parallelization/transformations/loop_parallelization.h>
 #include <sdfg/reordering/transformations/loop_distribute.h>
 #include <sdfg/reordering/transformations/loop_interchange.h>
@@ -20,10 +26,6 @@
 #include <sdfg/tiles/transformations/tile_fusion.h>
 #include <sdfg/tiles/transformations/tile_streaming_copy.h>
 #include <sdfg/tiles/transformations/tile_vectorizer.h>
-#include <sdfg/transformations/loop_peeling.h>
-#include <sdfg/transformations/loop_skewing.h>
-#include <sdfg/transformations/loop_tiling.h>
-#include <sdfg/transformations/map_collapse.h>
 #include <sdfg/transformations/offloading/cuda_offload_transform.h>
 #include <sdfg/transformations/offloading/cuda_parallelize_nested_map.h>
 #include <sdfg/transformations/offloading/cuda_transform.h>
@@ -34,8 +36,6 @@
 #include <sdfg/transformations/redundant_zero_init_elimination.h>
 #include <sdfg/transformations/stream_k.h>
 #include <sdfg/transformations/transformation.h>
-#include <sdfg/transformations/trivial_loop_elimination.h>
-#include <sdfg/transformations/unroll_transform.h>
 #include <sdfg/transformations/vectorize_transform.h>
 #include <sdfg/types/type.h>
 
@@ -87,7 +87,7 @@ void register_transformations(py::module& m) {
         );
 
     // LoopTiling transformation
-    py::class_<LoopTiling, Transformation>(m, "LoopTiling")
+    py::class_<sdfg::loops::transformations::LoopTiling, Transformation>(m, "LoopTiling")
         .def(
             py::init<StructuredLoop&, size_t, bool>(),
             py::arg("loop"),
@@ -102,17 +102,17 @@ void register_transformations(py::module& m) {
         )
         .def_property_readonly(
             "inner_loop",
-            &LoopTiling::inner_loop,
+            &sdfg::loops::transformations::LoopTiling::inner_loop,
             py::return_value_policy::reference,
             "Get the inner (tiled) loop after apply"
         )
         .def_property_readonly(
             "outer_loop",
-            &LoopTiling::outer_loop,
+            &sdfg::loops::transformations::LoopTiling::outer_loop,
             py::return_value_policy::reference,
             "Get the outer (tile) loop after apply"
         )
-        .def("__repr__", [](const LoopTiling& t) {
+        .def("__repr__", [](const sdfg::loops::transformations::LoopTiling& t) {
             std::ostringstream oss;
             oss << "<LoopTiling name='" << t.name() << "'>";
             return oss.str();
@@ -151,7 +151,7 @@ void register_transformations(py::module& m) {
         });
 
     // LoopSkewing transformation
-    py::class_<LoopSkewing, Transformation>(m, "LoopSkewing")
+    py::class_<sdfg::loops::transformations::LoopSkewing, Transformation>(m, "LoopSkewing")
         .def(
             py::init<StructuredLoop&, StructuredLoop&, int>(),
             py::arg("outer_loop"),
@@ -163,14 +163,14 @@ void register_transformations(py::module& m) {
             "    inner_loop: The inner loop\n"
             "    skew_factor: The skewing factor (default: 1)"
         )
-        .def("__repr__", [](const LoopSkewing& t) {
+        .def("__repr__", [](const sdfg::loops::transformations::LoopSkewing& t) {
             std::ostringstream oss;
             oss << "<LoopSkewing name='" << t.name() << "'>";
             return oss.str();
         });
 
     // MapCollapse transformation
-    py::class_<MapCollapse, Transformation>(m, "MapCollapse")
+    py::class_<sdfg::loops::transformations::MapCollapse, Transformation>(m, "MapCollapse")
         .def(
             py::init<Map&, size_t>(),
             py::arg("loop"),
@@ -182,11 +182,11 @@ void register_transformations(py::module& m) {
         )
         .def_property_readonly(
             "collapsed_loop",
-            &MapCollapse::collapsed_loop,
+            &sdfg::loops::transformations::MapCollapse::collapsed_loop,
             py::return_value_policy::reference,
             "Get the collapsed map after apply"
         )
-        .def("__repr__", [](const MapCollapse& t) {
+        .def("__repr__", [](const sdfg::loops::transformations::MapCollapse& t) {
             std::ostringstream oss;
             oss << "<MapCollapse name='" << t.name() << "'>";
             return oss.str();
@@ -371,7 +371,7 @@ void register_transformations(py::module& m) {
         });
 
     // LoopPeeling transformation
-    py::class_<LoopPeeling, Transformation>(m, "LoopPeeling")
+    py::class_<sdfg::loops::transformations::LoopPeeling, Transformation>(m, "LoopPeeling")
         .def(
             py::init<StructuredLoop&, bool>(),
             py::arg("loop"),
@@ -387,14 +387,14 @@ void register_transformations(py::module& m) {
             "        (default), emit the hoisted then/else form (clean vectorizable\n"
             "        micro-kernel + variable-trip remainder)."
         )
-        .def("__repr__", [](const LoopPeeling& t) {
+        .def("__repr__", [](const sdfg::loops::transformations::LoopPeeling& t) {
             std::ostringstream oss;
             oss << "<LoopPeeling name='" << t.name() << "'>";
             return oss.str();
         });
 
     // TrivialLoopElimination transformation
-    py::class_<TrivialLoopElimination, Transformation>(m, "TrivialLoopElimination")
+    py::class_<sdfg::loops::transformations::TrivialLoopElimination, Transformation>(m, "TrivialLoopElimination")
         .def(
             py::init<Map&>(),
             py::arg("loop"),
@@ -404,7 +404,7 @@ void register_transformations(py::module& m) {
             "Args:\n"
             "    loop: The map to eliminate"
         )
-        .def("__repr__", [](const TrivialLoopElimination& t) {
+        .def("__repr__", [](const sdfg::loops::transformations::TrivialLoopElimination& t) {
             std::ostringstream oss;
             oss << "<TrivialLoopElimination name='" << t.name() << "'>";
             return oss.str();
@@ -539,7 +539,7 @@ void register_transformations(py::module& m) {
         });
 
     // UnrollTransform transformation
-    py::class_<UnrollTransform, Transformation>(m, "UnrollTransform")
+    py::class_<sdfg::loops::transformations::UnrollTransform, Transformation>(m, "UnrollTransform")
         .def(
             py::init<StructuredLoop&>(),
             py::arg("loop"),
@@ -549,7 +549,7 @@ void register_transformations(py::module& m) {
             "Args:\n"
             "    loop: The constant-trip loop to fully unroll"
         )
-        .def("__repr__", [](const UnrollTransform& t) {
+        .def("__repr__", [](const sdfg::loops::transformations::UnrollTransform& t) {
             std::ostringstream oss;
             oss << "<UnrollTransform name='" << t.name() << "'>";
             return oss.str();

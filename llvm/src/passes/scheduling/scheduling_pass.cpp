@@ -4,13 +4,13 @@
 #include "docc/cmd_args.h"
 #include "sdfg/passes/rpc/daisytuner_rpc_context.h"
 #include "sdfg/passes/rpc/rpc_scheduling_pass.h"
-#include "sdfg/passes/scheduler/loop_scheduling_pass.h"
+#include "sdfg/scheduling/loops/loop_scheduling_pass.h"
 
 namespace docc {
 namespace passes {
 
 SchedulingPass::SchedulingPass(
-    const sdfg::passes::scheduler::SchedulerRegistry& scheduler_registry,
+    const sdfg::scheduling::SchedulerRegistry& scheduler_registry,
     bool force_synchronous,
     bool dump_visualization,
     bool transfer_opt,
@@ -56,7 +56,7 @@ llvm::PreservedAnalyses SchedulingPass::
             rpc_optimization_pass.run_pass(builder, analysis_manager);
         }
 
-        sdfg::passes::scheduler::LoopSchedulingPass loop_scheduling_pass(schedulers, report_, offload_unknown_sizes);
+        sdfg::scheduling::loops::LoopSchedulingPass loop_scheduling_pass(schedulers, report_, offload_unknown_sizes);
         loop_scheduling_pass.run(builder, analysis_manager);
     });
 

@@ -1,7 +1,7 @@
 #include "sdfg/passes/scheduler/rocm_scheduler.h"
 
 #include "sdfg/analysis/analysis.h"
-#include "sdfg/passes/scheduler/loop_scheduling_pass.h"
+#include "sdfg/scheduling/loops/loop_scheduling_pass.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/targets/rocm/rocm.h"
 
@@ -48,7 +48,7 @@ TEST(ROCMSchedulerTest, SkipsLoneAlreadyROCMScheduledMap) {
     builder.add_computational_memlet(block, tasklet, "_out", a_out, {indvar}, desc_2);
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({get_rocm_sched()}, nullptr);
+    scheduling::loops::LoopSchedulingPass loop_scheduling_pass({get_rocm_sched()}, nullptr);
 
     // The only loop is already scheduled -> no scheduling changes.
     EXPECT_FALSE(loop_scheduling_pass.run(builder, analysis_manager));

@@ -45,6 +45,26 @@ set(SOURCE_FILES
     src/fp_math/transformations/quantize_contraction.cpp
     src/fp_math/transformations/fuse_fma.cpp
     src/fp_math/transformations/unfuse_fma.cpp
+    src/loops/passes/collapse_pass.cpp
+    src/loops/passes/loop_normal_form.cpp
+    src/loops/passes/map_delinearization.cpp
+    src/loops/passes/trivial_loop_elimination_pass.cpp
+    src/loops/passes/tiling_pass.cpp
+    src/loops/transformations/collapse_to_depth.cpp
+    src/loops/transformations/loop_condition_normalize.cpp
+    src/loops/transformations/loop_indvar_finalize.cpp
+    src/loops/transformations/loop_peeling.cpp
+    src/loops/transformations/loop_rotate.cpp
+    src/loops/transformations/loop_shift.cpp
+    src/loops/transformations/loop_skewing.cpp
+    src/loops/transformations/loop_split.cpp
+    src/loops/transformations/loop_tiling.cpp
+    src/loops/transformations/loop_unit_stride.cpp
+    src/loops/transformations/map_collapse.cpp
+    src/loops/transformations/map_delinearize.cpp
+    src/loops/transformations/multi_level_tiling.cpp
+    src/loops/transformations/trivial_loop_elimination.cpp
+    src/loops/transformations/unroll_transform.cpp
     src/parallelization/analysis/parallel_patterns.cpp
     src/parallelization/passes/auto_parallelization.cpp
     src/parallelization/transformations/loop_parallelization.cpp
@@ -76,13 +96,8 @@ set(SOURCE_FILES
     src/tiles/transformations/tile_vectorizer.cpp
     src/passes/code_motion/extended_block_hoisting.cpp
     src/passes/code_motion/extended_block_sorting.cpp
-    src/passes/collapse_pass.cpp
     src/passes/redundant_zero_init_elimination_pass.cpp
-    src/passes/trivial_loop_elimination_pass.cpp
-    src/passes/tiling_pass.cpp
     src/passes/dot_expansion_pass.cpp
-    src/passes/normalization/loop_normal_form.cpp
-    src/passes/normalization/map_delinearization.cpp
     src/passes/offloading/code_motion/block_hoisting.cpp
     src/passes/offloading/code_motion/block_sorting.cpp
     src/passes/offloading/cuda_library_node_expansion_pass.cpp
@@ -106,14 +121,14 @@ set(SOURCE_FILES
     src/passes/scalar_promotion_pass.cpp
     src/passes/scheduler/cuda_scheduler.cpp
     src/passes/scheduler/cuda_offload_scheduler.cpp
-    src/passes/scheduler/loop_scheduling_pass.cpp
     src/passes/scheduler/omp_scheduler.cpp
     src/passes/scheduler/rocm_scheduler.cpp
     src/passes/scheduler/rocm_offload_scheduler.cpp
-    src/passes/scheduler/scheduler_registry.cpp
     src/passes/scheduler/vectorize_scheduler.cpp
     src/passes/targets/device_residency.cpp
     src/passes/targets/target_mapping_pass.cpp
+    src/scheduling/loops/loop_scheduling_pass.cpp
+    src/scheduling/scheduler_registry.cpp
     src/targets/cuda/blas/batched_gemm.cpp
     src/targets/cuda/blas/dot.cpp
     src/targets/cuda/blas/gemm.cpp
@@ -180,19 +195,6 @@ set(SOURCE_FILES
     src/targets/rocm/stdlib/memcpy.cpp
     src/targets/rocm/stdlib/memset.cpp
     src/targets/vectorize/codegen/vectorize_dispatcher.cpp
-    src/transformations/collapse_to_depth.cpp
-    src/transformations/loop_condition_normalize.cpp
-    src/transformations/loop_indvar_finalize.cpp
-    src/transformations/loop_peeling.cpp
-    src/transformations/loop_rotate.cpp
-    src/transformations/loop_shift.cpp
-    src/transformations/loop_skewing.cpp
-    src/transformations/loop_split.cpp
-    src/transformations/loop_tiling.cpp
-    src/transformations/loop_unit_stride.cpp
-    src/transformations/map_collapse.cpp
-    src/transformations/map_delinearize.cpp
-    src/transformations/multi_level_tiling.cpp
     src/transformations/offloading/cublas_data_transfer_extraction.cpp
     src/transformations/offloading/cuda_offload_transform.cpp
     src/transformations/offloading/cuda_parallelize_nested_map.cpp
@@ -214,9 +216,7 @@ set(SOURCE_FILES
     src/transformations/replayer.cpp
     src/transformations/stream_k.cpp
     src/transformations/redundant_zero_init_elimination.cpp
-    src/transformations/trivial_loop_elimination.cpp
     src/transformations/transformation_schema.cpp
-    src/transformations/unroll_transform.cpp
     src/transformations/vectorize_transform.cpp
 )
 add_library(sdfgopt

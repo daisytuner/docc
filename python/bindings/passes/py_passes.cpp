@@ -4,9 +4,10 @@
 
 #include <sdfg/passes/offloading/sync_condition_propagation.h>
 #include <sdfg/passes/pass.h>
-#include <sdfg/passes/scheduler/loop_scheduling_pass.h>
 #include <sdfg/passes/symbolic/symbol_promotion.h>
 #include <sdfg/passes/symbolic/symbol_propagation.h>
+#include <sdfg/scheduling/loops/loop_scheduling_pass.h>
+#include <sdfg/scheduling/scheduler_registry.h>
 #include <sdfg/tiles/transformations/tile_guard_normalization.h>
 #include <sdfg/transformations/recorder.h>
 
@@ -85,11 +86,11 @@ void register_passes(py::module& m) {
         });
 
     // LoopSchedulingPass: run the target loop schedulers over the SDFG.
-    py::class_<scheduler::LoopSchedulingPass, Pass>(m, "LoopSchedulingPass")
+    py::class_<sdfg::scheduling::loops::LoopSchedulingPass, Pass>(m, "LoopSchedulingPass")
         .def(
             py::init([](const std::vector<std::string>& targets, bool offload_unknown_sizes) {
                 std::vector<scheduler::LoopScheduler*> schedulers;
-                auto& registry = scheduler::SchedulerRegistry::instance();
+                auto& registry = sdfg::scheduling::SchedulerRegistry::instance();
                 for (const auto& target : targets) {
                     auto* sched = registry.get_loop_scheduler(target);
                     if (!sched) {
@@ -98,7 +99,8 @@ void register_passes(py::module& m) {
                     schedulers.push_back(sched);
                 }
 
-                return std::make_unique<scheduler::LoopSchedulingPass>(schedulers, nullptr, offload_unknown_sizes);
+                return std::make_unique<
+                    sdfg::scheduling::loops::LoopSchedulingPass>(schedulers, nullptr, offload_unknown_sizes);
             }),
             py::arg("targets"),
             py::arg("offload_unknown_sizes") = false,
@@ -109,13 +111,13 @@ void register_passes(py::module& m) {
         )
         .def(
             "set_recorder",
-            [](scheduler::LoopSchedulingPass& self, sdfg::transformations::Recorder& recorder) {
+            [](sdfg::scheduling::loops::LoopSchedulingPass& self, sdfg::transformations::Recorder& recorder) {
                 self.set_recorder(&recorder);
             },
             py::arg("recorder"),
             "Attach a Recorder to capture the scheduling transformations."
         )
-        .def("__repr__", [](scheduler::LoopSchedulingPass&) {
+        .def("__repr__", [](sdfg::scheduling::loops::LoopSchedulingPass&) {
             return "<LoopSchedulingPass>";
         });
 }

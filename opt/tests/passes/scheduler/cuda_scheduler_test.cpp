@@ -4,8 +4,8 @@
 #include "sdfg/analysis/loop_analysis.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/reduce_ops/softmax_node.h"
 #include "sdfg/deepcopy/structured_sdfg_deep_copy.h"
-#include "sdfg/passes/scheduler/loop_scheduling_pass.h"
-#include "sdfg/passes/scheduler/scheduler_registry.h"
+#include "sdfg/scheduling/loops/loop_scheduling_pass.h"
+#include "sdfg/scheduling/scheduler_registry.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/targets/cuda/cuda.h"
 
@@ -76,7 +76,7 @@ TEST(CUDASchedulerTest, OuterParallelMapWithInnerMap) {
 
     analysis::AnalysisManager analysis_manager(builder.subject());
 
-    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({get_cuda_sched()}, nullptr);
+    scheduling::loops::LoopSchedulingPass loop_scheduling_pass({get_cuda_sched()}, nullptr);
 
     EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 
@@ -148,7 +148,7 @@ TEST(CUDASchedulerTest, OuterSequentialForWith2DMap) {
 
     analysis::AnalysisManager analysis_manager(builder.subject());
 
-    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({get_cuda_sched()}, nullptr);
+    scheduling::loops::LoopSchedulingPass loop_scheduling_pass({get_cuda_sched()}, nullptr);
 
     EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 
@@ -229,7 +229,7 @@ TEST(CUDASchedulerTest, OuterWhileWithInnerMaps) {
 
     analysis::AnalysisManager analysis_manager(builder.subject());
 
-    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({get_cuda_sched()}, nullptr);
+    scheduling::loops::LoopSchedulingPass loop_scheduling_pass({get_cuda_sched()}, nullptr);
 
     EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 
@@ -293,7 +293,7 @@ TEST(CUDASchedulerTest, NoDoubleSchedulingOfAlreadyCUDAMaps) {
 
     analysis::AnalysisManager analysis_manager(builder.subject());
 
-    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({get_cuda_sched()}, nullptr);
+    scheduling::loops::LoopSchedulingPass loop_scheduling_pass({get_cuda_sched()}, nullptr);
     EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 
     // Maps a, c, e should now be CUDA-scheduled
@@ -421,7 +421,7 @@ TEST(CUDASchedulerTest, MultipleTargetsNoDoubleScheduling) {
 
     // Run CUDA scheduler — it must see map_1 is already CUDA and skip it
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({get_cuda_sched()}, nullptr);
+    scheduling::loops::LoopSchedulingPass loop_scheduling_pass({get_cuda_sched()}, nullptr);
     EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 
     // map_2 should now be CUDA
@@ -565,7 +565,7 @@ TEST(CUDASchedulerTest, NoDoubleSchedulingOfCUDAMaps) {
     }
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({get_cuda_sched()}, nullptr);
+    scheduling::loops::LoopSchedulingPass loop_scheduling_pass({get_cuda_sched()}, nullptr);
 
     EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 
@@ -631,7 +631,7 @@ TEST(CUDASchedulerTest, DISABLED_OuterParallelMapWithInnerReduce) {
     builder.add_computational_memlet(block, tasklet, "_out", acc_out, {symbolic::symbol("i")}, acc_desc);
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({get_cuda_sched()}, nullptr);
+    scheduling::loops::LoopSchedulingPass loop_scheduling_pass({get_cuda_sched()}, nullptr);
 
     EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 
@@ -678,7 +678,7 @@ TEST(CUDASchedulerTest, SkipsLoneAlreadyCUDAScheduledMap) {
     builder.add_computational_memlet(block, tasklet, "_out", a_out, {indvar}, desc_2);
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({get_cuda_sched()}, nullptr);
+    scheduling::loops::LoopSchedulingPass loop_scheduling_pass({get_cuda_sched()}, nullptr);
 
     // The only loop is already scheduled -> no scheduling changes.
     EXPECT_FALSE(loop_scheduling_pass.run(builder, analysis_manager));

@@ -845,7 +845,7 @@ TEST(CuBlasTest, GemmNodeWithoutDataTransfers_DoublePrecisionNoThrow) {
         codegen::MapDispatcherRegistry::instance(),
         codegen::ReduceDispatcherRegistry::instance(),
         local_registry,
-        passes::scheduler::SchedulerRegistry::instance(),
+        scheduling::SchedulerRegistry::instance(),
         tiles::TileTargetRegistry::instance()
     };
     cuda::register_cuda_plugin(ctx);
@@ -920,7 +920,7 @@ TEST(CuBlasTest, GemmNodeWithoutDataTransfers_HalfPrecisionEmitsHgemm) {
         codegen::MapDispatcherRegistry::instance(),
         codegen::ReduceDispatcherRegistry::instance(),
         local_registry,
-        passes::scheduler::SchedulerRegistry::instance(),
+        scheduling::SchedulerRegistry::instance(),
         tiles::TileTargetRegistry::instance()
     };
     cuda::register_cuda_plugin(ctx);
@@ -1003,7 +1003,7 @@ TEST(CuBlasTest, GemmNodeWithDataTransfers_HalfPrecisionUsesHalfBuffers) {
         codegen::MapDispatcherRegistry::instance(),
         codegen::ReduceDispatcherRegistry::instance(),
         local_registry,
-        passes::scheduler::SchedulerRegistry::instance(),
+        scheduling::SchedulerRegistry::instance(),
         tiles::TileTargetRegistry::instance()
     };
     cuda::register_cuda_plugin(ctx);
