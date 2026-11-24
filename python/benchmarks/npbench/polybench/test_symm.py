@@ -55,9 +55,8 @@ def test_symm(target):
         verifier = SDFGVerification(
             verification={
                 "GEMM": 1,
-                "VECTORIZE": 7,
                 "FOR": 2,
-                "SEQUENTIAL": 4,
+                "SEQUENTIAL": 11,
                 "MAP": 9,
             },
         )
@@ -65,8 +64,7 @@ def test_symm(target):
         verifier = SDFGVerification(
             verification={
                 "GEMM": 1,
-                "VECTORIZE": 5,
-                "SEQUENTIAL": 2,
+                "SEQUENTIAL": 7,
                 "FOR": 2,
                 "CPU_PARALLEL": 2,
                 "MAP": 7,

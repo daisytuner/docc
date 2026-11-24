@@ -24,6 +24,7 @@ void ForDispatcher::dispatch_node(
     PrettyPrinter& main_stream, PrettyPrinter& globals_stream, CodeSnippetFactory& library_snippet_factory
 ) {
     LoopHints hints;
+    hints.vectorize = structured_control_flow::ScheduleType_Vectorize::is_set(node_.schedule_type());
     hints.unroll = structured_control_flow::ScheduleType_Unroll::is_set(node_.schedule_type());
     auto body = language_extension_.begin_for(main_stream, node_, hints);
     SequenceDispatcher

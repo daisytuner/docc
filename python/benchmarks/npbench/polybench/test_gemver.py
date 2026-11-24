@@ -45,7 +45,7 @@ def test_gemver(target):
         )
     elif target == "sequential":
         verifier = SDFGVerification(
-            verification={"GEMM": 2, "VECTORIZE": 8, "SEQUENTIAL": 3, "MAP": 11}
+            verification={"GEMM": 2, "SEQUENTIAL": 11, "MAP": 11}
         )
     elif target == "openmp":
         verifier = SDFGVerification(

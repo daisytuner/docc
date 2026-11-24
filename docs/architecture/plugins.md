@@ -22,7 +22,7 @@ The core keeps registries for everything that is target- or domain-specific. A p
 | `get_tile_target_registry()`                | Tile-level code generation for a target                                                       |
 | `option_registry()`                         | [Pass options](./core-concepts/passes.md#pass-options) declared by the plugin                 |
 
-The built-in plugins are registered at startup, for example `register_omp_plugin`, `register_cuda_plugin`, `register_rocm_plugin`, and `register_tenstorrent_plugin`, together with the einsum, parallelization, tiles, and vectorization plugins (`llvm/src/docc.cpp`).
+The built-in plugins are registered at startup, for example `register_omp_plugin`, `register_cuda_plugin`, `register_rocm_plugin`, and `register_tenstorrent_plugin`, together with the einsum, parallelization, and tiles plugins (`llvm/src/docc.cpp`).
 
 ## External plugins
 

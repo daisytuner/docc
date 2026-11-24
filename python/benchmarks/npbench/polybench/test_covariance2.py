@@ -34,7 +34,6 @@ def test_covariance2(target):
                 "SEQUENTIAL": 0,
                 "CUDA_Offload": 0,
                 "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
                 "GEMM": 0,
                 "DOT": 0,
             }
@@ -47,7 +46,6 @@ def test_covariance2(target):
                 "SEQUENTIAL": 0,
                 "CUDA_Offload": 0,
                 "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
                 "GEMM": 0,
                 "DOT": 0,
             }
@@ -60,7 +58,6 @@ def test_covariance2(target):
                 "SEQUENTIAL": 0,
                 "CUDA_Offload": 0,
                 "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
                 "GEMM": 0,
                 "DOT": 0,
             }
@@ -73,7 +70,6 @@ def test_covariance2(target):
                 "SEQUENTIAL": 0,
                 "CUDA_Offload": 0,
                 "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
                 "GEMM": 0,
                 "DOT": 0,
             }
@@ -86,7 +82,6 @@ def test_covariance2(target):
                 "SEQUENTIAL": 0,
                 "ROCM_Offload": 0,
                 "CPU_PARALLEL": 0,
-                "VECTORIZE": 0,
                 "GEMM": 0,
                 "DOT": 0,
             }

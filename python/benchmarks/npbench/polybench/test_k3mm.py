@@ -46,8 +46,7 @@ def test_k3mm(target):
         verifier = SDFGVerification(
             verification={
                 "MAP": 2,
-                "SEQUENTIAL": 1,
-                "VECTORIZE": 1,
+                "SEQUENTIAL": 2,
                 "GEMM": 3,
             }
         )

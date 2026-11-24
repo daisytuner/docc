@@ -34,7 +34,7 @@ kernel(2.0, x, 3.0, y, w)                    # runs
 | Target       | Hardware           | Description                                                     |
 | ------------ | ------------------ | --------------------------------------------------------------- |
 | `none`       | single CPU core    | Default. Compiles the function as-is, without parallelization. |
-| `sequential` | single CPU core    | Optimizes and vectorizes the code.                              |
+| `sequential` | single CPU core    | Optimizes the code without parallelization.                     |
 | `openmp`     | all CPU cores      | Parallelizes loops with OpenMP.                                 |
 | `cuda`       | NVIDIA GPUs        | Offloads loops to the GPU. Requires CuPy.                       |
 | `rocm`       | AMD GPUs           | Offloads loops to the GPU. Requires CuPy.                       |

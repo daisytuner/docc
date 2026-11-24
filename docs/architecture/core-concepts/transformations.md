@@ -71,7 +71,7 @@ Create a new `AnalysisManager` after each change, or reuse one and call `invalid
 | Loop structure  | `LoopTiling`, `MultiLevelTiling`, `LoopInterchange`, `LoopSkewing`, `LoopDistribute`, `LoopSplit`, `LoopPeeling`, `LoopShift`, `LoopRotate`, `LoopUnitStride`, `TrivialLoopElimination`, `UnrollTransform` | `opt/include/sdfg/transformations/`        |
 | Maps            | `MapCollapse`, `MapFusion`, `MapDelinearize`                                                                                               | `opt/include/sdfg/transformations/`        |
 | Parallelization | `LoopParallelization` (`For` → `Map`), `OMPTransform` (OpenMP schedule), `StreamK`                                                          | `opt/include/sdfg/parallelization/`, `opt/include/sdfg/transformations/` |
-| Vectorization   | `VectorizeTransform`, `TileVectorizer`                                                                                                     | `opt/include/sdfg/transformations/`, `opt/include/sdfg/tiles/` |
+| Vectorization   | `VectorizeTransform`, `TileVectorizer`                                                                                                     | `opt/include/sdfg/loops/transformations/`, `opt/include/sdfg/tiles/` |
 | Tiles           | `TileFusion`, `LocalStorage`, `SoftwarePipelining`                                                                                         | `opt/include/sdfg/tiles/transformations/` |
 | GPU             | `CUDATransform`, `CUDAOffloadTransform`, `ROCMOffloadTransform`, `GpuMmaTransform`                                                         | `opt/include/sdfg/transformations/offloading/`, `opt/include/sdfg/targets/` |
 

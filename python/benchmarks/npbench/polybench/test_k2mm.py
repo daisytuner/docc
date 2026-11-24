@@ -48,8 +48,7 @@ def test_k2mm(target):
         verifier = SDFGVerification(
             verification={
                 "MAP": 6,
-                "SEQUENTIAL": 3,
-                "VECTORIZE": 3,
+                "SEQUENTIAL": 6,
                 "GEMM": 2,
             }
         )

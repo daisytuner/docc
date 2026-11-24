@@ -21,6 +21,7 @@ namespace codegen {
 /// Loop properties a language may be able to express (e.g. clang loop pragmas in C).
 struct LoopHints {
     bool unroll = false;
+    bool vectorize = false;
     bool no_vectorize = false;
 };
 

@@ -52,14 +52,13 @@ def test_cholesky(target):
         )
     elif target == "sequential":
         verifier = SDFGVerification(
-            verification={"VECTORIZE": 2, "REDUCE": 2, "SEQUENTIAL": 2, "FOR": 2}
+            verification={"REDUCE": 2, "SEQUENTIAL": 4, "FOR": 2}
         )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "VECTORIZE": 2,
+                "SEQUENTIAL": 4,
                 "REDUCE": 2,
-                "SEQUENTIAL": 2,
                 "FOR": 2,
             }
         )
