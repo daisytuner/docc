@@ -38,6 +38,10 @@ protected:
     // in which case this (block) level combines per-warp partials instead of per-thread.
     bool has_nested_warp_reduction(const std::string& container);
 
+    // Width of the register (shuffle) reduction of an X_BLOCK reduce with lanes > 1: its
+    // lanes, which must equal the wave size (wave_lanes). 0 when this node is not such a reduce.
+    int64_t register_lanes();
+
     // Whether a BLOCK-level reduction nested below this node reduces @p container. When a
     // grid reduce owns such a nested block reduce of the same container, its register is
     // populated only by the block's axis leaders (via the block combine), so every other

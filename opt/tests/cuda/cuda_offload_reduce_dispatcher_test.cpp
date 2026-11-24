@@ -92,7 +92,8 @@ static std::string dispatch_block_reduce(
     bool nested = false,
     tiles::ReductionBufferInfo* buffer_info = nullptr,
     bool materialize = true,
-    bool opaque_accumulator = false
+    bool opaque_accumulator = false,
+    int64_t lanes = 1
 ) {
     builder::StructuredSDFGBuilder builder("red", FunctionType_CPU);
     auto& root = builder.subject().root();
@@ -124,8 +125,12 @@ static std::string dispatch_block_reduce(
         builder.add_container(partial_container, partials_type);
     }
 
+    // The block always launches 32 threads: parallel_size * lanes.
     auto schedule = gpu::ScheduleType_GPU_Offload::create<
-        ScheduleType_CUDA_Offload>(gpu::TargetLevel::X_BLOCK, symbolic::integer(32));
+        ScheduleType_CUDA_Offload>(gpu::TargetLevel::X_BLOCK, symbolic::integer(32 / lanes));
+    if (lanes != 1) {
+        gpu::ScheduleType_GPU_Offload::lanes(schedule, symbolic::integer(lanes));
+    }
     if (strategy.has_value()) {
         gpu::ScheduleType_GPU_Offload::partial_storage(schedule, *strategy);
     }
@@ -240,7 +245,8 @@ static std::string dispatch_block_reduce(
 
     const auto total = analysis_manager.get<tiles::ReductionBufferAnalysis>().kernel(reduce);
     EXPECT_TRUE(total.shared_bytes.has_value()) << total.diagnostic;
-    EXPECT_EQ(total.shared_bytes, strategy == gpu::ReduceStrategy::Global ? 0 : (nested ? 256 : 128));
+    const bool private_only = strategy == gpu::ReduceStrategy::Global || strategy == gpu::ReduceStrategy::Register;
+    EXPECT_EQ(total.shared_bytes, private_only ? 0 : (nested ? 256 : 128));
     if (buffer_info) {
         *buffer_info = analysis_manager.get<tiles::ReductionBufferAnalysis>().require(reduce, "acc");
     }
@@ -346,9 +352,36 @@ TEST(CUDAOffloadReduceDispatcherTest, BlockLevelGlobalUsesAtomicsNoShared) {
     EXPECT_EQ(kernel.find("__daisy_reduce_m_acc"), std::string::npos);
 }
 
-// Register strategy is warp-only; a block level must reject it loudly.
+// Register strategy needs a warp-wide lane group; a plain block level must reject it loudly.
 TEST(CUDAOffloadReduceDispatcherTest, RegisterAtBlockLevelThrows) {
     EXPECT_THROW(dispatch_block_reduce(gpu::ReduceStrategy::Register), InvalidSDFGException);
+}
+
+// Lanes give every launched thread its own reduce iteration, so 1 x 32 lanes lowers exactly
+// like 32 plain threads.
+TEST(CUDAOffloadReduceDispatcherTest, LanesSharedMatchesPlainThreads) {
+    EXPECT_EQ(
+        dispatch_block_reduce(std::nullopt, "", false, false, nullptr, true, false, 32),
+        dispatch_block_reduce(std::nullopt)
+    );
+}
+
+// An X_BLOCK with warp-sized lanes and Register partials shuffles each lane group in
+// registers; without an enclosing block reduce, the group leader commits atomically.
+TEST(CUDAOffloadReduceDispatcherTest, LanesRegisterShufflesAndLeaderCommits) {
+    tiles::ReductionBufferInfo info;
+    std::string kernel = dispatch_block_reduce(gpu::ReduceStrategy::Register, "", false, false, &info, true, false, 32);
+
+    EXPECT_EQ(kernel.find("__shared__"), std::string::npos);
+    EXPECT_EQ(kernel.find("__syncthreads()"), std::string::npos);
+    ASSERT_FALSE(info.private_buffer.empty());
+    EXPECT_NE(kernel.find("__daisy_reduce_mask = 32 / 2"), std::string::npos) << kernel;
+    EXPECT_NE(kernel.find("__shfl_xor_sync"), std::string::npos) << kernel;
+    EXPECT_NE(kernel.find("if ((threadIdx.x & 31) == 0) {"), std::string::npos) << kernel;
+    EXPECT_NE(
+        kernel.find("atomicAdd(&reinterpret_cast<float *>(acc)[0], " + info.private_buffer + "[0]);"), std::string::npos
+    ) << kernel;
+    EXPECT_EQ(kernel.find("num_warps"), std::string::npos) << kernel;
 }
 
 // A placed partial_container renames the shared buffer; the invented default name

@@ -143,10 +143,9 @@ bool GPUOffloadNestedLoop<
     if (parallel_size_->as_int() <= 0) {
         return false;
     }
-    // Condition: lanes > 1 is a wave-granular X_BLOCK map: lanes must be the warp size and the loop a Map.
+    // Condition: lanes > 1 is a wave-granular X_BLOCK loop: lanes must be the warp size.
     if (lanes_ != 1) {
-        if (lanes_ != gpu::gpu_warp_size<GPUType>() || target_level_ != gpu::TargetLevel::X_BLOCK ||
-            dynamic_cast<structured_control_flow::Map*>(&loop_) == nullptr) {
+        if (lanes_ != gpu::gpu_warp_size<GPUType>() || target_level_ != gpu::TargetLevel::X_BLOCK) {
             return false;
         }
     }
@@ -373,9 +372,10 @@ bool GPUOffloadNestedLoop<
         }
         if (rescaled) {
             const int64_t warp = gpu::gpu_warp_size<GPUType>();
-            const int64_t width = std::min<int64_t>(parallel_size_->as_int(), warp);
-            if (target_level_ != gpu::TargetLevel::X_BLOCK || (width & (width - 1)) != 0 ||
-                parallel_size_->as_int() % width != 0 || block_product % warp != 0) {
+            const int64_t block_x = parallel_size_->as_int() * lanes_;
+            const int64_t width = std::min<int64_t>(block_x, warp);
+            if (target_level_ != gpu::TargetLevel::X_BLOCK || (width & (width - 1)) != 0 || block_x % width != 0 ||
+                block_product % warp != 0) {
                 return false;
             }
         }

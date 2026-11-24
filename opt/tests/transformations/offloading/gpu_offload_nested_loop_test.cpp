@@ -204,6 +204,51 @@ TEST(GPUOffloadNestedLoopTest, ReduceWithSupportedOperationApplies) {
     EXPECT_EQ(serializer.serialize(builder.subject()), materialized);
 }
 
+// A reduce with warp-sized lanes launches parallel_size * lanes threads, each folding its own
+// iteration: the shared partials are sized for every launched thread.
+TEST(GPUOffloadNestedLoopTest, ReduceWithLanesApplies) {
+    builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+    auto& root = builder.subject().root();
+
+    types::Scalar int_desc(types::PrimitiveType::Int32);
+    types::Pointer pointer_type((types::Scalar(types::PrimitiveType::Float)));
+    builder.add_container("i", int_desc);
+    builder.add_container("j", int_desc);
+    builder.add_container("__daisy_cuda_A", pointer_type);
+
+    auto& grid = builder.add_map(
+        root,
+        symbolic::symbol("i"),
+        lt("i", 128),
+        symbolic::zero(),
+        step("i"),
+        gpu_schedule(gpu::TargetLevel::X_GRID, 128)
+    );
+    std::vector<structured_control_flow::ReductionInfo> reductions{
+        {structured_control_flow::ReductionOperation::Add, "__daisy_cuda_A"}
+    };
+    auto& reduce = builder.add_reduce(
+        grid.root(),
+        symbolic::symbol("j"),
+        lt("j", 256),
+        symbolic::zero(),
+        step("j"),
+        reductions,
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+    add_device_store(builder, reduce.root(), "__daisy_cuda_A", symbolic::symbol("i"));
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    Transform not_warp_sized(reduce, gpu::TargetLevel::X_BLOCK, symbolic::integer(4), 16);
+    EXPECT_FALSE(not_warp_sized.can_be_applied(builder, analysis_manager));
+
+    Transform transformation(reduce, gpu::TargetLevel::X_BLOCK, symbolic::integer(4), 32);
+    ASSERT_TRUE(transformation.can_be_applied(builder, analysis_manager));
+    transformation.apply(builder, analysis_manager);
+    EXPECT_EQ(cuda::ScheduleType_CUDA_Offload::lanes(reduce.schedule_type())->as_int(), 32);
+    EXPECT_EQ(analysis_manager.get<tiles::ReductionBufferAnalysis>().require(reduce, "__daisy_cuda_A").shared_bytes, 512);
+}
+
 // -----------------------------------------------------------------------------
 // Negative cases
 // -----------------------------------------------------------------------------

@@ -310,7 +310,8 @@ void register_transformations(py::module& m) {
             "    loop: The nested map or reduce to offload\n"
             "    target_level: Block/warp target level (must nest correctly under ancestors)\n"
             "    parallel_size: Threads along this dimension\n"
-            "    lanes: Lanes per iteration (1 or the warp size; X_BLOCK maps only)"
+            "    lanes: 1 or the warp size (X_BLOCK only). A map shares each iteration across lanes; a reduce\n"
+            "           gives every lane its own iteration and combines lane groups by warp shuffle"
         )
         .def("__repr__", [](const CUDAOffloadNestedLoop& t) {
             std::ostringstream oss;
@@ -362,7 +363,8 @@ void register_transformations(py::module& m) {
             "    loop: The nested map or reduce to offload\n"
             "    target_level: Block/warp target level (must nest correctly under ancestors)\n"
             "    parallel_size: Threads along this dimension\n"
-            "    lanes: Lanes per iteration (1 or the warp size; X_BLOCK maps only)"
+            "    lanes: 1 or the warp size (X_BLOCK only). A map shares each iteration across lanes; a reduce\n"
+            "           gives every lane its own iteration and combines lane groups by warp shuffle"
         )
         .def("__repr__", [](const ROCMOffloadNestedLoop& t) {
             std::ostringstream oss;
