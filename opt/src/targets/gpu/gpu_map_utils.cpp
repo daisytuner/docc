@@ -623,6 +623,10 @@ int64_t wave_lanes(const structured_control_flow::ScheduleType& schedule, int64_
     return warp_size;
 }
 
+symbolic::Condition lane_leader_condition(int64_t lanes) {
+    return symbolic::Eq(symbolic::mod(symbolic::threadIdx_x(), symbolic::integer(lanes)), symbolic::zero());
+}
+
 void validate_wave_maps(
     structured_control_flow::StructuredLoop& node, analysis::AnalysisManager& analysis_manager, int64_t warp_size
 ) {

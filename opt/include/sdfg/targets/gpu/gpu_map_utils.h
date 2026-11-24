@@ -208,6 +208,9 @@ bool nested_warp_dim(structured_control_flow::StructuredLoop& loop, analysis::An
 // @p warp_size (the dispatching target's) without one.
 int64_t wave_lanes(const structured_control_flow::ScheduleType& schedule, int64_t warp_size);
 
+// `threadIdx.x % lanes == 0`: selects the leader lane of each lane group of an X_BLOCK with lanes.
+symbolic::Condition lane_leader_condition(int64_t lanes);
+
 // Throws unless every lanes > 1 offload loop in @p node's subtree is an X_BLOCK Map or Reduce
 // with lanes == wave_lanes() and no nested WARP loop.
 void validate_wave_maps(
