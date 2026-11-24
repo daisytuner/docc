@@ -10,23 +10,27 @@ namespace sdfg {
 namespace transformations {
 class Recorder;
 }
-namespace passes {
-namespace scheduler {
+namespace scheduling {
+namespace loops {
 
-class LoopSchedulingPass : public Pass {
+class LoopSchedulingPass : public ::sdfg::passes::Pass {
 private:
-    std::vector<LoopScheduler*> targets_;
+    std::vector<::sdfg::passes::scheduler::LoopScheduler*> targets_;
     sdfg::PassReportConsumer* report_;
     bool offload_unknown_sizes_;
     sdfg::transformations::Recorder* recorder_ = nullptr;
 
     bool run_pass_target(
-        builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager, LoopScheduler& scheduler
+        builder::StructuredSDFGBuilder& builder,
+        analysis::AnalysisManager& analysis_manager,
+        ::sdfg::passes::scheduler::LoopScheduler& scheduler
     );
 
 public:
     LoopSchedulingPass(
-        const std::vector<LoopScheduler*>& targets, sdfg::PassReportConsumer* report, bool offload_unknown_sizes = false
+        const std::vector<::sdfg::passes::scheduler::LoopScheduler*>& targets,
+        sdfg::PassReportConsumer* report,
+        bool offload_unknown_sizes = false
     )
         : targets_(targets), report_(report), offload_unknown_sizes_(offload_unknown_sizes) {
     }
@@ -50,6 +54,6 @@ public:
 };
 
 
-} // namespace scheduler
-} // namespace passes
+} // namespace loops
+} // namespace scheduling
 } // namespace sdfg

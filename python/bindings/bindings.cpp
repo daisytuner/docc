@@ -24,7 +24,7 @@
 #include "sdfg/data_flow/tasklet.h"
 #include "sdfg/passes/rpc/daisytuner_rpc_context.h"
 #include "sdfg/passes/rpc/rpc_context.h"
-#include "sdfg/passes/scheduler/scheduler_registry.h"
+#include "sdfg/scheduling/scheduler_registry.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/symbolic/extreme_values.h"
 #include "sdfg/targets/cuda/plugin.h"

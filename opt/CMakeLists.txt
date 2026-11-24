@@ -121,14 +121,14 @@ set(SOURCE_FILES
     src/passes/scalar_promotion_pass.cpp
     src/passes/scheduler/cuda_scheduler.cpp
     src/passes/scheduler/cuda_offload_scheduler.cpp
-    src/passes/scheduler/loop_scheduling_pass.cpp
     src/passes/scheduler/omp_scheduler.cpp
     src/passes/scheduler/rocm_scheduler.cpp
     src/passes/scheduler/rocm_offload_scheduler.cpp
-    src/passes/scheduler/scheduler_registry.cpp
     src/passes/scheduler/vectorize_scheduler.cpp
     src/passes/targets/device_residency.cpp
     src/passes/targets/target_mapping_pass.cpp
+    src/scheduling/loops/loop_scheduling_pass.cpp
+    src/scheduling/scheduler_registry.cpp
     src/targets/cuda/blas/batched_gemm.cpp
     src/targets/cuda/blas/dot.cpp
     src/targets/cuda/blas/gemm.cpp

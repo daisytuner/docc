@@ -1,7 +1,7 @@
 #include "sdfg/passes/scheduler/omp_scheduler.h"
 
-#include "sdfg/passes/scheduler/loop_scheduling_pass.h"
-#include "sdfg/passes/scheduler/scheduler_registry.h"
+#include "sdfg/scheduling/loops/loop_scheduling_pass.h"
+#include "sdfg/scheduling/scheduler_registry.h"
 #include "sdfg/targets/omp/schedule.h"
 
 #include <gtest/gtest.h>
@@ -71,7 +71,7 @@ TEST(OMPSchedulerTest, OuterParallelMapWithInnerMap) {
 
     analysis::AnalysisManager analysis_manager(builder.subject());
 
-    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({get_omp_sched()}, nullptr);
+    scheduling::loops::LoopSchedulingPass loop_scheduling_pass({get_omp_sched()}, nullptr);
 
     EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 
@@ -147,7 +147,7 @@ TEST(OMPSchedulerTest, OuterWhileWith2DMap) {
 
     analysis::AnalysisManager analysis_manager(builder.subject());
 
-    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({get_omp_sched()}, nullptr);
+    scheduling::loops::LoopSchedulingPass loop_scheduling_pass({get_omp_sched()}, nullptr);
 
     EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 
@@ -231,7 +231,7 @@ TEST(OMPSchedulerTest, OuterWhileWithInnerMaps) {
 
     analysis::AnalysisManager analysis_manager(builder.subject());
 
-    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({get_omp_sched()}, nullptr);
+    scheduling::loops::LoopSchedulingPass loop_scheduling_pass({get_omp_sched()}, nullptr);
 
     EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 
@@ -271,7 +271,7 @@ TEST(OMPSchedulerTest, SkipsAlreadyParallelMap) {
     builder.add_computational_memlet(block, tasklet, "_out", a_out, {indvar}, desc_2);
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({get_omp_sched()}, nullptr);
+    scheduling::loops::LoopSchedulingPass loop_scheduling_pass({get_omp_sched()}, nullptr);
 
     EXPECT_FALSE(loop_scheduling_pass.run(builder, analysis_manager));
     EXPECT_EQ(map.schedule_type().value(), omp::ScheduleType_OMP::value());

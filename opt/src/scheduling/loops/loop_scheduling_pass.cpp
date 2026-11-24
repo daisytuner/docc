@@ -1,23 +1,25 @@
-#include "sdfg/passes/scheduler/loop_scheduling_pass.h"
+#include "sdfg/scheduling/loops/loop_scheduling_pass.h"
 
 #include "sdfg/analysis/data_transfer_elimination_analysis.h"
 #include "sdfg/passes/offloading/data_transfer_minimization_pass.h"
 #include "sdfg/passes/scheduler/loop_scheduler.h"
-#include "sdfg/passes/scheduler/scheduler_registry.h"
 #include "sdfg/passes/structured_control_flow/unique_loop_indvars.h"
+#include "sdfg/scheduling/scheduler_registry.h"
 #include "sdfg/structured_control_flow/map.h"
 
 namespace sdfg {
-namespace passes {
-namespace scheduler {
+namespace scheduling {
+namespace loops {
 
 bool LoopSchedulingPass::run_pass_target(
-    builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager, LoopScheduler& scheduler
+    builder::StructuredSDFGBuilder& builder,
+    analysis::AnalysisManager& analysis_manager,
+    ::sdfg::passes::scheduler::LoopScheduler& scheduler
 ) {
     scheduler.set_report(report_);
     scheduler.set_recorder(recorder_);
 
-    UniqueLoopIndvars unique_indvar_pass;
+    ::sdfg::passes::UniqueLoopIndvars unique_indvar_pass;
     unique_indvar_pass.run_pass(builder, analysis_manager);
 
     // ===== Phase 1: Find all applicable loops =====
@@ -25,11 +27,12 @@ bool LoopSchedulingPass::run_pass_target(
 
     // Initialize queue with outermost loops
     std::list<structured_control_flow::ControlFlowNode*> queue;
-    std::unordered_map<structured_control_flow::ControlFlowNode*, SchedulerLoopInfo> scheduling_info_map;
+    std::unordered_map<structured_control_flow::ControlFlowNode*, ::sdfg::passes::scheduler::SchedulerLoopInfo>
+        scheduling_info_map;
     for (auto& loop : loop_analysis.outermost_loops()) {
         queue.push_back(loop);
 
-        SchedulerLoopInfo info;
+        ::sdfg::passes::scheduler::SchedulerLoopInfo info;
         info.loop_info = loop_analysis.loop_info(loop);
         scheduling_info_map[loop] = info;
     }
@@ -87,7 +90,7 @@ bool LoopSchedulingPass::run_pass_target(
             report_->in_outermost_loop(scheduling_info.loop_info.loopnest_index);
         }
 
-        SchedulerAction action = SchedulerAction::NEXT;
+        ::sdfg::passes::scheduler::SchedulerAction action = ::sdfg::passes::scheduler::SchedulerAction::NEXT;
         if (auto while_loop = dyn_cast<structured_control_flow::While*>(loop)) {
             action = scheduler.find(builder, analysis_manager, *while_loop, offload_unknown_sizes_);
         } else if (auto structured_loop = dyn_cast<structured_control_flow::StructuredLoop*>(loop)) {
@@ -97,21 +100,21 @@ bool LoopSchedulingPass::run_pass_target(
         }
 
         switch (action) {
-            case SchedulerAction::APPLY: {
+            case ::sdfg::passes::scheduler::SchedulerAction::APPLY: {
                 if (auto structured_loop = dyn_cast<structured_control_flow::StructuredLoop*>(loop)) {
                     applicable_loops.push_back(structured_loop);
                 }
                 break;
             }
-            case SchedulerAction::NEXT: {
+            case ::sdfg::passes::scheduler::SchedulerAction::NEXT: {
                 break;
             }
-            case SchedulerAction::CHILDREN: {
+            case ::sdfg::passes::scheduler::SchedulerAction::CHILDREN: {
                 auto children = loop_analysis.children(loop);
                 for (auto& child : children) {
                     queue.push_front(child);
 
-                    SchedulerLoopInfo info;
+                    ::sdfg::passes::scheduler::SchedulerLoopInfo info;
                     info.loop_info = loop_analysis.loop_info(child);
                     scheduling_info_map[child] = info;
                 }
@@ -164,6 +167,6 @@ bool LoopSchedulingPass::run_pass(builder::StructuredSDFGBuilder& builder, analy
     return applied;
 }
 
-} // namespace scheduler
-} // namespace passes
+} // namespace loops
+} // namespace scheduling
 } // namespace sdfg
