@@ -33,6 +33,7 @@
 #include <sdfg/passes/dot_expansion_pass.h>
 #include <sdfg/passes/offloading/cuda_library_node_rewriter_pass.h>
 #include <sdfg/passes/offloading/device_buffer_reuse_pass.h>
+#include <sdfg/passes/offloading/lanes_map_predication.h>
 #include <sdfg/passes/offloading/reduction_shared_memory_delinearization.h>
 #include <sdfg/passes/opt_pipeline.h>
 #include <sdfg/passes/pipeline.h>
@@ -671,6 +672,8 @@ std::string PyStructuredSDFG::compile(
     // Prepare already-scheduled graphs before instrumentation and code generation.
     sdfg::passes::ReductionSharedMemoryDelinearization reduction_buffers;
     reduction_buffers.run(builder_opt, analysis_manager);
+    sdfg::passes::LanesMapPredication lanes_predication;
+    lanes_predication.run(builder_opt, analysis_manager);
 
     // Instrumentation plan
     std::unique_ptr<sdfg::codegen::InstrumentationPlan> instrumentation_plan;
@@ -827,6 +830,8 @@ std::string PyStructuredSDFG::to_cpp() const {
 
     sdfg::passes::ReductionSharedMemoryDelinearization reduction_buffers;
     reduction_buffers.run(builder, analysis_manager);
+    sdfg::passes::LanesMapPredication lanes_predication;
+    lanes_predication.run(builder, analysis_manager);
 
     auto instrumentation_plan = sdfg::codegen::InstrumentationPlan::none(sdfg);
     auto arg_capture_plan = sdfg::codegen::ArgCapturePlan::none(sdfg);

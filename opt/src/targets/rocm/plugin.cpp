@@ -14,6 +14,7 @@
 #include "sdfg/targets/gpu/gpu_offload_reduce_dispatcher.h"
 #include "sdfg/targets/gpu/gpu_tile_arrival_node.h"
 #include "sdfg/targets/gpu/gpu_tile_target.h"
+#include "sdfg/targets/gpu/gpu_wave_barrier_node.h"
 #include "sdfg/targets/rocm/rocm.h"
 #include "sdfg/targets/rocm/rocm_mma_bare_dispatcher.h"
 #include "sdfg/targets/rocm/rocm_mma_fragment_dispatcher.h"
@@ -295,6 +296,20 @@ void register_rocm_plugin(plugins::Context& context) {
            const data_flow::DataFlowGraph& data_flow_graph,
            const data_flow::LibraryNode& node) {
             return std::make_unique<gpu::GpuTileArrivalDispatcher>(language_extension, function, data_flow_graph, node);
+        }
+    );
+
+    libNodeSerRegistry.register_library_node_serializer(gpu::LibraryNodeType_GpuWaveBarrier.value(), []() {
+        return std::make_unique<gpu::GpuWaveBarrierNodeSerializer>();
+    });
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
+        gpu::LibraryNodeType_GpuWaveBarrier,
+        data_flow::ImplementationType_NONE,
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<gpu::GpuWaveBarrierDispatcher>(language_extension, function, data_flow_graph, node);
         }
     );
 

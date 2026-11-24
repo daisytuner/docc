@@ -82,6 +82,7 @@ set(TEST_FILES
     passes/offloading/device_buffer_reuse_pass_test.cpp
     passes/offloading/gpu_control_flow_offload_pass_test.cpp
     passes/offloading/gpu_nested_offload_pass_test.cpp
+    passes/offloading/lanes_map_predication_test.cpp
     analysis/data_dependency_tile_copy_test.cpp
     transformations/offloading/cuda_parallelize_nested_map_test.cpp
     transformations/offloading/rocm_parallelize_nested_map_test.cpp

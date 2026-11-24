@@ -2015,6 +2015,171 @@ def lanes_reduce_tables(scn, lanes):
 
 
 # ---------------------------------------------------------------------------
+# Lanes maps: every lane of a group executes the body of the group's iteration.
+# Writes to device memory must not be replicated across the lanes.
+# ---------------------------------------------------------------------------
+LANES_MAP_BODIES = ("sequential_reduce", "atomic", "nested_atomic")
+LANES_MAP_INNER = 3
+
+
+def build_lanes_map_body(backend, body, rows, parallel_size, lanes):
+    """X_GRID(1) > X_BLOCK(parallel_size, lanes) map over ``rows`` with a body of
+    lane-shared side effects (``K`` = LANES_MAP_INNER):
+
+    * ``sequential_reduce``: ``acc[i] += A[i*K + k]`` over a sequential k-loop, then
+      ``s = acc[i]`` (a thread-private read-back) and ``out[i] = s + s``.
+    * ``atomic``: ``atomicAdd(&out[i], A[i])``.
+    * ``nested_atomic``: a Y_BLOCK(K) map below the lanes map with
+      ``atomicAdd(&out[i], A[i*K + j])`` (the Y threads contend on ``out[i]``).
+
+    Replicated by the lanes, the atomics would add every value ``lanes`` times.
+    """
+    K = LANES_MAP_INNER
+    n = rows * K
+    n_out = rows
+    f = Scalar(PrimitiveType.Float)
+    builder = StructuredSDFGBuilder(f"lanes_map_{body}")
+    dev_ptr = _declare_common(
+        backend,
+        builder,
+        ("A", "acc", "out"),
+        ("__daisy_dev_A", "__daisy_dev_acc", "__daisy_dev_out"),
+    )
+    i32 = Scalar(PrimitiveType.Int32)
+    for name in ("g", "i", "k"):
+        builder.add_container(name, i32, is_argument=False)
+    builder.add_container("s", f, is_argument=False)
+    builder.add_container("val", f, is_argument=False)
+    builder.add_container("__daisy_dst_ptr", dev_ptr, is_argument=False)
+
+    sizes = {"__daisy_dev_A": n, "__daisy_dev_acc": rows, "__daisy_dev_out": n_out}
+    for host, dev in (
+        ("A", "__daisy_dev_A"),
+        ("acc", "__daisy_dev_acc"),
+        ("out", "__daisy_dev_out"),
+    ):
+        nbytes = f"{sizes[dev]} * {FLOAT_BYTES}"
+        backend.offload(
+            builder,
+            dev,
+            dev,
+            DataTransferDirection.NONE,
+            BufferLifecycle.ALLOC,
+            dev_ptr,
+            nbytes,
+        )
+        backend.offload(
+            builder,
+            host,
+            dev,
+            DataTransferDirection.H2D,
+            BufferLifecycle.NO_CHANGE,
+            dev_ptr,
+            nbytes,
+        )
+
+    def atomic_add(src_index, slot):
+        blk = builder.add_block()
+        a = builder.add_access(blk, "__daisy_dev_A")
+        val = builder.add_access(blk, "val")
+        stage = builder.add_tasklet(blk, TaskletCode.assign, ["_in"], ["_out"])
+        builder.add_memlet(blk, a, "", stage, "_in", src_index, dev_ptr)
+        builder.add_memlet(blk, stage, "_out", val, "", "", f)
+        blk = builder.add_block()
+        out = builder.add_access(blk, "__daisy_dev_out")
+        dref = builder.add_access(blk, "__daisy_dst_ptr")
+        builder.add_reference_memlet(blk, out, dref, slot, dev_ptr)
+        blk = builder.add_block()
+        dref = builder.add_access(blk, "__daisy_dst_ptr")
+        val = builder.add_access(blk, "val")
+        node = builder.add_atomic_accumulate(
+            blk, "Float", {"cuda": "CUDA", "rocm": "ROCm"}[backend.name]
+        )
+        builder.add_memlet(blk, dref, "", node, "_dst", "", dev_ptr)
+        builder.add_memlet(blk, val, "", node, "_src", "", f)
+
+    builder.begin_map("g", "0", "1", "1", backend.schedule(TargetLevel.X_GRID, 1))
+    builder.begin_map(
+        "i",
+        "0",
+        str(rows),
+        "1",
+        backend.schedule(TargetLevel.X_BLOCK, parallel_size, lanes=lanes),
+    )
+    if body == "sequential_reduce":
+        builder.begin_for("k", "0", str(K), "1")
+        blk = builder.add_block()
+        a = builder.add_access(blk, "__daisy_dev_A")
+        acc_in = builder.add_access(blk, "__daisy_dev_acc")
+        acc_out = builder.add_access(blk, "__daisy_dev_acc")
+        t = builder.add_tasklet(blk, TaskletCode.fp_add, ["_in1", "_in2"], ["_out"])
+        builder.add_memlet(blk, acc_in, "", t, "_in1", "i")
+        builder.add_memlet(blk, a, "", t, "_in2", f"i * {K} + k")
+        builder.add_memlet(blk, t, "_out", acc_out, "", "i")
+        builder.end_for()
+
+        blk = builder.add_block()
+        acc = builder.add_access(blk, "__daisy_dev_acc")
+        s_out = builder.add_access(blk, "s")
+        t = builder.add_tasklet(blk, TaskletCode.assign, ["_in"], ["_out"])
+        builder.add_memlet(blk, acc, "", t, "_in", "i")
+        builder.add_memlet(blk, t, "_out", s_out, "", "", f)
+
+        blk = builder.add_block()
+        s_in = builder.add_access(blk, "s")
+        out = builder.add_access(blk, "__daisy_dev_out")
+        t = builder.add_tasklet(blk, TaskletCode.fp_add, ["_in1", "_in2"], ["_out"])
+        builder.add_memlet(blk, s_in, "", t, "_in1", "", f)
+        builder.add_memlet(blk, s_in, "", t, "_in2", "", f)
+        builder.add_memlet(blk, t, "_out", out, "", "i")
+    elif body == "atomic":
+        atomic_add("i", "i")
+    else:
+        builder.begin_map(
+            "k", "0", str(K), "1", backend.schedule(TargetLevel.Y_BLOCK, K)
+        )
+        atomic_add(f"i * {K} + k", "i")
+        builder.end_map()
+    builder.end_map()
+    builder.end_map()
+
+    for host, dev in (("acc", "__daisy_dev_acc"), ("out", "__daisy_dev_out")):
+        backend.offload(
+            builder,
+            host,
+            dev,
+            DataTransferDirection.D2H,
+            BufferLifecycle.NO_CHANGE,
+            dev_ptr,
+            f"{sizes[dev]} * {FLOAT_BYTES}",
+        )
+    for dev in sizes:
+        backend.offload(
+            builder,
+            dev,
+            dev,
+            DataTransferDirection.NONE,
+            BufferLifecycle.FREE,
+            dev_ptr,
+            "0",
+        )
+    return builder.move(), n, n_out
+
+
+def lanes_map_reference(body, a, rows):
+    """Expected (acc, out) of :func:`build_lanes_map_body` for input ``a``."""
+    K = LANES_MAP_INNER
+    if body == "sequential_reduce":
+        acc = a.reshape(rows, K).sum(axis=1)
+        return acc, 2 * acc
+    if body == "atomic":
+        out = a[:rows].copy()
+    else:
+        out = a.reshape(rows, K).sum(axis=1)
+    return np.zeros(rows), out
+
+
+# ---------------------------------------------------------------------------
 # Multiple reductions in ONE node (several accumulators at one level).
 # ---------------------------------------------------------------------------
 def make_multi_reduction_scenarios(ws):
@@ -2502,6 +2667,33 @@ def register(namespace, backend):
         expected = {"add": matrix.sum, "max": matrix.max}[op](axis=1)
         np.testing.assert_allclose(accumulator, expected, rtol=1e-4, atol=1e-4)
 
+    @pytest.mark.parametrize("body", LANES_MAP_BODIES)
+    @pytest.mark.parametrize(
+        "rows,parallel_size",
+        [(1, 1), (2, 2), (5, 2), (7, 4)],
+        ids=["single", "equals", "ragged_cover", "ragged_wide"],
+    )
+    def test_lanes_map_side_effects(body, rows, parallel_size, tmp_path):
+        """Lane-shared writes in a lanes map are performed once per group, by its
+        leader lane, with a wave barrier before other lanes read them back."""
+        lanes = backend.lane_width()
+        sdfg, n, n_out = build_lanes_map_body(backend, body, rows, parallel_size, lanes)
+        out_dir = tmp_path / "lanes_map"
+        compiled = _compile(backend, sdfg, out_dir)
+        generated = "\n".join(p.read_text() for p in out_dir.rglob(backend.source_glob))
+        assert f"% ({lanes})" in generated, "lane-leader guard missing"
+        barrier = "__syncwarp()" if backend.name == "cuda" else "wave_barrier()"
+        assert barrier in generated, "wave barrier missing"
+
+        a = _rng_input("add", n, 24)
+        acc = np.zeros(rows, dtype=np.float32)
+        out = np.zeros(n_out, dtype=np.float32)
+        compiled(a, acc, out)
+
+        ref_acc, ref_out = lanes_map_reference(body, a.astype(np.float64), rows)
+        np.testing.assert_allclose(acc, ref_acc, rtol=1e-4, atol=1e-4)
+        np.testing.assert_allclose(out, ref_out, rtol=1e-4, atol=1e-4)
+
     @pytest.mark.parametrize(
         "guarded", [True, False], ids=["debug_test_1_guarded", "debug_test_2_exact"]
     )
@@ -2625,6 +2817,7 @@ def register(namespace, backend):
         test_reduce_nest=test_reduce_nest,
         test_reduce_first_multi_output=test_reduce_first_multi_output,
         test_lanes_reduce=test_lanes_reduce,
+        test_lanes_map_side_effects=test_lanes_map_side_effects,
         test_tiled_matmul=test_tiled_matmul,
         test_multi_reduction_one_node=test_multi_reduction_one_node,
         test_reduce_different_vars=test_reduce_different_vars,
