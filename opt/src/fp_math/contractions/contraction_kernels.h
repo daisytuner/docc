@@ -93,7 +93,8 @@ using MatrixRead = std::function<
     KernelValue(BlockBuilder&, const symbolic::MultiExpression&, const symbolic::Expression&, const symbolic::Expression&)>;
 
 /// `S[o] = max(max_i |X(o, i)|, tiny)` in @p type over @p outer x @p inner, where @p read gives X(o, i), as a map over
-/// o around a Max reduction over i; per matrix of @p batch, the results of each after those of the one before.
+/// o around a Max reduction over i; per matrix of @p batch, the results of each after those of the one before. Into
+/// the container @p into if given, else a new buffer.
 std::string absmax(
     KernelBuilder& kb,
     const std::string& prefix,
@@ -102,7 +103,8 @@ std::string absmax(
     const symbolic::Expression& inner,
     double tiny,
     types::PrimitiveType type,
-    const Batch& batch = {}
+    const Batch& batch = {},
+    const std::string& into = ""
 );
 
 /// Powers of two around the magnitudes @p magnitudes, in @p type: the exponents `E[o] = floor(log2(magnitudes[o])) +
@@ -152,6 +154,20 @@ void build_slicing_direct_prepared(
     const std::vector<std::string>& b_slices,
     const std::string& scales_b,
     int a_slices = 0
+);
+
+/// The scales of the rows of the @p rows x @p columns matrices X, their absolute maxima, into the container @p scales
+/// and X's row-major Int8 slices into @p slices, as slicing with direct rescaling slices A (see OzakiContraction);
+/// per matrix of @p batch, one after the other. @p read gives X(row, column) in @p type.
+void build_row_slices(
+    KernelBuilder& kb,
+    const Batch& batch,
+    types::PrimitiveType type,
+    const symbolic::Expression& rows,
+    const symbolic::Expression& columns,
+    const MatrixRead& read,
+    const std::string& scales,
+    const std::vector<std::string>& slices
 );
 
 /// The MatMul or GEMM node a transformation description refers to as its subgraph node "0".

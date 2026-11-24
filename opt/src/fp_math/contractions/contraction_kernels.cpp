@@ -402,9 +402,10 @@ std::string absmax(
     const symbolic::Expression& inner,
     double tiny,
     PrimitiveType type,
-    const Batch& batch
+    const Batch& batch,
+    const std::string& into
 ) {
-    auto result = kb.buffer(prefix, type, symbolic::mul(batch.count(), outer));
+    auto result = into.empty() ? kb.buffer(prefix, type, symbolic::mul(batch.count(), outer)) : into;
     auto accumulator = kb.scalar(prefix + "_acc", type);
 
     auto [scope, entry] = batch.maps(kb, kb.scope());
