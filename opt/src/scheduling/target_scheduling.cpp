@@ -23,6 +23,9 @@ bool schedule(
     std::unique_ptr<passes::scheduler::SDFGScheduler> sdfg_scheduler =
         config.normalize ? target->scheduling.create_sdfg_scheduler(options) : std::make_unique<PassthroughScheduler>();
     bool changed = sdfg_scheduler->schedule(builder, analysis_manager);
+    if (config.on_normal_form) {
+        config.on_normal_form(builder.subject());
+    }
 
     if (target->apply_sched_time_mapping) {
         changed |= target->apply_sched_time_mapping(builder, analysis_manager, options);

@@ -67,6 +67,14 @@ llvm::cl::opt<bool> DOCC_OFFLOAD_UNKNOWN_SIZES(
     llvm::cl::init(false)
 );
 
+llvm::cl::opt<bool> DOCC_NORMALIZE(
+    "docc-normalize",
+    llvm::cl::desc(
+        "Brings the SDFG into the target's normal form before scheduling; disable it to schedule an SDFG as it is"
+    ),
+    llvm::cl::init(true)
+);
+
 namespace args {
 
 llvm::cl::opt<bool> DOCC_DOT_DUMP_SCHEDULED(

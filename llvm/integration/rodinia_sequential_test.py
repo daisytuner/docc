@@ -207,11 +207,11 @@ def test_backprop(compiler="clang-21"):
     verifier = SDFGVerification(
         verification={
             "sdfgs": 25,
-            "FOR": 37,
+            "FOR": 47,
             "SEQUENTIAL": 62,
             "WHILE": 6,
             "Malloc": 5,
-            "MAP": 25,
+            "MAP": 15,
         }
     )
     runner = TestRunner(
@@ -354,12 +354,12 @@ def test_cfd(compiler="clang++-21"):
     if platform.machine() in ("aarch64", "arm64"):
         verification = {
             "sdfgs": 5,
-            "MAP": 7,
-            "FOR": 9,
+            "MAP": 4,
+            "FOR": 12,
             "SEQUENTIAL": 16,
         }
     else:
-        verification = {"sdfgs": 6, "MAP": 15, "SEQUENTIAL": 28, "FOR": 13}
+        verification = {"sdfgs": 6, "MAP": 6, "SEQUENTIAL": 28, "FOR": 22}
     verifier = SDFGVerification(verification=verification)
     runner = TestRunner(
         "Rodinia",
@@ -1137,7 +1137,7 @@ def test_srad(compiler="clang++-21"):
     )
 
     verifier = SDFGVerification(
-        verification={"sdfgs": 3, "MAP": 8, "SEQUENTIAL": 17, "FOR": 9}
+        verification={"sdfgs": 3, "MAP": 7, "SEQUENTIAL": 17, "FOR": 10}
     )
     runner = TestRunner(
         "Rodinia",

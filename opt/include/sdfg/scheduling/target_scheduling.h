@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/optimization_report/pass_report_consumer.h"
@@ -20,6 +22,8 @@ struct ScheduleConfig {
     /// tuned, as argument capture needs it while keeping all execution on the host.
     bool schedule_loops = true;
     bool offload_unknown_sizes = false;
+    /// Called with the SDFG in the target's normal form, before anything maps or schedules it, e.g. to record it.
+    std::function<void(const StructuredSDFG&)> on_normal_form;
     /// Remote tuning, run between the SDFG scheduler and the loop schedulers; nullptr for none.
     passes::Pass* remote_tuning = nullptr;
     transformations::Recorder* recorder = nullptr;

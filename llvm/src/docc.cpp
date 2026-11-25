@@ -15,8 +15,10 @@
 #include <sdfg/targets/omp/plugin.h>
 #include <sdfg/tiles/plugin.h>
 #ifdef DOCC_BUILD_TARGET_TENSTORRENT
-#include <docc/target/tenstorrent/plugin.h>
+#include <docc/target/tenstorrent/target.h>
 #endif
+
+#include "docc/target/docc_target.h"
 
 #include "docc/utils.h"
 #include "sdfg/scheduling/scheduler_registry.h"
@@ -35,6 +37,11 @@ docc::PluginRegistry plugin_registry;
 
 static std::once_flag dispatcher_registration_flag;
 
+sdfg::plugins::Context& docc_context() {
+    static sdfg::plugins::Context context = sdfg::plugins::Context::global_context();
+    return context;
+}
+
 void register_sdfg_dispatchers() {
     std::call_once(dispatcher_registration_flag, []() {
         sdfg::codegen::register_default_dispatchers();
@@ -45,12 +52,13 @@ void register_sdfg_dispatchers() {
         sdfg::omp::register_omp_plugin();
         sdfg::cuda::register_cuda_plugin();
         sdfg::rocm::register_rocm_plugin();
-#ifdef DOCC_BUILD_TARGET_TENSTORRENT
-        sdfg::tenstorrent::register_tenstorrent_plugin();
-#endif
         sdfg::offloading::register_external_data_transfers_plugin();
 
-        sdfg::plugins::Context context = sdfg::plugins::Context::global_context();
+        auto& context = docc_context();
+        docc::target::register_builtin_targets(context);
+#ifdef DOCC_BUILD_TARGET_TENSTORRENT
+        docc::target::tenstorrent::register_plugin(context);
+#endif
 
         if (!DOCC_Plugins.empty()) {
             std::stringstream ss(DOCC_Plugins);

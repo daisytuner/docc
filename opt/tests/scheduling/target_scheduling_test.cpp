@@ -92,8 +92,17 @@ TEST(TargetSchedulingTest, RunsStepsInPipelineOrder) {
     StepRemoteTuning remote_tuning;
 
     steps.clear();
-    scheduling::schedule(context, builder, analysis_manager, {.target = "steps"}, {.remote_tuning = &remote_tuning});
-    EXPECT_EQ(steps, (std::vector<std::string>{"sdfg_scheduler", "mapping", "remote_tuning", "loop_scheduler"}));
+    scheduling::ScheduleConfig config{
+        .on_normal_form =
+            [](const StructuredSDFG&) {
+                steps.push_back("normal_form");
+            },
+        .remote_tuning = &remote_tuning
+    };
+    scheduling::schedule(context, builder, analysis_manager, {.target = "steps"}, config);
+    EXPECT_EQ(
+        steps, (std::vector<std::string>{"sdfg_scheduler", "normal_form", "mapping", "remote_tuning", "loop_scheduler"})
+    );
 
     steps.clear();
     scheduling::schedule(context, builder, analysis_manager, {.target = "steps"}, {.schedule_loops = false});

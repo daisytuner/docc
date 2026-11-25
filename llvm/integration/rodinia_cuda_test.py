@@ -210,10 +210,10 @@ def test_backprop(compiler="clang-21"):
             "WHILE": 6,
             "Free": 6,
             "Malloc": 5,
-            "CUDA_Offload": 24,
-            "CUDAOffloading": 38,
-            "MAP": 50,
-            "SEQUENTIAL": 63,
+            "CUDA_Offload": 14,
+            "CUDAOffloading": 26,
+            "MAP": 35,
+            "SEQUENTIAL": 58,
         },
     )
     runner = TestRunner(
@@ -370,9 +370,9 @@ def test_cfd(compiler="clang++-21"):
         verification={
             "sdfgs": 6,
             "ExternalOffloading": 0,
-            "CUDAOffloading": 26,
-            "MAP": 23,
-            "SEQUENTIAL": 26,
+            "CUDAOffloading": 66,
+            "MAP": 13,
+            "SEQUENTIAL": 16,
             "FOR": 13,
             "CUDA_Offload": 10,
         },
@@ -1029,13 +1029,13 @@ def test_particlefilter(compiler="clang-21"):
             "sdfgs": 17,
             "Free": 2,
             "Malloc": 4,
-            "CUDA_Offload": 26,
+            "CUDA_Offload": 22,
             "REDUCE": 1,
             "Call": 29,
             "WHILE": 12,
             "CMath": 7,
-            "CUDAOffloading": 50,
-            "MAP": 32,
+            "CUDAOffloading": 37,
+            "MAP": 28,
             "FOR": 32,
             "SEQUENTIAL": 39,
         }
@@ -1160,13 +1160,13 @@ def test_srad(compiler="clang++-21"):
     verifier = SDFGVerification(
         verification={
             "sdfgs": 3,
-            "Malloc": 11,
-            "CUDAOffloading": 48,
-            "MAP": 12,
+            "Malloc": 6,
+            "CUDAOffloading": 32,
+            "MAP": 10,
             "FOR": 9,
-            "SEQUENTIAL": 11,
+            "SEQUENTIAL": 9,
             "CUDA_Offload": 10,
-            "Free": 11,
+            "Free": 6,
         },
     )
     runner = TestRunner(

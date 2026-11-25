@@ -2,22 +2,22 @@
 
 #include "docc/analysis/sdfg_registry.h"
 #include "docc/cmd_args.h"
+#include "docc/passes/dumps/dump_sdfg_pass.h"
 #include "sdfg/passes/rpc/daisytuner_rpc_context.h"
 #include "sdfg/passes/rpc/rpc_scheduling_pass.h"
-#include "sdfg/scheduling/loops/loop_scheduling_pass.h"
+#include "sdfg/scheduling/target_scheduling.h"
 
 namespace docc {
 namespace passes {
 
 SchedulingPass::SchedulingPass(
-    const sdfg::scheduling::SchedulerRegistry& scheduler_registry,
+    const sdfg::plugins::Context& context,
     bool force_synchronous,
     bool dump_visualization,
     bool transfer_opt,
     sdfg::PassReportConsumer* report
 )
-    : scheduler_registry_(scheduler_registry),
-      force_synchronous_(force_synchronous || DOCC_FORCE_SYNCHRONOUS_OFFLOADING),
+    : context_(context), force_synchronous_(force_synchronous || DOCC_FORCE_SYNCHRONOUS_OFFLOADING),
       dump_visualization_(dump_visualization), transfer_opt_(transfer_opt), report_(report) {
 }
 
@@ -28,13 +28,17 @@ llvm::PreservedAnalyses SchedulingPass::
         return llvm::PreservedAnalyses::all();
     }
 
-    auto target = docc::DOCC_TUNE.getValue();
-    auto remote_tuning = docc::DOCC_TRANSFERTUNE.getValue();
-    auto offload_unknown_sizes = docc::DOCC_OFFLOAD_UNKNOWN_SIZES.getValue();
-
-    std::vector<sdfg::passes::scheduler::LoopScheduler*> schedulers;
-    if (target != "sequential") {
-        schedulers.push_back(scheduler_registry_.get_loop_scheduler(target));
+    docc::target::TargetOptions options{
+        .target = docc::DOCC_TUNE.getValue(),
+        .category = docc::DOCC_TRANSFERTUNE_CATEGORY.getValue(),
+        .remote_tuning = docc::DOCC_TRANSFERTUNE.getValue(),
+        // Fusion breaks some SDFGs lifted from LLVM IR (e.g. polybench deriche), so LLVM normalizes without it.
+        .enable_fusion_in_normalize = false
+    };
+    bool normalize = docc::DOCC_NORMALIZE.getValue();
+    auto* target = context_.get_target_handler(options.target);
+    if (target == nullptr) {
+        throw std::invalid_argument("Unknown target '" + options.target + "'");
     }
 
     registry.for_each_sdfg_modifiable(Module, [&](analysis::SDFGHolder&, sdfg::StructuredSDFG& sdfg) {
@@ -44,20 +48,32 @@ llvm::PreservedAnalyses SchedulingPass::
             report_->in_scope(&builder.subject());
         }
 
-        if (target != "tenstorrent" && remote_tuning) {
-            auto category = docc::DOCC_TRANSFERTUNE_CATEGORY.getValue();
-            std::shared_ptr<sdfg::passes::rpc::RpcContext> context =
-                sdfg::passes::rpc::DaisytunerRpcContext::from_docc_config();
-            // Normalization happens in NormalizationPass before SchedulingPass
-            docc::target::TargetOptions rpc_options{
-                .target = target, .category = category, .remote_tuning = true, .already_normalized = true
-            };
-            sdfg::passes::scheduler::RpcOptimizationPass rpc_optimization_pass(context, rpc_options, false);
-            rpc_optimization_pass.run_pass(builder, analysis_manager);
+        sdfg::scheduling::ScheduleConfig config{
+            .normalize = normalize,
+            .offload_unknown_sizes = docc::DOCC_OFFLOAD_UNKNOWN_SIZES.getValue(),
+            .on_normal_form =
+                [](const sdfg::StructuredSDFG& sdfg) {
+                    DumpSDFGPass::dump(sdfg);
+                },
+            .report = report_
+        };
+
+        std::unique_ptr<sdfg::passes::scheduler::RpcOptimizationPass> rpc_optimization_pass;
+        if (options.remote_tuning) {
+            auto rpc_options = options;
+            // The server normalizes whatever the client did not.
+            rpc_options.already_normalized = normalize && !target->scheduling.remote_normalization;
+            rpc_optimization_pass = std::make_unique<sdfg::passes::scheduler::RpcOptimizationPass>(
+                sdfg::passes::rpc::DaisytunerRpcContext::from_docc_config(),
+                rpc_options,
+                options.enable_fusion_in_normalize,
+                true,
+                report_
+            );
+            config.remote_tuning = rpc_optimization_pass.get();
         }
 
-        sdfg::scheduling::loops::LoopSchedulingPass loop_scheduling_pass(schedulers, report_, offload_unknown_sizes);
-        loop_scheduling_pass.run(builder, analysis_manager);
+        sdfg::scheduling::schedule(context_, builder, analysis_manager, options, config);
     });
 
     if (report_) {

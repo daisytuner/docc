@@ -56,6 +56,14 @@ infer_type(const sdfg::Function& function, const types::IType& type, const data_
  * @param inner_type The new innermost element type
  * @return A unique pointer to the reconstructed type
  */
+/**
+ * @brief The base type of a reference memlet `dst = &src[0]` that aliases a pointer container of @p type.
+ *
+ * The type itself if its pointee is known; for an opaque pointer, a pointer to opaque pointers, since a reference
+ * yields the same address for any element type.
+ */
+std::unique_ptr<types::IType> pointer_alias_base_type(const types::IType& type);
+
 std::unique_ptr<types::IType> recombine_array_type(const types::IType& type, uint depth, const types::IType& inner_type);
 
 /// @brief Special value indicating to follow only an outermost pointer when peeling
