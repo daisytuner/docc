@@ -554,8 +554,39 @@ std::string GPUOffloadReduceDispatcher::
         }
         conditions.push_back("(" + language_extension.expression(get_target_level_idx(level)) + " == 0)");
     }
+    // A lanes map enclosing or inside this reduce replicates the reduction on each of its lanes.
+    if (auto lane_leader = replicated_lane_leader(language_extension); !lane_leader.empty()) {
+        conditions.push_back(lane_leader);
+    }
 
     return helpers::join(conditions, " && ");
+}
+
+int64_t GPUOffloadReduceDispatcher::replicating_lanes() {
+    auto& loop_analysis = analysis_manager_.get<analysis::LoopAnalysis>();
+    int64_t lanes = 1;
+    auto visit = [&](structured_control_flow::ControlFlowNode* loop) {
+        auto* map = dynamic_cast<structured_control_flow::Map*>(loop);
+        if (map != nullptr &&
+            map->schedule_type().category() == structured_control_flow::ScheduleTypeCategory::Offloader) {
+            lanes = std::max<int64_t>(lanes, gpu::ScheduleType_GPU_Offload::lanes(map->schedule_type())->as_int());
+        }
+    };
+    for (auto* loop : loop_analysis.ancestors(&node_)) {
+        visit(loop);
+    }
+    for (auto* loop : loop_analysis.descendants(&node_)) {
+        visit(loop);
+    }
+    return lanes > 1 ? lanes : 0;
+}
+
+std::string GPUOffloadReduceDispatcher::replicated_lane_leader(codegen::LanguageExtension& language_extension) {
+    const int64_t lanes = replicating_lanes();
+    if (lanes == 0) {
+        return "";
+    }
+    return "((" + language_extension.expression(symbolic::threadIdx_x()) + " % " + std::to_string(lanes) + ") == 0)";
 }
 
 std::string GPUOffloadReduceDispatcher::reduce_linear_thread_index(codegen::LanguageExtension& language_extension) {
@@ -1435,8 +1466,11 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
             bool fed_by_nested_reduction = has_nested_block_reduction(r.container) ||
                                            has_nested_warp_reduction(r.container);
             bool redundant_threads = is_grid_level(target_level) && !fed_by_nested_reduction;
+            // The lanes of a lanes map hold identical partials: only their leader may commit.
+            const std::string lane_leader = replicated_lane_leader(language_extension);
+            std::string leader;
             if (redundant_threads) {
-                std::string leader = lin_tid + " == 0";
+                leader = lin_tid + " == 0";
                 if (multi_output) {
                     std::unordered_set<TargetLevel> mapped_axes;
                     for (auto* loop : analysis_manager_.get<analysis::LoopAnalysis>().descendants(&node_)) {
@@ -1453,13 +1487,20 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
                                 .push_back("(" + language_extension.expression(get_target_level_idx(level)) + " == 0)");
                         }
                     }
+                    if (!lane_leader.empty()) {
+                        conditions.push_back(lane_leader);
+                    }
                     leader = conditions.empty() ? "true" : helpers::join(conditions, " && ");
                 }
+            } else {
+                leader = lane_leader;
+            }
+            if (!leader.empty()) {
                 stream << "if (" << leader << ") {" << std::endl;
                 stream.setIndent(stream.indent() + 4);
             }
             emit_atomic_commit(reg_name);
-            if (redundant_threads) {
+            if (!leader.empty()) {
                 stream.setIndent(stream.indent() - 4);
                 stream << "}" << std::endl;
             }
