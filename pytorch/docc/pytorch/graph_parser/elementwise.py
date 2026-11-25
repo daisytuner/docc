@@ -6,6 +6,7 @@ import torch.fx
 
 from docc.sdfg import (
     DebugInfo,
+    Scalar,
     StructuredSDFGBuilder,
     Tensor,
     CMathFunction,
@@ -21,6 +22,7 @@ from docc.pytorch.graph_parser.utils import (
     register_module,
     primitive_type_is_floating_point,
     primitive_type_is_integer,
+    promoted_type,
 )
 
 
@@ -234,6 +236,13 @@ class ElementwiseTensorOpParser(GraphParserModule):
         )
         result_info: TensorInfo = self.get_result_tensor_info(node, builder, metadata)
         debug_info: DebugInfo = self.get_debug_info(node)
+        # Operands of different types compute in the result's, as PyTorch promotes them.
+        self_info = self.cast_to(
+            node, builder, metadata, self_info, result_info.element_type()
+        )
+        other_info_or_const = self.cast_to(
+            node, builder, metadata, other_info_or_const, result_info.element_type()
+        )
 
         builder.add_elementwise_op(
             self.op_type,
@@ -286,6 +295,18 @@ class ElementwiseTaskletOpParser(GraphParserModule):
         )
         result_info: TensorInfo = self.get_result_tensor_info(node, builder, metadata)
         debug_info: DebugInfo = self.get_debug_info(node)
+        # Tensors of different types compare in their promoted type, as in PyTorch.
+        if isinstance(other_info_or_const, TensorInfo):
+            common: Scalar = Scalar(
+                promoted_type(
+                    self_info.element_type().primitive_type,
+                    other_info_or_const.element_type().primitive_type,
+                )
+            )
+            self_info = self.cast_to(node, builder, metadata, self_info, common)
+            other_info_or_const = self.cast_to(
+                node, builder, metadata, other_info_or_const, common
+            )
 
         is_float = primitive_type_is_floating_point(
             self_info.element_type().primitive_type
@@ -408,6 +429,17 @@ class ElementwiseTensorOpParserWithAlpha(GraphParserModule):
             )
 
         result_info: TensorInfo = self.get_result_tensor_info(node, builder, metadata)
+        # Operands of different types compute in the result's, as PyTorch promotes them.
+        self_info = self.cast_to(
+            node, builder, metadata, self_info, result_info.element_type()
+        )
+        intermediate_info_or_const = self.cast_to(
+            node,
+            builder,
+            metadata,
+            intermediate_info_or_const,
+            result_info.element_type(),
+        )
         builder.add_elementwise_op(
             self.op_type,
             self_info.container(),
@@ -452,6 +484,13 @@ class ElementwiseCMathTensorOpParser(GraphParserModule):
         other_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 1)
         result_info: TensorInfo = self.get_result_tensor_info(node, builder, metadata)
         debug_info: DebugInfo = self.get_debug_info(node)
+        # Operands of different types compute in the result's, as PyTorch promotes them.
+        self_info = self.cast_to(
+            node, builder, metadata, self_info, result_info.element_type()
+        )
+        other_info = self.cast_to(
+            node, builder, metadata, other_info, result_info.element_type()
+        )
         builder.add_elementwise_cmath_op(
             self.func,
             self_info.container(),

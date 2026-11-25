@@ -259,7 +259,18 @@ PYBIND11_MODULE(_sdfg, m) {
         .def_property_readonly("start_line", &sdfg::DebugInfo::start_line)
         .def_property_readonly("start_column", &sdfg::DebugInfo::start_column)
         .def_property_readonly("end_line", &sdfg::DebugInfo::end_line)
-        .def_property_readonly("end_column", &sdfg::DebugInfo::end_column);
+        .def_property_readonly("end_column", &sdfg::DebugInfo::end_column)
+        // A Python expression, as stub generators print the default arguments of the builder's functions.
+        .def("__repr__", [](const sdfg::DebugInfo& self) {
+            if (self.filename().empty() && self.function().empty() && self.start_line() == 0 &&
+                self.start_column() == 0 && self.end_line() == 0 && self.end_column() == 0) {
+                return std::string("DebugInfo()");
+            }
+            return "DebugInfo(" + py::repr(py::str(self.filename())).cast<std::string>() + ", " +
+                   py::repr(py::str(self.function())).cast<std::string>() + ", " + std::to_string(self.start_line()) +
+                   ", " + std::to_string(self.start_column()) + ", " + std::to_string(self.end_line()) + ", " +
+                   std::to_string(self.end_column()) + ")";
+        });
 
     py::class_<sdfg::Options>(m, "Options")
         .def("has", &sdfg::Options::has, py::arg("key"), "Check whether a value is set for the given option")
@@ -348,6 +359,13 @@ PYBIND11_MODULE(_sdfg, m) {
             "Get native pointer to StructuredSDFG for external plugin use"
         )
         .def_property_readonly(
+            "_options_ptr",
+            [](PyStructuredSDFG& self) {
+                return reinterpret_cast<uintptr_t>(&self.options());
+            },
+            "Get native pointer to the SDFG's sdfg::Options for external plugin use"
+        )
+        .def_property_readonly(
             "root",
             [](PyStructuredSDFG& self) -> sdfg::structured_control_flow::Sequence& {
                 return self.root();
@@ -368,6 +386,12 @@ PYBIND11_MODULE(_sdfg, m) {
             "approximate_math",
             &PyStructuredSDFG::approximate_math,
             "Marks all CMath nodes approximate, allowing fast device intrinsics (e.g. __expf)"
+        )
+        .def(
+            "widen_floats",
+            &PyStructuredSDFG::widen_floats,
+            py::arg("types"),
+            "Widens the given float types to Float, as expansion does for the types a target does not store"
         )
         .def(
             "expand",
@@ -1099,6 +1123,18 @@ PYBIND11_MODULE(_sdfg, m) {
             py::return_value_policy::reference
         )
         .def(
+            "add_ozaki_slice_op",
+            &PyStructuredSDFGBuilder::add_ozaki_slice_op,
+            py::arg("X"),
+            py::arg("X_type"),
+            py::arg("scales"),
+            py::arg("scales_type"),
+            py::arg("slices"),
+            py::arg("slice_type"),
+            py::arg("debug_info") = sdfg::DebugInfo(),
+            py::return_value_policy::reference
+        )
+        .def(
             "add_tile_copy_node",
             &PyStructuredSDFGBuilder::add_tile_copy_node,
             py::arg("buffer_name"),
@@ -1399,10 +1435,30 @@ PYBIND11_MODULE(_sdfg, m) {
     );
 
     m.def(
+        "target_artifact",
+        [](const std::string& target) -> py::object {
+            auto* handler = docc_context.get_target_handler(target);
+            auto* artifact = handler ? handler->safe_get_artifact() : nullptr;
+            if (!artifact) {
+                return py::none();
+            }
+            py::dict entry;
+            entry["file"] = artifact->file;
+            entry["kind"] = artifact->kind == docc::target::ArtifactKind::PythonModule ? "python_module"
+                                                                                       : "shared_library";
+            entry["loader"] = artifact->loader;
+            entry["build"] = artifact->build;
+            return entry;
+        },
+        py::arg("target"),
+        "The target's own artifact as a dict of file, kind, loader and build; None if docc builds a C++ library"
+    );
+
+    m.def(
         "target_default_contraction_precision",
         [](const std::string& target) -> std::string {
             auto* handler = docc_context.get_target_handler(target);
-            return handler ? handler->safe_get_default_contraction_precision() : "native";
+            return handler ? handler->safe_get_precision().default_contraction : "native";
         },
         py::arg("target"),
         "How Float and Double matmuls compute for the target when no contraction_precision is selected"
@@ -1413,8 +1469,8 @@ PYBIND11_MODULE(_sdfg, m) {
         [](const std::string& target) {
             auto* handler = docc_context.get_target_handler(target);
             return std::make_pair(
-                handler ? handler->safe_get_default_float() : "float64",
-                handler ? handler->safe_get_default_int() : "int64"
+                handler ? handler->safe_get_precision().literal_float : "float64",
+                handler ? handler->safe_get_precision().literal_int : "int64"
             );
         },
         py::arg("target"),
@@ -1425,7 +1481,7 @@ PYBIND11_MODULE(_sdfg, m) {
         "target_default_einsum",
         [](const std::string& target) {
             auto* handler = docc_context.get_target_handler(target);
-            return handler && handler->safe_get_default_einsum();
+            return handler && handler->safe_get_lift_einsums();
         },
         py::arg("target"),
         "Whether Python contraction detection is enabled by default for the target"

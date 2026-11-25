@@ -514,8 +514,21 @@ public:
         const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
     );
 
-    /// Y = A @ B with B given as its prepared Ozaki slices (row-major k x n Int8) and the scales of its columns; see
-    /// sdfg::fp_math::OzakiMatMulNode.
+    /// The Ozaki slices of the rows of X and the scales of its rows, as add_ozaki_matmul_op takes a B stored
+    /// transposed; see sdfg::fp_math::OzakiSliceNode.
+    sdfg::data_flow::LibraryNode& add_ozaki_slice_op(
+        const std::string& X,
+        const sdfg::types::Tensor& X_type,
+        const std::string& scales,
+        const sdfg::types::Tensor& scales_type,
+        const std::vector<std::string>& slices,
+        const sdfg::types::Tensor& slice_type,
+        const sdfg::DebugInfo& debug_info = sdfg::DebugInfo()
+    );
+
+    /// Y = A @ B with B given as its prepared Ozaki slices (row-major k x n Int8, or column-major if the slice type's
+    /// strides say B is stored transposed) and the scales of its columns, possibly over a batch of leading dimensions;
+    /// see sdfg::fp_math::OzakiMatMulNode.
     sdfg::data_flow::LibraryNode& add_ozaki_matmul_op(
         const std::string& A,
         const sdfg::types::Tensor& A_type,

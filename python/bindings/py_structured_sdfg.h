@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <sdfg/passes/rpc/rpc_context.h>
@@ -76,6 +78,8 @@ public:
     void einsum();
 
     void approximate_math();
+
+    void widen_floats(const std::vector<sdfg::types::PrimitiveType>& types);
 
     /** @deprecated give targetOptions **/
     void expand();
