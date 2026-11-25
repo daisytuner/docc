@@ -37,9 +37,11 @@ import numpy as np
 import pytest
 
 from docc.sdfg import (
+    AnalysisManager,
     BufferLifecycle,
     CMathFunction,
     DataTransferDirection,
+    LanesMapPredication,
     Pointer,
     PrimitiveType,
     ReduceStrategy,
@@ -2694,6 +2696,19 @@ def register(namespace, backend):
         np.testing.assert_allclose(acc, ref_acc, rtol=1e-4, atol=1e-4)
         np.testing.assert_allclose(out, ref_out, rtol=1e-4, atol=1e-4)
 
+    def test_lanes_map_predication_pass():
+        """The pass is exposed to Python, predicates explicitly, and is idempotent."""
+        sdfg, _, _ = build_lanes_map_body(
+            backend, "sequential_reduce", 5, 2, backend.lane_width()
+        )
+        builder = StructuredSDFGBuilder(sdfg)
+        pass_ = LanesMapPredication()
+        assert pass_.name == "LanesMapPredication"
+        assert pass_.run(builder, AnalysisManager(builder))
+        assert "gpu::WaveBarrier" in sdfg.to_json()
+        assert not pass_.run(builder, AnalysisManager(builder))
+        sdfg.validate()
+
     @pytest.mark.parametrize(
         "guarded", [True, False], ids=["debug_test_1_guarded", "debug_test_2_exact"]
     )
@@ -2818,6 +2833,7 @@ def register(namespace, backend):
         test_reduce_first_multi_output=test_reduce_first_multi_output,
         test_lanes_reduce=test_lanes_reduce,
         test_lanes_map_side_effects=test_lanes_map_side_effects,
+        test_lanes_map_predication_pass=test_lanes_map_predication_pass,
         test_tiled_matmul=test_tiled_matmul,
         test_multi_reduction_one_node=test_multi_reduction_one_node,
         test_reduce_different_vars=test_reduce_different_vars,
