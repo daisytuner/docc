@@ -6,9 +6,11 @@
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/library_nodes/barrier_local_node.h"
 #include "sdfg/data_flow/tasklet.h"
+#include "sdfg/passes/offloading/reduction_shared_memory_delinearization.h"
 #include "sdfg/serializer/json_serializer.h"
 #include "sdfg/structured_control_flow/if_else.h"
 #include "sdfg/structured_control_flow/map.h"
+#include "sdfg/structured_control_flow/reduce.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/cuda/cuda.h"
 #include "sdfg/targets/gpu/gpu_map_utils.h"
@@ -179,6 +181,41 @@ TEST(LanesMapPredicationTest, LeavesPrivateCollectiveAndLaneIndexedBlocks) {
     for (size_t i = 0; i < body.size(); ++i) {
         EXPECT_TRUE(dynamic_cast<Block*>(&body.at(i)) != nullptr);
     }
+}
+
+// An offloaded reduce in a lanes map commits its accumulator from the leader lane, so a later read
+// on the other lanes is preceded by a wave barrier. Its body only updates materialized partials.
+TEST(LanesMapPredicationTest, SynchronizesReadBackOfOffloadedReduce) {
+    LanesKernel k;
+    auto& body = k.map->root();
+    auto kk = symbolic::symbol("k");
+    auto& reduce = k.builder.add_reduce(
+        body,
+        kk,
+        symbolic::Lt(kk, symbolic::integer(4)),
+        symbolic::zero(),
+        symbolic::add(kk, symbolic::one()),
+        {structured_control_flow::ReductionInfo{structured_control_flow::ReductionOperation::Add, "dev"}},
+        cuda::ScheduleType_CUDA_Offload::create<
+            cuda::ScheduleType_CUDA_Offload>(gpu::TargetLevel::Y_BLOCK, symbolic::integer(4))
+    );
+    k.increment(reduce.root(), symbolic::symbol("i"));
+    auto& after = k.load(body, "s");
+
+    analysis::AnalysisManager analysis_manager(k.builder.subject());
+    passes::ReductionSharedMemoryDelinearization materialize;
+    ASSERT_TRUE(materialize.run_pass(k.builder, analysis_manager));
+    passes::LanesMapPredication pass;
+    EXPECT_TRUE(pass.run_pass(k.builder, analysis_manager));
+
+    ASSERT_EQ(body.size(), 3u);
+    EXPECT_EQ(&body.at(0), &reduce);
+    EXPECT_TRUE(is_wave_barrier(body.at(1)));
+    EXPECT_EQ(&body.at(2), &after);
+    for (size_t i = 0; i < reduce.root().size(); ++i) {
+        EXPECT_FALSE(is_leader_guard(reduce.root().at(i)));
+    }
+    EXPECT_FALSE(pass.run_pass(k.builder, analysis_manager));
 }
 
 // Plain X_BLOCK maps (lanes == 1) run each iteration on one thread: nothing to predicate.

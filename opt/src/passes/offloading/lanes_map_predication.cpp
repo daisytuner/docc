@@ -11,6 +11,7 @@
 #include "sdfg/exceptions.h"
 #include "sdfg/structured_control_flow/if_else.h"
 #include "sdfg/structured_control_flow/map.h"
+#include "sdfg/structured_control_flow/reduce.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/gpu/gpu_map_utils.h"
 #include "sdfg/targets/gpu/gpu_offload_schedule_type.h"
@@ -54,6 +55,14 @@ struct BlockEffects {
 bool lane_shared(const StructuredSDFG& sdfg, const std::string& container) {
     const auto& type = sdfg.type(container);
     return type.type_id() == types::TypeID::Pointer || type.storage_type().is_device();
+}
+
+bool is_wave_barrier(const structured_control_flow::ControlFlowNode& node) {
+    auto* block = dynamic_cast<const Block*>(&node);
+    if (block == nullptr || block->dataflow().library_nodes().size() != 1) {
+        return false;
+    }
+    return (*block->dataflow().library_nodes().begin())->code() == gpu::LibraryNodeType_GpuWaveBarrier;
 }
 
 bool is_leader_guard(const IfElse& if_else, const symbolic::Condition& leader) {
@@ -277,6 +286,30 @@ public:
         }
         for (auto it = runs.rbegin(); it != runs.rend(); ++it) {
             guard_run(sequence, it->first, it->second);
+        }
+
+        // An offloaded reduce in a lanes map commits its lane-shared accumulators from the leader
+        // lane (reduce dispatcher), so later readers on the other lanes need a wave barrier too.
+        for (size_t i = sequence.size(); i-- > 0;) {
+            auto* reduce = dynamic_cast<structured_control_flow::Reduce*>(&sequence.at(i));
+            if (reduce == nullptr ||
+                reduce->schedule_type().category() != structured_control_flow::ScheduleTypeCategory::Offloader) {
+                continue;
+            }
+            if (i + 1 < sequence.size() && is_wave_barrier(sequence.at(i + 1))) {
+                continue;
+            }
+            BlockEffects writes;
+            for (const auto& reduction : reduce->reductions()) {
+                if (lane_shared(builder_.subject(), reduction.container)) {
+                    writes.shared_writes.insert(reduction.container);
+                }
+            }
+            if (read_unguarded(writes)) {
+                auto& barrier = builder_.add_block_after(sequence, *reduce);
+                builder_.add_library_node<gpu::GpuWaveBarrierNode>(barrier, DebugInfo());
+                changed_ = true;
+            }
         }
         return true;
     }
