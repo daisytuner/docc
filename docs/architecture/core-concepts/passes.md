@@ -83,7 +83,17 @@ Scheduling maps loops onto the target. The `LoopSchedulingPass` walks the loop t
 1. `find`: should this loop be scheduled (`APPLY`), skipped (`NEXT`), or should its children be considered (`CHILDREN`)?
 2. `can_apply_schedule` and `apply_schedule`: apply the schedule, usually with [transformations](./transformations.md).
 
-The OpenMP scheduler, for example, applies `OMPTransform` to the outermost `Map` of a loop nest. The CUDA and ROCm schedulers offload loop nests to the GPU and map them to thread blocks and threads. Each target registers its schedulers through the [plugin interface](../plugins.md).
+The OpenMP scheduler, for example, applies `OMPTransform` to the outermost `Map` of a loop nest. The CUDA and ROCm schedulers offload loop nests to the GPU: the outermost loop becomes the `X_GRID` dimension of a kernel, and `GPUNestedOffloadPass` maps the perfectly nested loops below it by the depth of the nest:
+
+| Nest depth | Nested loops, outer to inner          |
+| ---------- | ------------------------------------- |
+| 2          | `X_BLOCK`                             |
+| 3          | `Y_GRID`, `X_BLOCK`                   |
+| 4 and more | `Y_GRID`, `X_BLOCK`, `Y_BLOCK`        |
+
+Grid sizes follow the loop's iteration count; block sizes are capped at a default. See [GPU target levels](./transformations.md#gpu-target-levels) for what each level means. Each target registers its schedulers through the [plugin interface](../plugins.md).
+
+Right before code generation, two passes prepare GPU kernels: `ReductionSharedMemoryDelinearization` creates the buffers that hold the partial results of GPU reductions, and `LanesMapPredication` makes sure that the writes in the body of an `X_BLOCK` map with `lanes` happen once per lane group instead of once per lane.
 
 ## Pass options
 
