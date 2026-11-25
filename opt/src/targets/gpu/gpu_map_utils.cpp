@@ -377,10 +377,9 @@ NestedFoldPlan analyze_nested_fold(
         return false;
     };
 
-    // A block/warp fold shares data through on-chip memory reachable by a
-    // __syncthreads; a grid fold spreads the iterations across blocks, where no
-    // in-kernel barrier exists.
-    const bool barrierable = is_block_level(target_level) || is_warp_level(target_level);
+    // A block fold shares data through on-chip memory reachable by a __syncthreads;
+    // a grid fold spreads the iterations across blocks, where no in-kernel barrier exists.
+    const bool barrierable = is_block_level(target_level);
 
     structured_control_flow::ControlFlowNode* node = &loop;
     while (node != outermost) {
@@ -460,7 +459,7 @@ NestedFoldPlan analyze_nested_fold(
     return plan;
 }
 
-symbolic::Expression get_target_level_dim(TargetLevel target_level, int warp_size) {
+symbolic::Expression get_target_level_dim(TargetLevel target_level) {
     switch (target_level) {
         case TargetLevel::X_GRID:
             return symbolic::gridDim_x();
@@ -474,8 +473,6 @@ symbolic::Expression get_target_level_dim(TargetLevel target_level, int warp_siz
             return symbolic::gridDim_z();
         case TargetLevel::Z_BLOCK:
             return symbolic::blockDim_z();
-        case TargetLevel::WARP:
-            return symbolic::integer(warp_size);
         default:
             throw InvalidSDFGException(
                 "Invalid target level for GPU map: " + std::to_string(static_cast<int>(target_level))
@@ -497,8 +494,6 @@ symbolic::Expression get_target_level_idx(TargetLevel target_level) {
             return symbolic::blockIdx_z();
         case TargetLevel::Z_BLOCK:
             return symbolic::threadIdx_z();
-        case TargetLevel::WARP:
-            throw InvalidSDFGException("Cannot get index for WARP target level");
         default:
             throw InvalidSDFGException(
                 "Invalid target level for GPU map: " + std::to_string(static_cast<int>(target_level))
@@ -514,10 +509,6 @@ bool is_grid_level(TargetLevel target_level) {
 bool is_block_level(TargetLevel target_level) {
     return target_level == TargetLevel::X_BLOCK || target_level == TargetLevel::Y_BLOCK ||
            target_level == TargetLevel::Z_BLOCK;
-}
-
-bool is_warp_level(TargetLevel target_level) {
-    return target_level == TargetLevel::WARP;
 }
 
 size_t perfectly_nested_depth(structured_control_flow::StructuredLoop* loop) {
@@ -657,9 +648,6 @@ void validate_wave_maps(
             !dyn_cast<structured_control_flow::Reduce*>(struc_loop)) {
             throw InvalidSDFGException("lanes > 1 is only supported on maps and reductions");
         }
-        if (nested_warp_dim(*struc_loop, analysis_manager)) {
-            throw InvalidSDFGException("a WARP level loop cannot be nested in a wave-granular (lanes > 1) map");
-        }
     }
 }
 
@@ -797,44 +785,6 @@ bool is_wave_converged(
         uniform.insert(loop->indvar());
     }
     return true;
-}
-
-bool nested_warp_dim(structured_control_flow::StructuredLoop& loop, analysis::AnalysisManager& analysis_manager) {
-    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
-    auto loops = loop_analysis.descendants(&loop);
-    loops.insert(&loop);
-
-    for (const auto& loop : loops) {
-        if (auto struc_loop = dyn_cast<structured_control_flow::StructuredLoop*>(loop)) {
-            if (struc_loop->schedule_type().category() == structured_control_flow::ScheduleTypeCategory::Offloader) {
-                if (ScheduleType_GPU_Offload::target_level(struc_loop->schedule_type()) == TargetLevel::WARP) {
-                    return true;
-                }
-            }
-        }
-    }
-    return false;
-}
-
-structured_control_flow::StructuredLoop* find_x_block_owning_warp_level(
-    structured_control_flow::StructuredLoop& node, analysis::AnalysisManager& analysis_manager
-) {
-    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
-    if (ScheduleType_GPU_Offload::target_level(node.schedule_type()) != TargetLevel::WARP) {
-        return nullptr;
-    }
-
-    auto ancestors = loop_analysis.ancestors(&node);
-    for (auto ancestor : ancestors) {
-        if (auto struc_loop = dyn_cast<structured_control_flow::StructuredLoop*>(ancestor)) {
-            if (struc_loop->schedule_type().category() == structured_control_flow::ScheduleTypeCategory::Offloader) {
-                if (ScheduleType_GPU_Offload::target_level(struc_loop->schedule_type()) == TargetLevel::X_BLOCK) {
-                    return struc_loop;
-                }
-            }
-        }
-    }
-    return nullptr;
 }
 
 bool is_gpu_schedule(const structured_control_flow::ScheduleType& schedule) {

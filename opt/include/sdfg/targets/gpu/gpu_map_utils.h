@@ -169,14 +169,13 @@ NestedFoldPlan analyze_nested_fold(
     structured_control_flow::StructuredLoop& loop, TargetLevel target_level, analysis::AnalysisManager& analysis_manager
 );
 
-symbolic::Expression get_target_level_dim(TargetLevel target_level, int warp_size);
+symbolic::Expression get_target_level_dim(TargetLevel target_level);
 
 symbolic::Expression get_target_level_idx(TargetLevel target_level);
 
 // Coarse GPU cooperation level of a target axis.
 bool is_grid_level(TargetLevel target_level);
 bool is_block_level(TargetLevel target_level);
-bool is_warp_level(TargetLevel target_level);
 
 // Induction variables of every offloaded loop (Map or Reduce) at @p target_level
 // in @p node's subtree (including @p node itself).
@@ -202,8 +201,6 @@ void get_nested_level_maps(
     std::unordered_map<TargetLevel, structured_control_flow::StructuredLoop*>& output
 );
 
-bool nested_warp_dim(structured_control_flow::StructuredLoop& loop, analysis::AnalysisManager& analysis_manager);
-
 // Lane-group width a lanes > 1 schedule must use: the wave size of its ARCH, or
 // @p warp_size (the dispatching target's) without one.
 int64_t wave_lanes(const structured_control_flow::ScheduleType& schedule, int64_t warp_size);
@@ -212,7 +209,7 @@ int64_t wave_lanes(const structured_control_flow::ScheduleType& schedule, int64_
 symbolic::Condition lane_leader_condition(int64_t lanes);
 
 // Throws unless every lanes > 1 offload loop in @p node's subtree is an X_BLOCK Map or Reduce
-// with lanes == wave_lanes() and no nested WARP loop.
+// with lanes == wave_lanes().
 void validate_wave_maps(
     structured_control_flow::StructuredLoop& node, analysis::AnalysisManager& analysis_manager, int64_t warp_size
 );
@@ -225,10 +222,6 @@ void validate_wave_maps(
 // false unless proven.
 bool is_wave_converged(
     structured_control_flow::ControlFlowNode& node, analysis::AnalysisManager& analysis_manager, int64_t warp_size
-);
-
-structured_control_flow::StructuredLoop* find_x_block_owning_warp_level(
-    structured_control_flow::StructuredLoop& node, analysis::AnalysisManager& analysis_manager
 );
 
 // Counts the depth of the perfectly nested loop chain starting at `loop`.

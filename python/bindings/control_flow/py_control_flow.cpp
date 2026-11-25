@@ -281,7 +281,6 @@ void register_control_flow(py::module& m) {
         .value("X_BLOCK", sdfg::gpu::TargetLevel::X_BLOCK)
         .value("Y_BLOCK", sdfg::gpu::TargetLevel::Y_BLOCK)
         .value("Z_BLOCK", sdfg::gpu::TargetLevel::Z_BLOCK)
-        .value("WARP", sdfg::gpu::TargetLevel::WARP)
         .export_values();
 
     // ReduceStrategy enum (where a reduction's partials live / how they combine)

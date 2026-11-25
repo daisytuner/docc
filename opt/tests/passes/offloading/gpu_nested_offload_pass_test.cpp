@@ -171,11 +171,11 @@ TEST(GPUNestedOffloadPassTest, Depth2_XBlock_ROCM) {
     EXPECT_EQ(rocm::ScheduleType_ROCM_Offload::target_level(inner.schedule_type()), gpu::TargetLevel::X_BLOCK);
 }
 
-// ---- Consideration 1: depth-3 WARP budget behavior (current behavior) -------
+// ---- Consideration 1: depth-3 nests -----------------------------------------
 
-// chain[0] has 32 iterations => X_BLOCK(32); X_BLOCK * WARP = 32 * 32 = 1024 <= 1024
-// so the WARP level also applies.
-TEST(GPUNestedOffloadPassTest, Depth3_ChainFitsWarpBudget_XBlockAndWarpApplied) {
+// A depth-3 nest offloads its middle loop to X_BLOCK; the innermost loop stays sequential.
+// chain[0] has 32 iterations => X_BLOCK(32).
+TEST(GPUNestedOffloadPassTest, Depth3_SmallMiddleLoop_OnlyXBlockApplied) {
     builder::StructuredSDFGBuilder builder("t", FunctionType_CPU);
     auto& root = builder.subject().root();
     add_index_containers(builder, {"i", "j", "k"});
@@ -212,11 +212,11 @@ TEST(GPUNestedOffloadPassTest, Depth3_ChainFitsWarpBudget_XBlockAndWarpApplied) 
     EXPECT_TRUE(pass.run(builder, analysis_manager));
 
     EXPECT_EQ(cuda::ScheduleType_CUDA_Offload::target_level(c0.schedule_type()), gpu::TargetLevel::X_BLOCK);
+    EXPECT_TRUE(is_sequential(c1));
 }
 
-// chain[0] has 128 iterations => X_BLOCK(128); X_BLOCK * WARP = 128 * 32 = 4096 > 1024
-// so the WARP level is rejected and only X_BLOCK applies.
-TEST(GPUNestedOffloadPassTest, Depth3_XBlockExceedsWarpBudget_OnlyXBlockApplied) {
+// chain[0] has 128 iterations => X_BLOCK(128); the innermost loop stays sequential.
+TEST(GPUNestedOffloadPassTest, Depth3_LargeMiddleLoop_OnlyXBlockApplied) {
     builder::StructuredSDFGBuilder builder("t", FunctionType_CPU);
     auto& root = builder.subject().root();
     add_index_containers(builder, {"i", "j", "k"});
@@ -256,9 +256,8 @@ TEST(GPUNestedOffloadPassTest, Depth3_XBlockExceedsWarpBudget_OnlyXBlockApplied)
     EXPECT_TRUE(is_sequential(c1));
 }
 
-// The pass hardcodes WARP size 32, but ROCm's wavefront is 64, so the depth-3 WARP
-// level is always rejected on ROCm and only X_BLOCK applies.
-TEST(GPUNestedOffloadPassTest, Depth3_ROCM_WarpRejected_OnlyXBlock) {
+// ROCm offloads a depth-3 nest the same way: X_BLOCK on the middle loop only.
+TEST(GPUNestedOffloadPassTest, Depth3_ROCM_OnlyXBlockApplied) {
     builder::StructuredSDFGBuilder builder("t", FunctionType_CPU);
     auto& root = builder.subject().root();
     add_index_containers(builder, {"i", "j", "k"});

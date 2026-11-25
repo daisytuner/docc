@@ -211,16 +211,6 @@ TEST(ROCMOffloadTransformTest, BlockTargetLevelRejected) {
     EXPECT_FALSE(transform.can_be_applied(builder, analysis_manager));
 }
 
-TEST(ROCMOffloadTransformTest, WarpTargetLevelRejected) {
-    builder::StructuredSDFGBuilder builder("rocm_warp_level", FunctionType_CPU);
-    auto& map = build_offloadable_map(builder, symbolic::integer(1024));
-
-    analysis::AnalysisManager analysis_manager(builder.subject());
-    ROCMOffloadTransform transform(map, symbolic::integer(64), gpu::TargetLevel::WARP);
-
-    EXPECT_FALSE(transform.can_be_applied(builder, analysis_manager));
-}
-
 // --- Parallel sizes --------------------------------------------------------
 
 TEST(ROCMOffloadTransformTest, SmallParallelSizeAccepted) {

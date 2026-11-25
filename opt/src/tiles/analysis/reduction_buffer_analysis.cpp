@@ -302,12 +302,9 @@ void allocation_cost(
     if (!placed.empty() && (strategy != gpu::ReduceStrategy::Shared || reduction.reductions().size() != 1)) {
         throw InvalidSDFGException("partial_container requires a single Shared accumulator");
     }
-    if (strategy == gpu::ReduceStrategy::Global && level == gpu::TargetLevel::WARP) {
-        throw InvalidSDFGException("Global reduction strategy is not supported at WARP scope");
-    }
-    if (strategy == gpu::ReduceStrategy::Register && level != gpu::TargetLevel::WARP &&
+    if (strategy == gpu::ReduceStrategy::Register &&
         !(level == gpu::TargetLevel::X_BLOCK && gpu::ScheduleType_GPU_Offload::lanes(schedule)->as_int() > 1)) {
-        throw InvalidSDFGException("Register reduction strategy requires WARP scope or an X_BLOCK with lanes");
+        throw InvalidSDFGException("Register reduction strategy requires an X_BLOCK with lanes");
     }
     if (strategy != gpu::ReduceStrategy::Shared) {
         return;
@@ -348,7 +345,7 @@ void allocation_cost(
             continue;
         }
         auto nested_level = gpu::ScheduleType_GPU_Offload::target_level(effective_schedule(*nested, proposal));
-        nested_cooperative |= gpu::is_block_level(nested_level) || gpu::is_warp_level(nested_level);
+        nested_cooperative |= gpu::is_block_level(nested_level);
     }
     if (nested_cooperative || owner != &reduction) {
         result.private_bytes = 0;
