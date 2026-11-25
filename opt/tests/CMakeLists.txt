@@ -136,9 +136,14 @@ target_include_directories(sdfgopt_test PRIVATE ./)
 target_link_libraries(sdfgopt_test gtest_main sdfg::opt)
 # Numeric tests compile generated code with the project's compiler and load it.
 target_link_libraries(sdfgopt_test ${CMAKE_DL_LIBS})
+# Generated C++ holds bfloat16 as __bf16, which not every compiler has (GCC only from 13).
+include(CheckCXXSourceCompiles)
+check_cxx_source_compiles("int main() { __bf16 x = 1.0f; return static_cast<float>(x) == 1.0f ? 0 : 1; }"
+    DOCC_TEST_CXX_HAS_BF16)
 target_compile_definitions(sdfgopt_test PRIVATE
     DOCC_TEST_CXX_COMPILER="${CMAKE_CXX_COMPILER}"
     DOCC_TEST_RTL_INCLUDE="${CMAKE_CURRENT_SOURCE_DIR}/../../rtl/include"
+    DOCC_TEST_CXX_HAS_BF16=$<BOOL:${DOCC_TEST_CXX_HAS_BF16}>
 )
 if(DOCC_BUILD_TARGET_TENSTORRENT)
     target_link_libraries(sdfgopt_test docc::target::tenstorrent)

@@ -1,7 +1,11 @@
 import ctypes
+import importlib.util
+import json
+import os
 import re
 import warnings
 from docc.sdfg import Scalar, Array, Pointer, Structure, PrimitiveType
+from docc.compiler.artifacts import is_python_module, load_artifact
 
 import numpy as np
 import ml_dtypes
@@ -231,6 +235,8 @@ _PRIMITIVE_TO_NP_DTYPE = {
     PrimitiveType.Bool: np.bool_,
     PrimitiveType.Half: np.float16,
     PrimitiveType.BFloat: ml_dtypes.bfloat16,
+    PrimitiveType.Float8E4M3: ml_dtypes.float8_e4m3fn,
+    PrimitiveType.Float8E5M2: ml_dtypes.float8_e5m2,
 }
 
 # Pre-computed dtype map for numpy conversion
@@ -248,7 +254,15 @@ _NUMPY_DTYPE_MAP = {
     PrimitiveType.Bool: np.bool_,
     PrimitiveType.Half: np.float16,
     PrimitiveType.BFloat: ml_dtypes.bfloat16,
+    PrimitiveType.Float8E4M3: ml_dtypes.float8_e4m3fn,
+    PrimitiveType.Float8E5M2: ml_dtypes.float8_e5m2,
 }
+
+# Types whose ctypes arrays numpy cannot view (no PEP 3118 buffer format), read with np.frombuffer instead.
+_BUFFER_FORMATLESS = (
+    PrimitiveType.Half,
+    PrimitiveType.BFloat,
+)
 
 _CTYPES_MAP = {
     PrimitiveType.Bool: ctypes.c_bool,
@@ -268,24 +282,44 @@ _CTYPES_MAP = {
 }
 
 
-def torch_tensor_to_numpy(tensor) -> np.ndarray:
-    """Helper method to convert a torch.tensor to an numpy.ndarray that supports ml_dtypes"""
+def _ml_dtypes_of_torch():
+    """Torch's dtypes that NumPy holds only as ml_dtypes, with the integer type of their bits."""
     import torch
 
-    if tensor.dtype == torch.bfloat16:
-        return tensor.view(dtype=torch.uint16).numpy().view(dtype=ml_dtypes.bfloat16)
-    else:
+    return {
+        torch.bfloat16: (ml_dtypes.bfloat16, torch.uint16, np.uint16),
+        torch.float8_e4m3fn: (ml_dtypes.float8_e4m3fn, torch.uint8, np.uint8),
+        torch.float8_e5m2: (ml_dtypes.float8_e5m2, torch.uint8, np.uint8),
+    }
+
+
+def torch_tensor_to_numpy(tensor) -> np.ndarray:
+    """Helper method to convert a torch.tensor to an numpy.ndarray that supports ml_dtypes"""
+    found = _ml_dtypes_of_torch().get(tensor.dtype)
+    if found is None:
         return tensor.numpy()
+    dtype, torch_bits, _ = found
+    return tensor.view(dtype=torch_bits).numpy().view(dtype=dtype)
 
 
 def numpy_to_torch_tensor(array: np.ndarray):
     """Helper method to convert an numpy.ndarray to a torch.tensor that supports ml_dtypes"""
     import torch
 
-    if array.dtype == ml_dtypes.bfloat16:
-        return torch.from_numpy(array.view(dtype=np.uint16)).view(dtype=torch.bfloat16)
-    else:
-        return torch.from_numpy(array)
+    for torch_dtype, (dtype, _, bits) in _ml_dtypes_of_torch().items():
+        if array.dtype == dtype:
+            return torch.from_numpy(array.view(dtype=bits)).view(dtype=torch_dtype)
+    return torch.from_numpy(array)
+
+
+def _numpy_to_torch_dtype(dtype):
+    """The torch dtype of the NumPy or ml_dtypes ``dtype``."""
+    import torch
+
+    for torch_dtype, (ml_dtype, _, _) in _ml_dtypes_of_torch().items():
+        if np.dtype(dtype) == ml_dtype:
+            return torch_dtype
+    return torch.from_numpy(np.empty(0, dtype)).dtype
 
 
 _PRIMITIVE_TO_TORCH_DTYPE_CACHE = None
@@ -327,6 +361,64 @@ def _primitive_to_torch_dtype(primitive_type):
     return dtype
 
 
+def _load_python_module(path):
+    """Import the Python module a target generated at ``path``."""
+    name = "_docc_module_" + os.path.splitext(os.path.basename(path))[0]
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _flat_view(arr):
+    """1-D view of the memory a C pointer to ``arr``'s first element addresses."""
+    if arr.flags.c_contiguous or arr.size == 0:
+        return arr.reshape(-1)
+    itemsize = arr.itemsize
+    if any(s < 0 or s % itemsize for s in arr.strides):
+        raise TypeError(
+            "Python modules require arrays with non-negative strides that are "
+            f"multiples of the item size, got strides {arr.strides}"
+        )
+    span = sum((n - 1) * s for n, s in zip(arr.shape, arr.strides)) // itemsize + 1
+    return np.lib.stride_tricks.as_strided(arr, shape=(span,), strides=(itemsize,))
+
+
+def _reshape_output(arr, dims, compiled_strides, shape_symbol_values):
+    """Give a flat output buffer its multi-dimensional shape (and strides)."""
+    if not dims or len(dims) == 1:
+        return arr
+    if compiled_strides:
+        try:
+            itemsize = arr.itemsize
+            byte_strides = tuple(
+                int(eval(s, {}, shape_symbol_values)) * itemsize
+                for s in compiled_strides
+            )
+            return np.lib.stride_tricks.as_strided(
+                arr, shape=dims, strides=byte_strides
+            )
+        except:
+            pass
+    return arr.reshape(dims)
+
+
+def _float32_like(array):
+    """A float32 copy of ``array`` with its strides in elements, which a program specialized on them reads."""
+    item = array.dtype.itemsize
+    if array.size == 0 or any(stride % item for stride in array.strides):
+        return array.astype(np.float32)
+    strides = [stride // item for stride in array.strides]
+    low = sum(min(0, (n - 1) * s) for n, s in zip(array.shape, strides))
+    high = sum(max(0, (n - 1) * s) for n, s in zip(array.shape, strides))
+    buffer = np.empty(high - low + 1, np.float32)
+    wide = np.lib.stride_tricks.as_strided(
+        buffer[-low:], array.shape, [s * buffer.itemsize for s in strides]
+    )
+    wide[...] = array
+    return wide
+
+
 class CompiledSDFG:
     def __init__(
         self,
@@ -346,8 +438,18 @@ class CompiledSDFG:
         self.sdfg = sdfg
         self.shape_sources = shape_sources or []
         self.structure_member_info = structure_member_info or {}
-        self.lib = ctypes.CDLL(lib_path)
-        self.func = getattr(self.lib, sdfg.name)
+        # Targets with their own code generator may produce a Python module instead of a shared library.
+        self._pythonic = is_python_module(target)
+        func = load_artifact(target, str(lib_path), sdfg.name)
+        if func is not None:
+            self.lib = None
+            self.func = func
+        elif self._pythonic:
+            self.lib = None
+            self.func = getattr(_load_python_module(lib_path), sdfg.name)
+        else:
+            self.lib = ctypes.CDLL(lib_path)
+            self.func = getattr(self.lib, sdfg.name)
 
         # Optional per-artifact stream setter, emitted only by GPU (ROCm)
         # artifacts. When present, the device call path aims every kernel launch
@@ -409,10 +511,9 @@ class CompiledSDFG:
             ct_type = self._get_ctypes_type(arg_type)
             self.arg_types.append(ct_type)
 
-        self.func.argtypes = self.arg_types
-
-        # Set up return type
-        self.func.restype = self._get_ctypes_type(sdfg.return_type)
+        if not self._pythonic:
+            self.func.argtypes = self.arg_types
+            self.func.restype = self._get_ctypes_type(sdfg.return_type)
 
         # Pre-compute argument classification for fast __call__
         self._precompute_arg_metadata()
@@ -570,6 +671,21 @@ class CompiledSDFG:
         # Map from _arg_info index to result position (for O(1) lookup)
         self._output_pos_map = {idx: pos for pos, idx in enumerate(self._output_order)}
 
+        # Arguments whose float type the target does not store, widened to Float (passes::FloatWidening): the
+        # caller's arrays of their original types are converted at the boundary, by user position and result position.
+        widened = self.sdfg.metadata("widened_argument_types")
+        widened = json.loads(widened) if widened else {}
+        self._widened_inputs = []
+        self._widened_results = {}
+        for i, info in enumerate(self._arg_info):
+            if info[0] == _ARG_TYPE_USER_ARRAY and info[2] in widened:
+                self._widened_inputs.append(info[1])
+            elif info[0] == _ARG_TYPE_OUTPUT_ARRAY and info[1] in widened:
+                primitive = getattr(PrimitiveType, widened[info[1]])
+                self._widened_results[self._output_pos_map[i]] = _PRIMITIVE_TO_NP_DTYPE[
+                    primitive
+                ]
+
     def _convert_to_python_syntax(self, expr_str):
         result = expr_str
 
@@ -681,11 +797,8 @@ class CompiledSDFG:
                         arr_type = ct_type * total_size
                         # For Half/BFloat, use np.frombuffer since np.ctypeslib.as_array
                         # doesn't support these types (PEP 3118 buffer format limitation)
-                        if pointee.primitive_type in (
-                            PrimitiveType.Half,
-                            PrimitiveType.BFloat,
-                        ):
-                            byte_size = total_size * 2  # Half and BFloat are 2 bytes
+                        if pointee.primitive_type in _BUFFER_FORMATLESS:
+                            byte_size = total_size * np.dtype(dtype).itemsize
                             arr = np.frombuffer(
                                 (ctypes.c_char * byte_size).from_address(
                                     ctypes.cast(func_result, ctypes.c_void_p).value
@@ -724,13 +837,8 @@ class CompiledSDFG:
                                 arr_type = ct_type * total_size
                                 # For Half/BFloat, use np.frombuffer since np.ctypeslib.as_array
                                 # doesn't support these types (PEP 3118 buffer format limitation)
-                                if pointee.primitive_type in (
-                                    PrimitiveType.Half,
-                                    PrimitiveType.BFloat,
-                                ):
-                                    byte_size = (
-                                        total_size * 2
-                                    )  # Half and BFloat are 2 bytes
+                                if pointee.primitive_type in _BUFFER_FORMATLESS:
+                                    byte_size = total_size * np.dtype(dtype).itemsize
                                     arr = np.frombuffer(
                                         (ctypes.c_char * byte_size).from_address(
                                             ctypes.cast(
@@ -1023,7 +1131,9 @@ class CompiledSDFG:
         # Host inputs are copied to the device inside _call_device (with a
         # one-time warning); device inputs are consumed zero-copy.
         if self.device_resident:
-            return self._call_device(*args)
+            if not self._widened_inputs and not self._widened_results:
+                return self._call_device(*args)
+            return self._call_widened(self._call_device, args)
 
         # Host execution path. CPU torch tensors are converted to numpy views so
         # the ctypes boundary can take their data pointer.
@@ -1042,7 +1152,51 @@ class CompiledSDFG:
                 )
                 for a in args
             )
-        return self._call_host(*args)
+        call = self._call_python if self._pythonic else self._call_host
+        if not self._widened_inputs and not self._widened_results:
+            return call(*args)
+        return self._call_widened(call, args)
+
+    def _call_widened(self, call, args):
+        """``call`` with the widened arguments (see __init__) in float32, written back into the caller's arrays, which the
+        program may update, and the widened results in their original types. NumPy arrays and torch tensors, on any
+        device, are converted; CuPy has no such types to convert. A Python module takes the caller's arrays as they are
+        and converts them itself, as it may keep arguments across calls by their arrays.
+        """
+        args = list(args)
+        written = []
+        for position in [] if self._pythonic else self._widened_inputs:
+            arg = args[position]
+            if isinstance(arg, np.ndarray) and arg.dtype != np.float32:
+                wide = _float32_like(arg)
+                written.append((arg, wide))
+                args[position] = wide
+            elif (
+                _is_torch_tensor(arg)
+                and arg.is_floating_point()
+                and arg.element_size() < 4
+            ):
+                import torch
+
+                wide = arg.detach().to(torch.float32).contiguous()
+                written.append((arg, wide))
+                args[position] = wide
+        result = call(*args)
+        for arg, wide in written:
+            if isinstance(arg, np.ndarray):
+                np.copyto(arg, wide, casting="unsafe")
+            else:
+                arg.detach().copy_(wide)
+        if not self._widened_results:
+            return result
+        results = list(result) if isinstance(result, tuple) else [result]
+        for position, dtype in self._widened_results.items():
+            value = results[position]
+            if _is_torch_tensor(value):
+                results[position] = value.to(_numpy_to_torch_dtype(dtype))
+            elif isinstance(value, np.ndarray) or np.isscalar(value):
+                results[position] = np.asarray(value).astype(dtype)
+        return tuple(results) if isinstance(result, tuple) else results[0]
 
     def _call_host(self, *args):
         # Ultra-fast path using pre-computed tuple-based argument info
@@ -1187,30 +1341,78 @@ class CompiledSDFG:
                 results[result_pos] = buf.value
             else:
                 # Array - buf is already a numpy array
-                arr = buf
-                if dims and len(dims) > 1:
-                    # Need to reshape
-                    if compiled_strides:
-                        try:
-                            itemsize = arr.itemsize
-                            byte_strides = tuple(
-                                int(_eval(s, {}, shape_symbol_values)) * itemsize
-                                for s in compiled_strides
-                            )
-                            arr = np.lib.stride_tricks.as_strided(
-                                arr, shape=dims, strides=byte_strides
-                            )
-                        except:
-                            arr = arr.reshape(dims)
-                    else:
-                        arr = arr.reshape(dims)
-                elif dims and len(dims) == 1:
-                    pass  # Already 1D with correct size
-                results[result_pos] = arr
+                results[result_pos] = _reshape_output(
+                    buf, dims, compiled_strides, shape_symbol_values
+                )
 
         if len(results) == 1:
             return results[0]
         return tuple(results) if results else None
+
+    def _call_python(self, *args):
+        """Execute a Python module; pointers are passed as flat NumPy views."""
+        shape_symbol_values = {}
+        for s_idx, u_idx, dim_idx, key in self._shape_sources_list:
+            if u_idx < len(args):
+                shape_symbol_values[key] = args[u_idx].shape[dim_idx]
+
+        call_args = []
+        outputs = []  # (arg_info index, buffer, dims, compiled_strides)
+        for i, info in enumerate(self._arg_info):
+            arg_type = info[0]
+            if arg_type == _ARG_TYPE_OUTPUT_ARRAY:
+                dims = [
+                    int(eval(code, _EVAL_GLOBALS, shape_symbol_values))
+                    for code in info[4]
+                ]
+                buf = np.empty(int(np.prod(dims)), dtype=info[7])
+                outputs.append((i, buf, dims, info[5]))
+                call_args.append(buf)
+            elif arg_type == _ARG_TYPE_OUTPUT_SCALAR:
+                dtype = _PRIMITIVE_TO_NP_DTYPE.get(info[3]) or np.dtype(info[2])
+                buf = np.zeros(1, dtype=dtype)
+                outputs.append((i, buf, None, None))
+                call_args.append(buf)
+            elif arg_type == _ARG_TYPE_SHAPE:
+                call_args.append(shape_symbol_values.get(info[2], 0))
+            elif arg_type == _ARG_TYPE_USER_ARRAY:
+                arg = args[info[1]]
+                shape_symbol_values[info[2]] = arg
+                call_args.append(_flat_view(arg))
+            elif arg_type == _ARG_TYPE_USER_STRUCT:
+                raise NotImplementedError(
+                    "Structure arguments are not supported by Python modules"
+                )
+            else:  # _ARG_TYPE_USER_SCALAR
+                arg = args[info[1]]
+                shape_symbol_values[info[2]] = arg
+                # Convert like the ctypes boundary does, e.g. wrapping out-of-range integers.
+                call_args.append(info[3](arg).value)
+
+        func_result = self.func(*call_args)
+
+        if not outputs:
+            if isinstance(func_result, np.generic):
+                return func_result.item()
+            if isinstance(func_result, np.ndarray):
+                shape = self.get_return_shape(*args)
+                if shape is not None:
+                    return func_result.reshape(shape)
+            return func_result
+
+        results = [None] * len(outputs)
+        for i, buf, dims, compiled_strides in outputs:
+            if dims is None:
+                result = buf[0].item()
+            else:
+                result = _reshape_output(
+                    buf, dims, compiled_strides, shape_symbol_values
+                )
+            results[self._output_pos_map[i]] = result
+
+        if len(results) == 1:
+            return results[0]
+        return tuple(results)
 
     def get_return_shape(self, *args):
         shape_str = self.sdfg.metadata("return_shape")

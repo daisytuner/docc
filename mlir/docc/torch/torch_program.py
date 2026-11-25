@@ -8,6 +8,7 @@ import time
 import numpy as np
 
 from docc.compiler import CompiledSDFG, DoccProgram, DoccOptions
+from docc.compiler.artifacts import artifact_file
 from docc.sdfg import StructuredSDFG, DoccMetrics
 from docc.mlir import MLIRModule
 
@@ -354,7 +355,7 @@ class TorchProgram(DoccProgram):
                 self._input_info.append({})
 
         if docc_reuse_binaries:
-            lib_path = f"{output_folder}/lib__docc_{self.name}.so"
+            lib_path = f"{output_folder}/{artifact_file(self.options.target, f'__docc_{self.name}')}"
             if not os.path.exists(lib_path):
                 raise ValueError(
                     f"Tried reusing binary '{lib_path}' but does not exist"
