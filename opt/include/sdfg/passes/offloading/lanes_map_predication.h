@@ -13,7 +13,9 @@ namespace passes {
  * for thread-private computations, but replicates every write to memory the lanes share (global,
  * shared or static device memory, atomics). This pass wraps each run of blocks with such writes in
  * `if (threadIdx.x % lanes == 0)`, so only the leader lane of each group performs them, and inserts
- * a wave barrier after the run when other lanes read the written memory afterwards.
+ * a wave barrier after the run when other lanes read the written memory afterwards. Offloaded
+ * reductions in a lanes map commit from the leader lane (see GPUOffloadReduceDispatcher), so a wave
+ * barrier also follows a reduce whose lane-shared accumulator is read afterwards.
  *
  * Blocks containing collective nodes or indexing by `threadIdx.x` (lane-distributed work) are left
  * unchanged. Runs after reduction partials are materialized, whose thread-private buffers stay

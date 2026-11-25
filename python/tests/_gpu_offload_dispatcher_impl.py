@@ -672,12 +672,14 @@ def build_reduce_nest(
     *,
     loop_order=None,
     reduce_options=None,
+    map_options=None,
     primitive=PrimitiveType.Float,
 ):
     """Build flat acc[row] reductions; None map levels denote sequential maps.
 
     loop_order names m0, m1, ... and r0, r1, ... in outer-to-inner order.
-    reduce_options maps reduction names to backend.schedule keyword arguments.
+    reduce_options / map_options map reduction / map names to backend.schedule
+    keyword arguments (e.g. lanes on an X_BLOCK map).
     primitive is the element type of A and acc.
     """
     m_names = [f"m{k}" for k in range(len(map_specs))]
@@ -687,6 +689,9 @@ def build_reduce_nest(
     assert len(order) == len(specs) and set(order) == set(specs)
     reduce_options = reduce_options or {}
     assert set(reduce_options) <= set(r_names)
+    map_options = map_options or {}
+    assert set(map_options) <= set(m_names)
+    options = {**reduce_options, **map_options}
     _validate_nest(
         [
             (specs[name][0], specs[name][2])
@@ -762,7 +767,7 @@ def build_reduce_nest(
         schedule = (
             ScheduleType.sequential()
             if level is None
-            else backend.schedule(level, psize, **reduce_options.get(name, {}))
+            else backend.schedule(level, psize, **options.get(name, {}))
         )
         if name in m_names:
             builder.begin_map(name, "0", str(count), "1", schedule)
@@ -2168,6 +2173,61 @@ def build_lanes_map_body(backend, body, rows, parallel_size, lanes):
     return builder.move(), n, n_out
 
 
+def make_lanes_map_reduce_scenarios():
+    """Offloaded reductions replicated by a lanes map (enclosing or nested).
+
+    Every lane of the map's group holds the same partials, so only the leader lane
+    may commit them: otherwise the Global (atomic) commits add every value
+    ``lanes`` times and the Shared commits race on the accumulator. The lane width
+    is the device's wave size, resolved by ``lanes_map_reduce_tables``.
+    """
+    scenarios = []
+    for placement, strategies in (
+        ("map_over_yb", ("shared", "global")),
+        ("yb_over_map", ("shared", "global")),
+        ("xg_over_map", ("global",)),
+    ):
+        for strategy in strategies:
+            for rows, parallel_size in ((2, 1), (5, 2)):
+                scenarios.append(
+                    dict(
+                        id=f"{placement}_{strategy}_r{rows}_p{parallel_size}",
+                        placement=placement,
+                        strategy=strategy,
+                        rows=rows,
+                        parallel_size=parallel_size,
+                    )
+                )
+    return scenarios
+
+
+def lanes_map_reduce_tables(scn, lanes):
+    """build_reduce_nest arguments of a lanes-map reduce recipe (``K`` = 6)."""
+    rows, parallel_size = scn["rows"], scn["parallel_size"]
+    strategy = {"shared": ReduceStrategy.Shared, "global": ReduceStrategy.Global}[
+        scn["strategy"]
+    ]
+    lanes_map = ("xb", rows, parallel_size)
+    if scn["placement"] == "xg_over_map":
+        maps, reductions, order = [lanes_map], [("xg", 6, 2)], ["r0", "m0"]
+        lanes_name = "m0"
+    else:
+        maps, reductions = [("xg", 1, 1), lanes_map], [("yb", 6, 4)]
+        order = (
+            ["m0", "m1", "r0"]
+            if scn["placement"] == "map_over_yb"
+            else ["m0", "r0", "m1"]
+        )
+        lanes_name = "m1"
+    return dict(
+        map_specs=_spec(maps),
+        reduce_specs=_spec(reductions),
+        loop_order=order,
+        reduce_options={"r0": {"partial_storage": strategy}},
+        map_options={lanes_name: {"lanes": lanes}},
+    )
+
+
 def lanes_map_reference(body, a, rows):
     """Expected (acc, out) of :func:`build_lanes_map_body` for input ``a``."""
     K = LANES_MAP_INNER
@@ -2696,6 +2756,32 @@ def register(namespace, backend):
         np.testing.assert_allclose(acc, ref_acc, rtol=1e-4, atol=1e-4)
         np.testing.assert_allclose(out, ref_out, rtol=1e-4, atol=1e-4)
 
+    _lanes_map_reduce_scns = make_lanes_map_reduce_scenarios()
+
+    @pytest.mark.parametrize(
+        "scn",
+        _lanes_map_reduce_scns,
+        ids=[scn["id"] for scn in _lanes_map_reduce_scns],
+    )
+    @pytest.mark.parametrize("op", ["add", "max"])
+    def test_lanes_map_reduce(scn, op, tmp_path):
+        """A reduce replicated by a lanes map commits from the leader lane only."""
+        lanes = backend.lane_width()
+        sdfg, rows, cols = build_reduce_nest(
+            backend, op=op, **lanes_map_reduce_tables(scn, lanes)
+        )
+        out_dir = tmp_path / "lanes_map_reduce"
+        compiled = _compile(backend, sdfg, out_dir)
+        generated = "\n".join(p.read_text() for p in out_dir.rglob(backend.source_glob))
+        assert f"% {lanes}) == 0)" in generated, "leader-lane commit missing"
+
+        values = _rng_input(op, rows * cols, 25)
+        accumulator = np.full(rows, _identity(op), dtype=np.float32)
+        compiled(values, accumulator)
+        matrix = values.reshape(rows, cols)
+        expected = {"add": matrix.sum, "max": matrix.max}[op](axis=1)
+        np.testing.assert_allclose(accumulator, expected, rtol=1e-4, atol=1e-4)
+
     def test_lanes_map_predication_pass():
         """The pass is exposed to Python, predicates explicitly, and is idempotent."""
         sdfg, _, _ = build_lanes_map_body(
@@ -2834,6 +2920,7 @@ def register(namespace, backend):
         test_lanes_reduce=test_lanes_reduce,
         test_lanes_map_side_effects=test_lanes_map_side_effects,
         test_lanes_map_predication_pass=test_lanes_map_predication_pass,
+        test_lanes_map_reduce=test_lanes_map_reduce,
         test_tiled_matmul=test_tiled_matmul,
         test_multi_reduction_one_node=test_multi_reduction_one_node,
         test_reduce_different_vars=test_reduce_different_vars,
