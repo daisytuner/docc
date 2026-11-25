@@ -173,9 +173,9 @@ TEST(GPUNestedOffloadPassTest, Depth2_XBlock_ROCM) {
 
 // ---- Consideration 1: depth-3 nests -----------------------------------------
 
-// A depth-3 nest offloads its middle loop to X_BLOCK; the innermost loop stays sequential.
-// chain[0] has 32 iterations => X_BLOCK(32).
-TEST(GPUNestedOffloadPassTest, Depth3_SmallMiddleLoop_OnlyXBlockApplied) {
+// A depth-3 nest below an X_GRID loop maps its middle loop to Y_GRID (the exact count)
+// and its innermost loop to X_BLOCK.
+TEST(GPUNestedOffloadPassTest, Depth3_YGridXBlock_CUDA) {
     builder::StructuredSDFGBuilder builder("t", FunctionType_CPU);
     auto& root = builder.subject().root();
     add_index_containers(builder, {"i", "j", "k"});
@@ -211,12 +211,15 @@ TEST(GPUNestedOffloadPassTest, Depth3_SmallMiddleLoop_OnlyXBlockApplied) {
     passes::GPUNestedOffloadPass pass(loops, passes::GPUTarget::CUDA);
     EXPECT_TRUE(pass.run(builder, analysis_manager));
 
-    EXPECT_EQ(cuda::ScheduleType_CUDA_Offload::target_level(c0.schedule_type()), gpu::TargetLevel::X_BLOCK);
-    EXPECT_TRUE(is_sequential(c1));
+    using Schedule = cuda::ScheduleType_CUDA_Offload;
+    EXPECT_EQ(Schedule::target_level(c0.schedule_type()), gpu::TargetLevel::Y_GRID);
+    EXPECT_EQ(Schedule::parallel_size(c0.schedule_type())->as_int(), 32);
+    EXPECT_EQ(Schedule::target_level(c1.schedule_type()), gpu::TargetLevel::X_BLOCK);
+    EXPECT_EQ(Schedule::parallel_size(c1.schedule_type())->as_int(), 32);
 }
 
-// chain[0] has 128 iterations => X_BLOCK(128); the innermost loop stays sequential.
-TEST(GPUNestedOffloadPassTest, Depth3_LargeMiddleLoop_OnlyXBlockApplied) {
+// The X_BLOCK size is capped at the default block size; the Y_GRID keeps the exact count.
+TEST(GPUNestedOffloadPassTest, Depth3_LargeInnerLoop_XBlockCapped) {
     builder::StructuredSDFGBuilder builder("t", FunctionType_CPU);
     auto& root = builder.subject().root();
     add_index_containers(builder, {"i", "j", "k"});
@@ -240,24 +243,27 @@ TEST(GPUNestedOffloadPassTest, Depth3_LargeMiddleLoop_OnlyXBlockApplied) {
     auto& c1 = builder.add_map(
         c0.root(),
         symbolic::symbol("k"),
-        lt("k", 32),
+        lt("k", 1024),
         symbolic::zero(),
         step("k"),
         structured_control_flow::ScheduleType_Sequential::create()
     );
-    add_store(builder, c1.root(), flat_index({"i", "j", "k"}, {128, 128, 32}));
+    add_store(builder, c1.root(), flat_index({"i", "j", "k"}, {128, 128, 1024}));
 
     analysis::AnalysisManager analysis_manager(builder.subject());
     std::vector<structured_control_flow::StructuredLoop*> loops{&grid};
     passes::GPUNestedOffloadPass pass(loops, passes::GPUTarget::CUDA);
     EXPECT_TRUE(pass.run(builder, analysis_manager));
 
-    EXPECT_EQ(cuda::ScheduleType_CUDA_Offload::target_level(c0.schedule_type()), gpu::TargetLevel::X_BLOCK);
-    EXPECT_TRUE(is_sequential(c1));
+    using Schedule = cuda::ScheduleType_CUDA_Offload;
+    EXPECT_EQ(Schedule::target_level(c0.schedule_type()), gpu::TargetLevel::Y_GRID);
+    EXPECT_EQ(Schedule::parallel_size(c0.schedule_type())->as_int(), 128);
+    EXPECT_EQ(Schedule::target_level(c1.schedule_type()), gpu::TargetLevel::X_BLOCK);
+    EXPECT_EQ(Schedule::parallel_size(c1.schedule_type())->as_int(), 128);
 }
 
-// ROCm offloads a depth-3 nest the same way: X_BLOCK on the middle loop only.
-TEST(GPUNestedOffloadPassTest, Depth3_ROCM_OnlyXBlockApplied) {
+// ROCm offloads a depth-3 nest the same way.
+TEST(GPUNestedOffloadPassTest, Depth3_YGridXBlock_ROCM) {
     builder::StructuredSDFGBuilder builder("t", FunctionType_CPU);
     auto& root = builder.subject().root();
     add_index_containers(builder, {"i", "j", "k"});
@@ -293,8 +299,11 @@ TEST(GPUNestedOffloadPassTest, Depth3_ROCM_OnlyXBlockApplied) {
     passes::GPUNestedOffloadPass pass(loops, passes::GPUTarget::ROCM);
     EXPECT_TRUE(pass.run(builder, analysis_manager));
 
-    EXPECT_EQ(rocm::ScheduleType_ROCM_Offload::target_level(c0.schedule_type()), gpu::TargetLevel::X_BLOCK);
-    EXPECT_TRUE(is_sequential(c1));
+    using Schedule = rocm::ScheduleType_ROCM_Offload;
+    EXPECT_EQ(Schedule::target_level(c0.schedule_type()), gpu::TargetLevel::Y_GRID);
+    EXPECT_EQ(Schedule::parallel_size(c0.schedule_type())->as_int(), 32);
+    EXPECT_EQ(Schedule::target_level(c1.schedule_type()), gpu::TargetLevel::X_BLOCK);
+    EXPECT_EQ(Schedule::parallel_size(c1.schedule_type())->as_int(), 32);
 }
 
 // ---- Deeper nest and rejection paths ---------------------------------------

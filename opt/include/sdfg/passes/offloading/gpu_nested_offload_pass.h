@@ -11,10 +11,10 @@ namespace passes {
 /**
  * @brief Depth-aware nested GPU offload pass.
  *
- * For each already grid-offloaded outer loop, inspects the maximum nesting depth
- * of its loop nest and offloads the nested loops via GPUOffloadNestedLoop:
+ * For each already grid-offloaded (X_GRID) outer loop, inspects the maximum nesting
+ * depth of its loop nest and offloads the nested loops via GPUOffloadNestedLoop:
  *   - depth 2:    X_BLOCK
- *   - depth 3:    X_BLOCK (the innermost loop stays sequential)
+ *   - depth 3:    Y_GRID, X_BLOCK
  *   - depth >= 4: Y_GRID, X_BLOCK, Y_BLOCK
  *
  * Grid/block sizes derive from each loop's iteration count: a known integer count
