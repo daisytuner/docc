@@ -75,7 +75,7 @@ All arrays of a call must be either NumPy or CuPy arrays. If a function cannot r
 | `fp_contract`           | `True`              | Fuse multiplications and additions into fused multiply-adds, like `-ffp-contract=fast`                            |
 | `contraction_precision` | target default      | Precision of float matrix multiplications: `native`, `int2` … `int8` (quantized), `ozaki`, `ozaki1[:s]`, `ozaki2[:L]` (emulated on Int8 units) |
 | `einsum`                | —                   | Detect loops that implement tensor contractions and optimize them as such                                         |
-| `normalize`             | CPU targets: `True` | Normalize loops before scheduling                                                                                 |
+| `normalize`             | `True`              | Bring the SDFG into the target's normal form before scheduling. Disable it to schedule an SDFG optimized by hand as it is |
 | `device_residency`      | GPU targets: `True` | Allow device-resident arguments, see above                                                                         |
 | `rocm_async_alloc`      | `False`             | ROCm: allocate device scratch with stream-ordered `hipMallocAsync`/`hipFreeAsync` (graph-capturable) instead of `hipMalloc`/`hipFree`. Needs a working async allocator; broken on some GPUs (for example gfx90a) |
 | `instrumentation_mode`  | `""`                | `"ols"` or `"ols_tuned"` to measure each optimized loop nest, see [C/C++ instrumentation](../c-cpp/usage.md#measure-performance) |

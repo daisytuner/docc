@@ -113,6 +113,7 @@ set(SOURCE_FILES
     src/passes/offloading/lanes_map_predication.cpp
     src/passes/offloading/reduction_shared_memory_delinearization.cpp
     src/passes/offloading/gpu_nested_parallelization_pass.cpp
+    src/passes/offloading/offloading_cleanup_pass.cpp
     src/passes/offloading/rocm_library_node_expansion_pass.cpp
     src/passes/offloading/rocm_library_node_rewriter_pass.cpp
     src/passes/offloading/rocm_library_node_transfer_extraction_pass.cpp
@@ -130,6 +131,9 @@ set(SOURCE_FILES
     src/passes/targets/target_mapping_pass.cpp
     src/scheduling/loops/loop_scheduling_pass.cpp
     src/scheduling/scheduler_registry.cpp
+    src/scheduling/a_priori_loop_nest_normalization.cpp
+    src/scheduling/passthrough_scheduler.cpp
+    src/scheduling/target_scheduling.cpp
     src/targets/cuda/blas/batched_gemm.cpp
     src/targets/cuda/blas/dot.cpp
     src/targets/cuda/blas/gemm.cpp

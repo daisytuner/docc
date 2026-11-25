@@ -5,6 +5,7 @@
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/passes/scheduler/loop_scheduler.h"
+#include "sdfg/passes/scheduler/sdfg_scheduler.h"
 
 namespace docc::compile {
 class SrcFileCompilerBuilder;
@@ -83,8 +84,22 @@ struct TargetPrecision {
     std::vector<sdfg::types::PrimitiveType> widened_float_types = {};
 };
 
+/// How a target schedules an SDFG, in pipeline order; run by sdfg::scheduling::schedule. Every target sets both.
+struct TargetScheduling {
+    using SDFGSchedulerFactory = std::unique_ptr<sdfg::passes::scheduler::SDFGScheduler> (*)(const TargetOptions&);
+    using LoopSchedulersFactory =
+        std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> (*)(const TargetOptions&);
+
+    /// Brings the whole SDFG into the target's normal form, before remote tuning.
+    SDFGSchedulerFactory create_sdfg_scheduler = nullptr;
+    /// The loop schedulers run after remote tuning, possibly none.
+    LoopSchedulersFactory create_loop_schedulers = nullptr;
+    /// Whether remote tuning asks the server to normalize, for targets whose SDFG scheduler does not.
+    bool remote_normalization = false;
+};
+
 struct DoccTarget {
-    static constexpr int NEWEST_API_VER = 5;
+    static constexpr int NEWEST_API_VER = 6;
 
     int api_ver = NEWEST_API_VER;
     std::string short_name;
@@ -138,17 +153,6 @@ struct DoccTarget {
         }
     }
 
-    std::vector<std::shared_ptr<
-        sdfg::passes::scheduler::LoopScheduler>> (*get_target_loop_schedulers)(const TargetOptions& options);
-    [[nodiscard]] std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>>
-    safe_get_target_loop_schedulers(const TargetOptions& options) const {
-        if (api_ver >= 2 && get_target_loop_schedulers != nullptr) {
-            return get_target_loop_schedulers(options);
-        } else {
-            return {};
-        }
-    }
-
     // Since API version 5, the target's properties are grouped by the stage reading them, in pipeline order. Plugins
     // of earlier versions get the defaults.
 
@@ -166,6 +170,9 @@ struct DoccTarget {
         static const TargetPrecision defaults;
         return api_ver >= 5 ? precision : defaults;
     }
+
+    /// How the target schedules an SDFG. Since API version 6, required.
+    TargetScheduling scheduling;
 
     /// The target's own artifact; without a compile hook, docc generates and builds C++.
     TargetArtifact artifact;

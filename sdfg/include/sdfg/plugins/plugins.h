@@ -2,6 +2,7 @@
 
 #include <list>
 #include <memory>
+#include <stdexcept>
 #include <string>
 
 #include "sdfg/codegen/dispatchers/map_dispatcher.h"
@@ -108,7 +109,11 @@ public:
         };
     }
 
+    /// @throws std::invalid_argument if the target does not set both factories of its scheduling.
     bool add_target(docc::target::DoccTarget* target) {
+        if (!target->scheduling.create_sdfg_scheduler || !target->scheduling.create_loop_schedulers) {
+            throw std::invalid_argument("Target '" + target->short_name + "' does not define its scheduling");
+        }
         auto res = available_targets.insert_or_assign(target->short_name, target);
         return res.second;
     }
