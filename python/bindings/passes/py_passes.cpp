@@ -2,6 +2,7 @@
 
 #include <sstream>
 
+#include <sdfg/passes/offloading/lanes_map_predication.h>
 #include <sdfg/passes/offloading/sync_condition_propagation.h>
 #include <sdfg/passes/pass.h>
 #include <sdfg/passes/symbolic/symbol_promotion.h>
@@ -67,6 +68,23 @@ void register_passes(py::module& m) {
         .def("__repr__", [](SyncConditionPropagation& self) {
             std::ostringstream oss;
             oss << "<SyncConditionPropagation name='" << self.name() << "'>";
+            return oss.str();
+        });
+
+    // LanesMapPredication pass
+    py::class_<LanesMapPredication, Pass>(m, "LanesMapPredication")
+        .def(
+            py::init<>(),
+            "Create a lanes-map predication pass.\n\n"
+            "Every lane of an X_BLOCK map with lanes > 1 executes the body of its\n"
+            "iteration. Wraps the blocks writing lane-shared (device) memory in a\n"
+            "leader-lane guard (threadIdx.x % lanes == 0) and inserts a wave barrier\n"
+            "where other lanes read the result. Code generation runs it after\n"
+            "materializing reduction buffers; it is idempotent."
+        )
+        .def("__repr__", [](LanesMapPredication& self) {
+            std::ostringstream oss;
+            oss << "<LanesMapPredication name='" << self.name() << "'>";
             return oss.str();
         });
 

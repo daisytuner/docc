@@ -298,17 +298,20 @@ void register_transformations(py::module& m) {
     using CUDAOffloadNestedLoop = GPUOffloadNestedLoop<sdfg::cuda::ScheduleType_CUDA_Offload>;
     py::class_<CUDAOffloadNestedLoop, Transformation>(m, "CUDAOffloadNestedLoop")
         .def(
-            py::init([](StructuredLoop& loop, sdfg::gpu::TargetLevel target_level, int parallel_size) {
-                return CUDAOffloadNestedLoop(loop, target_level, sdfg::symbolic::integer(parallel_size));
+            py::init([](StructuredLoop& loop, sdfg::gpu::TargetLevel target_level, int parallel_size, int lanes) {
+                return CUDAOffloadNestedLoop(loop, target_level, sdfg::symbolic::integer(parallel_size), lanes);
             }),
             py::arg("loop"),
             py::arg("target_level"),
             py::arg("parallel_size"),
+            py::arg("lanes") = 1,
             "Offload a nested (sequential) map/reduce to a further CUDA target level.\n\n"
             "Args:\n"
             "    loop: The nested map or reduce to offload\n"
             "    target_level: Block/warp target level (must nest correctly under ancestors)\n"
-            "    parallel_size: Threads along this dimension"
+            "    parallel_size: Threads along this dimension\n"
+            "    lanes: 1 or the warp size (X_BLOCK only). A map shares each iteration across lanes; a reduce\n"
+            "           gives every lane its own iteration and combines lane groups by warp shuffle"
         )
         .def("__repr__", [](const CUDAOffloadNestedLoop& t) {
             std::ostringstream oss;
@@ -348,17 +351,20 @@ void register_transformations(py::module& m) {
     using ROCMOffloadNestedLoop = GPUOffloadNestedLoop<sdfg::rocm::ScheduleType_ROCM_Offload>;
     py::class_<ROCMOffloadNestedLoop, Transformation>(m, "ROCMOffloadNestedLoop")
         .def(
-            py::init([](StructuredLoop& loop, sdfg::gpu::TargetLevel target_level, int parallel_size) {
-                return ROCMOffloadNestedLoop(loop, target_level, sdfg::symbolic::integer(parallel_size));
+            py::init([](StructuredLoop& loop, sdfg::gpu::TargetLevel target_level, int parallel_size, int lanes) {
+                return ROCMOffloadNestedLoop(loop, target_level, sdfg::symbolic::integer(parallel_size), lanes);
             }),
             py::arg("loop"),
             py::arg("target_level"),
             py::arg("parallel_size"),
+            py::arg("lanes") = 1,
             "Offload a nested (sequential) map/reduce to a further ROCM target level.\n\n"
             "Args:\n"
             "    loop: The nested map or reduce to offload\n"
             "    target_level: Block/warp target level (must nest correctly under ancestors)\n"
-            "    parallel_size: Threads along this dimension"
+            "    parallel_size: Threads along this dimension\n"
+            "    lanes: 1 or the warp size (X_BLOCK only). A map shares each iteration across lanes; a reduce\n"
+            "           gives every lane its own iteration and combines lane groups by warp shuffle"
         )
         .def("__repr__", [](const ROCMOffloadNestedLoop& t) {
             std::ostringstream oss;

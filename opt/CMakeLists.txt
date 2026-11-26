@@ -110,6 +110,7 @@ set(SOURCE_FILES
     src/passes/offloading/gpu_control_flow_offload_pass.cpp
     src/passes/offloading/gpu_loop_reordering_pass.cpp
     src/passes/offloading/gpu_nested_offload_pass.cpp
+    src/passes/offloading/lanes_map_predication.cpp
     src/passes/offloading/reduction_shared_memory_delinearization.cpp
     src/passes/offloading/gpu_nested_parallelization_pass.cpp
     src/passes/offloading/rocm_library_node_expansion_pass.cpp
@@ -158,6 +159,7 @@ set(SOURCE_FILES
     src/targets/gpu/gpu_mma_fill_node.cpp
     src/targets/gpu/gpu_mma_interleave.cpp
     src/targets/gpu/gpu_tile_arrival_node.cpp
+    src/targets/gpu/gpu_wave_barrier_node.cpp
     src/targets/gpu/gpu_mma_fragment.cpp
     src/targets/gpu/gpu_mma_fragment_eltwise_add_node.cpp
     src/targets/gpu/gpu_mma_fragment_load_node.cpp

@@ -614,6 +614,19 @@ void get_nested_level_maps(
     }
 }
 
+int64_t wave_lanes(const structured_control_flow::ScheduleType& schedule, int64_t warp_size) {
+    if (schedule.properties().count(GpuArch::ARCH_PROPERTY)) {
+        if (const auto* arch = GpuArch::get_from_schedule_type(schedule)) {
+            return arch->per_cu_threads();
+        }
+    }
+    return warp_size;
+}
+
+symbolic::Condition lane_leader_condition(int64_t lanes) {
+    return symbolic::Eq(symbolic::mod(symbolic::threadIdx_x(), symbolic::integer(lanes)), symbolic::zero());
+}
+
 void validate_wave_maps(
     structured_control_flow::StructuredLoop& node, analysis::AnalysisManager& analysis_manager, int64_t warp_size
 ) {
@@ -632,21 +645,17 @@ void validate_wave_maps(
             continue;
         }
         if (ScheduleType_GPU_Offload::target_level(sched) != TargetLevel::X_BLOCK) {
-            throw InvalidSDFGException("lanes > 1 is only supported on X_BLOCK maps");
+            throw InvalidSDFGException("lanes > 1 is only supported on X_BLOCK loops");
         }
-        int64_t expected = warp_size;
-        if (sched.properties().count(GpuArch::ARCH_PROPERTY)) {
-            if (const auto* arch = GpuArch::get_from_schedule_type(sched)) {
-                expected = arch->per_cu_threads();
-            }
-        }
+        const int64_t expected = wave_lanes(sched, warp_size);
         if (lanes != expected) {
             throw InvalidSDFGException(
                 "lanes must be 1 or the warp size (" + std::to_string(expected) + "), got " + std::to_string(lanes)
             );
         }
-        if (!dyn_cast<structured_control_flow::Map*>(struc_loop)) {
-            throw InvalidSDFGException("lanes > 1 is only supported on maps");
+        if (!dyn_cast<structured_control_flow::Map*>(struc_loop) &&
+            !dyn_cast<structured_control_flow::Reduce*>(struc_loop)) {
+            throw InvalidSDFGException("lanes > 1 is only supported on maps and reductions");
         }
         if (nested_warp_dim(*struc_loop, analysis_manager)) {
             throw InvalidSDFGException("a WARP level loop cannot be nested in a wave-granular (lanes > 1) map");
@@ -723,7 +732,8 @@ bool is_wave_converged(
 
     // An offloaded loop's index is wave-uniform when it only changes at wave boundaries of
     // the flat thread id: its axis advances every stride * lanes threads and wraps every
-    // stride * extent threads (stride 1/bx/bx*by for x/y/z).
+    // stride * extent threads (stride 1/bx/bx*by for x/y/z). Lanes share an iteration only
+    // on maps; a reduce with lanes gives every thread its own iteration.
     auto index_uniform = [&](structured_control_flow::StructuredLoop& loop, TargetLevel level) {
         if (is_grid_level(level)) {
             return true;
@@ -736,7 +746,9 @@ bool is_wave_converged(
         if (extent == 1) {
             return true;
         }
-        const int64_t lanes = ScheduleType_GPU_Offload::lanes(loop.schedule_type())->as_int();
+        const int64_t lanes = dyn_cast<structured_control_flow::Map*>(&loop)
+                                  ? ScheduleType_GPU_Offload::lanes(loop.schedule_type())->as_int()
+                                  : 1;
         return (stride * lanes) % warp_size == 0 && (stride * extent) % warp_size == 0;
     };
 
@@ -837,13 +849,13 @@ int64_t gpu_warp_size<cuda::ScheduleType_CUDA_Offload>() {
 
 template<>
 int64_t gpu_warp_size<rocm::ScheduleType_ROCM_Offload>() {
-    return rocm::ROCM_WARP_SIZE;
+    return rocm::rocm_wavefront_size();
 }
 
 int64_t gpu_warp_size(const structured_control_flow::ScheduleType& schedule) {
     if (schedule.value() == rocm::ScheduleType_ROCM_Offload::value() ||
         schedule.value() == rocm::ScheduleType_ROCM::value()) {
-        return rocm::ROCM_WARP_SIZE;
+        return rocm::rocm_wavefront_size();
     }
     return cuda::CUDA_WARP_SIZE;
 }
