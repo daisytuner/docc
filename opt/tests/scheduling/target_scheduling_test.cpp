@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -89,7 +90,6 @@ TEST(TargetSchedulingTest, RunsStepsInPipelineOrder) {
     context.add_target(&step_target);
     builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
     analysis::AnalysisManager analysis_manager(builder.subject());
-    StepRemoteTuning remote_tuning;
 
     steps.clear();
     scheduling::ScheduleConfig config{
@@ -97,7 +97,10 @@ TEST(TargetSchedulingTest, RunsStepsInPipelineOrder) {
             [](const StructuredSDFG&) {
                 steps.push_back("normal_form");
             },
-        .remote_tuning = &remote_tuning
+        .remote_tuning =
+            [](bool) {
+                return std::make_unique<StepRemoteTuning>();
+            }
     };
     scheduling::schedule(context, builder, analysis_manager, {.target = "steps"}, config);
     EXPECT_EQ(
@@ -118,6 +121,32 @@ TEST(TargetSchedulingTest, WithoutNormalizationSkipsTheTargetsSDFGScheduler) {
     steps.clear();
     scheduling::schedule(context, builder, analysis_manager, {.target = "steps"}, {.normalize = false});
     EXPECT_EQ(steps, (std::vector<std::string>{"mapping", "loop_scheduler"}));
+}
+
+TEST(TargetSchedulingTest, RemoteTuningNormalizesWhatTheClientDidNot) {
+    auto context = plugins::Context::global_context();
+    context.add_target(&step_target);
+    docc::target::DoccTarget remote_normalizing_target = step_target;
+    remote_normalizing_target.short_name = "remote_normalizing_steps";
+    remote_normalizing_target.scheduling.remote_normalization = true;
+    context.add_target(&remote_normalizing_target);
+    builder::StructuredSDFGBuilder builder("sdfg", FunctionType_CPU);
+    analysis::AnalysisManager analysis_manager(builder.subject());
+
+    auto remote_normalize = [&](const std::string& target, bool normalize) {
+        std::optional<bool> told;
+        scheduling::ScheduleConfig config{.normalize = normalize, .remote_tuning = [&told](bool remote_normalize) {
+                                              told = remote_normalize;
+                                              return std::make_unique<StepRemoteTuning>();
+                                          }};
+        scheduling::schedule(context, builder, analysis_manager, {.target = target}, config);
+        return told;
+    };
+
+    EXPECT_EQ(remote_normalize("steps", true), false);
+    EXPECT_EQ(remote_normalize("steps", false), true);
+    EXPECT_EQ(remote_normalize("remote_normalizing_steps", true), true);
+    EXPECT_EQ(remote_normalize("remote_normalizing_steps", false), true);
 }
 
 TEST(TargetSchedulingTest, UnknownTargetThrows) {

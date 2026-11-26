@@ -8,12 +8,9 @@
 namespace sdfg {
 namespace scheduling {
 
-APrioriLoopNestNormalization::APrioriLoopNestNormalization(bool enable_fusion) : enable_fusion_(enable_fusion) {
-}
-
 bool APrioriLoopNestNormalization::
     schedule(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
-    reordering::normalize(builder.subject(), enable_fusion_);
+    reordering::normalize(builder.subject());
     // normalize runs on its own builder and analysis manager.
     analysis_manager.invalidate_all();
 

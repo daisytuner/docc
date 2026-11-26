@@ -106,9 +106,8 @@ DoccTarget et_target = {
         return mappingPass.run_pass(builder, analysis_manager);
     },
     .scheduling =
-        {.create_sdfg_scheduler =
-             [](const TargetOptions& options) -> std::unique_ptr<sdfg::passes::scheduler::SDFGScheduler> {
-             return std::make_unique<sdfg::scheduling::APrioriLoopNestNormalization>(options.enable_fusion_in_normalize);
+        {.create_sdfg_scheduler = [](const TargetOptions&) -> std::unique_ptr<sdfg::passes::scheduler::SDFGScheduler> {
+             return std::make_unique<sdfg::scheduling::APrioriLoopNestNormalization>();
          },
          .create_loop_schedulers =
              [](const TargetOptions& options) -> std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> {

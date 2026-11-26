@@ -17,8 +17,6 @@ struct TargetOptions {
     std::string target;
     std::string category;
     bool remote_tuning;
-    bool already_normalized = false;
-    bool enable_fusion_in_normalize = true;
     bool use_new_fusion_in_simplify = true;
     bool fp_contract = true;
     /// How Float and Double matmuls compute: native, int2 ... int8 (quantized), ozaki, ozaki1[:s] or ozaki2[:L]

@@ -525,19 +525,12 @@ void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options, bool
         }
     };
 
-    std::unique_ptr<sdfg::passes::scheduler::RpcOptimizationPass> rpc_optimization_pass;
     if (options.remote_tuning) {
-        auto* target = docc_context_.get_target_handler(options.target);
-        auto rpc_options = options;
-        // The server normalizes whatever the client did not.
-        rpc_options.already_normalized = normalize && !(target && target->scheduling.remote_normalization);
-        rpc_optimization_pass = std::make_unique<sdfg::passes::scheduler::RpcOptimizationPass>(
-            sdfg::passes::rpc::DaisytunerRpcContext::from_docc_config(),
-            rpc_options,
-            options.enable_fusion_in_normalize,
-            schedule_loops
-        );
-        config.remote_tuning = rpc_optimization_pass.get();
+        config.remote_tuning = [&options, schedule_loops](bool remote_normalize) {
+            return std::make_unique<sdfg::passes::scheduler::RpcOptimizationPass>(
+                sdfg::passes::rpc::DaisytunerRpcContext::from_docc_config(), options, remote_normalize, schedule_loops
+            );
+        };
     }
 
     sdfg::scheduling::schedule(docc_context_, builder, analysis_manager, options, config);

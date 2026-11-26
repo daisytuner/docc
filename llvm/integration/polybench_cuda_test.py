@@ -818,9 +818,9 @@ def test_bicg(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     verifier = SDFGVerification(
         verification={
             "sdfgs": 8,
-            "FOR": 2,
-            "MAP": 9,
-            "CUDA_Offload": 10,
+            "FOR": 1,
+            "MAP": 8,
+            "CUDA_Offload": 7,
         },
     )
     test_case = benchmark_path / "bicg.c"
@@ -1292,9 +1292,9 @@ def test_trisolv(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "FOR": 2,
-            "MAP": 5,
-            "SEQUENTIAL": 5,
-            "CUDA_Offload": 5,
+            "MAP": 4,
+            "SEQUENTIAL": 6,
+            "CUDA_Offload": 3,
         },
     )
     test_case = benchmark_path / "trisolv.c"

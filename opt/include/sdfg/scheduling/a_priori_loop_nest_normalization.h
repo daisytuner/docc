@@ -15,11 +15,7 @@ namespace scheduling {
  * Loop Scheduling in Complex Applications", CGO 2025, https://doi.org/10.1145/3696443.3708951
  */
 class APrioriLoopNestNormalization : public passes::scheduler::SDFGScheduler {
-    bool enable_fusion_;
-
 public:
-    explicit APrioriLoopNestNormalization(bool enable_fusion = true);
-
     bool schedule(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
 };
 

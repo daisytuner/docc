@@ -126,9 +126,9 @@ def test_correlation(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 6,
-            "SEQUENTIAL": 11,
-            "MAP": 15,
-            "CPU_PARALLEL": 10,
+            "SEQUENTIAL": 7,
+            "MAP": 5,
+            "CPU_PARALLEL": 4,
             "FOR": 0,
         },
     )
@@ -178,10 +178,10 @@ def test_covariance(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     verifier = SDFGVerification(
         verification={
             "sdfgs": 8,
-            "MAP": 11,
-            "CPU_PARALLEL": 7,
+            "MAP": 5,
+            "CPU_PARALLEL": 4,
             "FOR": 0,
-            "SEQUENTIAL": 9,
+            "SEQUENTIAL": 6,
             "REDUCE": 5,
         },
     )
@@ -237,10 +237,10 @@ def test_gemm(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "MAP": 6,
-            "CPU_PARALLEL": 5,
+            "CPU_PARALLEL": 4,
             "GEMM": 0,
             "FOR": 1,
-            "SEQUENTIAL": 5,
+            "SEQUENTIAL": 6,
             "REDUCE": 3,
         },
     )
@@ -356,8 +356,8 @@ def test_gesummv(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 4,
-            "MAP": 4,
-            "CPU_PARALLEL": 4,
+            "MAP": 2,
+            "CPU_PARALLEL": 2,
             "SEQUENTIAL": 4,
             "FOR": 0,
         },
@@ -414,8 +414,8 @@ def test_symm(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 3,
-            "MAP": 6,
-            "CPU_PARALLEL": 3,
+            "MAP": 5,
+            "CPU_PARALLEL": 2,
             "SEQUENTIAL": 8,
             "FOR": 2,
         },
@@ -473,8 +473,8 @@ def test_syr2k(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
             "sdfgs": 8,
             "REDUCE": 3,
             "SEQUENTIAL": 6,
-            "MAP": 6,
-            "CPU_PARALLEL": 4,
+            "MAP": 5,
+            "CPU_PARALLEL": 3,
             "FOR": 1,
         },
     )
@@ -531,8 +531,8 @@ def test_syrk(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
             "sdfgs": 8,
             "REDUCE": 3,
             "SEQUENTIAL": 6,
-            "MAP": 6,
-            "CPU_PARALLEL": 4,
+            "MAP": 5,
+            "CPU_PARALLEL": 3,
             "FOR": 1,
         },
     )
@@ -591,10 +591,10 @@ def test_trmm(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     verifier = SDFGVerification(
         verification={
             "sdfgs": 8,
-            "MAP": 7,
-            "CPU_PARALLEL": 5,
-            "SEQUENTIAL": 8,
-            "FOR": 3,
+            "MAP": 4,
+            "CPU_PARALLEL": 2,
+            "SEQUENTIAL": 6,
+            "FOR": 1,
             "REDUCE": 3,
         },
     )
@@ -650,9 +650,9 @@ def test_2mm(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 5,
-            "SEQUENTIAL": 7,
-            "MAP": 10,
-            "CPU_PARALLEL": 8,
+            "SEQUENTIAL": 5,
+            "MAP": 6,
+            "CPU_PARALLEL": 6,
             "GEMM": 0,
             "FOR": 0,
         },
@@ -710,9 +710,9 @@ def test_3mm(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 6,
-            "SEQUENTIAL": 9,
-            "MAP": 13,
-            "CPU_PARALLEL": 10,
+            "SEQUENTIAL": 6,
+            "MAP": 7,
+            "CPU_PARALLEL": 7,
             "GEMM": 0,
             "FOR": 0,
         },
@@ -772,8 +772,8 @@ def test_atax(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
             "REDUCE": 4,
             "MAP": 4,
             "CPU_PARALLEL": 3,
-            "SEQUENTIAL": 8,
-            "FOR": 3,
+            "SEQUENTIAL": 6,
+            "FOR": 1,
         },
     )
     test_case = benchmark_path / "atax.c"
@@ -810,12 +810,8 @@ def test_atax(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
 @pytest.mark.parametrize(
     "datatype",
     [
-        pytest.param(
-            "-DDATA_TYPE_IS_DOUBLE", marks=pytest.mark.xfail(reason="Output incorrect")
-        ),
-        pytest.param(
-            "-DDATA_TYPE_IS_FLOAT", marks=pytest.mark.xfail(reason="Output incorrect")
-        ),
+        "-DDATA_TYPE_IS_DOUBLE",
+        "-DDATA_TYPE_IS_FLOAT",
     ],
 )
 def test_bicg(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
@@ -831,11 +827,11 @@ def test_bicg(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     verifier = SDFGVerification(
         verification={
             "sdfgs": 8,
-            "MAP": 6,
-            "CPU_PARALLEL": 5,
-            "SEQUENTIAL": 7,
-            "FOR": 3,
-            "REDUCE": 3,
+            "MAP": 3,
+            "CPU_PARALLEL": 3,
+            "SEQUENTIAL": 5,
+            "FOR": 1,
+            "REDUCE": 4,
         },
     )
     test_case = benchmark_path / "bicg.c"
@@ -890,10 +886,10 @@ def test_doitgen(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 9,
             "REDUCE": 5,
-            "SEQUENTIAL": 15,
+            "SEQUENTIAL": 13,
             "CPU_PARALLEL": 2,
             "FOR": 4,
-            "MAP": 8,
+            "MAP": 6,
         },
     )
     test_case = benchmark_path / "doitgen.c"
@@ -1007,8 +1003,8 @@ def test_cholesky(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
             "sdfgs": 8,
             "REDUCE": 5,
             "SEQUENTIAL": 10,
-            "MAP": 8,
-            "CPU_PARALLEL": 6,
+            "MAP": 5,
+            "CPU_PARALLEL": 3,
             "FOR": 3,
         },
     )
@@ -1123,11 +1119,11 @@ def test_gramschmidt(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     verifier = SDFGVerification(
         verification={
             "sdfgs": 8,
-            "REDUCE": 4,
+            "REDUCE": 5,
             "SEQUENTIAL": 7,
-            "MAP": 6,
-            "CPU_PARALLEL": 5,
-            "FOR": 2,
+            "MAP": 5,
+            "CPU_PARALLEL": 4,
+            "FOR": 1,
         },
     )
     test_case = benchmark_path / "gramschmidt.c"
@@ -1183,8 +1179,8 @@ def test_lu(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
             "sdfgs": 8,
             "REDUCE": 5,
             "SEQUENTIAL": 11,
-            "MAP": 9,
-            "CPU_PARALLEL": 6,
+            "MAP": 6,
+            "CPU_PARALLEL": 3,
             "FOR": 3,
         },
     )
@@ -1241,8 +1237,8 @@ def test_ludcmp(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
             "sdfgs": 8,
             "REDUCE": 7,
             "SEQUENTIAL": 15,
-            "MAP": 10,
-            "CPU_PARALLEL": 7,
+            "MAP": 7,
+            "CPU_PARALLEL": 4,
             "FOR": 5,
         },
     )
@@ -1282,12 +1278,8 @@ def test_ludcmp(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
 @pytest.mark.parametrize(
     "datatype",
     [
-        pytest.param(
-            "-DDATA_TYPE_IS_DOUBLE", marks=pytest.mark.xfail(reason="Output incorrect")
-        ),
-        pytest.param(
-            "-DDATA_TYPE_IS_FLOAT", marks=pytest.mark.xfail(reason="Output incorrect")
-        ),
+        "-DDATA_TYPE_IS_DOUBLE",
+        "-DDATA_TYPE_IS_FLOAT",
     ],
 )
 def test_trisolv(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
@@ -1303,8 +1295,8 @@ def test_trisolv(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     verifier = SDFGVerification(
         verification={
             "sdfgs": 8,
-            "MAP": 4,
-            "CPU_PARALLEL": 3,
+            "MAP": 2,
+            "CPU_PARALLEL": 1,
             "SEQUENTIAL": 6,
             "FOR": 2,
             "REDUCE": 3,
@@ -1357,9 +1349,9 @@ def test_deriche(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 3,
-            "SEQUENTIAL": 7,
-            "MAP": 7,
-            "CPU_PARALLEL": 7,
+            "SEQUENTIAL": 8,
+            "MAP": 5,
+            "CPU_PARALLEL": 4,
             "FOR": 4,
         },
     )
@@ -1496,8 +1488,8 @@ def test_adi(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
             "sdfgs": 8,
             "REDUCE": 3,
             "SEQUENTIAL": 8,
-            "MAP": 9,
-            "CPU_PARALLEL": 9,
+            "MAP": 3,
+            "CPU_PARALLEL": 3,
             "FOR": 5,
         },
     )

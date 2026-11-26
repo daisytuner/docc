@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <memory>
 
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
@@ -24,8 +25,9 @@ struct ScheduleConfig {
     bool offload_unknown_sizes = false;
     /// Called with the SDFG in the target's normal form, before anything maps or schedules it, e.g. to record it.
     std::function<void(const StructuredSDFG&)> on_normal_form;
-    /// Remote tuning, run between the SDFG scheduler and the loop schedulers; nullptr for none.
-    passes::Pass* remote_tuning = nullptr;
+    /// Creates the remote tuning, run between the SDFG scheduler and the loop schedulers; empty for none. It is told
+    /// whether the remote side has to bring the SDFG into normal form, i.e. whether the client did not.
+    std::function<std::unique_ptr<passes::Pass>(bool normalize)> remote_tuning;
     transformations::Recorder* recorder = nullptr;
     PassReportConsumer* report = nullptr;
 };

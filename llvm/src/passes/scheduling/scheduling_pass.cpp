@@ -31,9 +31,7 @@ llvm::PreservedAnalyses SchedulingPass::
     docc::target::TargetOptions options{
         .target = docc::DOCC_TUNE.getValue(),
         .category = docc::DOCC_TRANSFERTUNE_CATEGORY.getValue(),
-        .remote_tuning = docc::DOCC_TRANSFERTUNE.getValue(),
-        // Fusion breaks some SDFGs lifted from LLVM IR (e.g. polybench deriche), so LLVM normalizes without it.
-        .enable_fusion_in_normalize = false
+        .remote_tuning = docc::DOCC_TRANSFERTUNE.getValue()
     };
     bool normalize = docc::DOCC_NORMALIZE.getValue();
     auto* target = context_.get_target_handler(options.target);
@@ -58,19 +56,12 @@ llvm::PreservedAnalyses SchedulingPass::
             .report = report_
         };
 
-        std::unique_ptr<sdfg::passes::scheduler::RpcOptimizationPass> rpc_optimization_pass;
         if (options.remote_tuning) {
-            auto rpc_options = options;
-            // The server normalizes whatever the client did not.
-            rpc_options.already_normalized = normalize && !target->scheduling.remote_normalization;
-            rpc_optimization_pass = std::make_unique<sdfg::passes::scheduler::RpcOptimizationPass>(
-                sdfg::passes::rpc::DaisytunerRpcContext::from_docc_config(),
-                rpc_options,
-                options.enable_fusion_in_normalize,
-                true,
-                report_
-            );
-            config.remote_tuning = rpc_optimization_pass.get();
+            config.remote_tuning = [&options, this](bool remote_normalize) {
+                return std::make_unique<sdfg::passes::scheduler::RpcOptimizationPass>(
+                    sdfg::passes::rpc::DaisytunerRpcContext::from_docc_config(), options, remote_normalize, true, report_
+                );
+            };
         }
 
         sdfg::scheduling::schedule(context_, builder, analysis_manager, options, config);
