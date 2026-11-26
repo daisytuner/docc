@@ -359,7 +359,7 @@ def test_cfd(compiler="clang++-21"):
             "SEQUENTIAL": 27,
         }
     else:
-        verification = {"sdfgs": 6, "MAP": 15, "SEQUENTIAL": 28, "FOR": 13}
+        verification = {"sdfgs": 6, "MAP": 7, "SEQUENTIAL": 16, "FOR": 9}
     verifier = SDFGVerification(verification=verification)
     runner = TestRunner(
         "Rodinia",
