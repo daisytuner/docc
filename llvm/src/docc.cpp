@@ -13,7 +13,6 @@
 #include <sdfg/targets/cuda/plugin.h>
 #include <sdfg/targets/memory/plugin.h>
 #include <sdfg/targets/omp/plugin.h>
-#include <sdfg/targets/vectorize/plugin.h>
 #include <sdfg/tiles/plugin.h>
 #ifdef DOCC_BUILD_TARGET_TENSTORRENT
 #include <docc/target/tenstorrent/plugin.h>
@@ -44,7 +43,6 @@ void register_sdfg_dispatchers() {
         sdfg::parallelization::register_parallelization_plugin();
         sdfg::tiles::register_tiles_plugin();
         sdfg::omp::register_omp_plugin();
-        sdfg::vectorize::register_vectorize_plugin();
         sdfg::cuda::register_cuda_plugin();
         sdfg::rocm::register_rocm_plugin();
 #ifdef DOCC_BUILD_TARGET_TENSTORRENT

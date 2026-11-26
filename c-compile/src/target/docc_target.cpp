@@ -17,7 +17,6 @@
 #include "sdfg/passes/scheduler/omp_scheduler.h"
 #include "sdfg/passes/scheduler/rocm_offload_scheduler.h"
 #include "sdfg/passes/scheduler/rocm_scheduler.h"
-#include "sdfg/passes/scheduler/vectorize_scheduler.h"
 #include "sdfg/targets/cuda/cuda_offload_dispatcher_strategy.h"
 #include "sdfg/targets/omp/math/tensor/conv_expander.h"
 #include "sdfg/targets/rocm/rocm_offload_dispatcher_strategy.h"
@@ -191,7 +190,6 @@ static DoccTarget sequential_target = {
     .get_target_loop_schedulers =
         [](const TargetOptions& options) -> std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> {
         std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> schedulers;
-        schedulers.push_back(std::make_shared<sdfg::passes::scheduler::VectorizeScheduler>());
         return schedulers;
     }
 };
@@ -222,7 +220,6 @@ static DoccTarget openmp_target = {
         [](const TargetOptions& options) -> std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> {
         std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> schedulers;
         schedulers.push_back(std::make_shared<sdfg::passes::scheduler::OMPScheduler>());
-        schedulers.push_back(std::make_shared<sdfg::passes::scheduler::VectorizeScheduler>());
         return schedulers;
     }
 };

@@ -1,22 +1,22 @@
 #pragma once
 
-#include "sdfg/targets/vectorize/schedule.h"
 #include "sdfg/transformations/transformation.h"
 
 namespace sdfg {
+namespace loops {
 namespace transformations {
 
 /**
  * @brief VectorizeTransform transformation for StructuredLoop nodes
  *
- * This transformation changes the schedule type of a StructuredLoop from sequential
- * to vectorized execution (Vectorize). This enables the loop iterations
- * to be executed in a vectorized manner, potentially improving performance on
- * processors.
+ * Sets the `"vectorize"` property on the loop's existing schedule (preserving its
+ * kind), which the loop codegen lowers to
+ * `#pragma clang loop vectorize(enable) interleave(enable)`.
  *
- * @note Only applicable to StructuredLoops with sequential schedule type
+ * @note Only applicable to Maps and Reduces with a sequential (non-parallel,
+ *       non-offloaded) schedule that are not vectorized yet
  */
-class VectorizeTransform : public Transformation {
+class VectorizeTransform : public ::sdfg::transformations::Transformation {
     structured_control_flow::StructuredLoop& loop_;
 
 public:
@@ -36,7 +36,7 @@ public:
      * @brief Check if this transformation can be applied
      * @param builder The SDFG builder
      * @param analysis_manager The analysis manager
-     * @return true if the map is sequential
+     * @return true if the loop is a sequential, not yet vectorized Map or Reduce
      */
     virtual bool
     can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) override;
@@ -64,4 +64,5 @@ public:
 };
 
 } // namespace transformations
+} // namespace loops
 } // namespace sdfg

@@ -58,6 +58,7 @@ set(TEST_FILES
     loops/transformations/multi_level_tiling_test.cpp
     loops/transformations/trivial_loop_elimination_test.cpp
     loops/transformations/unroll_transform_test.cpp
+    loops/transformations/vectorize_transform_test.cpp
     parallelization/analysis/parallel_patterns_test.cpp
     parallelization/passes/auto_parallelization_test.cpp
     parallelization/transformations/loop_parallelization_test.cpp
@@ -111,7 +112,6 @@ set(TEST_FILES
     passes/scheduler/gpu_post_schedule_test.cpp
     passes/scheduler/omp_scheduler_test.cpp
     passes/scheduler/rocm_scheduler_test.cpp
-    passes/scheduler/vectorize_scheduler_test.cpp
     targets/cuda/cuda_language_extension_test.cpp
     targets/cuda/cuda_lib_dispatcher_test.cpp
     targets/omp/codegen/omp_map_dispatcher_test.cpp
@@ -125,7 +125,6 @@ set(TEST_FILES
     transformations/redundant_zero_init_elimination_test.cpp
     transformations/stream_k_test.cpp
     transformations/recorder_test.cpp
-    transformations/vectorize_transform_test.cpp
     transformations/transformation_serialization_test.cpp
     test.cpp
 )

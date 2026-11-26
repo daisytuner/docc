@@ -50,10 +50,9 @@ def test_trmm(target):
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
-                "VECTORIZE": 2,
                 "MAP": 4,
                 "GEMM": 1,
-                "SEQUENTIAL": 4,
+                "SEQUENTIAL": 6,
                 "FOR": 2,
             }
         )

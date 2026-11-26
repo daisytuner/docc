@@ -39,7 +39,7 @@ def test_bicg(target):
         verifier = SDFGVerification(
             verification={
                 "MAP": 2,
-                "VECTORIZE": 2,
+                "SEQUENTIAL": 2,
                 "GEMM": 2,
             }
         )

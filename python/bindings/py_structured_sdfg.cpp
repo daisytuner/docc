@@ -74,7 +74,6 @@
 #include "sdfg/passes/redundant_zero_init_elimination_pass.h"
 #include "sdfg/passes/rpc/daisytuner_rpc_context.h"
 #include "sdfg/passes/rpc/rpc_context.h"
-#include "sdfg/passes/scheduler/vectorize_scheduler.h"
 #include "sdfg/passes/schedules/expansion_pass.h"
 #include "sdfg/passes/targets/target_mapping_pass.h"
 #include "sdfg/reordering/passes/loop_fusion/loop_fusion_pass.h"

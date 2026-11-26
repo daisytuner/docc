@@ -1645,6 +1645,45 @@ TEST(JSONSerializerTest, SerializeDeserialize_ForKeepsSchedule) {
     EXPECT_EQ(des_for.schedule_type().value(), for_loop.schedule_type().value());
 }
 
+TEST(JSONSerializerTest, Deserialize_LegacyVectorizeSchedule) {
+    sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+    types::Scalar base_desc(types::PrimitiveType::Int32);
+    builder.add_container("i", base_desc);
+    auto i = symbolic::symbol("i");
+    auto& map = builder.add_map(
+        builder.subject().root(),
+        i,
+        symbolic::Lt(i, symbolic::integer(4)),
+        symbolic::zero(),
+        symbolic::add(i, symbolic::one()),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+    builder.add_block(map.root());
+
+    sdfg::serializer::JSONSerializer serializer;
+    nlohmann::json j;
+    serializer.structured_loop_to_json(j, map);
+    // Legacy SDFGs serialized vectorization as its own VECTORIZE schedule (category Vectorizer = 2).
+    j["schedule_type"]["value"] = "VECTORIZE";
+    j["schedule_type"]["category"] = 2;
+    j["schedule_type"]["properties"] = {{"fusion", "none"}};
+
+    auto des_builder = sdfg::builder::StructuredSDFGBuilder("test_sdfg", FunctionType_CPU);
+    des_builder.add_container("i", base_desc);
+    serializer.json_to_structured_loop_node(j, des_builder, des_builder.subject().root());
+    auto& des_map = sdfg::dyn_cast<sdfg::structured_control_flow::Map&>(des_builder.subject().root().at(0));
+    auto& schedule = des_map.schedule_type();
+    EXPECT_EQ(schedule.value(), structured_control_flow::ScheduleType_Sequential::value());
+    EXPECT_EQ(schedule.category(), structured_control_flow::ScheduleTypeCategory::None);
+    EXPECT_TRUE(structured_control_flow::ScheduleType_Vectorize::is_set(schedule));
+    EXPECT_TRUE(structured_control_flow::ScheduleType_NoFusion::is_set(schedule));
+
+    nlohmann::json j_new;
+    serializer.structured_loop_to_json(j_new, des_map);
+    EXPECT_EQ(j_new["schedule_type"]["value"], "SEQUENTIAL");
+    EXPECT_EQ(j_new["schedule_type"]["properties"]["vectorize"], "enable");
+}
+
 TEST(JSONSerializerTest, SerializeDeserialize_MapKeepsNoFusion) {
     sdfg::builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
     types::Scalar base_desc(types::PrimitiveType::Int32);

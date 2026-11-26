@@ -68,9 +68,7 @@ def test_hdiff(target):
     if target == "none":
         verifier = SDFGVerification(verification={"SEQUENTIAL": 12, "MAP": 12})
     elif target == "sequential":
-        verifier = SDFGVerification(
-            verification={"VECTORIZE": 4, "SEQUENTIAL": 8, "MAP": 12}
-        )
+        verifier = SDFGVerification(verification={"SEQUENTIAL": 12, "MAP": 12})
     elif target == "openmp":
         verifier = SDFGVerification(verification={"CPU_PARALLEL": 4, "MAP": 4})
     elif target == "cuda":

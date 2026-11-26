@@ -72,9 +72,11 @@ std::string CStyleLanguageExtension::reinterpret_cast_expr(const std::string& ex
 
 Body CStyleLanguageExtension::
     begin_for(PrettyPrinter& stream, const structured_control_flow::StructuredLoop& loop, const LoopHints& hints) {
-    if (hints.unroll || hints.no_vectorize) {
+    if (hints.unroll || hints.vectorize || hints.no_vectorize) {
         stream << "#pragma clang loop";
-        if (hints.no_vectorize) {
+        if (hints.vectorize) {
+            stream << " vectorize(enable) interleave(enable)";
+        } else if (hints.no_vectorize) {
             stream << " vectorize(disable) interleave(disable)";
         }
         if (hints.unroll) {

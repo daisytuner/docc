@@ -43,10 +43,9 @@ def test_go_fast(target):
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
-                "SEQUENTIAL": 1,
+                "SEQUENTIAL": 3,
                 "MAP": 2,
                 "CMath": 1,
-                "VECTORIZE": 2,
                 "REDUCE": 1,
             }
         )
@@ -56,7 +55,7 @@ def test_go_fast(target):
                 "MAP": 1,
                 "CPU_PARALLEL": 1,
                 "CMath": 1,
-                "VECTORIZE": 1,
+                "SEQUENTIAL": 1,
                 "REDUCE": 1,
             }
         )

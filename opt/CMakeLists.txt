@@ -65,6 +65,7 @@ set(SOURCE_FILES
     src/loops/transformations/multi_level_tiling.cpp
     src/loops/transformations/trivial_loop_elimination.cpp
     src/loops/transformations/unroll_transform.cpp
+    src/loops/transformations/vectorize_transform.cpp
     src/parallelization/analysis/parallel_patterns.cpp
     src/parallelization/passes/auto_parallelization.cpp
     src/parallelization/transformations/loop_parallelization.cpp
@@ -125,7 +126,6 @@ set(SOURCE_FILES
     src/passes/scheduler/omp_scheduler.cpp
     src/passes/scheduler/rocm_scheduler.cpp
     src/passes/scheduler/rocm_offload_scheduler.cpp
-    src/passes/scheduler/vectorize_scheduler.cpp
     src/passes/targets/device_residency.cpp
     src/passes/targets/target_mapping_pass.cpp
     src/scheduling/loops/loop_scheduling_pass.cpp
@@ -196,7 +196,6 @@ set(SOURCE_FILES
     src/targets/rocm/rocm.cpp
     src/targets/rocm/stdlib/memcpy.cpp
     src/targets/rocm/stdlib/memset.cpp
-    src/targets/vectorize/codegen/vectorize_dispatcher.cpp
     src/transformations/offloading/cublas_data_transfer_extraction.cpp
     src/transformations/offloading/cuda_offload_transform.cpp
     src/transformations/offloading/cuda_parallelize_nested_map.cpp
@@ -219,7 +218,6 @@ set(SOURCE_FILES
     src/transformations/stream_k.cpp
     src/transformations/redundant_zero_init_elimination.cpp
     src/transformations/transformation_schema.cpp
-    src/transformations/vectorize_transform.cpp
 )
 add_library(sdfgopt
     ${SOURCE_FILES}

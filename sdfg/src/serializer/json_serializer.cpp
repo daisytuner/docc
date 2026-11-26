@@ -1345,14 +1345,24 @@ ScheduleType JSONSerializer::json_to_schedule_type(const nlohmann::json& j) {
     // assert(j["category"].is_number_integer());
     assert(j.contains("properties"));
     assert(j["properties"].is_object());
+    auto value = j["value"].get<std::string>();
+
+    // Legacy SDFGs carry vectorization as a VECTORIZE schedule (category Vectorizer); it is now a
+    // property on a sequential schedule.
+    bool legacy_vectorize = value == structured_control_flow::ScheduleType_Vectorize::LEGACY_VALUE;
+
     ScheduleTypeCategory category = ScheduleTypeCategory::None;
-    if (j.contains("category")) {
+    if (j.contains("category") && !legacy_vectorize) {
         category = static_cast<ScheduleTypeCategory>(j["category"].get<int>());
     }
-    ScheduleType schedule_type(j["value"].get<std::string>(), category);
-    for (const auto& [key, value] : j["properties"].items()) {
-        assert(value.is_string());
-        schedule_type.set_property(key, value.get<std::string>());
+    ScheduleType schedule_type = legacy_vectorize ? structured_control_flow::ScheduleType_Sequential::create()
+                                                  : ScheduleType(value, category);
+    for (const auto& [key, prop] : j["properties"].items()) {
+        assert(prop.is_string());
+        schedule_type.set_property(key, prop.get<std::string>());
+    }
+    if (legacy_vectorize) {
+        structured_control_flow::ScheduleType_Vectorize::set(schedule_type);
     }
     return schedule_type;
 }
