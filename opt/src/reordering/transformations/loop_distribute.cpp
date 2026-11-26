@@ -40,6 +40,17 @@ bool user_in_subtree(analysis::User* user, const structured_control_flow::Contro
     return false;
 }
 
+bool subsets_contain_symbol(const std::vector<data_flow::Subset>& subsets, const symbolic::Symbol& symbol) {
+    for (auto& subset : subsets) {
+        for (auto& expr : subset) {
+            if (symbolic::uses(expr, symbol)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 } // namespace
 
 bool LoopDistribute::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
@@ -116,10 +127,6 @@ bool LoopDistribute::can_be_applied(builder::StructuredSDFGBuilder& builder, ana
     };
 
     // (1) Cross-iteration loop-carried pairs (from LCDA).
-    std::unordered_set<std::string> lc_containers;
-    for (auto& pair : lcd.pairs(this->loop_)) {
-        lc_containers.insert(pair.writer->container());
-    }
     for (auto& pair : lcd.pairs(this->loop_)) {
         const std::string& container = pair.writer->container();
         if (container == indvar_name) {
@@ -166,17 +173,13 @@ bool LoopDistribute::can_be_applied(builder::StructuredSDFGBuilder& builder, ana
     // across iterations via delta-set computation, so the LC pass above
     // catches the unsafe ones.
     //
-    // For SCALAR containers (empty subset) every access is to the same single
-    // cell. If the scalar has any LC dependence in this loop (i.e. it is
-    // overwritten / re-read across iters rather than being a loop-invariant
-    // constant), an intra-iter cross-piece RAW becomes unsafe under
-    // distribution: the reader's piece would see the writer's last-iteration
-    // value instead of the matching iteration's value. DDA's reaching-defs
-    // also drop these cross-piece reads from `ue_reads` (they are killed
-    // intra-iter by the same-iter writer in the middle piece), so LCDA
-    // never sees them as loop-carried -- we must catch them directly.
-    // Only reads in the body matter, which only code in the loop defines: the loop's own DDA, computed only for such
-    // a scalar, answers as the whole program's would.
+    // A write whose cell does not depend on the loop indvar (a scalar, or a
+    // reference such as `ref = &A[i * M]` that is overwritten every iteration)
+    // targets the same cell in every iteration. Its intra-iteration reads are
+    // killed by the writer, so LCDA reports no loop-carried pair for them. If
+    // such a read lands in a different group than the writer, distribution
+    // makes it observe another iteration's value, so we check them directly.
+    // Indvar-indexed writes are covered by the per-pair analysis above.
     std::unique_ptr<analysis::DataDependencyAnalysis> dda;
     auto& users = analysis_manager.get<analysis::Users>();
     analysis::UsersView body_view(users, this->loop_.root());
@@ -184,21 +187,8 @@ bool LoopDistribute::can_be_applied(builder::StructuredSDFGBuilder& builder, ana
         if (writer->container() == indvar_name) {
             continue;
         }
-        if (lc_containers.find(writer->container()) == lc_containers.end()) {
-            continue; // no LC dep on this container
-        }
-        if (!writer->subsets().empty()) {
-            // Array-typed access: per-pair LC analysis above is precise enough.
-            bool any_nonempty = false;
-            for (auto& s : writer->subsets()) {
-                if (!s.empty()) {
-                    any_nonempty = true;
-                    break;
-                }
-            }
-            if (any_nonempty) {
-                continue;
-            }
+        if (subsets_contain_symbol(writer->subsets(), this->loop_.indvar())) {
+            continue;
         }
         size_t w_piece = piece_of(writer);
         if (w_piece == body.size()) {
@@ -223,6 +213,36 @@ bool LoopDistribute::can_be_applied(builder::StructuredSDFGBuilder& builder, ana
             }
             // Cross-group intra-iter scalar RAW: unsafe under distribution.
             return false;
+        }
+    }
+
+    // (3) Rebound pointers (references).
+    //
+    // A reference memlet (`ref = &A[...]`) rebinds the container `ref` on every
+    // iteration. Its readers are library-node pointer inputs, which DDA does not
+    // report as reads of the rebinding. If a rebinding and any other use of the
+    // same container land in different groups, distribution moves the binding
+    // and the use out of their fused order, so the use sees a wrong binding.
+    for (auto* rebind : body_view.moves()) {
+        if (rebind->container() == indvar_name) {
+            continue;
+        }
+        size_t m_piece = piece_of(rebind);
+        if (m_piece == body.size()) {
+            return false;
+        }
+        int m_group = group_of(m_piece);
+        for (auto* use : body_view.uses(rebind->container())) {
+            if (use == rebind) {
+                continue;
+            }
+            size_t u_piece = piece_of(use);
+            if (u_piece == body.size()) {
+                return false;
+            }
+            if (group_of(u_piece) != m_group) {
+                return false;
+            }
         }
     }
 
