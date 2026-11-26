@@ -516,7 +516,14 @@ void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options, bool
     sdfg::analysis::AnalysisManager analysis_manager(*sdfg_, options_);
 
     // Arg-capture mode pretends to schedule for the target but keeps all execution on the host.
-    sdfg::scheduling::ScheduleConfig config{.normalize = normalize, .schedule_loops = schedule_loops};
+    sdfg::scheduling::ScheduleConfig config{
+        .normalize = normalize,
+        .schedule_loops = schedule_loops,
+        // The SDFG in the target's normal form, as tools such as the gym and cutout scripts read it.
+        .on_normal_form = [this](const sdfg::StructuredSDFG&) {
+            dump_debug("py4.norm");
+        }
+    };
 
     std::unique_ptr<sdfg::passes::scheduler::RpcOptimizationPass> rpc_optimization_pass;
     if (options.remote_tuning) {

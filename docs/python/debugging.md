@@ -23,6 +23,7 @@ docc-out/waxpby.py-waxpby-openmp-ae0ce0211084fb5a/
 ├── waxpby_sdfg.py3.1.pre-fusion.json / .dot
 ├── waxpby_sdfg.py3.2.post-fusion.json / .dot  after loop fusion
 ├── waxpby_sdfg.py3.opt.json / .dot            after optimization
+├── waxpby_sdfg.py4.norm.json / .dot           in the target's normal form, before loop scheduling
 ├── waxpby_sdfg.py5.post_sched.json / .dot     after scheduling for the target
 ├── waxpby_sdfg.cpp / .h                       generated C++ code
 └── libwaxpby_sdfg.so                          compiled library
