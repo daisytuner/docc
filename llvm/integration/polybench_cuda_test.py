@@ -641,8 +641,8 @@ def test_2mm(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
             "FOR": 3,
             "REDUCE": 2,
             "MAP": 17,
-            "SEQUENTIAL": 7,
-            "CUDA_Offload": 15,
+            "SEQUENTIAL": 5,
+            "CUDA_Offload": 17,
         },
     )
     test_case = benchmark_path / "2mm.c"
@@ -699,7 +699,7 @@ def test_3mm(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
             "FOR": 3,
             "CUDAOffloading": 34,
             "MAP": 21,
-            "CUDA_Offload": 18,
+            "CUDA_Offload": 21,
         },
     )
     test_case = benchmark_path / "3mm.c"
@@ -875,10 +875,10 @@ def test_doitgen(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 9,
             "REDUCE": 3,
-            "SEQUENTIAL": 16,
+            "SEQUENTIAL": 15,
             "CUDA_Offload": 5,
             "FOR": 6,
-            "CUDAOffloading": 6,
+            "CUDAOffloading": 7,
             "MAP": 12,
         },
     )
@@ -1590,10 +1590,10 @@ def test_heat_3d(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 3,
-            "SEQUENTIAL": 7,
+            "SEQUENTIAL": 4,
             "CUDAOffloading": 14,
             "MAP": 10,
-            "CUDA_Offload": 7,
+            "CUDA_Offload": 10,
             "FOR": 1,
         },
     )
