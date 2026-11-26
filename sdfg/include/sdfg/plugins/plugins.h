@@ -9,7 +9,6 @@
 #include "sdfg/codegen/dispatchers/node_dispatcher_registry.h"
 #include "sdfg/codegen/dispatchers/reduce_dispatcher.h"
 #include "sdfg/plugins/targets.h"
-#include "sdfg/scheduling/scheduler_registry.h"
 #include "sdfg/serializer/json_serializer.h"
 #include "sdfg/structured_sdfg.h"
 #include "sdfg/tiles/tile_target_registry.h"
@@ -22,9 +21,6 @@ namespace plugins {
  * implementation that actually owns the different registries as local state. And this legacy adapter can exist that
  * just redirects to problematic broken state. The methods exist, so we can migrate users over to the methods, before
  * stripping the implementation-specific parts into subclasses.
- *
- * Also, SchedulerRegistry currently lives not in this library, so poses another API hazard, as you could compile this
- * as part of the library it is in!
  */
 struct Context {
     // Serialization
@@ -58,13 +54,6 @@ struct Context {
     /// @deprecated
     codegen::LibraryNodeDispatcherRegistry& library_node_dispatcher_registry;
 
-    // Schedulers
-    /// @deprecated
-    scheduling::SchedulerRegistry& scheduler_registry;
-    scheduling::SchedulerRegistry& get_scheduler_registry() {
-        return scheduler_registry;
-    }
-
     // Tile targets
     tiles::TileTargetRegistry& get_tile_target_registry() {
         return tile_target_registry_;
@@ -87,13 +76,12 @@ public:
         codegen::MapDispatcherRegistry& map_dispatcher_registry,
         codegen::ReduceDispatcherRegistry& reduce_dispatcher_registry,
         codegen::LibraryNodeDispatcherRegistry& library_node_dispatcher_registry,
-        scheduling::SchedulerRegistry& scheduler_registry,
         tiles::TileTargetRegistry& tile_target_registry
     )
         : library_node_serializer_registry(library_node_serializer_registry),
           node_dispatcher_registry(node_dispatcher_registry), map_dispatcher_registry(map_dispatcher_registry),
           reduce_dispatcher_registry(reduce_dispatcher_registry),
-          library_node_dispatcher_registry(library_node_dispatcher_registry), scheduler_registry(scheduler_registry),
+          library_node_dispatcher_registry(library_node_dispatcher_registry),
           tile_target_registry_(tile_target_registry) {
     }
 
@@ -104,7 +92,6 @@ public:
             codegen::MapDispatcherRegistry::instance(),
             codegen::ReduceDispatcherRegistry::instance(),
             codegen::LibraryNodeDispatcherRegistry::instance(),
-            scheduling::SchedulerRegistry::instance(),
             tiles::TileTargetRegistry::instance()
         };
     }

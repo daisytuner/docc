@@ -21,7 +21,6 @@
 #include "docc/target/docc_target.h"
 
 #include "docc/utils.h"
-#include "sdfg/scheduling/scheduler_registry.h"
 #include "sdfg/targets/rocm/plugin.h"
 
 namespace docc {

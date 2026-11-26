@@ -525,11 +525,6 @@ void register_rocm_plugin(plugins::Context& context) {
             );
         }
     );
-
-
-    context.get_scheduler_registry()
-        .register_loop_scheduler<
-            passes::scheduler::ROCMOffloadScheduler>(passes::scheduler::ROCMOffloadScheduler::target());
 }
 
 } // namespace sdfg::rocm
