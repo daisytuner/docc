@@ -97,7 +97,9 @@ def verify(reference_file: Path, test_file: Path, dtype, max_ulps=None):
                 rtol = 1e-12
                 atol = 1e-14
             assert np.allclose(
-                reference_arrays[array], test_arrays[array], equal_nan=True,
+                reference_arrays[array],
+                test_arrays[array],
+                equal_nan=True,
                 rtol=rtol,
                 atol=atol,
             )
@@ -116,7 +118,7 @@ def test_correlation(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     )
 
     verifier = SDFGVerification(
-        verification={"sdfgs": 8, "REDUCE": 4, "SEQUENTIAL": 23, "MAP": 17, "FOR": 2},
+        verification={"sdfgs": 8, "REDUCE": 6, "SEQUENTIAL": 23, "MAP": 17, "FOR": 0},
     )
     test_case = benchmark_path / "correlation.c"
     runner = TestRunner(
@@ -161,7 +163,7 @@ def test_covariance(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     )
 
     verifier = SDFGVerification(
-        verification={"sdfgs": 8, "MAP": 13, "SEQUENTIAL": 18, "FOR": 2, "REDUCE": 3},
+        verification={"sdfgs": 8, "MAP": 13, "SEQUENTIAL": 18, "FOR": 0, "REDUCE": 5},
     )
     test_case = benchmark_path / "covariance.c"
     runner = TestRunner(
@@ -214,10 +216,10 @@ def test_gemm(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 3,
-            "SEQUENTIAL": 11,
-            "MAP": 8,
-            "FOR": 0,
-            "GEMM": 1,
+            "SEQUENTIAL": 14,
+            "MAP": 10,
+            "FOR": 1,
+            "GEMM": 0,
         },
     )
     test_case = benchmark_path / "gemm.c"
@@ -270,7 +272,7 @@ def test_gemver(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     )
 
     verifier = SDFGVerification(
-        verification={"sdfgs": 8, "REDUCE": 4, "MAP": 7, "SEQUENTIAL": 12, "FOR": 1},
+        verification={"sdfgs": 8, "REDUCE": 5, "MAP": 7, "SEQUENTIAL": 12, "FOR": 0},
     )
     test_case = benchmark_path / "gemver.c"
     runner = TestRunner(
@@ -421,7 +423,7 @@ def test_syr2k(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     )
 
     verifier = SDFGVerification(
-        verification={"sdfgs": 8, "REDUCE": 4, "SEQUENTIAL": 12, "MAP": 8, "FOR": 0},
+        verification={"sdfgs": 8, "REDUCE": 3, "SEQUENTIAL": 12, "MAP": 8, "FOR": 1},
     )
     test_case = benchmark_path / "syr2k.c"
     runner = TestRunner(
@@ -471,7 +473,7 @@ def test_syrk(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     )
 
     verifier = SDFGVerification(
-        verification={"sdfgs": 8, "REDUCE": 4, "MAP": 8, "SEQUENTIAL": 12, "FOR": 0},
+        verification={"sdfgs": 8, "REDUCE": 3, "MAP": 8, "SEQUENTIAL": 12, "FOR": 1},
     )
     test_case = benchmark_path / "syrk.c"
     runner = TestRunner(
@@ -573,11 +575,11 @@ def test_2mm(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     verifier = SDFGVerification(
         verification={
             "sdfgs": 8,
-            "MAP": 12,
-            "SEQUENTIAL": 15,
+            "MAP": 16,
+            "SEQUENTIAL": 21,
             "FOR": 0,
-            "GEMM": 2,
-            "REDUCE": 3,
+            "GEMM": 0,
+            "REDUCE": 5,
         },
     )
     test_case = benchmark_path / "2mm.c"
@@ -632,11 +634,11 @@ def test_3mm(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     verifier = SDFGVerification(
         verification={
             "sdfgs": 8,
-            "MAP": 14,
-            "SEQUENTIAL": 17,
+            "MAP": 20,
+            "SEQUENTIAL": 26,
             "FOR": 0,
-            "GEMM": 3,
-            "REDUCE": 3,
+            "GEMM": 0,
+            "REDUCE": 6,
         },
     )
     test_case = benchmark_path / "3mm.c"
@@ -689,7 +691,7 @@ def test_atax(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     )
 
     verifier = SDFGVerification(
-        verification={"sdfgs": 8, "REDUCE": 4, "MAP": 7, "SEQUENTIAL": 12, "FOR": 1},
+        verification={"sdfgs": 8, "REDUCE": 4, "MAP": 5, "SEQUENTIAL": 12, "FOR": 3},
     )
     test_case = benchmark_path / "atax.c"
     runner = TestRunner(
@@ -739,7 +741,7 @@ def test_bicg(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     )
 
     verifier = SDFGVerification(
-        verification={"sdfgs": 8, "MAP": 6, "SEQUENTIAL": 10, "FOR": 0, "REDUCE": 4},
+        verification={"sdfgs": 8, "MAP": 4, "SEQUENTIAL": 10, "FOR": 2, "REDUCE": 4},
     )
     test_case = benchmark_path / "bicg.c"
     runner = TestRunner(
@@ -789,7 +791,7 @@ def test_doitgen(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     )
 
     verifier = SDFGVerification(
-        verification={"sdfgs": 9, "REDUCE": 3, "SEQUENTIAL": 20, "FOR": 6, "MAP": 11},
+        verification={"sdfgs": 9, "REDUCE": 5, "SEQUENTIAL": 20, "FOR": 4, "MAP": 11},
     )
     test_case = benchmark_path / "doitgen.c"
     runner = TestRunner(
@@ -839,7 +841,7 @@ def test_mvt(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     )
 
     verifier = SDFGVerification(
-        verification={"sdfgs": 8, "REDUCE": 4, "MAP": 4, "SEQUENTIAL": 9, "FOR": 1},
+        verification={"sdfgs": 8, "REDUCE": 5, "MAP": 4, "SEQUENTIAL": 9, "FOR": 0},
     )
     test_case = benchmark_path / "mvt.c"
     runner = TestRunner(
@@ -889,7 +891,7 @@ def test_cholesky(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     )
 
     verifier = SDFGVerification(
-        verification={"sdfgs": 8, "REDUCE": 6, "SEQUENTIAL": 19, "MAP": 11, "FOR": 2},
+        verification={"sdfgs": 8, "REDUCE": 5, "SEQUENTIAL": 19, "MAP": 11, "FOR": 3},
     )
     test_case = benchmark_path / "cholesky.c"
     runner = TestRunner(
@@ -989,7 +991,7 @@ def test_gramschmidt(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     )
 
     verifier = SDFGVerification(
-        verification={"sdfgs": 8, "REDUCE": 4, "SEQUENTIAL": 15, "MAP": 9, "FOR": 2},
+        verification={"sdfgs": 8, "REDUCE": 5, "SEQUENTIAL": 15, "MAP": 9, "FOR": 1},
     )
     test_case = benchmark_path / "gramschmidt.c"
     runner = TestRunner(
@@ -1039,7 +1041,7 @@ def test_lu(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     )
 
     verifier = SDFGVerification(
-        verification={"sdfgs": 8, "REDUCE": 6, "SEQUENTIAL": 20, "MAP": 12, "FOR": 2},
+        verification={"sdfgs": 8, "REDUCE": 5, "SEQUENTIAL": 20, "MAP": 12, "FOR": 3},
     )
     test_case = benchmark_path / "lu.c"
     runner = TestRunner(
@@ -1089,7 +1091,7 @@ def test_ludcmp(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     )
 
     verifier = SDFGVerification(
-        verification={"sdfgs": 8, "REDUCE": 8, "SEQUENTIAL": 25, "MAP": 13, "FOR": 4},
+        verification={"sdfgs": 8, "REDUCE": 7, "SEQUENTIAL": 25, "MAP": 13, "FOR": 5},
     )
     test_case = benchmark_path / "ludcmp.c"
     runner = TestRunner(
@@ -1139,7 +1141,7 @@ def test_trisolv(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     )
 
     verifier = SDFGVerification(
-        verification={"sdfgs": 8, "MAP": 4, "SEQUENTIAL": 8, "FOR": 1, "REDUCE": 3},
+        verification={"sdfgs": 8, "MAP": 2, "SEQUENTIAL": 8, "FOR": 3, "REDUCE": 3},
     )
     test_case = benchmark_path / "trisolv.c"
     runner = TestRunner(

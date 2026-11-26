@@ -6,6 +6,7 @@
 #include <sdfg/passes/targets/target_mapping_pass.h>
 #include <sdfg/plugins/plugins.h>
 #include <sdfg/plugins/target_mapping.h>
+#include <sdfg/scheduling/a_priori_loop_nest_normalization.h>
 
 #include "docc/target/et/target.h"
 
@@ -103,7 +104,16 @@ DoccTarget et_target = {
         std::vector<std::shared_ptr<sdfg::plugins::TargetMapper>> mappers{std::make_shared<EtLibNodeMapper>()};
         sdfg::passes::TargetMappingPass mappingPass(mappers);
         return mappingPass.run_pass(builder, analysis_manager);
-    }
+    },
+    .scheduling =
+        {.create_sdfg_scheduler =
+             [](const TargetOptions& options) -> std::unique_ptr<sdfg::passes::scheduler::SDFGScheduler> {
+             return std::make_unique<sdfg::scheduling::APrioriLoopNestNormalization>(options.enable_fusion_in_normalize);
+         },
+         .create_loop_schedulers =
+             [](const TargetOptions& options) -> std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> {
+             return {};
+         }}
 };
 
 void register_plugin(sdfg::plugins::Context& context) {

@@ -12,6 +12,7 @@
 #include "sdfg/scheduling/loops/loop_scheduling_pass.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/targets/cuda/cuda.h"
+#include "sdfg/targets/cuda/cuda_data_offloading_node.h"
 #include "sdfg/targets/rocm/rocm.h"
 
 using namespace sdfg;
@@ -255,4 +256,65 @@ TEST(CUDAOffloadPostScheduleTest, ExtractsSoftmaxTransfersWithoutLoops) {
 
     EXPECT_TRUE(pass.run(builder, analysis_manager));
     EXPECT_EQ(softmax_node.implementation_type().value(), cuda::ImplementationType_CUDAWithoutTransfers.value());
+}
+
+// The offload schedulers clean up after offloading: a device buffer copied back and freed, then reallocated and copied
+// in again, stays on the device.
+TEST(OffloadSchedulerTest, MinimizesDataTransfers) {
+    for (bool rocm : {false, true}) {
+        builder::StructuredSDFGBuilder builder("post_schedule_test", FunctionType_CPU);
+        auto& root = builder.subject().root();
+        types::Scalar base_desc(types::PrimitiveType::Float);
+        types::Pointer desc(base_desc);
+        builder.add_container("A", desc, true);
+        builder.add_container("__daisy_offload_A", desc);
+
+        offloading::add_offloading_block<cuda::CUDADataOffloadingNode>(
+            builder,
+            root,
+            "A",
+            "__daisy_offload_A",
+            offloading::DataTransferDirection::D2H,
+            offloading::BufferLifecycle::FREE,
+            desc,
+            {},
+            symbolic::integer(400),
+            symbolic::integer(0)
+        );
+        offloading::add_offloading_block<cuda::CUDADataOffloadingNode>(
+            builder,
+            root,
+            "A",
+            "__daisy_offload_A",
+            offloading::DataTransferDirection::H2D,
+            offloading::BufferLifecycle::ALLOC,
+            desc,
+            {},
+            symbolic::integer(400),
+            symbolic::integer(0)
+        );
+
+        passes::scheduler::CUDAOffloadScheduler cuda_scheduler;
+        passes::scheduler::ROCMOffloadScheduler rocm_scheduler;
+        passes::scheduler::LoopScheduler* scheduler =
+            rocm ? static_cast<passes::scheduler::LoopScheduler*>(&rocm_scheduler) : &cuda_scheduler;
+        analysis::AnalysisManager analysis_manager(builder.subject());
+        scheduling::loops::LoopSchedulingPass pass({scheduler}, nullptr);
+        EXPECT_TRUE(pass.run(builder, analysis_manager));
+
+        // Only the copy back remains, and it keeps the buffer.
+        std::vector<offloading::DataOffloadingNode*> transfers;
+        for (size_t i = 0; i < root.size(); i++) {
+            if (auto* block = dynamic_cast<structured_control_flow::Block*>(&root.at(i))) {
+                for (auto* node : block->dataflow().library_nodes()) {
+                    if (auto* transfer = dynamic_cast<offloading::DataOffloadingNode*>(node)) {
+                        transfers.push_back(transfer);
+                    }
+                }
+            }
+        }
+        ASSERT_EQ(transfers.size(), 1);
+        EXPECT_EQ(transfers[0]->transfer_direction(), offloading::DataTransferDirection::D2H);
+        EXPECT_EQ(transfers[0]->buffer_lifecycle(), offloading::BufferLifecycle::NO_CHANGE);
+    }
 }

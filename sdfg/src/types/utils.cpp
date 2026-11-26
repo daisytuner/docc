@@ -87,6 +87,14 @@ infer_type(const sdfg::Function& function, const types::IType& type, const data_
     }
 };
 
+std::unique_ptr<types::IType> pointer_alias_base_type(const types::IType& type) {
+    auto* pointer_type = dynamic_cast<const types::Pointer*>(&type);
+    if (pointer_type && !pointer_type->has_pointee_type()) {
+        return std::make_unique<types::Pointer>(static_cast<const types::IType&>(types::Pointer()));
+    }
+    return type.clone();
+}
+
 std::unique_ptr<types::IType> recombine_array_type(const types::IType& type, uint depth, const types::IType& inner_type) {
     if (depth == 0) {
         return inner_type.clone();

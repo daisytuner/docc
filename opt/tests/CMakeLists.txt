@@ -112,6 +112,7 @@ set(TEST_FILES
     passes/scheduler/gpu_post_schedule_test.cpp
     passes/scheduler/omp_scheduler_test.cpp
     passes/scheduler/rocm_scheduler_test.cpp
+    scheduling/target_scheduling_test.cpp
     targets/cuda/cuda_language_extension_test.cpp
     targets/cuda/cuda_lib_dispatcher_test.cpp
     targets/omp/codegen/omp_map_dispatcher_test.cpp

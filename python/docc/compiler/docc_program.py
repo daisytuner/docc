@@ -175,7 +175,7 @@ class DoccOptions:
         if self.einsum is None:
             self.einsum = target_default_einsum(self.target)
         if self.normalize is None:
-            self.normalize = self.target in ("sequential", "openmp")
+            self.normalize = True
         if self.device_residency is None:
             self.device_residency = self.target in ("cuda", "rocm")
         if self.symbolic_shapes is None:
@@ -418,21 +418,11 @@ class DoccProgram(ABC):
             if self.options.debug_dump:
                 sdfg.dump(output_folder, "py3.opt", dump_dot=True)
 
-            # Normalization for scheduling
-            if self.options.normalize:
-                sdfg.normalize()
-                target_options.already_normalized = True
-            if self.options.debug_dump:
-                sdfg.dump(
-                    output_folder,
-                    "py4.norm",
-                    dump_dot=True,
-                )
-
-            # Schedule if target is specified
+            # Schedule for the target: its normal form, then its loop schedulers
             sdfg.schedule(
                 target_options,
                 not self.options.capture_args,
+                self.options.normalize,
             )
 
             # CMath nodes exist only after expansion.

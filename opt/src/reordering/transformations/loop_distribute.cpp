@@ -239,10 +239,25 @@ void LoopDistribute::apply(builder::StructuredSDFGBuilder& builder, analysis::An
 
     auto parent = static_cast<structured_control_flow::Sequence*>(this->loop_.get_parent());
 
-    structured_control_flow::ScheduleType schedule_type = structured_control_flow::ScheduleType_Sequential::create();
-    if (auto map_stmt = dyn_cast<structured_control_flow::Map*>(&this->loop_)) {
-        schedule_type = map_stmt->schedule_type();
-    }
+    // The pieces of a Map are Maps with its schedule. Those of any other loop are sequential: its iterations may
+    // depend on each other, and a Reduce's reductions describe its whole body.
+    auto* map_stmt = dyn_cast<structured_control_flow::Map*>(&this->loop_);
+    auto add_piece = [&](bool after) -> structured_control_flow::StructuredLoop& {
+        auto& debug_info = this->loop_.debug_info();
+        if (map_stmt) {
+            auto& schedule_type = map_stmt->schedule_type();
+            if (after) {
+                return builder
+                    .add_map_after(*parent, this->loop_, indvar, condition, init, update, schedule_type, debug_info);
+            }
+            return builder
+                .add_map_before(*parent, this->loop_, indvar, condition, init, update, schedule_type, debug_info);
+        }
+        if (after) {
+            return builder.add_for_after(*parent, this->loop_, indvar, condition, init, update, debug_info);
+        }
+        return builder.add_for_before(*parent, this->loop_, indvar, condition, init, update, debug_info);
+    };
 
     auto& body = this->loop_.root();
 
@@ -258,9 +273,7 @@ void LoopDistribute::apply(builder::StructuredSDFGBuilder& builder, analysis::An
     // Create suffix loop FIRST (added after `loop_`) so prefix creation does
     // not shift body indices we still need.
     if (child_idx + 1 < body.size()) {
-        auto& suffix_loop = builder.add_map_after(
-            *parent, this->loop_, indvar, condition, init, update, schedule_type, this->loop_.debug_info()
-        );
+        auto& suffix_loop = add_piece(true);
         // Move all children after child_ into the suffix loop, preserving
         // their relative order. Each move shifts subsequent indices down by 1.
         size_t to_move = body.size() - (child_idx + 1);
@@ -274,9 +287,7 @@ void LoopDistribute::apply(builder::StructuredSDFGBuilder& builder, analysis::An
 
     // Create prefix loop (added before `loop_`).
     if (child_idx > 0) {
-        auto& prefix_loop = builder.add_map_before(
-            *parent, this->loop_, indvar, condition, init, update, schedule_type, this->loop_.debug_info()
-        );
+        auto& prefix_loop = add_piece(false);
         // Move all children before child_ into the prefix loop. Always move
         // child at index 0 since each move shifts subsequent indices down.
         for (size_t i = 0; i < child_idx; i++) {

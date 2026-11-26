@@ -67,7 +67,6 @@
 #endif
 #include <docc/target/tenstorrent/target.h>
 #include "boost/stacktrace/stacktrace.hpp"
-#include "targets/target_mapping.h"
 
 namespace py = pybind11;
 using namespace sdfg::types;
@@ -187,7 +186,7 @@ PYBIND11_MODULE(_sdfg, m) {
     register_analysis(m);
     register_replayer(m);
     register_transformations(m);
-    register_passes(m);
+    register_passes(m, docc_context);
     register_cutout(m);
     register_metrics(m);
     register_gpu_arch(m, docc_context);
@@ -423,12 +422,6 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("record_for_instrumentation") = false
         )
         .def(
-            "normalize",
-            &PyStructuredSDFG::normalize,
-            py::arg("options") = docc::target::TargetOptions{},
-            "Normalize the SDFG"
-        )
-        .def(
             "schedule",
             static_cast<
                 void (PyStructuredSDFG::*)(const std::string&, const std::string&, bool)>(&PyStructuredSDFG::schedule),
@@ -440,10 +433,11 @@ PYBIND11_MODULE(_sdfg, m) {
         .def(
             "schedule",
             static_cast<
-                void (PyStructuredSDFG::*)(const docc::target::TargetOptions&, bool)>(&PyStructuredSDFG::schedule),
+                void (PyStructuredSDFG::*)(const docc::target::TargetOptions&, bool, bool)>(&PyStructuredSDFG::schedule),
             py::arg("options"),
             py::arg("schedule_loops") = true,
-            "Schedule the SDFG"
+            py::arg("normalize") = true,
+            "Schedule the SDFG. With normalize=False, it is scheduled as it is instead of in the target's normal form."
         )
         .def(
             "promote_device_residency",

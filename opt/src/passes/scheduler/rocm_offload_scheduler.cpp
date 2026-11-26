@@ -6,6 +6,7 @@
 #include "sdfg/passes/offloading/gpu_control_flow_offload_pass.h"
 #include "sdfg/passes/offloading/gpu_nested_offload_pass.h"
 #include "sdfg/passes/offloading/gpu_nested_parallelization_pass.h"
+#include "sdfg/passes/offloading/offloading_cleanup_pass.h"
 #include "sdfg/passes/offloading/rocm_library_node_transfer_extraction_pass.h"
 #include "sdfg/passes/scheduler/loop_scheduler.h"
 #include "sdfg/passes/structured_control_flow/dead_cfg_elimination.h"
@@ -168,6 +169,9 @@ bool ROCMOffloadScheduler::post_schedule(
     ROCMControlFlowOffloadPass control_flow_offload_pass;
     changed |= control_flow_offload_pass.run(builder, analysis_manager);
     analysis_manager.invalidate_all();
+
+    OffloadingCleanupPass offloading_cleanup_pass;
+    changed |= offloading_cleanup_pass.run(builder, analysis_manager);
     return changed;
 }
 
