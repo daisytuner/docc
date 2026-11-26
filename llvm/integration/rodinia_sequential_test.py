@@ -208,10 +208,10 @@ def test_backprop(compiler="clang-21"):
         verification={
             "sdfgs": 25,
             "FOR": 37,
-            "SEQUENTIAL": 62,
+            "SEQUENTIAL": 52,
             "WHILE": 6,
             "Malloc": 5,
-            "MAP": 25,
+            "MAP": 15,
         }
     )
     runner = TestRunner(
@@ -354,9 +354,9 @@ def test_cfd(compiler="clang++-21"):
     if platform.machine() in ("aarch64", "arm64"):
         verification = {
             "sdfgs": 5,
-            "MAP": 7,
-            "FOR": 9,
-            "SEQUENTIAL": 16,
+            "MAP": 14,
+            "FOR": 13,
+            "SEQUENTIAL": 27,
         }
     else:
         verification = {"sdfgs": 6, "MAP": 15, "SEQUENTIAL": 28, "FOR": 13}

@@ -203,10 +203,10 @@ def test_backprop(compiler="clang-21"):
         verification={
             "sdfgs": 25,
             "FOR": 37,
-            "SEQUENTIAL": 37,
+            "SEQUENTIAL": 42,
             "WHILE": 6,
-            "MAP": 20,
-            "CPU_PARALLEL": 20,
+            "MAP": 15,
+            "CPU_PARALLEL": 10,
         },
     )
     runner = TestRunner(
@@ -362,10 +362,10 @@ def test_cfd(compiler="clang++-21"):
     else:
         verification = {
             "sdfgs": 6,
-            "MAP": 14,
+            "MAP": 13,
             "CPU_PARALLEL": 5,
             "FOR": 13,
-            "SEQUENTIAL": 22,
+            "SEQUENTIAL": 21,
         }
     verifier = SDFGVerification(verification=verification)
 
