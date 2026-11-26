@@ -33,9 +33,7 @@ def test_jacobi_1d(target):
     if target == "none":
         verifier = SDFGVerification(verification={"MAP": 2, "SEQUENTIAL": 3, "FOR": 1})
     elif target == "sequential":
-        verifier = SDFGVerification(
-            verification={"VECTORIZE": 2, "MAP": 2, "SEQUENTIAL": 1, "FOR": 1}
-        )
+        verifier = SDFGVerification(verification={"MAP": 2, "SEQUENTIAL": 3, "FOR": 1})
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={"CPU_PARALLEL": 2, "MAP": 2, "SEQUENTIAL": 1, "FOR": 1}

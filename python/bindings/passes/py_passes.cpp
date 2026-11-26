@@ -106,7 +106,7 @@ void register_passes(py::module& m) {
             py::arg("offload_unknown_sizes") = false,
             "Create a loop-scheduling pass for the given targets.\n\n"
             "Applies each target's standard loop scheduler (e.g. 'openmp',\n"
-            "'cuda', 'rocm', 'vectorize') to the SDFG's loop nests -- the same\n"
+            "'cuda', 'rocm') to the SDFG's loop nests -- the same\n"
             "schedulers the compiler uses, i.e. the default schedule / baseline."
         )
         .def(

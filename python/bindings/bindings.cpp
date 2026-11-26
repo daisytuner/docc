@@ -53,7 +53,6 @@
 #include <sdfg/targets/cuda/plugin.h>
 #include <sdfg/targets/omp/plugin.h>
 #include <sdfg/targets/rocm/plugin.h>
-#include <sdfg/targets/vectorize/plugin.h>
 #include <sdfg/tiles/analysis/reduction_buffer_analysis.h>
 #include <sdfg/tiles/plugin.h>
 
@@ -111,7 +110,6 @@ PYBIND11_MODULE(_sdfg, m) {
     sdfg::tiles::register_tiles_plugin(docc_context);
     sdfg::fp_math::register_fp_math_plugin(docc_context);
     sdfg::omp::register_omp_plugin();
-    sdfg::vectorize::register_vectorize_plugin();
     sdfg::cuda::register_cuda_plugin(docc_context);
     sdfg::rocm::register_rocm_plugin(docc_context);
     docc::target::register_builtin_targets(docc_context);

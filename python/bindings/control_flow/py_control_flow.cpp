@@ -269,7 +269,6 @@ void register_control_flow(py::module& m) {
     py::enum_<ScheduleTypeCategory>(m, "ScheduleTypeCategory")
         .value("Offloader", ScheduleTypeCategory::Offloader)
         .value("Parallelizer", ScheduleTypeCategory::Parallelizer)
-        .value("Vectorizer", ScheduleTypeCategory::Vectorizer)
         .value("None_", ScheduleTypeCategory::None)
         .export_values();
 
@@ -403,6 +402,16 @@ void register_control_flow(py::module& m) {
             "Create a ROCm offload schedule type for the given target level and parallel size; for a "
             "reduction, partial_storage (ReduceStrategy) and partial_container (buffer name) may be set; "
             "lanes (X_BLOCK only) makes each iteration a wave of that many lanes"
+        )
+        .def_property(
+            "vectorize",
+            [](const ScheduleType& st) {
+                return ScheduleType_Vectorize::is_set(st);
+            },
+            [](ScheduleType& st, bool vectorize) {
+                ScheduleType_Vectorize::set(st, vectorize);
+            },
+            "Whether the loop is marked for vectorization (emits '#pragma clang loop vectorize(enable)')"
         )
         .def_property(
             "zero_init",

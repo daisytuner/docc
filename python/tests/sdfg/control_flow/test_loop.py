@@ -342,7 +342,6 @@ class TestScheduleType:
         """Test ScheduleTypeCategory enum values are accessible."""
         assert ScheduleTypeCategory.Offloader is not None
         assert ScheduleTypeCategory.Parallelizer is not None
-        assert ScheduleTypeCategory.Vectorizer is not None
         assert ScheduleTypeCategory.None_ is not None
 
     def test_schedule_type_category_comparison(self):

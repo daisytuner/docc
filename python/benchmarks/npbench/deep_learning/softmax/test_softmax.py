@@ -47,16 +47,15 @@ def test_softmax(target):
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
-                "VECTORIZE": 6,
                 "REDUCE": 2,
-                "SEQUENTIAL": 12,
+                "SEQUENTIAL": 18,
                 "MAP": 16,
             }
         )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "VECTORIZE": 4,
+                "SEQUENTIAL": 4,
                 "REDUCE": 2,
                 "CPU_PARALLEL": 4,
                 "MAP": 6,

@@ -93,20 +93,20 @@ def simple_loop(A, B, N):
 
 ### `target="sequential"`
 
-Generates optimized sequential code with SIMD vectorization.
+Generates optimized sequential code without parallelization.
 
 ```python
 import math
 
 @native(target="sequential")
-def vectorized_sin(A, B):
+def sequential_sin(A, B):
     for i in range(A.shape[0]):
         B[i] = math.sin(A[i])
 
 N = 128
 A = np.random.rand(N).astype(np.float64)
 B = np.zeros(N, dtype=np.float64)
-vectorized_sin(A, B)
+sequential_sin(A, B)
 ```
 
 ### `target="openmp"`

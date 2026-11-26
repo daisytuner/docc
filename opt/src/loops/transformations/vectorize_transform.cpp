@@ -1,8 +1,12 @@
-#include "sdfg/transformations/vectorize_transform.h"
+#include "sdfg/loops/transformations/vectorize_transform.h"
 
+#include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/optimization_report/pass_report_consumer.h"
+#include "sdfg/structured_control_flow/map.h"
+#include "sdfg/structured_control_flow/reduce.h"
 
 namespace sdfg {
+namespace loops {
 namespace transformations {
 
 VectorizeTransform::VectorizeTransform(structured_control_flow::StructuredLoop& loop) : loop_(loop) {
@@ -22,21 +26,31 @@ bool VectorizeTransform::
         return false;
     }
 
-    auto result = loop_.schedule_type().category() == structured_control_flow::ScheduleTypeCategory::None;
-
-    if (report_) {
-        if (result) {
-            report_->transform_possible(this);
-        } else {
+    if (loop_.schedule_type().category() != structured_control_flow::ScheduleTypeCategory::None) {
+        if (report_) {
             report_->transform_impossible(this, "not sequential");
         }
+        return false;
     }
 
-    return result;
+    if (structured_control_flow::ScheduleType_Vectorize::is_set(loop_.schedule_type())) {
+        if (report_) {
+            report_->transform_impossible(this, "already vectorized");
+        }
+        return false;
+    }
+
+    if (report_) {
+        report_->transform_possible(this);
+    }
+    return true;
 }
 
 void VectorizeTransform::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
-    builder.update_schedule_type(this->loop_, vectorize::ScheduleType_Vectorize::create());
+    // Copy the current schedule (preserving its kind and properties) and annotate it for vectorization.
+    auto new_schedule = loop_.schedule_type();
+    structured_control_flow::ScheduleType_Vectorize::set(new_schedule);
+    builder.update_schedule_type(this->loop_, new_schedule);
     if (report_) {
         report_->transform_applied(this);
     }
@@ -56,12 +70,13 @@ VectorizeTransform VectorizeTransform::from_json(builder::StructuredSDFGBuilder&
     auto loop_id = desc["subgraph"]["0"]["element_id"].get<size_t>();
     auto element = builder.find_element_by_id(loop_id);
     if (element == nullptr) {
-        throw InvalidTransformationDescriptionException("Element with ID " + std::to_string(loop_id) + " not found.");
+        throw ::sdfg::transformations::
+            InvalidTransformationDescriptionException("Element with ID " + std::to_string(loop_id) + " not found.");
     }
 
     auto loop = dyn_cast<structured_control_flow::StructuredLoop*>(element);
     if (loop == nullptr) {
-        throw InvalidTransformationDescriptionException(
+        throw ::sdfg::transformations::InvalidTransformationDescriptionException(
             "Element with ID " + std::to_string(loop_id) + " is not a StructuredLoop."
         );
     }
@@ -70,4 +85,5 @@ VectorizeTransform VectorizeTransform::from_json(builder::StructuredSDFGBuilder&
 }
 
 } // namespace transformations
+} // namespace loops
 } // namespace sdfg
