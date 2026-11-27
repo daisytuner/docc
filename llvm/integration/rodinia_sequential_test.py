@@ -354,12 +354,12 @@ def test_cfd(compiler="clang++-21"):
     if platform.machine() in ("aarch64", "arm64"):
         verification = {
             "sdfgs": 5,
-            "MAP": 14,
-            "FOR": 13,
-            "SEQUENTIAL": 27,
+            "MAP": 7,
+            "FOR": 9,
+            "SEQUENTIAL": 16,
         }
     else:
-        verification = {"sdfgs": 6, "MAP": 7, "SEQUENTIAL": 16, "FOR": 9}
+        verification = {"sdfgs": 6, "MAP": 14, "SEQUENTIAL": 27, "FOR": 13}
     verifier = SDFGVerification(verification=verification)
     runner = TestRunner(
         "Rodinia",
