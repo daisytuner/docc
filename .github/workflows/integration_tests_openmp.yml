@@ -1,16 +1,14 @@
 name: Integration Tests - OpenMP
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    types: [opened, reopened, synchronize]
-  schedule:
-    - cron: "0 5 * * *"
+  workflow_call:
+
+permissions:
+  contents: read
 
 jobs:
   integration-test-openmp:
+    timeout-minutes: 60
     runs-on:
       group: dahlia
       labels: openmp
@@ -86,6 +84,7 @@ jobs:
           pytest -v -rx apps_openmp_test.py
 
   integration-test-openmp-arm64:
+    timeout-minutes: 120
     runs-on:
       group: aster
     container:

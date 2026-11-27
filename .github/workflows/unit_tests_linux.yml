@@ -1,16 +1,14 @@
 name: Unit Tests (Linux)
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    types: [opened, reopened, synchronize]
-  schedule:
-    - cron: "0 4 * * *"
+  workflow_call:
+
+permissions:
+  contents: read
 
 jobs:
   cpp-tests-linux:
+    timeout-minutes: 60
     runs-on:
       group: dahlia
       labels: RTX5060
@@ -25,15 +23,8 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Mark GitHub Actions workdir as safe
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-
-      - name: Formatting
-        shell: bash
-        run: |
-          shopt -s globstar
-          clang-format-21 -style=file --dry-run --Werror sdfg/include/**/*.h sdfg/src/**/*.cpp sdfg/tests/**/*.cpp
-          clang-format-21 -style=file --dry-run --Werror opt/include/**/*.h opt/src/**/*.cpp opt/tests/**/*.cpp
+      - name: Prepare workspace
+        uses: ./.github/actions/prepare-workspace
 
       - name: Build
         run: |
@@ -89,7 +80,7 @@ jobs:
           pytest -v -s rtl_tests.py
 
       - name: Coveralls
-        uses: coverallsapp/github-action@v2
+        uses: coverallsapp/github-action@8d6379e14d29928660c4ba802d8e85393440b329 # v2
         with:
           flag-name: sdfg
           parallel: true
@@ -140,6 +131,7 @@ jobs:
           ./rpc/tests/sdfgrpc_daisytuner_rpc_test
 
   inference-tests-linux:
+    timeout-minutes: 60
     runs-on:
       group: dahlia
       labels: rocm
@@ -163,8 +155,8 @@ jobs:
           echo "$PWD/.venv/bin" >> $GITHUB_PATH
           echo "PYTHONPATH=$PWD/python:$PWD/pytorch" >> $GITHUB_ENV
 
-      - name: Mark GitHub Actions workdir as safe
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Prepare workspace
+        uses: ./.github/actions/prepare-workspace
 
       - name: Install dependencies
         run: |
@@ -217,13 +209,14 @@ jobs:
           #     op with device=torch.device("cuda").
           #   - test_clamp_nan_min / test_clamp_nan_max: docc clamp NaN-bound
           #     codegen mismatch.
-          python -m pytest -v pytorch/tests --target=rocm \
+          python -m pytest -v -n 4 pytorch/tests --target=rocm \
             -k "not _gpu and not test_clamp_nan_min and not test_clamp_nan_max"
 
 
   ##### FRONTENDS #####
 
   llvm-tests-linux:
+    timeout-minutes: 60
     runs-on:
       group: dahlia
       labels: Linux
@@ -235,14 +228,8 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Mark GitHub Actions workdir as safe
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-
-      - name: Formatting
-        shell: bash
-        run: |
-          shopt -s globstar
-          clang-format-21 -style=file --dry-run --Werror llvm/include/**/*.h llvm/src/**/*.cpp llvm/tests/**/*.cpp llvm/driver/**/*.cpp
+      - name: Prepare workspace
+        uses: ./.github/actions/prepare-workspace
 
       - name: Build
         run: |
@@ -276,7 +263,7 @@ jobs:
           lcov --ignore-errors unused --extract build/coverage_full.lcov '*/llvm/src/*' '*/llvm/include/*' --output-file build/coverage.lcov
 
       - name: Coveralls
-        uses: coverallsapp/github-action@v2
+        uses: coverallsapp/github-action@8d6379e14d29928660c4ba802d8e85393440b329 # v2
         with:
           flag-name: llvm
           parallel: true
@@ -304,6 +291,7 @@ jobs:
           pytest -v llvm_test_suite.py
 
   mlir-tests-linux:
+    timeout-minutes: 60
     runs-on:
       group: dahlia
       labels: Linux
@@ -330,8 +318,8 @@ jobs:
           echo "$PWD/.venv/bin" >> $GITHUB_PATH
           echo "PYTHONPATH=$PWD/python:$PWD/mlir" >> $GITHUB_ENV
 
-      - name: Mark GitHub Actions workdir as safe
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Prepare workspace
+        uses: ./.github/actions/prepare-workspace
 
       - name: Install dependencies
         run: |
@@ -385,6 +373,7 @@ jobs:
       #     python fasterrcnn_resnet50.py
 
   python-tests-linux:
+    timeout-minutes: 60
     runs-on:
       group: dahlia
       labels: Linux
@@ -412,8 +401,8 @@ jobs:
           python -m venv .venv
           echo "$PWD/.venv/bin" >> $GITHUB_PATH
 
-      - name: Mark GitHub Actions workdir as safe
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Prepare workspace
+        uses: ./.github/actions/prepare-workspace
 
       - name: Install dependencies
         run: |
@@ -421,13 +410,6 @@ jobs:
           pip install pybind11 coverage black==25.9.0 build scikit-build-core
           pip install pytest pytest-xdist pytest-cov
           pip install sympy numpy ml_dtypes scipy
-
-      - name: Formatting
-        shell: bash
-        run: |
-          shopt -s globstar
-          clang-format-21 -style=file --dry-run --Werror python/bindings/**/*.h python/bindings/**/*.cpp
-          black --check python/docc/ python/tests/
 
       - name: Build
         run: |
@@ -459,7 +441,7 @@ jobs:
           pytest -v -n auto python/benchmarks/ -k openmp
 
       - name: Coveralls
-        uses: coverallsapp/github-action@v2
+        uses: coverallsapp/github-action@8d6379e14d29928660c4ba802d8e85393440b329 # v2
         with:
           flag-name: python-${{ matrix.python-version }}
           parallel: true
@@ -467,6 +449,7 @@ jobs:
           file: coverage.xml
 
   pytorch-tests-linux:
+    timeout-minutes: 60
     runs-on:
       group: dahlia
       labels: Linux
@@ -494,17 +477,13 @@ jobs:
           python -m venv .venv
           echo "$PWD/.venv/bin" >> $GITHUB_PATH
 
-      - name: Mark GitHub Actions workdir as safe
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Prepare workspace
+        uses: ./.github/actions/prepare-workspace
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r pytorch/requirements.txt
-
-      - name: Check Formatting
-        run: |
-          black --check pytorch/
 
       - name: Build frontends
         run: |
@@ -513,12 +492,6 @@ jobs:
             -v -e python/
           pip install --no-build-isolation \
             -v -e pytorch/
-
-      - name: Check Typing
-        run: |
-          pip install pybind11-stubgen
-          ./scripts/generate-pybind-stubs.py
-          pyright -p pytorch/
 
       - name: Unit Tests
         env:
@@ -532,7 +505,7 @@ jobs:
 
       - name: Coveralls
         if: matrix.python-version == '3.14'
-        uses: coverallsapp/github-action@v2
+        uses: coverallsapp/github-action@8d6379e14d29928660c4ba802d8e85393440b329 # v2
         with:
           flag-name: pytorch
           parallel: true
@@ -542,6 +515,7 @@ jobs:
   ##### TARGETS #####
 
   cuda-tests-linux:
+    timeout-minutes: 60
     runs-on:
       group: dahlia
       labels: RTX5060
@@ -573,8 +547,8 @@ jobs:
           echo "$PWD/.venv/bin" >> $GITHUB_PATH
           echo "PYTHONPATH=$PWD/python:$PWD/mlir" >> $GITHUB_ENV
 
-      - name: Mark GitHub Actions workdir as safe
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Prepare workspace
+        uses: ./.github/actions/prepare-workspace
 
       - name: Install dependencies
         run: |
@@ -612,15 +586,15 @@ jobs:
           nvidia-smi
           export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 
-          pytest -v python/tests/cuda -m "cuda"
-          pytest -v python/tests/python/ -m "cuda"
-          pytest -v python/tests/sdfg/ -m "cuda"
+          pytest -v -n auto python/tests/cuda -m "cuda"
+          pytest -v -n auto python/tests/python/ -m "cuda"
+          pytest -v -n auto python/tests/sdfg/ -m "cuda"
 
-          pytest -v python/benchmarks/ -k cuda
-          pytest -v mlir/integration -m "cuda"
+          pytest -v -n auto python/benchmarks/ -k cuda
+          pytest -v -n auto mlir/integration -m "cuda"
 
           # Segformer correctness test
-          # pytest -v mlir/benchmarks/torch/model_zoo/segformer.py -k "cuda"
+          # pytest -v -n auto mlir/benchmarks/torch/model_zoo/segformer.py -k "cuda"
 
       - name: PyTorch Tests
         run: |
@@ -629,9 +603,10 @@ jobs:
           .venv-pytorch/bin/pip install -r pytorch/requirements-cuda.txt
           export PYTHONPATH=$PWD/python:$PWD/pytorch
 
-          .venv-pytorch/bin/pytest -v pytorch/tests --target=cuda
+          .venv-pytorch/bin/pytest -v -n auto pytorch/tests --target=cuda
 
   rocm-tests-linux:
+    timeout-minutes: 60
     runs-on:
       group: dahlia
       labels: rocm
@@ -664,8 +639,8 @@ jobs:
           echo "$PWD/.venv/bin" >> $GITHUB_PATH
           echo "PYTHONPATH=$PWD/python:$PWD/mlir" >> $GITHUB_ENV
 
-      - name: Mark GitHub Actions workdir as safe
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Prepare workspace
+        uses: ./.github/actions/prepare-workspace
 
       - name: Install dependencies
         run: |
@@ -707,14 +682,14 @@ jobs:
           export ROCM_HOME=/opt/rocm
           export LD_LIBRARY_PATH=/opt/rocm/lib:$LD_LIBRARY_PATH
 
-          pytest -v python/tests/rocm -m "rocm"
-          pytest -v python/tests/python/ -m "rocm"
-          pytest -v python/tests/sdfg/ -m "rocm"
+          pytest -v -n 4 python/tests/rocm -m "rocm"
+          pytest -v -n 4 python/tests/python/ -m "rocm"
+          pytest -v -n 4 python/tests/sdfg/ -m "rocm"
 
-          pytest -v python/benchmarks/ -k rocm
-          pytest -v mlir/integration -m "rocm"
+          pytest -v -n 4 python/benchmarks/ -k rocm
+          pytest -v -n 4 mlir/integration -m "rocm"
 
-          # pytest -v mlir/benchmarks/torch/model_zoo/segformer.py -k "rocm"
+          # pytest -v -n 4 mlir/benchmarks/torch/model_zoo/segformer.py -k "rocm"
 
       - name: PyTorch Tests
         run: |
@@ -726,9 +701,10 @@ jobs:
 
           .venv-pytorch/bin/pip install cupy-rocm-7-0
 
-          .venv-pytorch/bin/pytest -v pytorch/tests --target=rocm
+          .venv-pytorch/bin/pytest -v -n 4 pytorch/tests --target=rocm
 
   tenstorrent-tests-linux:
+    timeout-minutes: 30
     runs-on:
       group: dahlia
       labels: tenstorrent
@@ -757,8 +733,8 @@ jobs:
           echo "$PWD/.venv/bin" >> $GITHUB_PATH
           echo "PYTHONPATH=$PWD/python:$PWD/mlir" >> $GITHUB_ENV
 
-      - name: Mark GitHub Actions workdir as safe
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Prepare workspace
+        uses: ./.github/actions/prepare-workspace
 
       - name: Install dependencies
         run: |
@@ -795,6 +771,7 @@ jobs:
           pytest -v python/tests mlir/integration -m "tenstorrent"
 
   py-tests-linux-arm64:
+    timeout-minutes: 30
     runs-on:
       group: aster
     container:
@@ -821,8 +798,8 @@ jobs:
           python -m venv .venv
           echo "$PWD/.venv/bin" >> $GITHUB_PATH
 
-      - name: Mark GitHub Actions workdir as safe
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Prepare workspace
+        uses: ./.github/actions/prepare-workspace
 
       - name: Install dependencies
         run: |
@@ -862,9 +839,10 @@ jobs:
 
   finish:
     needs: [cpp-tests-linux, python-tests-linux, mlir-tests-linux, llvm-tests-linux, pytorch-tests-linux,]
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
       - name: Coveralls Finished
-        uses: coverallsapp/github-action@v2
+        uses: coverallsapp/github-action@8d6379e14d29928660c4ba802d8e85393440b329 # v2
         with:
           parallel-finished: true

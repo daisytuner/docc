@@ -1,0 +1,21 @@
+name: Prepare workspace
+description: Marks the checked-out workspace as safe for git and optionally installs Python. Run after actions/checkout.
+
+inputs:
+  python-version:
+    description: Python version to install. Leave empty to skip Python setup.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Mark GitHub Actions workdir as safe
+      shell: bash
+      run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+    - name: Set up Python
+      if: inputs.python-version != ''
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}

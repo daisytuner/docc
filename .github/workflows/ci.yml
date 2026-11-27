@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, reopened, synchronize]
+  schedule:
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  formatting:
+    uses: ./.github/workflows/format_check.yml
+
+  typing:
+    needs: formatting
+    uses: ./.github/workflows/typecheck.yml
+
+  sanitizer-tests-linux:
+    needs: formatting
+    uses: ./.github/workflows/sanitizer_tests_linux.yml
+    secrets: inherit
+
+  sanitizer-tests-macos:
+    needs: formatting
+    uses: ./.github/workflows/sanitizer_tests_macos.yml
+    secrets: inherit
+
+  unit-tests-linux:
+    needs: [formatting, typing, sanitizer-tests-linux]
+    uses: ./.github/workflows/unit_tests_linux.yml
+    secrets: inherit
+
+  unit-tests-macos:
+    needs: [formatting, typing, sanitizer-tests-macos]
+    uses: ./.github/workflows/unit_tests_macos.yml
+    secrets: inherit
+
+  unit-tests-release:
+    needs: [formatting, typing, sanitizer-tests-linux, sanitizer-tests-macos]
+    uses: ./.github/workflows/unit_tests_release.yml
+    secrets: inherit
+
+  integration-tests-cuda:
+    needs: [formatting, typing, sanitizer-tests-linux]
+    uses: ./.github/workflows/integration_tests_cuda.yml
+    secrets: inherit
+
+  integration-tests-openmp:
+    needs: [formatting, typing, sanitizer-tests-linux]
+    uses: ./.github/workflows/integration_tests_openmp.yml
+    secrets: inherit
+
+  ci-summary:
+    if: always()
+    needs:
+      - formatting
+      - typing
+      - unit-tests-linux
+      - unit-tests-macos
+      - unit-tests-release
+      - sanitizer-tests-linux
+      - sanitizer-tests-macos
+      - integration-tests-cuda
+      - integration-tests-openmp
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fail if any required job did not succeed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS" | python3 -c '
+          import json, sys
+          needs = json.load(sys.stdin)
+          bad = {job: n["result"] for job, n in needs.items() if n["result"] not in ("success", "skipped")}
+          if bad:
+              print("Jobs not successful:", bad)
+              sys.exit(1)
+          print("All jobs successful")
+          '

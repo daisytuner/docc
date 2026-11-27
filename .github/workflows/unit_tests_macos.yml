@@ -1,16 +1,14 @@
 name: Unit Tests (macOS)
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    types: [opened, reopened, synchronize]
-  schedule:
-    - cron: "0 4 * * *"
+  workflow_call:
+
+permissions:
+  contents: read
 
 jobs:
   primary-tests-macos:
+    timeout-minutes: 30
     runs-on:
       group: dahlia
       labels: macOS

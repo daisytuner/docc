@@ -1,16 +1,14 @@
 name: Unit Tests - Release
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    types: [opened, reopened, synchronize]
-  schedule:
-    - cron: "0 4 * * *"
+  workflow_call:
+
+permissions:
+  contents: read
 
 jobs:
   release-linux:
+    timeout-minutes: 30
     runs-on:
       group: dahlia
       labels: RTX5060
@@ -25,15 +23,8 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Mark GitHub Actions workdir as safe
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-
-      - name: Formatting
-        shell: bash
-        run: |
-          shopt -s globstar
-          clang-format-21 -style=file --dry-run --Werror sdfg/include/**/*.h sdfg/src/**/*.cpp sdfg/tests/**/*.cpp
-          clang-format-21 -style=file --dry-run --Werror opt/include/**/*.h opt/src/**/*.cpp opt/tests/**/*.cpp
+      - name: Prepare workspace
+        uses: ./.github/actions/prepare-workspace
 
       - name: Build and test
         run: |
@@ -74,6 +65,7 @@ jobs:
           pytest -v -s rtl_tests.py
 
   release-macos:
+    timeout-minutes: 30
     runs-on:
       group: dahlia
       labels: macOS
