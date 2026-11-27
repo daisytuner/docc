@@ -249,6 +249,65 @@ TEST(GPUOffloadNestedLoopTest, ReduceWithLanesApplies) {
     EXPECT_EQ(analysis_manager.get<tiles::ReductionBufferAnalysis>().require(reduce, "__daisy_cuda_A").shared_bytes, 512);
 }
 
+// Register partials of a lanes reduce live in registers and are combined by shuffles only: a
+// nested block reduction of the same accumulator has no shared buffer to fold into.
+TEST(GPUOffloadNestedLoopTest, RegisterLanesReduceRejectsNestedBlockReduce) {
+    for (auto strategy : {gpu::ReduceStrategy::Register, gpu::ReduceStrategy::Shared}) {
+        builder::StructuredSDFGBuilder builder("test_sdfg", FunctionType_CPU);
+        auto& root = builder.subject().root();
+
+        types::Scalar int_desc(types::PrimitiveType::Int32);
+        types::Pointer pointer_type((types::Scalar(types::PrimitiveType::Float)));
+        builder.add_container("i", int_desc);
+        builder.add_container("j", int_desc);
+        builder.add_container("k", int_desc);
+        builder.add_container("__daisy_cuda_A", pointer_type);
+
+        auto& grid = builder.add_map(
+            root,
+            symbolic::symbol("i"),
+            lt("i", 128),
+            symbolic::zero(),
+            step("i"),
+            gpu_schedule(gpu::TargetLevel::X_GRID, 128)
+        );
+        std::vector<structured_control_flow::ReductionInfo> reductions{
+            {structured_control_flow::ReductionOperation::Add, "__daisy_cuda_A"}
+        };
+        auto lanes_schedule = gpu_schedule(gpu::TargetLevel::X_BLOCK, 1);
+        gpu::ScheduleType_GPU_Offload::lanes(lanes_schedule, symbolic::integer(32));
+        gpu::ScheduleType_GPU_Offload::partial_storage(lanes_schedule, strategy);
+        auto& outer = builder.add_reduce(
+            grid.root(), symbolic::symbol("j"), lt("j", 64), symbolic::zero(), step("j"), reductions, lanes_schedule
+        );
+        auto& inner = builder.add_reduce(
+            outer.root(),
+            symbolic::symbol("k"),
+            lt("k", 4),
+            symbolic::zero(),
+            step("k"),
+            reductions,
+            structured_control_flow::ScheduleType_Sequential::create()
+        );
+        add_device_store(builder, inner.root(), "__daisy_cuda_A", symbolic::symbol("i"));
+
+        analysis::AnalysisManager analysis_manager(builder.subject());
+        Transform transformation(inner, gpu::TargetLevel::Y_BLOCK, symbolic::integer(4));
+        const bool shared = strategy == gpu::ReduceStrategy::Shared;
+        EXPECT_EQ(transformation.can_be_applied(builder, analysis_manager), shared);
+
+        builder.update_schedule_type(inner, gpu_schedule(gpu::TargetLevel::Y_BLOCK, 4));
+        analysis_manager.invalidate_all();
+        auto info = analysis_manager.get<tiles::ReductionBufferAnalysis>().buffer(inner, "__daisy_cuda_A");
+        if (shared) {
+            EXPECT_EQ(info.status, tiles::ReductionBufferStatus::Exact) << info.diagnostic;
+        } else {
+            EXPECT_NE(info.status, tiles::ReductionBufferStatus::Exact);
+            EXPECT_NE(info.diagnostic.find("Register (lanes)"), std::string::npos) << info.diagnostic;
+        }
+    }
+}
+
 // -----------------------------------------------------------------------------
 // Negative cases
 // -----------------------------------------------------------------------------

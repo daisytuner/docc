@@ -325,7 +325,14 @@ void allocation_cost(
         if (!gpu::is_block_level(gpu::ScheduleType_GPU_Offload::target_level(enclosing_schedule))) {
             continue;
         }
-        if (gpu::ScheduleType_GPU_Offload::partial_storage(enclosing_schedule) != gpu::ReduceStrategy::Shared) {
+        const auto enclosing_strategy = gpu::ScheduleType_GPU_Offload::partial_storage(enclosing_schedule);
+        if (enclosing_strategy == gpu::ReduceStrategy::Register) {
+            throw InvalidSDFGException(
+                "a Register (lanes) block reduction keeps its partials in registers and cannot fold a nested block "
+                "reduction of the same accumulator; use Shared partial storage"
+            );
+        }
+        if (enclosing_strategy != gpu::ReduceStrategy::Shared) {
             throw InvalidSDFGException("Shared reduction cannot reuse a Global block owner's partial buffer");
         }
         if (projected_ancestors(enclosing, loops, interchange).size() <
