@@ -225,18 +225,17 @@ void GPUOffloadReduceDispatcher::dispatch_kernel_body(
     std::string size = kernel_language_extension.expression(node_.num_iterations());
 
     // The partial-storage strategy fixes the combine mechanism; only these (scope, mechanism)
-    // pairs are supported: warp+Register (shuffle), block+Shared (tree), block/grid+Global
-    // (atomics). Others (e.g. a shared tree at grid scope, a shuffle off a warp) have no
+    // pairs are supported: lanes+Register (shuffle), block+Shared (tree), block/grid+Global
+    // (atomics). Others (e.g. a shared tree at grid scope, a shuffle without lanes) have no
     // lowering and must fail loudly rather than emit undefined code.
     ReduceStrategy strategy = gpu::ScheduleType_GPU_Offload::partial_storage(node_.schedule_type());
-    if (strategy == ReduceStrategy::Register && target_level != TargetLevel::WARP) {
-        throw InvalidSDFGException("GPUOffloadReduceDispatcher: Register partial storage is only valid at WARP level");
+    if (strategy == ReduceStrategy::Register && register_lanes() == 0) {
+        throw InvalidSDFGException(
+            "GPUOffloadReduceDispatcher: Register partial storage requires an X_BLOCK with lanes == warp size"
+        );
     }
     if (strategy == ReduceStrategy::Shared && !is_block_level(target_level)) {
         throw InvalidSDFGException("GPUOffloadReduceDispatcher: Shared partial storage is only valid at block levels");
-    }
-    if (strategy == ReduceStrategy::Global && target_level == TargetLevel::WARP) {
-        throw InvalidSDFGException("GPUOffloadReduceDispatcher: Global partial storage is not valid at WARP level");
     }
 
     // A placed partials container (partial_container) is a shared buffer; it only applies to
@@ -260,45 +259,25 @@ void GPUOffloadReduceDispatcher::dispatch_kernel_body(
         }
     }
 
-    // Declare this level's reduction partials (registers for WARP/GRID, shared memory for
-    // BLOCK) and initialize them to each operator's identity element.
+    // Declare this level's reduction partials (registers, or shared memory for a Shared block
+    // level) and initialize them to each operator's identity element.
     this->dispatch_reduction_declarations(
         kernel_language_extension, kernel_source_stream, kernel_snippet_factory, target_level
     );
 
 
-    auto warp_size = strategy_->get_warp_size();
-    if (target_level == TargetLevel::WARP) {
-        std::string warp_dim = kernel_language_extension.expression(get_target_level_dim(target_level, warp_size));
-        kernel_source_stream << "uint32_t num_warps = (" << kernel_language_extension.expression(symbolic::blockDim_x())
-                             << " + " << warp_dim << " - 1) / " << warp_dim << ";" << std::endl;
-        kernel_source_stream
-            << "uint32_t warp_id = " << kernel_language_extension.expression(symbolic::threadIdx_x()) << " / "
-            << kernel_language_extension.expression(get_target_level_dim(target_level, warp_size)) << ";" << std::endl;
-        kernel_source_stream << "uint32_t lane = " << kernel_language_extension.expression(symbolic::threadIdx_x())
-                             << " & ("
-                             << kernel_language_extension.expression(get_target_level_dim(target_level, warp_size))
-                             << " - 1);" << std::endl;
-    }
-
-    std::string coverage_dim = kernel_language_extension.expression(get_target_level_dim(target_level, warp_size));
-    // For the WARP level each thread iterates sequentially over the warp-level
-    // iteration space and accumulates into its per-thread register; the
-    // cross-lane reduction is performed afterwards via __shfl_xor_sync over the
-    // enclosing X_BLOCK lanes. The coverage loop therefore runs once per
-    // iteration rather than once per warp_size.
-    std::string coverage_count_dim = (target_level == TargetLevel::WARP) ? std::string("1") : coverage_dim;
+    std::string coverage_dim = kernel_language_extension.expression(get_target_level_dim(target_level));
     // Cast the ceil-div to int: blockDim/gridDim are unsigned, and CUDA 12.9's max()
     // overload set makes max(1, <unsigned>) ambiguous under clang-cuda.
-    std::string coverage_bound = "max(1, (int)((" + size + " + " + coverage_count_dim + " - 1) / " +
-                                 coverage_count_dim + "))";
+    std::string coverage_bound = "max(1, (int)((" + size + " + " + coverage_dim + " - 1) / " + coverage_dim + "))";
     // With a constant trip and parallel size the bound folds to a literal, so the loop
     // fully unrolls and its loads issue back to back. The launch dim is >= parallel_size,
     // so this only over-covers, which the boundary guard (absent under nested_sync) masks.
     bool guard_redundant = false;
-    if (target_level != TargetLevel::WARP && !gpu::ScheduleType_GPU_Offload::nested_sync(node_.schedule_type())) {
+    if (!gpu::ScheduleType_GPU_Offload::nested_sync(node_.schedule_type())) {
         auto trip = node_.num_iterations();
-        auto psize = gpu::ScheduleType_GPU_Offload::parallel_size(node_.schedule_type());
+        // Each launched thread (parallel_size * lanes) takes its own iteration per sweep.
+        auto psize = gpu::ScheduleType_GPU_Offload::threads(node_.schedule_type());
         if (!trip.is_null() && !psize.is_null() && SymEngine::is_a<SymEngine::Integer>(*trip) &&
             SymEngine::is_a<SymEngine::Integer>(*psize)) {
             auto t = SymEngine::rcp_static_cast<const SymEngine::Integer>(trip)->as_int();
@@ -319,33 +298,13 @@ void GPUOffloadReduceDispatcher::dispatch_kernel_body(
     }
     kernel_source_stream.changeIndent(+4);
 
-    if (target_level == TargetLevel::WARP) {
-        std::string indvar_name = indvar->get_name();
-        auto x_block_parent = find_x_block_owning_warp_level(node_, analysis_manager_);
-        if (!x_block_parent) {
-            throw InvalidSDFGException("WARP level map must be nested within an X_BLOCK level map");
-        }
-
-        // Sequential per-thread iteration over the warp-level space.
-        kernel_source_stream << "size_t " << indvar_name << " = " << kernel_language_extension.expression(node_.init())
-                             << " + " << coverage_loop_var << " * "
-                             << kernel_language_extension.expression(node_.stride()) << ";" << std::endl;
-    } else {
-        // The stride scales the whole parallel index (coverage sweeps included), as in the
-        // map dispatcher; a nested warp handles the sub-stride itself.
-        std::string parallel_index =
-            coverage_loop_var + " * " +
-            kernel_language_extension.expression(get_target_level_dim(target_level, warp_size)) + " + " +
-            kernel_language_extension.expression(get_target_level_idx(target_level));
-        std::string offset = "(" + parallel_index + ")";
-        if (!(target_level == TargetLevel::X_BLOCK && nested_warp_dim(node_, analysis_manager_))) {
-            offset = kernel_language_extension.expression(node_.stride()) + " * " + offset;
-        }
-
-        kernel_source_stream << "size_t " << indvar->get_name() << " = "
-                             << kernel_language_extension.expression(node_.init()) << " + " << offset << ";"
-                             << std::endl;
-    }
+    // The stride scales the whole parallel index (coverage sweeps included), as in the
+    // map dispatcher.
+    std::string parallel_index = coverage_loop_var + " * " + coverage_dim + " + " +
+                                 kernel_language_extension.expression(get_target_level_idx(target_level));
+    kernel_source_stream
+        << "size_t " << indvar->get_name() << " = " << kernel_language_extension.expression(node_.init()) << " + "
+        << kernel_language_extension.expression(node_.stride()) << " * (" << parallel_index << ");" << std::endl;
 
 
     // Boundary Conditions
@@ -382,30 +341,20 @@ void GPUOffloadReduceDispatcher::dispatch_kernel_body(
     // Publish per-thread register partials to their shared slots once, before the combine.
     this->dispatch_reduction_publish(kernel_language_extension, kernel_source_stream, target_level);
 
-    // Combine the per-thread / per-warp partials for this level into the accumulator.
+    // Combine the per-thread / per-group partials for this level into the accumulator.
     this->dispatch_reduction_combine(kernel_language_extension, kernel_source_stream, kernel_snippet_factory, target_level);
 }
 
-bool GPUOffloadReduceDispatcher::has_nested_warp_reduction(const std::string& container) {
-    auto& loop_analysis = analysis_manager_.get<analysis::LoopAnalysis>();
-    for (auto* loop : loop_analysis.descendants(&node_)) {
-        auto* reduce = dynamic_cast<structured_control_flow::Reduce*>(loop);
-        if (reduce == nullptr) {
-            continue;
-        }
-        if (reduce->schedule_type().category() != structured_control_flow::ScheduleTypeCategory::Offloader) {
-            continue;
-        }
-        if (gpu::ScheduleType_GPU_Offload::target_level(reduce->schedule_type()) != TargetLevel::WARP) {
-            continue;
-        }
-        for (const auto& r : reduce->reductions()) {
-            if (r.container == container) {
-                return true;
-            }
-        }
+int64_t GPUOffloadReduceDispatcher::register_lanes() {
+    const auto& schedule = node_.schedule_type();
+    if (gpu::ScheduleType_GPU_Offload::target_level(schedule) != TargetLevel::X_BLOCK) {
+        return 0;
     }
-    return false;
+    const int64_t lanes = gpu::ScheduleType_GPU_Offload::lanes(schedule)->as_int();
+    if (lanes <= 1 || lanes != wave_lanes(schedule, strategy_->get_warp_size())) {
+        return 0;
+    }
+    return lanes;
 }
 
 bool GPUOffloadReduceDispatcher::has_enclosing_block_reduction(const std::string& container) {
@@ -538,8 +487,39 @@ std::string GPUOffloadReduceDispatcher::
         }
         conditions.push_back("(" + language_extension.expression(get_target_level_idx(level)) + " == 0)");
     }
+    // A lanes map enclosing or inside this reduce replicates the reduction on each of its lanes.
+    if (auto lane_leader = replicated_lane_leader(language_extension); !lane_leader.empty()) {
+        conditions.push_back(lane_leader);
+    }
 
     return helpers::join(conditions, " && ");
+}
+
+int64_t GPUOffloadReduceDispatcher::replicating_lanes() {
+    auto& loop_analysis = analysis_manager_.get<analysis::LoopAnalysis>();
+    int64_t lanes = 1;
+    auto visit = [&](structured_control_flow::ControlFlowNode* loop) {
+        auto* map = dynamic_cast<structured_control_flow::Map*>(loop);
+        if (map != nullptr &&
+            map->schedule_type().category() == structured_control_flow::ScheduleTypeCategory::Offloader) {
+            lanes = std::max<int64_t>(lanes, gpu::ScheduleType_GPU_Offload::lanes(map->schedule_type())->as_int());
+        }
+    };
+    for (auto* loop : loop_analysis.ancestors(&node_)) {
+        visit(loop);
+    }
+    for (auto* loop : loop_analysis.descendants(&node_)) {
+        visit(loop);
+    }
+    return lanes > 1 ? lanes : 0;
+}
+
+std::string GPUOffloadReduceDispatcher::replicated_lane_leader(codegen::LanguageExtension& language_extension) {
+    const int64_t lanes = replicating_lanes();
+    if (lanes == 0) {
+        return "";
+    }
+    return "((" + language_extension.expression(symbolic::threadIdx_x()) + " % " + std::to_string(lanes) + ") == 0)";
 }
 
 std::string GPUOffloadReduceDispatcher::reduce_linear_thread_index(codegen::LanguageExtension& language_extension) {
@@ -676,12 +656,11 @@ bool GPUOffloadReduceDispatcher::uses_register_partial(TargetLevel target_level,
         return false;
     }
     // The register partial requires this to be the sole block level owning the container's
-    // body: no nested warp reduce (which emits the body itself), no nested block reduce (which
+    // body: no nested block reduce (which
     // owns the body and shadows the accumulator onto shared, leaving the register at identity
     // so the publish would clobber the shared result), and no enclosing block reduce (which
     // already declares the shared buffer, so a register partial here would redeclare it).
-    return !has_nested_warp_reduction(container) && !has_nested_block_reduction(container) &&
-           !has_enclosing_block_reduction(container);
+    return !has_nested_block_reduction(container) && !has_enclosing_block_reduction(container);
 }
 
 int64_t GPUOffloadReduceDispatcher::warp_combine_width(TargetLevel target_level, const std::string& container) {
@@ -1096,8 +1075,6 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
     // in the flat layout, while the axis-local index bounds the loop and selects writers.
     std::string lin_tid = reduce_linear_thread_index(language_extension);
 
-    std::string warp_size =
-        language_extension.expression(get_target_level_dim(TargetLevel::WARP, strategy_->get_warp_size()));
     const bool wave_converged = is_wave_converged(node_, analysis_manager_, strategy_->get_warp_size());
 
     for (const auto& r : node_.reductions()) {
@@ -1172,7 +1149,7 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
         if (is_scalar_accumulator(r.container) && is_grid_level(target_level)) {
             throw InvalidSDFGException(
                 "GPUOffloadReduceDispatcher: scalar accumulator '" + r.container +
-                "' cannot be reduced at a grid level; fold it into a block or warp level instead"
+                "' cannot be reduced at a grid level; fold it into a block level instead"
             );
         }
 
@@ -1182,8 +1159,13 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
             // combine expression (e.g. a min/max ternary) would duplicate it into divergent
             // branches, and on Volta+ a masked shuffle stalls until every named lane reaches
             // that exact instruction, deadlocking the warp.
+            // The X_BLOCK's lanes shuffle within each group of `lanes` threads, whose leader is
+            // lane 0 of the group.
+            const int64_t lanes = register_lanes();
+            const std::string group_leader = "(" + language_extension.expression(symbolic::threadIdx_x()) + " & " +
+                                             std::to_string(lanes - 1) + ") == 0";
             std::string other = "__daisy_reduce_shfl_" + r.container;
-            stream << "for (int __daisy_reduce_mask = " << warp_size << " / 2; __daisy_reduce_mask > 0; "
+            stream << "for (int __daisy_reduce_mask = " << lanes << " / 2; __daisy_reduce_mask > 0; "
                    << "__daisy_reduce_mask >>= 1) {" << std::endl;
             stream.setIndent(stream.indent() + 4);
             stream << ctype << " " << other << " = " << shuffle_xor(reg_name, "__daisy_reduce_mask") << ";"
@@ -1193,33 +1175,42 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
             stream << "}" << std::endl;
 
             if (has_enclosing_block_reduction(r.container)) {
-                // Publish this warp's result into the enclosing block's per-thread shared
-                // buffer at the lane-0 flat slot; every other slot keeps the operator
+                // Publish this group's result into the enclosing block's per-thread shared
+                // buffer at the leader's flat slot; every other slot keeps the operator
                 // identity set at declaration time. The block-level per-thread reduction
                 // tree then folds these partials (across all remaining block dimensions)
                 // exactly as it folds ordinary per-thread partials.
                 //
                 // Combine (rather than overwrite) into the slot: when the enclosing block
                 // owner's count exceeds its parallel_size its coverage loop runs multiple
-                // tiles, re-executing this publish once per tile, and each tile's warp
+                // tiles, re-executing this publish once per tile, and each tile's group
                 // result must fold into the identity-initialised slot instead of clobbering
                 // the previous tiles. For a single tile combine(identity, reg) == reg.
                 std::string slot = target;
-                stream << "if (lane == 0) {" << std::endl;
+                stream << "if (" << group_leader << ") {" << std::endl;
                 stream.setIndent(stream.indent() + 4);
                 stream << slot << " = " << combine_expr(r.operation, slot, reg_name) << ";" << std::endl;
                 stream.setIndent(stream.indent() - 4);
                 stream << "}" << std::endl;
             } else if (is_scalar_accumulator(r.container)) {
-                // Standalone warp scalar: the shuffle left the full result in every lane's
+                // Standalone scalar: the shuffle left the full result in every lane's
                 // register, so broadcast it to each lane's private scalar. There is no global
                 // slot to commit to (a scalar accumulator is thread-private).
                 stream << r.container << " = " << reg_name << ";" << std::endl;
+            } else if (has_enclosing_grid_reduction(r.container)) {
+                // An enclosing grid reduce owns the container: the group leader folds into
+                // that level's thread-local register (atomics are illegal on local memory);
+                // the grid level commits the folded result across blocks.
+                stream << "if (" << group_leader << ") {" << std::endl;
+                stream.setIndent(stream.indent() + 4);
+                stream << target << " = " << combine_expr(r.operation, target, reg_name) << ";" << std::endl;
+                stream.setIndent(stream.indent() - 4);
+                stream << "}" << std::endl;
             } else {
-                // No block level owns this container, so the per-warp result must reach
-                // the global accumulator directly. The warp leader atomically merges its
-                // register (cross-warp and cross-block combine) into acc[index].
-                stream << "if (lane == 0) {" << std::endl;
+                // No other level owns this container, so each group's result must reach the
+                // global accumulator directly. The group leader atomically merges its
+                // register (cross-group and cross-block combine) into acc[index].
+                stream << "if (" << group_leader << ") {" << std::endl;
                 stream.setIndent(stream.indent() + 4);
                 emit_atomic_commit(reg_name);
                 stream.setIndent(stream.indent() - 4);
@@ -1235,9 +1226,9 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
             // once, after all coverage-loop iterations have finished accumulating.
             // Emit one halving tree over a block axis. Neighbours are `half * stride` flat
             // slots apart (stride 1/bx/bx*by for x/y/z); ceil-half + bound guard handles
-            // non-power-of-two sizes. A nested warp publishes its per-warp result into the
-            // lane-0 slot and leaves every other slot at the operator identity, so the same
-            // per-thread tree passes those partials through unchanged.
+            // non-power-of-two sizes. A nested Register lanes reduce publishes each group's
+            // result into its leader's slot and leaves every other slot at the operator
+            // identity, so the same per-thread tree passes those partials through unchanged.
             auto emit_block_tree = [&](TargetLevel lvl, ReductionOperation op) {
                 std::string a_dim = language_extension.expression(reduce_block_dim(lvl));
                 std::string a_idx = language_extension.expression(get_target_level_idx(lvl));
@@ -1393,18 +1384,20 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
             }
 
             // Atomic commit of each thread's register straight to the global accumulator.
-            // At a grid level with no nested block/warp reduce, the reduce body is replicated
+            // At a grid level with no nested block reduce, the reduce body is replicated
             // verbatim across all block threads and each holds an identical partial; committing
             // all of them would multiply the result by blockDim, so a single thread commits.
-            // When fed by a nested block/warp reduction, only the axis leaders hold a
+            // When fed by a nested block reduction, only the axis leaders hold a
             // non-identity value (every other thread holds the operator identity), so every
             // thread may commit. At a block level (block+Global storage) each thread instead
             // holds a *distinct* reduce-axis partial, so all of them must commit.
-            bool fed_by_nested_reduction = has_nested_block_reduction(r.container) ||
-                                           has_nested_warp_reduction(r.container);
+            bool fed_by_nested_reduction = has_nested_block_reduction(r.container);
             bool redundant_threads = is_grid_level(target_level) && !fed_by_nested_reduction;
+            // The lanes of a lanes map hold identical partials: only their leader may commit.
+            const std::string lane_leader = replicated_lane_leader(language_extension);
+            std::string leader;
             if (redundant_threads) {
-                std::string leader = lin_tid + " == 0";
+                leader = lin_tid + " == 0";
                 if (multi_output) {
                     std::unordered_set<TargetLevel> mapped_axes;
                     for (auto* loop : analysis_manager_.get<analysis::LoopAnalysis>().descendants(&node_)) {
@@ -1421,13 +1414,20 @@ void GPUOffloadReduceDispatcher::dispatch_reduction_combine(
                                 .push_back("(" + language_extension.expression(get_target_level_idx(level)) + " == 0)");
                         }
                     }
+                    if (!lane_leader.empty()) {
+                        conditions.push_back(lane_leader);
+                    }
                     leader = conditions.empty() ? "true" : helpers::join(conditions, " && ");
                 }
+            } else {
+                leader = lane_leader;
+            }
+            if (!leader.empty()) {
                 stream << "if (" << leader << ") {" << std::endl;
                 stream.setIndent(stream.indent() + 4);
             }
             emit_atomic_commit(reg_name);
-            if (redundant_threads) {
+            if (!leader.empty()) {
                 stream.setIndent(stream.indent() - 4);
                 stream << "}" << std::endl;
             }

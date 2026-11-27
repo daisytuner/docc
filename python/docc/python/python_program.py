@@ -25,6 +25,7 @@ from docc.sdfg import (
 )
 from docc.compiler.docc_program import DoccProgram, DoccOptions
 from docc.compiler.compiled_sdfg import CompiledSDFG
+from docc.compiler.artifacts import artifact_file
 from docc.python.ast_parser import ASTParser
 from docc.python.type_system import element_type_from_sdfg_type, scalar_type_for_dtype
 
@@ -362,7 +363,9 @@ class PythonProgram(DoccProgram):
             return None
 
         sdfg_name = f"{self.name}_sdfg"
-        lib_path = os.path.join(output_folder, f"lib{sdfg_name}.so")
+        lib_path = os.path.join(
+            output_folder, artifact_file(self.options.target, sdfg_name)
+        )
         json_path = os.path.join(output_folder, f"{sdfg_name}.py5.post_sched.json")
         if not os.path.exists(lib_path):
             raise ValueError(f"Tried reusing binary '{lib_path}' but does not exist")

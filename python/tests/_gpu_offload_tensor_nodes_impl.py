@@ -3,7 +3,7 @@ Backend-agnostic check that every tensor library node can be offloaded to the GP
 
 Each case builds an SDFG holding a single tensor library node directly through the
 ``StructuredSDFGBuilder`` API (no PyTorch frontend), runs the regular
-expand -> simplify -> normalize -> schedule pipeline for the GPU target, compiles
+expand -> simplify -> schedule pipeline for the GPU target, compiles
 it, runs it and compares against a NumPy reference.
 
 A case passes only if nothing is computed on the host after scheduling: every loop
@@ -1233,8 +1233,6 @@ def run_case(spec, params, target, output_dir: Path, check_offload=True):
         opts = TargetOptions(target, "server")
         sdfg.expand(opts)
         sdfg.simplify()
-        sdfg.normalize()
-        opts.already_normalized = True
         sdfg.schedule(opts)
         sdfg.validate()
         host = host_compute(json.loads(sdfg.to_json()), target) if check_offload else []

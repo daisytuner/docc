@@ -440,6 +440,35 @@ const std::vector<structured_control_flow::ControlFlowNode*> LoopAnalysis::outer
     return outermost_maps_;
 }
 
+std::vector<structured_control_flow::ControlFlowNode*> LoopAnalysis::innermost_loops() const {
+    std::vector<structured_control_flow::ControlFlowNode*> result;
+    for (auto* loop : this->loops_) {
+        if (dyn_cast<StructuredLoop*>(loop) != nullptr) {
+            if (this->is_innermost_loop(loop)) {
+                result.push_back(loop);
+            }
+        }
+    }
+    return result;
+}
+
+bool LoopAnalysis::is_innermost_loop(structured_control_flow::ControlFlowNode* loop) const {
+    auto& children = this->children(loop);
+    return children.empty();
+}
+
+std::vector<structured_control_flow::ControlFlowNode*> LoopAnalysis::innermost_maps() const {
+    std::vector<structured_control_flow::ControlFlowNode*> result;
+    for (auto* loop : this->loops_) {
+        if (auto* map = dyn_cast<structured_control_flow::Map*>(loop)) {
+            if (this->is_innermost_loop(loop)) {
+                result.push_back(map);
+            }
+        }
+    }
+    return result;
+}
+
 const std::vector<sdfg::structured_control_flow::ControlFlowNode*>& LoopAnalysis::
     children(sdfg::structured_control_flow::ControlFlowNode* node) const {
     // Find unique child

@@ -50,10 +50,9 @@ def test_doitgen(target):
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
-                "VECTORIZE": 1,
                 "MAP": 3,
                 "GEMM": 1,
-                "SEQUENTIAL": 4,
+                "SEQUENTIAL": 5,
                 "FOR": 2,
             }
         )

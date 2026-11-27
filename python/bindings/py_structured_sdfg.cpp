@@ -6,6 +6,7 @@
 #include <memory>
 #include <nlohmann/json_fwd.hpp>
 #include <sstream>
+#include <unordered_set>
 
 #include <dlfcn.h>
 #include <unistd.h>
@@ -22,25 +23,22 @@
 #include <sdfg/fp_math/library_nodes/ozaki_matmul_node.h>
 #include <sdfg/fp_math/passes/contraction_precision.h>
 #include <sdfg/fp_math/passes/fp_contraction.h>
+#include <sdfg/loops/passes/loop_normal_form.h>
 #include <sdfg/parallelization/passes/auto_parallelization.h>
 #include <sdfg/passes/dataflow/approximate_math.h>
 #include <sdfg/passes/dataflow/dead_data_elimination.h>
+#include <sdfg/passes/dataflow/float_widening.h>
 #include <sdfg/passes/dataflow/local_buffer_reuse.h>
 #include <sdfg/passes/dataflow/tensor_to_pointer_conversion.h>
 #include <sdfg/passes/dot_expansion_pass.h>
-#include <sdfg/passes/normalization/loop_normal_form.h>
-#include <sdfg/passes/normalization/normalization.h>
-#include <sdfg/passes/normalization/normalize.h>
 #include <sdfg/passes/offloading/cuda_library_node_rewriter_pass.h>
 #include <sdfg/passes/offloading/device_buffer_reuse_pass.h>
+#include <sdfg/passes/offloading/lanes_map_predication.h>
 #include <sdfg/passes/offloading/reduction_shared_memory_delinearization.h>
 #include <sdfg/passes/opt_pipeline.h>
 #include <sdfg/passes/pipeline.h>
 #include <sdfg/passes/rpc/rpc_scheduling_pass.h>
-#include <sdfg/passes/scheduler/cuda_scheduler.h>
-#include <sdfg/passes/scheduler/loop_scheduling_pass.h>
 #include <sdfg/passes/scheduler/omp_scheduler.h>
-#include <sdfg/passes/scheduler/scheduler_registry.h>
 #include <sdfg/passes/structured_control_flow/common_assignment_elimination.h>
 #include <sdfg/passes/structured_control_flow/condition_elimination.h>
 #include <sdfg/passes/structured_control_flow/pointer_evolution.h>
@@ -49,6 +47,9 @@
 #include <sdfg/passes/symbolic/symbol_promotion.h>
 #include <sdfg/passes/symbolic/symbol_propagation.h>
 #include <sdfg/passes/targets/device_residency.h>
+#include <sdfg/reordering/reordering.h>
+#include <sdfg/scheduling/loops/loop_scheduling_pass.h>
+#include <sdfg/scheduling/target_scheduling.h>
 #include <sdfg/serializer/json_serializer.h>
 
 #include <sdfg/helpers/helpers.h>
@@ -62,7 +63,6 @@
 #include "docc/compile/src_file_compiler_builder.h"
 #include "docc/util/docc_paths.h"
 #include "sdfg/passes/dataflow/tasklet_fusion.h"
-#include "sdfg/passes/loop_fusion/loop_fusion_pass.h"
 #include "sdfg/passes/memory/tensor_allocation_size_inference.h"
 #include "sdfg/passes/offloading/code_motion/block_hoisting.h"
 #include "sdfg/passes/offloading/code_motion/block_sorting.h"
@@ -73,12 +73,11 @@
 #include "sdfg/passes/redundant_zero_init_elimination_pass.h"
 #include "sdfg/passes/rpc/daisytuner_rpc_context.h"
 #include "sdfg/passes/rpc/rpc_context.h"
-#include "sdfg/passes/scheduler/vectorize_scheduler.h"
 #include "sdfg/passes/schedules/expansion_pass.h"
 #include "sdfg/passes/targets/target_mapping_pass.h"
+#include "sdfg/reordering/passes/loop_fusion/loop_fusion_pass.h"
 #include "sdfg/targets/omp/schedule.h"
 #include "sdfg/util/offloading_instrumentation_plan.h"
-#include "targets/target_mapping.h"
 
 #ifdef DOCC_HAS_TARGET_ET
 #include <docc/target/et/target.h>
@@ -203,6 +202,13 @@ void PyStructuredSDFG::approximate_math() {
     pass.run(builder, analysis_manager);
 }
 
+void PyStructuredSDFG::widen_floats(const std::vector<sdfg::types::PrimitiveType>& types) {
+    sdfg::builder::StructuredSDFGBuilder builder(*sdfg_);
+    sdfg::analysis::AnalysisManager analysis_manager(*sdfg_, options_);
+    sdfg::passes::FloatWidening pass({types.begin(), types.end()});
+    pass.run(builder, analysis_manager);
+}
+
 void PyStructuredSDFG::expand() {
     docc::target::TargetOptions opt{.target = "none", .category = "", .remote_tuning = false};
     expand(opt);
@@ -217,6 +223,9 @@ void PyStructuredSDFG::expand(const docc::target::TargetOptions& options) {
     sdfg::passes::CompileStatistics::enter_stage_if_enabled("expand");
     sdfg::builder::StructuredSDFGBuilder builder_opt(*sdfg_);
     sdfg::analysis::AnalysisManager analysis_manager(*sdfg_, options_);
+    auto* target = docc_context_.get_target_handler(options.target);
+    static const docc::target::TargetPrecision native;
+    const auto& target_precision = target ? target->safe_get_precision() : native;
 
     // Tensor layouts are lost on expansion, so record buffer sizes for offloading first
     sdfg::passes::TensorAllocationSizeInference tensor_allocation_size_inference;
@@ -224,23 +233,34 @@ void PyStructuredSDFG::expand(const docc::target::TargetOptions& options) {
 
     // Matmuls with prepared Ozaki slices of B leave Int8 matmuls as the precision pass does, before the targets map
     // them.
-    sdfg::fp_math::expand_ozaki_matmuls(builder_opt, analysis_manager);
+    sdfg::fp_math::expand_ozaki_matmuls(
+        builder_opt, analysis_manager, target_precision.contraction_bits, target_precision.contraction_min_normal
+    );
 
     // Before the targets map matmuls, e.g. to BLAS; they map the Int8 matmuls the emulation leaves instead.
     if (options.contraction_precision != "native") {
         auto precision = sdfg::fp_math::ContractionPrecision::parse(options.contraction_precision);
-        if (auto* target = docc_context_.get_target_handler(options.target);
-            target && target->safe_get_direct_contraction_rescaling()) {
+        if (target_precision.direct_rescaling) {
             precision.rescaling = sdfg::fp_math::Rescaling::Direct;
             if (precision.kind == sdfg::fp_math::ContractionPrecision::Kind::Ozaki) {
                 precision.variant = sdfg::fp_math::OzakiVariant::Slicing;
             }
         }
+        precision.max_bits = target_precision.contraction_bits;
+        precision.min_normal = target_precision.contraction_min_normal;
         sdfg::fp_math::ContractionPrecisionPass contraction_precision_pass(precision);
         contraction_precision_pass.run(builder_opt, analysis_manager);
     }
 
-    if (auto* target = docc_context_.get_target_handler(options.target)) {
+    // After the contraction precision, which slices by the operands' own types: FP8, which no code generator stores,
+    // and the float types the target does not store compute in Float.
+    std::set<sdfg::types::PrimitiveType>
+        widened(target_precision.widened_float_types.begin(), target_precision.widened_float_types.end());
+    widened.insert({sdfg::types::PrimitiveType::Float8E4M3, sdfg::types::PrimitiveType::Float8E5M2});
+    sdfg::passes::FloatWidening widening(widened);
+    widening.run(builder_opt, analysis_manager);
+
+    if (target) {
         if (auto target_expand = target->safe_apply_expand_time_mapping_fn_get()) {
             target_expand(builder_opt, analysis_manager, options);
         }
@@ -333,7 +353,7 @@ void PyStructuredSDFG::simplify(const docc::target::TargetOptions& options) {
     }
 
     // Normalize loop condition and update (run twice)
-    sdfg::passes::normalization::LoopNormalFormPass loop_normalization_pass;
+    sdfg::loops::LoopNormalFormPass loop_normalization_pass;
     loop_normalization_pass.run(builder_opt, analysis_manager);
 
     // Dead code elimination
@@ -390,7 +410,7 @@ void PyStructuredSDFG::simplify(const docc::target::TargetOptions& options) {
         dump_debug("py3.1.pre-fusion");
 
         // New Map Fusion, simpler than previous, but what it can do should be cheaper to do
-        sdfg::passes::loop_fusion::LoopFusionPass map_fusion_by_domain_pass({.allow_init_hoist = false});
+        sdfg::reordering::loop_fusion::LoopFusionPass map_fusion_by_domain_pass({.allow_init_hoist = false});
         map_fusion_by_domain_pass.run(builder_opt, analysis_manager);
 
         dump_debug("py3.2.post-fusion");
@@ -413,7 +433,7 @@ void PyStructuredSDFG::simplify(const docc::target::TargetOptions& options) {
 
     // Fuse maps (no init-into-reduction hoisting in simplify; reserved for the final
     // normalize() map-fusion run so loop distribution and fusion do not fight)
-    auto map_fusion = sdfg::passes::normalization::map_fusion(false, false);
+    auto map_fusion = sdfg::reordering::map_fusion(false, false);
     map_fusion.run(builder_opt, analysis_manager);
 
     // Contract multiplications feeding additions into FMAs (-ffp-contract=fast)
@@ -483,99 +503,39 @@ void PyStructuredSDFG::dump(
     }
 }
 
-void PyStructuredSDFG::normalize(const docc::target::TargetOptions& options) {
-    sdfg::passes::normalization::normalize(*sdfg_, options.enable_fusion_in_normalize);
-}
-
 void PyStructuredSDFG::schedule(const std::string& target, const std::string& category, bool remote_tuning) {
     docc::target::TargetOptions topts = {.target = target, .category = category, .remote_tuning = remote_tuning};
     schedule(topts);
 }
-void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options, bool schedule_loops) {
-    sdfg::passes::CompileStatistics::enter_stage_if_enabled("schedule");
+void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options, bool schedule_loops, bool normalize) {
     if (options.target == "none") {
         return;
     }
+    sdfg::passes::CompileStatistics::enter_stage_if_enabled("schedule");
 
     sdfg::builder::StructuredSDFGBuilder builder(*sdfg_);
     sdfg::analysis::AnalysisManager analysis_manager(*sdfg_, options_);
 
-    docc::plugins::apply_lib_node_target_mapping(docc_context_, builder, analysis_manager, options);
-
-    // CPU Opt Pipeline
-    if (options.target == "sequential" || options.target == "openmp") {
-        sdfg::passes::Pipeline dce = sdfg::passes::Pipeline::dead_code_elimination();
-        sdfg::passes::DeadDataElimination dde;
-        sdfg::passes::SymbolPropagation symbol_propagation_pass;
-        symbol_propagation_pass.run(builder, analysis_manager);
-        dde.run(builder, analysis_manager);
-        dce.run(builder, analysis_manager);
-    }
+    // Arg-capture mode pretends to schedule for the target but keeps all execution on the host.
+    sdfg::scheduling::ScheduleConfig config{
+        .normalize = normalize,
+        .schedule_loops = schedule_loops,
+        // The SDFG in the target's normal form, as tools such as the gym and cutout scripts read it.
+        .on_normal_form = [this](const sdfg::StructuredSDFG&) {
+            dump_debug("py4.norm");
+        }
+    };
 
     if (options.remote_tuning) {
-        std::shared_ptr<sdfg::passes::rpc::RpcContext> context =
-            sdfg::passes::rpc::DaisytunerRpcContext::from_docc_config();
-        sdfg::passes::scheduler::RpcOptimizationPass
-            rpc_optimization_pass(context, options, options.enable_fusion_in_normalize, schedule_loops);
-        rpc_optimization_pass.run(builder, analysis_manager);
+        config.remote_tuning = [&options, schedule_loops](bool remote_normalize) {
+            return std::make_unique<sdfg::passes::scheduler::RpcOptimizationPass>(
+                sdfg::passes::rpc::DaisytunerRpcContext::from_docc_config(), options, remote_normalize, schedule_loops
+            );
+        };
     }
 
-    // Arg-capture mode: Pretends to schedule for target
-    // but keeps all execution on single-core host
-    if (!schedule_loops) {
-        return;
-    }
+    sdfg::scheduling::schedule(docc_context_, builder, analysis_manager, options, config);
 
-    // Acquire target-specific loop schedulers only after remote tuning, since they are consumed
-    // solely by the LoopSchedulingPass below.
-    std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> schedulers;
-
-    auto* handler = docc_context_.get_target_handler(options.target);
-    if (handler) {
-        auto target_schedulers = handler->safe_get_target_loop_schedulers(options);
-        if (!target_schedulers.empty()) {
-            schedulers.insert(schedulers.end(), target_schedulers.begin(), target_schedulers.end());
-        }
-    }
-
-    auto mapped = schedulers | std::views::transform([&](auto& n) {
-                      return n.get();
-                  });
-    std::vector<sdfg::passes::scheduler::LoopScheduler*> unwrapped_schedulers(mapped.begin(), mapped.end());
-
-    sdfg::passes::scheduler::LoopSchedulingPass loop_scheduling_pass(unwrapped_schedulers, nullptr);
-    loop_scheduling_pass.run(builder, analysis_manager);
-
-    if (options.target == "cuda" || options.target == "rocm") {
-        sdfg::passes::DataTransferMinimizationPass data_transfer_minimization_pass;
-        data_transfer_minimization_pass.run(builder, analysis_manager);
-
-        sdfg::passes::DeviceBufferReusePass device_buffer_reuse_pass;
-        device_buffer_reuse_pass.run(builder, analysis_manager);
-        sdfg::passes::DeadDataElimination dde(false);
-        dde.run(builder, analysis_manager);
-        sdfg::passes::DeadCFGElimination dead_cfg_elimination;
-        dead_cfg_elimination.run(builder, analysis_manager);
-
-        sdfg::passes::ReferencePropagation reference_propagation;
-        reference_propagation.run(builder, analysis_manager);
-        sdfg::passes::DeadReferenceElimination dead_reference_elimination;
-        dead_reference_elimination.run(builder, analysis_manager);
-        reference_propagation.run(builder, analysis_manager);
-        dead_reference_elimination.run(builder, analysis_manager);
-
-        // Drop redundant zero-init nests of matmuls lowered to MMA. Run after reference propagation and
-        // transfer cleanup so the init map is the immediate sibling of the MMA nest and both name the same
-        // (aliases collapsed) output container, which is what the transformation matches. Nests whose output
-        // still round-trips through the host here only become eligible after device-residency promotion, so
-        // the pass is re-run in promote_device_residency().
-        dump_debug("pre_zero_init_elim");
-        sdfg::passes::RedundantZeroInitEliminationPass redundant_zero_init_elimination_pass;
-        redundant_zero_init_elimination_pass.run(builder, analysis_manager);
-        dde.run(builder, analysis_manager);
-
-        dead_cfg_elimination.run(builder, analysis_manager);
-    }
     sdfg::passes::CompileStatistics::exit_stage_if_enabled();
 }
 
@@ -625,6 +585,23 @@ std::string PyStructuredSDFG::compile(
     if (!fs::exists(build_path)) {
         fs::create_directories(build_path);
     }
+
+    // A target with its own code generator writes its artifact in place of the C++ library.
+    if (auto* handler = docc_context_.get_target_handler(target)) {
+        if (auto* artifact = handler->safe_get_artifact()) {
+            docc::target::CodegenRequest request{
+                .output_folder = output_folder,
+                .instrumentation_mode = instrumentation_mode,
+                .capture_args = capture_args,
+                .debug_build = debug_build,
+                .threads = threads,
+                .reuse_sources = reuse_sources,
+                .options = &options_,
+            };
+            return artifact->compile(*sdfg_, request);
+        }
+    }
+
     fs::path header_path = build_path / (sdfg_->name() + ".h");
     fs::path source_path = build_path / (sdfg_->name() + ".cpp");
 
@@ -635,6 +612,8 @@ std::string PyStructuredSDFG::compile(
     // Prepare already-scheduled graphs before instrumentation and code generation.
     sdfg::passes::ReductionSharedMemoryDelinearization reduction_buffers;
     reduction_buffers.run(builder_opt, analysis_manager);
+    sdfg::passes::LanesMapPredication lanes_predication;
+    lanes_predication.run(builder_opt, analysis_manager);
 
     // Instrumentation plan
     std::unique_ptr<sdfg::codegen::InstrumentationPlan> instrumentation_plan;
@@ -791,6 +770,8 @@ std::string PyStructuredSDFG::to_cpp() const {
 
     sdfg::passes::ReductionSharedMemoryDelinearization reduction_buffers;
     reduction_buffers.run(builder, analysis_manager);
+    sdfg::passes::LanesMapPredication lanes_predication;
+    lanes_predication.run(builder, analysis_manager);
 
     auto instrumentation_plan = sdfg::codegen::InstrumentationPlan::none(sdfg);
     auto arg_capture_plan = sdfg::codegen::ArgCapturePlan::none(sdfg);

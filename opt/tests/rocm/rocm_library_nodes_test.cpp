@@ -200,7 +200,6 @@ TEST(RocBlasTest, GemmNodeWithoutDataTransfers_DoublePrecisionNoThrow) {
         codegen::MapDispatcherRegistry::instance(),
         codegen::ReduceDispatcherRegistry::instance(),
         local_registry,
-        passes::scheduler::SchedulerRegistry::instance(),
         tiles::TileTargetRegistry::instance()
     };
     rocm::register_rocm_plugin(ctx);
@@ -275,7 +274,6 @@ TEST(RocBlasTest, GemmNodeWithoutDataTransfers_HalfPrecisionEmitsHgemm) {
         codegen::MapDispatcherRegistry::instance(),
         codegen::ReduceDispatcherRegistry::instance(),
         local_registry,
-        passes::scheduler::SchedulerRegistry::instance(),
         tiles::TileTargetRegistry::instance()
     };
     rocm::register_rocm_plugin(ctx);
@@ -358,7 +356,6 @@ TEST(RocBlasTest, GemmNodeWithDataTransfers_HalfPrecisionUsesFloat16Buffers) {
         codegen::MapDispatcherRegistry::instance(),
         codegen::ReduceDispatcherRegistry::instance(),
         local_registry,
-        passes::scheduler::SchedulerRegistry::instance(),
         tiles::TileTargetRegistry::instance()
     };
     rocm::register_rocm_plugin(ctx);
@@ -442,7 +439,6 @@ TEST(RocBlasTest, GemmNodeWithoutDataTransfers_BFloat16EmitsGemmEx) {
         codegen::MapDispatcherRegistry::instance(),
         codegen::ReduceDispatcherRegistry::instance(),
         local_registry,
-        passes::scheduler::SchedulerRegistry::instance(),
         tiles::TileTargetRegistry::instance()
     };
     rocm::register_rocm_plugin(ctx);
@@ -530,7 +526,6 @@ TEST(RocBlasTest, GemmNodeWithDataTransfers_BFloat16UsesBFloat16Buffers) {
         codegen::MapDispatcherRegistry::instance(),
         codegen::ReduceDispatcherRegistry::instance(),
         local_registry,
-        passes::scheduler::SchedulerRegistry::instance(),
         tiles::TileTargetRegistry::instance()
     };
     rocm::register_rocm_plugin(ctx);

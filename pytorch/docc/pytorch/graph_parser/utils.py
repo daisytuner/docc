@@ -8,7 +8,7 @@ import torch.fx
 import torch.fx.passes.shape_prop
 from torch.fx.node import Argument, Target
 
-from typing import Any
+from typing import Any, overload
 from abc import ABC, abstractmethod
 import math
 from enum import Enum
@@ -521,8 +521,8 @@ TORCH_PRIMITIVE_TYPES: dict[torch.dtype, PrimitiveType] = {
     # Unsupported: torch.cfloat
     # Unsupported: torch.complex128
     # Unsupported: torch.cdouble
-    # Unsupported: torch.float8_e4m3fn
-    # Unsupported: torch.float8_e5m2
+    torch.float8_e4m3fn: PrimitiveType.Float8E4M3,
+    torch.float8_e5m2: PrimitiveType.Float8E5M2,
     # Unsupported: torch.float8_e4m3fnuz
     # Unsupported: torch.float8_e5m2fnuz
     # Unsupported: torch.float8_e8m0fnuz
@@ -540,6 +540,12 @@ TORCH_PRIMITIVE_TYPES: dict[torch.dtype, PrimitiveType] = {
     torch.long: PrimitiveType.Int64,
     torch.bool: PrimitiveType.Bool,
 }
+
+
+def promoted_type(a: PrimitiveType, b: PrimitiveType) -> PrimitiveType:
+    """The type PyTorch computes values of types ``a`` and ``b`` in (``torch.promote_types``)."""
+    dtypes = {primitive: dtype for dtype, primitive in TORCH_PRIMITIVE_TYPES.items()}
+    return TORCH_PRIMITIVE_TYPES[torch.promote_types(dtypes[a], dtypes[b])]
 
 
 class GraphParserBase:
@@ -1403,6 +1409,62 @@ class GraphParserModule(GraphParserBase, ABC):
             info: TensorInfo = TensorInfo(node.name, sdfg_tensor)
             metadata.add_tensor(node.name, info)
         self.create_view(node, builder, metadata, info, ref_info)
+
+    @overload
+    def cast_to(
+        self,
+        node: torch.fx.Node,
+        builder: StructuredSDFGBuilder,
+        metadata: TensorMetadata,
+        operand: "TensorInfo",
+        element: Scalar,
+    ) -> "TensorInfo": ...
+
+    @overload
+    def cast_to(
+        self,
+        node: torch.fx.Node,
+        builder: StructuredSDFGBuilder,
+        metadata: TensorMetadata,
+        operand: "TensorInfo | TensorConstant",
+        element: Scalar,
+    ) -> "TensorInfo | TensorConstant": ...
+
+    def cast_to(
+        self,
+        node: torch.fx.Node,
+        builder: StructuredSDFGBuilder,
+        metadata: TensorMetadata,
+        operand: "TensorInfo | TensorConstant",
+        element: Scalar,
+    ) -> "TensorInfo | TensorConstant":
+        """
+        ``operand`` with elements of type ``element``: as it is if they are, else a copy cast to it, such as a
+        bfloat16 weight that multiplies a float32 value, which PyTorch promotes to float32 first. Elementwise library
+        nodes need inputs of one type.
+        """
+        if operand.element_type().primitive_type == element.primitive_type:
+            return operand
+        if isinstance(operand, TensorConstant):
+            floats = primitive_type_is_floating_point(
+                operand.element_type().primitive_type
+            ) and primitive_type_is_floating_point(element.primitive_type)
+            return TensorConstant(operand.value(), element) if floats else operand
+        tensor: Tensor = Tensor(element, operand.shape())
+        sdfg_type: Type = (
+            Pointer(element) if isinstance(operand.sdfg_type(), Pointer) else element
+        )
+        cast: TensorInfo = self.create_intermediate_tensor_info(
+            node, builder, metadata, sdfg_type, tensor, [operand]
+        )
+        builder.add_cast_op(
+            operand.container(),
+            operand.sdfg_tensor_type(),
+            cast.container(),
+            tensor,
+            self.get_debug_info(node),
+        )
+        return cast
 
     def create_intermediate_tensor_info(
         self,

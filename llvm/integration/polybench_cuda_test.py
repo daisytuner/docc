@@ -109,12 +109,12 @@ def test_correlation(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     verifier = SDFGVerification(
         verification={
             "sdfgs": 8,
-            "REDUCE": 4,
-            "SEQUENTIAL": 9,
-            "CUDAOffloading": 30,
-            "MAP": 25,
-            "CUDA_Offload": 22,
-            "FOR": 2,
+            "REDUCE": 6,
+            "SEQUENTIAL": 7,
+            "CUDAOffloading": 15,
+            "MAP": 13,
+            "CUDA_Offload": 12,
+            "FOR": 0,
         },
     )
     test_case = benchmark_path / "correlation.c"
@@ -163,12 +163,12 @@ def test_covariance(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     verifier = SDFGVerification(
         verification={
             "sdfgs": 8,
-            "CUDAOffloading": 20,
-            "MAP": 17,
-            "CUDA_Offload": 15,
-            "FOR": 2,
-            "SEQUENTIAL": 7,
-            "REDUCE": 3,
+            "CUDAOffloading": 11,
+            "MAP": 9,
+            "CUDA_Offload": 9,
+            "FOR": 0,
+            "SEQUENTIAL": 5,
+            "REDUCE": 5,
         },
     )
     test_case = benchmark_path / "covariance.c"
@@ -223,10 +223,10 @@ def test_gemm(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "FOR": 4,
-            "SEQUENTIAL": 5,
-            "CUDAOffloading": 16,
-            "MAP": 12,
-            "CUDA_Offload": 11,
+            "SEQUENTIAL": 6,
+            "CUDAOffloading": 11,
+            "MAP": 11,
+            "CUDA_Offload": 9,
         },
     )
     test_case = benchmark_path / "gemm.c"
@@ -280,12 +280,12 @@ def test_gemver(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     verifier = SDFGVerification(
         verification={
             "sdfgs": 8,
-            "REDUCE": 4,
-            "CUDAOffloading": 40,
+            "REDUCE": 5,
+            "CUDAOffloading": 32,
             "MAP": 10,
-            "CUDA_Offload": 9,
-            "FOR": 1,
-            "SEQUENTIAL": 6,
+            "CUDA_Offload": 11,
+            "FOR": 0,
+            "SEQUENTIAL": 4,
         },
     )
     test_case = benchmark_path / "gemver.c"
@@ -340,10 +340,10 @@ def test_gesummv(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 4,
-            "CUDAOffloading": 26,
-            "MAP": 9,
-            "CUDA_Offload": 9,
-            "SEQUENTIAL": 4,
+            "CUDAOffloading": 15,
+            "MAP": 6,
+            "CUDA_Offload": 5,
+            "SEQUENTIAL": 5,
             "FOR": 0,
         },
     )
@@ -399,10 +399,10 @@ def test_symm(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 3,
-            "CUDAOffloading": 10,
+            "CUDAOffloading": 8,
             "MAP": 8,
-            "CUDA_Offload": 7,
-            "SEQUENTIAL": 6,
+            "CUDA_Offload": 5,
+            "SEQUENTIAL": 8,
             "FOR": 2,
         },
     )
@@ -457,12 +457,12 @@ def test_syr2k(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     verifier = SDFGVerification(
         verification={
             "sdfgs": 8,
-            "REDUCE": 4,
-            "CUDAOffloading": 16,
+            "REDUCE": 3,
+            "CUDAOffloading": 11,
             "MAP": 9,
-            "CUDA_Offload": 9,
-            "SEQUENTIAL": 4,
-            "FOR": 0,
+            "CUDA_Offload": 7,
+            "SEQUENTIAL": 6,
+            "FOR": 1,
         },
     )
     test_case = benchmark_path / "syr2k.c"
@@ -516,12 +516,12 @@ def test_syrk(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     verifier = SDFGVerification(
         verification={
             "sdfgs": 8,
-            "REDUCE": 4,
-            "CUDAOffloading": 12,
+            "REDUCE": 3,
+            "CUDAOffloading": 8,
             "MAP": 9,
-            "CUDA_Offload": 9,
-            "SEQUENTIAL": 4,
-            "FOR": 0,
+            "CUDA_Offload": 7,
+            "SEQUENTIAL": 6,
+            "FOR": 1,
         },
     )
     test_case = benchmark_path / "syrk.c"
@@ -640,9 +640,9 @@ def test_2mm(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
             "sdfgs": 8,
             "FOR": 3,
             "REDUCE": 2,
-            "MAP": 17,
-            "SEQUENTIAL": 7,
-            "CUDA_Offload": 15,
+            "MAP": 13,
+            "SEQUENTIAL": 5,
+            "CUDA_Offload": 13,
         },
     )
     test_case = benchmark_path / "2mm.c"
@@ -697,9 +697,9 @@ def test_3mm(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "FOR": 3,
-            "CUDAOffloading": 34,
-            "MAP": 21,
-            "CUDA_Offload": 18,
+            "CUDAOffloading": 22,
+            "MAP": 15,
+            "CUDA_Offload": 15,
         },
     )
     test_case = benchmark_path / "3mm.c"
@@ -754,10 +754,10 @@ def test_atax(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 4,
-            "CUDAOffloading": 16,
-            "MAP": 11,
-            "CUDA_Offload": 11,
-            "SEQUENTIAL": 5,
+            "CUDAOffloading": 8,
+            "MAP": 8,
+            "CUDA_Offload": 7,
+            "SEQUENTIAL": 6,
             "FOR": 1,
         },
     )
@@ -818,9 +818,9 @@ def test_bicg(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     verifier = SDFGVerification(
         verification={
             "sdfgs": 8,
-            "FOR": 2,
-            "MAP": 9,
-            "CUDA_Offload": 10,
+            "FOR": 1,
+            "MAP": 8,
+            "CUDA_Offload": 7,
         },
     )
     test_case = benchmark_path / "bicg.c"
@@ -874,12 +874,12 @@ def test_doitgen(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     verifier = SDFGVerification(
         verification={
             "sdfgs": 9,
-            "REDUCE": 3,
-            "SEQUENTIAL": 16,
-            "CUDA_Offload": 5,
-            "FOR": 6,
+            "REDUCE": 5,
+            "SEQUENTIAL": 13,
+            "CUDA_Offload": 6,
+            "FOR": 4,
             "CUDAOffloading": 6,
-            "MAP": 12,
+            "MAP": 10,
         },
     )
     test_case = benchmark_path / "doitgen.c"
@@ -933,12 +933,12 @@ def test_mvt(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     verifier = SDFGVerification(
         verification={
             "sdfgs": 8,
-            "REDUCE": 4,
-            "CUDAOffloading": 18,
+            "REDUCE": 5,
+            "CUDAOffloading": 17,
             "MAP": 6,
-            "CUDA_Offload": 5,
-            "SEQUENTIAL": 6,
-            "FOR": 1,
+            "CUDA_Offload": 7,
+            "SEQUENTIAL": 4,
+            "FOR": 0,
         },
     )
     test_case = benchmark_path / "mvt.c"
@@ -992,12 +992,12 @@ def test_cholesky(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     verifier = SDFGVerification(
         verification={
             "sdfgs": 8,
-            "REDUCE": 6,
-            "SEQUENTIAL": 8,
-            "CUDAOffloading": 18,
-            "MAP": 13,
-            "CUDA_Offload": 13,
-            "FOR": 2,
+            "REDUCE": 5,
+            "SEQUENTIAL": 12,
+            "CUDAOffloading": 9,
+            "MAP": 11,
+            "CUDA_Offload": 7,
+            "FOR": 3,
         },
     )
     test_case = benchmark_path / "cholesky.c"
@@ -1166,12 +1166,12 @@ def test_lu(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     verifier = SDFGVerification(
         verification={
             "sdfgs": 8,
-            "REDUCE": 6,
-            "SEQUENTIAL": 9,
-            "CUDAOffloading": 18,
-            "MAP": 14,
-            "CUDA_Offload": 13,
-            "FOR": 2,
+            "REDUCE": 5,
+            "SEQUENTIAL": 13,
+            "CUDAOffloading": 9,
+            "MAP": 12,
+            "CUDA_Offload": 7,
+            "FOR": 3,
         },
     )
     test_case = benchmark_path / "lu.c"
@@ -1225,13 +1225,13 @@ def test_ludcmp(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     verifier = SDFGVerification(
         verification={
             "sdfgs": 8,
-            "REDUCE": 8,
+            "REDUCE": 7,
             "Call": 13,
-            "SEQUENTIAL": 13,
-            "CUDAOffloading": 24,
-            "MAP": 16,
-            "CUDA_Offload": 15,
-            "FOR": 4,
+            "SEQUENTIAL": 17,
+            "CUDAOffloading": 15,
+            "MAP": 14,
+            "CUDA_Offload": 9,
+            "FOR": 5,
         },
     )
     test_case = benchmark_path / "ludcmp.c"
@@ -1292,9 +1292,9 @@ def test_trisolv(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "FOR": 2,
-            "MAP": 5,
-            "SEQUENTIAL": 5,
-            "CUDA_Offload": 5,
+            "MAP": 4,
+            "SEQUENTIAL": 6,
+            "CUDA_Offload": 3,
         },
     )
     test_case = benchmark_path / "trisolv.c"
@@ -1343,7 +1343,7 @@ def test_deriche(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
     verifier = SDFGVerification(
         verification={
             "sdfgs": 8,
-            "CUDAOffloading": 32,
+            "CUDAOffloading": 16,
             "MAP": 15,
             "FOR": 4,
             "CUDA_Offload": 15,
@@ -1482,9 +1482,9 @@ def test_adi(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "FOR": 5,
-            "CUDAOffloading": 44,
-            "MAP": 19,
-            "CUDA_Offload": 19,
+            "CUDAOffloading": 15,
+            "MAP": 7,
+            "CUDA_Offload": 7,
             "SEQUENTIAL": 8,
             "REDUCE": 3,
         },
@@ -1537,7 +1537,7 @@ def test_fdtd_2d(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
             "sdfgs": 8,
             "REDUCE": 3,
             "SEQUENTIAL": 4,
-            "CUDAOffloading": 28,
+            "CUDAOffloading": 26,
             "MAP": 13,
             "CUDA_Offload": 13,
             "FOR": 1,
@@ -1590,10 +1590,10 @@ def test_heat_3d(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 8,
             "REDUCE": 3,
-            "SEQUENTIAL": 7,
+            "SEQUENTIAL": 4,
             "CUDAOffloading": 14,
             "MAP": 10,
-            "CUDA_Offload": 7,
+            "CUDA_Offload": 10,
             "FOR": 1,
         },
     )

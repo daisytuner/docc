@@ -71,11 +71,22 @@ Create a new `AnalysisManager` after each change, or reuse one and call `invalid
 | Loop structure  | `LoopTiling`, `MultiLevelTiling`, `LoopInterchange`, `LoopSkewing`, `LoopDistribute`, `LoopSplit`, `LoopPeeling`, `LoopShift`, `LoopRotate`, `LoopUnitStride`, `TrivialLoopElimination`, `UnrollTransform` | `opt/include/sdfg/transformations/`        |
 | Maps            | `MapCollapse`, `MapFusion`, `MapDelinearize`                                                                                               | `opt/include/sdfg/transformations/`        |
 | Parallelization | `LoopParallelization` (`For` → `Map`), `OMPTransform` (OpenMP schedule), `StreamK`                                                          | `opt/include/sdfg/parallelization/`, `opt/include/sdfg/transformations/` |
-| Vectorization   | `VectorizeTransform`, `TileVectorizer`                                                                                                     | `opt/include/sdfg/transformations/`, `opt/include/sdfg/tiles/` |
+| Vectorization   | `VectorizeTransform`, `TileVectorizer`                                                                                                     | `opt/include/sdfg/loops/transformations/`, `opt/include/sdfg/tiles/` |
 | Tiles           | `TileFusion`, `LocalStorage`, `SoftwarePipelining`                                                                                         | `opt/include/sdfg/tiles/transformations/` |
-| GPU             | `CUDATransform`, `CUDAOffloadTransform`, `ROCMOffloadTransform`, `GpuMmaTransform`                                                         | `opt/include/sdfg/transformations/offloading/`, `opt/include/sdfg/targets/` |
+| GPU             | `CUDATransform`, `CUDAOffloadTransform`, `ROCMOffloadTransform`, `CUDAOffloadNestedLoop`, `ROCMOffloadNestedLoop`, `GpuMmaTransform`         | `opt/include/sdfg/transformations/offloading/`, `opt/include/sdfg/targets/` |
 
 All of them except `MultiLevelTiling`, `LoopSplit`, `LoopShift`, `LoopRotate`, `LoopUnitStride`, and `MapDelinearize` are available in Python under the same names in `docc.sdfg`. The target [schedulers](./passes.md#scheduling) are built from these transformations: the OpenMP scheduler, for example, applies `OMPTransform`.
+
+### GPU target levels
+
+`CUDAOffloadTransform` and `ROCMOffloadTransform` offload a loop to a grid dimension (`X_GRID`, `Y_GRID`, or `Z_GRID`) and make it a kernel. `CUDAOffloadNestedLoop` and `ROCMOffloadNestedLoop` map a loop inside that kernel to another grid dimension or to a thread-block dimension (`X_BLOCK`, `Y_BLOCK`, `Z_BLOCK`). Each dimension is used at most once per kernel, and a block dimension sits below its grid dimension (`Y_BLOCK` and `Z_BLOCK` may also sit directly below `X_GRID`).
+
+A `Reduce` mapped to a GPU level combines the partial results of its threads according to its `partial_storage`: a tree in shared memory (`Shared`, the default for block levels) or atomic updates of the result (`Global`, the default for grid levels).
+
+An `X_BLOCK` can also carry `lanes`: `1` (the default) or the device's wave size (32 on NVIDIA and RDNA GPUs, 64 on CDNA GPUs). The block then has `parallel_size * lanes` threads:
+
+- On a `Reduce`, every lane works on its own iterations, and each group of lanes combines its results with warp shuffles. With `Register` partial storage, the group leader then commits the result; with `Shared`, the groups are folded in shared memory.
+- On a `Map`, the lanes of a group share one iteration. This is meant for bodies that the whole wave executes together, such as MMA operations. Before code generation, the `LanesMapPredication` pass restricts the other writes to memory, which every lane would repeat, to the first lane of each group.
 
 ## Record and replay
 

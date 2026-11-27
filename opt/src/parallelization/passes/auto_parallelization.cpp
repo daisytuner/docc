@@ -5,8 +5,8 @@
 
 #include "sdfg/analysis/loop_analysis.h"
 #include "sdfg/analysis/users.h"
-#include "sdfg/parallelization/analysis/loop_carried_dependency_analysis.h"
 #include "sdfg/passes/pipeline.h"
+#include "sdfg/reordering/analysis/loop_carried_dependency_analysis.h"
 
 namespace sdfg {
 namespace parallelization {
@@ -75,7 +75,7 @@ AutoParallelization::Classification AutoParallelization::classify(
     }
 
     // Criterion: loop must be data-parallel w.r.t containers
-    auto& lcd = analysis_manager.get<parallelization::LoopCarriedDependencyAnalysis>();
+    auto& lcd = analysis_manager.get<reordering::LoopCarriedDependencyAnalysis>();
     auto& dependencies = lcd.dependencies(for_stmt);
 
     // Recognized reductions: loop-carried read-write dependencies that are

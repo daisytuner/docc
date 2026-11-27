@@ -11,6 +11,9 @@ inline void register_fp_math_plugin(plugins::Context& context) {
     context.library_node_serializer_registry.register_library_node_serializer(LibraryNodeType_OzakiMatMul.value(), []() {
         return std::make_unique<OzakiMatMulNodeSerializer>();
     });
+    context.library_node_serializer_registry.register_library_node_serializer(LibraryNodeType_OzakiSlice.value(), []() {
+        return std::make_unique<OzakiSliceNodeSerializer>();
+    });
 }
 
 } // namespace fp_math

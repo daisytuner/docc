@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <sdfg/passes/rpc/rpc_context.h>
@@ -77,6 +79,8 @@ public:
 
     void approximate_math();
 
+    void widen_floats(const std::vector<sdfg::types::PrimitiveType>& types);
+
     /** @deprecated give targetOptions **/
     void expand();
     void expand(const std::string& target, const std::string& category);
@@ -94,11 +98,10 @@ public:
         bool record_for_instrumentation = false
     );
 
-    void normalize(const docc::target::TargetOptions& options = {});
 
     void schedule(const std::string& target, const std::string& category, bool remote_tuning = false);
 
-    void schedule(const docc::target::TargetOptions& options, bool schedule_loops = true);
+    void schedule(const docc::target::TargetOptions& options, bool schedule_loops = true, bool normalize = true);
 
     /**
      * Run the device-resident argument promotion pass.

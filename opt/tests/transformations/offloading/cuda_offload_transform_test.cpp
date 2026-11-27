@@ -251,16 +251,6 @@ TEST(CUDAOffloadTransformTest, BlockTargetLevelRejected) {
     EXPECT_FALSE(transform.can_be_applied(builder, analysis_manager));
 }
 
-TEST(CUDAOffloadTransformTest, WarpTargetLevelRejected) {
-    builder::StructuredSDFGBuilder builder("cuda_warp_level", FunctionType_CPU);
-    auto& map = build_offloadable_map(builder, symbolic::integer(1024));
-
-    analysis::AnalysisManager analysis_manager(builder.subject());
-    CUDAOffloadTransform transform(map, symbolic::integer(32), gpu::TargetLevel::WARP);
-
-    EXPECT_FALSE(transform.can_be_applied(builder, analysis_manager));
-}
-
 // --- Parallel sizes --------------------------------------------------------
 
 TEST(CUDAOffloadTransformTest, SmallParallelSizeAccepted) {

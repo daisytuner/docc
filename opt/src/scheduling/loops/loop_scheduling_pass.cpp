@@ -1,0 +1,171 @@
+#include "sdfg/scheduling/loops/loop_scheduling_pass.h"
+
+#include "sdfg/analysis/data_transfer_elimination_analysis.h"
+#include "sdfg/passes/offloading/data_transfer_minimization_pass.h"
+#include "sdfg/passes/scheduler/loop_scheduler.h"
+#include "sdfg/passes/structured_control_flow/unique_loop_indvars.h"
+#include "sdfg/structured_control_flow/map.h"
+
+namespace sdfg {
+namespace scheduling {
+namespace loops {
+
+bool LoopSchedulingPass::run_pass_target(
+    builder::StructuredSDFGBuilder& builder,
+    analysis::AnalysisManager& analysis_manager,
+    ::sdfg::passes::scheduler::LoopScheduler& scheduler
+) {
+    scheduler.set_report(report_);
+    scheduler.set_recorder(recorder_);
+
+    ::sdfg::passes::UniqueLoopIndvars unique_indvar_pass;
+    unique_indvar_pass.run_pass(builder, analysis_manager);
+
+    // ===== Phase 1: Find all applicable loops =====
+    auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
+
+    // Initialize queue with outermost loops
+    std::list<structured_control_flow::ControlFlowNode*> queue;
+    std::unordered_map<structured_control_flow::ControlFlowNode*, ::sdfg::passes::scheduler::SchedulerLoopInfo>
+        scheduling_info_map;
+    for (auto& loop : loop_analysis.outermost_loops()) {
+        queue.push_back(loop);
+
+        ::sdfg::passes::scheduler::SchedulerLoopInfo info;
+        info.loop_info = loop_analysis.loop_info(loop);
+        scheduling_info_map[loop] = info;
+    }
+    std::vector<structured_control_flow::StructuredLoop*> no_loops;
+    if (queue.empty()) {
+        return scheduler.post_schedule(builder, analysis_manager, no_loops);
+    }
+
+    // Filter by compatible types
+    size_t num_to_check = queue.size();
+    for (size_t i = 0; i < num_to_check; i++) {
+        auto loop = queue.front();
+        queue.pop_front();
+
+        bool found_incompatible = false;
+
+        // Check if the loop is scheduled already
+        if (auto sloop = dyn_cast<structured_control_flow::StructuredLoop*>(loop)) {
+            auto compatible_schedules = scheduler.compatible_types();
+            if (compatible_schedules.find(sloop->schedule_type().category()) == compatible_schedules.end()) {
+                found_incompatible = true;
+            }
+        }
+
+        // Check descendants
+        if (!found_incompatible) {
+            auto descendants = loop_analysis.descendants(loop);
+            for (auto descendant : descendants) {
+                if (auto sloop = dyn_cast<structured_control_flow::StructuredLoop*>(descendant)) {
+                    auto compatible_schedules = scheduler.compatible_types();
+                    if (compatible_schedules.find(sloop->schedule_type().category()) == compatible_schedules.end()) {
+                        found_incompatible = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (!found_incompatible) {
+            queue.push_back(loop);
+        }
+    }
+
+    // Traverse loop tree using scheduler's find() to collect applicable loops
+    std::vector<structured_control_flow::StructuredLoop*> applicable_loops;
+    while (!queue.empty()) {
+        auto loop = queue.front();
+        queue.pop_front();
+
+        auto scheduling_info = scheduling_info_map.at(loop);
+        scheduling_info_map.erase(loop);
+
+        // Set the report context
+        if (report_ && scheduling_info.loop_info.loopnest_index >= 0) {
+            report_->in_outermost_loop(scheduling_info.loop_info.loopnest_index);
+        }
+
+        ::sdfg::passes::scheduler::SchedulerAction action = ::sdfg::passes::scheduler::SchedulerAction::NEXT;
+        if (auto while_loop = dyn_cast<structured_control_flow::While*>(loop)) {
+            action = scheduler.find(builder, analysis_manager, *while_loop, offload_unknown_sizes_);
+        } else if (auto structured_loop = dyn_cast<structured_control_flow::StructuredLoop*>(loop)) {
+            action = scheduler.find(builder, analysis_manager, *structured_loop, offload_unknown_sizes_);
+        } else {
+            throw InvalidSDFGException("LoopScheduler encountered non-loop in loop analysis.");
+        }
+
+        switch (action) {
+            case ::sdfg::passes::scheduler::SchedulerAction::APPLY: {
+                if (auto structured_loop = dyn_cast<structured_control_flow::StructuredLoop*>(loop)) {
+                    applicable_loops.push_back(structured_loop);
+                }
+                break;
+            }
+            case ::sdfg::passes::scheduler::SchedulerAction::NEXT: {
+                break;
+            }
+            case ::sdfg::passes::scheduler::SchedulerAction::CHILDREN: {
+                auto children = loop_analysis.children(loop);
+                for (auto& child : children) {
+                    queue.push_front(child);
+
+                    ::sdfg::passes::scheduler::SchedulerLoopInfo info;
+                    info.loop_info = loop_analysis.loop_info(child);
+                    scheduling_info_map[child] = info;
+                }
+                break;
+            }
+        }
+    }
+    if (applicable_loops.empty()) {
+        return scheduler.post_schedule(builder, analysis_manager, no_loops);
+    }
+
+    // ===== Phase 2: Pre-schedule (collapse + cleanup) =====
+    scheduler.pre_schedule(builder, analysis_manager, applicable_loops);
+
+    // ===== Phase 3: Apply scheduling transforms =====
+    // Phase 3a: Collect loops where transform can be applied
+    std::vector<structured_control_flow::StructuredLoop*> schedulable_loops;
+    for (auto* loop : applicable_loops) {
+        if (scheduler.can_apply_schedule(builder, analysis_manager, *loop, offload_unknown_sizes_)) {
+            schedulable_loops.push_back(loop);
+        }
+    }
+
+    if (schedulable_loops.empty()) {
+        return scheduler.post_schedule(builder, analysis_manager, no_loops);
+    }
+
+    // Phase 3b: Apply transforms
+    for (auto* loop : schedulable_loops) {
+        scheduler.apply_schedule(builder, analysis_manager, *loop, offload_unknown_sizes_);
+    }
+    analysis_manager.preserve<sdfg::analysis::ArgumentsAnalysis>();
+
+    // ===== Phase 4: Post-schedule =====
+    scheduler.post_schedule(builder, analysis_manager, schedulable_loops);
+
+    return true;
+}
+
+bool LoopSchedulingPass::run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+    bool applied = false;
+    for (const auto& target : targets_) {
+        bool target_applied = run_pass_target(builder, analysis_manager, *target);
+        if (target_applied) {
+            analysis_manager.invalidate_all();
+        }
+        applied = applied || target_applied;
+    }
+
+    return applied;
+}
+
+} // namespace loops
+} // namespace scheduling
+} // namespace sdfg

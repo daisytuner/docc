@@ -3,6 +3,8 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
+#include <sdfg/plugins/plugins.h>
+
 namespace py = pybind11;
 
 /**
@@ -15,4 +17,4 @@ namespace py = pybind11;
  * - name() -> pass name
  * - run(builder, analysis_manager) -> bool (True if the SDFG was modified)
  */
-void register_passes(py::module& m);
+void register_passes(py::module& m, sdfg::plugins::Context& context);

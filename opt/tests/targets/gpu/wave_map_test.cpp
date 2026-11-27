@@ -126,7 +126,7 @@ TEST(WaveMapTest, LanesMultiplyThreads) {
 }
 
 TEST(WaveMapTest, LanesRejectedOffXBlock) {
-    for (auto level : {TargetLevel::Y_BLOCK, TargetLevel::Z_BLOCK, TargetLevel::X_GRID, TargetLevel::WARP}) {
+    for (auto level : {TargetLevel::Y_BLOCK, TargetLevel::Z_BLOCK, TargetLevel::X_GRID}) {
         auto s = rocm_sched(level, 2);
         EXPECT_THROW(ScheduleType_GPU_Offload::lanes(s, symbolic::integer(64)), InvalidSDFGException);
     }
@@ -170,23 +170,6 @@ TEST(WaveMapTest, ValidateUsesScheduleArchWarpSize) {
 TEST(WaveMapTest, ValidateRejectsLanesOffXBlock) {
     WaveKernel k(64, TargetLevel::Z_BLOCK);
     analysis::AnalysisManager am(k.builder.subject());
-    EXPECT_THROW(validate_wave_maps(*k.grid, am, 64), InvalidSDFGException);
-}
-
-TEST(WaveMapTest, ValidateRejectsNestedWarp) {
-    WaveKernel k(64);
-    auto& sdfg_builder = k.builder;
-    sdfg_builder.add_container("l", types::Scalar(types::PrimitiveType::Int32));
-    auto l = symbolic::symbol("l");
-    sdfg_builder.add_map(
-        k.wave->root(),
-        l,
-        symbolic::Lt(l, symbolic::integer(4)),
-        symbolic::zero(),
-        symbolic::add(l, symbolic::integer(1)),
-        rocm_sched(TargetLevel::WARP, 64)
-    );
-    analysis::AnalysisManager am(sdfg_builder.subject());
     EXPECT_THROW(validate_wave_maps(*k.grid, am, 64), InvalidSDFGException);
 }
 

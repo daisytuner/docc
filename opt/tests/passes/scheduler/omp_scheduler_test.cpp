@@ -1,8 +1,8 @@
 #include "sdfg/passes/scheduler/omp_scheduler.h"
 
-#include "sdfg/passes/scheduler/loop_scheduling_pass.h"
-#include "sdfg/passes/scheduler/scheduler_registry.h"
+#include "sdfg/scheduling/loops/loop_scheduling_pass.h"
 #include "sdfg/targets/omp/schedule.h"
+#include "sdfg/transformations/recorder.h"
 
 #include <gtest/gtest.h>
 
@@ -71,7 +71,7 @@ TEST(OMPSchedulerTest, OuterParallelMapWithInnerMap) {
 
     analysis::AnalysisManager analysis_manager(builder.subject());
 
-    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({get_omp_sched()}, nullptr);
+    scheduling::loops::LoopSchedulingPass loop_scheduling_pass({get_omp_sched()}, nullptr);
 
     EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 
@@ -147,7 +147,7 @@ TEST(OMPSchedulerTest, OuterWhileWith2DMap) {
 
     analysis::AnalysisManager analysis_manager(builder.subject());
 
-    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({get_omp_sched()}, nullptr);
+    scheduling::loops::LoopSchedulingPass loop_scheduling_pass({get_omp_sched()}, nullptr);
 
     EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 
@@ -231,7 +231,7 @@ TEST(OMPSchedulerTest, OuterWhileWithInnerMaps) {
 
     analysis::AnalysisManager analysis_manager(builder.subject());
 
-    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({get_omp_sched()}, nullptr);
+    scheduling::loops::LoopSchedulingPass loop_scheduling_pass({get_omp_sched()}, nullptr);
 
     EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 
@@ -271,8 +271,68 @@ TEST(OMPSchedulerTest, SkipsAlreadyParallelMap) {
     builder.add_computational_memlet(block, tasklet, "_out", a_out, {indvar}, desc_2);
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    passes::scheduler::LoopSchedulingPass loop_scheduling_pass({get_omp_sched()}, nullptr);
+    scheduling::loops::LoopSchedulingPass loop_scheduling_pass({get_omp_sched()}, nullptr);
 
     EXPECT_FALSE(loop_scheduling_pass.run(builder, analysis_manager));
     EXPECT_EQ(map.schedule_type().value(), omp::ScheduleType_OMP::value());
+}
+
+// Innermost sequential maps are marked for vectorization through the recorder; parallel maps are not.
+TEST(OMPSchedulerTest, VectorizesInnermostSequentialMaps) {
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto& root = builder.subject().root();
+
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Pointer desc(base_desc);
+    builder.add_container("A", types::Pointer(), true);
+    builder.add_container("N", sym_desc, true);
+    builder.add_container("i", sym_desc);
+    builder.add_container("j", sym_desc);
+
+    auto i = symbolic::symbol("i");
+    auto j = symbolic::symbol("j");
+    auto& parallel = builder.add_map(
+        root,
+        j,
+        symbolic::Lt(j, symbolic::symbol("N")),
+        symbolic::zero(),
+        symbolic::add(j, symbolic::one()),
+        omp::ScheduleType_OMP::create()
+    );
+    auto& block = builder.add_block(parallel.root());
+    auto& a_in = builder.add_access(block, "A");
+    auto& a_out = builder.add_access(block, "A");
+    auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(block, a_in, tasklet, "_in", {j}, desc);
+    builder.add_computational_memlet(block, tasklet, "_out", a_out, {j}, desc);
+
+    auto& seq = builder.add_map(
+        root,
+        i,
+        symbolic::Lt(i, symbolic::symbol("N")),
+        symbolic::zero(),
+        symbolic::add(i, symbolic::one()),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+    auto& block_2 = builder.add_block(seq.root());
+    auto& b_in = builder.add_access(block_2, "A");
+    auto& b_out = builder.add_access(block_2, "A");
+    auto& tasklet_2 = builder.add_tasklet(block_2, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(block_2, b_in, tasklet_2, "_in", {i}, desc);
+    builder.add_computational_memlet(block_2, tasklet_2, "_out", b_out, {i}, desc);
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    passes::scheduler::OMPScheduler scheduler;
+    transformations::Recorder recorder;
+    scheduler.set_recorder(&recorder);
+    std::vector<structured_control_flow::StructuredLoop*> scheduled;
+    EXPECT_TRUE(scheduler.post_schedule(builder, analysis_manager, scheduled));
+
+    // Already-parallel maps keep their schedule; the sequential one is vectorized and recorded.
+    EXPECT_FALSE(structured_control_flow::ScheduleType_Vectorize::is_set(parallel.schedule_type()));
+    EXPECT_TRUE(structured_control_flow::ScheduleType_Vectorize::is_set(seq.schedule_type()));
+    auto history = recorder.get_history();
+    ASSERT_EQ(history.size(), 1);
+    EXPECT_EQ(history[0]["transformation_type"], "VectorizeTransform");
 }

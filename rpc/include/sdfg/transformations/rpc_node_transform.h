@@ -30,8 +30,6 @@ private:
 
     bool dump_steps_;
 
-    bool enable_fusion_;
-
     bool normalize_;
 
     bool schedule_loops_;
@@ -51,7 +49,6 @@ public:
         const std::string& target,
         const std::string& category,
         sdfg::passes::rpc::RpcContext& rpc_context,
-        bool enable_fusion = true,
         bool normalize = true,
         bool schedule_loops = true,
         bool print_steps = false
@@ -63,10 +60,12 @@ public:
         sdfg::builder::StructuredSDFGBuilder& builder, sdfg::analysis::AnalysisManager& analysis_manager
     ) override;
 
-    virtual void apply(sdfg::builder::StructuredSDFGBuilder& builder, sdfg::analysis::AnalysisManager& analysis_manager)
-        override;
+    virtual void
+    apply(sdfg::builder::StructuredSDFGBuilder& builder, sdfg::analysis::AnalysisManager& analysis_manager) override;
 
-    passes::rpc::RpcOptResponse& applied_recipe() const { return *opt_resp_; }
+    passes::rpc::RpcOptResponse& applied_recipe() const {
+        return *opt_resp_;
+    }
 
     void to_json(nlohmann::json& j) const override;
 

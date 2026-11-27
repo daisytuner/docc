@@ -20,6 +20,7 @@
 #include "sdfg/targets/gpu/gpu_offload_reduce_dispatcher.h"
 #include "sdfg/targets/gpu/gpu_tile_arrival_node.h"
 #include "sdfg/targets/gpu/gpu_tile_target.h"
+#include "sdfg/targets/gpu/gpu_wave_barrier_node.h"
 #include "sdfg/tiles/tile_target_registry.h"
 
 
@@ -387,6 +388,20 @@ void register_cuda_plugin(plugins::Context& context) {
         }
     );
 
+    libNodeSerRegistry.register_library_node_serializer(gpu::LibraryNodeType_GpuWaveBarrier.value(), []() {
+        return std::make_unique<gpu::GpuWaveBarrierNodeSerializer>();
+    });
+    libNodeDispatcherRegistry.register_library_node_dispatcher(
+        gpu::LibraryNodeType_GpuWaveBarrier,
+        data_flow::ImplementationType_NONE,
+        [](codegen::LanguageExtension& language_extension,
+           const Function& function,
+           const data_flow::DataFlowGraph& data_flow_graph,
+           const data_flow::LibraryNode& node) {
+            return std::make_unique<gpu::GpuWaveBarrierDispatcher>(language_extension, function, data_flow_graph, node);
+        }
+    );
+
     // BarrierLocal. Its a generic impl, but it explicitly casts to rocm & cuda types. Both, cuda and rocm register this
     // to ensure it exists. But they register the same impl.
     libNodeDispatcherRegistry.register_library_node_dispatcher(
@@ -454,10 +469,6 @@ void register_cuda_plugin(plugins::Context& context) {
             );
         }
     );
-
-    context.get_scheduler_registry()
-        .register_loop_scheduler<
-            passes::scheduler::CUDAOffloadScheduler>(passes::scheduler::CUDAOffloadScheduler::target());
 }
 
 } // namespace sdfg::cuda

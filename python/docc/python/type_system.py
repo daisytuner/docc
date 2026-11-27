@@ -13,14 +13,31 @@ from docc.sdfg import (
     Type,
 )
 
-# Floating-point primitive types (including half precision).
+# Floating-point primitive types (including half precision and FP8).
 FLOAT_PRIMITIVE_TYPES = frozenset(
     {
         PrimitiveType.Double,
         PrimitiveType.Float,
         PrimitiveType.Half,
         PrimitiveType.BFloat,
+        PrimitiveType.Float8E4M3,
+        PrimitiveType.Float8E5M2,
     }
+)
+
+# Floats narrower than Float, which ml_dtypes promotes to Float when mixed with each other or with integers.
+NARROW_FLOAT_PRIMITIVE_TYPES = frozenset(
+    {
+        PrimitiveType.Half,
+        PrimitiveType.BFloat,
+        PrimitiveType.Float8E4M3,
+        PrimitiveType.Float8E5M2,
+    }
+)
+
+# ml_dtypes' floats, whose matrix products ml_dtypes returns in Float: bfloat16 and FP8 (NumPy's float16 stays).
+MATMUL_TO_FLOAT_PRIMITIVE_TYPES = frozenset(
+    {PrimitiveType.BFloat, PrimitiveType.Float8E4M3, PrimitiveType.Float8E5M2}
 )
 
 # Integer primitive types (signed and unsigned).
@@ -178,10 +195,10 @@ def promote_element_types(left_element_type, right_element_type):
             return Scalar(PrimitiveType.Double)
         if left_pt == PrimitiveType.Float or right_pt == PrimitiveType.Float:
             return Scalar(PrimitiveType.Float)
-        # Half-precision types: same type stays, mixed promotes to Float
+        # Narrow types: same type stays, mixed promotes to Float
         if left_pt == right_pt:
             return Scalar(left_pt)  # BFloat+BFloat→BFloat, Half+Half→Half
-        return Scalar(PrimitiveType.Float)  # Mixed half types → float32
+        return Scalar(PrimitiveType.Float)  # Mixed narrow types → float32
 
     # Both integers: return wider (simplified - always Int64 for now)
     if not left_is_float and not right_is_float:
@@ -204,8 +221,8 @@ def promote_element_types(left_element_type, right_element_type):
     if float_type == PrimitiveType.Double:
         return Scalar(PrimitiveType.Double)
 
-    # Half-precision + any int → float32 (half types can't represent ints well)
-    if float_type in {PrimitiveType.Half, PrimitiveType.BFloat}:
+    # Narrow float + any int → float32 (narrow types can't represent ints well)
+    if float_type in NARROW_FLOAT_PRIMITIVE_TYPES:
         return Scalar(PrimitiveType.Float)
 
     # float32 + (int32 or larger) → float64
@@ -314,6 +331,8 @@ def _dtype_to_primitive_table():
             import ml_dtypes
 
             table[np.dtype(ml_dtypes.bfloat16)] = PrimitiveType.BFloat
+            table[np.dtype(ml_dtypes.float8_e4m3fn)] = PrimitiveType.Float8E4M3
+            table[np.dtype(ml_dtypes.float8_e5m2)] = PrimitiveType.Float8E5M2
         except Exception:
             pass
         _DTYPE_TO_PRIMITIVE = table

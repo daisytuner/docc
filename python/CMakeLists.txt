@@ -18,7 +18,6 @@ set(PYTHON_SOURCES
     bindings/metrics/py_metrics.cpp
     bindings/passes/py_passes.cpp
     bindings/py_structured_sdfg.cpp
-    bindings/targets/target_mapping.cpp
     bindings/targets/py_gpu_arch.cpp
     bindings/transformations/py_transformations.cpp
     bindings/types/py_types.cpp

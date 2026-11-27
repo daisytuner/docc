@@ -34,9 +34,17 @@ protected:
 
     void validate_before_dispatch(analysis::AnalysisManager& analysis_manager) override;
 
-    // Whether a WARP-level reduction nested below this node reduces @p container,
-    // in which case this (block) level combines per-warp partials instead of per-thread.
-    bool has_nested_warp_reduction(const std::string& container);
+    // Width of the register (shuffle) reduction of an X_BLOCK reduce with lanes > 1: its
+    // lanes, which must equal the wave size (wave_lanes). 0 when this node is not such a reduce.
+    int64_t register_lanes();
+
+    // Lanes of a lanes map enclosing or nested in this reduce, which then runs replicated on each
+    // lane of a group; 0 without one.
+    int64_t replicating_lanes();
+
+    // `(threadIdx.x % lanes) == 0` for replicating_lanes(); empty without a lanes map. Commits of
+    // the replicated reduce are restricted to this leader lane.
+    std::string replicated_lane_leader(codegen::LanguageExtension& language_extension);
 
     // Whether a BLOCK-level reduction nested below this node reduces @p container. When a
     // grid reduce owns such a nested block reduce of the same container, its register is
@@ -44,9 +52,9 @@ protected:
     // thread holds the operator identity and the grid commit must stay unguarded.
     bool has_nested_block_reduction(const std::string& container);
 
-    // Whether a BLOCK-level reduction enclosing this node reduces @p container. A WARP
-    // reduce relies on such an enclosing block reduce to own the shared buffer its
-    // per-warp partials are published into; without one, the warp must flush directly
+    // Whether a BLOCK-level reduction enclosing this node reduces @p container. A Register
+    // lanes reduce relies on such an enclosing block reduce to own the shared buffer its
+    // per-group partials are published into; without one, each group must flush directly
     // to the global accumulator instead.
     bool has_enclosing_block_reduction(const std::string& container);
 
@@ -96,7 +104,7 @@ protected:
     // Whether @p container is a scalar accumulator addressed by name (no subscript), e.g.
     // an in-place pooling handler. Such an accumulator is a single-slot, per-thread private
     // reduction target: it is aliased (a C++ reference) onto this level's partial in the
-    // body and, after the block/warp combine, broadcast back to every thread's private
+    // body and, after the block (shuffle) combine, broadcast back to every thread's private
     // scalar, rather than being addressed as a pointer container[index].
     bool is_scalar_accumulator(const std::string& container);
 
@@ -131,7 +139,7 @@ protected:
     // a per-thread register partial (published to shared once after the coverage loop)
     // instead of read-modify-writing shared each iteration. Applies only to a standalone
     // block level that solely owns the body (no enclosing block reduce, no nested block
-    // reduce, no nested warp reduce). This keeps the hot accumulation in a register so the
+    // reduce). This keeps the hot accumulation in a register so the
     // FMA chain is not serialized through shared memory; the existing shared tree/shuffle
     // combine is unchanged.
     bool uses_register_partial(TargetLevel target_level, const std::string& container);

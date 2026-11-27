@@ -147,9 +147,7 @@ effective_schedule(const structured_control_flow::StructuredLoop& loop, const Re
 }
 
 auto projected_ancestors(
-    structured_control_flow::ControlFlowNode* node,
-    analysis::LoopAnalysis& loops,
-    const transformations::LoopSwap* proposal
+    structured_control_flow::ControlFlowNode* node, analysis::LoopAnalysis& loops, const loops::LoopSwap* proposal
 ) {
     auto result = loops.ancestors(node);
     if (proposal && node == &proposal->outer) {
@@ -161,9 +159,7 @@ auto projected_ancestors(
 }
 
 auto projected_descendants(
-    structured_control_flow::ControlFlowNode* node,
-    analysis::LoopAnalysis& loops,
-    const transformations::LoopSwap* proposal
+    structured_control_flow::ControlFlowNode* node, analysis::LoopAnalysis& loops, const loops::LoopSwap* proposal
 ) {
     auto result = loops.descendants(node);
     if (proposal && node == &proposal->outer) {
@@ -175,9 +171,7 @@ auto projected_descendants(
 }
 
 std::vector<ReductionLoopDomain> inner_domains(
-    structured_control_flow::Reduce& reduction,
-    analysis::LoopAnalysis& loops,
-    const transformations::LoopSwap* proposal = nullptr
+    structured_control_flow::Reduce& reduction, analysis::LoopAnalysis& loops, const loops::LoopSwap* proposal = nullptr
 ) {
     std::vector<structured_control_flow::StructuredLoop*> inner;
     for (auto* node : projected_descendants(&reduction, loops, proposal)) {
@@ -291,7 +285,7 @@ void allocation_cost(
     const std::string& container,
     analysis::LoopAnalysis& loops,
     const ReductionScheduleProposal* proposal = nullptr,
-    const transformations::LoopSwap* interchange = nullptr
+    const loops::LoopSwap* interchange = nullptr
 ) {
     auto footprint_bytes = checked_product(result.layout->extent, *result.element_bytes);
     result.private_bytes = footprint_bytes;
@@ -308,11 +302,9 @@ void allocation_cost(
     if (!placed.empty() && (strategy != gpu::ReduceStrategy::Shared || reduction.reductions().size() != 1)) {
         throw InvalidSDFGException("partial_container requires a single Shared accumulator");
     }
-    if (strategy == gpu::ReduceStrategy::Global && level == gpu::TargetLevel::WARP) {
-        throw InvalidSDFGException("Global reduction strategy is not supported at WARP scope");
-    }
-    if (strategy == gpu::ReduceStrategy::Register && level != gpu::TargetLevel::WARP) {
-        throw InvalidSDFGException("Register reduction strategy requires WARP scope");
+    if (strategy == gpu::ReduceStrategy::Register &&
+        !(level == gpu::TargetLevel::X_BLOCK && gpu::ScheduleType_GPU_Offload::lanes(schedule)->as_int() > 1)) {
+        throw InvalidSDFGException("Register reduction strategy requires an X_BLOCK with lanes");
     }
     if (strategy != gpu::ReduceStrategy::Shared) {
         return;
@@ -330,7 +322,14 @@ void allocation_cost(
         if (!gpu::is_block_level(gpu::ScheduleType_GPU_Offload::target_level(enclosing_schedule))) {
             continue;
         }
-        if (gpu::ScheduleType_GPU_Offload::partial_storage(enclosing_schedule) != gpu::ReduceStrategy::Shared) {
+        const auto enclosing_strategy = gpu::ScheduleType_GPU_Offload::partial_storage(enclosing_schedule);
+        if (enclosing_strategy == gpu::ReduceStrategy::Register) {
+            throw InvalidSDFGException(
+                "a Register (lanes) block reduction keeps its partials in registers and cannot fold a nested block "
+                "reduction of the same accumulator; use Shared partial storage"
+            );
+        }
+        if (enclosing_strategy != gpu::ReduceStrategy::Shared) {
             throw InvalidSDFGException("Shared reduction cannot reuse a Global block owner's partial buffer");
         }
         if (projected_ancestors(enclosing, loops, interchange).size() <
@@ -346,7 +345,7 @@ void allocation_cost(
             continue;
         }
         auto nested_level = gpu::ScheduleType_GPU_Offload::target_level(effective_schedule(*nested, proposal));
-        nested_cooperative |= gpu::is_block_level(nested_level) || gpu::is_warp_level(nested_level);
+        nested_cooperative |= gpu::is_block_level(nested_level);
     }
     if (nested_cooperative || owner != &reduction) {
         result.private_bytes = 0;
@@ -366,7 +365,8 @@ void allocation_cost(
         if (!gpu::is_block_level(axis)) {
             return;
         }
-        auto count = gpu::ScheduleType_GPU_Offload::parallel_size(loop_schedule)->as_int();
+        // Hardware threads along the axis: an X_BLOCK with lanes occupies parallel_size * lanes.
+        auto count = gpu::ScheduleType_GPU_Offload::threads(loop_schedule)->as_int();
         if (count <= 0 || (dimensions.contains(axis) && dimensions.at(axis) != count)) {
             throw InvalidSDFGException("inconsistent block dimensions for reduction buffer");
         }
@@ -400,8 +400,7 @@ void allocation_cost(
 
 } // namespace
 
-ReductionLoopDomain ReductionLoopDomain::
-    from_header(const symbolic::Symbol& indvar, const transformations::LoopHeader& header) {
+ReductionLoopDomain ReductionLoopDomain::from_header(const symbolic::Symbol& indvar, const loops::LoopHeader& header) {
     auto step = symbolic::expand(symbolic::sub(header.update, indvar));
     if (!positive_integer(step)) {
         return {indvar, header.init, SymEngine::null, SymEngine::null};
@@ -525,7 +524,7 @@ ReductionBufferInfo ReductionBufferAnalysis::estimate_interchange(
     structured_control_flow::Reduce& reduction,
     const std::string& container,
     ReductionBufferInfo footprint,
-    const transformations::LoopSwap& proposal
+    const loops::LoopSwap& proposal
 ) const {
     try {
         if (proposal.outer.root().size() != 1 || &proposal.outer.root().at(0) != &proposal.inner) {
@@ -749,7 +748,7 @@ ReductionBufferInfo ReductionBufferAnalysis::
     }
 }
 
-bool ReductionBufferAnalysis::supports_interchange(const transformations::LoopSwap& proposal) const {
+bool ReductionBufferAnalysis::supports_interchange(const loops::LoopSwap& proposal) const {
     if (proposal.outer.root().size() != 1 || &proposal.outer.root().at(0) != &proposal.inner) {
         throw InvalidSDFGException("ReductionBufferAnalysis: proposal requires directly nested loops");
     }

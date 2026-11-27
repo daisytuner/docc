@@ -62,9 +62,8 @@ def test_spmv(target):
         verifier = SDFGVerification(
             verification={
                 "REDUCE": 1,
-                "VECTORIZE": 5,
                 "MAP": 4,
-                "SEQUENTIAL": 1,
+                "SEQUENTIAL": 6,
                 "FOR": 1,
             }
         )
@@ -73,9 +72,8 @@ def test_spmv(target):
             verification={
                 "CPU_PARALLEL": 1,
                 "REDUCE": 1,
-                "VECTORIZE": 4,
                 "MAP": 4,
-                "SEQUENTIAL": 1,
+                "SEQUENTIAL": 5,
                 "FOR": 1,
             }
         )

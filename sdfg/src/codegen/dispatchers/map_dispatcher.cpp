@@ -25,7 +25,8 @@ SchedTypeMapDispatcher::SchedTypeMapDispatcher(
 
 void SchedTypeMapDispatcher::
     dispatch(PrettyPrinter& main_stream, PrettyPrinter& globals_stream, CodeSnippetFactory& library_snippet_factory) {
-    auto dispatcher = MapDispatcherRegistry::instance().get_map_dispatcher(node_.schedule_type().value());
+    auto schedule = language_extension_.loop_schedule(node_.schedule_type());
+    auto dispatcher = MapDispatcherRegistry::instance().get_map_dispatcher(schedule);
     if (dispatcher) {
         auto dispatcher_ptr =
             dispatcher(language_extension_, sdfg_, analysis_manager_, node_, instrumentation_plan_, arg_capture_plan_);
@@ -53,7 +54,8 @@ void SequentialMapDispatcher::dispatch_node(
 ) {
     main_stream << language_extension_.comment("Map") << std::endl;
     LoopHints hints;
-    hints.no_vectorize = true;
+    hints.vectorize = structured_control_flow::ScheduleType_Vectorize::is_set(node_.schedule_type());
+    hints.no_vectorize = !hints.vectorize;
     hints.unroll = structured_control_flow::ScheduleType_Unroll::is_set(node_.schedule_type());
     auto body = language_extension_.begin_for(main_stream, node_, hints);
     SequenceDispatcher
@@ -63,7 +65,8 @@ void SequentialMapDispatcher::dispatch_node(
 };
 
 InstrumentationInfo MapDispatcher::instrumentation_info() const {
-    auto dispatcher = MapDispatcherRegistry::instance().get_map_dispatcher(node_.schedule_type().value());
+    auto schedule = language_extension_.loop_schedule(node_.schedule_type());
+    auto dispatcher = MapDispatcherRegistry::instance().get_map_dispatcher(schedule);
     if (dispatcher) {
         auto dispatcher_ptr =
             dispatcher(language_extension_, sdfg_, analysis_manager_, node_, instrumentation_plan_, arg_capture_plan_);

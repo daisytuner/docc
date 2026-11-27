@@ -49,7 +49,6 @@
 #include "docc/passes/function_to_sdfg_pass.h"
 #include "docc/passes/inlining/argument_expansion_pass.h"
 #include "docc/passes/scheduling/einsum_pass.h"
-#include "docc/passes/scheduling/normalization_pass.h"
 #include "docc/passes/scheduling/scheduling_pass.h"
 #include "docc/passes/sdfg_simplify_pass.h"
 #include "docc/plugin_registry.h"
@@ -76,12 +75,8 @@ extern "C" LLVM_ATTRIBUTE_WEAK ::llvm::PassPluginLibraryInfo llvmGetPassPluginIn
         .RegisterPassBuilderCallbacks = [](llvm::PassBuilder& PB) {
             docc::register_sdfg_dispatchers();
 
-            auto& sched_registry = sdfg::passes::scheduler::SchedulerRegistry::instance();
-
             // Compile-Time Pass Registration
-            PB.registerPipelineStartEPCallback([&sched_registry](
-                                                   llvm::ModulePassManager& MPM, llvm::OptimizationLevel Level
-                                               ) {
+            PB.registerPipelineStartEPCallback([](llvm::ModulePassManager& MPM, llvm::OptimizationLevel Level) {
                 // Simplification
                 {
                     llvm::FunctionPassManager FPM;
@@ -175,27 +170,19 @@ extern "C" LLVM_ATTRIBUTE_WEAK ::llvm::PassPluginLibraryInfo llvmGetPassPluginIn
                 // Lift SDFGs from functions
                 MPM.addPass(docc::passes::createDOCCPass(docc::passes::FunctionToSDFGPass(docc::plugin_registry), AM));
 
-                // Normalization Pass
-                if (docc::DOCC_TUNE != "none") {
-                    MPM.addPass(docc::passes::createDOCCPass(docc::passes::NormalizationPass(), AM));
-                }
-
                 // Einsum Pass
                 if (DOCC_Einsum) {
                     MPM.addPass(docc::passes::createDOCCPass(docc::passes::EinsumPass(), AM));
-                    MPM.addPass(docc::passes::createDOCCPass(docc::passes::NormalizationPass(), AM));
                 }
 
                 bool enable_offloading_transfer_opt = !docc::args::DOCC_NO_OFFLOADING_TRANSFER_OPT.getValue();
 
                 if (docc::DOCC_TUNE != "none") {
-                    // Dump sdfg and features after all seuquential optimizations are done but
-                    // before offloading
-                    MPM.addPass(docc::passes::createDOCCPass(docc::passes::DumpSDFGPass(), AM));
+                    // Also records each SDFG in the target's normal form, before offloading
                     MPM.addPass(
                         docc::passes::createDOCCPass(
                             docc::passes::SchedulingPass(
-                                sched_registry, false, false, enable_offloading_transfer_opt, report_consumer.get()
+                                docc::docc_context(), false, false, enable_offloading_transfer_opt, report_consumer.get()
                             ),
                             AM
                         )

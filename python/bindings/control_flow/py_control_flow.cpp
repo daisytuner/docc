@@ -269,7 +269,6 @@ void register_control_flow(py::module& m) {
     py::enum_<ScheduleTypeCategory>(m, "ScheduleTypeCategory")
         .value("Offloader", ScheduleTypeCategory::Offloader)
         .value("Parallelizer", ScheduleTypeCategory::Parallelizer)
-        .value("Vectorizer", ScheduleTypeCategory::Vectorizer)
         .value("None_", ScheduleTypeCategory::None)
         .export_values();
 
@@ -281,7 +280,6 @@ void register_control_flow(py::module& m) {
         .value("X_BLOCK", sdfg::gpu::TargetLevel::X_BLOCK)
         .value("Y_BLOCK", sdfg::gpu::TargetLevel::Y_BLOCK)
         .value("Z_BLOCK", sdfg::gpu::TargetLevel::Z_BLOCK)
-        .value("WARP", sdfg::gpu::TargetLevel::WARP)
         .export_values();
 
     // ReduceStrategy enum (where a reduction's partials live / how they combine)
@@ -364,7 +362,8 @@ void register_control_flow(py::module& m) {
             py::arg("lanes") = py::none(),
             "Create a CUDA offload schedule type for the given target level and parallel size; for a "
             "reduction, partial_storage (ReduceStrategy) and partial_container (buffer name) may be set; "
-            "lanes (X_BLOCK only) makes each iteration a wave of that many lanes"
+            "lanes (X_BLOCK only) makes each map iteration a wave of that many lanes; on a reduce, lane groups "
+            "combine by warp shuffle"
         )
         .def_static(
             "rocm_offload",
@@ -402,7 +401,18 @@ void register_control_flow(py::module& m) {
             py::arg("lanes") = py::none(),
             "Create a ROCm offload schedule type for the given target level and parallel size; for a "
             "reduction, partial_storage (ReduceStrategy) and partial_container (buffer name) may be set; "
-            "lanes (X_BLOCK only) makes each iteration a wave of that many lanes"
+            "lanes (X_BLOCK only) makes each map iteration a wave of that many lanes; on a reduce, lane groups "
+            "combine by warp shuffle"
+        )
+        .def_property(
+            "vectorize",
+            [](const ScheduleType& st) {
+                return ScheduleType_Vectorize::is_set(st);
+            },
+            [](ScheduleType& st, bool vectorize) {
+                ScheduleType_Vectorize::set(st, vectorize);
+            },
+            "Whether the loop is marked for vectorization (emits '#pragma clang loop vectorize(enable)')"
         )
         .def_property(
             "zero_init",

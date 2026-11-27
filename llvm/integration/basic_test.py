@@ -385,8 +385,8 @@ def test_transfer_minimization_cuda():
     verification = SDFGVerification(
         {
             "sdfgs": 1,
-            "CUDA_Offload": 3,
-            "CUDAOffloading": 11,
+            "CUDA_Offload": 6,
+            "CUDAOffloading": 14,
         }
     )
     verification.verify(stderr)

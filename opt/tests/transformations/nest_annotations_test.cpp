@@ -5,15 +5,15 @@
 
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/loops/transformations/loop_tiling.h"
+#include "sdfg/reordering/transformations/loop_interchange.h"
+#include "sdfg/reordering/transformations/map_fusion.h"
 #include "sdfg/structured_control_flow/for.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/targets/gpu/gpu_schedule_type.h"
 #include "sdfg/targets/rocm/rocm.h"
-#include "sdfg/transformations/loop_interchange.h"
-#include "sdfg/transformations/loop_tiling.h"
-#include "sdfg/transformations/map_fusion.h"
 #include "sdfg/transformations/offloading/rocm_offload_transform.h"
 #include "sdfg/transformations/omp_transform.h"
 
@@ -107,7 +107,7 @@ TEST(NestAnnotationsTest, LoopTilingMapKeepsAnnotationOnOuterTileLoop) {
     auto [outer, inner] = add_zero_init_nest(builder);
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    transformations::LoopTiling tiling(*outer, 8);
+    loops::transformations::LoopTiling tiling(*outer, 8);
     ASSERT_TRUE(tiling.can_be_applied(builder, analysis_manager));
     tiling.apply(builder, analysis_manager);
 
@@ -138,7 +138,7 @@ TEST(NestAnnotationsTest, LoopTilingForKeepsAnnotationOnOuterTileLoop) {
     builder.add_computational_memlet(block, tasklet, "_out", out, {i}, f32ptr);
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    transformations::LoopTiling tiling(loop, 8);
+    loops::transformations::LoopTiling tiling(loop, 8);
     ASSERT_TRUE(tiling.can_be_applied(builder, analysis_manager));
     tiling.apply(builder, analysis_manager);
 
@@ -151,7 +151,7 @@ TEST(NestAnnotationsTest, LoopInterchangeKeepsAnnotationOnOutermostLoop) {
     auto [outer, inner] = add_zero_init_nest(builder);
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    transformations::LoopInterchange interchange(*outer, *inner);
+    reordering::transformations::LoopInterchange interchange(*outer, *inner);
     ASSERT_TRUE(interchange.can_be_applied(builder, analysis_manager));
     interchange.apply(builder, analysis_manager);
 
@@ -170,7 +170,7 @@ TEST(NestAnnotationsTest, LoopInterchangeWithInnerForKeepsAnnotationOnOutermostL
     auto [outer, inner] = add_zero_init_nest(builder, /*inner_as_for=*/true);
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    transformations::LoopInterchange interchange(*outer, *inner);
+    reordering::transformations::LoopInterchange interchange(*outer, *inner);
     ASSERT_TRUE(interchange.can_be_applied(builder, analysis_manager));
     interchange.apply(builder, analysis_manager);
 
@@ -263,7 +263,7 @@ TEST(NestAnnotationsTest, MapFusionDropsZeroInit) {
     }
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    transformations::MapFusion fusion(init_map, consumer);
+    reordering::transformations::MapFusion fusion(init_map, consumer);
     ASSERT_TRUE(fusion.can_be_applied(builder, analysis_manager));
     fusion.apply(builder, analysis_manager);
 

@@ -60,23 +60,21 @@ def test_correlation(target):
             verification={
                 "GEMM": 1,
                 "CMath": 2,
-                "VECTORIZE": 17,
                 "REDUCE": 3,
                 "MAP": 23,
                 "FOR": 1,
-                "SEQUENTIAL": 10,
+                "SEQUENTIAL": 27,
             }
         )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
                 "GEMM": 1,
-                "VECTORIZE": 5,
+                "SEQUENTIAL": 6,
                 "REDUCE": 3,
                 "CMath": 2,
                 "CPU_PARALLEL": 15,
                 "MAP": 17,
-                "SEQUENTIAL": 1,
                 "FOR": 1,
             }
         )

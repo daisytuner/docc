@@ -47,9 +47,8 @@ def test_lu(target):
         verifier = SDFGVerification(
             verification={
                 "MAP": 1,
-                "VECTORIZE": 2,
                 "REDUCE": 2,
-                "SEQUENTIAL": 3,
+                "SEQUENTIAL": 5,
                 "FOR": 2,
             }
         )
@@ -57,9 +56,8 @@ def test_lu(target):
         verifier = SDFGVerification(
             verification={
                 "MAP": 1,
-                "VECTORIZE": 2,
+                "SEQUENTIAL": 5,
                 "REDUCE": 2,
-                "SEQUENTIAL": 3,
                 "FOR": 2,
             }
         )

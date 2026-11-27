@@ -6,7 +6,16 @@ import torch.fx
 from torch.fx.node import Argument
 from math import ceil
 
-from docc.sdfg import StructuredSDFGBuilder, Tensor, Scalar, DebugInfo
+from docc.sdfg import (
+    Block,
+    DebugInfo,
+    PrimitiveType,
+    Scalar,
+    StructuredSDFGBuilder,
+    Tasklet,
+    TaskletCode,
+    Tensor,
+)
 
 from docc.pytorch.graph_parser.utils import (
     TensorInfo,
@@ -458,3 +467,123 @@ class SlicingParser(GraphParserModule):
 
 register_module("aten.slice.Tensor", SlicingParser())
 register_module("aten.slice_copy.Tensor", SlicingParser(force_copy=True))
+
+
+class IndexPutParser(GraphParserModule):
+    """``index_put(x, indices, values)`` with a single index tensor, along one dimension: ``x`` with the slabs
+    ``values[..., j, ...]`` written to ``x[..., indices[j], ...]``, as a static KV cache stores the keys of the
+    current tokens at their positions. The positions are loaded one by one, and each slab is copied to its position;
+    among repeated positions, the last write wins."""
+
+    def parse(
+        self,
+        node: torch.fx.Node,
+        builder: StructuredSDFGBuilder,
+        metadata: TensorMetadata,
+    ) -> None:
+        if len(node.args) < 3 or len(node.args) > 4 or node.kwargs:
+            raise GraphParserError(
+                self, node, "Expected x, indices, values and optionally accumulate"
+            )
+        if len(node.args) == 4 and node.args[3] is not False:
+            raise GraphParserError(self, node, "accumulate=True is not supported")
+        indices = node.args[1]
+        if not isinstance(indices, (list, tuple)):
+            raise GraphParserError(self, node, "Expected a list of indices")
+        selected = [d for d, index in enumerate(indices) if index is not None]
+        if len(selected) != 1:
+            raise GraphParserError(
+                self,
+                node,
+                "Only a single index tensor, along one dimension, is supported",
+            )
+        dim = selected[0]
+
+        x_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 0)
+        index_info: TensorInfo = self.convert_arg_to_tensor_info(
+            node, metadata, indices[dim]
+        )
+        values_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 2)
+        result_info: TensorInfo = self.get_result_tensor_info(node, builder, metadata)
+        shape: list[str] = x_info.shape()
+        if len(index_info.shape()) != 1:
+            raise GraphParserError(
+                self, node, "Expected a one-dimensional index tensor"
+            )
+        count: str = index_info.shape()[0]
+        expected = list(shape)
+        expected[dim] = count
+        if values_info.shape() != expected:
+            raise GraphParserError(
+                self,
+                node,
+                f"Expected values of shape {expected}, got {values_info.shape()}",
+            )
+        debug_info: DebugInfo = self.get_debug_info(node)
+
+        # Updating x in place, the result is x itself (see GraphParser.update_in_place).
+        if result_info.container() != x_info.container():
+            builder.add_copy_op(
+                x_info.container(),
+                x_info.sdfg_tensor_type(),
+                result_info.container(),
+                result_info.sdfg_tensor_type(),
+                debug_info,
+            )
+
+        index_scalar = Scalar(PrimitiveType.Int64)
+        counter: str = builder.find_new_name("_index_put_j")
+        builder.add_container(counter, index_scalar, False)
+        position: str = builder.find_new_name("_index_put_position")
+        builder.add_container(position, index_scalar, False)
+        builder.begin_for(counter, "0", count, "1", debug_info)
+
+        block: Block = builder.add_block(debug_info)
+        tasklet: Tasklet = builder.add_tasklet(
+            block, TaskletCode.assign, ["_in"], ["_out"], debug_info
+        )
+        builder.add_memlet(
+            block,
+            builder.add_access(block, index_info.container(), debug_info),
+            "void",
+            tasklet,
+            "_in",
+            subset=f"({index_info.offset()}) + ({counter})*({index_info.strides()[0]})",
+            debug_info=debug_info,
+        )
+        builder.add_memlet(
+            block,
+            tasklet,
+            "_out",
+            builder.add_access(block, position, debug_info),
+            "void",
+            subset="",
+            debug_info=debug_info,
+        )
+
+        # The slab: every dimension but dim, at position j of values and at the loaded position of the result.
+        element = x_info.element_type()
+        slab_shape = [s for d, s in enumerate(shape) if d != dim]
+        values_strides = values_info.strides()
+        result_strides = result_info.strides()
+        builder.add_copy_op(
+            values_info.container(),
+            Tensor(
+                element,
+                slab_shape,
+                [s for d, s in enumerate(values_strides) if d != dim],
+                f"({values_info.offset()}) + ({counter})*({values_strides[dim]})",
+            ),
+            result_info.container(),
+            Tensor(
+                element,
+                slab_shape,
+                [s for d, s in enumerate(result_strides) if d != dim],
+                f"({result_info.offset()}) + ({position})*({result_strides[dim]})",
+            ),
+            debug_info,
+        )
+        builder.end_for()
+
+
+register_module("aten.index_put.default", IndexPutParser())

@@ -84,7 +84,6 @@ set(SOURCE_FILES
   src/passes/inlining/argument_expansion_pass.cpp
   src/passes/scheduling/docc_backend_context.cpp
   src/passes/scheduling/einsum_pass.cpp
-  src/passes/scheduling/normalization_pass.cpp
   src/passes/scheduling/scheduling_pass.cpp
   src/passes/function_to_sdfg_pass.cpp
   src/cmd_args.cpp

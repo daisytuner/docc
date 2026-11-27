@@ -43,9 +43,13 @@ private:
     data_flow::LibraryNode& node_;
     int bits_;
     Rescaling rescaling_;
+    double min_normal_;
 
 public:
-    explicit QuantizeContraction(data_flow::LibraryNode& node, int bits = 8, Rescaling rescaling = Rescaling::Exponents);
+    /// @param min_normal the least scale of a row or column, as for OzakiContraction; 0 for the type's own
+    explicit QuantizeContraction(
+        data_flow::LibraryNode& node, int bits = 8, Rescaling rescaling = Rescaling::Exponents, double min_normal = 0
+    );
 
     virtual std::string name() const override;
 

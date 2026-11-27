@@ -8,7 +8,6 @@
 #include "sdfg/targets/cuda/plugin.h"
 #include "sdfg/targets/omp/plugin.h"
 #include "sdfg/targets/rocm/plugin.h"
-#include "sdfg/targets/vectorize/plugin.h"
 #include "sdfg/tiles/plugin.h"
 #include "sdfg/visualizer/dot_visualizer.h"
 
@@ -25,7 +24,6 @@ int main(int argc, char** argv) {
     sdfg::parallelization::register_parallelization_plugin(context);
     sdfg::tiles::register_tiles_plugin(context);
     sdfg::fp_math::register_fp_math_plugin(context);
-    sdfg::vectorize::register_vectorize_plugin();
     sdfg::omp::register_omp_plugin();
     sdfg::cuda::register_cuda_plugin(context);
     sdfg::rocm::register_rocm_plugin(context);

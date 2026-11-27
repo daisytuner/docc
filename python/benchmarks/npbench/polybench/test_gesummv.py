@@ -40,8 +40,7 @@ def test_gesummv(target):
         verifier = SDFGVerification(
             verification={
                 "GEMM": 2,
-                "VECTORIZE": 3,
-                "SEQUENTIAL": 2,
+                "SEQUENTIAL": 5,
                 "MAP": 5,
             }
         )

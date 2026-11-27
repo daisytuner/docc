@@ -99,10 +99,22 @@ private:
 } // namespace
 
 template<typename GPUType>
+static auto make_nested_schedule(gpu::TargetLevel target_level, symbolic::Integer parallel_size, int64_t lanes) {
+    auto schedule = GPUType::template create<GPUType>(target_level, parallel_size);
+    if (lanes != 1) {
+        gpu::ScheduleType_GPU_Offload::lanes(schedule, symbolic::integer(lanes));
+    }
+    return schedule;
+}
+
+template<typename GPUType>
 GPUOffloadNestedLoop<GPUType>::GPUOffloadNestedLoop(
-    structured_control_flow::StructuredLoop& loop, gpu::TargetLevel target_level, symbolic::Integer parallel_size
+    structured_control_flow::StructuredLoop& loop,
+    gpu::TargetLevel target_level,
+    symbolic::Integer parallel_size,
+    int64_t lanes
 )
-    : loop_(loop), target_level_(target_level), parallel_size_(parallel_size) {
+    : loop_(loop), target_level_(target_level), parallel_size_(parallel_size), lanes_(lanes) {
 }
 
 
@@ -130,6 +142,12 @@ bool GPUOffloadNestedLoop<
     // Condition: parallel size must be in bounds of the target level
     if (parallel_size_->as_int() <= 0) {
         return false;
+    }
+    // Condition: lanes > 1 is a wave-granular X_BLOCK loop: lanes must be the warp size.
+    if (lanes_ != 1) {
+        if (lanes_ != gpu::gpu_warp_size<GPUType>() || target_level_ != gpu::TargetLevel::X_BLOCK) {
+            return false;
+        }
     }
     // X grid dimension is limited to 2^31 - 1.
     if (target_level_ == gpu::TargetLevel::X_GRID) {
@@ -165,11 +183,6 @@ bool GPUOffloadNestedLoop<
         if (parallel_size_->as_int() > max_block_dim_z) {
             return false;
         }
-    } else if (target_level_ == gpu::TargetLevel::WARP) {
-        // WARP dimension must equal the target's warp/wavefront size.
-        if (parallel_size_->as_int() != gpu::gpu_warp_size<GPUType>()) {
-            return false;
-        }
     } else {
         // Unsupported outermost level
         return false;
@@ -192,7 +205,9 @@ bool GPUOffloadNestedLoop<
         if (sched.properties().find("target_level") == sched.properties().end()) {
             continue;
         }
-        ancestor_levels.emplace_back(GPUType::target_level(sched), GPUType::parallel_size(sched)->as_int());
+        const auto lanes = gpu::ScheduleType_GPU_Offload::lanes(sched)->as_int();
+        // Store the hardware threads each ancestor occupies (parallel_size * lanes).
+        ancestor_levels.emplace_back(GPUType::target_level(sched), GPUType::parallel_size(sched)->as_int() * lanes);
     }
 
     // Condition: There must be at least one ancestor GPU loop of the same target level.
@@ -208,11 +223,6 @@ bool GPUOffloadNestedLoop<
         }
         return false;
     };
-
-    // Condition: no dimension may be nested within a WARP (WARP must be the innermost level).
-    if (has_ancestor_level(gpu::TargetLevel::WARP)) {
-        return false;
-    }
 
     // Condition: each level indexes one hardware dimension, so an enclosing loop may not
     // already use it (both would read the same index and cover only the diagonal).
@@ -251,33 +261,22 @@ bool GPUOffloadNestedLoop<
         return false;
     }
 
-    // Condition: a WARP must be nested within an X_BLOCK.
-    if (target_level_ == gpu::TargetLevel::WARP && !has_ancestor_level(gpu::TargetLevel::X_BLOCK)) {
-        return false;
-    }
-
     // Condition: the product of all block dimensions (including this one) must not exceed 1024 threads.
     auto is_block_level = [](gpu::TargetLevel level) {
         return level == gpu::TargetLevel::X_BLOCK || level == gpu::TargetLevel::Y_BLOCK ||
                level == gpu::TargetLevel::Z_BLOCK;
     };
     int64_t block_product = 1;
-    // A WARP occupies threads within the block, so it counts toward the block thread budget.
-    if (is_block_level(target_level_) || target_level_ == gpu::TargetLevel::WARP) {
-        block_product *= parallel_size_->as_int();
+    if (is_block_level(target_level_)) {
+        block_product *= parallel_size_->as_int() * (target_level_ == gpu::TargetLevel::X_BLOCK ? lanes_ : 1);
     }
     for (auto& [level, size] : ancestor_levels) {
-        if (is_block_level(level) || level == gpu::TargetLevel::WARP) {
+        if (is_block_level(level)) {
             block_product *= size;
         }
     }
     constexpr int64_t max_threads_per_block = 1024;
     if (block_product > max_threads_per_block) {
-        return false;
-    }
-
-    // Condition: num threads >= warp size
-    if (target_level_ == gpu::TargetLevel::WARP && block_product < gpu::gpu_warp_size<GPUType>()) {
         return false;
     }
 
@@ -312,16 +311,12 @@ bool GPUOffloadNestedLoop<
             // cannot be cooperatively combined. Leave such reductions sequential.
             if (!probe.has_indexed()) {
                 // A bare scalar accumulator is still supported as a thread-private target at
-                // block/warp levels (aliased onto the level's partial, then broadcast to
-                // every thread after the combine), but not at grid levels: there is no global
-                // slot and a cross-block combine is meaningless. Keep grid-level scalar
-                // reductions sequential.
-                const bool block_or_warp = target_level_ == gpu::TargetLevel::X_BLOCK ||
-                                           target_level_ == gpu::TargetLevel::Y_BLOCK ||
-                                           target_level_ == gpu::TargetLevel::Z_BLOCK ||
-                                           target_level_ == gpu::TargetLevel::WARP;
+                // block levels (aliased onto the level's partial, then broadcast to every
+                // thread after the combine), but not at grid levels: there is no global slot
+                // and a cross-block combine is meaningless. Keep grid-level scalar reductions
+                // sequential.
                 const bool is_scalar = builder.subject().type(reduction.container).type_id() == types::TypeID::Scalar;
-                if (!is_scalar || !block_or_warp) {
+                if (!is_scalar || !gpu::is_block_level(target_level_)) {
                     return false;
                 }
             }
@@ -352,22 +347,23 @@ bool GPUOffloadNestedLoop<
         }
         if (rescaled) {
             const int64_t warp = gpu::gpu_warp_size<GPUType>();
-            const int64_t width = std::min<int64_t>(parallel_size_->as_int(), warp);
-            if (target_level_ != gpu::TargetLevel::X_BLOCK || (width & (width - 1)) != 0 ||
-                parallel_size_->as_int() % width != 0 || block_product % warp != 0) {
+            const int64_t block_x = parallel_size_->as_int() * lanes_;
+            const int64_t width = std::min<int64_t>(block_x, warp);
+            if (target_level_ != gpu::TargetLevel::X_BLOCK || (width & (width - 1)) != 0 || block_x % width != 0 ||
+                block_product % warp != 0) {
                 return false;
             }
         }
     }
 
     return analysis_manager.get<tiles::ReductionBufferAnalysis>()
-        .supports_schedule(loop_, GPUType::template create<GPUType>(target_level_, parallel_size_));
+        .supports_schedule(loop_, make_nested_schedule<GPUType>(target_level_, parallel_size_, lanes_));
 }
 
 template<typename GPUType>
 void GPUOffloadNestedLoop<
     GPUType>::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
-    auto new_schedule = GPUType::template create<GPUType>(target_level_, parallel_size_);
+    auto new_schedule = make_nested_schedule<GPUType>(target_level_, parallel_size_, lanes_);
     if (!analysis_manager.get<tiles::ReductionBufferAnalysis>().supports_schedule(loop_, new_schedule)) {
         throw InvalidSDFGException("GPUOffloadNestedLoop: unsupported proposed reduction footprint");
     }
@@ -412,7 +408,9 @@ void GPUOffloadNestedLoop<GPUType>::to_json(nlohmann::json& j) const {
     j["parameters"]["target_level"] = to_string(target_level_);
     j["parameters"]["parallel_size"] = serializer::JSONSerializer::expression(parallel_size_);
     j["parameters"]["gpu_type"] = GPUType::value();
-
+    if (lanes_ != 1) {
+        j["parameters"]["lanes"] = lanes_;
+    }
 
     serializer::JSONSerializer ser_flat(false);
     j["subgraph"] = nlohmann::json::object();
@@ -435,7 +433,8 @@ GPUOffloadNestedLoop<GPUType> GPUOffloadNestedLoop<
     if (!loop) {
         throw InvalidTransformationDescriptionException("Element with ID " + std::to_string(loop_id) + " is not a loop.");
     }
-    return GPUOffloadNestedLoop<GPUType>(*loop, target_level, parallel_size);
+    const int64_t lanes = parameters.contains("lanes") ? parameters["lanes"].get<int64_t>() : 1;
+    return GPUOffloadNestedLoop<GPUType>(*loop, target_level, parallel_size, lanes);
 }
 
 // Explicit template instantiations for the supported GPU targets.

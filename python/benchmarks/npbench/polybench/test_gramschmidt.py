@@ -66,16 +66,15 @@ def test_gramschmidt(target):
         verifier = SDFGVerification(
             verification={
                 "GEMM": 1,
-                "VECTORIZE": 5,
                 "MAP": 8,
-                "SEQUENTIAL": 3,
+                "SEQUENTIAL": 14,
                 "FOR": 11,
             }
         )
     elif target == "openmp":
         verifier = SDFGVerification(
             verification={
-                "VECTORIZE": 2,
+                "SEQUENTIAL": 2,
                 "GEMM": 1,
                 "MAP": 6,
                 "CPU_PARALLEL": 4,

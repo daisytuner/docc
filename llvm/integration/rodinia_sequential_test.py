@@ -208,10 +208,10 @@ def test_backprop(compiler="clang-21"):
         verification={
             "sdfgs": 25,
             "FOR": 37,
-            "SEQUENTIAL": 62,
+            "SEQUENTIAL": 52,
             "WHILE": 6,
             "Malloc": 5,
-            "MAP": 25,
+            "MAP": 15,
         }
     )
     runner = TestRunner(
@@ -354,12 +354,12 @@ def test_cfd(compiler="clang++-21"):
     if platform.machine() in ("aarch64", "arm64"):
         verification = {
             "sdfgs": 5,
-            "MAP": 7,
+            "MAP": 4,
             "FOR": 9,
-            "SEQUENTIAL": 16,
+            "SEQUENTIAL": 13,
         }
     else:
-        verification = {"sdfgs": 6, "MAP": 15, "SEQUENTIAL": 28, "FOR": 13}
+        verification = {"sdfgs": 6, "MAP": 6, "SEQUENTIAL": 19, "FOR": 13}
     verifier = SDFGVerification(verification=verification)
     runner = TestRunner(
         "Rodinia",
@@ -428,11 +428,11 @@ def test_heartwall(compiler="clang-21"):
         verification={
             "sdfgs": 50,
             "Malloc": 27,
-            "MAP": 4,
-            "FOR": 51,
-            "SEQUENTIAL": 4,
+            "MAP": 7,
+            "FOR": 41,
+            "SEQUENTIAL": 48,
             "Free": 37,
-            "WHILE": 70,
+            "WHILE": 73,
         }
     )
     runner = TestRunner(
@@ -607,7 +607,6 @@ def test_hotspot(compiler="clang++-21"):
     return runner.run(timeout=240)
 
 
-@pytest.mark.xfail(reason="Verifier changed & Output incorrect")
 def test_hotspot3D(compiler="clang-21"):
     test_case = (
         Path(__file__).parent / "tests" / "rodinia" / "openmp" / "hotspot3D" / "3D.c"
@@ -704,12 +703,12 @@ def test_kmeans(compiler="clang-21"):
         verification={
             "sdfgs": 6,
             "Free": 10,
-            "FOR": 16,
+            "FOR": 12,
             "MAP": 4,
             "Calloc": 2,
             "Malloc": 6,
             "WHILE": 11,
-            "SEQUENTIAL": 4,
+            "SEQUENTIAL": 16,
         }
     )
     runner = TestRunner(
@@ -946,7 +945,6 @@ def test_lud(compiler="clang-21"):
     return runner.run(timeout=240)
 
 
-@pytest.mark.xfail(reason="Verifier changed & Output incorrect")
 def test_nw(compiler="clang++-21"):
     test_case = Path(__file__).parent / "tests" / "rodinia" / "openmp" / "nw" / "nw.cpp"
 
@@ -956,8 +954,8 @@ def test_nw(compiler="clang++-21"):
             "Malloc": 3,
             "WHILE": 5,
             "Free": 15,
-            "FOR": 28,
-            "SEQUENTIAL": 13,
+            "FOR": 15,
+            "SEQUENTIAL": 28,
             "MAP": 13,
         },
     )
@@ -1022,9 +1020,9 @@ def test_particlefilter(compiler="clang-21"):
             "Call": 29,
             "WHILE": 12,
             "CMath": 7,
-            "MAP": 19,
+            "MAP": 16,
             "FOR": 32,
-            "SEQUENTIAL": 52,
+            "SEQUENTIAL": 49,
         }
     )
     runner = TestRunner(
@@ -1075,7 +1073,6 @@ def test_particlefilter(compiler="clang-21"):
     return runner.run(timeout=240)
 
 
-@pytest.mark.xfail(reason="Verifier changed & Output incorrect")
 def test_pathfinder(compiler="clang++-21"):
     test_case = (
         Path(__file__).parent
@@ -1087,7 +1084,7 @@ def test_pathfinder(compiler="clang++-21"):
     )
 
     verifier = SDFGVerification(
-        verification={"sdfgs": 1, "FOR": 7},
+        verification={"sdfgs": 1, "FOR": 5},
     )
     runner = TestRunner(
         "Rodinia",
@@ -1137,7 +1134,7 @@ def test_srad(compiler="clang++-21"):
     )
 
     verifier = SDFGVerification(
-        verification={"sdfgs": 3, "MAP": 8, "SEQUENTIAL": 17, "FOR": 9}
+        verification={"sdfgs": 3, "MAP": 7, "SEQUENTIAL": 16, "FOR": 9}
     )
     runner = TestRunner(
         "Rodinia",
@@ -1185,7 +1182,6 @@ def test_srad(compiler="clang++-21"):
     return runner.run(timeout=240)
 
 
-@pytest.mark.xfail(reason="Verifier changed & Output incorrect")
 def test_streamcluster(compiler="clang++-21"):
     test_case = (
         Path(__file__).parent
@@ -1199,13 +1195,13 @@ def test_streamcluster(compiler="clang++-21"):
     verifier = SDFGVerification(
         verification={
             "sdfgs": 25,
-            "MAP": 3,
-            "SEQUENTIAL": 3,
-            "FOR": 45,
+            "MAP": 2,
+            "SEQUENTIAL": 41,
+            "FOR": 39,
             "Malloc": 7,
             "Free": 8,
             "Calloc": 3,
-            "WHILE": 28,
+            "WHILE": 32,
         },
     )
     runner = TestRunner(

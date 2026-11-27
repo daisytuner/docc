@@ -17,7 +17,6 @@ enum class TargetLevel {
     X_BLOCK,
     Y_BLOCK,
     Z_BLOCK,
-    WARP,
 };
 
 inline std::string to_string(const TargetLevel& target_level) {
@@ -34,8 +33,6 @@ inline std::string to_string(const TargetLevel& target_level) {
             return "Y_BLOCK";
         case TargetLevel::Z_BLOCK:
             return "Z_BLOCK";
-        case TargetLevel::WARP:
-            return "WARP";
     }
     throw InvalidSDFGException("Invalid TargetLevel");
 }
@@ -53,8 +50,6 @@ inline TargetLevel target_level_from_string(const std::string& value) {
         return TargetLevel::Y_BLOCK;
     } else if (value == "Z_BLOCK") {
         return TargetLevel::Z_BLOCK;
-    } else if (value == "WARP") {
-        return TargetLevel::WARP;
     }
     throw InvalidSDFGException("Invalid TargetLevel: " + value);
 }
@@ -64,7 +59,7 @@ inline TargetLevel target_level_from_string(const std::string& value) {
  *
  * Orthogonal to the TargetLevel (which fixes the cooperation *scope*): the
  * strategy fixes the *mechanism*.
- * - Register: per-thread/lane register; a warp scope folds via __shfl_xor_sync.
+ * - Register: per-lane register; an X_BLOCK with lanes folds each lane group via __shfl_xor_sync.
  * - Shared:   NV_Shared buffer + block halving tree.
  * - Global:   per-thread register merged atomically into the global accumulator.
  */
@@ -93,13 +88,10 @@ inline ReduceStrategy reduce_strategy_from_string(const std::string& value) {
     throw InvalidSDFGException("Invalid ReduceStrategy: " + value);
 }
 
-// The mechanism a target level uses by default: warp -> register+shuffle,
-// block -> shared tree, grid -> global atomics. Reproduces the historical
-// (pre-partial_storage) codegen when the property is unset.
+// The mechanism a target level uses by default: block -> shared tree, grid -> global
+// atomics. Register (shuffle) partials are opt-in for an X_BLOCK with lanes.
 inline ReduceStrategy default_reduce_strategy(TargetLevel target_level) {
     switch (target_level) {
-        case TargetLevel::WARP:
-            return ReduceStrategy::Register;
         case TargetLevel::X_BLOCK:
         case TargetLevel::Y_BLOCK:
         case TargetLevel::Z_BLOCK:
@@ -164,8 +156,10 @@ public:
     }
 
     /**
-     * @brief Lanes that jointly execute each iteration (1 = one thread per iteration;
-     *        the warp size = one wave per iteration, a subgroup-collective body).
+     * @brief Lanes per iteration group (1 = one thread per iteration). On a map, the warp
+     *        size makes each iteration one wave (a subgroup-collective body). On a reduce,
+     *        every lane takes its own iteration and each group of `lanes` threads is
+     *        combined by warp shuffle (Register partials, or Shared partials of the groups).
      */
     static symbolic::Integer lanes(const structured_control_flow::ScheduleType& schedule) {
         auto it = schedule.properties().find("lanes");

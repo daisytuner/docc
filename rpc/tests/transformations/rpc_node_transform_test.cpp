@@ -10,15 +10,15 @@
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/codegen/utils.h"
 #include "sdfg/deepcopy/structured_sdfg_deep_copy.h"
+#include "sdfg/loops/transformations/loop_tiling.h"
 #include "sdfg/metadata/loop_provenance.h"
 #include "sdfg/metadata/rpc_optimization.h"
 #include "sdfg/passes/rpc/rpc_context.h"
+#include "sdfg/reordering/transformations/loop_interchange.h"
 #include "sdfg/serializer/json_serializer.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/structured_control_flow/structured_loop.h"
 #include "sdfg/structured_sdfg.h"
-#include "sdfg/transformations/loop_interchange.h"
-#include "sdfg/transformations/loop_tiling.h"
 #include "sdfg/transformations/recorder.h"
 #include "sdfg/types/pointer.h"
 #include "sdfg/types/type.h"
@@ -141,8 +141,7 @@ TEST_F(RPCNodeTransformTest, Matmul_FMA) {
     EXPECT_EQ(outer_loops.size(), 1);
 
     auto outer_loop = static_cast<structured_control_flow::StructuredLoop*>(outer_loops[0]);
-    sdfg::transformations::RPCNodeTransform
-        transfer_tuning(*outer_loop, "sequential", "server", *ctx_, true, true, true);
+    sdfg::transformations::RPCNodeTransform transfer_tuning(*outer_loop, "sequential", "server", *ctx_, true, true);
     ASSERT_TRUE(transfer_tuning.can_be_applied(builder, analysis_manager));
     transfer_tuning.apply(builder, analysis_manager);
 
@@ -195,8 +194,7 @@ TEST_F(RPCNodeTransformTest, Double_Matmul) {
 
     builder.subject().validate();
     auto outer_loop = static_cast<structured_control_flow::StructuredLoop*>(outer_loops[0]);
-    sdfg::transformations::RPCNodeTransform
-        transfer_tuning(*outer_loop, "sequential", "server", *ctx_, true, true, true);
+    sdfg::transformations::RPCNodeTransform transfer_tuning(*outer_loop, "sequential", "server", *ctx_, true, true);
     ASSERT_TRUE(transfer_tuning.can_be_applied(builder, analysis_manager));
     transfer_tuning.apply(builder, analysis_manager);
 
@@ -222,7 +220,7 @@ TEST_F(RPCNodeTransformTest, UniqueElementIDs) {
 
     auto* first_outer_loop = static_cast<structured_control_flow::StructuredLoop*>(initial_outer_loops[0]);
     sdfg::transformations::RPCNodeTransform
-        first_rpc_transform(*first_outer_loop, "sequential", "server", *ctx_, true, false, true);
+        first_rpc_transform(*first_outer_loop, "sequential", "server", *ctx_, false, true);
     ASSERT_TRUE(first_rpc_transform.can_be_applied(main_builder, main_analysis_manager));
     first_rpc_transform.apply(main_builder, main_analysis_manager);
 
@@ -237,7 +235,7 @@ TEST_F(RPCNodeTransformTest, UniqueElementIDs) {
 
     auto* second_outer_loop = static_cast<structured_control_flow::StructuredLoop*>(remaining_outer_loops.back());
     sdfg::transformations::RPCNodeTransform
-        second_rpc_transform(*second_outer_loop, "sequential", "server", *ctx_, true, false, true);
+        second_rpc_transform(*second_outer_loop, "sequential", "server", *ctx_, false, true);
     ASSERT_TRUE(second_rpc_transform.can_be_applied(main_builder, main_analysis_manager));
     second_rpc_transform.apply(main_builder, main_analysis_manager);
 
@@ -305,7 +303,7 @@ TEST_F(RPCNodeTransformTest, HandleUnauthenticatedError) {
     EXPECT_EQ(outer_loops.size(), 1);
     auto outer_loop = static_cast<structured_control_flow::StructuredLoop*>(outer_loops[0]);
 
-    sdfg::transformations::RPCNodeTransform transform(*outer_loop, "sequential", "server", *ctx_, true, true, true);
+    sdfg::transformations::RPCNodeTransform transform(*outer_loop, "sequential", "server", *ctx_, true, true);
 
     // Test parse_rpc_response handles 401 errors
     auto response = transform.parse_rpc_response(result);
@@ -334,7 +332,7 @@ TEST_F(RPCNodeTransformTest, HandleOtherHttpErrors) {
     EXPECT_EQ(outer_loops.size(), 1);
     auto outer_loop = static_cast<structured_control_flow::StructuredLoop*>(outer_loops[0]);
 
-    sdfg::transformations::RPCNodeTransform transform(*outer_loop, "sequential", "server", *ctx_, true, true, true);
+    sdfg::transformations::RPCNodeTransform transform(*outer_loop, "sequential", "server", *ctx_, true, true);
 
     // Test parse_rpc_response handles HTTP errors
     auto response = transform.parse_rpc_response(result);
@@ -381,7 +379,7 @@ TEST_F(RPCNodeTransformTest, ApplyUnwrapsReferenceTypedContainersFromResponse) {
     ASSERT_EQ(outer_loops.size(), 1);
     auto outer_loop = static_cast<structured_control_flow::StructuredLoop*>(outer_loops[0]);
 
-    sdfg::transformations::RPCNodeTransform transform(*outer_loop, "sequential", "server", *test_ctx, true, false, true);
+    sdfg::transformations::RPCNodeTransform transform(*outer_loop, "sequential", "server", *test_ctx, false, true);
     ASSERT_TRUE(transform.can_be_applied(builder, analysis_manager));
     transform.apply(builder, analysis_manager);
 

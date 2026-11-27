@@ -82,6 +82,7 @@ set(TEST_FILES
     helpers/helpers_test.cpp
     passes/dataflow/bytes_reference_elimination_test.cpp
     passes/dataflow/constant_propagation_test.cpp
+    passes/dataflow/float_widening_test.cpp
     passes/dataflow/dead_data_elimination_test.cpp
     passes/dataflow/local_buffer_reuse_test.cpp
     passes/dataflow/memlet_linearization_test.cpp

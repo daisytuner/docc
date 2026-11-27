@@ -34,4 +34,6 @@ def test_vectorize_transform():
     assert t.can_be_applied(builder, am)
     t.apply(builder, am)
 
-    assert m.schedule_type.value != "SEQUENTIAL"
+    assert m.schedule_type.value == "SEQUENTIAL"
+    assert m.schedule_type.vectorize
+    assert not t.can_be_applied(builder, am)

@@ -10,8 +10,6 @@
 #include <sdfg/serializer/json_serializer.h>
 
 #include "sdfg/codegen/language_extension.h"
-#include "sdfg/passes/scheduler/rocm_scheduler.h"
-#include "sdfg/passes/scheduler/scheduler_registry.h"
 #include "sdfg/targets/rocm/blas/batched_gemm.h"
 #include "sdfg/targets/rocm/blas/dot.h"
 #include "sdfg/targets/rocm/blas/gemm.h"

@@ -19,7 +19,6 @@ sdfg = build_waxpby().move()
 print(sdfg.root.at(0))   # <For indvar='i' ...>
 sdfg.simplify()
 print(sdfg.root.at(0))   # <Map indvar='i' schedule='SEQUENTIAL' ...>
-sdfg.normalize()
 sdfg.schedule("openmp", "server", False)
 print(sdfg.root.at(0))   # <Map indvar='i' schedule='CPU_PARALLEL' ...>
 ```
@@ -28,8 +27,7 @@ print(sdfg.root.at(0))   # <Map indvar='i' schedule='CPU_PARALLEL' ...>
 | ------------- | ---------------------------------------------------------------------------------------------------------------- |
 | `expand()`    | Expands library nodes into loops and tasklets where the target has no better implementation                     |
 | `simplify()`  | Runs the simplification pipelines (dataflow, symbolic, dead code, constants). Its last pass, `AutoParallelization`, turns every `For` whose iterations are independent into a `Map`. |
-| `normalize()` | Brings loops into a canonical form and fuses loops and blocks where possible                                    |
-| `schedule()`  | Runs the loop schedulers of the target, which assign a schedule to each `Map`, here OpenMP                      |
+| `schedule()`  | Brings the SDFG into the target's normal form (for CPU targets: canonical loops, fused loops and blocks), then runs the target's loop schedulers, which assign a schedule to each `Map`, here OpenMP |
 
 These are the stages that `DOCC_DEBUG=dump` writes for the Python and PyTorch frontends, see [Debug Options](../../python/debugging.md#look-at-the-intermediate-steps). The C/C++ frontend runs the same kinds of passes inside the LLVM plugin.
 
@@ -83,7 +81,17 @@ Scheduling maps loops onto the target. The `LoopSchedulingPass` walks the loop t
 1. `find`: should this loop be scheduled (`APPLY`), skipped (`NEXT`), or should its children be considered (`CHILDREN`)?
 2. `can_apply_schedule` and `apply_schedule`: apply the schedule, usually with [transformations](./transformations.md).
 
-The OpenMP scheduler, for example, applies `OMPTransform` to the outermost `Map` of a loop nest. The CUDA and ROCm schedulers offload loop nests to the GPU and map them to thread blocks and threads. Each target registers its schedulers through the [plugin interface](../plugins.md).
+The OpenMP scheduler, for example, applies `OMPTransform` to the outermost `Map` of a loop nest. The CUDA and ROCm schedulers offload loop nests to the GPU: the outermost loop becomes the `X_GRID` dimension of a kernel, and `GPUNestedOffloadPass` maps the perfectly nested loops below it by the depth of the nest:
+
+| Nest depth | Nested loops, outer to inner          |
+| ---------- | ------------------------------------- |
+| 2          | `X_BLOCK`                             |
+| 3          | `Y_GRID`, `X_BLOCK`                   |
+| 4 and more | `Y_GRID`, `X_BLOCK`, `Y_BLOCK`        |
+
+Grid sizes follow the loop's iteration count; block sizes are capped at a default. See [GPU target levels](./transformations.md#gpu-target-levels) for what each level means. Each target registers its schedulers through the [plugin interface](../plugins.md).
+
+Right before code generation, two passes prepare GPU kernels: `ReductionSharedMemoryDelinearization` creates the buffers that hold the partial results of GPU reductions, and `LanesMapPredication` makes sure that the writes in the body of an `X_BLOCK` map with `lanes` happen once per lane group instead of once per lane.
 
 ## Pass options
 

@@ -48,6 +48,12 @@ enum class OzakiVariant {
  * Accuracy is relative to the magnitudes of each row of A and column of B: elements much smaller than their row's
  * largest lose bits, as in all Ozaki schemes. The Int8 matmuls stay library nodes for the target to map.
  *
+ * Without a given number of slices, each operand gets as many as its own precision needs, at most as many as the
+ * result keeps (see operand_splits): an operand of fewer significand bits than the result, such as bfloat16 or FP8
+ * weights, needs fewer slices, and a target that computes the result in fewer bits than its type (`max_bits`) needs
+ * fewer for both. With direct rescaling, A and B then take slices of their own and the products (t, u) with t <= s_A,
+ * u <= s_B and t + u <= max(s_A, s_B) + 1.
+ *
  * Applies to a 2-D Float or Double MatMul, or a row-major GEMM (whose alpha and beta it applies to the result), with a
  * constant K small enough for exact Int32 accumulation; with direct rescaling, slicing only, also to a MatMul that
  * repeats over batch dimensions.
@@ -58,6 +64,8 @@ private:
     OzakiVariant variant_;
     int splits_;
     Rescaling rescaling_;
+    int max_bits_;
+    double min_normal_;
 
 public:
     static constexpr int MAX_SLICES = 10;
@@ -67,14 +75,21 @@ public:
     static constexpr int MAX_MODULI = 20;
 
     /**
-     * @param splits slices (Slicing) or moduli (Modular); 0 picks as many as the output precision needs
+     * @param splits slices (Slicing) or moduli (Modular); 0 picks as many as the operands' and the output's precision
+     * need
      * @param rescaling Direct computes the slices and the result in the contraction's own type; Slicing only
+     * @param max_bits the significand bits, guard bits included, the target computes the result in; 0 for the result
+     * type's own
+     * @param min_normal the smallest normal value of the float the target computes direct rescaling in, the least
+     * scale of a row or column, so that the scales of all-zero ones stay invertible there; 0 for the type's own
      */
     explicit OzakiContraction(
         data_flow::LibraryNode& node,
         OzakiVariant variant = OzakiVariant::Modular,
         int splits = 0,
-        Rescaling rescaling = Rescaling::Exponents
+        Rescaling rescaling = Rescaling::Exponents,
+        int max_bits = 0,
+        double min_normal = 0
     );
 
     virtual std::string name() const override;
@@ -96,8 +111,17 @@ public:
         return rescaling_;
     }
 
-    /// The slices or moduli the transformation uses for @p node, resolving 0 to the default.
+    /// The slices or moduli the transformation uses for @p node, resolving 0 to the default: for slicing, the larger
+    /// of operand_splits().
     int effective_splits() const;
+    /**
+     * The slices of A and of B, slicing: the given number for both, else per operand ceil(bits / 7) with
+     * bits = min(significand of the operand's type + 2 guard bits, the result's bits), the result's bits being its
+     * type's significand + 2, or max_bits if smaller. Integer operands of 8 bits or less need one slice.
+     */
+    std::pair<int, int> operand_splits() const;
+    /// The bits operand @p connector ("A" or "B") needs represented, before the result's bounds; 0 if unknown.
+    int operand_bits(const std::string& connector) const;
 
     /// Bits each of A and B keeps per row or column in the modular variant with @p moduli and reduction @p k.
     static int modular_bits(int moduli, int64_t k);

@@ -30,8 +30,7 @@ def test_floyd_warshall(target):
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
-                "VECTORIZE": 2,
-                "SEQUENTIAL": 3,
+                "SEQUENTIAL": 5,
                 "MAP": 4,
                 "FOR": 1,
             }

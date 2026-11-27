@@ -3897,3 +3897,54 @@ TEST(MemoryLayoutAnalysisTest, LibraryNode_MatMul_GpuThreadsShareTile_Idiv) {
     EXPECT_TRUE(symbolic::eq(ext_y.at(0), symbolic::integer(32)));
     EXPECT_TRUE(symbolic::eq(ext_y.at(1), symbolic::integer(32)));
 }
+
+// Accesses beside inner loops belong to the outer tile too, as in polybench correlation:
+//   for i < 7: { C[i][i] = 1; for j in [i+1, 8): { for k < 4: C[i][j] = 1; C[j][i] = 1; } }
+TEST(MemoryLayoutAnalysisTest, TileIncludesAccessesBesideInnerLoops) {
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto& root = builder.subject().root();
+
+    types::Scalar index_type(types::PrimitiveType::Int64);
+    types::Scalar scalar_type(types::PrimitiveType::Double);
+    types::Array row_type(scalar_type, symbolic::integer(8));
+    types::Pointer pointer_type(row_type);
+    for (auto* name : {"i", "j", "k"}) {
+        builder.add_container(name, index_type);
+    }
+    builder.add_container("C", pointer_type, true);
+
+    auto i = symbolic::symbol("i");
+    auto j = symbolic::symbol("j");
+    auto k = symbolic::symbol("k");
+    auto one = symbolic::one();
+    auto assign_one = [&](structured_control_flow::Sequence& seq, data_flow::Subset subset) {
+        auto& block = builder.add_block(seq);
+        auto& out = builder.add_access(block, "C");
+        auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"1.0"});
+        builder.add_computational_memlet(block, tasklet, "_out", out, subset);
+    };
+
+    auto& loop_i =
+        builder.add_for(root, i, symbolic::Lt(i, symbolic::integer(7)), symbolic::zero(), symbolic::add(i, one));
+    assign_one(loop_i.root(), {i, i});
+    auto& loop_j = builder.add_for(
+        loop_i.root(), j, symbolic::Lt(j, symbolic::integer(8)), symbolic::add(i, one), symbolic::add(j, one)
+    );
+    auto& loop_k =
+        builder
+            .add_for(loop_j.root(), k, symbolic::Lt(k, symbolic::integer(4)), symbolic::zero(), symbolic::add(k, one));
+    assign_one(loop_k.root(), {i, j});
+    assign_one(loop_j.root(), {j, i});
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    auto& analysis = analysis_manager.get<analysis::MemoryLayoutAnalysis>();
+    auto* tile = analysis.tile(loop_i, "C");
+    ASSERT_NE(tile, nullptr);
+    auto range = tile->contiguous_range();
+    ASSERT_FALSE(range.first.is_null());
+    ASSERT_FALSE(range.second.is_null());
+    // From C[0][0] (the diagonal) to at least C[7][6] (row 7 is only written transposed).
+    EXPECT_TRUE(symbolic::eq(range.first, symbolic::zero()));
+    EXPECT_TRUE(SymEngine::is_a<SymEngine::Integer>(*range.second));
+    EXPECT_GE(SymEngine::rcp_static_cast<const SymEngine::Integer>(range.second)->as_int(), 7 * 8 + 6);
+}

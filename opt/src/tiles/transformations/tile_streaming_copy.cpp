@@ -66,9 +66,9 @@ bool reads_source_once(tiles::TileCopyNode& node, const Function& function, anal
         return false;
     }
 
-    // Each thread must own a distinct iteration of the enclosing GPU loops. Lanes and WARP loops
-    // share an iteration across threads, and a launched level without an enclosing loop runs the
-    // copy on every thread of that level.
+    // Each thread must own a distinct iteration of the enclosing GPU loops. Lanes share an
+    // iteration across threads, and a launched level without an enclosing loop runs the copy on
+    // every thread of that level.
     std::set<gpu::TargetLevel> enclosing_levels;
     for (size_t i = 0; i < kernel_depth; ++i) {
         const auto& schedule = loops[i]->schedule_type();
@@ -76,8 +76,7 @@ bool reads_source_once(tiles::TileCopyNode& node, const Function& function, anal
             continue;
         }
         auto level = gpu::ScheduleType_GPU_Offload::target_level_if_exists(schedule);
-        if (!level || *level == gpu::TargetLevel::WARP ||
-            gpu::ScheduleType_GPU_Offload::lanes(schedule)->as_int() != 1) {
+        if (!level || gpu::ScheduleType_GPU_Offload::lanes(schedule)->as_int() != 1) {
             return false;
         }
         enclosing_levels.insert(*level);
@@ -85,9 +84,6 @@ bool reads_source_once(tiles::TileCopyNode& node, const Function& function, anal
     std::unordered_map<gpu::TargetLevel, structured_control_flow::ScheduleType> launch;
     gpu::get_nested_schedule_types(*loops[kernel_depth - 1], analysis_manager, launch);
     for (const auto& [level, schedule] : launch) {
-        if (level == gpu::TargetLevel::WARP) {
-            return false;
-        }
         if (enclosing_levels.count(level) == 0 && gpu::ScheduleType_GPU_Offload::threads(schedule)->as_int() > 1) {
             return false;
         }

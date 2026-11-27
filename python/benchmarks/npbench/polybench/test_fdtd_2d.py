@@ -41,8 +41,7 @@ def test_fdtd_2d(target):
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
-                "VECTORIZE": 7,
-                "SEQUENTIAL": 7,
+                "SEQUENTIAL": 14,
                 "MAP": 13,
                 "FOR": 1,
             }

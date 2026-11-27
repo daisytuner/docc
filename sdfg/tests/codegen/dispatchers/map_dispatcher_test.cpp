@@ -46,6 +46,45 @@ TEST(SequentialMapDispatcherTest, DispatchNode) {
     );
 }
 
+TEST(SequentialMapDispatcherTest, DispatchNodeVectorized) {
+    builder::StructuredSDFGBuilder builder("sdfg_a", FunctionType_CPU);
+    auto& sdfg = builder.subject();
+    auto& root = sdfg.root();
+
+    builder.add_container("i", types::Scalar(types::PrimitiveType::Int32));
+    auto schedule = structured_control_flow::ScheduleType_Sequential::create();
+    structured_control_flow::ScheduleType_Vectorize::set(schedule);
+    structured_control_flow::ScheduleType_Unroll::set(schedule);
+    auto& loop = builder.add_map(
+        root,
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::symbol("i"), symbolic::integer(10)),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
+        schedule
+    );
+
+    auto final_sdfg = builder.move();
+    analysis::AnalysisManager analysis_manager(*final_sdfg);
+
+    codegen::CLanguageExtension language_extension(*final_sdfg);
+    auto instrumentation = codegen::InstrumentationPlan::none(*final_sdfg);
+    auto arg_capture = codegen::ArgCapturePlan::none(*final_sdfg);
+    codegen::SequentialMapDispatcher
+        dispatcher(language_extension, *final_sdfg, analysis_manager, loop, *instrumentation, *arg_capture);
+
+    codegen::PrettyPrinter main_stream;
+    codegen::PrettyPrinter globals_stream;
+    codegen::CodeSnippetFactory library_factory;
+    dispatcher.dispatch_node(main_stream, globals_stream, library_factory);
+
+    EXPECT_EQ(
+        main_stream.str(),
+        "// Map\n#pragma clang loop vectorize(enable) interleave(enable) unroll(full)\nfor(i = 0;i < 10;i = 1 + "
+        "i)\n{\n}\n"
+    );
+}
+
 TEST(MapDispatcherTest, RedirectDispatch) {
     builder::StructuredSDFGBuilder builder("sdfg_a", FunctionType_CPU);
     auto& sdfg = builder.subject();
@@ -141,4 +180,60 @@ TEST(MapDispatcherTest, RedirectDispatch) {
 
     EXPECT_TRUE(dispatch_called);
     EXPECT_TRUE(dispatch_node_called);
+}
+
+TEST(SchedTypeMapDispatcherTest, DispatchesTheLanguagesSchedule) {
+    builder::StructuredSDFGBuilder builder("sdfg_a", FunctionType_CPU);
+    auto& root = builder.subject().root();
+
+    builder.add_container("i", types::Scalar(types::PrimitiveType::Int32));
+    auto& loop = builder.add_map(
+        root,
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::symbol("i"), symbolic::integer(10)),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
+        structured_control_flow::ScheduleType("unregistered", structured_control_flow::ScheduleTypeCategory::None)
+    );
+
+    auto final_sdfg = builder.move();
+    analysis::AnalysisManager analysis_manager(*final_sdfg);
+
+    /// Runs every schedule as the "lowered" one, as a language without the schedule's target might.
+    class LoweringLanguageExtension : public codegen::CLanguageExtension {
+    public:
+        using CLanguageExtension::CLanguageExtension;
+
+        std::string loop_schedule(const structured_control_flow::ScheduleType& schedule) const override {
+            return "lowered";
+        }
+    };
+
+    LoweringLanguageExtension language_extension(*final_sdfg);
+    auto instrumentation = codegen::InstrumentationPlan::none(*final_sdfg);
+    auto arg_capture = codegen::ArgCapturePlan::none(*final_sdfg);
+
+    codegen::MapDispatcherRegistry::instance().register_map_dispatcher(
+        "lowered",
+        [](codegen::LanguageExtension& language_extension,
+           StructuredSDFG& sdfg,
+           analysis::AnalysisManager& analysis_manager,
+           structured_control_flow::Map& map,
+           codegen::InstrumentationPlan& instrumentation,
+           codegen::ArgCapturePlan& arg_capture) {
+            return std::make_unique<codegen::SequentialMapDispatcher>(
+                language_extension, sdfg, analysis_manager, map, instrumentation, arg_capture
+            );
+        }
+    );
+
+    codegen::SchedTypeMapDispatcher
+        dispatcher(language_extension, *final_sdfg, analysis_manager, loop, *instrumentation, *arg_capture);
+
+    codegen::PrettyPrinter main_stream;
+    codegen::PrettyPrinter globals_stream;
+    codegen::CodeSnippetFactory library_factory;
+    dispatcher.dispatch(main_stream, globals_stream, library_factory);
+
+    EXPECT_NE(main_stream.str().find("for(i = 0;i < 10;i = 1 + i)"), std::string::npos);
 }

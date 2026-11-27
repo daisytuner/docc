@@ -16,7 +16,20 @@
 #include <sdfg/fp_math/transformations/ozaki_contraction.h>
 #include <sdfg/fp_math/transformations/quantize_contraction.h>
 #include <sdfg/fp_math/transformations/unfuse_fma.h>
+#include <sdfg/loops/transformations/loop_peeling.h>
+#include <sdfg/loops/transformations/loop_shift.h>
+#include <sdfg/loops/transformations/loop_skewing.h>
+#include <sdfg/loops/transformations/loop_split.h>
+#include <sdfg/loops/transformations/loop_tiling.h>
+#include <sdfg/loops/transformations/map_collapse.h>
+#include <sdfg/loops/transformations/map_delinearize.h>
+#include <sdfg/loops/transformations/multi_level_tiling.h>
+#include <sdfg/loops/transformations/trivial_loop_elimination.h>
+#include <sdfg/loops/transformations/unroll_transform.h>
+#include <sdfg/loops/transformations/vectorize_transform.h>
 #include <sdfg/parallelization/transformations/loop_parallelization.h>
+#include <sdfg/reordering/transformations/loop_distribute.h>
+#include <sdfg/reordering/transformations/loop_interchange.h>
 #include <sdfg/targets/gpu/gpu_mma_einsum_transform.h>
 #include <sdfg/targets/gpu/gpu_mma_interleave.h>
 #include <sdfg/tiles/transformations/local_storage.h>
@@ -24,16 +37,6 @@
 #include <sdfg/tiles/transformations/tile_fusion.h>
 #include <sdfg/tiles/transformations/tile_streaming_copy.h>
 #include <sdfg/tiles/transformations/tile_vectorizer.h>
-#include <sdfg/transformations/loop_distribute.h>
-#include <sdfg/transformations/loop_interchange.h>
-#include <sdfg/transformations/loop_peeling.h>
-#include <sdfg/transformations/loop_shift.h>
-#include <sdfg/transformations/loop_skewing.h>
-#include <sdfg/transformations/loop_split.h>
-#include <sdfg/transformations/loop_tiling.h>
-#include <sdfg/transformations/map_collapse.h>
-#include <sdfg/transformations/map_delinearize.h>
-#include <sdfg/transformations/multi_level_tiling.h>
 #include <sdfg/transformations/offloading/cuda_offload_transform.h>
 #include <sdfg/transformations/offloading/cuda_parallelize_nested_map.h>
 #include <sdfg/transformations/offloading/cuda_transform.h>
@@ -46,9 +49,6 @@
 #include <sdfg/transformations/omp_transform.h>
 #include <sdfg/transformations/redundant_zero_init_elimination.h>
 #include <sdfg/transformations/stream_k.h>
-#include <sdfg/transformations/trivial_loop_elimination.h>
-#include <sdfg/transformations/unroll_transform.h>
-#include <sdfg/transformations/vectorize_transform.h>
 
 namespace sdfg {
 namespace transformations {
@@ -118,17 +118,17 @@ template<typename Visitor>
 decltype(auto)
 dispatch_transformation(const std::string& transformation_name, const nlohmann::json& desc, Visitor&& visitor) {
     if (transformation_name == "LoopTiling") {
-        return detail::invoke_for<transformations::LoopTiling>(std::forward<Visitor>(visitor));
+        return detail::invoke_for<loops::transformations::LoopTiling>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "MapCollapse") {
-        return detail::invoke_for<transformations::MapCollapse>(std::forward<Visitor>(visitor));
+        return detail::invoke_for<loops::transformations::MapCollapse>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "MapDelinearize") {
-        return detail::invoke_for<transformations::MapDelinearize>(std::forward<Visitor>(visitor));
+        return detail::invoke_for<loops::transformations::MapDelinearize>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "MultiLevelTiling") {
-        return detail::invoke_for<transformations::MultiLevelTiling>(std::forward<Visitor>(visitor));
+        return detail::invoke_for<loops::transformations::MultiLevelTiling>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "LoopDistribute") {
-        return detail::invoke_for<transformations::LoopDistribute>(std::forward<Visitor>(visitor));
+        return detail::invoke_for<reordering::transformations::LoopDistribute>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "LoopInterchange") {
-        return detail::invoke_for<transformations::LoopInterchange>(std::forward<Visitor>(visitor));
+        return detail::invoke_for<reordering::transformations::LoopInterchange>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "LocalStorage") {
         return detail::invoke_for<transformations::LocalStorage>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "SoftwarePipelining") {
@@ -140,27 +140,27 @@ dispatch_transformation(const std::string& transformation_name, const nlohmann::
     } else if (transformation_name == "TileStreamingCopy") {
         return detail::invoke_for<transformations::TileStreamingCopy>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "LoopSkewing") {
-        return detail::invoke_for<transformations::LoopSkewing>(std::forward<Visitor>(visitor));
+        return detail::invoke_for<loops::transformations::LoopSkewing>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "LoopShift") {
-        return detail::invoke_for<transformations::LoopShift>(std::forward<Visitor>(visitor));
+        return detail::invoke_for<loops::transformations::LoopShift>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "LoopSplit") {
-        return detail::invoke_for<transformations::LoopSplit>(std::forward<Visitor>(visitor));
+        return detail::invoke_for<loops::transformations::LoopSplit>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "LoopParallelization") {
         return detail::invoke_for<transformations::LoopParallelization>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "OMPTransform") {
         return detail::invoke_for<transformations::OMPTransform>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "LoopPeeling") {
-        return detail::invoke_for<transformations::LoopPeeling>(std::forward<Visitor>(visitor));
+        return detail::invoke_for<loops::transformations::LoopPeeling>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "TrivialLoopElimination") {
-        return detail::invoke_for<transformations::TrivialLoopElimination>(std::forward<Visitor>(visitor));
+        return detail::invoke_for<loops::transformations::TrivialLoopElimination>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "RedundantZeroInitElimination") {
         return detail::invoke_for<transformations::RedundantZeroInitElimination>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "StreamK") {
         return detail::invoke_for<transformations::StreamK>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "VectorizeTransform") {
-        return detail::invoke_for<transformations::VectorizeTransform>(std::forward<Visitor>(visitor));
+        return detail::invoke_for<loops::transformations::VectorizeTransform>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "UnrollTransform") {
-        return detail::invoke_for<transformations::UnrollTransform>(std::forward<Visitor>(visitor));
+        return detail::invoke_for<loops::transformations::UnrollTransform>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "CUDATransform") {
         return detail::invoke_for<cuda::CUDATransform>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "CUDAOffloadTransform") {

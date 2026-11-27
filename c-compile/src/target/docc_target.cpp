@@ -13,11 +13,10 @@
 #include "sdfg/passes/offloading/rocm_library_node_expansion_pass.h"
 #include "sdfg/passes/offloading/rocm_library_node_rewriter_pass.h"
 #include "sdfg/passes/scheduler/cuda_offload_scheduler.h"
-#include "sdfg/passes/scheduler/cuda_scheduler.h"
 #include "sdfg/passes/scheduler/omp_scheduler.h"
 #include "sdfg/passes/scheduler/rocm_offload_scheduler.h"
-#include "sdfg/passes/scheduler/rocm_scheduler.h"
-#include "sdfg/passes/scheduler/vectorize_scheduler.h"
+#include "sdfg/scheduling/a_priori_loop_nest_normalization.h"
+#include "sdfg/scheduling/passthrough_scheduler.h"
 #include "sdfg/targets/cuda/cuda_offload_dispatcher_strategy.h"
 #include "sdfg/targets/omp/math/tensor/conv_expander.h"
 #include "sdfg/targets/rocm/rocm_offload_dispatcher_strategy.h"
@@ -88,12 +87,16 @@ static DoccTarget cuda_target = {
         sdfg::cuda::CudaLibraryNodeRewriterPass cuda_pass;
         return cuda_pass.run(builder, analysis_manager);
     },
-    .get_target_loop_schedulers =
-        [](const TargetOptions& options) -> std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> {
-        std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> schedulers;
-        schedulers.push_back(std::make_shared<sdfg::passes::scheduler::CUDAOffloadScheduler>());
-        return schedulers;
-    }
+    .scheduling =
+        {.create_sdfg_scheduler =
+             [](const TargetOptions& options) -> std::unique_ptr<sdfg::passes::scheduler::SDFGScheduler> {
+             return std::make_unique<sdfg::scheduling::PassthroughScheduler>();
+         },
+         .create_loop_schedulers =
+             [](const TargetOptions& options) -> std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> {
+             return {std::make_shared<sdfg::passes::scheduler::CUDAOffloadScheduler>()};
+         },
+         .remote_normalization = true}
 };
 
 static DoccTarget rocm_target = {
@@ -169,12 +172,16 @@ static DoccTarget rocm_target = {
         sdfg::rocm::RocmLibraryNodeRewriterPass rocm_pass;
         return rocm_pass.run(builder, analysis_manager);
     },
-    .get_target_loop_schedulers =
-        [](const TargetOptions& options) -> std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> {
-        std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> schedulers;
-        schedulers.push_back(std::make_shared<sdfg::passes::scheduler::ROCMOffloadScheduler>());
-        return schedulers;
-    }
+    .scheduling =
+        {.create_sdfg_scheduler =
+             [](const TargetOptions& options) -> std::unique_ptr<sdfg::passes::scheduler::SDFGScheduler> {
+             return std::make_unique<sdfg::scheduling::PassthroughScheduler>();
+         },
+         .create_loop_schedulers =
+             [](const TargetOptions& options) -> std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> {
+             return {std::make_shared<sdfg::passes::scheduler::ROCMOffloadScheduler>()};
+         },
+         .remote_normalization = true}
 };
 
 static DoccTarget sequential_target = {
@@ -188,11 +195,14 @@ static DoccTarget sequential_target = {
         sdfg::passes::LibraryNodeExpansionPass libnode_expansion_pass(expander, *options.options);
         return libnode_expansion_pass.run(builder, analysis_manager);
     },
-    .get_target_loop_schedulers =
-        [](const TargetOptions& options) -> std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> {
-        std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> schedulers;
-        schedulers.push_back(std::make_shared<sdfg::passes::scheduler::VectorizeScheduler>());
-        return schedulers;
+    .scheduling = {
+        .create_sdfg_scheduler = [](const TargetOptions&) -> std::unique_ptr<sdfg::passes::scheduler::SDFGScheduler> {
+            return std::make_unique<sdfg::scheduling::APrioriLoopNestNormalization>();
+        },
+        .create_loop_schedulers =
+            [](const TargetOptions& options) -> std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> {
+            return {};
+        }
     }
 };
 
@@ -218,13 +228,14 @@ static DoccTarget openmp_target = {
         sdfg::passes::LibraryNodeExpansionPass libnode_expansion_pass(expander, *options.options);
         return libnode_expansion_pass.run(builder, analysis_manager);
     },
-    .get_target_loop_schedulers =
-        [](const TargetOptions& options) -> std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> {
-        std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> schedulers;
-        schedulers.push_back(std::make_shared<sdfg::passes::scheduler::OMPScheduler>());
-        schedulers.push_back(std::make_shared<sdfg::passes::scheduler::VectorizeScheduler>());
-        return schedulers;
-    }
+    .scheduling =
+        {.create_sdfg_scheduler = [](const TargetOptions&) -> std::unique_ptr<sdfg::passes::scheduler::SDFGScheduler> {
+             return std::make_unique<sdfg::scheduling::APrioriLoopNestNormalization>();
+         },
+         .create_loop_schedulers =
+             [](const TargetOptions& options) -> std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> {
+             return {std::make_shared<sdfg::passes::scheduler::OMPScheduler>()};
+         }}
 };
 
 /**

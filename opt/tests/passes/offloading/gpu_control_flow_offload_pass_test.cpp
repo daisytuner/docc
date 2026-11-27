@@ -11,8 +11,8 @@
 #include "sdfg/data_flow/library_nodes/stdlib/memset.h"
 #include "sdfg/data_flow/tasklet.h"
 #include "sdfg/passes/scheduler/cuda_offload_scheduler.h"
-#include "sdfg/passes/scheduler/loop_scheduling_pass.h"
 #include "sdfg/passes/scheduler/rocm_offload_scheduler.h"
+#include "sdfg/scheduling/loops/loop_scheduling_pass.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/for.h"
 #include "sdfg/structured_control_flow/if_else.h"
@@ -161,7 +161,7 @@ protected:
     bool run_scheduling() {
         analysis::AnalysisManager analysis_manager(builder_.subject());
         typename Case::Scheduler scheduler;
-        passes::scheduler::LoopSchedulingPass pass({&scheduler}, nullptr);
+        scheduling::loops::LoopSchedulingPass pass({&scheduler}, nullptr);
         return pass.run(builder_, analysis_manager);
     }
 

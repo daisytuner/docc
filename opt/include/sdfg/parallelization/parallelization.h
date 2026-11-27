@@ -4,8 +4,8 @@
 #include <sdfg/plugins/plugins.h>
 #include <sdfg/serializer/json_serializer.h>
 
-#include "sdfg/parallelization/analysis/loop_carried_dependency_analysis.h"
 #include "sdfg/parallelization/passes/auto_parallelization.h"
+#include "sdfg/reordering/analysis/loop_carried_dependency_analysis.h"
 
 namespace sdfg {
 namespace parallelization {

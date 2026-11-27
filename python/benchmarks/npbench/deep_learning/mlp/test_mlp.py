@@ -65,8 +65,7 @@ def test_mlp(target):
         verifier = SDFGVerification(
             verification={
                 "REDUCE": 2,
-                "VECTORIZE": 9,
-                "SEQUENTIAL": 7,
+                "SEQUENTIAL": 16,
                 "MAP": 14,
                 "GEMM": 3,
             }
@@ -75,7 +74,7 @@ def test_mlp(target):
         verifier = SDFGVerification(
             verification={
                 "REDUCE": 2,
-                "VECTORIZE": 4,
+                "SEQUENTIAL": 4,
                 "CPU_PARALLEL": 7,
                 "MAP": 9,
                 "GEMM": 3,
