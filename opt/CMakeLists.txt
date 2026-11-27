@@ -66,6 +66,9 @@ set(SOURCE_FILES
     src/loops/transformations/trivial_loop_elimination.cpp
     src/loops/transformations/unroll_transform.cpp
     src/loops/transformations/vectorize_transform.cpp
+    src/code_motion/conflicts.cpp
+    src/code_motion/transformations/hoist_child.cpp
+    src/code_motion/transformations/move_child.cpp
     src/parallelization/analysis/parallel_patterns.cpp
     src/parallelization/passes/auto_parallelization.cpp
     src/parallelization/transformations/loop_parallelization.cpp

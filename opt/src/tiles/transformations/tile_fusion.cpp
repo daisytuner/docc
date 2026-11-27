@@ -8,6 +8,7 @@
 #include <isl/options.h>
 #include <isl/set.h>
 #include <isl/val.h>
+#include <map>
 #include <optional>
 #include <set>
 #include <stdexcept>
@@ -34,6 +35,7 @@
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/symbolic/utils.h"
 #include "sdfg/tiles/analysis/tile_analysis.h"
+#include "sdfg/tiles/tile_target_registry.h"
 #include "sdfg/types/array.h"
 #include "sdfg/types/pointer.h"
 #include "sdfg/types/scalar.h"
@@ -142,6 +144,43 @@ footprint(const math::tensor::TensorLayout& layout, symbolic::Assumptions& assum
     return symbolic::MultiExpression{element};
 }
 
+/// The assumptions of @p extra, else @p scope, on the symbols @p expressions use and on those their assumptions use:
+/// all an access with these elements needs.
+symbolic::Assumptions reachable(
+    const symbolic::Assumptions& scope, const symbolic::Assumptions& extra, const symbolic::MultiExpression& expressions
+) {
+    symbolic::Assumptions kept;
+    std::vector<symbolic::Expression> pending(expressions.begin(), expressions.end());
+    while (!pending.empty()) {
+        auto expression = pending.back();
+        pending.pop_back();
+        if (expression.is_null()) {
+            continue;
+        }
+        for (auto& atom : symbolic::atoms(expression)) {
+            if (kept.contains(atom)) {
+                continue;
+            }
+            auto found = extra.find(atom);
+            if (found == extra.end()) {
+                found = scope.find(atom);
+                if (found == scope.end()) {
+                    continue;
+                }
+            }
+            auto& assumption = found->second;
+            kept.insert_or_assign(atom, assumption);
+            pending.insert(pending.end(), assumption.lower_bounds().begin(), assumption.lower_bounds().end());
+            pending.insert(pending.end(), assumption.upper_bounds().begin(), assumption.upper_bounds().end());
+            pending.insert(pending.end(), assumption.constraints().begin(), assumption.constraints().end());
+            pending.push_back(assumption.tight_lower_bound());
+            pending.push_back(assumption.tight_upper_bound());
+            pending.push_back(assumption.map());
+        }
+    }
+    return kept;
+}
+
 /**
  * Collects every access of a container in @p node into @p accesses, with @p from renamed to @p to and the counters
  * @p varying varying. Memlets access the elements their subsets give; a library node accesses through a pointer the
@@ -162,18 +201,22 @@ bool collect_accesses(
         return symbolic::subs(expression, from, to);
     };
     if (auto* block = dyn_cast<structured_control_flow::Block*>(&node)) {
-        // The counters of the loop and of the loops within vary between the accesses compared; the block's
-        // assumptions hold them constant.
-        auto scope = assumptions_analysis.get(*block, true);
-        for (auto& counter : varying) {
-            if (scope.contains(counter)) {
-                scope.at(counter).constant(false);
+        // An access needs the assumptions on the symbols of its elements only. The counters of the loop and of the
+        // loops within vary between the accesses compared; the block's assumptions hold them constant.
+        auto& scope = assumptions_analysis.get(*block, true);
+        auto needed = [&](const symbolic::MultiExpression& elements, const symbolic::Assumptions& extra) {
+            auto kept = reachable(scope, extra, elements);
+            for (auto& counter : varying) {
+                if (kept.contains(counter)) {
+                    kept.at(counter).constant(false);
+                }
             }
-        }
-        auto assumptions = renamed(scope, from, to);
+            return renamed(kept, from, to);
+        };
         auto add = [&](const std::string& container, bool write, std::optional<symbolic::MultiExpression> elements) {
-            Access access{container, write, std::nullopt, assumptions};
+            Access access{container, write, std::nullopt, {}};
             if (elements) {
+                access.assumptions = needed(*elements, {});
                 symbolic::MultiExpression renamed_elements;
                 for (auto& element : *elements) {
                     renamed_elements.push_back(rename(element));
@@ -208,14 +251,15 @@ bool collect_accesses(
                             (pattern && pattern->empty())) {
                             return;
                         }
-                        Access access{src->data(), write, std::nullopt, assumptions};
+                        Access access{src->data(), write, std::nullopt, {}};
                         auto layout = analysis::library_node_operand_layout(
                             memlet, write ? analysis::OperandAccess::Write : analysis::OperandAccess::Read
                         );
                         if (layout) {
-                            access.elements = symbolic::MultiExpression{
-                                rename(footprint(*layout, access.assumptions, counters).front())
-                            };
+                            symbolic::Assumptions elements_bounds;
+                            auto elements = footprint(*layout, elements_bounds, counters);
+                            access.assumptions = needed(elements, elements_bounds);
+                            access.elements = symbolic::MultiExpression{rename(elements.front())};
                         }
                         accesses.push_back(std::move(access));
                     };
@@ -503,9 +547,9 @@ bool TileFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysi
             containers.insert(access.container);
         }
     }
-    for (auto& container : containers) {
-        for (auto* loop : {&first_map_, &second_map_}) {
-            if (tiles::TileAnalysis::summarize(builder.subject(), *loop, container).aliased) {
+    for (auto* loop : {&first_map_, &second_map_}) {
+        for (auto& [container, summary] : tiles::TileAnalysis::summarize(builder.subject(), loop->root())) {
+            if (summary.aliased && containers.contains(container)) {
                 return false;
             }
         }
@@ -538,18 +582,45 @@ bool TileFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysi
             access, loop.indvar(), symbolic::add(loop.init(), symbolic::mul(symbolic::integer(step), k)), iteration
         );
     };
-    for (auto& first_access : first_accesses) {
-        auto first = at(first_access, first_map_, first_step);
-        for (auto& second_access : second_accesses) {
-            if (first_access.container != second_access.container || (!first_access.write && !second_access.write)) {
+    // Containers each iteration has its own instance of depend only within the iterations of one number, which the
+    // fused loop runs in order.
+    auto* target = tiles::TileTargetRegistry::instance().get(first_map_.schedule_type().value());
+    auto iteration_private = [&](const std::string& container) {
+        auto storage = builder.subject().type(container).storage_type();
+        return target && target->iteration_private(first_map_.schedule_type(), storage) &&
+               target->iteration_private(second_map_.schedule_type(), storage);
+    };
+    // Each access at the iteration number once, the second map's by container.
+    std::vector<Access> first_at;
+    for (auto& access : first_accesses) {
+        if (!iteration_private(access.container)) {
+            first_at.push_back(at(access, first_map_, first_step));
+        }
+    }
+    std::map<std::string, std::vector<Access>> second_at;
+    for (auto& access : second_accesses) {
+        if (!iteration_private(access.container)) {
+            second_at[access.container].push_back(at(access, second_map_, second_step));
+        }
+    }
+    for (auto& first : first_at) {
+        auto found = second_at.find(first.container);
+        if (found == second_at.end()) {
+            continue;
+        }
+        for (auto& second : found->second) {
+            if (!first.write && !second.write) {
                 continue;
             }
-            auto second = at(second_access, second_map_, second_step);
-            forward |= later_overlap(first, second, k);
             if (later_overlap(second, first, k)) {
+                // Only a halo, over the same iterations, resolves it.
+                if (!identical) {
+                    return false;
+                }
                 reversed_containers.insert(first.container);
                 reversed_flow |= first.write && !second.write;
             }
+            forward = forward || later_overlap(first, second, k);
         }
     }
     if (reversed_containers.empty()) {
@@ -1234,38 +1305,44 @@ void TileFusion::apply_aligned(builder::StructuredSDFGBuilder& builder, analysis
     auto& parent = static_cast<structured_control_flow::Sequence&>(*first_map_.get_parent());
     auto first_counter = first_map_.indvar();
     auto second_counter = second_map_.indvar();
-    auto counter = symbolic::symbol(builder.find_new_name(first_counter->get_name()));
-    builder.add_container(counter->get_name(), sdfg.type(first_counter->get_name()));
     // The fused loop runs the first map's iterations, the second's of the same number aligned to them: offset if the
-    // steps agree, else both at the iteration number counting from zero in steps of one.
-    symbolic::Condition condition;
-    symbolic::Expression init, update, first_at, second_at;
+    // steps agree, scaled if the first counts the iteration number, else both at the iteration number counting from
+    // zero in steps of one.
+    auto counter = first_counter;
+    auto condition = first_map_.condition();
+    auto init = first_map_.init();
+    auto update = first_map_.update();
+    symbolic::Expression first_at = first_counter;
+    symbolic::Expression second_at;
+    bool counts_iterations = symbolic::eq(first_map_.init(), symbolic::zero()) &&
+                             symbolic::eq(first_map_.stride(), symbolic::one());
     if (symbolic::eq(first_map_.stride(), second_map_.stride())) {
-        condition = symbolic::subs(first_map_.condition(), first_counter, counter);
-        init = first_map_.init();
-        update = symbolic::subs(first_map_.update(), first_counter, counter);
-        first_at = counter;
         second_at = symbolic::add(counter, symbolic::sub(second_map_.init(), first_map_.init()));
+    } else if (counts_iterations) {
+        second_at = symbolic::add(second_map_.init(), symbolic::mul(second_map_.stride(), counter));
     } else {
+        counter = symbolic::symbol(builder.find_new_name(first_counter->get_name()));
+        builder.add_container(counter->get_name(), sdfg.type(first_counter->get_name()));
         condition = symbolic::Lt(counter, first_map_.num_iterations());
         init = symbolic::zero();
         update = symbolic::add(counter, symbolic::one());
         first_at = symbolic::add(first_map_.init(), symbolic::mul(first_map_.stride(), counter));
         second_at = symbolic::add(second_map_.init(), symbolic::mul(second_map_.stride(), counter));
     }
-    structured_control_flow::StructuredLoop* fused;
+    if (!symbolic::eq(first_at, first_counter)) {
+        first_map_.root().replace(first_counter, first_at);
+    }
+    second_map_.root().replace(second_counter, second_at);
+    structured_control_flow::StructuredLoop* fused = &first_map_;
     if (sequential_) {
         fused = &builder.add_for_before(parent, first_map_, counter, condition, init, update, first_map_.debug_info());
-    } else {
-        fused = &builder.add_map_before(
-            parent, first_map_, counter, condition, init, update, first_map_.schedule_type(), first_map_.debug_info()
-        );
+        builder.move_children(first_map_.root(), fused->root());
+        builder.remove_child(parent, parent.index(first_map_));
+    } else if (!symbolic::eq(counter, first_counter)) {
+        builder.update_loop(first_map_, counter, condition, init, update);
     }
-    first_map_.root().replace(first_counter, first_at);
-    second_map_.root().replace(second_counter, second_at);
-    builder.move_children(first_map_.root(), fused->root());
+    // The first map, or the loop replacing it, takes the second's body.
     builder.move_children(second_map_.root(), fused->root());
-    builder.remove_child(parent, parent.index(first_map_));
     builder.remove_child(parent, parent.index(second_map_));
     analysis_manager.invalidate_all();
     applied_ = true;

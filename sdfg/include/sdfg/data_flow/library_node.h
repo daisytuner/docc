@@ -180,6 +180,7 @@ public:
      */
     [[nodiscard]] bool side_effect() const override;
 
+
     /**
      * @brief Convert node to string representation
      * @return String representation of the node
