@@ -138,14 +138,14 @@ def test_LULESH():
 
     verifier = SDFGVerification(
         verification={
-            "sdfgs": 29,
-            "FOR": 22,
+            "sdfgs": 30,
+            "FOR": 23,
             "WHILE": 24,
-            "CUDAOffloading": 46,
-            "MAP": 55,
-            "CUDA_Offload": 14,
-            "Free": 6,
-            "SEQUENTIAL": 63,
+            "CUDAOffloading": 78,
+            "MAP": 47,
+            "CUDA_Offload": 30,
+            "Free": 16,
+            "SEQUENTIAL": 40,
         },
     )
     runner = TestRunner(
@@ -393,7 +393,7 @@ def test_miniAMR2():
     verifier = SDFGVerification(
         verification={
             "sdfgs": 48,
-            "CUDAOffloading": 226,
+            "CUDAOffloading": 300,
             "MAP": 77,
             "CUDA": 0,
             "FOR": 21,

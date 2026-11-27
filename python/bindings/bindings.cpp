@@ -298,17 +298,14 @@ PYBIND11_MODULE(_sdfg, m) {
     py::class_<docc::target::TargetOptions>(m, "TargetOptions")
         .def(py::init<>())
         .def(
-            py::init<std::string, std::string, bool, bool>(),
+            py::init<std::string, std::string, bool>(),
             py::arg("target"),
             py::arg("category"),
-            py::arg("remote_tuning") = false,
-            py::arg("already_normalized") = false
+            py::arg("remote_tuning") = false
         )
         .def_readwrite<>("target", &docc::target::TargetOptions::target)
         .def_readwrite<>("category", &docc::target::TargetOptions::category)
         .def_readwrite<>("remote_tuning", &docc::target::TargetOptions::remote_tuning)
-        .def_readwrite<>("already_normalized", &docc::target::TargetOptions::already_normalized)
-        .def_readwrite<>("enable_fusion_in_normalize", &docc::target::TargetOptions::enable_fusion_in_normalize)
         .def_readwrite<>("use_new_fusion_in_simplify", &docc::target::TargetOptions::use_new_fusion_in_simplify)
         .def_readwrite<>("fp_contract", &docc::target::TargetOptions::fp_contract)
         .def_readwrite<>("contraction_precision", &docc::target::TargetOptions::contraction_precision)

@@ -202,11 +202,11 @@ def test_backprop(compiler="clang-21"):
     verifier = SDFGVerification(
         verification={
             "sdfgs": 25,
-            "FOR": 47,
-            "SEQUENTIAL": 47,
+            "FOR": 37,
+            "SEQUENTIAL": 42,
             "WHILE": 6,
             "MAP": 15,
-            "CPU_PARALLEL": 15,
+            "CPU_PARALLEL": 10,
         },
     )
     runner = TestRunner(
@@ -356,16 +356,16 @@ def test_cfd(compiler="clang++-21"):
             "sdfgs": 5,
             "MAP": 3,
             "CPU_PARALLEL": 3,
-            "FOR": 12,
-            "SEQUENTIAL": 12,
+            "FOR": 9,
+            "SEQUENTIAL": 9,
         }
     else:
         verification = {
             "sdfgs": 6,
             "MAP": 5,
             "CPU_PARALLEL": 4,
-            "FOR": 22,
-            "SEQUENTIAL": 23,
+            "FOR": 13,
+            "SEQUENTIAL": 14,
         }
     verifier = SDFGVerification(verification=verification)
 
@@ -436,10 +436,10 @@ def test_heartwall(compiler="clang-21"):
         verification={
             "sdfgs": 50,
             "MAP": 4,
-            "FOR": 51,
-            "SEQUENTIAL": 3,
-            "CPU_PARALLEL": 1,
-            "WHILE": 70,
+            "FOR": 41,
+            "SEQUENTIAL": 41,
+            "CPU_PARALLEL": 4,
+            "WHILE": 73,
             "Memset": 6,
         },
     )
@@ -704,10 +704,10 @@ def test_kmeans(compiler="clang-21"):
     verifier = SDFGVerification(
         verification={
             "sdfgs": 6,
-            "FOR": 16,
+            "FOR": 12,
             "MAP": 4,
             "WHILE": 11,
-            "SEQUENTIAL": 3,
+            "SEQUENTIAL": 15,
             "CPU_PARALLEL": 1,
         }
     )
@@ -941,7 +941,6 @@ def test_lud(compiler="clang-21"):
     return runner.run(timeout=240)
 
 
-@pytest.mark.xfail(reason="Verifier changed & Output incorrect")
 def test_nw(compiler="clang++-21"):
     test_case = Path(__file__).parent / "tests" / "rodinia" / "openmp" / "nw" / "nw.cpp"
 
@@ -949,8 +948,8 @@ def test_nw(compiler="clang++-21"):
         verification={
             "sdfgs": 7,
             "WHILE": 5,
-            "FOR": 28,
-            "SEQUENTIAL": 12,
+            "FOR": 15,
+            "SEQUENTIAL": 27,
             "CPU_PARALLEL": 1,
             "MAP": 13,
         },
@@ -1015,11 +1014,11 @@ def test_particlefilter(compiler="clang-21"):
             "REDUCE": 1,
             "Call": 29,
             "WHILE": 12,
-            "CPU_PARALLEL": 14,
+            "CPU_PARALLEL": 11,
             "CMath": 7,
-            "MAP": 17,
+            "MAP": 15,
             "FOR": 32,
-            "SEQUENTIAL": 36,
+            "SEQUENTIAL": 37,
         }
     )
     runner = TestRunner(
@@ -1070,7 +1069,6 @@ def test_particlefilter(compiler="clang-21"):
     return runner.run(timeout=240)
 
 
-@pytest.mark.xfail(reason="Verifier changed & Output incorrect")
 def test_pathfinder(compiler="clang++-21"):
     test_case = (
         Path(__file__).parent
@@ -1084,8 +1082,8 @@ def test_pathfinder(compiler="clang++-21"):
     verifier = SDFGVerification(
         verification={
             "sdfgs": 1,
-            "FOR": 7,
-            "SEQUENTIAL": 1,
+            "FOR": 5,
+            "SEQUENTIAL": 6,
             "MAP": 2,
             "CPU_PARALLEL": 1,
         },
@@ -1142,8 +1140,8 @@ def test_srad(compiler="clang++-21"):
             "sdfgs": 3,
             "MAP": 5,
             "CPU_PARALLEL": 5,
-            "FOR": 10,
-            "SEQUENTIAL": 10,
+            "FOR": 9,
+            "SEQUENTIAL": 9,
         },
     )
     runner = TestRunner(
@@ -1192,7 +1190,6 @@ def test_srad(compiler="clang++-21"):
     return runner.run(timeout=240)
 
 
-@pytest.mark.xfail(reason="Verifier changed & Output incorrect")
 def test_streamcluster(compiler="clang++-21"):
     test_case = (
         Path(__file__).parent
@@ -1205,10 +1202,10 @@ def test_streamcluster(compiler="clang++-21"):
     verifier = SDFGVerification(
         verification={
             "sdfgs": 25,
-            "MAP": 3,
-            "CPU_PARALLEL": 3,
-            "FOR": 45,
-            "WHILE": 28,
+            "MAP": 2,
+            "CPU_PARALLEL": 2,
+            "FOR": 39,
+            "WHILE": 32,
             "Trap": 1,
             "Memset": 3,
         },

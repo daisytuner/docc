@@ -32,7 +32,9 @@ bool schedule(
     }
 
     if (config.remote_tuning) {
-        changed |= config.remote_tuning->run(builder, analysis_manager);
+        // The remote side normalizes whatever the client did not.
+        bool remote_normalize = !config.normalize || target->scheduling.remote_normalization;
+        changed |= config.remote_tuning(remote_normalize)->run(builder, analysis_manager);
     }
 
     if (!config.schedule_loops) {

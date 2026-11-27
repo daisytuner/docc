@@ -47,8 +47,8 @@ docc::target::DoccTarget tenstorrent_target = {
     },
     .scheduling =
         {.create_sdfg_scheduler =
-             [](const docc::target::TargetOptions& options) -> std::unique_ptr<sdfg::passes::scheduler::SDFGScheduler> {
-             return std::make_unique<sdfg::scheduling::APrioriLoopNestNormalization>(options.enable_fusion_in_normalize);
+             [](const docc::target::TargetOptions&) -> std::unique_ptr<sdfg::passes::scheduler::SDFGScheduler> {
+             return std::make_unique<sdfg::scheduling::APrioriLoopNestNormalization>();
          },
          .create_loop_schedulers = [](const docc::target::TargetOptions& options)
              -> std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> {

@@ -11,11 +11,8 @@ namespace scheduler {
 bool RpcOptimizationPass::run_pass(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     auto& root = builder.subject().root();
 
-    // Normalize only if it hasn't been done yet
-    bool normalize = !options_.already_normalized;
-
     transformations::RPCNodeTransform
-        rpc_transform(root, options_.target, options_.category, *rpc_context_, enable_fusion_, normalize, schedule_loops_);
+        rpc_transform(root, options_.target, options_.category, *rpc_context_, normalize_, schedule_loops_);
 
     rpc_transform.set_report(report_);
     if (rpc_transform.can_be_applied(builder, analysis_manager)) {
