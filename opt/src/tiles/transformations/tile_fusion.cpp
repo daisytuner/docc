@@ -2,6 +2,14 @@
 
 #include <climits>
 #include <cmath>
+#include <isl/aff.h>
+#include <isl/ctx.h>
+#include <isl/map.h>
+#include <isl/options.h>
+#include <isl/set.h>
+#include <isl/val.h>
+#include <optional>
+#include <set>
 #include <stdexcept>
 
 #include <symengine/solve.h>
@@ -13,15 +21,19 @@
 #include "sdfg/analysis/users.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/data_flow_graph.h"
+#include "sdfg/data_flow/library_node.h"
+#include "sdfg/data_flow/pointer_metadata.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/structured_control_flow/for.h"
 #include "sdfg/structured_control_flow/if_else.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/symbolic/conjunctive_normal_form.h"
 #include "sdfg/symbolic/delinearization.h"
+#include "sdfg/symbolic/maps.h"
 #include "sdfg/symbolic/polynomials.h"
 #include "sdfg/symbolic/symbolic.h"
 #include "sdfg/symbolic/utils.h"
+#include "sdfg/tiles/analysis/tile_analysis.h"
 #include "sdfg/types/array.h"
 #include "sdfg/types/pointer.h"
 #include "sdfg/types/scalar.h"
@@ -59,6 +71,308 @@ structured_control_flow::Block* get_first_block(structured_control_flow::Sequenc
     return nullptr;
 }
 
+/// One access of a container in a loop's body: the elements it may touch, as an expression in the counters of the
+/// loops around it and of the access's footprint, which @ref assumptions bound; none if it may touch any element.
+struct Access {
+    std::string container;
+    bool write = false;
+    std::optional<symbolic::MultiExpression> elements;
+    symbolic::Assumptions assumptions;
+};
+
+/// @p assumptions with @p from replaced by @p to in their bounds, and renamed if @p to is a symbol, else dropped.
+symbolic::Assumptions
+renamed(const symbolic::Assumptions& assumptions, const symbolic::Symbol& from, const symbolic::Expression& to) {
+    auto to_symbol = SymEngine::is_a<SymEngine::Symbol>(*to) ? SymEngine::rcp_static_cast<const SymEngine::Symbol>(to)
+                                                             : symbolic::Symbol();
+    symbolic::Assumptions result;
+    for (auto& [symbol, assumption] : assumptions) {
+        // `to` names the renamed symbol now; its own assumptions, if any, belong to another scope.
+        if (!to_symbol.is_null() && !symbolic::eq(from, to_symbol) && symbolic::eq(symbol, to_symbol)) {
+            continue;
+        }
+        if (to_symbol.is_null() && symbolic::eq(symbol, from)) {
+            continue;
+        }
+        auto key = symbolic::eq(symbol, from) ? to_symbol : symbol;
+        symbolic::Assumption copy(key);
+        auto subs = [&](const symbolic::Expression& expression) {
+            return expression.is_null() ? expression : symbolic::subs(expression, from, to);
+        };
+        for (auto& bound : assumption.lower_bounds()) {
+            copy.add_lower_bound(subs(bound));
+        }
+        for (auto& bound : assumption.upper_bounds()) {
+            copy.add_upper_bound(subs(bound));
+        }
+        for (auto& constraint : assumption.constraints()) {
+            copy.add_constraint(subs(constraint));
+        }
+        if (!assumption.tight_lower_bound().is_null()) {
+            copy.tight_lower_bound(subs(assumption.tight_lower_bound()));
+        }
+        if (!assumption.tight_upper_bound().is_null()) {
+            copy.tight_upper_bound(subs(assumption.tight_upper_bound()));
+        }
+        if (!assumption.map().is_null()) {
+            copy.map(subs(assumption.map()));
+        }
+        copy.constant(assumption.constant());
+        result.insert_or_assign(key, std::move(copy));
+    }
+    return result;
+}
+
+/// The elements @p layout lays out, as an expression over fresh counters bounded in @p assumptions.
+symbolic::MultiExpression
+footprint(const math::tensor::TensorLayout& layout, symbolic::Assumptions& assumptions, size_t& counters) {
+    auto element = layout.offset();
+    for (size_t d = 0; d < layout.shape().size(); ++d) {
+        auto counter = symbolic::symbol("__tile_fusion_element" + std::to_string(counters++));
+        auto assumption = symbolic::Assumption::create(counter, types::Scalar(types::PrimitiveType::Int64));
+        auto last = symbolic::sub(layout.shape().at(d), symbolic::one());
+        assumption.add_lower_bound(symbolic::zero());
+        assumption.add_upper_bound(last);
+        assumption.tight_lower_bound(symbolic::zero());
+        assumption.tight_upper_bound(last);
+        assumption.constant(false);
+        assumptions.insert_or_assign(counter, std::move(assumption));
+        element = symbolic::add(element, symbolic::mul(counter, layout.strides().at(d)));
+    }
+    return symbolic::MultiExpression{element};
+}
+
+/**
+ * Collects every access of a container in @p node into @p accesses, with @p from renamed to @p to and the counters
+ * @p varying varying. Memlets access the elements their subsets give; a library node accesses through a pointer the
+ * elements analysis::library_node_operand_layout lays out, and any element if it gives none; references and other
+ * memlets may access any element of both containers.
+ * @return false if @p node holds control flow the accesses of which cannot be bounded
+ */
+bool collect_accesses(
+    structured_control_flow::ControlFlowNode& node,
+    analysis::AssumptionsAnalysis& assumptions_analysis,
+    const symbolic::SymbolSet& varying,
+    const symbolic::Symbol& from,
+    const symbolic::Symbol& to,
+    std::vector<Access>& accesses,
+    size_t& counters
+) {
+    auto rename = [&](const symbolic::Expression& expression) {
+        return symbolic::subs(expression, from, to);
+    };
+    if (auto* block = dyn_cast<structured_control_flow::Block*>(&node)) {
+        // The counters of the loop and of the loops within vary between the accesses compared; the block's
+        // assumptions hold them constant.
+        auto scope = assumptions_analysis.get(*block, true);
+        for (auto& counter : varying) {
+            if (scope.contains(counter)) {
+                scope.at(counter).constant(false);
+            }
+        }
+        auto assumptions = renamed(scope, from, to);
+        auto add = [&](const std::string& container, bool write, std::optional<symbolic::MultiExpression> elements) {
+            Access access{container, write, std::nullopt, assumptions};
+            if (elements) {
+                symbolic::MultiExpression renamed_elements;
+                for (auto& element : *elements) {
+                    renamed_elements.push_back(rename(element));
+                }
+                access.elements = std::move(renamed_elements);
+            }
+            accesses.push_back(std::move(access));
+        };
+        auto& dataflow = block->dataflow();
+        for (auto& memlet : dataflow.edges()) {
+            auto* src = dynamic_cast<const data_flow::AccessNode*>(&memlet.src());
+            auto* dst = dynamic_cast<const data_flow::AccessNode*>(&memlet.dst());
+            if (dynamic_cast<const data_flow::ConstantNode*>(src)) {
+                src = nullptr;
+            }
+            if (dynamic_cast<const data_flow::ConstantNode*>(dst)) {
+                dst = nullptr;
+            }
+            bool computational = memlet.type() == data_flow::MemletType::Computational;
+            if (src && dst) {
+                add(src->data(), !computational, std::nullopt);
+                add(dst->data(), true, std::nullopt);
+                continue;
+            }
+            if (src) {
+                auto* library = dynamic_cast<const data_flow::LibraryNode*>(&memlet.dst());
+                auto meta = library && memlet.subset().empty() ? library->pointer_access_type(memlet) : nullptr;
+                if (meta) {
+                    auto operand = [&](bool write) {
+                        auto pattern = write ? meta->access_write_pattern() : meta->access_read_pattern();
+                        if (!(write ? meta->may_contain_writes() : meta->may_contain_reads()) ||
+                            (pattern && pattern->empty())) {
+                            return;
+                        }
+                        Access access{src->data(), write, std::nullopt, assumptions};
+                        auto layout = analysis::library_node_operand_layout(
+                            memlet, write ? analysis::OperandAccess::Write : analysis::OperandAccess::Read
+                        );
+                        if (layout) {
+                            access.elements = symbolic::MultiExpression{
+                                rename(footprint(*layout, access.assumptions, counters).front())
+                            };
+                        }
+                        accesses.push_back(std::move(access));
+                    };
+                    operand(false);
+                    operand(true);
+                    continue;
+                }
+                if (computational) {
+                    add(src->data(), false, memlet.subset());
+                } else {
+                    add(src->data(), true, std::nullopt);
+                }
+            }
+            if (dst) {
+                add(dst->data(),
+                    true,
+                    computational ? std::optional<symbolic::MultiExpression>(memlet.subset()) : std::nullopt);
+            }
+        }
+        return true;
+    }
+    if (auto* sequence = dyn_cast<structured_control_flow::Sequence*>(&node)) {
+        for (size_t i = 0; i < sequence->size(); ++i) {
+            if (!collect_accesses(sequence->at(i), assumptions_analysis, varying, from, to, accesses, counters)) {
+                return false;
+            }
+        }
+        return true;
+    }
+    if (auto* loop = dyn_cast<structured_control_flow::StructuredLoop*>(&node)) {
+        return collect_accesses(loop->root(), assumptions_analysis, varying, from, to, accesses, counters);
+    }
+    if (auto* branches = dyn_cast<structured_control_flow::IfElse*>(&node)) {
+        for (size_t i = 0; i < branches->size(); ++i) {
+            if (!collect_accesses(branches->at(i).first, assumptions_analysis, varying, from, to, accesses, counters)) {
+                return false;
+            }
+        }
+        return true;
+    }
+    return false;
+}
+
+/// @p access with its loop's counter @p from replaced by @p to, an expression in the loop's iteration number, which
+/// @p iteration bounds.
+Access at_iteration(
+    const Access& access,
+    const symbolic::Symbol& from,
+    const symbolic::Expression& to,
+    const symbolic::Assumption& iteration
+) {
+    Access result{access.container, access.write, std::nullopt, renamed(access.assumptions, from, to)};
+    if (access.elements) {
+        symbolic::MultiExpression elements;
+        for (auto& element : *access.elements) {
+            elements.push_back(symbolic::subs(element, from, to));
+        }
+        result.elements = std::move(elements);
+    }
+    result.assumptions.insert_or_assign(iteration.symbol(), iteration);
+    return result;
+}
+
+/// @p assumptions with an assumption for each symbol only @p other bounds, so that both bound every symbol of a pair.
+symbolic::Assumptions completed(symbolic::Assumptions assumptions, const symbolic::Assumptions& other) {
+    for (auto& [symbol, assumption] : other) {
+        if (!assumptions.contains(symbol)) {
+            assumptions.insert_or_assign(symbol, assumption);
+        }
+    }
+    return assumptions;
+}
+
+/// Whether @p first, in an iteration of the loop counting @p counter, and @p second, in a later one, may access the
+/// same element.
+bool later_overlap(const Access& first, const Access& second, const symbolic::Symbol& counter) {
+    if (!first.elements || !second.elements) {
+        return true;
+    }
+    auto deltas = symbolic::maps::dependence_deltas(
+        *first.elements,
+        *second.elements,
+        counter,
+        completed(first.assumptions, second.assumptions),
+        completed(second.assumptions, first.assumptions)
+    );
+    return !deltas.empty;
+}
+
+/**
+ * The most iterations of the loop counting @p point by which an element @p consumer reads lies past the iteration of
+ * @p producer writing it, at least 0: the halo by which the producer must run ahead. None if unbounded.
+ */
+std::optional<int64_t>
+halo(const Access& producer, const Access& consumer, const symbolic::Symbol& point, const symbolic::Symbol& counter) {
+    if (!producer.elements || !consumer.elements || producer.elements->size() != consumer.elements->size()) {
+        return std::nullopt;
+    }
+    auto producer_assumptions = completed(producer.assumptions, consumer.assumptions);
+    auto consumer_assumptions = completed(consumer.assumptions, producer.assumptions);
+    auto [map_1, map_2, map_3] = symbolic::expressions_to_intersection_map_str(
+        *producer.elements, *consumer.elements, counter, producer_assumptions, consumer_assumptions
+    );
+    auto* ctx = isl_ctx_alloc();
+    isl_options_set_on_error(ctx, ISL_ON_ERROR_CONTINUE);
+    std::optional<int64_t> result;
+    isl_map* writes = isl_map_read_from_str(ctx, map_1.c_str());
+    isl_map* reads = isl_map_read_from_str(ctx, map_2.c_str());
+    if (writes && reads) {
+        auto dimension = isl_map_find_dim_by_name(writes, isl_dim_in, (point->get_name() + "_1").c_str());
+        // { producer iteration -> consumer iteration : the consumer reads what the producer writes }
+        isl_map* pairs = isl_map_apply_range(writes, isl_map_reverse(reads));
+        writes = nullptr;
+        reads = nullptr;
+        if (dimension < 0) {
+            isl_map_free(pairs);
+        } else if (isl_map_is_empty(pairs) == isl_bool_true) {
+            isl_map_free(pairs);
+            result = 0;
+        } else {
+            // Consumer minus producer iteration per dimension; the halo is the producer's lead, -min.
+            // The least difference must be one constant, independent of the parameters and finite.
+            isl_pw_aff* least = isl_set_dim_min(isl_map_deltas(pairs), dimension);
+            struct Piece {
+                int count = 0;
+                std::optional<int64_t> value;
+            } piece;
+            isl_pw_aff_foreach_piece(
+                least,
+                [](isl_set* domain, isl_aff* aff, void* user) -> isl_stat {
+                    auto* piece = static_cast<Piece*>(user);
+                    ++piece->count;
+                    if (isl_aff_is_cst(aff) == isl_bool_true && isl_aff_is_nan(aff) == isl_bool_false) {
+                        isl_val* constant = isl_aff_get_constant_val(aff);
+                        if (isl_val_is_int(constant) == isl_bool_true) {
+                            piece->value = isl_val_get_num_si(constant);
+                        }
+                        isl_val_free(constant);
+                    }
+                    isl_set_free(domain);
+                    isl_aff_free(aff);
+                    return isl_stat_ok;
+                },
+                &piece
+            );
+            isl_pw_aff_free(least);
+            if (piece.count == 1 && piece.value) {
+                result = std::max<int64_t>(0, -*piece.value);
+            }
+        }
+    }
+    isl_map_free(writes);
+    isl_map_free(reads);
+    isl_ctx_free(ctx);
+    return result;
+}
+
 } // namespace
 
 TileFusion::TileFusion(structured_control_flow::Map& first_map, structured_control_flow::Map& second_map)
@@ -69,116 +383,15 @@ std::string TileFusion::name() const {
     return "TileFusion";
 }
 
-int TileFusion::compute_radius(
-    const data_flow::Subset& producer_write_subset,
-    const std::vector<data_flow::Subset>& consumer_read_subsets,
-    const std::vector<structured_control_flow::StructuredLoop*>& producer_loops,
-    const std::vector<structured_control_flow::StructuredLoop*>& consumer_loops,
-    const symbolic::Assumptions& producer_assumptions,
-    const symbolic::Assumptions& consumer_assumptions
-) {
-    if (producer_loops.empty() || consumer_loops.empty()) {
-        return -1;
-    }
-
-    // Delinearize the producer write subset
-    auto producer_sub = producer_write_subset;
-    if (producer_sub.size() == 1) {
-        auto producer_result = symbolic::delinearize(producer_write_subset.at(0), producer_assumptions);
-        if (producer_result.success) {
-            producer_sub = producer_result.indices;
-        }
-    }
-
-    // Extract the innermost producer loop indvar (the spatial iteration variable)
-    auto* producer_inner = producer_loops.back();
-    auto producer_indvar = producer_inner->indvar();
-
-    // Extract the innermost consumer loop indvar
-    auto* consumer_inner = consumer_loops.back();
-    auto consumer_indvar = consumer_inner->indvar();
-
-    int max_radius = 0;
-
-    for (const auto& consumer_read_subset : consumer_read_subsets) {
-        auto consumer_sub = consumer_read_subset;
-        if (consumer_sub.size() == 1) {
-            auto consumer_result = symbolic::delinearize(consumer_read_subset.at(0), consumer_assumptions);
-            if (consumer_result.success) {
-                consumer_sub = consumer_result.indices;
-            }
-        }
-        if (consumer_sub.size() != producer_sub.size()) {
-            return -1;
-        }
-
-        // Solve: producer_sub[d] = consumer_sub[d] for producer_indvar
-        // This gives us: producer_indvar = f(consumer_indvar)
-        SymEngine::vec_sym producer_vars;
-        producer_vars.push_back(SymEngine::rcp_static_cast<const SymEngine::Symbol>(producer_indvar));
-
-        SymEngine::vec_basic equations;
-        for (size_t d = 0; d < producer_sub.size(); ++d) {
-            auto diff = symbolic::sub(producer_sub.at(d), consumer_sub.at(d));
-            if (symbolic::uses(diff, producer_indvar->get_name())) {
-                // This dimension depends on the producer indvar — include in system
-                equations.push_back(diff);
-            }
-            // Dimensions not involving the producer indvar are independent
-            // (e.g., inner loop variables in 2D stencils) — skip them.
-        }
-
-        if (equations.size() != producer_vars.size()) {
-            return -1;
-        }
-
-        SymEngine::vec_basic solution;
-        try {
-            solution = SymEngine::linsolve(equations, producer_vars);
-        } catch (...) {
-            return -1;
-        }
-
-        if (solution.size() != 1) {
-            return -1;
-        }
-
-        auto& sol = solution[0];
-        if (SymEngine::is_a<SymEngine::NaN>(*sol) || SymEngine::is_a<SymEngine::Infty>(*sol)) {
-            return -1;
-        }
-
-        // The solution is: producer_indvar = f(consumer_indvar)
-        // The offset is: f(consumer_indvar) - consumer_indvar
-        // For a stencil B[1+i] and consumer reads B[j], B[1+j], B[2+j]:
-        //   solve 1+i=j   -> i = j-1, offset = -1
-        //   solve 1+i=1+j -> i = j,   offset = 0
-        //   solve 1+i=2+j -> i = j+1, offset = +1
-        auto offset_expr = symbolic::expand(symbolic::sub(sol, consumer_indvar));
-
-        // The offset should be a constant integer
-        if (!SymEngine::is_a<SymEngine::Integer>(*offset_expr)) {
-            return -1;
-        }
-
-        int offset = std::abs(static_cast<int>(SymEngine::down_cast<const SymEngine::Integer&>(*offset_expr).as_int()));
-
-        if (offset > max_radius) {
-            max_radius = offset;
-        }
-    }
-
-    return max_radius;
-}
-
 bool TileFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
     candidates_.clear();
+    cyclic_containers_.clear();
     radius_ = 0;
+    sequential_ = false;
 
     // Get analyses upfront
     auto& loop_analysis = analysis_manager.get<analysis::LoopAnalysis>();
     auto& assumptions_analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
-    auto& arguments_analysis = analysis_manager.get<analysis::ArgumentsAnalysis>();
 
     // ==========================================================================
     // Criterion 1: Both maps are in the same parent sequence, consecutive
@@ -207,250 +420,239 @@ bool TileFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysi
     }
 
     // ==========================================================================
-    // Criterion 3: Both are perfectly nested tile structures with Maps
-    // Structure required: outer tile Map -> inner iteration Map(s) -> Block(s)
+    // Criterion 2: Both run as many iterations under the same schedule
+    // The fused loop runs the n-th iteration of the first map, then the n-th of the second.
     // ==========================================================================
-    auto first_loop_info = loop_analysis.loop_info(&first_map_);
-    auto second_loop_info = loop_analysis.loop_info(&second_map_);
+    auto first_counter = first_map_.indvar();
+    auto second_counter = second_map_.indvar();
+    auto positive_stride = [](structured_control_flow::StructuredLoop& loop) -> int64_t {
+        auto stride = loop.stride();
+        if (stride.is_null() || !SymEngine::is_a<SymEngine::Integer>(*stride) || loop.canonical_bound().is_null()) {
+            return 0;
+        }
+        return std::max<int64_t>(SymEngine::down_cast<const SymEngine::Integer&>(*stride).as_int(), 0);
+    };
+    // A loop within that counts with the same name hides the counter: the body is no function of the iteration.
+    for (auto* loop : {&first_map_, &second_map_}) {
+        for (auto* inner : loop_analysis.descendants(loop)) {
+            auto* structured = dynamic_cast<const structured_control_flow::StructuredLoop*>(inner);
+            if (structured && symbolic::eq(structured->indvar(), loop->indvar())) {
+                return false;
+            }
+        }
+    }
+    auto first_step = positive_stride(first_map_);
+    auto second_step = positive_stride(second_map_);
+    if (first_step == 0 || second_step == 0) {
+        return false;
+    }
+    auto iterations = first_map_.num_iterations();
+    if (iterations.is_null() || second_map_.num_iterations().is_null() ||
+        !symbolic::eq(iterations, second_map_.num_iterations())) {
+        return false;
+    }
+    int tile_size = static_cast<int>(first_step);
+    // Maps over the same iterations, under the same counter name.
+    bool identical = symbolic::eq(first_map_.init(), second_map_.init()) && first_step == second_step &&
+                     symbolic::
+                         eq(first_map_.canonical_bound(),
+                            symbolic::subs(second_map_.canonical_bound(), second_counter, first_counter));
+    if (first_map_.schedule_type().value() != second_map_.schedule_type().value()) {
+        return false;
+    }
 
-    // Must be perfectly nested (no side code between loop levels)
-    if (!first_loop_info.is_perfectly_nested) {
+    // ==========================================================================
+    // Criterion 3: No dependence runs from an iteration of the second map to a later one of the first
+    // Fused, each iteration runs the first map's body, then the second's: every pair of accesses to the same
+    // container, one a write, must not touch the same element with the second map's iteration earlier. If they
+    // touch it with the first map's iteration earlier, the fused loop is sequential; otherwise it stays a map.
+    // ==========================================================================
+    auto counters_of = [&](structured_control_flow::StructuredLoop& loop) {
+        symbolic::SymbolSet varying{loop.indvar()};
+        for (auto* inner : loop_analysis.descendants(&loop)) {
+            if (auto* structured = dynamic_cast<const structured_control_flow::StructuredLoop*>(inner)) {
+                varying.insert(structured->indvar());
+            }
+        }
+        return varying;
+    };
+    auto first_varying = counters_of(first_map_);
+    auto second_varying = counters_of(second_map_);
+    std::vector<Access> first_accesses;
+    std::vector<Access> second_accesses;
+    size_t counters = 0;
+    if (!collect_accesses(
+            first_map_.root(), assumptions_analysis, first_varying, first_counter, first_counter, first_accesses, counters
+        ) ||
+        !collect_accesses(
+            second_map_.root(),
+            assumptions_analysis,
+            second_varying,
+            second_counter,
+            second_counter,
+            second_accesses,
+            counters
+        )) {
         return false;
     }
-    if (!second_loop_info.is_perfectly_nested) {
-        return false;
+    // Accesses through another name of a container's memory escape the comparison: its pointer must not escape, be
+    // overwritten or be captured in either map.
+    std::set<std::string> containers;
+    for (auto* accesses : {&first_accesses, &second_accesses}) {
+        for (auto& access : *accesses) {
+            containers.insert(access.container);
+        }
+    }
+    for (auto& container : containers) {
+        for (auto* loop : {&first_map_, &second_map_}) {
+            if (tiles::TileAnalysis::summarize(builder.subject(), *loop, container).aliased) {
+                return false;
+            }
+        }
     }
 
-    // Must be all Maps (perfectly parallel) - this is a tile fusion on parallel maps
-    if (!first_loop_info.is_perfectly_parallel) {
-        return false;
+    bool forward = false;
+    bool reversed_flow = false;
+    std::set<std::string> reversed_containers;
+    std::set<std::string> first_writes, first_reads, second_writes;
+    for (auto& access : first_accesses) {
+        (access.write ? first_writes : first_reads).insert(access.container);
     }
-    if (!second_loop_info.is_perfectly_parallel) {
-        return false;
+    for (auto& access : second_accesses) {
+        if (access.write) {
+            second_writes.insert(access.container);
+        }
+    }
+    // Both maps' accesses at the iteration number k in [0, iterations - 1].
+    auto k = symbolic::symbol("__tile_fusion_iteration");
+    auto iteration = symbolic::Assumption::create(k, types::Scalar(types::PrimitiveType::Int64));
+    auto last = symbolic::sub(iterations, symbolic::one());
+    iteration.add_lower_bound(symbolic::zero());
+    iteration.add_upper_bound(last);
+    iteration.tight_lower_bound(symbolic::zero());
+    iteration.tight_upper_bound(last);
+    iteration.map(symbolic::add(k, symbolic::one()));
+    iteration.constant(false);
+    auto at = [&](const Access& access, structured_control_flow::StructuredLoop& loop, int64_t step) {
+        return at_iteration(
+            access, loop.indvar(), symbolic::add(loop.init(), symbolic::mul(symbolic::integer(step), k)), iteration
+        );
+    };
+    for (auto& first_access : first_accesses) {
+        auto first = at(first_access, first_map_, first_step);
+        for (auto& second_access : second_accesses) {
+            if (first_access.container != second_access.container || (!first_access.write && !second_access.write)) {
+                continue;
+            }
+            auto second = at(second_access, second_map_, second_step);
+            forward |= later_overlap(first, second, k);
+            if (later_overlap(second, first, k)) {
+                reversed_containers.insert(first.container);
+                reversed_flow |= first.write && !second.write;
+            }
+        }
+    }
+    if (reversed_containers.empty()) {
+        sequential_ = forward;
+        return true;
     }
 
-    // Must have at least depth 2 (outer tile + inner iteration)
-    if (first_loop_info.max_depth < 2) {
+    // ==========================================================================
+    // Criterion 4: A halo resolves the reversed dependences
+    // Each tile's producer iterations run ahead by a radius, recomputing what the consumer reads of the next tiles.
+    // This needs the stencil structure (a tile map over one point map each), a producer whose recomputed iterations
+    // write what the consumer does not, and inputs the consumer writes double-buffered (Criterion 8).
+    // ==========================================================================
+    if (!reversed_flow || !identical) {
         return false;
     }
-    if (second_loop_info.max_depth < 2) {
-        return false;
+    for (auto& container : second_writes) {
+        if (first_writes.contains(container)) {
+            return false;
+        }
     }
-
-    // The immediate child must be a Map (the inner iteration map)
-    if (first_map_.root().size() != 1) {
+    if (first_map_.root().size() != 1 || second_map_.root().size() != 1) {
         return false;
     }
     auto* first_inner_map = dyn_cast<structured_control_flow::Map*>(&first_map_.root().at(0));
-    if (first_inner_map == nullptr) {
-        return false;
-    }
-
-    if (second_map_.root().size() != 1) {
-        return false;
-    }
     auto* second_inner_map = dyn_cast<structured_control_flow::Map*>(&second_map_.root().at(0));
-    if (second_inner_map == nullptr) {
+    if (first_inner_map == nullptr || second_inner_map == nullptr) {
         return false;
     }
-
-    // ==========================================================================
-    // Criterion 4: Compatible tile bounds (same init and stride)
-    // ==========================================================================
-    if (!symbolic::eq(first_map_.init(), second_map_.init())) {
+    auto first_loop_info = loop_analysis.loop_info(&first_map_);
+    auto second_loop_info = loop_analysis.loop_info(&second_map_);
+    if (!first_loop_info.is_perfectly_nested || !second_loop_info.is_perfectly_nested ||
+        !first_loop_info.is_perfectly_parallel || !second_loop_info.is_perfectly_parallel) {
         return false;
     }
-
-    auto first_stride = first_map_.stride();
-    auto second_stride = second_map_.stride();
-    if (first_stride.is_null() || second_stride.is_null()) {
-        return false;
-    }
-    if (!symbolic::eq(first_stride, second_stride)) {
-        return false;
-    }
-
-    // Extract tile size as integer
-    if (!SymEngine::is_a<SymEngine::Integer>(*first_stride)) {
-        return false;
-    }
-    int tile_size = static_cast<int>(SymEngine::down_cast<const SymEngine::Integer&>(*first_stride).as_int());
-    if (tile_size <= 0) {
-        return false;
-    }
-
-    // ==========================================================================
-    // Criterion 5: Shared intermediate container exists
-    // First writes C, second reads C, second does NOT write C
-    // Also detect cyclic containers: second writes D, first reads D
-    // ==========================================================================
-    auto first_args = arguments_analysis.arguments(analysis_manager, first_map_);
-    auto second_args = arguments_analysis.arguments(analysis_manager, second_map_);
-
-    std::unordered_set<std::string> first_outputs;
-    std::unordered_set<std::string> first_inputs;
-    for (const auto& [name, arg] : first_args) {
-        if (arg.is_output) {
-            first_outputs.insert(name);
-        }
-        if (arg.is_input) {
-            first_inputs.insert(name);
-        }
-    }
-
-    std::unordered_set<std::string> shared_containers;
-    std::unordered_set<std::string> cyclic_container_names;
-    for (const auto& [name, arg] : second_args) {
-        if (first_outputs.contains(name)) {
-            if (arg.is_output) {
-                return false; // Consumer also writes the shared container
-            }
-            if (arg.is_input) {
-                shared_containers.insert(name);
-            }
-        }
-        // Detect cyclic: K2 writes container that K1 reads
-        if (arg.is_output && first_inputs.contains(name) && !first_outputs.contains(name)) {
-            cyclic_container_names.insert(name);
-        }
-    }
-    if (shared_containers.empty()) {
-        return false;
-    }
-
-    // ==========================================================================
-    // Criterion 6: Compute radius for each shared container
-    // ==========================================================================
-    // Collect the loop hierarchy for producer and consumer
-    std::vector<structured_control_flow::StructuredLoop*> producer_loops = {&first_map_, first_inner_map};
-    std::vector<structured_control_flow::StructuredLoop*> consumer_loops = {&second_map_, second_inner_map};
-
-    // Get assumptions from the innermost block (recursively find it)
-    auto* first_block = get_first_block(first_inner_map->root());
-    if (first_block == nullptr) {
-        return false;
-    }
-    auto& producer_assumptions = assumptions_analysis.get(*first_block);
-
-    auto* second_block = get_first_block(second_inner_map->root());
-    if (second_block == nullptr) {
-        return false;
-    }
-    auto& consumer_assumptions = assumptions_analysis.get(*second_block);
-
-    // Collect all blocks in producer and consumer
     std::vector<structured_control_flow::Block*> producer_blocks;
     collect_blocks(first_inner_map->root(), producer_blocks);
-    std::vector<structured_control_flow::Block*> consumer_blocks;
-    collect_blocks(second_inner_map->root(), consumer_blocks);
 
-    int overall_radius = 0;
-
-    for (const auto& container : shared_containers) {
-        // Find the producer write subset for this container
-        data_flow::Subset producer_write_subset;
-        bool found_producer = false;
-
-        for (auto* block : producer_blocks) {
-            auto& dataflow = block->dataflow();
-            for (auto& node : dataflow.nodes()) {
-                auto* access = dynamic_cast<data_flow::AccessNode*>(&node);
-                if (access == nullptr || access->data() != container) {
-                    continue;
-                }
-                // It's a write if it has incoming edges and no outgoing edges
-                if (dataflow.in_degree(*access) > 0 && dataflow.out_degree(*access) == 0) {
-                    auto& iedge = *dataflow.in_edges(*access).begin();
-                    if (iedge.type() != data_flow::MemletType::Computational) {
-                        continue;
-                    }
-                    if (found_producer) {
-                        return false; // Multiple writes to same container
-                    }
-                    producer_write_subset = iedge.subset();
-                    found_producer = true;
-                }
+    // The consumer's point counter takes the producer's name, so that their difference is one dimension.
+    auto point = first_inner_map->indvar();
+    std::vector<Access> consumer_reads;
+    {
+        std::vector<Access> renamed_second;
+        size_t renamed_counters = counters;
+        std::vector<Access> point_renamed;
+        if (!collect_accesses(
+                second_map_.root(),
+                assumptions_analysis,
+                second_varying,
+                second_counter,
+                first_counter,
+                renamed_second,
+                renamed_counters
+            )) {
+            return false;
+        }
+        for (auto& access : renamed_second) {
+            if (access.write) {
+                continue;
             }
-        }
-        if (!found_producer || producer_write_subset.empty()) {
-            return false;
-        }
-
-        // Collect all consumer read subsets for this container
-        std::vector<data_flow::Subset> consumer_read_subsets;
-        for (auto* block : consumer_blocks) {
-            auto& dataflow = block->dataflow();
-            for (auto& node : dataflow.nodes()) {
-                auto* access = dynamic_cast<data_flow::AccessNode*>(&node);
-                if (access == nullptr || access->data() != container) {
-                    continue;
+            Access copy{
+                access.container, false, std::nullopt, renamed(access.assumptions, second_inner_map->indvar(), point)
+            };
+            if (access.elements) {
+                symbolic::MultiExpression elements;
+                for (auto& element : *access.elements) {
+                    elements.push_back(symbolic::subs(element, second_inner_map->indvar(), point));
                 }
-                // It's a read if it has outgoing edges
-                if (dataflow.out_degree(*access) > 0) {
-                    for (auto& memlet : dataflow.out_edges(*access)) {
-                        if (memlet.type() != data_flow::MemletType::Computational) {
-                            continue;
-                        }
-                        auto& subset = memlet.subset();
-                        // Deduplicate
-                        bool found = false;
-                        for (const auto& existing : consumer_read_subsets) {
-                            if (existing.size() != subset.size()) {
-                                continue;
-                            }
-                            bool match = true;
-                            for (size_t d = 0; d < existing.size(); ++d) {
-                                if (!symbolic::eq(existing[d], subset[d])) {
-                                    match = false;
-                                    break;
-                                }
-                            }
-                            if (match) {
-                                found = true;
-                                break;
-                            }
-                        }
-                        if (!found) {
-                            consumer_read_subsets.push_back(subset);
-                        }
-                    }
-                }
+                copy.elements = std::move(elements);
             }
+            consumer_reads.push_back(std::move(copy));
         }
-        if (consumer_read_subsets.empty()) {
-            return false;
-        }
-
-        int radius = compute_radius(
-            producer_write_subset,
-            consumer_read_subsets,
-            producer_loops,
-            consumer_loops,
-            producer_assumptions,
-            consumer_assumptions
-        );
-        if (radius < 0) {
-            return false;
-        }
-
-        // ==========================================================================
-        // Criterion 7: Radius must be less than tile size
-        // ==========================================================================
-        if (radius >= tile_size) {
-            return false;
-        }
-
-        if (radius > overall_radius) {
-            overall_radius = radius;
-        }
-
-        TileFusionCandidate candidate;
-        candidate.container = container;
-        candidate.radius = radius;
-        candidates_.push_back(candidate);
     }
-
+    int overall_radius = 0;
+    for (auto& producer : first_accesses) {
+        if (!producer.write || !reversed_containers.contains(producer.container)) {
+            continue;
+        }
+        for (auto& consumer : consumer_reads) {
+            if (consumer.container != producer.container) {
+                continue;
+            }
+            auto radius = halo(producer, consumer, point, first_counter);
+            if (!radius || *radius >= tile_size) {
+                return false;
+            }
+            overall_radius = std::max(overall_radius, static_cast<int>(*radius));
+            candidates_.push_back({producer.container, static_cast<int>(*radius)});
+        }
+    }
+    if (overall_radius == 0) {
+        return false;
+    }
     radius_ = overall_radius;
+    sequential_ = true;
+
+    // The inputs of the producer the consumer writes, which a halo would otherwise read updated.
+    std::unordered_set<std::string> cyclic_container_names;
+    for (auto& container : second_writes) {
+        if (first_reads.contains(container)) {
+            cyclic_container_names.insert(container);
+        }
+    }
 
     // ==========================================================================
     // Criterion 8: Analyze cyclic containers for double buffering
@@ -588,6 +790,10 @@ bool TileFusion::can_be_applied(builder::StructuredSDFGBuilder& builder, analysi
 }
 
 void TileFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+    if (radius_ == 0) {
+        apply_aligned(builder, analysis_manager);
+        return;
+    }
     auto& sdfg = builder.subject();
     auto& assumptions_analysis = analysis_manager.get<analysis::AssumptionsAnalysis>();
 
@@ -1023,6 +1229,49 @@ void TileFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analys
     fused_loop_ = &fused_for;
 }
 
+void TileFusion::apply_aligned(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager) {
+    auto& sdfg = builder.subject();
+    auto& parent = static_cast<structured_control_flow::Sequence&>(*first_map_.get_parent());
+    auto first_counter = first_map_.indvar();
+    auto second_counter = second_map_.indvar();
+    auto counter = symbolic::symbol(builder.find_new_name(first_counter->get_name()));
+    builder.add_container(counter->get_name(), sdfg.type(first_counter->get_name()));
+    // The fused loop runs the first map's iterations, the second's of the same number aligned to them: offset if the
+    // steps agree, else both at the iteration number counting from zero in steps of one.
+    symbolic::Condition condition;
+    symbolic::Expression init, update, first_at, second_at;
+    if (symbolic::eq(first_map_.stride(), second_map_.stride())) {
+        condition = symbolic::subs(first_map_.condition(), first_counter, counter);
+        init = first_map_.init();
+        update = symbolic::subs(first_map_.update(), first_counter, counter);
+        first_at = counter;
+        second_at = symbolic::add(counter, symbolic::sub(second_map_.init(), first_map_.init()));
+    } else {
+        condition = symbolic::Lt(counter, first_map_.num_iterations());
+        init = symbolic::zero();
+        update = symbolic::add(counter, symbolic::one());
+        first_at = symbolic::add(first_map_.init(), symbolic::mul(first_map_.stride(), counter));
+        second_at = symbolic::add(second_map_.init(), symbolic::mul(second_map_.stride(), counter));
+    }
+    structured_control_flow::StructuredLoop* fused;
+    if (sequential_) {
+        fused = &builder.add_for_before(parent, first_map_, counter, condition, init, update, first_map_.debug_info());
+    } else {
+        fused = &builder.add_map_before(
+            parent, first_map_, counter, condition, init, update, first_map_.schedule_type(), first_map_.debug_info()
+        );
+    }
+    first_map_.root().replace(first_counter, first_at);
+    second_map_.root().replace(second_counter, second_at);
+    builder.move_children(first_map_.root(), fused->root());
+    builder.move_children(second_map_.root(), fused->root());
+    builder.remove_child(parent, parent.index(first_map_));
+    builder.remove_child(parent, parent.index(second_map_));
+    analysis_manager.invalidate_all();
+    applied_ = true;
+    fused_loop_ = fused;
+}
+
 void TileFusion::to_json(nlohmann::json& j) const {
     j["transformation_type"] = this->name();
     j["parameters"] = nlohmann::json::object();
@@ -1074,6 +1323,10 @@ structured_control_flow::StructuredLoop* TileFusion::fused_loop() const {
         throw InvalidTransformationException("Accessing fused loop before apply.");
     }
     return fused_loop_;
+}
+
+bool TileFusion::sequential() const {
+    return sequential_;
 }
 
 int TileFusion::radius() const {

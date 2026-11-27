@@ -36,6 +36,8 @@ class TileFusion : public Transformation {
 
     structured_control_flow::StructuredLoop* fused_loop_ = nullptr;
     int radius_ = 0;
+    /// Whether a dependence crosses tiles in order, so that the fused loop runs its tiles in sequence.
+    bool sequential_ = false;
 
     /// Shared containers and their computed radii
     struct TileFusionCandidate {
@@ -59,17 +61,6 @@ class TileFusion : public Transformation {
         int buffer_size; ///< Total buffer elements: tiled_dim_buf_size * product(other_dims)
     };
     std::vector<CyclicContainerInfo> cyclic_containers_;
-
-    /// Compute the radius for a shared container by analyzing producer write
-    /// and consumer read subsets. Returns -1 if the radius cannot be determined.
-    static int compute_radius(
-        const data_flow::Subset& producer_write_subset,
-        const std::vector<data_flow::Subset>& consumer_read_subsets,
-        const std::vector<structured_control_flow::StructuredLoop*>& producer_loops,
-        const std::vector<structured_control_flow::StructuredLoop*>& consumer_loops,
-        const symbolic::Assumptions& producer_assumptions,
-        const symbolic::Assumptions& consumer_assumptions
-    );
 
 public:
     /**
@@ -95,6 +86,14 @@ public:
 
     /// Get the computed radius (only valid after can_be_applied returns true)
     int radius() const;
+
+    /// Whether the fused loop runs its tiles in sequence, a For, rather than as a Map (only valid after
+    /// can_be_applied returns true)
+    bool sequential() const;
+
+private:
+    /// Fuses the two maps' bodies into one loop over their tiles, the first's body before the second's.
+    void apply_aligned(builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager);
 };
 
 } // namespace transformations

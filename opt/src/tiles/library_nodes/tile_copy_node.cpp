@@ -169,12 +169,19 @@ std::string TileCopyNode::toStr() const {
 }
 
 data_flow::PointerAccessType TileCopyNode::pointer_access_type(int input_idx) const {
-    auto size = symbolic::integer(static_cast<long long>(bytes_));
+    // The elements the copy accesses are the tile its plan lays out on each side. A swizzled buffer permutes them,
+    // and a register-staged phase's register array is indexed by copy step: those sides bound no elements.
+    std::optional<math::tensor::TensorLayout> layout;
+    if (input_idx == 0 && phase_ != CopyPhase::LoadRegs && plan_.dst_swizzle.is_identity()) {
+        layout = plan_.dst;
+    } else if (input_idx == 1 && phase_ != CopyPhase::StoreRegs) {
+        layout = plan_.src;
+    }
     if (input_idx == 0) { // _dst
-        return data_flow::PointerAccessMeta::create_full_write_only(size, /*no_capture=*/true);
+        return data_flow::PointerAccessMeta::create_full_write_only(SymEngine::null, /*no_capture=*/true, layout);
     }
     if (input_idx == 1) { // _src
-        return data_flow::PointerAccessMeta::create_read_only(size, /*no_capture=*/true);
+        return data_flow::PointerAccessMeta::create_read_only(SymEngine::null, /*no_capture=*/true, layout);
     }
     return data_flow::LibraryNode::pointer_access_type(input_idx);
 }
