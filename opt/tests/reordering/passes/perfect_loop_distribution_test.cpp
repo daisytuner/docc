@@ -1,7 +1,9 @@
 #include <gtest/gtest.h>
 
+#include "sdfg/data_flow/library_nodes/math/blas/gemm_node.h"
 #include "sdfg/parallelization/parallelization.h"
 #include "sdfg/reordering/passes/perfect_loop_distribution.h"
+#include "sdfg/reordering/transformations/loop_distribute.h"
 
 #include <sdfg/analysis/loop_analysis.h>
 #include <sdfg/codegen/code_generators/cpp_code_generator.h>
@@ -1298,4 +1300,86 @@ TEST(PerfectLoopDistributionTest, Apply_BlockAndSubloop) {
     EXPECT_TRUE(SymEngine::eq(*inner_loop->init(), *symbolic::integer(0)));
     EXPECT_TRUE(SymEngine::eq(*inner_loop->condition(), *symbolic::Lt(inner_loop->indvar(), symbolic::symbol("M"))));
     EXPECT_TRUE(SymEngine::eq(*inner_loop->update(), *symbolic::add(inner_loop->indvar(), symbolic::integer(1))));
+}
+
+TEST(PerfectLoopDistributionTest, LoopDependentReference_NotDistributed) {
+    // for (i = 0; i < N; i++) {
+    //     ref = &A[i * M];
+    //     for (j = 0; j < M; j++) B[i * M + j] = ref[j];
+    // }
+    // The reference is loop-dependent and read in a different distributed piece,
+    // so the loop must stay fused.
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto& root = builder.subject().root();
+
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Pointer desc(base_desc);
+    types::Pointer opaque_desc;
+    builder.add_container("A", opaque_desc, true);
+    builder.add_container("B", opaque_desc, true);
+    builder.add_container("C", opaque_desc, true);
+    builder.add_container("ref", desc);
+
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("N", sym_desc, true);
+    builder.add_container("M", sym_desc, true);
+    builder.add_container("i", sym_desc);
+    builder.add_container("j", sym_desc);
+
+    auto& loop_i = builder.add_for(
+        root,
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::symbol("i"), symbolic::symbol("N")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1))
+    );
+
+    auto& ref_block = builder.add_block(loop_i.root());
+    auto& a_in = builder.add_access(ref_block, "A");
+    auto& ref_out = builder.add_access(ref_block, "ref");
+    builder.add_reference_memlet(
+        ref_block, a_in, ref_out, {symbolic::mul(symbolic::symbol("i"), symbolic::symbol("M"))}, desc
+    );
+
+    auto& loop_j = builder.add_for(
+        loop_i.root(),
+        symbolic::symbol("j"),
+        symbolic::Lt(symbolic::symbol("j"), symbolic::symbol("M")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("j"), symbolic::integer(1))
+    );
+    auto& gemm_block = builder.add_block(loop_j.root());
+    auto& ref_in = builder.add_access(gemm_block, "ref");
+    auto& b_in = builder.add_access(gemm_block, "B");
+    auto& c_io = builder.add_access(gemm_block, "C");
+    auto& alpha = builder.add_constant(gemm_block, "1.0", base_desc);
+    auto& beta = builder.add_constant(gemm_block, "0.0", base_desc);
+    auto& gemm = builder.add_library_node<math::blas::GEMMNode>(
+        gemm_block,
+        DebugInfo(),
+        data_flow::ImplementationType_NONE,
+        math::blas::BLAS_Precision::s,
+        math::blas::BLAS_Layout::RowMajor,
+        math::blas::BLAS_Transpose::No,
+        math::blas::BLAS_Transpose::No,
+        symbolic::integer(4),
+        symbolic::integer(6),
+        symbolic::integer(8),
+        symbolic::integer(8),
+        symbolic::integer(6),
+        symbolic::integer(6)
+    );
+    builder.add_computational_memlet(gemm_block, ref_in, gemm, "__A", {}, desc);
+    builder.add_computational_memlet(gemm_block, b_in, gemm, "__B", {}, desc);
+    builder.add_computational_memlet(gemm_block, c_io, gemm, "__C", {}, desc);
+    builder.add_computational_memlet(gemm_block, alpha, gemm, "__alpha", {}, base_desc);
+    builder.add_computational_memlet(gemm_block, beta, gemm, "__beta", {}, base_desc);
+
+    analysis::AnalysisManager am(builder.subject());
+    PerfectLoopDistributionPass pass;
+    EXPECT_FALSE(pass.run_pass(builder, am));
+
+    EXPECT_EQ(builder.subject().root().size(), 1);
+    EXPECT_EQ(&builder.subject().root().at(0), &loop_i);
+    EXPECT_EQ(loop_i.root().size(), 2);
 }

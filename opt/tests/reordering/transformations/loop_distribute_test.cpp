@@ -4,6 +4,7 @@
 
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/data_flow/library_nodes/math/blas/gemm_node.h"
 #include "sdfg/structured_control_flow/map.h"
 
 using namespace sdfg;
@@ -275,4 +276,160 @@ TEST(LoopDistributeTest, CannotApplySingleChild) {
 
     // Should not be applicable with only one child
     EXPECT_FALSE(transformation.can_be_applied(builder, analysis_manager));
+}
+
+namespace {
+
+// Adds `C = alpha * ref * B + beta * C` as a GEMM library node in `parent`,
+// where `ref` is a pointer container holding a per-iteration sub-matrix.
+void add_gemm_on_reference(builder::StructuredSDFGBuilder& builder, structured_control_flow::Sequence& parent) {
+    types::Scalar elem(types::PrimitiveType::Float);
+    types::Pointer ptr(elem);
+
+    auto& block = builder.add_block(parent);
+    auto& ref_in = builder.add_access(block, "ref");
+    auto& b_in = builder.add_access(block, "B");
+    auto& c_io = builder.add_access(block, "C");
+    auto& alpha = builder.add_constant(block, "1.0", elem);
+    auto& beta = builder.add_constant(block, "0.0", elem);
+    auto& gemm = static_cast<math::blas::GEMMNode&>(builder.add_library_node<math::blas::GEMMNode>(
+        block,
+        DebugInfo(),
+        data_flow::ImplementationType_NONE,
+        math::blas::BLAS_Precision::s,
+        math::blas::BLAS_Layout::RowMajor,
+        math::blas::BLAS_Transpose::No,
+        math::blas::BLAS_Transpose::No,
+        symbolic::integer(4),
+        symbolic::integer(6),
+        symbolic::integer(8),
+        symbolic::integer(8),
+        symbolic::integer(6),
+        symbolic::integer(6)
+    ));
+    builder.add_computational_memlet(block, ref_in, gemm, "__A", {}, ptr);
+    builder.add_computational_memlet(block, b_in, gemm, "__B", {}, ptr);
+    builder.add_computational_memlet(block, c_io, gemm, "__C", {}, ptr);
+    builder.add_computational_memlet(block, alpha, gemm, "__alpha", {}, elem);
+    builder.add_computational_memlet(block, beta, gemm, "__beta", {}, elem);
+}
+
+// Adds `ref = &A[i * 32]` to `parent`, updated every iteration of the enclosing loop.
+void add_reference_update(builder::StructuredSDFGBuilder& builder, structured_control_flow::Sequence& parent) {
+    types::Scalar elem(types::PrimitiveType::Float);
+    types::Pointer ptr(elem);
+
+    auto& block = builder.add_block(parent);
+    auto& a_in = builder.add_access(block, "A");
+    auto& ref_out = builder.add_access(block, "ref");
+    builder
+        .add_reference_memlet(block, a_in, ref_out, {symbolic::mul(symbolic::symbol("i"), symbolic::integer(32))}, ptr);
+}
+
+} // namespace
+
+TEST(LoopDistributeTest, LoopDependentReference_GemmCrossGroup_NotApplicable) {
+    // for (i = 0; i < N; i++) {
+    //     ref = &A[i * 32];                // prefix: reference overwritten every iteration
+    //     for (j = 0; j < M; j++)          // center: GEMM reads ref
+    //         gemm(ref, B, C);
+    // }
+    // Distributing would run all reference updates before any GEMM, so every
+    // GEMM would read the last iteration's sub-matrix.
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto& root = builder.subject().root();
+
+    types::Scalar elem(types::PrimitiveType::Float);
+    types::Pointer ptr(elem);
+    types::Pointer opaque_desc;
+    builder.add_container("A", opaque_desc, true);
+    builder.add_container("B", opaque_desc, true);
+    builder.add_container("C", opaque_desc, true);
+    builder.add_container("ref", ptr);
+
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("N", sym_desc, true);
+    builder.add_container("M", sym_desc, true);
+    builder.add_container("i", sym_desc);
+    builder.add_container("j", sym_desc);
+
+    auto& loop_i = builder.add_for(
+        root,
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::symbol("i"), symbolic::symbol("N")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1))
+    );
+    add_reference_update(builder, loop_i.root());
+
+    auto& loop_j = builder.add_for(
+        loop_i.root(),
+        symbolic::symbol("j"),
+        symbolic::Lt(symbolic::symbol("j"), symbolic::symbol("M")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("j"), symbolic::integer(1))
+    );
+    add_gemm_on_reference(builder, loop_j.root());
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    reordering::transformations::LoopDistribute transformation(loop_i, loop_j);
+    EXPECT_FALSE(transformation.can_be_applied(builder, analysis_manager));
+}
+
+TEST(LoopDistributeTest, LoopDependentReference_GemmSameGroup_Applicable) {
+    // for (i = 0; i < N; i++) {
+    //     D[i] = 0.0;                      // prefix: independent work
+    //     for (j = 0; j < M; j++) {        // center: reference and its GEMM together
+    //         ref = &A[i * 32];
+    //         gemm(ref, B, C);
+    //     }
+    // }
+    // The reference is created and consumed in the same distributed piece, so
+    // distribution keeps the dependency intact.
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto& root = builder.subject().root();
+
+    types::Scalar elem(types::PrimitiveType::Float);
+    types::Pointer ptr(elem);
+    types::Pointer opaque_desc;
+    builder.add_container("A", opaque_desc, true);
+    builder.add_container("B", opaque_desc, true);
+    builder.add_container("C", opaque_desc, true);
+    builder.add_container("D", opaque_desc, true);
+    builder.add_container("ref", ptr);
+
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("N", sym_desc, true);
+    builder.add_container("M", sym_desc, true);
+    builder.add_container("i", sym_desc);
+    builder.add_container("j", sym_desc);
+
+    auto& loop_i = builder.add_for(
+        root,
+        symbolic::symbol("i"),
+        symbolic::Lt(symbolic::symbol("i"), symbolic::symbol("N")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("i"), symbolic::integer(1))
+    );
+
+    auto& indep_block = builder.add_block(loop_i.root());
+    auto& d_out = builder.add_access(indep_block, "D");
+    auto& const_node = builder.add_constant(indep_block, "0.0", elem);
+    auto& indep_tasklet = builder.add_tasklet(indep_block, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(indep_block, const_node, indep_tasklet, "_in", {}, elem);
+    builder.add_computational_memlet(indep_block, indep_tasklet, "_out", d_out, {symbolic::symbol("i")}, elem);
+
+    auto& loop_j = builder.add_for(
+        loop_i.root(),
+        symbolic::symbol("j"),
+        symbolic::Lt(symbolic::symbol("j"), symbolic::symbol("M")),
+        symbolic::integer(0),
+        symbolic::add(symbolic::symbol("j"), symbolic::integer(1))
+    );
+    add_reference_update(builder, loop_j.root());
+    add_gemm_on_reference(builder, loop_j.root());
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    reordering::transformations::LoopDistribute transformation(loop_i, loop_j);
+    EXPECT_TRUE(transformation.can_be_applied(builder, analysis_manager));
 }
