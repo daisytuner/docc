@@ -34,6 +34,9 @@ struct ContractionPrecision {
     /// The significand bits, guard bits included, the target computes results in, which bound the slices Ozaki picks
     /// by precision; not part of the spec, but chosen by the target; 0 for the result type's own.
     int max_bits = 0;
+    /// The smallest normal value of the float the target computes direct rescaling in, the least scale a row or
+    /// column takes; not part of the spec, but chosen by the target; 0 for the contraction type's own.
+    double min_normal = 0;
 
     /// @throws std::invalid_argument for a malformed spec
     static ContractionPrecision parse(const std::string& spec);

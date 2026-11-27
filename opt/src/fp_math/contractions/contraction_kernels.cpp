@@ -156,8 +156,9 @@ PrimitiveType compute_type(PrimitiveType type) {
     return type == PrimitiveType::Double ? PrimitiveType::Double : PrimitiveType::Float;
 }
 
-double smallest_normal(PrimitiveType type) {
-    return type == PrimitiveType::Float ? std::numeric_limits<float>::min() : std::numeric_limits<double>::min();
+double smallest_normal(PrimitiveType type, double min_normal) {
+    double own = type == PrimitiveType::Float ? std::numeric_limits<float>::min() : std::numeric_limits<double>::min();
+    return std::max(own, min_normal);
 }
 
 symbolic::Expression Batch::count() const {

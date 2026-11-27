@@ -152,8 +152,12 @@ public:
 };
 
 class OzakiSliceExpander : public passes::CodeLibNodeExpander<OzakiSliceNode> {
+    double min_normal_;
+
 public:
-    OzakiSliceExpander() : CodeLibNodeExpander(LibraryNodeType_OzakiSlice) {
+    /// @param min_normal the least scale of a row (see OzakiContraction)
+    explicit OzakiSliceExpander(double min_normal = 0)
+        : CodeLibNodeExpander(LibraryNodeType_OzakiSlice), min_normal_(min_normal) {
     }
 
     using TypedLibNodeExpander<OzakiSliceNode>::handle_expand;
@@ -173,12 +177,14 @@ public:
 
 class OzakiMatMulExpander : public passes::CodeLibNodeExpander<OzakiMatMulNode> {
     int max_bits_;
+    double min_normal_;
 
 public:
     /// @param max_bits the bits the target computes results in (see OzakiContraction); with them, A takes the slices
     /// its own precision needs, which may differ from B's, else as many as B
-    explicit OzakiMatMulExpander(int max_bits = 0)
-        : CodeLibNodeExpander(LibraryNodeType_OzakiMatMul), max_bits_(max_bits) {
+    /// @param min_normal the least scale of a row of A (see OzakiContraction)
+    explicit OzakiMatMulExpander(int max_bits = 0, double min_normal = 0)
+        : CodeLibNodeExpander(LibraryNodeType_OzakiMatMul), max_bits_(max_bits), min_normal_(min_normal) {
     }
 
     using TypedLibNodeExpander<OzakiMatMulNode>::handle_expand;
@@ -190,9 +196,12 @@ public:
 
 /// Expands every OzakiMatMul node of the SDFG into the slicing of A, the Int8 MatMuls and the rescaling, and every
 /// OzakiSlice node into the slicing of its rows; whether any.
-/// @param max_bits see OzakiMatMulExpander
+/// @param max_bits, min_normal see OzakiMatMulExpander
 bool expand_ozaki_matmuls(
-    builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager, int max_bits = 0
+    builder::StructuredSDFGBuilder& builder,
+    analysis::AnalysisManager& analysis_manager,
+    int max_bits = 0,
+    double min_normal = 0
 );
 
 } // namespace fp_math

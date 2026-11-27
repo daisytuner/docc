@@ -65,6 +65,7 @@ private:
     int splits_;
     Rescaling rescaling_;
     int max_bits_;
+    double min_normal_;
 
 public:
     static constexpr int MAX_SLICES = 10;
@@ -79,13 +80,16 @@ public:
      * @param rescaling Direct computes the slices and the result in the contraction's own type; Slicing only
      * @param max_bits the significand bits, guard bits included, the target computes the result in; 0 for the result
      * type's own
+     * @param min_normal the smallest normal value of the float the target computes direct rescaling in, the least
+     * scale of a row or column, so that the scales of all-zero ones stay invertible there; 0 for the type's own
      */
     explicit OzakiContraction(
         data_flow::LibraryNode& node,
         OzakiVariant variant = OzakiVariant::Modular,
         int splits = 0,
         Rescaling rescaling = Rescaling::Exponents,
-        int max_bits = 0
+        int max_bits = 0,
+        double min_normal = 0
     );
 
     virtual std::string name() const override;

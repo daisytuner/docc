@@ -233,7 +233,9 @@ void PyStructuredSDFG::expand(const docc::target::TargetOptions& options) {
 
     // Matmuls with prepared Ozaki slices of B leave Int8 matmuls as the precision pass does, before the targets map
     // them.
-    sdfg::fp_math::expand_ozaki_matmuls(builder_opt, analysis_manager, target_precision.contraction_bits);
+    sdfg::fp_math::expand_ozaki_matmuls(
+        builder_opt, analysis_manager, target_precision.contraction_bits, target_precision.contraction_min_normal
+    );
 
     // Before the targets map matmuls, e.g. to BLAS; they map the Int8 matmuls the emulation leaves instead.
     if (options.contraction_precision != "native") {
@@ -245,6 +247,7 @@ void PyStructuredSDFG::expand(const docc::target::TargetOptions& options) {
             }
         }
         precision.max_bits = target_precision.contraction_bits;
+        precision.min_normal = target_precision.contraction_min_normal;
         sdfg::fp_math::ContractionPrecisionPass contraction_precision_pass(precision);
         contraction_precision_pass.run(builder_opt, analysis_manager);
     }

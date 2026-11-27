@@ -12,8 +12,8 @@ using data_flow::TaskletCode;
 using math::cmath::CMathFunction;
 using types::PrimitiveType;
 
-QuantizeContraction::QuantizeContraction(data_flow::LibraryNode& node, int bits, Rescaling rescaling)
-    : node_(node), bits_(bits), rescaling_(rescaling) {
+QuantizeContraction::QuantizeContraction(data_flow::LibraryNode& node, int bits, Rescaling rescaling, double min_normal)
+    : node_(node), bits_(bits), rescaling_(rescaling), min_normal_(min_normal) {
 }
 
 std::string QuantizeContraction::name() const {
@@ -41,7 +41,7 @@ void QuantizeContraction::apply(builder::StructuredSDFGBuilder& builder, analysi
         auto& batch = operands.batch;
         // Rounding in the contraction's own type is far below the quantization error.
         auto type = operands.element;
-        auto tiny = detail::smallest_normal(type);
+        auto tiny = detail::smallest_normal(type, min_normal_);
         auto read_a = [&](BlockBuilder& block, auto& entry, auto& row, auto& column) {
             return operands.a(block, entry, row, column);
         };
@@ -156,18 +156,24 @@ void QuantizeContraction::apply(builder::StructuredSDFGBuilder& builder, analysi
 void QuantizeContraction::to_json(nlohmann::json& j) const {
     j["transformation_type"] = this->name();
     j["subgraph"] = {{"0", {{"element_id", node_.element_id()}, {"type", "library_node"}}}};
-    j["parameters"] = {{"bits", bits_}, {"rescaling", rescaling_ == Rescaling::Direct ? "direct" : "exponents"}};
+    j["parameters"] = {
+        {"bits", bits_},
+        {"rescaling", rescaling_ == Rescaling::Direct ? "direct" : "exponents"},
+        {"min_normal", min_normal_},
+    };
 }
 
 QuantizeContraction QuantizeContraction::from_json(builder::StructuredSDFGBuilder& builder, const nlohmann::json& j) {
     int bits = 8;
     auto rescaling = Rescaling::Exponents;
+    double min_normal = 0;
     if (j.contains("parameters")) {
         bits = j["parameters"].value("bits", 8);
         rescaling = j["parameters"].value("rescaling", "exponents") == "direct" ? Rescaling::Direct
                                                                                 : Rescaling::Exponents;
+        min_normal = j["parameters"].value("min_normal", 0.0);
     }
-    return QuantizeContraction(detail::contraction_from_json(builder, j), bits, rescaling);
+    return QuantizeContraction(detail::contraction_from_json(builder, j), bits, rescaling, min_normal);
 }
 
 } // namespace fp_math

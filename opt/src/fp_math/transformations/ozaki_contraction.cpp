@@ -55,9 +55,11 @@ const std::vector<int64_t>& OzakiContraction::moduli() {
     return primes;
 }
 
-OzakiContraction::
-    OzakiContraction(data_flow::LibraryNode& node, OzakiVariant variant, int splits, Rescaling rescaling, int max_bits)
-    : node_(node), variant_(variant), splits_(splits), rescaling_(rescaling), max_bits_(max_bits) {
+OzakiContraction::OzakiContraction(
+    data_flow::LibraryNode& node, OzakiVariant variant, int splits, Rescaling rescaling, int max_bits, double min_normal
+)
+    : node_(node), variant_(variant), splits_(splits), rescaling_(rescaling), max_bits_(max_bits),
+      min_normal_(min_normal) {
 }
 
 int OzakiContraction::operand_bits(const std::string& connector) const {
@@ -504,12 +506,14 @@ void direct_products(
 }
 
 /// Slicing with direct rescaling, in the contraction's own type; see OzakiContraction.
-void build_slicing_direct(KernelBuilder& kb, detail::ContractionOperands& operands, int a_count, int b_count) {
+void build_slicing_direct(
+    KernelBuilder& kb, detail::ContractionOperands& operands, int a_count, int b_count, double min_normal
+) {
     auto m = operands.m, n = operands.n, k = operands.k;
     // Each matrix of a batch gets scales of its own; every buffer holds one matrix after the other.
     auto& batch = operands.batch;
     auto type = operands.element;
-    auto tiny = detail::smallest_normal(type);
+    auto tiny = detail::smallest_normal(type, min_normal);
     auto read_a = [&](BlockBuilder& block, auto& entry, auto& row, auto& column) {
         return operands.a(block, entry, row, column);
     };
@@ -537,14 +541,15 @@ void build_slicing_direct_prepared(
     ContractionOperands& operands,
     const std::vector<std::string>& b_slices,
     const std::string& scales_b,
-    int a_slices
+    int a_slices,
+    double min_normal
 ) {
     auto m = operands.m, k = operands.k;
     auto type = operands.element;
     auto read_a = [&](BlockBuilder& block, auto& entry, auto& row, auto& column) {
         return operands.a(block, entry, row, column);
     };
-    auto scales_a = absmax(kb, "_oz_scale_a", read_a, m, k, smallest_normal(type), type, operands.batch);
+    auto scales_a = absmax(kb, "_oz_scale_a", read_a, m, k, smallest_normal(type, min_normal), type, operands.batch);
     auto slices = a_slices > 0 ? a_slices : static_cast<int>(b_slices.size());
     auto a_digits =
         slice_direct(kb, operands.batch, type, slices, "_oz_a_slice", m, k, operands.a_transposed, read_a, scales_a, true);
@@ -559,9 +564,10 @@ void build_row_slices(
     const symbolic::Expression& columns,
     const MatrixRead& read,
     const std::string& scales,
-    const std::vector<std::string>& slices
+    const std::vector<std::string>& slices,
+    double min_normal
 ) {
-    absmax(kb, "_oz_scale_rows", read, rows, columns, smallest_normal(type), type, batch, scales);
+    absmax(kb, "_oz_scale_rows", read, rows, columns, smallest_normal(type, min_normal), type, batch, scales);
     slice_direct(
         kb, batch, type, static_cast<int>(slices.size()), "_oz_row_slice", rows, columns, false, read, scales, true, slices
     );
@@ -579,7 +585,7 @@ void OzakiContraction::apply(builder::StructuredSDFGBuilder& builder, analysis::
     auto& node = direct && b_stored_transposed(oriented) ? read_b_row_major(builder, oriented).contraction : oriented;
     detail::expand_contraction(builder, node, [&](KernelBuilder& kb, detail::ContractionOperands& operands) {
         if (direct) {
-            build_slicing_direct(kb, operands, a_count, b_count);
+            build_slicing_direct(kb, operands, a_count, b_count, min_normal_);
         } else if (variant == OzakiVariant::Slicing) {
             build_slicing(kb, operands, splits);
         } else {
@@ -597,6 +603,7 @@ void OzakiContraction::to_json(nlohmann::json& j) const {
         {"splits", splits_},
         {"rescaling", rescaling_ == Rescaling::Direct ? "direct" : "exponents"},
         {"max_bits", max_bits_},
+        {"min_normal", min_normal_},
     };
 }
 
@@ -611,7 +618,8 @@ OzakiContraction OzakiContraction::from_json(builder::StructuredSDFGBuilder& bui
         variant,
         parameters.value("splits", 0),
         rescaling,
-        parameters.value("max_bits", 0)
+        parameters.value("max_bits", 0),
+        parameters.value("min_normal", 0.0)
     );
 }
 

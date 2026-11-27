@@ -75,6 +75,11 @@ struct TargetPrecision {
     /// The significand bits, guard bits included, in which the target computes the results of emulated contractions,
     /// e.g. 13 for a unit computing in a float of 11 bits; Ozaki slices no operand finer. 0 for the result type's own.
     int contraction_bits = 0;
+    /// The smallest normal value of the float in which the target computes the scales of emulated contractions, e.g.
+    /// 2^-62 for a unit computing in a float of 7 exponent bits: scales of rows or columns are at least that, so that
+    /// those of all-zero ones stay invertible where narrower floats flush Float's own smallest normal to zero. 0 for
+    /// the contraction type's own.
+    double contraction_min_normal = 0;
     /// Float types the target does not store, such as bfloat16 on a unit without it, besides FP8, which no code
     /// generator stores: after the contraction precision, which slices by the operands' own types,
     /// passes::FloatWidening turns them into Float, and the runtime converts the arguments of these types at the
