@@ -27,6 +27,8 @@ extern llvm::cl::opt<std::string> DOCC_FUNC_BLACKLIST;
 
 extern llvm::cl::opt<bool> DOCC_OFFLOAD_UNKNOWN_SIZES;
 
+extern llvm::cl::opt<bool> DOCC_NORMALIZE;
+
 namespace args {
 
 extern llvm::cl::opt<bool> DOCC_DOT_DUMP_SCHEDULED;

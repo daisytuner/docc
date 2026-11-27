@@ -26,6 +26,7 @@
 #include <sdfg/loops/transformations/multi_level_tiling.h>
 #include <sdfg/loops/transformations/trivial_loop_elimination.h>
 #include <sdfg/loops/transformations/unroll_transform.h>
+#include <sdfg/loops/transformations/vectorize_transform.h>
 #include <sdfg/parallelization/transformations/loop_parallelization.h>
 #include <sdfg/reordering/transformations/loop_distribute.h>
 #include <sdfg/reordering/transformations/loop_interchange.h>
@@ -48,7 +49,6 @@
 #include <sdfg/transformations/omp_transform.h>
 #include <sdfg/transformations/redundant_zero_init_elimination.h>
 #include <sdfg/transformations/stream_k.h>
-#include <sdfg/transformations/vectorize_transform.h>
 
 namespace sdfg {
 namespace transformations {
@@ -158,7 +158,7 @@ dispatch_transformation(const std::string& transformation_name, const nlohmann::
     } else if (transformation_name == "StreamK") {
         return detail::invoke_for<transformations::StreamK>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "VectorizeTransform") {
-        return detail::invoke_for<transformations::VectorizeTransform>(std::forward<Visitor>(visitor));
+        return detail::invoke_for<loops::transformations::VectorizeTransform>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "UnrollTransform") {
         return detail::invoke_for<loops::transformations::UnrollTransform>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "CUDATransform") {

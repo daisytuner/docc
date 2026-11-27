@@ -53,3 +53,14 @@ The two are not alternatives but layers: the global schedule decides placement a
 The same split appears in scheduling languages such as Halide (Ragan-Kelley et al., PLDI 2013), which separates per-stage loop directives from the choice of where a producer is computed and stored relative to its consumers, and Tiramisu (Baghdadi et al., CGO 2019), which separates computation scheduling from data and communication management.
 docc does not expose a scheduling language: a schedule is applied as ordinary SDFG transformations (`OMPTransform`, `CUDATransform`, ...).
 It can still be captured as data — with a `transformations::Recorder` attached, every applied transformation is recorded as a replayable descriptor.
+
+## Scheduling for a Target
+
+Every target (`docc::target::DoccTarget`) declares how it schedules an SDFG in its `scheduling`, and `sdfg::scheduling::schedule` ([target_scheduling.h](target_scheduling.h)) runs it, in this order:
+
+1. the target's `SDFGScheduler` brings the whole SDFG into the normal form its loop schedulers expect — a priori loop nest normalization ([a_priori_loop_nest_normalization.h](a_priori_loop_nest_normalization.h)) for CPU, Tenstorrent and ET targets, nothing ([passthrough_scheduler.h](passthrough_scheduler.h)) for GPU targets;
+2. the target's sched-time library node mapping;
+3. remote tuning, if requested;
+4. the target's loop schedulers, through the `LoopSchedulingPass`.
+
+The `SDFGScheduler` must be deterministic: the tuning server runs it as well.

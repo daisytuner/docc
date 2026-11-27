@@ -18,11 +18,11 @@ The core keeps registries for everything that is target- or domain-specific. A p
 | `get_map_dispatcher_registry()`             | How to generate code for a `Map` with a given schedule, for example an OpenMP loop or a GPU kernel |
 | `get_reduce_dispatcher_registry()`          | The same for `Reduce` loops                                                                   |
 | `get_node_dispatcher_registry()`            | Code generation for other control flow nodes                                                  |
-| `get_scheduler_registry()`                  | [Loop schedulers](./core-concepts/passes.md#scheduling) of a target                           |
+| `add_target(target)`                        | A target and its [scheduling](./core-concepts/passes.md#scheduling): its normal form and loop schedulers |
 | `get_tile_target_registry()`                | Tile-level code generation for a target                                                       |
 | `option_registry()`                         | [Pass options](./core-concepts/passes.md#pass-options) declared by the plugin                 |
 
-The built-in plugins are registered at startup, for example `register_omp_plugin`, `register_cuda_plugin`, `register_rocm_plugin`, and `register_tenstorrent_plugin`, together with the einsum, parallelization, tiles, and vectorization plugins (`llvm/src/docc.cpp`).
+The built-in plugins are registered at startup, for example `register_omp_plugin`, `register_cuda_plugin`, `register_rocm_plugin`, and `register_tenstorrent_plugin`, together with the einsum, parallelization, and tiles plugins (`llvm/src/docc.cpp`).
 
 ## External plugins
 
@@ -31,7 +31,7 @@ An external plugin is a shared library that exports one C function, `register_do
 | Field                      | Description                                                                                          |
 | -------------------------- | ---------------------------------------------------------------------------------------------------- |
 | `name`, `version`, `description` | Shown when the plugin is loaded                                                                |
-| `register_plugin_callback` | Called once with the `Context`; registers dispatchers, schedulers, and serializers                   |
+| `register_plugin_callback` | Called once with the `Context`; registers dispatchers, targets, and serializers                      |
 | `sdfg_lookup`              | Called with the (mangled) name of each function; returns SDFGs that replace the function, or an empty list |
 
 Both callbacks are required. `sdfg_lookup` lets a plugin replace a function with a hand-optimized implementation, for example a domain-specific kernel that docc could not derive itself.

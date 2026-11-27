@@ -98,11 +98,10 @@ public:
         bool record_for_instrumentation = false
     );
 
-    void normalize(const docc::target::TargetOptions& options = {});
 
     void schedule(const std::string& target, const std::string& category, bool remote_tuning = false);
 
-    void schedule(const docc::target::TargetOptions& options, bool schedule_loops = true);
+    void schedule(const docc::target::TargetOptions& options, bool schedule_loops = true, bool normalize = true);
 
     /**
      * Run the device-resident argument promotion pass.

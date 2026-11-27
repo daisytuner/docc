@@ -65,6 +65,7 @@ void SequentialReduceDispatcher::dispatch_node(
 ) {
     main_stream << language_extension_.comment("Reduce") << std::endl;
     LoopHints hints;
+    hints.vectorize = structured_control_flow::ScheduleType_Vectorize::is_set(node_.schedule_type());
     hints.unroll = structured_control_flow::ScheduleType_Unroll::is_set(node_.schedule_type());
     auto body = language_extension_.begin_for(main_stream, node_, hints);
     SequenceDispatcher

@@ -39,8 +39,7 @@ def test_compute(target):
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
-                "VECTORIZE": 1,
-                "SEQUENTIAL": 1,
+                "SEQUENTIAL": 2,
                 "MAP": 2,
             }
         )

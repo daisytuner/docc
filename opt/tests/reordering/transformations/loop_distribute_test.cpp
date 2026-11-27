@@ -5,6 +5,7 @@
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/library_nodes/math/blas/gemm_node.h"
+#include "sdfg/structured_control_flow/map.h"
 
 using namespace sdfg;
 
@@ -77,11 +78,55 @@ TEST(LoopDistributeTest, BasicDistribution) {
     EXPECT_EQ(first_loop->root().size(), 1);
     EXPECT_EQ(&first_loop->root().at(0), &block1);
 
-    // Second loop is the new Map (suffix) holding block2
-    auto second_loop = dyn_cast<structured_control_flow::Map*>(&new_sdfg.root().at(1));
+    // Second loop is the new suffix holding block2, sequential like the original
+    auto second_loop = dyn_cast<structured_control_flow::For*>(&new_sdfg.root().at(1));
     EXPECT_TRUE(second_loop != nullptr);
     EXPECT_EQ(second_loop->root().size(), 1);
     EXPECT_EQ(&second_loop->root().at(0), &block2);
+}
+
+TEST(LoopDistributeTest, MapPiecesKeepSchedule) {
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto& root = builder.subject().root();
+
+    types::Scalar base_desc(types::PrimitiveType::Float);
+    types::Pointer desc(base_desc);
+    types::Pointer opaque_desc;
+    builder.add_container("A", opaque_desc, true);
+    builder.add_container("B", opaque_desc, true);
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("N", sym_desc, true);
+    builder.add_container("i", sym_desc);
+
+    auto indvar = symbolic::symbol("i");
+    auto schedule = structured_control_flow::ScheduleType_Sequential::create();
+    structured_control_flow::ScheduleType_Vectorize::set(schedule);
+    auto& loop = builder.add_map(
+        root,
+        indvar,
+        symbolic::Lt(indvar, symbolic::symbol("N")),
+        symbolic::integer(0),
+        symbolic::add(indvar, symbolic::integer(1)),
+        schedule
+    );
+    for (auto* container : {"A", "B"}) {
+        auto& block = builder.add_block(loop.root());
+        auto& in = builder.add_access(block, container);
+        auto& out = builder.add_access(block, container);
+        auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(block, in, tasklet, "_in", {indvar}, desc);
+        builder.add_computational_memlet(block, tasklet, "_out", out, {indvar}, desc);
+    }
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    reordering::transformations::LoopDistribute transformation(loop);
+    ASSERT_TRUE(transformation.can_be_applied(builder, analysis_manager));
+    transformation.apply(builder, analysis_manager);
+
+    ASSERT_EQ(root.size(), 2);
+    auto* suffix = dyn_cast<structured_control_flow::Map*>(&root.at(1));
+    ASSERT_NE(suffix, nullptr);
+    EXPECT_TRUE(structured_control_flow::ScheduleType_Vectorize::is_set(suffix->schedule_type()));
 }
 
 TEST(LoopDistributeTest, Serialization) {

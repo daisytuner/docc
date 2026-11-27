@@ -37,12 +37,15 @@ import numpy as np
 import pytest
 
 from docc.sdfg import (
+    AnalysisManager,
     BufferLifecycle,
     CMathFunction,
     DataTransferDirection,
+    LanesMapPredication,
     Pointer,
     PrimitiveType,
     ReduceStrategy,
+    RocmArch,
     Scalar,
     ScheduleType,
     StorageType,
@@ -83,19 +86,31 @@ class GpuBackend:
     _storage: Callable[[], object]
     _schedule: Callable[[object, int], object]
     _offload_method: str
+    _lane_width: Callable[[], int]
     bf16_float_compute: bool = False
+
+    def lane_width(self):
+        """Wave width of the device a lanes > 1 schedule must use (queried lazily,
+        so collecting the suite needs no GPU)."""
+        return self._lane_width()
 
     def storage(self):
         return self._storage()
 
     def schedule(
-        self, target_level, parallel_size, partial_storage=None, partial_container=None
+        self,
+        target_level,
+        parallel_size,
+        partial_storage=None,
+        partial_container=None,
+        lanes=None,
     ):
         return self._schedule(
             target_level,
             parallel_size,
             partial_storage=partial_storage,
             partial_container=partial_container,
+            lanes=lanes,
         )
 
     def offload(self, builder, *args, **kwargs):
@@ -110,6 +125,7 @@ CUDA_BACKEND = GpuBackend(
     _storage=StorageType.NV_Generic,
     _schedule=ScheduleType.cuda_offload,
     _offload_method="add_cuda_offloading_block",
+    _lane_width=lambda: 32,
 )
 
 ROCM_BACKEND = GpuBackend(
@@ -120,6 +136,7 @@ ROCM_BACKEND = GpuBackend(
     _storage=StorageType.AMD_Generic,
     _schedule=ScheduleType.rocm_offload,
     _offload_method="add_rocm_offloading_block",
+    _lane_width=lambda: 32 if RocmArch.current_name().startswith("gfx1") else 64,
     bf16_float_compute=True,
 )
 
@@ -655,12 +672,14 @@ def build_reduce_nest(
     *,
     loop_order=None,
     reduce_options=None,
+    map_options=None,
     primitive=PrimitiveType.Float,
 ):
     """Build flat acc[row] reductions; None map levels denote sequential maps.
 
     loop_order names m0, m1, ... and r0, r1, ... in outer-to-inner order.
-    reduce_options maps reduction names to backend.schedule keyword arguments.
+    reduce_options / map_options map reduction / map names to backend.schedule
+    keyword arguments (e.g. lanes on an X_BLOCK map).
     primitive is the element type of A and acc.
     """
     m_names = [f"m{k}" for k in range(len(map_specs))]
@@ -670,6 +689,9 @@ def build_reduce_nest(
     assert len(order) == len(specs) and set(order) == set(specs)
     reduce_options = reduce_options or {}
     assert set(reduce_options) <= set(r_names)
+    map_options = map_options or {}
+    assert set(map_options) <= set(m_names)
+    options = {**reduce_options, **map_options}
     _validate_nest(
         [
             (specs[name][0], specs[name][2])
@@ -745,7 +767,7 @@ def build_reduce_nest(
         schedule = (
             ScheduleType.sequential()
             if level is None
-            else backend.schedule(level, psize, **reduce_options.get(name, {}))
+            else backend.schedule(level, psize, **options.get(name, {}))
         )
         if name in m_names:
             builder.begin_map(name, "0", str(count), "1", schedule)
@@ -1946,6 +1968,279 @@ def make_reduce_first_scenarios(ws):
     return scenarios
 
 
+def make_lanes_reduce_scenarios():
+    """X_BLOCK reductions with wave-sized lanes.
+
+    Every launched thread (parallel_size * lanes) takes its own iteration and each
+    lane group combines by warp shuffle: Register partials commit from the group
+    leader, Shared partials fold the groups of a row through shared memory. The
+    lanes reduce stands alone, sits under an enclosing Y_BLOCK reduce of the same
+    accumulator (the leader publishes into its shared slot), or under an X_GRID
+    reduce (the groups feed the grid's thread-local partial and atomics).
+
+    The lane width is the device's wave size, known only at run time, so each
+    scenario is a recipe resolved by ``lanes_reduce_tables``.
+    """
+    scenarios = []
+    for parallel_size in (1, 2):
+        for strategy_name in ("shared", "register"):
+            for relation in ("smaller", "equals", "multiple", "ragged"):
+                for placement in ("standalone", "under_yb", "under_xg"):
+                    scenarios.append(
+                        dict(
+                            id=f"lanes_{placement}_p{parallel_size}_{strategy_name}_{relation}",
+                            placement=placement,
+                            parallel_size=parallel_size,
+                            strategy=strategy_name,
+                            relation=relation,
+                        )
+                    )
+    return scenarios
+
+
+def lanes_reduce_tables(scn, lanes):
+    """(map_specs, reduce_specs, reduce_options) of a lanes-reduce recipe."""
+    parallel_size = scn["parallel_size"]
+    width = parallel_size * lanes
+    count = {
+        "smaller": width - 5,
+        "equals": width,
+        "multiple": 3 * width,
+        "ragged": width + lanes // 2 + 3,
+    }[scn["relation"]]
+    strategy = {"shared": ReduceStrategy.Shared, "register": ReduceStrategy.Register}[
+        scn["strategy"]
+    ]
+    lanes_reduce = ("xb", count, parallel_size)
+    maps, reductions, name = {
+        "standalone": ([("xg", 3, 2)], [lanes_reduce], "r0"),
+        "under_yb": ([("xg", 3, 2)], [("yb", 2, 2), lanes_reduce], "r1"),
+        "under_xg": ([], [("xg", 4, 2), lanes_reduce], "r1"),
+    }[scn["placement"]]
+    options = {name: {"partial_storage": strategy, "lanes": lanes}}
+    return _spec(maps), _spec(reductions), options
+
+
+# ---------------------------------------------------------------------------
+# Lanes maps: every lane of a group executes the body of the group's iteration.
+# Writes to device memory must not be replicated across the lanes.
+# ---------------------------------------------------------------------------
+LANES_MAP_BODIES = ("sequential_reduce", "atomic", "nested_atomic")
+LANES_MAP_INNER = 3
+
+
+def build_lanes_map_body(backend, body, rows, parallel_size, lanes):
+    """X_GRID(1) > X_BLOCK(parallel_size, lanes) map over ``rows`` with a body of
+    lane-shared side effects (``K`` = LANES_MAP_INNER):
+
+    * ``sequential_reduce``: ``acc[i] += A[i*K + k]`` over a sequential k-loop, then
+      ``s = acc[i]`` (a thread-private read-back) and ``out[i] = s + s``.
+    * ``atomic``: ``atomicAdd(&out[i], A[i])``.
+    * ``nested_atomic``: a Y_BLOCK(K) map below the lanes map with
+      ``atomicAdd(&out[i], A[i*K + j])`` (the Y threads contend on ``out[i]``).
+
+    Replicated by the lanes, the atomics would add every value ``lanes`` times.
+    """
+    K = LANES_MAP_INNER
+    n = rows * K
+    n_out = rows
+    f = Scalar(PrimitiveType.Float)
+    builder = StructuredSDFGBuilder(f"lanes_map_{body}")
+    dev_ptr = _declare_common(
+        backend,
+        builder,
+        ("A", "acc", "out"),
+        ("__daisy_dev_A", "__daisy_dev_acc", "__daisy_dev_out"),
+    )
+    i32 = Scalar(PrimitiveType.Int32)
+    for name in ("g", "i", "k"):
+        builder.add_container(name, i32, is_argument=False)
+    builder.add_container("s", f, is_argument=False)
+    builder.add_container("val", f, is_argument=False)
+    builder.add_container("__daisy_dst_ptr", dev_ptr, is_argument=False)
+
+    sizes = {"__daisy_dev_A": n, "__daisy_dev_acc": rows, "__daisy_dev_out": n_out}
+    for host, dev in (
+        ("A", "__daisy_dev_A"),
+        ("acc", "__daisy_dev_acc"),
+        ("out", "__daisy_dev_out"),
+    ):
+        nbytes = f"{sizes[dev]} * {FLOAT_BYTES}"
+        backend.offload(
+            builder,
+            dev,
+            dev,
+            DataTransferDirection.NONE,
+            BufferLifecycle.ALLOC,
+            dev_ptr,
+            nbytes,
+        )
+        backend.offload(
+            builder,
+            host,
+            dev,
+            DataTransferDirection.H2D,
+            BufferLifecycle.NO_CHANGE,
+            dev_ptr,
+            nbytes,
+        )
+
+    def atomic_add(src_index, slot):
+        blk = builder.add_block()
+        a = builder.add_access(blk, "__daisy_dev_A")
+        val = builder.add_access(blk, "val")
+        stage = builder.add_tasklet(blk, TaskletCode.assign, ["_in"], ["_out"])
+        builder.add_memlet(blk, a, "", stage, "_in", src_index, dev_ptr)
+        builder.add_memlet(blk, stage, "_out", val, "", "", f)
+        blk = builder.add_block()
+        out = builder.add_access(blk, "__daisy_dev_out")
+        dref = builder.add_access(blk, "__daisy_dst_ptr")
+        builder.add_reference_memlet(blk, out, dref, slot, dev_ptr)
+        blk = builder.add_block()
+        dref = builder.add_access(blk, "__daisy_dst_ptr")
+        val = builder.add_access(blk, "val")
+        node = builder.add_atomic_accumulate(
+            blk, "Float", {"cuda": "CUDA", "rocm": "ROCm"}[backend.name]
+        )
+        builder.add_memlet(blk, dref, "", node, "_dst", "", dev_ptr)
+        builder.add_memlet(blk, val, "", node, "_src", "", f)
+
+    builder.begin_map("g", "0", "1", "1", backend.schedule(TargetLevel.X_GRID, 1))
+    builder.begin_map(
+        "i",
+        "0",
+        str(rows),
+        "1",
+        backend.schedule(TargetLevel.X_BLOCK, parallel_size, lanes=lanes),
+    )
+    if body == "sequential_reduce":
+        builder.begin_for("k", "0", str(K), "1")
+        blk = builder.add_block()
+        a = builder.add_access(blk, "__daisy_dev_A")
+        acc_in = builder.add_access(blk, "__daisy_dev_acc")
+        acc_out = builder.add_access(blk, "__daisy_dev_acc")
+        t = builder.add_tasklet(blk, TaskletCode.fp_add, ["_in1", "_in2"], ["_out"])
+        builder.add_memlet(blk, acc_in, "", t, "_in1", "i")
+        builder.add_memlet(blk, a, "", t, "_in2", f"i * {K} + k")
+        builder.add_memlet(blk, t, "_out", acc_out, "", "i")
+        builder.end_for()
+
+        blk = builder.add_block()
+        acc = builder.add_access(blk, "__daisy_dev_acc")
+        s_out = builder.add_access(blk, "s")
+        t = builder.add_tasklet(blk, TaskletCode.assign, ["_in"], ["_out"])
+        builder.add_memlet(blk, acc, "", t, "_in", "i")
+        builder.add_memlet(blk, t, "_out", s_out, "", "", f)
+
+        blk = builder.add_block()
+        s_in = builder.add_access(blk, "s")
+        out = builder.add_access(blk, "__daisy_dev_out")
+        t = builder.add_tasklet(blk, TaskletCode.fp_add, ["_in1", "_in2"], ["_out"])
+        builder.add_memlet(blk, s_in, "", t, "_in1", "", f)
+        builder.add_memlet(blk, s_in, "", t, "_in2", "", f)
+        builder.add_memlet(blk, t, "_out", out, "", "i")
+    elif body == "atomic":
+        atomic_add("i", "i")
+    else:
+        builder.begin_map(
+            "k", "0", str(K), "1", backend.schedule(TargetLevel.Y_BLOCK, K)
+        )
+        atomic_add(f"i * {K} + k", "i")
+        builder.end_map()
+    builder.end_map()
+    builder.end_map()
+
+    for host, dev in (("acc", "__daisy_dev_acc"), ("out", "__daisy_dev_out")):
+        backend.offload(
+            builder,
+            host,
+            dev,
+            DataTransferDirection.D2H,
+            BufferLifecycle.NO_CHANGE,
+            dev_ptr,
+            f"{sizes[dev]} * {FLOAT_BYTES}",
+        )
+    for dev in sizes:
+        backend.offload(
+            builder,
+            dev,
+            dev,
+            DataTransferDirection.NONE,
+            BufferLifecycle.FREE,
+            dev_ptr,
+            "0",
+        )
+    return builder.move(), n, n_out
+
+
+def make_lanes_map_reduce_scenarios():
+    """Offloaded reductions replicated by a lanes map (enclosing or nested).
+
+    Every lane of the map's group holds the same partials, so only the leader lane
+    may commit them: otherwise the Global (atomic) commits add every value
+    ``lanes`` times and the Shared commits race on the accumulator. The lane width
+    is the device's wave size, resolved by ``lanes_map_reduce_tables``.
+    """
+    scenarios = []
+    for placement, strategies in (
+        ("map_over_yb", ("shared", "global")),
+        ("yb_over_map", ("shared", "global")),
+        ("xg_over_map", ("global",)),
+    ):
+        for strategy in strategies:
+            for rows, parallel_size in ((2, 1), (5, 2)):
+                scenarios.append(
+                    dict(
+                        id=f"{placement}_{strategy}_r{rows}_p{parallel_size}",
+                        placement=placement,
+                        strategy=strategy,
+                        rows=rows,
+                        parallel_size=parallel_size,
+                    )
+                )
+    return scenarios
+
+
+def lanes_map_reduce_tables(scn, lanes):
+    """build_reduce_nest arguments of a lanes-map reduce recipe (``K`` = 6)."""
+    rows, parallel_size = scn["rows"], scn["parallel_size"]
+    strategy = {"shared": ReduceStrategy.Shared, "global": ReduceStrategy.Global}[
+        scn["strategy"]
+    ]
+    lanes_map = ("xb", rows, parallel_size)
+    if scn["placement"] == "xg_over_map":
+        maps, reductions, order = [lanes_map], [("xg", 6, 2)], ["r0", "m0"]
+        lanes_name = "m0"
+    else:
+        maps, reductions = [("xg", 1, 1), lanes_map], [("yb", 6, 4)]
+        order = (
+            ["m0", "m1", "r0"]
+            if scn["placement"] == "map_over_yb"
+            else ["m0", "r0", "m1"]
+        )
+        lanes_name = "m1"
+    return dict(
+        map_specs=_spec(maps),
+        reduce_specs=_spec(reductions),
+        loop_order=order,
+        reduce_options={"r0": {"partial_storage": strategy}},
+        map_options={lanes_name: {"lanes": lanes}},
+    )
+
+
+def lanes_map_reference(body, a, rows):
+    """Expected (acc, out) of :func:`build_lanes_map_body` for input ``a``."""
+    K = LANES_MAP_INNER
+    if body == "sequential_reduce":
+        acc = a.reshape(rows, K).sum(axis=1)
+        return acc, 2 * acc
+    if body == "atomic":
+        out = a[:rows].copy()
+    else:
+        out = a.reshape(rows, K).sum(axis=1)
+    return np.zeros(rows), out
+
+
 # ---------------------------------------------------------------------------
 # Multiple reductions in ONE node (several accumulators at one level).
 # ---------------------------------------------------------------------------
@@ -2413,6 +2708,93 @@ def register(namespace, backend):
         }[op](axis=1)
         np.testing.assert_allclose(accumulator, expected, rtol=1e-4, atol=1e-4)
 
+    _lanes_reduce_scns = make_lanes_reduce_scenarios()
+
+    @pytest.mark.parametrize(
+        "scn", _lanes_reduce_scns, ids=[scn["id"] for scn in _lanes_reduce_scns]
+    )
+    @pytest.mark.parametrize("op", ["add", "max"])
+    def test_lanes_reduce(scn, op, tmp_path):
+        map_specs, reduce_specs, options = lanes_reduce_tables(
+            scn, backend.lane_width()
+        )
+        sdfg, rows, cols = build_reduce_nest(
+            backend, map_specs, reduce_specs, op, reduce_options=options
+        )
+        compiled = _compile(backend, sdfg, tmp_path / "lanes_reduce")
+        values = _rng_input(op, rows * cols, 22)
+        accumulator = np.full(rows, _identity(op), dtype=np.float32)
+        compiled(values, accumulator)
+        matrix = values.reshape(rows, cols)
+        expected = {"add": matrix.sum, "max": matrix.max}[op](axis=1)
+        np.testing.assert_allclose(accumulator, expected, rtol=1e-4, atol=1e-4)
+
+    @pytest.mark.parametrize("body", LANES_MAP_BODIES)
+    @pytest.mark.parametrize(
+        "rows,parallel_size",
+        [(1, 1), (2, 2), (5, 2), (7, 4)],
+        ids=["single", "equals", "ragged_cover", "ragged_wide"],
+    )
+    def test_lanes_map_side_effects(body, rows, parallel_size, tmp_path):
+        """Lane-shared writes in a lanes map are performed once per group, by its
+        leader lane, with a wave barrier before other lanes read them back."""
+        lanes = backend.lane_width()
+        sdfg, n, n_out = build_lanes_map_body(backend, body, rows, parallel_size, lanes)
+        out_dir = tmp_path / "lanes_map"
+        compiled = _compile(backend, sdfg, out_dir)
+        generated = "\n".join(p.read_text() for p in out_dir.rglob(backend.source_glob))
+        assert f"% ({lanes})" in generated, "lane-leader guard missing"
+        barrier = "__syncwarp()" if backend.name == "cuda" else "wave_barrier()"
+        assert barrier in generated, "wave barrier missing"
+
+        a = _rng_input("add", n, 24)
+        acc = np.zeros(rows, dtype=np.float32)
+        out = np.zeros(n_out, dtype=np.float32)
+        compiled(a, acc, out)
+
+        ref_acc, ref_out = lanes_map_reference(body, a.astype(np.float64), rows)
+        np.testing.assert_allclose(acc, ref_acc, rtol=1e-4, atol=1e-4)
+        np.testing.assert_allclose(out, ref_out, rtol=1e-4, atol=1e-4)
+
+    _lanes_map_reduce_scns = make_lanes_map_reduce_scenarios()
+
+    @pytest.mark.parametrize(
+        "scn",
+        _lanes_map_reduce_scns,
+        ids=[scn["id"] for scn in _lanes_map_reduce_scns],
+    )
+    @pytest.mark.parametrize("op", ["add", "max"])
+    def test_lanes_map_reduce(scn, op, tmp_path):
+        """A reduce replicated by a lanes map commits from the leader lane only."""
+        lanes = backend.lane_width()
+        sdfg, rows, cols = build_reduce_nest(
+            backend, op=op, **lanes_map_reduce_tables(scn, lanes)
+        )
+        out_dir = tmp_path / "lanes_map_reduce"
+        compiled = _compile(backend, sdfg, out_dir)
+        generated = "\n".join(p.read_text() for p in out_dir.rglob(backend.source_glob))
+        assert f"% {lanes}) == 0)" in generated, "leader-lane commit missing"
+
+        values = _rng_input(op, rows * cols, 25)
+        accumulator = np.full(rows, _identity(op), dtype=np.float32)
+        compiled(values, accumulator)
+        matrix = values.reshape(rows, cols)
+        expected = {"add": matrix.sum, "max": matrix.max}[op](axis=1)
+        np.testing.assert_allclose(accumulator, expected, rtol=1e-4, atol=1e-4)
+
+    def test_lanes_map_predication_pass():
+        """The pass is exposed to Python, predicates explicitly, and is idempotent."""
+        sdfg, _, _ = build_lanes_map_body(
+            backend, "sequential_reduce", 5, 2, backend.lane_width()
+        )
+        builder = StructuredSDFGBuilder(sdfg)
+        pass_ = LanesMapPredication()
+        assert pass_.name == "LanesMapPredication"
+        assert pass_.run(builder, AnalysisManager(builder))
+        assert "gpu::WaveBarrier" in sdfg.to_json()
+        assert not pass_.run(builder, AnalysisManager(builder))
+        sdfg.validate()
+
     @pytest.mark.parametrize(
         "guarded", [True, False], ids=["debug_test_1_guarded", "debug_test_2_exact"]
     )
@@ -2535,6 +2917,10 @@ def register(namespace, backend):
         test_map_nest=test_map_nest,
         test_reduce_nest=test_reduce_nest,
         test_reduce_first_multi_output=test_reduce_first_multi_output,
+        test_lanes_reduce=test_lanes_reduce,
+        test_lanes_map_side_effects=test_lanes_map_side_effects,
+        test_lanes_map_predication_pass=test_lanes_map_predication_pass,
+        test_lanes_map_reduce=test_lanes_map_reduce,
         test_tiled_matmul=test_tiled_matmul,
         test_multi_reduction_one_node=test_multi_reduction_one_node,
         test_reduce_different_vars=test_reduce_different_vars,

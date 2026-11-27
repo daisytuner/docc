@@ -33,11 +33,11 @@
 #include <sdfg/passes/dot_expansion_pass.h>
 #include <sdfg/passes/offloading/cuda_library_node_rewriter_pass.h>
 #include <sdfg/passes/offloading/device_buffer_reuse_pass.h>
+#include <sdfg/passes/offloading/lanes_map_predication.h>
 #include <sdfg/passes/offloading/reduction_shared_memory_delinearization.h>
 #include <sdfg/passes/opt_pipeline.h>
 #include <sdfg/passes/pipeline.h>
 #include <sdfg/passes/rpc/rpc_scheduling_pass.h>
-#include <sdfg/passes/scheduler/cuda_scheduler.h>
 #include <sdfg/passes/scheduler/omp_scheduler.h>
 #include <sdfg/passes/structured_control_flow/common_assignment_elimination.h>
 #include <sdfg/passes/structured_control_flow/condition_elimination.h>
@@ -49,7 +49,7 @@
 #include <sdfg/passes/targets/device_residency.h>
 #include <sdfg/reordering/reordering.h>
 #include <sdfg/scheduling/loops/loop_scheduling_pass.h>
-#include <sdfg/scheduling/scheduler_registry.h>
+#include <sdfg/scheduling/target_scheduling.h>
 #include <sdfg/serializer/json_serializer.h>
 
 #include <sdfg/helpers/helpers.h>
@@ -73,13 +73,11 @@
 #include "sdfg/passes/redundant_zero_init_elimination_pass.h"
 #include "sdfg/passes/rpc/daisytuner_rpc_context.h"
 #include "sdfg/passes/rpc/rpc_context.h"
-#include "sdfg/passes/scheduler/vectorize_scheduler.h"
 #include "sdfg/passes/schedules/expansion_pass.h"
 #include "sdfg/passes/targets/target_mapping_pass.h"
 #include "sdfg/reordering/passes/loop_fusion/loop_fusion_pass.h"
 #include "sdfg/targets/omp/schedule.h"
 #include "sdfg/util/offloading_instrumentation_plan.h"
-#include "targets/target_mapping.h"
 
 #ifdef DOCC_HAS_TARGET_ET
 #include <docc/target/et/target.h>
@@ -502,99 +500,39 @@ void PyStructuredSDFG::dump(
     }
 }
 
-void PyStructuredSDFG::normalize(const docc::target::TargetOptions& options) {
-    sdfg::reordering::normalize(*sdfg_, options.enable_fusion_in_normalize);
-}
-
 void PyStructuredSDFG::schedule(const std::string& target, const std::string& category, bool remote_tuning) {
     docc::target::TargetOptions topts = {.target = target, .category = category, .remote_tuning = remote_tuning};
     schedule(topts);
 }
-void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options, bool schedule_loops) {
-    sdfg::passes::CompileStatistics::enter_stage_if_enabled("schedule");
+void PyStructuredSDFG::schedule(const docc::target::TargetOptions& options, bool schedule_loops, bool normalize) {
     if (options.target == "none") {
         return;
     }
+    sdfg::passes::CompileStatistics::enter_stage_if_enabled("schedule");
 
     sdfg::builder::StructuredSDFGBuilder builder(*sdfg_);
     sdfg::analysis::AnalysisManager analysis_manager(*sdfg_, options_);
 
-    docc::plugins::apply_lib_node_target_mapping(docc_context_, builder, analysis_manager, options);
-
-    // CPU Opt Pipeline
-    if (options.target == "sequential" || options.target == "openmp") {
-        sdfg::passes::Pipeline dce = sdfg::passes::Pipeline::dead_code_elimination();
-        sdfg::passes::DeadDataElimination dde;
-        sdfg::passes::SymbolPropagation symbol_propagation_pass;
-        symbol_propagation_pass.run(builder, analysis_manager);
-        dde.run(builder, analysis_manager);
-        dce.run(builder, analysis_manager);
-    }
+    // Arg-capture mode pretends to schedule for the target but keeps all execution on the host.
+    sdfg::scheduling::ScheduleConfig config{
+        .normalize = normalize,
+        .schedule_loops = schedule_loops,
+        // The SDFG in the target's normal form, as tools such as the gym and cutout scripts read it.
+        .on_normal_form = [this](const sdfg::StructuredSDFG&) {
+            dump_debug("py4.norm");
+        }
+    };
 
     if (options.remote_tuning) {
-        std::shared_ptr<sdfg::passes::rpc::RpcContext> context =
-            sdfg::passes::rpc::DaisytunerRpcContext::from_docc_config();
-        sdfg::passes::scheduler::RpcOptimizationPass
-            rpc_optimization_pass(context, options, options.enable_fusion_in_normalize, schedule_loops);
-        rpc_optimization_pass.run(builder, analysis_manager);
+        config.remote_tuning = [&options, schedule_loops](bool remote_normalize) {
+            return std::make_unique<sdfg::passes::scheduler::RpcOptimizationPass>(
+                sdfg::passes::rpc::DaisytunerRpcContext::from_docc_config(), options, remote_normalize, schedule_loops
+            );
+        };
     }
 
-    // Arg-capture mode: Pretends to schedule for target
-    // but keeps all execution on single-core host
-    if (!schedule_loops) {
-        return;
-    }
+    sdfg::scheduling::schedule(docc_context_, builder, analysis_manager, options, config);
 
-    // Acquire target-specific loop schedulers only after remote tuning, since they are consumed
-    // solely by the LoopSchedulingPass below.
-    std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> schedulers;
-
-    auto* handler = docc_context_.get_target_handler(options.target);
-    if (handler) {
-        auto target_schedulers = handler->safe_get_target_loop_schedulers(options);
-        if (!target_schedulers.empty()) {
-            schedulers.insert(schedulers.end(), target_schedulers.begin(), target_schedulers.end());
-        }
-    }
-
-    auto mapped = schedulers | std::views::transform([&](auto& n) {
-                      return n.get();
-                  });
-    std::vector<sdfg::passes::scheduler::LoopScheduler*> unwrapped_schedulers(mapped.begin(), mapped.end());
-
-    sdfg::scheduling::loops::LoopSchedulingPass loop_scheduling_pass(unwrapped_schedulers, nullptr);
-    loop_scheduling_pass.run(builder, analysis_manager);
-
-    if (options.target == "cuda" || options.target == "rocm") {
-        sdfg::passes::DataTransferMinimizationPass data_transfer_minimization_pass;
-        data_transfer_minimization_pass.run(builder, analysis_manager);
-
-        sdfg::passes::DeviceBufferReusePass device_buffer_reuse_pass;
-        device_buffer_reuse_pass.run(builder, analysis_manager);
-        sdfg::passes::DeadDataElimination dde(false);
-        dde.run(builder, analysis_manager);
-        sdfg::passes::DeadCFGElimination dead_cfg_elimination;
-        dead_cfg_elimination.run(builder, analysis_manager);
-
-        sdfg::passes::ReferencePropagation reference_propagation;
-        reference_propagation.run(builder, analysis_manager);
-        sdfg::passes::DeadReferenceElimination dead_reference_elimination;
-        dead_reference_elimination.run(builder, analysis_manager);
-        reference_propagation.run(builder, analysis_manager);
-        dead_reference_elimination.run(builder, analysis_manager);
-
-        // Drop redundant zero-init nests of matmuls lowered to MMA. Run after reference propagation and
-        // transfer cleanup so the init map is the immediate sibling of the MMA nest and both name the same
-        // (aliases collapsed) output container, which is what the transformation matches. Nests whose output
-        // still round-trips through the host here only become eligible after device-residency promotion, so
-        // the pass is re-run in promote_device_residency().
-        dump_debug("pre_zero_init_elim");
-        sdfg::passes::RedundantZeroInitEliminationPass redundant_zero_init_elimination_pass;
-        redundant_zero_init_elimination_pass.run(builder, analysis_manager);
-        dde.run(builder, analysis_manager);
-
-        dead_cfg_elimination.run(builder, analysis_manager);
-    }
     sdfg::passes::CompileStatistics::exit_stage_if_enabled();
 }
 
@@ -671,6 +609,8 @@ std::string PyStructuredSDFG::compile(
     // Prepare already-scheduled graphs before instrumentation and code generation.
     sdfg::passes::ReductionSharedMemoryDelinearization reduction_buffers;
     reduction_buffers.run(builder_opt, analysis_manager);
+    sdfg::passes::LanesMapPredication lanes_predication;
+    lanes_predication.run(builder_opt, analysis_manager);
 
     // Instrumentation plan
     std::unique_ptr<sdfg::codegen::InstrumentationPlan> instrumentation_plan;
@@ -827,6 +767,8 @@ std::string PyStructuredSDFG::to_cpp() const {
 
     sdfg::passes::ReductionSharedMemoryDelinearization reduction_buffers;
     reduction_buffers.run(builder, analysis_manager);
+    sdfg::passes::LanesMapPredication lanes_predication;
+    lanes_predication.run(builder, analysis_manager);
 
     auto instrumentation_plan = sdfg::codegen::InstrumentationPlan::none(sdfg);
     auto arg_capture_plan = sdfg::codegen::ArgCapturePlan::none(sdfg);

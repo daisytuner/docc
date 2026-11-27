@@ -65,6 +65,7 @@ set(SOURCE_FILES
     src/loops/transformations/multi_level_tiling.cpp
     src/loops/transformations/trivial_loop_elimination.cpp
     src/loops/transformations/unroll_transform.cpp
+    src/loops/transformations/vectorize_transform.cpp
     src/parallelization/analysis/parallel_patterns.cpp
     src/parallelization/passes/auto_parallelization.cpp
     src/parallelization/transformations/loop_parallelization.cpp
@@ -107,10 +108,11 @@ set(SOURCE_FILES
     src/passes/offloading/device_buffer_reuse_pass.cpp
     src/passes/offloading/device_resident_arg_promotion_pass.cpp
     src/passes/offloading/gpu_control_flow_offload_pass.cpp
-    src/passes/offloading/gpu_loop_reordering_pass.cpp
     src/passes/offloading/gpu_nested_offload_pass.cpp
+    src/passes/offloading/lanes_map_predication.cpp
     src/passes/offloading/reduction_shared_memory_delinearization.cpp
     src/passes/offloading/gpu_nested_parallelization_pass.cpp
+    src/passes/offloading/offloading_cleanup_pass.cpp
     src/passes/offloading/rocm_library_node_expansion_pass.cpp
     src/passes/offloading/rocm_library_node_rewriter_pass.cpp
     src/passes/offloading/rocm_library_node_transfer_extraction_pass.cpp
@@ -119,16 +121,15 @@ set(SOURCE_FILES
     src/passes/readonly_transfer_hoisting_pass.cpp
     src/passes/redundant_load_elimination_pass.cpp
     src/passes/scalar_promotion_pass.cpp
-    src/passes/scheduler/cuda_scheduler.cpp
     src/passes/scheduler/cuda_offload_scheduler.cpp
     src/passes/scheduler/omp_scheduler.cpp
-    src/passes/scheduler/rocm_scheduler.cpp
     src/passes/scheduler/rocm_offload_scheduler.cpp
-    src/passes/scheduler/vectorize_scheduler.cpp
     src/passes/targets/device_residency.cpp
     src/passes/targets/target_mapping_pass.cpp
     src/scheduling/loops/loop_scheduling_pass.cpp
-    src/scheduling/scheduler_registry.cpp
+    src/scheduling/a_priori_loop_nest_normalization.cpp
+    src/scheduling/passthrough_scheduler.cpp
+    src/scheduling/target_scheduling.cpp
     src/targets/cuda/blas/batched_gemm.cpp
     src/targets/cuda/blas/dot.cpp
     src/targets/cuda/blas/gemm.cpp
@@ -158,6 +159,7 @@ set(SOURCE_FILES
     src/targets/gpu/gpu_mma_fill_node.cpp
     src/targets/gpu/gpu_mma_interleave.cpp
     src/targets/gpu/gpu_tile_arrival_node.cpp
+    src/targets/gpu/gpu_wave_barrier_node.cpp
     src/targets/gpu/gpu_mma_fragment.cpp
     src/targets/gpu/gpu_mma_fragment_eltwise_add_node.cpp
     src/targets/gpu/gpu_mma_fragment_load_node.cpp
@@ -194,7 +196,6 @@ set(SOURCE_FILES
     src/targets/rocm/rocm.cpp
     src/targets/rocm/stdlib/memcpy.cpp
     src/targets/rocm/stdlib/memset.cpp
-    src/targets/vectorize/codegen/vectorize_dispatcher.cpp
     src/transformations/offloading/cublas_data_transfer_extraction.cpp
     src/transformations/offloading/cuda_offload_transform.cpp
     src/transformations/offloading/cuda_parallelize_nested_map.cpp
@@ -217,7 +218,6 @@ set(SOURCE_FILES
     src/transformations/stream_k.cpp
     src/transformations/redundant_zero_init_elimination.cpp
     src/transformations/transformation_schema.cpp
-    src/transformations/vectorize_transform.cpp
 )
 add_library(sdfgopt
     ${SOURCE_FILES}

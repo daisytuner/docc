@@ -164,8 +164,10 @@ public:
     }
 
     /**
-     * @brief Lanes that jointly execute each iteration (1 = one thread per iteration;
-     *        the warp size = one wave per iteration, a subgroup-collective body).
+     * @brief Lanes per iteration group (1 = one thread per iteration). On a map, the warp
+     *        size makes each iteration one wave (a subgroup-collective body). On a reduce,
+     *        every lane takes its own iteration and each group of `lanes` threads is
+     *        combined by warp shuffle (Register partials, or Shared partials of the groups).
      */
     static symbolic::Integer lanes(const structured_control_flow::ScheduleType& schedule) {
         auto it = schedule.properties().find("lanes");

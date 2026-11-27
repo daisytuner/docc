@@ -7,7 +7,7 @@
 #include "sdfg/passes/targets/target_mapping_pass.h"
 #include "sdfg/plugins/target_mapping.h"
 #include "sdfg/plugins/targets.h"
-#include "sdfg/scheduling/scheduler_registry.h"
+#include "sdfg/scheduling/a_priori_loop_nest_normalization.h"
 
 namespace sdfg::tenstorrent {
 bool tt_emit_full_metrics = false;
@@ -44,12 +44,15 @@ docc::target::DoccTarget tenstorrent_target = {
         passes::TargetMappingPass mappingPass(mappers);
         return mappingPass.run_pass(builder, analysis_manager);
     },
-    .get_target_loop_schedulers = [](const docc::target::TargetOptions& options)
-        -> std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> {
-        std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> schedulers;
-        schedulers.push_back(std::make_shared<sdfg::passes::scheduler::TenstorrentScheduler>());
-        return schedulers;
-    }
+    .scheduling =
+        {.create_sdfg_scheduler =
+             [](const docc::target::TargetOptions&) -> std::unique_ptr<sdfg::passes::scheduler::SDFGScheduler> {
+             return std::make_unique<sdfg::scheduling::APrioriLoopNestNormalization>();
+         },
+         .create_loop_schedulers = [](const docc::target::TargetOptions& options)
+             -> std::vector<std::shared_ptr<sdfg::passes::scheduler::LoopScheduler>> {
+             return {std::make_shared<sdfg::passes::scheduler::TenstorrentScheduler>()};
+         }}
 };
 
 void register_tenstorrent_plugin(bool emit_full_metrics, bool force_close_devices) {
@@ -141,9 +144,6 @@ void register_plugin(sdfg::plugins::Context& context) {
             );
         }
     );
-
-    context.scheduler_registry.register_loop_scheduler<
-        passes::scheduler::TenstorrentScheduler>(passes::scheduler::TenstorrentScheduler::target());
 
     context.add_target(&tenstorrent_target);
 }

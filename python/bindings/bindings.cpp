@@ -24,7 +24,6 @@
 #include "sdfg/data_flow/tasklet.h"
 #include "sdfg/passes/rpc/daisytuner_rpc_context.h"
 #include "sdfg/passes/rpc/rpc_context.h"
-#include "sdfg/scheduling/scheduler_registry.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/symbolic/extreme_values.h"
 #include "sdfg/targets/cuda/plugin.h"
@@ -53,7 +52,6 @@
 #include <sdfg/targets/cuda/plugin.h>
 #include <sdfg/targets/omp/plugin.h>
 #include <sdfg/targets/rocm/plugin.h>
-#include <sdfg/targets/vectorize/plugin.h>
 #include <sdfg/tiles/analysis/reduction_buffer_analysis.h>
 #include <sdfg/tiles/plugin.h>
 
@@ -61,14 +59,12 @@
 
 #include "docc/target/docc_target.h"
 #include "docc/util/docc_paths.h"
-#include "sdfg/passes/scheduler/cuda_scheduler.h"
 
 #ifdef DOCC_HAS_TARGET_ET
 #include <docc/target/et/target.h>
 #endif
 #include <docc/target/tenstorrent/target.h>
 #include "boost/stacktrace/stacktrace.hpp"
-#include "targets/target_mapping.h"
 
 namespace py = pybind11;
 using namespace sdfg::types;
@@ -111,7 +107,6 @@ PYBIND11_MODULE(_sdfg, m) {
     sdfg::tiles::register_tiles_plugin(docc_context);
     sdfg::fp_math::register_fp_math_plugin(docc_context);
     sdfg::omp::register_omp_plugin();
-    sdfg::vectorize::register_vectorize_plugin();
     sdfg::cuda::register_cuda_plugin(docc_context);
     sdfg::rocm::register_rocm_plugin(docc_context);
     docc::target::register_builtin_targets(docc_context);
@@ -189,7 +184,7 @@ PYBIND11_MODULE(_sdfg, m) {
     register_analysis(m);
     register_replayer(m);
     register_transformations(m);
-    register_passes(m);
+    register_passes(m, docc_context);
     register_cutout(m);
     register_metrics(m);
     register_gpu_arch(m, docc_context);
@@ -301,17 +296,14 @@ PYBIND11_MODULE(_sdfg, m) {
     py::class_<docc::target::TargetOptions>(m, "TargetOptions")
         .def(py::init<>())
         .def(
-            py::init<std::string, std::string, bool, bool>(),
+            py::init<std::string, std::string, bool>(),
             py::arg("target"),
             py::arg("category"),
-            py::arg("remote_tuning") = false,
-            py::arg("already_normalized") = false
+            py::arg("remote_tuning") = false
         )
         .def_readwrite<>("target", &docc::target::TargetOptions::target)
         .def_readwrite<>("category", &docc::target::TargetOptions::category)
         .def_readwrite<>("remote_tuning", &docc::target::TargetOptions::remote_tuning)
-        .def_readwrite<>("already_normalized", &docc::target::TargetOptions::already_normalized)
-        .def_readwrite<>("enable_fusion_in_normalize", &docc::target::TargetOptions::enable_fusion_in_normalize)
         .def_readwrite<>("use_new_fusion_in_simplify", &docc::target::TargetOptions::use_new_fusion_in_simplify)
         .def_readwrite<>("fp_contract", &docc::target::TargetOptions::fp_contract)
         .def_readwrite<>("contraction_precision", &docc::target::TargetOptions::contraction_precision)
@@ -425,12 +417,6 @@ PYBIND11_MODULE(_sdfg, m) {
             py::arg("record_for_instrumentation") = false
         )
         .def(
-            "normalize",
-            &PyStructuredSDFG::normalize,
-            py::arg("options") = docc::target::TargetOptions{},
-            "Normalize the SDFG"
-        )
-        .def(
             "schedule",
             static_cast<
                 void (PyStructuredSDFG::*)(const std::string&, const std::string&, bool)>(&PyStructuredSDFG::schedule),
@@ -442,10 +428,11 @@ PYBIND11_MODULE(_sdfg, m) {
         .def(
             "schedule",
             static_cast<
-                void (PyStructuredSDFG::*)(const docc::target::TargetOptions&, bool)>(&PyStructuredSDFG::schedule),
+                void (PyStructuredSDFG::*)(const docc::target::TargetOptions&, bool, bool)>(&PyStructuredSDFG::schedule),
             py::arg("options"),
             py::arg("schedule_loops") = true,
-            "Schedule the SDFG"
+            py::arg("normalize") = true,
+            "Schedule the SDFG. With normalize=False, it is scheduled as it is instead of in the target's normal form."
         )
         .def(
             "promote_device_residency",

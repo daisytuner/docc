@@ -15,10 +15,14 @@ class GPUOffloadNestedLoop : public Transformation {
     gpu::TargetLevel target_level_;
     structured_control_flow::StructuredLoop& loop_;
     symbolic::Integer parallel_size_;
+    int64_t lanes_;
 
 public:
     GPUOffloadNestedLoop(
-        structured_control_flow::StructuredLoop& loop, gpu::TargetLevel target_level, symbolic::Integer parallel_size
+        structured_control_flow::StructuredLoop& loop,
+        gpu::TargetLevel target_level,
+        symbolic::Integer parallel_size,
+        int64_t lanes = 1
     );
 
     virtual std::string name() const override;

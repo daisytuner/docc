@@ -99,7 +99,7 @@ def test_deriche(target):
         )
     elif target == "sequential":
         verifier = SDFGVerification(
-            verification={"SEQUENTIAL": 6, "FOR": 4, "VECTORIZE": 14, "MAP": 16}
+            verification={"SEQUENTIAL": 20, "FOR": 4, "MAP": 16}
         )
     elif target == "openmp":
         verifier = SDFGVerification(

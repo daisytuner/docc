@@ -40,7 +40,7 @@ def test_atax(target):
         verifier = SDFGVerification(
             verification={
                 "MAP": 1,
-                "VECTORIZE": 1,
+                "SEQUENTIAL": 1,
                 "GEMM": 2,
             }
         )

@@ -1,4 +1,4 @@
-#include "sdfg/transformations/vectorize_transform.h"
+#include "sdfg/loops/transformations/vectorize_transform.h"
 
 #include <gtest/gtest.h>
 
@@ -46,11 +46,12 @@ TEST(VectorizeTransformTest, MapWithSequentialSchedule) {
 
     // Apply
     analysis::AnalysisManager analysis_manager(builder.subject());
-    transformations::VectorizeTransform transformation(loop1);
+    loops::transformations::VectorizeTransform transformation(loop1);
     EXPECT_TRUE(transformation.can_be_applied(builder, analysis_manager));
     transformation.apply(builder, analysis_manager);
 
-    EXPECT_EQ(loop1.schedule_type().value(), vectorize::ScheduleType_Vectorize::value());
+    EXPECT_EQ(loop1.schedule_type().value(), structured_control_flow::ScheduleType_Sequential::value());
+    EXPECT_TRUE(structured_control_flow::ScheduleType_Vectorize::is_set(loop1.schedule_type()));
 }
 
 TEST(VectorizeTransformTest, MapWithVectorizeSchedule) {
@@ -79,8 +80,9 @@ TEST(VectorizeTransformTest, MapWithVectorizeSchedule) {
     auto condition1 = symbolic::Lt(indvar1, bound1);
     auto update1 = symbolic::add(indvar1, symbolic::integer(1));
 
-    auto& loop1 =
-        builder.add_map(root, indvar1, condition1, init1, update1, vectorize::ScheduleType_Vectorize::create());
+    auto schedule = structured_control_flow::ScheduleType_Sequential::create();
+    structured_control_flow::ScheduleType_Vectorize::set(schedule);
+    auto& loop1 = builder.add_map(root, indvar1, condition1, init1, update1, schedule);
     auto& body1 = loop1.root();
 
     // Add computation
@@ -94,7 +96,7 @@ TEST(VectorizeTransformTest, MapWithVectorizeSchedule) {
 
     // Apply
     analysis::AnalysisManager analysis_manager(builder.subject());
-    transformations::VectorizeTransform transformation(loop1);
+    loops::transformations::VectorizeTransform transformation(loop1);
     ASSERT_FALSE(transformation.can_be_applied(builder, analysis_manager));
 }
 
@@ -129,7 +131,7 @@ TEST(VectorizeTransformTest, Serialization) {
 
     size_t map_id = loop.element_id();
 
-    transformations::VectorizeTransform transformation(loop);
+    loops::transformations::VectorizeTransform transformation(loop);
 
     // Test to_json
     nlohmann::json j;
@@ -173,7 +175,7 @@ TEST(VectorizeTransformTest, Deserialization) {
 
     // Test from_json
     EXPECT_NO_THROW({
-        auto deserialized = transformations::VectorizeTransform::from_json(builder, j);
+        auto deserialized = loops::transformations::VectorizeTransform::from_json(builder, j);
         EXPECT_EQ(deserialized.name(), "VectorizeTransform");
     });
 
@@ -181,7 +183,7 @@ TEST(VectorizeTransformTest, Deserialization) {
         {
             nlohmann::json invalid_j = j;
             invalid_j["subgraph"]["0"]["element_id"] = 9999; // Non-existent ID
-            transformations::VectorizeTransform::from_json(builder, invalid_j);
+            loops::transformations::VectorizeTransform::from_json(builder, invalid_j);
         },
         transformations::InvalidTransformationDescriptionException
     );

@@ -75,22 +75,6 @@ def test_scheduler_runs_without_recorder():
     assert scheduler.run(builder, analysis_manager) is True
 
 
-def test_vectorize_scheduler_runs():
-    """The vectorize scheduler is registered and runs on the nest."""
-    builder = _build_map_nest()
-    analysis_manager = AnalysisManager(builder)
-
-    recorder = Recorder()
-    scheduler = LoopSchedulingPass(["vectorize"])
-    scheduler.set_recorder(recorder)
-
-    # May or may not vectorize this exact nest; just require it runs and the
-    # recording is a well-formed transformation list.
-    scheduler.run(builder, analysis_manager)
-    history = json.loads(recorder.history)
-    assert isinstance(history, list) and len(history) == 1
-
-
 def test_unknown_target_raises():
     """An unregistered scheduling target raises rather than silently no-oping."""
     builder = _build_map_nest()

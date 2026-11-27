@@ -50,6 +50,7 @@
 #include "sdfg/data_flow/library_nodes/stdlib/memcpy.h"
 #include "sdfg/data_flow/library_nodes/stdlib/memmove.h"
 #include "sdfg/element.h"
+#include "sdfg/passes/offloading/lanes_map_predication.h"
 #include "sdfg/passes/offloading/reduction_shared_memory_delinearization.h"
 #include "sdfg/structured_control_flow/return.h"
 #include "sdfg/structured_sdfg.h"
@@ -397,6 +398,8 @@ bool CodeGenerationPass::generate_code(
         sdfg::builder::StructuredSDFGBuilder builder(*part_sdfg);
         sdfg::passes::ReductionSharedMemoryDelinearization reduction_buffers;
         reduction_buffers.run(builder, analysis_manager);
+        sdfg::passes::LanesMapPredication lanes_predication;
+        lanes_predication.run(builder, analysis_manager);
 
         // Determine instrumentation plan
         std::unique_ptr<sdfg::codegen::InstrumentationPlan> instrumentation_plan;

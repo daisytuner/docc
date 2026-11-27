@@ -63,7 +63,6 @@ static std::string dispatch_softmax(
         codegen::MapDispatcherRegistry::instance(),
         codegen::ReduceDispatcherRegistry::instance(),
         local_registry,
-        scheduling::SchedulerRegistry::instance(),
         tiles::TileTargetRegistry::instance()
     };
     cuda::register_cuda_plugin(ctx);
@@ -183,7 +182,6 @@ TEST(SoftmaxDispatcherTest, WithoutTransfers_KernelFileGenerated) {
         codegen::MapDispatcherRegistry::instance(),
         codegen::ReduceDispatcherRegistry::instance(),
         local_registry,
-        scheduling::SchedulerRegistry::instance(),
         tiles::TileTargetRegistry::instance()
     };
     cuda::register_cuda_plugin(ctx);
@@ -227,7 +225,6 @@ TEST(SoftmaxDispatcherTest, RegistrationKeys) {
         codegen::MapDispatcherRegistry::instance(),
         codegen::ReduceDispatcherRegistry::instance(),
         local_registry,
-        scheduling::SchedulerRegistry::instance(),
         tiles::TileTargetRegistry::instance()
     };
     cuda::register_cuda_plugin(ctx);

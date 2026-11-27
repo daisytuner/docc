@@ -34,11 +34,11 @@ def test_trisolv(target):
         )
     elif target == "sequential":
         verifier = SDFGVerification(
-            verification={"VECTORIZE": 1, "REDUCE": 1, "SEQUENTIAL": 1, "FOR": 1}
+            verification={"REDUCE": 1, "SEQUENTIAL": 2, "FOR": 1}
         )
     elif target == "openmp":
         verifier = SDFGVerification(
-            verification={"VECTORIZE": 1, "REDUCE": 1, "SEQUENTIAL": 1, "FOR": 1}
+            verification={"REDUCE": 1, "SEQUENTIAL": 2, "FOR": 1}
         )
     elif target == "cuda":
         verifier = SDFGVerification(

@@ -89,7 +89,7 @@ symbolic::SymbolSet get_gpu_indvars(
 bool is_gpu_schedule(const structured_control_flow::ScheduleType& schedule);
 
 // Warp/wavefront size of the target, mirroring the offload dispatchers'
-// get_warp_size() (cuda::CUDA_WARP_SIZE / rocm::ROCM_WARP_SIZE).
+// get_warp_size() (cuda::CUDA_WARP_SIZE / the device's rocm::rocm_wavefront_size()).
 template<typename GPUType>
 int64_t gpu_warp_size();
 
@@ -204,8 +204,15 @@ void get_nested_level_maps(
 
 bool nested_warp_dim(structured_control_flow::StructuredLoop& loop, analysis::AnalysisManager& analysis_manager);
 
-// Throws unless every lanes > 1 offload loop in @p node's subtree is an X_BLOCK Map with
-// lanes == the warp size of its ARCH (or @p warp_size without one) and no nested WARP loop.
+// Lane-group width a lanes > 1 schedule must use: the wave size of its ARCH, or
+// @p warp_size (the dispatching target's) without one.
+int64_t wave_lanes(const structured_control_flow::ScheduleType& schedule, int64_t warp_size);
+
+// `threadIdx.x % lanes == 0`: selects the leader lane of each lane group of an X_BLOCK with lanes.
+symbolic::Condition lane_leader_condition(int64_t lanes);
+
+// Throws unless every lanes > 1 offload loop in @p node's subtree is an X_BLOCK Map or Reduce
+// with lanes == wave_lanes() and no nested WARP loop.
 void validate_wave_maps(
     structured_control_flow::StructuredLoop& node, analysis::AnalysisManager& analysis_manager, int64_t warp_size
 );

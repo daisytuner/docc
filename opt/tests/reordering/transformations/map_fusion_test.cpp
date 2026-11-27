@@ -2939,6 +2939,146 @@ TEST(MapFusionTest, Pattern2_NonPerfectlyNestedProducer) {
     EXPECT_EQ(new_sdfg.root().size(), 1) << "Consumer loop should be removed after fusion (only producer map remains)";
 }
 
+namespace {
+
+// The fused container T is an opaque pointer, as lifted from LLVM IR: only its memlets know the element type.
+void add_opaque_pointer_containers(builder::StructuredSDFGBuilder& builder) {
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
+    for (auto name : {"N", "M"}) {
+        builder.add_container(name, sym_desc, true);
+    }
+    for (auto name : {"i", "j", "k", "l"}) {
+        builder.add_container(name, sym_desc);
+    }
+    for (auto name : {"A", "T", "C"}) {
+        builder.add_container(name, types::Pointer(), true);
+    }
+}
+
+const types::Scalar* fused_temp_type(const StructuredSDFG& sdfg) {
+    for (auto& container : sdfg.containers()) {
+        if (container.rfind("_fused_tmp", 0) == 0) {
+            return dynamic_cast<const types::Scalar*>(&sdfg.type(container));
+        }
+    }
+    return nullptr;
+}
+
+} // namespace
+
+TEST(MapFusionTest, ProducerIntoConsumer_OpaquePointer) {
+    // Map(i) { T[i] = A[i] }; Map(k) { C[k] = T[k] }, all opaque pointers to Float.
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    add_opaque_pointer_containers(builder);
+    types::Pointer float_ptr{types::Scalar(types::PrimitiveType::Float)};
+    auto schedule = structured_control_flow::ScheduleType_Sequential::create();
+    auto& root = builder.subject().root();
+
+    auto add_copy = [&](const std::string& indvar, const std::string& src, const std::string& dst) {
+        auto& map = builder.add_map(
+            root,
+            symbolic::symbol(indvar),
+            symbolic::Lt(symbolic::symbol(indvar), symbolic::symbol("N")),
+            symbolic::integer(0),
+            symbolic::add(symbolic::symbol(indvar), symbolic::integer(1)),
+            schedule
+        );
+        auto& block = builder.add_block(map.root());
+        auto& read = builder.add_access(block, src);
+        auto& write = builder.add_access(block, dst);
+        auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(block, read, tasklet, "_in", {symbolic::symbol(indvar)}, float_ptr);
+        builder.add_computational_memlet(block, tasklet, "_out", write, {symbolic::symbol(indvar)}, float_ptr);
+        return &map;
+    };
+    auto* producer = add_copy("i", "A", "T");
+    auto* consumer = add_copy("k", "T", "C");
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    reordering::transformations::MapFusion transformation(*producer, *consumer);
+    ASSERT_TRUE(transformation.can_be_applied(builder, analysis_manager));
+    transformation.apply(builder, analysis_manager);
+
+    auto* temp_type = fused_temp_type(builder.subject());
+    ASSERT_NE(temp_type, nullptr);
+    EXPECT_EQ(temp_type->primitive_type(), types::PrimitiveType::Float);
+    EXPECT_NO_THROW(builder.subject().validate());
+}
+
+TEST(MapFusionTest, ConsumerIntoProducer_OpaquePointer) {
+    // Pattern 2 with opaque pointers to Float[M]:
+    // Map(i) { A[i, 0] = 1.0; Map(j) { T[i, j] = A[i, j] } }; Map(k) { Map(l) { C[k, l] = T[k, l] } }
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    add_opaque_pointer_containers(builder);
+    types::Scalar float_desc(types::PrimitiveType::Float);
+    types::Pointer row_ptr{types::Array(float_desc, {symbolic::symbol("M")})};
+    auto schedule = structured_control_flow::ScheduleType_Sequential::create();
+    auto& root = builder.subject().root();
+
+    auto add_map = [&](structured_control_flow::Sequence& parent,
+                       const std::string& indvar,
+                       const std::string& bound) -> structured_control_flow::Map& {
+        return builder.add_map(
+            parent,
+            symbolic::symbol(indvar),
+            symbolic::Lt(symbolic::symbol(indvar), symbolic::symbol(bound)),
+            symbolic::integer(0),
+            symbolic::add(symbolic::symbol(indvar), symbolic::integer(1)),
+            schedule
+        );
+    };
+    auto add_copy = [&](structured_control_flow::Sequence& body,
+                        const std::string& src,
+                        const std::string& dst,
+                        const data_flow::Subset& subset) {
+        auto& block = builder.add_block(body);
+        auto& read = builder.add_access(block, src);
+        auto& write = builder.add_access(block, dst);
+        auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(block, read, tasklet, "_in", subset, row_ptr);
+        builder.add_computational_memlet(block, tasklet, "_out", write, subset, row_ptr);
+    };
+
+    auto& producer = add_map(root, "i", "N");
+    auto& sibling = builder.add_block(producer.root());
+    auto& one = builder.add_constant(sibling, "1.0", float_desc);
+    auto& a_write = builder.add_access(sibling, "A");
+    auto& init = builder.add_tasklet(sibling, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(sibling, one, init, "_in", {});
+    builder
+        .add_computational_memlet(sibling, init, "_out", a_write, {symbolic::symbol("i"), symbolic::integer(0)}, row_ptr);
+    auto& producer_inner = add_map(producer.root(), "j", "M");
+    add_copy(producer_inner.root(), "A", "T", {symbolic::symbol("i"), symbolic::symbol("j")});
+
+    auto& consumer = add_map(root, "k", "N");
+    auto& consumer_inner = add_map(consumer.root(), "l", "M");
+    add_copy(consumer_inner.root(), "T", "C", {symbolic::symbol("k"), symbolic::symbol("l")});
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    reordering::transformations::MapFusion transformation(producer, consumer);
+    ASSERT_TRUE(transformation.can_be_applied(builder, analysis_manager));
+    transformation.apply(builder, analysis_manager);
+
+    auto* temp_type = fused_temp_type(builder.subject());
+    ASSERT_NE(temp_type, nullptr);
+    EXPECT_EQ(temp_type->primitive_type(), types::PrimitiveType::Float);
+
+    // The writeback T[i, j] = _fused_tmp keeps the producer's typed view of T.
+    ASSERT_EQ(producer_inner.root().size(), 3);
+    auto* writeback = dyn_cast<structured_control_flow::Block*>(&producer_inner.root().at(1));
+    ASSERT_NE(writeback, nullptr);
+    bool found_writeback = false;
+    for (auto& memlet : writeback->dataflow().edges()) {
+        auto* dst = dynamic_cast<const data_flow::AccessNode*>(&memlet.dst());
+        if (dst != nullptr && dst->data() == "T") {
+            found_writeback = true;
+            EXPECT_EQ(memlet.base_type(), row_ptr);
+        }
+    }
+    EXPECT_TRUE(found_writeback);
+    EXPECT_NO_THROW(builder.subject().validate());
+}
+
 TEST(MapFusionTest, Pattern2_Reverse_NonPerfectlyNestedConsumer) {
     // Reverse Pattern 2: Producer is perfectly nested, consumer is NOT perfectly nested.
     // Producer: Map(i, 0:N) { Map(j, 0:M) { T[i,j] = A[i,j] } }

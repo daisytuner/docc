@@ -44,13 +44,9 @@ def test_seidel_2d(target):
     if target == "none":
         verifier = SDFGVerification(verification={"MAP": 2, "SEQUENTIAL": 5, "FOR": 3})
     elif target == "sequential":
-        verifier = SDFGVerification(
-            verification={"VECTORIZE": 2, "MAP": 2, "SEQUENTIAL": 3, "FOR": 3}
-        )
+        verifier = SDFGVerification(verification={"MAP": 2, "SEQUENTIAL": 5, "FOR": 3})
     elif target == "openmp":
-        verifier = SDFGVerification(
-            verification={"VECTORIZE": 2, "MAP": 2, "SEQUENTIAL": 3, "FOR": 3}
-        )
+        verifier = SDFGVerification(verification={"MAP": 2, "SEQUENTIAL": 5, "FOR": 3})
     elif target == "cuda":
         verifier = SDFGVerification(verification={"MAP": 2, "SEQUENTIAL": 5, "FOR": 3})
     elif target == "rocm":

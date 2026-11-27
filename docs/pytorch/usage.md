@@ -32,7 +32,7 @@ docc supports **inference only**. With gradients enabled, compilation fails with
 | Target       | Hardware        | Description                                                     |
 | ------------ | --------------- | --------------------------------------------------------------- |
 | `none`       | single CPU core | Default. Compiles the model without parallelization.            |
-| `sequential` | single CPU core | Optimizes and vectorizes the code.                              |
+| `sequential` | single CPU core | Optimizes the model without parallelization.                    |
 | `openmp`     | all CPU cores   | Parallelizes the model with OpenMP.                             |
 | `cuda`       | NVIDIA GPUs     | Runs the model on the GPU. Requires CuPy.                       |
 | `rocm`       | AMD GPUs        | Runs the model on the GPU. Requires CuPy.                       |

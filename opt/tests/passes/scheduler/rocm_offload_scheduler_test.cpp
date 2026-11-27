@@ -1,22 +1,24 @@
-#include "sdfg/passes/scheduler/vectorize_scheduler.h"
+#include "sdfg/passes/scheduler/rocm_offload_scheduler.h"
 
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/scheduling/loops/loop_scheduling_pass.h"
 #include "sdfg/structured_control_flow/map.h"
-#include "sdfg/targets/vectorize/schedule.h"
+#include "sdfg/targets/rocm/rocm.h"
 
 #include <gtest/gtest.h>
 
 using namespace sdfg;
 
-static passes::scheduler::VectorizeScheduler* get_vectorize_sched() {
-    static passes::scheduler::VectorizeScheduler instance;
+static passes::scheduler::ROCMOffloadScheduler* get_rocm_sched() {
+    static passes::scheduler::ROCMOffloadScheduler instance;
     return &instance;
 }
 
-// Regression test: a loop that already carries a vectorize (non-None) schedule must be left
-// untouched -- the scheduler's find() returns SKIP instead of re-vectorizing it.
-TEST(VectorizeSchedulerTest, SkipsAlreadyVectorizedMap) {
+// Regression test (remote-tuning double-offload): a lone top-level map that already carries a
+// ROCM schedule has no nested maps, so it escapes the descendant-only compatibility filter. The
+// scheduler must still leave it untouched (find() returns SKIP) instead of re-applying
+// ROCMTransform, which would nest device buffers.
+TEST(ROCMOffloadSchedulerTest, SkipsLoneAlreadyROCMScheduledMap) {
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
     auto& sdfg = builder.subject();
     auto& root = sdfg.root();
@@ -36,7 +38,7 @@ TEST(VectorizeSchedulerTest, SkipsAlreadyVectorizedMap) {
         symbolic::Lt(indvar, symbolic::symbol("N")),
         symbolic::integer(0),
         symbolic::add(indvar, symbolic::integer(1)),
-        vectorize::ScheduleType_Vectorize::create()
+        rocm::ScheduleType_ROCM::create()
     );
     auto& block = builder.add_block(map.root());
     auto& a_in = builder.add_access(block, "A");
@@ -46,9 +48,16 @@ TEST(VectorizeSchedulerTest, SkipsAlreadyVectorizedMap) {
     builder.add_computational_memlet(block, tasklet, "_out", a_out, {indvar}, desc_2);
 
     analysis::AnalysisManager analysis_manager(builder.subject());
-    scheduling::loops::LoopSchedulingPass loop_scheduling_pass({get_vectorize_sched()}, nullptr);
+    scheduling::loops::LoopSchedulingPass loop_scheduling_pass({get_rocm_sched()}, nullptr);
 
     // The only loop is already scheduled -> no scheduling changes.
     EXPECT_FALSE(loop_scheduling_pass.run(builder, analysis_manager));
-    EXPECT_EQ(map.schedule_type().value(), vectorize::ScheduleType_Vectorize::value());
+
+    // Schedule unchanged and no device buffers created (not re-offloaded).
+    EXPECT_EQ(map.schedule_type().value(), rocm::ScheduleType_ROCM::value());
+    for (auto& container : builder.subject().containers()) {
+        std::string name = container;
+        EXPECT_EQ(name.find(rocm::ROCM_DEVICE_PREFIX), std::string::npos)
+            << "Unexpected device buffer " << name << " (map was re-offloaded)";
+    }
 }

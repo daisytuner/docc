@@ -54,9 +54,9 @@ def test_nussinov(target):
     elif target == "sequential":
         verifier = SDFGVerification(
             verification={
-                "VECTORIZE": 1,
                 "MAP": 2,
-                "SEQUENTIAL": 4,
+                "SEQUENTIAL": 5,
+                "FOR": 3,
             }
         )
     elif target == "openmp":

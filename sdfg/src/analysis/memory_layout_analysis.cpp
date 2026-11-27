@@ -739,10 +739,23 @@ void MemoryLayoutAnalysis::merge_scope_layouts(
         }
 
         std::vector<const MemoryTile*> inner_tiles;
+        std::unordered_set<const data_flow::Memlet*> covered;
         for (const auto* child : direct_child_scopes) {
             auto it = tiles_.find({child, container});
             if (it != tiles_.end()) {
                 inner_tiles.push_back(&it->second);
+                auto child_memlets = scope_memlets_.find(child);
+                if (child_memlets != scope_memlets_.end()) {
+                    covered.insert(child_memlets->second.begin(), child_memlets->second.end());
+                }
+            }
+        }
+        // Accesses no child tile covers: those in blocks directly in this scope, and those of child scopes
+        // without a tile. They are bounded here as they are.
+        std::vector<const data_flow::Memlet*> uncovered;
+        for (const auto* memlet : memlets) {
+            if (!covered.contains(memlet)) {
+                uncovered.push_back(memlet);
             }
         }
 
@@ -753,12 +766,54 @@ void MemoryLayoutAnalysis::merge_scope_layouts(
         // propagated child tile) one-sidedly; bound_accesses applies both rules.
         std::vector<const MemoryTile*> tile_accesses;
 
+        // Adds the raw accesses of @p accesses_to_add to tile_accesses; false if one does not address the container
+        // like reference_layout.
+        auto add_accesses = [&](const std::vector<const data_flow::Memlet*>& accesses_to_add) {
+            auto& reference_shape = reference_layout.shape();
+            for (const auto* memlet_ptr : accesses_to_add) {
+                auto& acc = accesses_.at(memlet_ptr);
+                if (acc.min_subset.size() != ndims) {
+                    return false;
+                }
+                if (acc.pre_ranged) {
+                    // Pre-ranged tiles may span different shapes per access; what
+                    // must agree is the addressing stride, not the extent.
+                    auto& strides = acc.layout.strides();
+                    if (strides.size() != ndims) {
+                        return false;
+                    }
+                    for (size_t d = 0; d < ndims; ++d) {
+                        if (!symbolic::eq(strides[d], reference_layout.strides()[d])) {
+                            return false;
+                        }
+                    }
+                } else {
+                    // Point accesses must share the reference shape on all inner
+                    // dimensions (the first may be the unbounded sentinel).
+                    auto& shape = acc.layout.shape();
+                    if (shape.size() != ndims) {
+                        return false;
+                    }
+                    for (size_t d = 1; d < ndims; ++d) {
+                        if (!symbolic::eq(shape[d], reference_shape[d])) {
+                            return false;
+                        }
+                    }
+                }
+                tile_accesses.push_back(&acc);
+            }
+            return true;
+        };
+
         if (!inner_tiles.empty()) {
             // Inner tiles have already resolved inner loop variables to their bounds;
             // each is a resolved range (pre_ranged) bounded one-sidedly here.
             ndims = inner_tiles[0]->min_subset.size();
             reference_layout = inner_tiles[0]->layout;
             tile_accesses = inner_tiles;
+            if (!add_accesses(uncovered)) {
+                continue;
+            }
 
             // Propagate tile groups from child scopes upward using the same
             // base-partitioning logic: group inner groups by their min_subset
@@ -775,7 +830,8 @@ void MemoryLayoutAnalysis::merge_scope_layouts(
                 }
             }
 
-            if (!inner_groups.empty()) {
+            // The child groups miss the uncovered accesses, so groups are only propagated without them.
+            if (!inner_groups.empty() && uncovered.empty()) {
                 // Group inner groups by their base at this level
                 struct OuterGroupEntry {
                     data_flow::Subset base;
@@ -861,56 +917,9 @@ void MemoryLayoutAnalysis::merge_scope_layouts(
         } else {
             // Use raw access indices (no inner tiles available)
             auto& first_access = accesses_.at(memlets[0]);
-            auto& reference_shape = first_access.layout.shape();
-            ndims = reference_shape.size();
+            ndims = first_access.layout.shape().size();
             reference_layout = first_access.layout;
-
-            bool consistent = true;
-            for (const auto* memlet_ptr : memlets) {
-                auto& acc = accesses_.at(memlet_ptr);
-
-                if (acc.min_subset.size() != ndims) {
-                    consistent = false;
-                    break;
-                }
-
-                if (acc.pre_ranged) {
-                    // Pre-ranged tiles may span different shapes per access; what
-                    // must agree is the addressing stride, not the extent.
-                    auto& strides = acc.layout.strides();
-                    if (strides.size() != ndims) {
-                        consistent = false;
-                        break;
-                    }
-                    for (size_t d = 0; d < ndims; ++d) {
-                        if (!symbolic::eq(strides[d], reference_layout.strides()[d])) {
-                            consistent = false;
-                            break;
-                        }
-                    }
-                } else {
-                    // Point accesses must share the reference shape on all inner
-                    // dimensions (the first may be the unbounded sentinel).
-                    auto& shape = acc.layout.shape();
-                    if (shape.size() != ndims) {
-                        consistent = false;
-                        break;
-                    }
-                    for (size_t d = 1; d < ndims; ++d) {
-                        if (!symbolic::eq(shape[d], reference_shape[d])) {
-                            consistent = false;
-                            break;
-                        }
-                    }
-                }
-                if (!consistent) {
-                    break;
-                }
-
-                tile_accesses.push_back(&acc);
-            }
-
-            if (!consistent) {
+            if (!add_accesses(memlets)) {
                 continue;
             }
 

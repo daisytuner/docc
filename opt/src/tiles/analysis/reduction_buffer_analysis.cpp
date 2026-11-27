@@ -305,8 +305,9 @@ void allocation_cost(
     if (strategy == gpu::ReduceStrategy::Global && level == gpu::TargetLevel::WARP) {
         throw InvalidSDFGException("Global reduction strategy is not supported at WARP scope");
     }
-    if (strategy == gpu::ReduceStrategy::Register && level != gpu::TargetLevel::WARP) {
-        throw InvalidSDFGException("Register reduction strategy requires WARP scope");
+    if (strategy == gpu::ReduceStrategy::Register && level != gpu::TargetLevel::WARP &&
+        !(level == gpu::TargetLevel::X_BLOCK && gpu::ScheduleType_GPU_Offload::lanes(schedule)->as_int() > 1)) {
+        throw InvalidSDFGException("Register reduction strategy requires WARP scope or an X_BLOCK with lanes");
     }
     if (strategy != gpu::ReduceStrategy::Shared) {
         return;
@@ -324,7 +325,14 @@ void allocation_cost(
         if (!gpu::is_block_level(gpu::ScheduleType_GPU_Offload::target_level(enclosing_schedule))) {
             continue;
         }
-        if (gpu::ScheduleType_GPU_Offload::partial_storage(enclosing_schedule) != gpu::ReduceStrategy::Shared) {
+        const auto enclosing_strategy = gpu::ScheduleType_GPU_Offload::partial_storage(enclosing_schedule);
+        if (enclosing_strategy == gpu::ReduceStrategy::Register) {
+            throw InvalidSDFGException(
+                "a Register (lanes) block reduction keeps its partials in registers and cannot fold a nested block "
+                "reduction of the same accumulator; use Shared partial storage"
+            );
+        }
+        if (enclosing_strategy != gpu::ReduceStrategy::Shared) {
             throw InvalidSDFGException("Shared reduction cannot reuse a Global block owner's partial buffer");
         }
         if (projected_ancestors(enclosing, loops, interchange).size() <
@@ -360,7 +368,8 @@ void allocation_cost(
         if (!gpu::is_block_level(axis)) {
             return;
         }
-        auto count = gpu::ScheduleType_GPU_Offload::parallel_size(loop_schedule)->as_int();
+        // Hardware threads along the axis: an X_BLOCK with lanes occupies parallel_size * lanes.
+        auto count = gpu::ScheduleType_GPU_Offload::threads(loop_schedule)->as_int();
         if (count <= 0 || (dimensions.contains(axis) && dimensions.at(axis) != count)) {
             throw InvalidSDFGException("inconsistent block dimensions for reduction buffer");
         }

@@ -20,6 +20,9 @@ public:
     }
 
 
+    /// Writes @p sdfg to its "sdfg_file", suffixed by @p stage if not empty.
+    static void dump(const sdfg::StructuredSDFG& sdfg, const std::string& stage = "", bool dump_visualization = false);
+
     static bool available(analysis::AnalysisManager& AM) {
         return true;
     }

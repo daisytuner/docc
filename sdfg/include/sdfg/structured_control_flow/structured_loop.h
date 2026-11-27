@@ -19,7 +19,12 @@ namespace structured_control_flow {
  * @brief Categories of schedule types for Map nodes
  * Defines the high-level classification of scheduling strategies.
  */
-enum class ScheduleTypeCategory { Offloader, Parallelizer, Vectorizer, None };
+enum class ScheduleTypeCategory {
+    Offloader = 0,
+    Parallelizer = 1,
+    // 2 was the removed Vectorizer category; values are serialized, so keep them stable.
+    None = 3
+};
 
 /**
  * @brief Represents a schedule type for Map nodes
@@ -126,6 +131,32 @@ public:
     static bool is_set(const ScheduleType& schedule) {
         auto it = schedule.properties().find("unroll");
         return it != schedule.properties().end() && it->second == "full";
+    }
+};
+
+/**
+ * @brief Vectorization annotation carried as a generic property on any ScheduleType.
+ *
+ * Like unrolling, vectorization is orthogonal to the execution strategy, so it is stored
+ * as a `"vectorize"` property rather than a distinct schedule kind. When set, the loop
+ * codegen emits `#pragma clang loop vectorize(enable) interleave(enable)`.
+ */
+class ScheduleType_Vectorize {
+public:
+    static constexpr const char* KEY = "vectorize";
+
+    /// Schedule value of the removed VECTORIZE schedule kind, still found in legacy serialized SDFGs.
+    static constexpr const char* LEGACY_VALUE = "VECTORIZE";
+
+    /// Mark (or clear) the schedule for vectorization.
+    static void set(ScheduleType& schedule, bool enable = true) {
+        schedule.set_property(KEY, enable ? "enable" : "disable");
+    }
+
+    /// True if the schedule is marked for vectorization.
+    static bool is_set(const ScheduleType& schedule) {
+        auto it = schedule.properties().find(KEY);
+        return it != schedule.properties().end() && it->second == "enable";
     }
 };
 
