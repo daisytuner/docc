@@ -469,10 +469,6 @@ void register_cuda_plugin(plugins::Context& context) {
             );
         }
     );
-
-    context.get_scheduler_registry()
-        .register_loop_scheduler<
-            passes::scheduler::CUDAOffloadScheduler>(passes::scheduler::CUDAOffloadScheduler::target());
 }
 
 } // namespace sdfg::cuda

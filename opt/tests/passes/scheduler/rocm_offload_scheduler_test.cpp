@@ -1,4 +1,4 @@
-#include "sdfg/passes/scheduler/rocm_scheduler.h"
+#include "sdfg/passes/scheduler/rocm_offload_scheduler.h"
 
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/scheduling/loops/loop_scheduling_pass.h"
@@ -9,8 +9,8 @@
 
 using namespace sdfg;
 
-static passes::scheduler::ROCMScheduler* get_rocm_sched() {
-    static passes::scheduler::ROCMScheduler instance;
+static passes::scheduler::ROCMOffloadScheduler* get_rocm_sched() {
+    static passes::scheduler::ROCMOffloadScheduler instance;
     return &instance;
 }
 
@@ -18,7 +18,7 @@ static passes::scheduler::ROCMScheduler* get_rocm_sched() {
 // ROCM schedule has no nested maps, so it escapes the descendant-only compatibility filter. The
 // scheduler must still leave it untouched (find() returns SKIP) instead of re-applying
 // ROCMTransform, which would nest device buffers.
-TEST(ROCMSchedulerTest, SkipsLoneAlreadyROCMScheduledMap) {
+TEST(ROCMOffloadSchedulerTest, SkipsLoneAlreadyROCMScheduledMap) {
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
     auto& sdfg = builder.subject();
     auto& root = sdfg.root();

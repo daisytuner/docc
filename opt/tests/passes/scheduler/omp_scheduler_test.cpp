@@ -1,7 +1,6 @@
 #include "sdfg/passes/scheduler/omp_scheduler.h"
 
 #include "sdfg/scheduling/loops/loop_scheduling_pass.h"
-#include "sdfg/scheduling/scheduler_registry.h"
 #include "sdfg/targets/omp/schedule.h"
 #include "sdfg/transformations/recorder.h"
 

@@ -8,7 +8,6 @@
 #include "sdfg/plugins/target_mapping.h"
 #include "sdfg/plugins/targets.h"
 #include "sdfg/scheduling/a_priori_loop_nest_normalization.h"
-#include "sdfg/scheduling/scheduler_registry.h"
 
 namespace sdfg::tenstorrent {
 bool tt_emit_full_metrics = false;
@@ -145,9 +144,6 @@ void register_plugin(sdfg::plugins::Context& context) {
             );
         }
     );
-
-    context.scheduler_registry.register_loop_scheduler<
-        passes::scheduler::TenstorrentScheduler>(passes::scheduler::TenstorrentScheduler::target());
 
     context.add_target(&tenstorrent_target);
 }

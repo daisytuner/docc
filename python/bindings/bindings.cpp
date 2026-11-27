@@ -24,7 +24,6 @@
 #include "sdfg/data_flow/tasklet.h"
 #include "sdfg/passes/rpc/daisytuner_rpc_context.h"
 #include "sdfg/passes/rpc/rpc_context.h"
-#include "sdfg/scheduling/scheduler_registry.h"
 #include "sdfg/structured_control_flow/block.h"
 #include "sdfg/symbolic/extreme_values.h"
 #include "sdfg/targets/cuda/plugin.h"
@@ -60,7 +59,6 @@
 
 #include "docc/target/docc_target.h"
 #include "docc/util/docc_paths.h"
-#include "sdfg/passes/scheduler/cuda_scheduler.h"
 
 #ifdef DOCC_HAS_TARGET_ET
 #include <docc/target/et/target.h>

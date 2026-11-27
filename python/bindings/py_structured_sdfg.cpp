@@ -38,7 +38,6 @@
 #include <sdfg/passes/opt_pipeline.h>
 #include <sdfg/passes/pipeline.h>
 #include <sdfg/passes/rpc/rpc_scheduling_pass.h>
-#include <sdfg/passes/scheduler/cuda_scheduler.h>
 #include <sdfg/passes/scheduler/omp_scheduler.h>
 #include <sdfg/passes/structured_control_flow/common_assignment_elimination.h>
 #include <sdfg/passes/structured_control_flow/condition_elimination.h>
@@ -50,7 +49,6 @@
 #include <sdfg/passes/targets/device_residency.h>
 #include <sdfg/reordering/reordering.h>
 #include <sdfg/scheduling/loops/loop_scheduling_pass.h>
-#include <sdfg/scheduling/scheduler_registry.h>
 #include <sdfg/scheduling/target_scheduling.h>
 #include <sdfg/serializer/json_serializer.h>
 
