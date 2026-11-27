@@ -66,9 +66,10 @@ bool MapCollapse::check_perfect_nest() {
         current = next;
     }
 
-    // Criterion: All maps must be contiguous (stride 1)
+    // Criterion: All maps must be contiguous (stride 1), or step by a positive constant over a known number of
+    // iterations, such as the tile loops of a tiled nest
     for (auto* map : maps) {
-        if (!map->is_contiguous()) {
+        if (!map->is_contiguous() && (!map->is_monotonic() || map->num_iterations().is_null())) {
             return false;
         }
     }
@@ -303,7 +304,7 @@ void MapCollapse::apply_perfect(builder::StructuredSDFGBuilder& builder, analysi
     std::vector<symbolic::Expression> bounds;
     for (auto* map : maps) {
         indvars.push_back(map->indvar());
-        bounds.push_back(map->canonical_bound());
+        bounds.push_back(map->is_contiguous() ? map->canonical_bound() : map->num_iterations());
     }
 
     // Step 2: Compute total iteration count = product of all bounds
@@ -369,6 +370,11 @@ void MapCollapse::apply_perfect(builder::StructuredSDFGBuilder& builder, analysi
         } else {
             // Middle: indvar_k = (civ / suffix) % B_k
             value = symbolic::mod(symbolic::div(civ, suffix), bounds[k]);
+        }
+
+        // A strided map's k-th iteration counts from its init in steps of its stride.
+        if (!maps[k]->is_contiguous()) {
+            value = symbolic::add(maps[k]->init(), symbolic::mul(maps[k]->stride(), value));
         }
 
         recovery_assignments.assignments()[indvars[k]] = value;

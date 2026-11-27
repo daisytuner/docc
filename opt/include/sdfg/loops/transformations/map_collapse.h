@@ -15,7 +15,9 @@ namespace transformations {
  *
  * Two modes are supported:
  *  - Perfect nesting: `count` perfectly-nested maps are flattened into one map
- *    using a product iteration space and modulo/division index recovery.
+ *    using a product iteration space and modulo/division index recovery. The
+ *    maps may step by positive constants, as the tile loops of a tiled nest do:
+ *    each then counts its iterations, from its init in steps of its stride.
  *  - Imperfect nesting (CUDA-kernel style, `count == 2`): the outer map's body
  *    may contain several sibling maps and other "skipped" control-flow elements.
  *    The flattened inner extent is the maximum of all sibling-map bounds; each
