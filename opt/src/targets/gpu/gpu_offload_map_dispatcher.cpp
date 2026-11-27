@@ -74,40 +74,18 @@ void GPUOffloadMapDispatcher::dispatch_kernel_body(
     TargetLevel target_level = gpu::ScheduleType_GPU_Offload::target_level(node_.schedule_type());
     std::string coverage_loop_var = "__daisy_gpu_coverage_loop_" + gpu::to_string(target_level);
     std::string size = kernel_language_extension.expression(node_.num_iterations());
-    auto warp_size = strategy_->get_warp_size();
-    if (target_level == TargetLevel::WARP) {
-        // Thread helpers (num_warps/warp_id/lane) are bounded by the hardware
-        // block-size cap (<=1024), so uint32 always suffices.
-        const std::string type_thread = kernel_language_extension.primitive_type(types::PrimitiveType::UInt32);
-        std::string warp_dim = kernel_language_extension.expression(get_target_level_dim(target_level, warp_size));
-        kernel_source_stream << type_thread << " num_warps = ("
-                             << kernel_language_extension.expression(symbolic::blockDim_x()) << " + " << warp_dim
-                             << " - 1) / " << warp_dim << ";" << std::endl;
-        kernel_source_stream
-            << type_thread << " warp_id = " << kernel_language_extension.expression(symbolic::threadIdx_x()) << " / "
-            << kernel_language_extension.expression(get_target_level_dim(target_level, warp_size)) << ";" << std::endl;
-        kernel_source_stream << type_thread
-                             << " lane = " << kernel_language_extension.expression(symbolic::threadIdx_x()) << " & ("
-                             << kernel_language_extension.expression(get_target_level_dim(target_level, warp_size))
-                             << " - 1);" << std::endl;
-    }
 
     // The indvar keeps its declared (container) width.
     const auto& indvar_dtype = sdfg_.type(indvar->get_name());
     const std::string type_index = kernel_language_extension.primitive_type(indvar_dtype.primitive_type());
 
-    std::string coverage_dim = kernel_language_extension.expression(get_target_level_dim(target_level, warp_size));
+    std::string coverage_dim = kernel_language_extension.expression(get_target_level_dim(target_level));
     // A wave-granular map (lanes > 1) indexes groups of `lanes` consecutive threads.
     const auto lanes = gpu::ScheduleType_GPU_Offload::lanes(node_.schedule_type())->as_int();
     auto per_lanes = [&](const std::string& expr) {
         return lanes == 1 ? expr : "(" + expr + " / " + std::to_string(lanes) + ")";
     };
     coverage_dim = per_lanes(coverage_dim);
-    // For the WARP level each thread iterates sequentially over the warp-level
-    // iteration space (the cross-lane reduction is performed by the reduce
-    // dispatcher via __shfl_xor_sync over the enclosing X_BLOCK lanes), so the
-    // coverage loop must run once per iteration rather than once per warp_size.
-    std::string coverage_count_dim = (target_level == TargetLevel::WARP) ? std::string("1") : coverage_dim;
 
     // Resolve the map trip and parallel size to constants (via assumptions for the
     // symbolic min(N, base+block) tile trips) so the coverage-loop bound and the
@@ -115,7 +93,7 @@ void GPUOffloadMapDispatcher::dispatch_kernel_body(
     // makes every worker iteration recompute a min/max/imod chain, which dominates
     // a multi-tile persistent (Stream-K) walk; a constant bound lets it fold away.
     long long resolved_trip = -1;
-    if (target_level != TargetLevel::WARP) {
+    {
         auto trip = node_.num_iterations();
         if (!trip.is_null() && SymEngine::is_a<SymEngine::Integer>(*trip)) {
             resolved_trip = SymEngine::rcp_static_cast<const SymEngine::Integer>(trip)->as_int();
@@ -158,8 +136,8 @@ void GPUOffloadMapDispatcher::dispatch_kernel_body(
         );
     } else {
         type_coverage = type_index;
-        coverage_bound = "max((" + type_coverage + ")1, (" + type_coverage + ")((" + size + " + " + coverage_count_dim +
-                         " - 1) / " + coverage_count_dim + "))";
+        coverage_bound = "max((" + type_coverage + ")1, (" + type_coverage + ")((" + size + " + " + coverage_dim +
+                         " - 1) / " + coverage_dim + "))";
     }
     if (coverage_bound == "1") {
         kernel_source_stream << "{" << std::endl
@@ -170,39 +148,16 @@ void GPUOffloadMapDispatcher::dispatch_kernel_body(
     }
     kernel_source_stream.setIndent(kernel_source_stream.indent() + 4);
 
-    std::string indvar_name = indvar->get_name();
-    if (target_level == TargetLevel::WARP) {
-        auto x_block_parent = find_x_block_owning_warp_level(node_, analysis_manager_);
-        if (!x_block_parent) {
-            throw InvalidSDFGException("WARP level map must be nested within an X_BLOCK level map");
-        }
-
-        // Sequential per-thread iteration over the warp-level space.
-        kernel_source_stream << type_index << " " << indvar_name << " = "
-                             << kernel_language_extension.expression(node_.init()) << " + " << coverage_loop_var
-                             << " * " << kernel_language_extension.expression(node_.stride()) << ";" << std::endl;
-    } else {
-        // 0-based parallel index across this dimension: `coverage` sweeps of `dim`
-        // units plus this thread/block's index. The map's induction variable is
-        // then init + stride * parallel_index, so the stride applies to BOTH the
-        // coverage and the index terms (tiled offload maps have stride != 1).
-        std::string dim_expr =
-            per_lanes(kernel_language_extension.expression(get_target_level_dim(target_level, warp_size)));
-        std::string idx_expr = per_lanes(kernel_language_extension.expression(get_target_level_idx(target_level)));
-        std::string parallel_index = coverage_loop_var + " * " + dim_expr + " + " + idx_expr;
-
-        std::string offset;
-        if (target_level == TargetLevel::X_BLOCK && nested_warp_dim(node_, analysis_manager_)) {
-            // Warp handles the sub-stride; the block index is used directly.
-            offset = "(" + parallel_index + ")";
-        } else {
-            offset = kernel_language_extension.expression(node_.stride()) + " * (" + parallel_index + ")";
-        }
-
-        kernel_source_stream << type_index << " " << indvar_name << " = "
-                             << kernel_language_extension.expression(node_.init()) << " + " << offset << ";"
-                             << std::endl;
-    }
+    // 0-based parallel index across this dimension: `coverage` sweeps of `dim` units
+    // plus this thread/block's index. The map's induction variable is then
+    // init + stride * parallel_index, so the stride applies to BOTH the coverage and
+    // the index terms (tiled offload maps have stride != 1).
+    std::string idx_expr = per_lanes(kernel_language_extension.expression(get_target_level_idx(target_level)));
+    std::string parallel_index = coverage_loop_var + " * " + coverage_dim + " + " + idx_expr;
+    kernel_source_stream << type_index << " " << indvar->get_name() << " = "
+                         << kernel_language_extension.expression(node_.init()) << " + "
+                         << kernel_language_extension.expression(node_.stride()) << " * (" << parallel_index << ");"
+                         << std::endl;
 
 
     // Boundary Conditions
@@ -212,10 +167,8 @@ void GPUOffloadMapDispatcher::dispatch_kernel_body(
     // `trip % parallel_size == 0` every generated index is in range, so the loop
     // condition holds for all threads and the per-thread guard is redundant --
     // dropping it lets the body's cooperative loads/stores vectorize instead of
-    // sitting under a predicate. WARP level is excluded (its sequential coverage
-    // is handled separately). Sound: only fires on compile-time-constant trips.
-    bool guard_redundant =
-        (target_level != TargetLevel::WARP && resolved_trip >= 0 && psize_int > 0 && resolved_trip % psize_int == 0);
+    // sitting under a predicate. Sound: only fires on compile-time-constant trips.
+    bool guard_redundant = resolved_trip >= 0 && psize_int > 0 && resolved_trip % psize_int == 0;
     bool emit_guard = !gpu::ScheduleType_GPU_Offload::nested_sync(node_.schedule_type()) && !guard_redundant;
     if (emit_guard) {
         kernel_source_stream << "if (" << kernel_language_extension.expression(node_.condition()) << ") {" << std::endl;

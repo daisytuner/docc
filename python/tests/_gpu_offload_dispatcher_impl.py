@@ -67,8 +67,8 @@ ELEMENT_BYTES = {PrimitiveType.Float: 4, PrimitiveType.BFloat: 2}
 class GpuBackend:
     """Everything that differs between the CUDA and ROCm offload backends.
 
-    ``warp_size``      -- warp (CUDA, 32) / wavefront (ROCm, 64) width; drives
-                          the warp scenarios and the nesting legality check.
+    ``warp_size``      -- warp (CUDA, 32) / wavefront (ROCm, 64) width that sizes
+                          full-wave blocks and bounds lane groups in scenarios.
     ``target``         -- compile target string passed to ``sdfg._compile``.
     ``source_glob``    -- glob matching the generated device sources, asserted
                           to contain the offload coverage loop.
@@ -167,15 +167,21 @@ def _add_body_op(builder, block, op):
     return builder.add_cmath(block, _CMATH[op], PrimitiveType.Float)
 
 
-# All seven offload target levels, addressable by short name for scenario tables.
+# An X_BLOCK whose parallel_size counts lane groups as wide as the device's wave: a map
+# shares each iteration across a group's lanes, a reduce gives every lane its own
+# iterations and combines each group by shuffle (Register partials). See _schedule.
+LANES_X_BLOCK = "lanes_x_block"
+
+# Offload target levels, addressable by short name for scenario tables ("xl" is
+# LANES_X_BLOCK).
 LEVELS = {
+    "xl": LANES_X_BLOCK,
     "xg": TargetLevel.X_GRID,
     "yg": TargetLevel.Y_GRID,
     "zg": TargetLevel.Z_GRID,
     "xb": TargetLevel.X_BLOCK,
     "yb": TargetLevel.Y_BLOCK,
     "zb": TargetLevel.Z_BLOCK,
-    "w": TargetLevel.WARP,
 }
 
 
@@ -204,24 +210,35 @@ _GRID_OF = {
 _BLOCK_LEVELS = set(_GRID_OF)
 
 
-def _validate_nest(specs, warp_size):
+def _schedule(backend, level, parallel_size, *, reduction=False, **options):
+    """Schedule of a scenario level: sequential for ``None``; LANES_X_BLOCK is an
+    X_BLOCK with the device's lane width (Register partials on a reduce unless the
+    scenario chooses a partial storage)."""
+    if level is None:
+        return ScheduleType.sequential()
+    if level == LANES_X_BLOCK:
+        if options.get("lanes") is None:
+            options["lanes"] = backend.lane_width()
+        if reduction and options.get("partial_storage") is None:
+            options["partial_storage"] = ReduceStrategy.Register
+        level = TargetLevel.X_BLOCK
+    return backend.schedule(level, parallel_size, **options)
+
+
+def _validate_nest(specs):
     """Assert an outer->inner level nest obeys the GPU nesting rules.
 
-    ``specs`` is a list of ``(TargetLevel, parallel_size)`` pairs, outer to inner.
-
-    * Each block dimension must be nested inside its corresponding grid
-      dimension (X_BLOCK<-X_GRID, Y_BLOCK<-Y_GRID, Z_BLOCK<-Z_GRID). Y/Z block
-      dimensions may instead sit under an X_GRID alone (one grid row per block).
-    * Nothing may be nested inside a WARP (it must be innermost).
-    * A WARP must be nested inside an X_BLOCK.
-    * The product of all ancestor block dimensions of a WARP must be at least
-      one full warp (>= ``warp_size``), since the warp's lanes are drawn from
-      the enclosing block's threads.
+    ``specs`` is a list of ``(TargetLevel, parallel_size)`` pairs, outer to inner;
+    sequential (``None``) levels are skipped and a lanes X_BLOCK counts as X_BLOCK.
+    Each block dimension must be nested inside its corresponding grid dimension
+    (X_BLOCK<-X_GRID, Y_BLOCK<-Y_GRID, Z_BLOCK<-Z_GRID). Y/Z block dimensions may
+    instead sit under an X_GRID alone (one grid row per block).
     """
-    levels = [lvl for (lvl, _ps) in specs]
-    for pos, lvl in enumerate(levels):
-        if lvl == TargetLevel.WARP and pos != len(levels) - 1:
-            raise AssertionError("nothing may be nested within WARP")
+    levels = [
+        TargetLevel.X_BLOCK if lvl == LANES_X_BLOCK else lvl
+        for (lvl, _ps) in specs
+        if lvl is not None
+    ]
     seen = []
     for lvl in levels:
         if (
@@ -231,16 +248,6 @@ def _validate_nest(specs, warp_size):
         ):
             raise AssertionError(f"{lvl} must be nested within {_GRID_OF[lvl]}")
         seen.append(lvl)
-    if TargetLevel.WARP in levels:
-        w = levels.index(TargetLevel.WARP)
-        if TargetLevel.X_BLOCK not in levels[:w]:
-            raise AssertionError("WARP must be nested within an X_BLOCK")
-        block_product = math.prod(ps for (lvl, ps) in specs[:w] if lvl in _BLOCK_LEVELS)
-        if block_product < warp_size:
-            raise AssertionError(
-                f"WARP requires ancestor block-dim product >= {warp_size}, "
-                f"got {block_product}"
-            )
 
 
 # ---------------------------------------------------------------------------
@@ -316,7 +323,7 @@ def build_offloaded_elementwise(backend, n, op, target_level, parallel_size):
         )
 
     builder.begin_map(
-        "i", "0", str(n), "1", backend.schedule(target_level, parallel_size)
+        "i", "0", str(n), "1", _schedule(backend, target_level, parallel_size)
     )
     blk = builder.add_block()
     a = builder.add_access(blk, "__daisy_dev_A")
@@ -427,9 +434,11 @@ def build_offloaded_reduction(
         str(n),
         "1",
         [(op, "__daisy_dev_acc")],
-        backend.schedule(
+        _schedule(
+            backend,
             target_level,
             parallel_size,
+            reduction=True,
             partial_storage=partial_storage,
             partial_container=partial_container,
         ),
@@ -547,7 +556,7 @@ def test_offload_reduce(op, n, parallel_size, tmp_path):
 
 
 # ===========================================================================
-# Multi-level scenarios: arbitrary depth and combinations of the seven levels.
+# Multi-level scenarios: arbitrary depth and combinations of the six levels.
 #
 # These builders are written purely from the intended dataflow semantics; they
 # do NOT mirror the dispatcher's code generation.  Each scenario is a semantic
@@ -581,7 +590,7 @@ def _declare_common(
 # ---------------------------------------------------------------------------
 def build_map_nest(backend, specs, op):
     """``specs`` = list of (TargetLevel, count, parallel_size) from outer to inner."""
-    _validate_nest([(lvl, ps) for (lvl, _c, ps) in specs], backend.warp_size)
+    _validate_nest([(lvl, ps) for (lvl, _c, ps) in specs])
     counts = [c for (_, c, _) in specs]
     n = math.prod(counts)
     names = [f"i{k}" for k in range(len(specs))]
@@ -621,7 +630,7 @@ def build_map_nest(backend, specs, op):
         )
 
     for name, (level, count, psize) in zip(names, specs):
-        builder.begin_map(name, "0", str(count), "1", backend.schedule(level, psize))
+        builder.begin_map(name, "0", str(count), "1", _schedule(backend, level, psize))
 
     blk = builder.add_block()
     a = builder.add_access(blk, "__daisy_dev_A")
@@ -697,8 +706,7 @@ def build_reduce_nest(
             (specs[name][0], specs[name][2])
             for name in order
             if specs[name][0] is not None
-        ],
-        backend.warp_size,
+        ]
     )
     map_counts = [c for (_, c, _) in map_specs]
     red_counts = [c for (_, c, _) in reduce_specs]
@@ -764,10 +772,8 @@ def build_reduce_nest(
 
     for name in order:
         level, count, psize = specs[name]
-        schedule = (
-            ScheduleType.sequential()
-            if level is None
-            else backend.schedule(level, psize, **options.get(name, {}))
+        schedule = _schedule(
+            backend, level, psize, reduction=name in r_names, **options.get(name, {})
         )
         if name in m_names:
             builder.begin_map(name, "0", str(count), "1", schedule)
@@ -823,13 +829,11 @@ def build_multi_reduction_node(backend, reduce_specs, wrap_specs, ops):
     ``reduce_specs`` (outer->inner) is the reduction axis -- possibly spread
     over several levels that all fold into every accumulator -- while
     ``wrap_specs`` are trivial single-iteration maps that only exist to give a
-    block/warp reduction its required grid parent(s).  Every accumulator sees
+    block reduction its required grid parent(s).  Every accumulator sees
     the SAME input element, so this exercises N independent reductions sharing
     one reduce node.
     """
-    _validate_nest(
-        [(lvl, ps) for (lvl, _c, ps) in wrap_specs + reduce_specs], backend.warp_size
-    )
+    _validate_nest([(lvl, ps) for (lvl, _c, ps) in wrap_specs + reduce_specs])
     assert all(
         c == 1 for (_l, c, _p) in wrap_specs
     ), "wrap maps must be single-iteration"
@@ -893,7 +897,7 @@ def build_multi_reduction_node(backend, reduce_specs, wrap_specs, ops):
         )
 
     for name, (level, count, psize) in zip(g_names, wrap_specs):
-        builder.begin_map(name, "0", str(count), "1", backend.schedule(level, psize))
+        builder.begin_map(name, "0", str(count), "1", _schedule(backend, level, psize))
     for name, (level, count, psize) in zip(r_names, reduce_specs):
         builder.begin_reduce(
             name,
@@ -901,7 +905,7 @@ def build_multi_reduction_node(backend, reduce_specs, wrap_specs, ops):
             str(count),
             "1",
             [(op, dev) for op, dev in zip(ops, dev_accs)],
-            backend.schedule(level, psize),
+            _schedule(backend, level, psize, reduction=True),
         )
     blk = builder.add_block()
     a = builder.add_access(blk, "__daisy_dev_A")
@@ -953,8 +957,7 @@ def build_reduce_different_vars(
     wrap = grid_wrap or []
     _validate_nest(
         [(lvl, ps) for (lvl, _c, ps) in wrap]
-        + [(outer_level, outer_ps), (inner_level, inner_ps)],
-        backend.warp_size,
+        + [(outer_level, outer_ps), (inner_level, inner_ps)]
     )
     n_q = outer_count * inner_count
 
@@ -1012,14 +1015,14 @@ def build_reduce_different_vars(
         )
 
     for name, (gl, gc, gp) in zip(g_names, wrap):
-        builder.begin_map(name, "0", str(gc), "1", backend.schedule(gl, gp))
+        builder.begin_map(name, "0", str(gc), "1", _schedule(backend, gl, gp))
     builder.begin_reduce(
         "r0",
         "0",
         str(outer_count),
         "1",
         [(op_outer, "__daisy_dev_acc_out")],
-        backend.schedule(outer_level, outer_ps),
+        _schedule(backend, outer_level, outer_ps, reduction=True),
     )
     builder.begin_reduce(
         "r1",
@@ -1027,7 +1030,7 @@ def build_reduce_different_vars(
         str(inner_count),
         "1",
         [(op_inner, "__daisy_dev_acc_in")],
-        backend.schedule(inner_level, inner_ps),
+        _schedule(backend, inner_level, inner_ps, reduction=True),
     )
     blk_in = builder.add_block()
     q = builder.add_access(blk_in, "__daisy_dev_Q")
@@ -1092,7 +1095,7 @@ def build_reduce_different_vars(
 # (identical level / count / parallel_size / index -- elementwise).  Cross-thread
 # sharing (index reversal, per-row broadcast) is instead made legal by an
 # explicit block-local barrier (__syncthreads) placed between the producing and
-# consuming sibling; this is only valid at block/warp level, since a grid
+# consuming sibling; this is only valid at block level, since a grid
 # parent's coverage loop is block-uniform (all threads of a block reach it).
 # ---------------------------------------------------------------------------
 def _dev(name):
@@ -1283,7 +1286,7 @@ def build_sibling_nest(backend, parent, sib, containers, siblings):
     branch = ([(LEVELS[parent[0]], parent[2])] if has_parent else []) + [
         (LEVELS[l], p) for (l, _c, p) in sib
     ]
-    _validate_nest(branch, backend.warp_size)
+    _validate_nest(branch)
 
     builder = StructuredSDFGBuilder("sibling_nest")
     host_names = [n for n, (role, _ne) in containers.items() if role != "tmp"]
@@ -1330,7 +1333,7 @@ def build_sibling_nest(backend, parent, sib, containers, siblings):
             "0",
             str(R),
             "1",
-            backend.schedule(LEVELS[parent[0]], parent[2]),
+            _schedule(backend, LEVELS[parent[0]], parent[2]),
         )
 
     i_val = "i" if has_parent else "0"
@@ -1364,7 +1367,7 @@ def build_sibling_nest(backend, parent, sib, containers, siblings):
                     "0",
                     str(count),
                     "1",
-                    backend.schedule(LEVELS[level], psize),
+                    _schedule(backend, LEVELS[level], psize),
                 )
             blk = builder.add_block()
             node = _add_body_op(builder, blk, op)
@@ -1390,7 +1393,7 @@ def build_sibling_nest(backend, parent, sib, containers, siblings):
                     str(count),
                     "1",
                     [(op, _dev(acc))],
-                    backend.schedule(LEVELS[level], psize),
+                    _schedule(backend, LEVELS[level], psize, reduction=True),
                 )
             blk = builder.add_block()
             node = _add_body_op(builder, blk, op)
@@ -1419,6 +1422,79 @@ def _spec(table):
     return [(LEVELS[name], count, psize) for (name, count, psize) in table]
 
 
+_X_BLOCKS = ("xb", TargetLevel.X_BLOCK)
+_YZ_BLOCKS = ("yb", "zb", TargetLevel.Y_BLOCK, TargetLevel.Z_BLOCK)
+
+
+def _lanes_tables(tables, reductions, ws):
+    """Lanes form of a scenario's level tables, or None without a (single) X_BLOCK.
+
+    The X_BLOCK becomes LANES_X_BLOCK with one lane group per ``ws`` of its threads
+    (at least one) and its iteration count unchanged. A reduced X_BLOCK moves below
+    the other block levels of its table, as a Register lanes reduce cannot fold a
+    nested block reduction of the same accumulator. ``ws`` (at least the device's
+    lane width) bounds the block so it stays within 1024 threads.
+    """
+    entries = [entry for table in tables for entry in table]
+    x_blocks = [entry for entry in entries if entry[0] in _X_BLOCKS]
+    if len(x_blocks) != 1:
+        return None
+    (x_block,) = x_blocks
+    groups = max(1, x_block[2] // ws)
+    other_threads = math.prod(entry[2] for entry in entries if entry[0] in _YZ_BLOCKS)
+    if groups * ws * other_threads > 1024:
+        return None
+    lanes_level = "xl" if x_block[0] == "xb" else LANES_X_BLOCK
+    lanes_entry = (lanes_level, x_block[1], groups)
+    out = []
+    for table, reduction in zip(tables, reductions):
+        if x_block not in table:
+            out.append(table)
+            continue
+        position = table.index(x_block)
+        rest = [entry for entry in table if entry is not x_block]
+        if reduction:
+            inner_blocks = [k for k, entry in enumerate(rest) if entry[0] in _YZ_BLOCKS]
+            if inner_blocks and inner_blocks[-1] >= position:
+                position = inner_blocks[-1] + 1
+        out.append(rest[:position] + [lanes_entry] + rest[position:])
+    return out
+
+
+def _with_lanes_variants(scenarios, ws, fields, reductions):
+    """Each scenario plus its lanes form (id suffix ``_lanes``), see _lanes_tables.
+
+    ``fields`` index (tuple scenarios) or key (dict scenarios) the level tables,
+    ``reductions`` flags which of them are reduction tables. Single-entry tables
+    may be given as a bare (level, count, parallel_size) entry.
+    """
+    out = []
+    for scenario in scenarios:
+        out.append(scenario)
+        bare = [
+            scenario[f] is not None and not isinstance(scenario[f], list)
+            for f in fields
+        ]
+        tables = [
+            [scenario[f]] if is_bare else (scenario[f] or [])
+            for f, is_bare in zip(fields, bare)
+        ]
+        lanes = _lanes_tables(tables, reductions, ws)
+        if lanes is None:
+            continue
+        variant = dict(scenario) if isinstance(scenario, dict) else list(scenario)
+        name_field = "id" if isinstance(scenario, dict) else 0
+        variant[name_field] = f"{scenario[name_field]}_lanes"
+        for f, table, is_bare, original in zip(
+            fields, lanes, bare, [scenario[f] for f in fields]
+        ):
+            variant[f] = (
+                table[0] if is_bare else (table if original is not None else None)
+            )
+        out.append(variant if isinstance(scenario, dict) else tuple(variant))
+    return out
+
+
 # (count, parallel_size) pairs realising every relationship between a loop's
 # iteration count and its schedule parallel_size.  Sweeping these drives the
 # grid/block coverage loop and its boundary guard into every regime:
@@ -1432,26 +1508,6 @@ _SIZE_RELATIONS = {
     "multiple": (16, 8),
     "ragged": (10, 4),
 }
-
-
-def _warp_relations(ws):
-    """Warp count/parallel_size regimes for a given warp/wavefront width ``ws``.
-
-    A warp's parallel_size is architecturally fixed at ``ws`` (its lanes ARE the
-    hardware lanes), but the iteration COUNT it folds is not: each lane walks its
-    slice of the count sequentially before the single cross-lane shuffle.  Sweep
-    the warp coverage loop into every regime while keeping parallel_size == ``ws``:
-      smaller  -- count < ws: some lanes fold nothing (identity), guard active
-      equals   -- count == ws: one element per lane
-      multiple -- count == k*ws: every lane folds k elements, no remainder
-      ragged   -- count > ws, not a multiple: full tiles + partial remainder
-    """
-    return {
-        "smaller": (ws - 12, ws),
-        "equals": (ws, ws),
-        "multiple": (3 * ws, ws),
-        "ragged": (ws + ws // 2 + 2, ws),
-    }
 
 
 # Grid dimension that each block dimension must be nested inside (short names).
@@ -1490,13 +1546,7 @@ def _two_dim_size_tables(a_level, b_level, parents):
 # MAP: arbitrary depth / combination of levels.
 # ---------------------------------------------------------------------------
 def make_map_nest_scenarios(ws):
-    """Element-wise MAP nest scenarios for warp/wavefront width ``ws``.
-
-    Every warp scenario is expressed in terms of ``ws`` so the enclosing full-warp
-    block (``ws`` threads) and the warp's ``ws``-wide parallel size adapt to both
-    the CUDA (32) and ROCm (64) architectures.
-    """
-    warp = _warp_relations(ws)
+    """Element-wise MAP nest scenarios for warp/wavefront width ``ws``."""
     scns = [
         # grid dimensions may stand alone
         ("yg_single", [("yg", 10, 4)], "add"),
@@ -1533,30 +1583,8 @@ def make_map_nest_scenarios(ws):
         ("xg_yb_no_yg", [("xg", 6, 4), ("yb", 5, 4)], "add"),
         ("xg_zb_no_zg", [("xg", 4, 2), ("zb", 3, 2)], "mul"),
         ("xg_xb_yb_no_yg", [("xg", 3, 2), ("xb", ws, ws), ("yb", 4, 4)], "add"),
-        # WARP must be innermost and nested under an X_BLOCK (itself under X_GRID)
-        ("xg_xb_warp", [("xg", 4, 2), ("xb", ws, ws), ("w", 3, ws)], "add"),
-        (
-            "xg_yg_xb_yb_warp",
-            [("xg", 2, 2), ("yg", 2, 2), ("xb", ws, ws), ("yb", 2, 2), ("w", 2, ws)],
-            "add",
-        ),
-        # the complete seven-level stack: all three grids, all three blocks, a warp
-        (
-            "all_seven",
-            [
-                ("xg", 2, 2),
-                ("yg", 2, 2),
-                ("zg", 2, 2),
-                ("xb", ws, ws),
-                ("yb", 2, 2),
-                ("zb", 2, 2),
-                ("w", 2, ws),
-            ],
-            "add",
-        ),
         # min / max element-wise maps over a couple of nests
         ("xg_yg_min", [("xg", 6, 4), ("yg", 5, 2)], "min"),
-        ("xg_xb_warp_max", [("xg", 4, 2), ("xb", ws, ws), ("w", 3, ws)], "max"),
     ]
 
     # Systematic count-vs-parallel_size sweeps (see _SIZE_RELATIONS): every single
@@ -1600,41 +1628,7 @@ def make_map_nest_scenarios(ws):
             )
         )
 
-    # Warp coverage-loop size sweeps (parallel_size fixed at ws, count varied): the
-    # warp innermost under its X_BLOCK/X_GRID owner, alone and crossed with an
-    # enclosing grid whose own coverage loop is swept in the same regimes.
-    for wrel, (wc, wp) in warp.items():
-        scns.append(
-            (
-                f"size_warp_{wrel}",
-                [("xg", 1, 1), ("xb", ws, ws), ("w", wc, wp)],
-                "add",
-            )
-        )
-    for (grel, (gc, gp)), (wrel, (wc, wp)) in itertools.product(
-        _SIZE_RELATIONS.items(), warp.items()
-    ):
-        scns.append(
-            (
-                f"size_xg_{grel}_warp_{wrel}",
-                [("xg", gc, gp), ("xb", ws, ws), ("w", wc, wp)],
-                "add",
-            )
-        )
-    # warp count crossed with its X_BLOCK owner's own count regime: the block folds
-    # its coverage tiles (count == k*ws over a fixed ws parallel_size) while the warp
-    # independently folds its own swept coverage loop.
-    for (brel, (bc, bp)), (wrel, (wc, wp)) in itertools.product(
-        _SIZE_RELATIONS.items(), warp.items()
-    ):
-        scns.append(
-            (
-                f"size_xb_{brel}_warp_{wrel}",
-                [("xg", 1, 1), ("xb", bc * ws, ws), ("w", wc, wp)],
-                "add",
-            )
-        )
-    return scns
+    return _with_lanes_variants(scns, ws, [1], [False])
 
 
 # ---------------------------------------------------------------------------
@@ -1703,39 +1697,6 @@ def _reduce_size_scenarios(ws):
             )
         )
 
-    # reduced warp, parallel_size fixed at ws, coverage-loop count swept.
-    # The warp is reduced under its owning X_BLOCK (also reduced) and grid.
-    warp_rels = list(_warp_relations(ws).items())
-    for wrel, (wc, wp) in warp_rels:
-        out.append(
-            (
-                f"rsize_warp_{wrel}",
-                [("xg", 1, 1)],
-                [("xb", ws, ws), ("w", wc, wp)],
-                "add",
-            )
-        )
-    # warp count crossed with the reduced X_BLOCK owner's own count regime: the
-    # block folds its coverage tiles while the warp folds its (independent) ones.
-    for (brel, (bc, bp)), (wrel, (wc, wp)) in itertools.product(rels, warp_rels):
-        out.append(
-            (
-                f"rsize_xb_{brel}_warp_{wrel}",
-                [("xg", 1, 1)],
-                [("xb", bc * ws, ws), ("w", wc, wp)],
-                "add",
-            )
-        )
-    # mapped (parallel) grid rows crossed with a reduced warp of swept count
-    for (grel, (gc, gp)), (wrel, (wc, wp)) in itertools.product(rels, warp_rels):
-        out.append(
-            (
-                f"rsize_map_xg_{grel}_red_warp_{wrel}",
-                [("xg", gc, gp)],
-                [("xb", ws, ws), ("w", wc, wp)],
-                "add",
-            )
-        )
     return out
 
 
@@ -1749,21 +1710,9 @@ def make_reduce_nest_scenarios(ws):
         ("reduce_yg_yb", [("yg", 1, 1)], [("yb", 8, 4)], "add"),
         # reduction axis split across several levels, all folding the SAME accumulator
         ("reduce_xg_xb_same", [], [("xg", 8, 4), ("xb", 5, 5)], "add"),
-        (
-            "reduce_xg_xb_warp_same",
-            [],
-            [("xg", 4, 2), ("xb", ws, ws), ("w", 4, ws)],
-            "add",
-        ),
         # map (parallel rows) + reduction (columns) on validly nested levels
         ("map_xg_reduce_xb", [("xg", 8, 4)], [("xb", 16, 8)], "add"),
         ("map_xg_yg_reduce_xb", [("xg", 3, 2), ("yg", 4, 2)], [("xb", 8, 4)], "mul"),
-        (
-            "map_xg_reduce_xb_warp",
-            [("xg", 4, 2)],
-            [("xb", ws, ws), ("w", 3, ws)],
-            "add",
-        ),
         # min / max reductions
         ("reduce_xg_min", [], [("xg", 1000, 256)], "min"),
         ("reduce_xg_xb_max_same", [], [("xg", 8, 4), ("xb", 5, 5)], "max"),
@@ -1809,24 +1758,26 @@ def make_reduce_nest_scenarios(ws):
             [("xb", 32, 32), ("yb", 2, 2)],
             "add",
         ),
+        # full stack: parallel rows over all three grids, reduction (columns) over
+        # all three blocks, folding the SAME accumulator
         (
-            "reduce_xb_yb_warp",
-            [("xg", 1, 1), ("yg", 1, 1)],
-            [("xb", ws, ws), ("yb", 2, 2), ("w", 2, ws)],
+            "map_xyzg_reduce_xyzb",
+            [("xg", 2, 2), ("yg", 2, 2), ("zg", 2, 2)],
+            [
+                ("xb", ws, ws),
+                ("yb", 2, 2),
+                ("zb", 2, 2),
+            ],
             "add",
         ),
-        # full seven-level stack: parallel rows over all three grids, reduction
-        # (columns) over all three blocks and a warp, folding the SAME accumulator
         (
-            "map_xyzg_reduce_xyzb_warp",
+            "map_xyzg_reduce_xyzb_max",
             [("xg", 2, 2), ("yg", 2, 2), ("zg", 2, 2)],
-            [("xb", ws, ws), ("yb", 2, 2), ("zb", 2, 2), ("w", 2, ws)],
-            "add",
-        ),
-        (
-            "map_xyzg_reduce_xyzb_warp_max",
-            [("xg", 2, 2), ("yg", 2, 2), ("zg", 2, 2)],
-            [("xb", ws, ws), ("yb", 2, 2), ("zb", 2, 2), ("w", 2, ws)],
+            [
+                ("xb", ws, ws),
+                ("yb", 2, 2),
+                ("zb", 2, 2),
+            ],
             "max",
         ),
         # the entire stack folded into ONE scalar: many different dimensions all
@@ -1841,7 +1792,6 @@ def make_reduce_nest_scenarios(ws):
                 ("xb", ws, ws),
                 ("yb", 2, 2),
                 ("zb", 2, 2),
-                ("w", 2, ws),
             ],
             "max",
         ),
@@ -1855,23 +1805,27 @@ def make_reduce_nest_scenarios(ws):
                 ("xb", ws, ws),
                 ("yb", 2, 2),
                 ("zb", 2, 2),
-                ("w", 2, ws),
             ],
             "mul",
         ),
     ]
     scns += _reduce_size_scenarios(ws)
-    return scns
+    return _with_lanes_variants(scns, ws, [1, 2], [False, True])
 
 
 def make_bf16_reduce_scenarios(ws):
     """bfloat16 sum reductions whose per-lane partial sums run far past 256, where a
     bfloat16 accumulator (8 significant bits) stops absorbing [0, 1) terms."""
-    return [
-        ("bf16_reduce_xg", [], [("xg", 16384, 8)], "add"),
-        ("bf16_reduce_xb", [("xg", 1, 1)], [("xb", 1024 * ws, ws)], "add"),
-        ("bf16_map_xg_reduce_xb", [("xg", 4, 4)], [("xb", 1024 * ws, ws)], "add"),
-    ]
+    return _with_lanes_variants(
+        [
+            ("bf16_reduce_xg", [], [("xg", 16384, 8)], "add"),
+            ("bf16_reduce_xb", [("xg", 1, 1)], [("xb", 1024 * ws, ws)], "add"),
+            ("bf16_map_xg_reduce_xb", [("xg", 4, 4)], [("xb", 1024 * ws, ws)], "add"),
+        ],
+        ws,
+        [1, 2],
+        [False, True],
+    )
 
 
 def make_reduce_first_scenarios(ws):
@@ -1880,7 +1834,7 @@ def make_reduce_first_scenarios(ws):
     All memlets have one flat index. The cases exercise multiple output slots,
     not multiple ReductionInfo entries or unsupported multidimensional memlets.
     Only GPU levels participate in nesting validation; a sequential map may
-    occur inside the innermost warp reduction.
+    occur inside the innermost reduction.
     """
     scenarios = []
     for relation, (count, parallel_size) in _SIZE_RELATIONS.items():
@@ -1920,16 +1874,6 @@ def make_reduce_first_scenarios(ws):
                 ["r0", "r1", "m0"],
                 {},
             ),
-            (
-                "warp_register_serial",
-                [grid_parent, serial],
-                [
-                    (TargetLevel.X_BLOCK, ws, ws),
-                    (TargetLevel.WARP, *_warp_relations(ws)[relation]),
-                ],
-                ["m0", "r0", "r1", "m1"],
-                {"r1": {"partial_storage": ReduceStrategy.Register}},
-            ),
         ]
         for storage_name, strategy, placed in (
             ("shared", ReduceStrategy.Shared, None),
@@ -1965,7 +1909,9 @@ def make_reduce_first_scenarios(ws):
                     reduce_options=options,
                 )
             )
-    return scenarios
+    return _with_lanes_variants(
+        scenarios, ws, ["map_specs", "reduce_specs"], [False, True]
+    )
 
 
 def make_lanes_reduce_scenarios():
@@ -2246,20 +2192,29 @@ def lanes_map_reference(body, a, rows):
 # ---------------------------------------------------------------------------
 def make_multi_reduction_scenarios(ws):
     """Several-accumulator single-reduce-node scenarios for width ``ws``."""
-    return [
-        ("multi_xg", [("xg", 1000, 256)], [], ["add", "mul"]),
-        ("multi_xg_minmax", [("xg", 1000, 256)], [], ["min", "max"]),
-        ("multi_xg_all", [("xg", 1000, 256)], [], ["add", "mul", "min", "max"]),
-        ("multi_xg_xb", [("xb", ws, ws)], [("xg", 1, 1)], ["add", "mul"]),
-        ("multi_xg_xb_narrow", [("xb", 8, 8)], [("xg", 1, 1)], ["add", "mul"]),
-        # several accumulators over a full block + warp reduction stack under a grid
-        (
-            "multi_full_stack",
-            [("xb", ws, ws), ("yb", 2, 2), ("zb", 2, 2), ("w", 2, ws)],
-            [("xg", 1, 1), ("yg", 1, 1), ("zg", 1, 1)],
-            ["add", "mul", "min", "max"],
-        ),
-    ]
+    return _with_lanes_variants(
+        [
+            ("multi_xg", [("xg", 1000, 256)], [], ["add", "mul"]),
+            ("multi_xg_minmax", [("xg", 1000, 256)], [], ["min", "max"]),
+            ("multi_xg_all", [("xg", 1000, 256)], [], ["add", "mul", "min", "max"]),
+            ("multi_xg_xb", [("xb", ws, ws)], [("xg", 1, 1)], ["add", "mul"]),
+            ("multi_xg_xb_narrow", [("xb", 8, 8)], [("xg", 1, 1)], ["add", "mul"]),
+            # several accumulators over a full block reduction stack under the grids
+            (
+                "multi_full_stack",
+                [
+                    ("xb", ws, ws),
+                    ("yb", 2, 2),
+                    ("zb", 2, 2),
+                ],
+                [("xg", 1, 1), ("yg", 1, 1), ("zg", 1, 1)],
+                ["add", "mul", "min", "max"],
+            ),
+        ],
+        ws,
+        [1, 2],
+        [True, False],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -2267,19 +2222,16 @@ def make_multi_reduction_scenarios(ws):
 # ---------------------------------------------------------------------------
 def make_diff_var_scenarios(ws):
     """Nested-different-accumulator scenarios for width ``ws``."""
-    return [
-        ("diff_xg_xb", ("xg", 8, 4), ("xb", 5, 5), "add", "add", None),
-        ("diff_xg_xb_amul", ("xg", 6, 3), ("xb", 4, 4), "add", "mul", None),
-        ("diff_xg_xb_minmax", ("xg", 8, 4), ("xb", 5, 5), "min", "max", None),
-        (
-            "diff_xg_xb_warp",
-            ("xb", ws, ws),
-            ("w", ws, ws),
-            "add",
-            "add",
-            [("xg", 1, 1)],
-        ),
-    ]
+    return _with_lanes_variants(
+        [
+            ("diff_xg_xb", ("xg", 8, 4), ("xb", 5, 5), "add", "add", None),
+            ("diff_xg_xb_amul", ("xg", 6, 3), ("xb", 4, 4), "add", "mul", None),
+            ("diff_xg_xb_minmax", ("xg", 8, 4), ("xb", 5, 5), "min", "max", None),
+        ],
+        ws,
+        [5, 1, 2],
+        [False, True, True],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -2439,29 +2391,16 @@ def make_sibling_scenarios(ws):
         # Same-thread producer -> consumer chain: T written and read at the same
         # (row, col) -> race-free without a barrier.
         _sib_scn("chain_xb", ("xg", 4, 2), [("xb", 8, 8)], _p_chain),
-        _sib_scn("chain_warp", ("xg", 2, 2), [("xb", ws, ws), ("w", 4, ws)], _p_chain),
         # A block map feeding a block/warp reduction -- map(block, reduce); the
         # reduce reads each thread's own T element, so no barrier is required.
         _sib_scn("map_reduce_xb", ("xg", 4, 2), [("xb", 8, 8)], _p_map_reduce),
         _sib_scn("map_reduce_yb", ("yg", 4, 2), [("yb", 8, 8)], _p_map_reduce),
-        _sib_scn(
-            "map_reduce_warp",
-            ("xg", 2, 2),
-            [("xb", ws, ws), ("w", 4, ws)],
-            _p_map_reduce,
-        ),
         # Cross-thread index reversal made legal by a block-local barrier between the
         # producing and consuming sibling (full-cover and coverage-loop variants).
         _sib_scn("reverse_barrier_xb", ("xg", 4, 2), [("xb", 8, 8)], _p_reverse),
         _sib_scn("reverse_barrier_xb_cover", ("xg", 4, 2), [("xb", 8, 4)], _p_reverse),
         # Reduce -> per-row broadcast made legal by a block-local barrier.
         _sib_scn("broadcast_barrier_xb", ("xg", 4, 2), [("xb", 8, 8)], _p_broadcast),
-        _sib_scn(
-            "broadcast_barrier_warp",
-            ("xg", 2, 2),
-            [("xb", ws, ws), ("w", 4, ws)],
-            _p_broadcast,
-        ),
     ]
 
     # Sweep the shared sibling column dimension across every count/parallel_size
@@ -2482,18 +2421,6 @@ def make_sibling_scenarios(ws):
                     f"size_{pname}_xb_{rel}", ("xg", 4, 2), [("xb", c, p)], factory
                 )
             )
-    # a reduced warp sibling whose coverage-loop count is swept while its owning
-    # X_BLOCK stays a full warp -- map(block-map, warp-reduce) with a varied warp.
-    for wrel, (wc, wp) in _warp_relations(ws).items():
-        scns.append(
-            _sib_scn(
-                f"size_mapred_warp_{wrel}",
-                ("xg", 2, 2),
-                [("xb", ws, ws), ("w", wc, wp)],
-                _p_map_reduce,
-            )
-        )
-
     # Independent siblings sharing a column count but running at DIFFERENT parallel
     # sizes; the parent blockDim must cover the larger sibling (largest-wins).
     scns += [
@@ -2502,7 +2429,7 @@ def make_sibling_scenarios(ws):
         _sib_indep_mixed("indep_mix_4_16", ("xg", 4, 2), 16, 4, 16),
         _sib_indep_mixed("indep_mix_ragged", ("xg", 4, 2), 10, 4, 8),
     ]
-    return scns
+    return _with_lanes_variants(scns, ws, ["sib"], [False])
 
 
 # ===========================================================================
@@ -2517,8 +2444,8 @@ def register(namespace, backend):
 
     @pytest.mark.parametrize(
         "target_level",
-        [TargetLevel.X_GRID, TargetLevel.X_BLOCK],
-        ids=["grid", "block"],
+        [TargetLevel.X_GRID, TargetLevel.X_BLOCK, LANES_X_BLOCK],
+        ids=["grid", "block", "block_lanes"],
     )
     @pytest.mark.parametrize("op", ["add", "mul", "min", "max"])
     @pytest.mark.parametrize(
@@ -2534,6 +2461,9 @@ def register(namespace, backend):
         ids=["1024x128", "1000x250", "1000x256", "100x32", "100x128", "size1"],
     )
     def test_offload_map(target_level, op, n, parallel_size, tmp_path):
+        if target_level == LANES_X_BLOCK:
+            # Lane groups: one per wave of the plain block's threads.
+            parallel_size = max(1, parallel_size // ws)
         sdfg = build_offloaded_elementwise(backend, n, op, target_level, parallel_size)
         compiled = _compile(backend, sdfg, tmp_path / "map")
 
@@ -2571,17 +2501,23 @@ def register(namespace, backend):
         ref = numpy_reduce(a, op)
         np.testing.assert_allclose(acc[0], ref, rtol=1e-4, atol=1e-4)
 
+    _block_strategies = [
+        (ReduceStrategy.Shared, None),  # block halving tree in __shared__
+        (ReduceStrategy.Global, None),  # block partials merged via atomics
+        (ReduceStrategy.Shared, "__daisy_reduce_placed"),  # placed shared buffer
+    ]
+    _block_strategy_ids = ["shared", "global", "shared_placed"]
+
     @pytest.mark.parametrize(
-        "strategy,partial_container",
-        [
-            (ReduceStrategy.Shared, None),  # block halving tree in __shared__
-            (ReduceStrategy.Global, None),  # block partials merged via atomics
-            (
-                ReduceStrategy.Shared,
-                "__daisy_reduce_placed",
-            ),  # placed (renamed) shared buffer
-        ],
-        ids=["block_shared", "block_global", "block_shared_placed"],
+        "level,strategy,partial_container",
+        [(TargetLevel.X_BLOCK, s, c) for (s, c) in _block_strategies]
+        # Lane groups: each lane folds its own iterations; Register partials
+        # combine each group by shuffle alone.
+        + [(LANES_X_BLOCK, s, c) for (s, c) in _block_strategies]
+        + [(LANES_X_BLOCK, ReduceStrategy.Register, None)],
+        ids=[f"block_{i}" for i in _block_strategy_ids]
+        + [f"block_lanes_{i}" for i in _block_strategy_ids]
+        + ["block_lanes_register"],
     )
     @pytest.mark.parametrize("op", ["add", "mul", "min", "max"])
     @pytest.mark.parametrize(
@@ -2594,13 +2530,15 @@ def register(namespace, backend):
         ids=["1000x256", "100x32", "size1"],
     )
     def test_offload_reduce_block_strategy(
-        strategy, partial_container, op, n, parallel_size, tmp_path
+        level, strategy, partial_container, op, n, parallel_size, tmp_path
     ):
+        if level == LANES_X_BLOCK:
+            parallel_size = max(1, parallel_size // ws)
         sdfg = build_offloaded_reduction(
             backend,
             n,
             op,
-            TargetLevel.X_BLOCK,
+            level,
             parallel_size,
             partial_storage=strategy,
             partial_container=partial_container,

@@ -123,8 +123,6 @@ void GPUOffloadBaseDispatcher::dispatch_node(
     auto y_blocks = target_level_indvars(node_, analysis_manager, TargetLevel::Y_BLOCK);
     auto z_blocks = target_level_indvars(node_, analysis_manager, TargetLevel::Z_BLOCK);
 
-    auto warps = target_level_indvars(node_, analysis_manager, TargetLevel::WARP);
-
     for (auto& var : scope_variables_unfiltered) {
         if (analysis_manager.get<tiles::ReductionBufferAnalysis>().is_partial_buffer(var)) {
             continue;
@@ -138,8 +136,7 @@ void GPUOffloadBaseDispatcher::dispatch_node(
             z_grids.find(symbolic::symbol(var)) == z_grids.end() &&
             x_blocks.find(symbolic::symbol(var)) == x_blocks.end() &&
             y_blocks.find(symbolic::symbol(var)) == y_blocks.end() &&
-            z_blocks.find(symbolic::symbol(var)) == z_blocks.end() &&
-            warps.find(symbolic::symbol(var)) == warps.end()) {
+            z_blocks.find(symbolic::symbol(var)) == z_blocks.end()) {
             scope_variables.push_back(var);
         }
     }

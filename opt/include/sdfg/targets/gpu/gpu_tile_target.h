@@ -54,9 +54,7 @@ public:
     std::optional<AxisSchedule> classify(const structured_control_flow::ScheduleType& sched) const override {
         if (sched.value() == offload_value_) {
             gpu::TargetLevel tl = gpu::gpu_target_level(sched);
-            Level level = gpu::is_grid_level(tl)    ? Level::Device
-                          : gpu::is_block_level(tl) ? Level::Group
-                                                    : Level::Subgroup;
+            Level level = gpu::is_grid_level(tl) ? Level::Device : Level::Group;
             return AxisSchedule(
                 level,
                 space(level),

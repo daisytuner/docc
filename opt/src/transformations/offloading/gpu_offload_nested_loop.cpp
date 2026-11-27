@@ -183,11 +183,6 @@ bool GPUOffloadNestedLoop<
         if (parallel_size_->as_int() > max_block_dim_z) {
             return false;
         }
-    } else if (target_level_ == gpu::TargetLevel::WARP) {
-        // WARP dimension must equal the target's warp/wavefront size.
-        if (parallel_size_->as_int() != gpu::gpu_warp_size<GPUType>()) {
-            return false;
-        }
     } else {
         // Unsupported outermost level
         return false;
@@ -229,11 +224,6 @@ bool GPUOffloadNestedLoop<
         return false;
     };
 
-    // Condition: no dimension may be nested within a WARP (WARP must be the innermost level).
-    if (has_ancestor_level(gpu::TargetLevel::WARP)) {
-        return false;
-    }
-
     // Condition: each level indexes one hardware dimension, so an enclosing loop may not
     // already use it (both would read the same index and cover only the diagonal).
     if (has_ancestor_level(target_level_)) {
@@ -271,33 +261,22 @@ bool GPUOffloadNestedLoop<
         return false;
     }
 
-    // Condition: a WARP must be nested within an X_BLOCK.
-    if (target_level_ == gpu::TargetLevel::WARP && !has_ancestor_level(gpu::TargetLevel::X_BLOCK)) {
-        return false;
-    }
-
     // Condition: the product of all block dimensions (including this one) must not exceed 1024 threads.
     auto is_block_level = [](gpu::TargetLevel level) {
         return level == gpu::TargetLevel::X_BLOCK || level == gpu::TargetLevel::Y_BLOCK ||
                level == gpu::TargetLevel::Z_BLOCK;
     };
     int64_t block_product = 1;
-    // A WARP occupies threads within the block, so it counts toward the block thread budget.
-    if (is_block_level(target_level_) || target_level_ == gpu::TargetLevel::WARP) {
+    if (is_block_level(target_level_)) {
         block_product *= parallel_size_->as_int() * (target_level_ == gpu::TargetLevel::X_BLOCK ? lanes_ : 1);
     }
     for (auto& [level, size] : ancestor_levels) {
-        if (is_block_level(level) || level == gpu::TargetLevel::WARP) {
+        if (is_block_level(level)) {
             block_product *= size;
         }
     }
     constexpr int64_t max_threads_per_block = 1024;
     if (block_product > max_threads_per_block) {
-        return false;
-    }
-
-    // Condition: num threads >= warp size
-    if (target_level_ == gpu::TargetLevel::WARP && block_product < gpu::gpu_warp_size<GPUType>()) {
         return false;
     }
 
@@ -332,16 +311,12 @@ bool GPUOffloadNestedLoop<
             // cannot be cooperatively combined. Leave such reductions sequential.
             if (!probe.has_indexed()) {
                 // A bare scalar accumulator is still supported as a thread-private target at
-                // block/warp levels (aliased onto the level's partial, then broadcast to
-                // every thread after the combine), but not at grid levels: there is no global
-                // slot and a cross-block combine is meaningless. Keep grid-level scalar
-                // reductions sequential.
-                const bool block_or_warp = target_level_ == gpu::TargetLevel::X_BLOCK ||
-                                           target_level_ == gpu::TargetLevel::Y_BLOCK ||
-                                           target_level_ == gpu::TargetLevel::Z_BLOCK ||
-                                           target_level_ == gpu::TargetLevel::WARP;
+                // block levels (aliased onto the level's partial, then broadcast to every
+                // thread after the combine), but not at grid levels: there is no global slot
+                // and a cross-block combine is meaningless. Keep grid-level scalar reductions
+                // sequential.
                 const bool is_scalar = builder.subject().type(reduction.container).type_id() == types::TypeID::Scalar;
-                if (!is_scalar || !block_or_warp) {
+                if (!is_scalar || !gpu::is_block_level(target_level_)) {
                     return false;
                 }
             }
