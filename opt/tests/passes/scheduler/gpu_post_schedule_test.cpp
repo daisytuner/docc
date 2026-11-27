@@ -6,12 +6,11 @@
 #include "sdfg/data_flow/library_nodes/math/tensor/reduce_ops/softmax_node.h"
 #include "sdfg/data_flow/library_nodes/stdlib/memset.h"
 #include "sdfg/passes/scheduler/cuda_offload_scheduler.h"
-#include "sdfg/passes/scheduler/cuda_scheduler.h"
 #include "sdfg/passes/scheduler/rocm_offload_scheduler.h"
-#include "sdfg/passes/scheduler/rocm_scheduler.h"
 #include "sdfg/scheduling/loops/loop_scheduling_pass.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/targets/cuda/cuda.h"
+#include "sdfg/targets/cuda/cuda_data_offloading_node.h"
 #include "sdfg/targets/rocm/rocm.h"
 
 using namespace sdfg;
@@ -42,25 +41,21 @@ struct ROCMTraits {
     }
 };
 
-template<typename S, typename T, bool OffloadsControlFlow>
+template<typename S, typename T>
 struct SchedulerCase {
     using Scheduler = S;
     using Traits = T;
-    static constexpr bool offloads_control_flow = OffloadsControlFlow;
 };
 
 using SchedulerCases = ::testing::Types<
-    SchedulerCase<passes::scheduler::CUDAScheduler, CUDATraits, false>,
-    SchedulerCase<passes::scheduler::CUDAOffloadScheduler, CUDATraits, true>,
-    SchedulerCase<passes::scheduler::ROCMScheduler, ROCMTraits, false>,
-    SchedulerCase<passes::scheduler::ROCMOffloadScheduler, ROCMTraits, true>>;
+    SchedulerCase<passes::scheduler::CUDAOffloadScheduler, CUDATraits>,
+    SchedulerCase<passes::scheduler::ROCMOffloadScheduler, ROCMTraits>>;
 
 template<typename Case>
 class GPUPostScheduleTest : public ::testing::Test {
 protected:
     using Scheduler = typename Case::Scheduler;
     using Traits = typename Case::Traits;
-    static constexpr bool offloads_control_flow = Case::offloads_control_flow;
 
     builder::StructuredSDFGBuilder builder_{"post_schedule_test", FunctionType_CPU};
     Scheduler scheduler_;
@@ -149,20 +144,15 @@ TYPED_TEST(GPUPostScheduleTest, RootBlockWithoutLoopsOrLibraryNodes) {
     this->builder_.add_computational_memlet(block, x, tasklet, "_in", {}, this->float_);
     this->builder_.add_computational_memlet(block, tasklet, "_out", y, {}, this->float_);
 
-    if constexpr (TestFixture::offloads_control_flow) {
-        // x and y are kernel locals, so the block is offloaded without transfers.
-        EXPECT_TRUE(this->run_scheduling());
-        ASSERT_EQ(sdfg.root().size(), 1);
-        auto* map = dynamic_cast<structured_control_flow::Map*>(&sdfg.root().at(0));
-        ASSERT_NE(map, nullptr);
-        EXPECT_EQ(map->schedule_type().category(), structured_control_flow::ScheduleTypeCategory::Offloader);
-        EXPECT_TRUE(symbolic::eq(map->num_iterations(), symbolic::one()));
-        ASSERT_EQ(map->root().size(), 1);
-        EXPECT_EQ(&map->root().at(0), &block);
-    } else {
-        EXPECT_FALSE(this->run_scheduling());
-        EXPECT_EQ(sdfg.root().size(), 1);
-    }
+    // x and y are kernel locals, so the block is offloaded without transfers.
+    EXPECT_TRUE(this->run_scheduling());
+    ASSERT_EQ(sdfg.root().size(), 1);
+    auto* map = dynamic_cast<structured_control_flow::Map*>(&sdfg.root().at(0));
+    ASSERT_NE(map, nullptr);
+    EXPECT_EQ(map->schedule_type().category(), structured_control_flow::ScheduleTypeCategory::Offloader);
+    EXPECT_TRUE(symbolic::eq(map->num_iterations(), symbolic::one()));
+    ASSERT_EQ(map->root().size(), 1);
+    EXPECT_EQ(&map->root().at(0), &block);
 }
 
 TYPED_TEST(GPUPostScheduleTest, ExtractsLibraryNodeTransfersWithOnlySkippedLoops) {
@@ -255,4 +245,65 @@ TEST(CUDAOffloadPostScheduleTest, ExtractsSoftmaxTransfersWithoutLoops) {
 
     EXPECT_TRUE(pass.run(builder, analysis_manager));
     EXPECT_EQ(softmax_node.implementation_type().value(), cuda::ImplementationType_CUDAWithoutTransfers.value());
+}
+
+// The offload schedulers clean up after offloading: a device buffer copied back and freed, then reallocated and copied
+// in again, stays on the device.
+TEST(OffloadSchedulerTest, MinimizesDataTransfers) {
+    for (bool rocm : {false, true}) {
+        builder::StructuredSDFGBuilder builder("post_schedule_test", FunctionType_CPU);
+        auto& root = builder.subject().root();
+        types::Scalar base_desc(types::PrimitiveType::Float);
+        types::Pointer desc(base_desc);
+        builder.add_container("A", desc, true);
+        builder.add_container("__daisy_offload_A", desc);
+
+        offloading::add_offloading_block<cuda::CUDADataOffloadingNode>(
+            builder,
+            root,
+            "A",
+            "__daisy_offload_A",
+            offloading::DataTransferDirection::D2H,
+            offloading::BufferLifecycle::FREE,
+            desc,
+            {},
+            symbolic::integer(400),
+            symbolic::integer(0)
+        );
+        offloading::add_offloading_block<cuda::CUDADataOffloadingNode>(
+            builder,
+            root,
+            "A",
+            "__daisy_offload_A",
+            offloading::DataTransferDirection::H2D,
+            offloading::BufferLifecycle::ALLOC,
+            desc,
+            {},
+            symbolic::integer(400),
+            symbolic::integer(0)
+        );
+
+        passes::scheduler::CUDAOffloadScheduler cuda_scheduler;
+        passes::scheduler::ROCMOffloadScheduler rocm_scheduler;
+        passes::scheduler::LoopScheduler* scheduler =
+            rocm ? static_cast<passes::scheduler::LoopScheduler*>(&rocm_scheduler) : &cuda_scheduler;
+        analysis::AnalysisManager analysis_manager(builder.subject());
+        scheduling::loops::LoopSchedulingPass pass({scheduler}, nullptr);
+        EXPECT_TRUE(pass.run(builder, analysis_manager));
+
+        // Only the copy back remains, and it keeps the buffer.
+        std::vector<offloading::DataOffloadingNode*> transfers;
+        for (size_t i = 0; i < root.size(); i++) {
+            if (auto* block = dynamic_cast<structured_control_flow::Block*>(&root.at(i))) {
+                for (auto* node : block->dataflow().library_nodes()) {
+                    if (auto* transfer = dynamic_cast<offloading::DataOffloadingNode*>(node)) {
+                        transfers.push_back(transfer);
+                    }
+                }
+            }
+        }
+        ASSERT_EQ(transfers.size(), 1);
+        EXPECT_EQ(transfers[0]->transfer_direction(), offloading::DataTransferDirection::D2H);
+        EXPECT_EQ(transfers[0]->buffer_lifecycle(), offloading::BufferLifecycle::NO_CHANGE);
+    }
 }

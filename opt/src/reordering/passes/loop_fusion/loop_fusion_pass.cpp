@@ -115,6 +115,10 @@ public:
     static symbolic::Expression get_indvar_placeholder(FusionLoopCandidate& candidate, size_t level) {
         auto* indvar_bounds = candidate.indvar_boundaries;
         symbolic::Expression stride = symbolic::integer(1);
+        // Without tight bounds there is no placeholder; accesses then keep the raw induction variable.
+        if (indvar_bounds->tight_lower_bound().is_null() || indvar_bounds->tight_upper_bound().is_null()) {
+            return {};
+        }
         if (symbolic::null_safe_eq(symbolic::sub(indvar_bounds->map(), indvar_bounds->symbol()), stride)) {
             return SymEngine::function_symbol(
                 "indvar",

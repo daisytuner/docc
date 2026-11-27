@@ -4,7 +4,6 @@
 #include "sdfg/passes/offloading/data_transfer_minimization_pass.h"
 #include "sdfg/passes/scheduler/loop_scheduler.h"
 #include "sdfg/passes/structured_control_flow/unique_loop_indvars.h"
-#include "sdfg/scheduling/scheduler_registry.h"
 #include "sdfg/structured_control_flow/map.h"
 
 namespace sdfg {

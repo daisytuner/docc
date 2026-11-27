@@ -8,7 +8,6 @@
 #include <sdfg/passes/symbolic/symbol_promotion.h>
 #include <sdfg/passes/symbolic/symbol_propagation.h>
 #include <sdfg/scheduling/loops/loop_scheduling_pass.h>
-#include <sdfg/scheduling/scheduler_registry.h>
 #include <sdfg/tiles/transformations/tile_guard_normalization.h>
 #include <sdfg/transformations/recorder.h>
 
@@ -17,7 +16,35 @@
 
 using namespace sdfg::passes;
 
-void register_passes(py::module& m) {
+namespace {
+
+struct OwnedLoopSchedulers {
+    std::vector<std::shared_ptr<scheduler::LoopScheduler>> loop_schedulers;
+};
+
+/// A LoopSchedulingPass that owns the loop schedulers created by the targets.
+class TargetLoopSchedulingPass : private OwnedLoopSchedulers, public sdfg::scheduling::loops::LoopSchedulingPass {
+    static std::vector<scheduler::LoopScheduler*>
+    pointers(const std::vector<std::shared_ptr<scheduler::LoopScheduler>>& loop_schedulers) {
+        std::vector<scheduler::LoopScheduler*> result;
+        for (auto& loop_scheduler : loop_schedulers) {
+            result.push_back(loop_scheduler.get());
+        }
+        return result;
+    }
+
+public:
+    TargetLoopSchedulingPass(
+        std::vector<std::shared_ptr<scheduler::LoopScheduler>> loop_schedulers, bool offload_unknown_sizes
+    )
+        : OwnedLoopSchedulers{std::move(loop_schedulers)},
+          LoopSchedulingPass(pointers(this->loop_schedulers), nullptr, offload_unknown_sizes) {
+    }
+};
+
+} // namespace
+
+void register_passes(py::module& m, sdfg::plugins::Context& context) {
     // Base Pass class (abstract)
     py::class_<Pass>(m, "Pass")
         .def_property_readonly("name", &Pass::name, "Get the pass name")
@@ -106,24 +133,25 @@ void register_passes(py::module& m) {
     // LoopSchedulingPass: run the target loop schedulers over the SDFG.
     py::class_<sdfg::scheduling::loops::LoopSchedulingPass, Pass>(m, "LoopSchedulingPass")
         .def(
-            py::init([](const std::vector<std::string>& targets, bool offload_unknown_sizes) {
-                std::vector<scheduler::LoopScheduler*> schedulers;
-                auto& registry = sdfg::scheduling::SchedulerRegistry::instance();
+            py::init([&context](const std::vector<std::string>& targets, bool offload_unknown_sizes) {
+                std::vector<std::shared_ptr<scheduler::LoopScheduler>> loop_schedulers;
                 for (const auto& target : targets) {
-                    auto* sched = registry.get_loop_scheduler(target);
-                    if (!sched) {
-                        throw std::runtime_error("No loop scheduler registered for target '" + target + "'");
+                    auto* handler = context.get_target_handler(target);
+                    if (!handler) {
+                        throw std::runtime_error("Unknown target '" + target + "'");
                     }
-                    schedulers.push_back(sched);
+                    auto target_loop_schedulers = handler->scheduling.create_loop_schedulers({.target = target});
+                    loop_schedulers
+                        .insert(loop_schedulers.end(), target_loop_schedulers.begin(), target_loop_schedulers.end());
                 }
-
-                return std::make_unique<
-                    sdfg::scheduling::loops::LoopSchedulingPass>(schedulers, nullptr, offload_unknown_sizes);
+                return std::unique_ptr<sdfg::scheduling::loops::LoopSchedulingPass>(
+                    new TargetLoopSchedulingPass(std::move(loop_schedulers), offload_unknown_sizes)
+                );
             }),
             py::arg("targets"),
             py::arg("offload_unknown_sizes") = false,
             "Create a loop-scheduling pass for the given targets.\n\n"
-            "Applies each target's standard loop scheduler (e.g. 'openmp',\n"
+            "Applies the loop schedulers of each target (e.g. 'openmp',\n"
             "'cuda', 'rocm') to the SDFG's loop nests -- the same\n"
             "schedulers the compiler uses, i.e. the default schedule / baseline."
         )

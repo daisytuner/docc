@@ -1,11 +1,10 @@
-#include "sdfg/passes/scheduler/cuda_scheduler.h"
+#include "sdfg/passes/scheduler/cuda_offload_scheduler.h"
 
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/analysis/loop_analysis.h"
 #include "sdfg/data_flow/library_nodes/math/tensor/reduce_ops/softmax_node.h"
 #include "sdfg/deepcopy/structured_sdfg_deep_copy.h"
 #include "sdfg/scheduling/loops/loop_scheduling_pass.h"
-#include "sdfg/scheduling/scheduler_registry.h"
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/targets/cuda/cuda.h"
 
@@ -13,12 +12,12 @@
 
 using namespace sdfg;
 
-static passes::scheduler::CUDAScheduler* get_cuda_sched() {
-    static passes::scheduler::CUDAScheduler instance;
+static passes::scheduler::CUDAOffloadScheduler* get_cuda_sched() {
+    static passes::scheduler::CUDAOffloadScheduler instance;
     return &instance;
 }
 
-TEST(CUDASchedulerTest, OuterParallelMapWithInnerMap) {
+TEST(CUDAOffloadSchedulerTest, OuterParallelMapWithInnerMap) {
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
 
     auto& sdfg = builder.subject();
@@ -80,11 +79,11 @@ TEST(CUDASchedulerTest, OuterParallelMapWithInnerMap) {
 
     EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 
-    EXPECT_EQ(loop.schedule_type().value(), cuda::ScheduleType_CUDA::value());
-    EXPECT_EQ(loop_2.schedule_type().value(), cuda::ScheduleType_CUDA::value());
+    EXPECT_EQ(loop.schedule_type().value(), cuda::ScheduleType_CUDA_Offload::value());
+    EXPECT_EQ(loop_2.schedule_type().value(), cuda::ScheduleType_CUDA_Offload::value());
 }
 
-TEST(CUDASchedulerTest, OuterSequentialForWith2DMap) {
+TEST(CUDAOffloadSchedulerTest, OuterSequentialForWith2DMap) {
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
 
     auto& sdfg = builder.subject();
@@ -152,11 +151,11 @@ TEST(CUDASchedulerTest, OuterSequentialForWith2DMap) {
 
     EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 
-    EXPECT_EQ(loop_2.schedule_type().value(), cuda::ScheduleType_CUDA::value());
-    EXPECT_EQ(loop_3.schedule_type().value(), cuda::ScheduleType_CUDA::value());
+    EXPECT_EQ(loop_2.schedule_type().value(), cuda::ScheduleType_CUDA_Offload::value());
+    EXPECT_EQ(loop_3.schedule_type().value(), cuda::ScheduleType_CUDA_Offload::value());
 }
 
-TEST(CUDASchedulerTest, OuterWhileWithInnerMaps) {
+TEST(CUDAOffloadSchedulerTest, OuterWhileWithInnerMaps) {
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
 
     auto& sdfg = builder.subject();
@@ -233,13 +232,13 @@ TEST(CUDASchedulerTest, OuterWhileWithInnerMaps) {
 
     EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 
-    EXPECT_EQ(loop_2.schedule_type().value(), cuda::ScheduleType_CUDA::value());
-    EXPECT_EQ(loop_3.schedule_type().value(), cuda::ScheduleType_CUDA::value());
+    EXPECT_EQ(loop_2.schedule_type().value(), cuda::ScheduleType_CUDA_Offload::value());
+    EXPECT_EQ(loop_3.schedule_type().value(), cuda::ScheduleType_CUDA_Offload::value());
 }
 
 // Regression test: When multiple outermost maps exist and some are already
 // CUDA-scheduled, the compatibility filter must skip ALL of them.
-TEST(CUDASchedulerTest, NoDoubleSchedulingOfAlreadyCUDAMaps) {
+TEST(CUDAOffloadSchedulerTest, NoDoubleSchedulingOfAlreadyCUDAMaps) {
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
 
     auto& sdfg = builder.subject();
@@ -297,9 +296,9 @@ TEST(CUDASchedulerTest, NoDoubleSchedulingOfAlreadyCUDAMaps) {
     EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 
     // Maps a, c, e should now be CUDA-scheduled
-    EXPECT_EQ(map_a.schedule_type().value(), cuda::ScheduleType_CUDA::value());
-    EXPECT_EQ(map_c.schedule_type().value(), cuda::ScheduleType_CUDA::value());
-    EXPECT_EQ(map_e.schedule_type().value(), cuda::ScheduleType_CUDA::value());
+    EXPECT_EQ(map_a.schedule_type().value(), cuda::ScheduleType_CUDA_Offload::value());
+    EXPECT_EQ(map_c.schedule_type().value(), cuda::ScheduleType_CUDA_Offload::value());
+    EXPECT_EQ(map_e.schedule_type().value(), cuda::ScheduleType_CUDA_Offload::value());
 
     // Maps b, d must still have exactly the CUDA schedule type — NOT double-offloaded.
     // With the old bug, maps b and d would pass through the compatibility filter
@@ -321,7 +320,7 @@ TEST(CUDASchedulerTest, NoDoubleSchedulingOfAlreadyCUDAMaps) {
     }
 }
 
-TEST(CUDASchedulerTest, PostScheduleRunsTransferExtractionWithoutGpuMaps) {
+TEST(CUDAOffloadSchedulerTest, PostScheduleRunsTransferExtractionWithoutGpuMaps) {
     builder::StructuredSDFGBuilder builder("softmax_scheduler_test", FunctionType_CPU);
 
     auto& sdfg = builder.subject();
@@ -349,7 +348,7 @@ TEST(CUDASchedulerTest, PostScheduleRunsTransferExtractionWithoutGpuMaps) {
     builder.add_computational_memlet(block, x_node, softmax_node, "X", {}, tensor_type);
 
     analysis::AnalysisManager analysis_manager(sdfg);
-    passes::scheduler::CUDAScheduler scheduler;
+    passes::scheduler::CUDAOffloadScheduler scheduler;
     std::vector<structured_control_flow::StructuredLoop*> scheduled_loops;
 
     EXPECT_TRUE(scheduler.post_schedule(builder, analysis_manager, scheduled_loops));
@@ -360,7 +359,7 @@ TEST(CUDASchedulerTest, PostScheduleRunsTransferExtractionWithoutGpuMaps) {
 // Regression test: When running the CUDA scheduler after another scheduler
 // has already CUDA-scheduled some maps, the analysis must reflect the updated
 // schedule types. This simulates the {"rpc", "cuda"} pipeline.
-TEST(CUDASchedulerTest, MultipleTargetsNoDoubleScheduling) {
+TEST(CUDAOffloadSchedulerTest, MultipleTargetsNoDoubleScheduling) {
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
 
     auto& sdfg = builder.subject();
@@ -425,7 +424,7 @@ TEST(CUDASchedulerTest, MultipleTargetsNoDoubleScheduling) {
     EXPECT_TRUE(loop_scheduling_pass.run(builder, analysis_manager));
 
     // map_2 should now be CUDA
-    EXPECT_EQ(map_2.schedule_type().value(), cuda::ScheduleType_CUDA::value());
+    EXPECT_EQ(map_2.schedule_type().value(), cuda::ScheduleType_CUDA_Offload::value());
 
     // map_1 should still be CUDA (not double-offloaded)
     EXPECT_EQ(map_1.schedule_type().value(), cuda::ScheduleType_CUDA::value());
@@ -444,7 +443,7 @@ TEST(CUDASchedulerTest, MultipleTargetsNoDoubleScheduling) {
 
 // Regression test: CUDA scheduler must not double-schedule maps that are already
 // CUDA-scheduled (e.g. after RPC scheduling applied CUDATransform).
-TEST(CUDASchedulerTest, NoDoubleSchedulingOfCUDAMaps) {
+TEST(CUDAOffloadSchedulerTest, NoDoubleSchedulingOfCUDAMaps) {
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
 
     auto& sdfg = builder.subject();
@@ -575,11 +574,11 @@ TEST(CUDASchedulerTest, NoDoubleSchedulingOfCUDAMaps) {
     EXPECT_EQ(map3.schedule_type().value(), cuda::ScheduleType_CUDA::value());
 
     // Maps 4-5 should now be CUDA-scheduled
-    EXPECT_EQ(map4.schedule_type().value(), cuda::ScheduleType_CUDA::value());
-    EXPECT_EQ(map5.schedule_type().value(), cuda::ScheduleType_CUDA::value());
+    EXPECT_EQ(map4.schedule_type().value(), cuda::ScheduleType_CUDA_Offload::value());
+    EXPECT_EQ(map5.schedule_type().value(), cuda::ScheduleType_CUDA_Offload::value());
 }
 
-TEST(CUDASchedulerTest, DISABLED_OuterParallelMapWithInnerReduce) {
+TEST(CUDAOffloadSchedulerTest, DISABLED_OuterParallelMapWithInnerReduce) {
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
 
     auto& sdfg = builder.subject();
@@ -648,7 +647,7 @@ TEST(CUDASchedulerTest, DISABLED_OuterParallelMapWithInnerReduce) {
 // CUDA schedule (as returned by remote tuning) has no nested maps, so it escapes the
 // descendant-only compatibility filter. The scheduler must still leave it untouched (find()
 // returns SKIP) instead of re-applying CUDATransform, which would nest device buffers.
-TEST(CUDASchedulerTest, SkipsLoneAlreadyCUDAScheduledMap) {
+TEST(CUDAOffloadSchedulerTest, SkipsLoneAlreadyCUDAScheduledMap) {
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
     auto& sdfg = builder.subject();
     auto& root = sdfg.root();

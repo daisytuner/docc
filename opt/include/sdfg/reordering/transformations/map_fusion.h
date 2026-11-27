@@ -17,6 +17,15 @@ namespace transformations {
 class FusionConsumerUpdateVisitor;
 
 /**
+ * @brief The element type @p dataflow writes to @p container, for the scalar a fusion streams it through.
+ *
+ * Taken from the writing memlet, since the container's type does not know it for opaque pointers (as lifted from
+ * LLVM IR). Falls back to the container's primitive type if @p dataflow does not write it.
+ */
+types::PrimitiveType
+written_element_type(const Function& function, const data_flow::DataFlowGraph& dataflow, const std::string& container);
+
+/**
  * @brief Map fusion transformation that fuses two sequential maps
  *
  * This transformation fuses two sequential maps (children of the same sequence)

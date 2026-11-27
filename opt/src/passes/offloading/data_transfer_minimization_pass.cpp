@@ -4,6 +4,7 @@
 #include <string>
 #include <unordered_set>
 #include <utility>
+#include "sdfg/types/utils.h"
 
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/analysis/data_transfer_elimination_analysis.h"
@@ -158,8 +159,7 @@ bool DataTransferMinimizationPass::eliminate_transfer_pair(
 
     // Maps the device pointers if necessary
     if (aliases) {
-        auto& container_type = builder.subject().type(copy_out_device_container);
-        auto ref_type = container_type.clone();
+        auto ref_type = types::pointer_alias_base_type(builder.subject().type(copy_out_device_container));
         auto& in_access = builder.add_access(*copy_in_block, copy_out_device_container, copy_out_src_debinfo);
         auto& out_access = builder.add_access(*copy_in_block, copy_in_device_container, copy_in_dst_debinfo);
         builder.add_reference_memlet(

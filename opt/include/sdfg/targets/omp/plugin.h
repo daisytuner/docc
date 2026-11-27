@@ -7,7 +7,6 @@
 #include "sdfg/codegen/dispatchers/node_dispatcher_registry.h"
 #include "sdfg/passes/scheduler/omp_scheduler.h"
 #include "sdfg/plugins/plugins.h"
-#include "sdfg/scheduling/scheduler_registry.h"
 #include "sdfg/targets/omp/codegen/omp_map_dispatcher.h"
 #include "sdfg/targets/omp/schedule.h"
 #include "sdfg/tiles/tile_target_registry.h"
@@ -62,9 +61,6 @@ inline void register_omp_plugin(plugins::Context& context) {
             );
         }
     );
-
-    context.get_scheduler_registry()
-        .register_loop_scheduler<passes::scheduler::OMPScheduler>(passes::scheduler::OMPScheduler::target());
 
     context.get_tile_target_registry().register_target(ScheduleType_OMP::value(), std::make_shared<OMPTileTarget>());
 }

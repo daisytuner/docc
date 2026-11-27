@@ -108,10 +108,11 @@ set(TEST_FILES
     passes/offloading/rocm_library_node_transfer_extraction_pass_test.cpp
     passes/offloading/cuda_library_node_rewriter_pass_test.cpp
     passes/offloading/rocm_library_node_rewriter_pass_test.cpp
-    passes/scheduler/cuda_scheduler_test.cpp
+    passes/scheduler/cuda_offload_scheduler_test.cpp
     passes/scheduler/gpu_post_schedule_test.cpp
     passes/scheduler/omp_scheduler_test.cpp
-    passes/scheduler/rocm_scheduler_test.cpp
+    passes/scheduler/rocm_offload_scheduler_test.cpp
+    scheduling/target_scheduling_test.cpp
     targets/cuda/cuda_language_extension_test.cpp
     targets/cuda/cuda_lib_dispatcher_test.cpp
     targets/omp/codegen/omp_map_dispatcher_test.cpp

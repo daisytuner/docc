@@ -19,7 +19,6 @@ sdfg = build_waxpby().move()
 print(sdfg.root.at(0))   # <For indvar='i' ...>
 sdfg.simplify()
 print(sdfg.root.at(0))   # <Map indvar='i' schedule='SEQUENTIAL' ...>
-sdfg.normalize()
 sdfg.schedule("openmp", "server", False)
 print(sdfg.root.at(0))   # <Map indvar='i' schedule='CPU_PARALLEL' ...>
 ```
@@ -28,8 +27,7 @@ print(sdfg.root.at(0))   # <Map indvar='i' schedule='CPU_PARALLEL' ...>
 | ------------- | ---------------------------------------------------------------------------------------------------------------- |
 | `expand()`    | Expands library nodes into loops and tasklets where the target has no better implementation                     |
 | `simplify()`  | Runs the simplification pipelines (dataflow, symbolic, dead code, constants). Its last pass, `AutoParallelization`, turns every `For` whose iterations are independent into a `Map`. |
-| `normalize()` | Brings loops into a canonical form and fuses loops and blocks where possible                                    |
-| `schedule()`  | Runs the loop schedulers of the target, which assign a schedule to each `Map`, here OpenMP                      |
+| `schedule()`  | Brings the SDFG into the target's normal form (for CPU targets: canonical loops, fused loops and blocks), then runs the target's loop schedulers, which assign a schedule to each `Map`, here OpenMP |
 
 These are the stages that `DOCC_DEBUG=dump` writes for the Python and PyTorch frontends, see [Debug Options](../../python/debugging.md#look-at-the-intermediate-steps). The C/C++ frontend runs the same kinds of passes inside the LLVM plugin.
 

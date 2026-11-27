@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include "sdfg/types/utils.h"
 
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/data_flow/access_node.h"
@@ -235,7 +236,7 @@ bool DeviceResidentArgPromotionPass::
         auto* block = record.block;
         if (record.alloc) {
             // Replace the device-buffer allocation with a reference: dev = arg.
-            auto ref_type = sdfg.type(arg).clone();
+            auto ref_type = types::pointer_alias_base_type(sdfg.type(arg));
             builder.clear_code_node_legacy(*block, *record.node);
             auto& src = builder.add_access(*block, arg);
             auto& dst = builder.add_access(*block, record.dev);

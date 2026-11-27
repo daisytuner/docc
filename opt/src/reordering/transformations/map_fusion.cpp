@@ -25,6 +25,20 @@ namespace transformations {
 
 using loop_fusion::FusionRegCandidate;
 
+types::PrimitiveType
+written_element_type(const Function& function, const data_flow::DataFlowGraph& dataflow, const std::string& container) {
+    for (auto& node : dataflow.nodes()) {
+        auto* access = dynamic_cast<const data_flow::AccessNode*>(&node);
+        if (access == nullptr || access->data() != container) {
+            continue;
+        }
+        for (auto& in_edge : dataflow.in_edges(*access)) {
+            return in_edge.result_type(function)->primitive_type();
+        }
+    }
+    return function.type(container).primitive_type();
+}
+
 MapFusion::MapFusion(
     structured_control_flow::Map& first_map,
     structured_control_flow::StructuredLoop& second_loop,
@@ -646,8 +660,7 @@ void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
         for (size_t cand_idx = 0; cand_idx < fusion_candidates_.size(); ++cand_idx) {
             auto& candidate = fusion_candidates_[cand_idx];
 
-            auto& container_type = sdfg.type(candidate.container);
-            types::Scalar tmp_type(container_type.primitive_type());
+            types::Scalar tmp_type(written_element_type(sdfg, first_dataflow, candidate.container));
             std::string temp_name;
             if (!init_hoist_) {
                 // Case 1: scalarize the streamed element into a private temp.
@@ -793,31 +806,40 @@ void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
         for (size_t cand_idx = 0; cand_idx < fusion_candidates_.size(); ++cand_idx) {
             auto& candidate = fusion_candidates_[cand_idx];
 
-            auto& container_type = sdfg.type(candidate.container);
+            // The producer's write of the container. Its memlet knows the written element type, which the container's
+            // type does not for opaque pointers (as lifted from LLVM IR).
+            data_flow::AccessNode* write_access = nullptr;
+            for (auto& node : producer_dataflow.nodes()) {
+                auto* access = dynamic_cast<data_flow::AccessNode*>(&node);
+                if (access != nullptr && access->data() == candidate.container &&
+                    producer_dataflow.in_degree(*access) > 0) {
+                    write_access = access;
+                    break;
+                }
+            }
+            data_flow::Subset original_write_subset;
+            std::unique_ptr<types::IType> original_write_base_type = sdfg.type(candidate.container).clone();
+            types::PrimitiveType element_type = original_write_base_type->primitive_type();
+            if (write_access != nullptr) {
+                for (auto& in_edge : producer_dataflow.in_edges(*write_access)) {
+                    original_write_subset = in_edge.subset();
+                    original_write_base_type = in_edge.base_type().clone();
+                    element_type = in_edge.result_type(sdfg)->primitive_type();
+                }
+            }
+
             std::string temp_name = builder.find_new_name("_fused_tmp");
-            types::Scalar tmp_type(container_type.primitive_type());
+            types::Scalar tmp_type(element_type);
             builder.add_container(temp_name, tmp_type);
             candidate_temps.push_back(temp_name);
 
             // Step 1: Modify the original producer block to write to _fused_tmp
-            data_flow::Subset original_write_subset;
-            for (auto& node : producer_dataflow.nodes()) {
-                auto* access = dynamic_cast<data_flow::AccessNode*>(&node);
-                if (access == nullptr || access->data() != candidate.container) {
-                    continue;
-                }
-                if (producer_dataflow.in_degree(*access) == 0) {
-                    continue;
-                }
-
-                // This is the write access node — save the original subset, then redirect
-                for (auto& in_edge : producer_dataflow.in_edges(*access)) {
-                    original_write_subset = in_edge.subset();
+            if (write_access != nullptr) {
+                for (auto& in_edge : producer_dataflow.in_edges(*write_access)) {
                     in_edge.set_subset({});
                     in_edge.set_base_type(tmp_type);
                 }
-                access->data(temp_name);
-                break;
+                write_access->data(temp_name);
             }
 
             // Step 2: Add a writeback block: container[original_subset] = _fused_tmp
@@ -826,7 +848,16 @@ void MapFusion::apply(builder::StructuredSDFGBuilder& builder, analysis::Analysi
             auto& wb_dst = builder.add_access(wb_block, candidate.container);
             auto& wb_tasklet = builder.add_tasklet(wb_block, data_flow::TaskletCode::assign, "_out", {"_in"});
             builder.add_computational_memlet(wb_block, wb_src, wb_tasklet, "_in", {});
-            builder.add_computational_memlet(wb_block, wb_tasklet, "_out", wb_dst, original_write_subset);
+            builder.add_memlet(
+                wb_block,
+                wb_tasklet,
+                "_out",
+                wb_dst,
+                "void",
+                original_write_subset,
+                *original_write_base_type,
+                DebugInfo()
+            );
 
             // Step 3: Copy consumer blocks after the writeback block
             structured_control_flow::ControlFlowNode* last_inserted = &wb_block;

@@ -56,10 +56,8 @@ The Python frontend runs when a `@native` function is called for the first time 
  optimization       simplification, loop fusion                       py3.opt
           │
           ▼
- normalization      loop normalization (CPU targets)                  py4.norm
-          │
-          ▼
- scheduling         loops ─► target schedules                         py5.post_sched
+ scheduling         target normal form                                py4.norm
+                    loops ─► target schedules                         py5.post_sched
           │
           ▼
  code generation    SDFG ─► C++/CUDA/HIP ─► Clang ─► shared library
