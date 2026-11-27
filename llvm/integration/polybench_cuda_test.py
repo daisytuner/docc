@@ -875,8 +875,8 @@ def test_doitgen(datatype, compiler="clang-21", size="MEDIUM_DATASET"):
         verification={
             "sdfgs": 9,
             "REDUCE": 5,
-            "SEQUENTIAL": 14,
-            "CUDA_Offload": 5,
+            "SEQUENTIAL": 13,
+            "CUDA_Offload": 6,
             "FOR": 4,
             "CUDAOffloading": 6,
             "MAP": 10,
