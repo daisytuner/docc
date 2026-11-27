@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -546,6 +547,55 @@ TEST(OzakiContractionTest, Direct_SlicesInTheContractionsTypeByRounding) {
             }
         };
     visit(sdfg.root());
+}
+
+namespace {
+
+/// The values of the floating-point constants @p sdfg's blocks compute with.
+std::vector<double> float_constants(StructuredSDFG& sdfg) {
+    std::vector<double> values;
+    visitor::for_each_block(sdfg.root(), [&](structured_control_flow::Block& block) {
+        for (auto* node : block.dataflow().data_nodes()) {
+            auto* constant = dynamic_cast<data_flow::ConstantNode*>(node);
+            if (constant && types::is_floating_point(constant->type().primitive_type())) {
+                values.push_back(std::stod(constant->data()));
+            }
+        }
+    });
+    return values;
+}
+
+/// Whether @p sdfg starts the absolute maxima of its scales at @p tiny, and at Float's own smallest normal nowhere.
+void expect_least_scale(StructuredSDFG& sdfg, double tiny) {
+    auto values = float_constants(sdfg);
+    EXPECT_NE(std::find(values.begin(), values.end(), tiny), values.end());
+    EXPECT_EQ(
+        std::find(values.begin(), values.end(), static_cast<double>(std::numeric_limits<float>::min())), values.end()
+    );
+}
+
+} // namespace
+
+TEST(OzakiContractionTest, Direct_ScalesAtLeastTheTargetsSmallestNormal) {
+    // A target computing in a float of fewer exponent bits flushes Float's smallest normal to zero, which would leave
+    // the scale of an all-zero row zero and its reciprocal infinite.
+    double tiny = std::ldexp(1.0, -62);
+    builder::StructuredSDFGBuilder builder("ozaki_direct_tiny", FunctionType_CPU);
+    auto& matmul =
+        add_matmul(builder, PrimitiveType::Float, symbolic::integer(M), symbolic::integer(N), symbolic::integer(K));
+    applying<fp_math::OzakiContraction>(fp_math::OzakiVariant::Slicing, 2, fp_math::Rescaling::Direct, 0, tiny)(
+        matmul, builder
+    );
+    expect_least_scale(builder.subject(), tiny);
+}
+
+TEST(QuantizeContractionTest, Direct_ScalesAtLeastTheTargetsSmallestNormal) {
+    double tiny = std::ldexp(1.0, -62);
+    builder::StructuredSDFGBuilder builder("quantize_direct_tiny", FunctionType_CPU);
+    auto& matmul =
+        add_matmul(builder, PrimitiveType::Float, symbolic::integer(M), symbolic::integer(N), symbolic::integer(K));
+    applying<fp_math::QuantizeContraction>(8, fp_math::Rescaling::Direct, tiny)(matmul, builder);
+    expect_least_scale(builder.subject(), tiny);
 }
 
 TEST(OzakiContractionTest, Direct_TwoSlicesBetweenInt8AndFloat) {

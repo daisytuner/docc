@@ -276,7 +276,7 @@ passes::LibNodeExpander::ExpandOutcome OzakiMatMulExpander::handle_expand(
         int bits = std::min(types::significand_bits(node.element()) + 2, max_bits_);
         a_slices = std::max(1, (bits + 6) / 7);
     }
-    detail::build_slicing_direct_prepared(kb, operands, slices, scales, a_slices);
+    detail::build_slicing_direct_prepared(kb, operands, slices, scales, a_slices, min_normal_);
     kb.finish();
     return standalone->successfully_expanded();
 }
@@ -435,13 +435,15 @@ passes::LibNodeExpander::ExpandOutcome OzakiSliceExpander::handle_expand(
         auto value = block.read(access, {layout.resolve_element(indices)}, pointer);
         return element == type ? value : block.convert(value, type);
     };
-    detail::build_row_slices(kb, detail::Batch{node.batch()}, type, node.rows(), node.columns(), read, scales, slices);
+    detail::build_row_slices(
+        kb, detail::Batch{node.batch()}, type, node.rows(), node.columns(), read, scales, slices, min_normal_
+    );
     kb.finish();
     return standalone->successfully_expanded();
 }
 
 bool expand_ozaki_matmuls(
-    builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager, int max_bits
+    builder::StructuredSDFGBuilder& builder, analysis::AnalysisManager& analysis_manager, int max_bits, double min_normal
 ) {
     std::vector<std::pair<structured_control_flow::Block*, data_flow::LibraryNode*>> found;
     visitor::for_each_block(builder.subject().root(), [&](structured_control_flow::Block& block) {
@@ -451,8 +453,8 @@ bool expand_ozaki_matmuls(
             }
         }
     });
-    OzakiMatMulExpander expander(max_bits);
-    OzakiSliceExpander slice_expander;
+    OzakiMatMulExpander expander(max_bits, min_normal);
+    OzakiSliceExpander slice_expander(min_normal);
     for (auto& [block, node] : found) {
         bool expanded = dynamic_cast<OzakiSliceNode*>(node)
                             ? passes::expansion::expand_single_node(builder, *block, *node, slice_expander).expanded

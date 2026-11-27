@@ -38,8 +38,9 @@ types::PrimitiveType compute_type(types::PrimitiveType type);
 /// The element type of a contraction: its result's.
 types::PrimitiveType contraction_type(const data_flow::LibraryNode& node);
 
-/// The smallest positive normal value of @p type.
-double smallest_normal(types::PrimitiveType type);
+/// The smallest positive normal value of @p type, or @p min_normal if larger: the smallest normal of the float a target
+/// computes in, if it computes in a narrower one, below which values flush to zero.
+double smallest_normal(types::PrimitiveType type, double min_normal = 0);
 
 /// The matrices a batched contraction repeats over: its batch dimensions, outermost first; none for one matrix.
 struct Batch {
@@ -147,18 +148,20 @@ void int8_matmul(
 /// Slicing with direct rescaling (see OzakiContraction) of A only: B's slices and the scales of its columns were
 /// prepared before, as slicing with direct rescaling computes them, each slice an Int8 buffer holding the row-major
 /// k x n matrix (one after the other per matrix of a batch), the scales a buffer of n per matrix in A's type. A takes
-/// @p a_slices slices, as many as B if 0.
+/// @p a_slices slices, as many as B if 0. A's scales are at least @p min_normal (see smallest_normal).
 void build_slicing_direct_prepared(
     KernelBuilder& kb,
     ContractionOperands& operands,
     const std::vector<std::string>& b_slices,
     const std::string& scales_b,
-    int a_slices = 0
+    int a_slices = 0,
+    double min_normal = 0
 );
 
 /// The scales of the rows of the @p rows x @p columns matrices X, their absolute maxima, into the container @p scales
 /// and X's row-major Int8 slices into @p slices, as slicing with direct rescaling slices A (see OzakiContraction);
-/// per matrix of @p batch, one after the other. @p read gives X(row, column) in @p type.
+/// per matrix of @p batch, one after the other. @p read gives X(row, column) in @p type. The scales are at least
+/// @p min_normal (see smallest_normal).
 void build_row_slices(
     KernelBuilder& kb,
     const Batch& batch,
@@ -167,7 +170,8 @@ void build_row_slices(
     const symbolic::Expression& columns,
     const MatrixRead& read,
     const std::string& scales,
-    const std::vector<std::string>& slices
+    const std::vector<std::string>& slices,
+    double min_normal = 0
 );
 
 /// The MatMul or GEMM node a transformation description refers to as its subgraph node "0".
