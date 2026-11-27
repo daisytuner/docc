@@ -35,6 +35,54 @@ def test_argwhere_bigger(target: str) -> None:
     check(ArgwhereBiggerNet(), torch.tensor([[1, 0, 1], [0, 1, 1]]), target=target)
 
 
+# --- as_strided_copy ---
+
+
+def test_as_strided_copy_simple(target: str) -> None:
+    class AsStridedCopySimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.as_strided_copy(input, (2, 2), (1, 2))
+
+    check(AsStridedCopySimpleNet(), torch.randn(3, 3), target=target)
+
+
+def test_as_strided_copy_offset(target: str) -> None:
+    class AsStridedCopyOffsetNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.as_strided_copy(input, (2, 2), (1, 2), 1)
+
+    check(AsStridedCopyOffsetNet(), torch.randn(3, 3), target=target)
+
+
+# --- as_strided_scatter ---
+
+
+@pytest.mark.skip(reason="Needs support for aten.as_strided_scatter.default")
+def test_as_strided_scatter_simple(target: str) -> None:
+    class AsStridedScatterSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor, src: torch.Tensor) -> torch.Tensor:
+            return torch.as_strided_scatter(input, src, (2, 2), (1, 2))
+
+    check(
+        AsStridedScatterSimpleNet(),
+        *(torch.zeros(3, 3), torch.add(torch.arange(4).reshape(2, 2), 1)),
+        target=target,
+    )
+
+
+@pytest.mark.skip(reason="Needs support for aten.as_strided_scatter.default")
+def test_as_strided_scatter_offset(target: str) -> None:
+    class AsStridedScatterOffsetNet(nn.Module):
+        def forward(self, input: torch.Tensor, src: torch.Tensor) -> torch.Tensor:
+            return torch.as_strided_scatter(input, src, (2, 2), (1, 2), 1)
+
+    check(
+        AsStridedScatterOffsetNet(),
+        *(torch.zeros(3, 3), torch.add(torch.arange(4).reshape(2, 2), 1)),
+        target=target,
+    )
+
+
 # --- cat ---
 
 
@@ -128,6 +176,63 @@ def test_chunk_evenly(target: str) -> None:
             return torch.chunk(input, 6)
 
     check(ChunkEvenlyNet(), torch.arange(12), target=target)
+
+
+# --- detach ---
+
+
+def test_detach_simple(target: str) -> None:
+    class DetachSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.detach(input)
+
+    check(DetachSimpleNet(), torch.randn(2, 3), target=target)
+
+
+# --- detach_copy ---
+
+
+def test_detach_copy_simple(target: str) -> None:
+    class DetachCopySimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.detach_copy(input)
+
+    check(DetachCopySimpleNet(), torch.randn(2, 3), target=target)
+
+
+# --- diagonal_copy ---
+
+
+def test_diagonal_copy_simple(target: str) -> None:
+    class DiagonalCopySimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.diagonal_copy(input)
+
+    check(DiagonalCopySimpleNet(), torch.randn(3, 3), target=target)
+
+
+def test_diagonal_copy_offset(target: str) -> None:
+    class DiagonalCopyOffsetNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.diagonal_copy(input, 1)
+
+    check(DiagonalCopyOffsetNet(), torch.randn(3, 3), target=target)
+
+
+def test_diagonal_copy_2d_non_quadratic(target: str) -> None:
+    class DiagonalCopy2DNonQuadraticNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.diagonal_copy(input, 1, 1, 0)
+
+    check(DiagonalCopy2DNonQuadraticNet(), torch.randn(2, 5), target=target)
+
+
+def test_diagonal_copy_4d_non_quadratic(target: str) -> None:
+    class DiagonalCopy4DNonQuadraticNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.diagonal_copy(input, offset=-1, dim1=1, dim2=2)
+
+    check(DiagonalCopy4DNonQuadraticNet(), torch.randn(2, 5, 4, 2), target=target)
 
 
 # --- dsplit ---
@@ -454,6 +559,53 @@ def test_index_put_multi_indices_accumulate(target: str) -> None:
     )
 
 
+# --- index_reduce ---
+
+
+@pytest.mark.skip(reason="Needs support for aten.index_reduce.default")
+def test_index_reduce_simple(target: str) -> None:
+    class IndexReduceSimpleNet(nn.Module):
+        def forward(
+            self, input: torch.Tensor, index: torch.Tensor, source: torch.Tensor
+        ) -> torch.Tensor:
+            return torch.index_reduce(input, 0, index, source, "prod")
+
+    check(
+        IndexReduceSimpleNet(),
+        *(
+            torch.empty(5, 3).fill_(2),
+            torch.tensor([0, 4, 2, 0]),
+            torch.tensor(
+                [[1, 2, 3], [4, 5, 6], [7, 8, 9], [10, 11, 12]], dtype=torch.float
+            ),
+        ),
+        target=target,
+    )
+
+
+@pytest.mark.skip(reason="Needs support for aten.index_reduce.default")
+def test_index_reduce_exclude_self(target: str) -> None:
+    class IndexReduceExcludeSelf(nn.Module):
+        def forward(
+            self, input: torch.Tensor, index: torch.Tensor, source: torch.Tensor
+        ) -> torch.Tensor:
+            return torch.index_reduce(
+                input, 0, index, source, "prod", include_self=False
+            )
+
+    check(
+        IndexReduceExcludeSelf(),
+        *(
+            torch.empty(5, 3).fill_(2),
+            torch.tensor([0, 4, 2, 0]),
+            torch.tensor(
+                [[1, 2, 3], [4, 5, 6], [7, 8, 9], [10, 11, 12]], dtype=torch.float
+            ),
+        ),
+        target=target,
+    )
+
+
 # --- index_select ---
 
 
@@ -479,6 +631,265 @@ def test_index_select_dim(target: str) -> None:
         *(torch.randn(3, 4), torch.tensor([0, 2])),
         target=target,
     )
+
+
+# --- masked_fill ---
+
+
+def test_masked_fill_simple(target: str) -> None:
+    class MaskedFillSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+            return torch.masked_fill(input, mask, 3.0)
+
+    check(
+        MaskedFillSimpleNet(),
+        *(torch.randn(2, 3), torch.tensor([[1, 0, 1], [0, 1, 0]], dtype=torch.bool)),
+        target=target,
+    )
+
+
+def test_masked_fill_broadcast(target: str) -> None:
+    class MaskedFillBroadcastNet(nn.Module):
+        def forward(self, input: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+            return torch.masked_fill(input, mask, 3.0)
+
+    check(
+        MaskedFillBroadcastNet(),
+        *(torch.randn(2, 3), torch.tensor([1, 0, 1], dtype=torch.bool)),
+        target=target,
+    )
+
+
+# --- masked_select ---
+
+
+def test_masked_select_simple(target: str) -> None:
+    class MaskedSelectSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+            return torch.masked_select(input, mask)
+
+    x = torch.randn(3, 4)
+    check(MaskedSelectSimpleNet(), *(x, x.ge(0.5)), target=target)
+
+
+# --- movedim ---
+
+
+def test_movedim_simple(target: str) -> None:
+    class MovedimSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.movedim(input, 1, 0)
+
+    check(MovedimSimpleNet(), torch.randn(3, 2, 1), target=target)
+
+
+def test_movedim_tuple(target: str) -> None:
+    class MovedimTupleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.movedim(input, (1, 2), (0, 1))
+
+    check(MovedimTupleNet(), torch.randn(3, 2, 1), target=target)
+
+
+# --- moveaxis ---
+
+
+def test_moveaxis_simple(target: str) -> None:
+    class MoveaxisSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.moveaxis(input, 1, 0)
+
+    check(MoveaxisSimpleNet(), torch.randn(3, 2, 1), target=target)
+
+
+def test_moveaxis_tuple(target: str) -> None:
+    class MoveaxisTupleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.moveaxis(input, (1, 2), (0, 1))
+
+    check(MoveaxisTupleNet(), torch.randn(3, 2, 1), target=target)
+
+
+# --- narrow ---
+
+
+def test_narrow_simple(target: str) -> None:
+    class NarrowSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.narrow(input, 0, 0, 2)
+
+    check(
+        NarrowSimpleNet(),
+        torch.tensor([[1, 2, 3], [4, 5, 6], [7, 8, 9]]),
+        target=target,
+    )
+
+
+def test_narrow_start(target: str) -> None:
+    class NarrowStartNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.narrow(input, 1, 1, 2)
+
+    check(
+        NarrowStartNet(),
+        torch.tensor([[1, 2, 3], [4, 5, 6], [7, 8, 9]]),
+        target=target,
+    )
+
+
+def test_narrow_start_neg(target: str) -> None:
+    class NarrowStartNegNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.narrow(input, -1, torch.tensor(-1), 1)
+
+    check(
+        NarrowStartNegNet(),
+        torch.tensor([[1, 2, 3], [4, 5, 6], [7, 8, 9]]),
+        target=target,
+    )
+
+
+# --- narrow_copy ---
+
+
+def test_narrow_copy_simple(target: str) -> None:
+    class NarrowCopySimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.narrow_copy(input, 0, 0, 2)
+
+    check(
+        NarrowCopySimpleNet(),
+        torch.tensor([[1, 2, 3], [4, 5, 6], [7, 8, 9]]),
+        target=target,
+    )
+
+
+def test_narrow_copy_start(target: str) -> None:
+    class NarrowCopyStartNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.narrow_copy(input, 1, 1, 2)
+
+    check(
+        NarrowCopyStartNet(),
+        torch.tensor([[1, 2, 3], [4, 5, 6], [7, 8, 9]]),
+        target=target,
+    )
+
+
+def test_narrow_copy_start_neg(target: str) -> None:
+    class NarrowCopyStartNegNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.narrow_copy(input, -1, -1, 1)
+
+    check(
+        NarrowCopyStartNegNet(),
+        torch.tensor([[1, 2, 3], [4, 5, 6], [7, 8, 9]]),
+        target=target,
+    )
+
+
+# --- nonzero ---
+
+
+def test_nonzero_simple(target: str) -> None:
+    class NonzeroSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.nonzero(input)
+
+    check(NonzeroSimpleNet(), torch.tensor([1, 1, 1, 0, 1]), target=target)
+
+
+def test_nonzero_multidim(target: str) -> None:
+    class NonzeroMultidimNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.nonzero(input)
+
+    check(
+        NonzeroMultidimNet(),
+        torch.tensor(
+            [
+                [0.6, 0.0, 0.0, 0.0],
+                [0.0, 0.4, 0.0, 0.0],
+                [0.0, 0.0, 1.2, 0.0],
+                [0.0, 0.0, 0.0, -0.4],
+            ]
+        ),
+        target=target,
+    )
+
+
+def test_nonzero_tuple(target: str) -> None:
+    class NonzeroTupleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> tuple[torch.Tensor, ...]:
+            return torch.nonzero(input, as_tuple=True)
+
+    check(NonzeroTupleNet(), torch.tensor([1, 1, 1, 0, 1]), target=target)
+
+
+def test_nonzero_tuple_multidim(target: str) -> None:
+    class NonzeroTupleMultidimNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> tuple[torch.Tensor, ...]:
+            return torch.nonzero(input, as_tuple=True)
+
+    check(
+        NonzeroTupleMultidimNet(),
+        torch.tensor(
+            [
+                [0.6, 0.0, 0.0, 0.0],
+                [0.0, 0.4, 0.0, 0.0],
+                [0.0, 0.0, 1.2, 0.0],
+                [0.0, 0.0, 0.0, -0.4],
+            ]
+        ),
+        target=target,
+    )
+
+
+def test_nonzero_tuple_value(target: str) -> None:
+    class NonzeroTupleValueNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> tuple[torch.Tensor, ...]:
+            return torch.nonzero(input, as_tuple=True)
+
+    check(NonzeroTupleValueNet(), torch.tensor(5), target=target)
+
+
+# --- nonzero_static ---
+
+
+@pytest.mark.skip(reason="Needs support for aten.nonzero_static.default")
+def test_nonzero_static_simple(target: str) -> None:
+    class NonzeroStaticSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.nonzero_static(input, size=4)
+
+    check(NonzeroStaticSimpleNet(), torch.tensor([[1, 0], [3, 2]]), target=target)
+
+
+@pytest.mark.skip(reason="Needs support for aten.nonzero_static.default")
+def test_nonzero_static_truncating(target: str) -> None:
+    class NonzeroStaticTruncatingNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.nonzero_static(input, size=2)
+
+    check(NonzeroStaticTruncatingNet(), torch.tensor([[1, 0], [3, 2]]), target=target)
+
+
+@pytest.mark.skip(reason="Needs support for aten.nonzero_static.default")
+def test_nonzero_static_zero_size(target: str) -> None:
+    class NonzeroStaticZeroSizeNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.nonzero_static(input, size=0)
+
+    check(NonzeroStaticZeroSizeNet(), torch.tensor([10]), target=target)
+
+
+@pytest.mark.skip(reason="Needs support for aten.nonzero_static.default")
+def test_nonzero_static_zero_rank(target: str) -> None:
+    class NonzeroStaticZeroRankNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.nonzero_static(input, size=2)
+
+    check(NonzeroStaticZeroRankNet(), torch.tensor(10), target=target)
 
 
 # --- permute ---

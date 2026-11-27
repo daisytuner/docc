@@ -22,6 +22,41 @@ def test_clone_memory_format_contiguous(target: str) -> None:
     check(CloneMemoryFormatContiguousNet(), torch.randn(2, 3), target=target)
 
 
+# --- diagonal ---
+
+
+def test_diagonal_simple(target: str) -> None:
+    class DiagonalSimpleNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.diagonal(input)
+
+    check(DiagonalSimpleNet(), torch.randn(3, 3), target=target)
+
+
+def test_diagonal_offset(target: str) -> None:
+    class DiagonalOffsetNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.diagonal(input, 1)
+
+    check(DiagonalOffsetNet(), torch.randn(3, 3), target=target)
+
+
+def test_diagonal_2d_non_quadratic(target: str) -> None:
+    class Diagonal2DNonQuadraticNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.diagonal(input, 1, 1, 0)
+
+    check(Diagonal2DNonQuadraticNet(), torch.randn(2, 5), target=target)
+
+
+def test_diagonal_4d_non_quadratic(target: str) -> None:
+    class Diagonal4DNonQuadraticNet(nn.Module):
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            return torch.diagonal(input, offset=-1, dim1=1, dim2=2)
+
+    check(Diagonal4DNonQuadraticNet(), torch.randn(2, 5, 4, 2), target=target)
+
+
 # --- embedding ---
 
 

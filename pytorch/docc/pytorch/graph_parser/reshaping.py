@@ -155,11 +155,11 @@ class WhereParser(GraphParserModule):
         debug_info: DebugInfo = self.get_debug_info(node)
         builder.add_conditional_copy_op(
             condition_info.container(),
-            condition_info.sdfg_tensor_type(),
+            condition_info.broadcast(result_info),
             self_info.container(),
-            self_info.sdfg_tensor_type(),
+            self_info.broadcast(result_info),
             other_info.container(),
-            other_info.sdfg_tensor_type(),
+            other_info.broadcast(result_info),
             result_info.container(),
             result_info.sdfg_tensor_type(),
             debug_info,
@@ -326,7 +326,9 @@ class ViewCopyParser(GraphParserModule):
     ) -> None:
         if len(node.args) != 2:
             raise GraphParserError(
-                self, node, "Expected exactly 2 argument but got " + str(len(node.args))
+                self,
+                node,
+                "Expected exactly 2 arguments but got " + str(len(node.args)),
             )
         if len(node.kwargs) != 0:
             raise GraphParserError(
@@ -406,3 +408,196 @@ class SplitWithSizesParser(GraphParserModule):
 
 
 register_module("aten.split_with_sizes.default", SplitWithSizesParser())
+
+
+class AsStridedCopyParser(GraphParserModule):
+    def parse(
+        self,
+        node: torch.fx.Node,
+        builder: StructuredSDFGBuilder,
+        metadata: TensorMetadata,
+    ) -> None:
+        if len(node.args) < 3 or len(node.args) > 4:
+            raise GraphParserError(
+                self,
+                node,
+                "Expected between 3 and 4 arguments but got: " + str(len(node.args)),
+            )
+        if len(node.kwargs) != 0:
+            raise GraphParserError(
+                self, node, "Unsupported kwargs: " + str(node.kwargs)
+            )
+
+        self_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 0)
+        size: list[str] = self.get_arg_multi_expr(node, 1)
+        stride: list[str] = self.get_arg_multi_expr(node, 2)
+        storage_offset: str = "0"
+        if len(node.args) == 4:
+            if not node.args[3] is None:
+                storage_offset: str = self.get_arg_expr(node, 3)
+        self_view_tensor: Tensor = Tensor(
+            self_info.element_type(), size, stride, storage_offset
+        )
+
+        result_info: TensorInfo = self.get_result_tensor_info(node, builder, metadata)
+        debug_info: DebugInfo = self.get_debug_info(node)
+        builder.add_copy_op(
+            self_info.container(),
+            self_view_tensor,
+            result_info.container(),
+            result_info.sdfg_tensor_type(),
+            debug_info,
+        )
+
+
+register_module("aten.as_strided_copy.default", AsStridedCopyParser())
+
+
+class DetachCopyParser(GraphParserModule):
+    def parse(
+        self,
+        node: torch.fx.Node,
+        builder: StructuredSDFGBuilder,
+        metadata: TensorMetadata,
+    ) -> None:
+        if len(node.args) != 1:
+            raise GraphParserError(
+                self,
+                node,
+                "Expected exactly one argument but got " + str(len(node.args)),
+            )
+        if len(node.kwargs) != 0:
+            raise GraphParserError(
+                self, node, "Unsupported kwargs: " + str(node.kwargs)
+            )
+
+        self_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 0)
+        result_info: TensorInfo = self.get_result_tensor_info(node, builder, metadata)
+        debug_info: DebugInfo = self.get_debug_info(node)
+
+        builder.add_copy_op(
+            self_info.container(),
+            self_info.sdfg_tensor_type(),
+            result_info.container(),
+            result_info.sdfg_tensor_type(),
+            debug_info,
+        )
+
+
+register_module("aten.detach_copy.default", DetachCopyParser())
+
+
+class DiagonalParser(GraphParserModule):
+    def parse(
+        self,
+        node: torch.fx.Node,
+        builder: StructuredSDFGBuilder,
+        metadata: TensorMetadata,
+    ) -> None:
+        if len(node.args) < 1 or len(node.args) > 4:
+            raise GraphParserError(
+                self,
+                node,
+                "Expected between 1 and 4 arguments but got: " + str(len(node.args)),
+            )
+        if len(node.kwargs) != 0:
+            raise GraphParserError(
+                self, node, "Unsupported kwargs: " + str(node.kwargs)
+            )
+
+        self_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 0)
+        if len(node.args) >= 2:
+            if node.args[1] is not None:
+                self.get_arg_expr(node, 1)
+        if len(node.args) >= 3:
+            if node.args[2] is not None:
+                self.get_arg_expr(node, 2)
+        if len(node.args) == 4:
+            if node.args[3] is not None:
+                self.get_arg_expr(node, 3)
+
+        self.create_result_view(node, builder, metadata, self_info)
+
+
+register_module("aten.diagonal.default", DiagonalParser())
+
+
+class NarrowCopyParser(GraphParserModule):
+    def parse(
+        self,
+        node: torch.fx.Node,
+        builder: StructuredSDFGBuilder,
+        metadata: TensorMetadata,
+    ) -> None:
+        if len(node.args) != 4:
+            raise GraphParserError(
+                self,
+                node,
+                "Expected exactly 4 argument but got: " + str(len(node.args)),
+            )
+        if len(node.kwargs) != 0:
+            raise GraphParserError(
+                self, node, "Unsupported kwargs: " + str(node.kwargs)
+            )
+
+        self_info: TensorInfo = self.get_arg_tensor_info(node, metadata, 0)
+        if not isinstance(node.args[1], int):
+            raise GraphParserError(
+                self,
+                node,
+                "Expected dim arg to be int type but got: " + str(type(node.args[1])),
+            )
+        dim: int = node.args[1]
+        if not isinstance(node.args[2], int):
+            raise GraphParserError(
+                self,
+                node,
+                "Expected start arg to be int type but got: " + str(type(node.args[2])),
+            )
+        start: int = node.args[2]
+        if not isinstance(node.args[3], int):
+            raise GraphParserError(
+                self,
+                node,
+                "Expected length arg to be int type but got: "
+                + str(type(node.args[3])),
+            )
+        length: int = node.args[3]
+
+        if dim < 0:
+            dim: int = len(self_info.shape()) + dim
+        if dim < 0 or dim >= len(self_info.shape()) or dim >= len(self_info.strides()):
+            raise GraphParserError(
+                self, node, f"Dim arg out of tensor bounds: {dim}, {self_info.shape()}"
+            )
+        # For now, until symbolic expressions are supported
+        try:
+            size: int = int(self_info.shape()[dim])
+            stride: int = int(self_info.strides()[dim])
+            offset: int = int(self_info.offset())
+        except ValueError as ve:
+            raise GraphParserError(self, node, str(ve))
+        if start < 0:
+            start: int = start + size
+
+        new_shape: list[str] = self_info.shape()
+        new_shape[dim] = str(length)
+        new_stride: list[str] = self_info.strides()
+        new_offset: str = str(offset + start)
+        new_tensor: Tensor = Tensor(
+            self_info.element_type(), new_shape, new_stride, new_offset
+        )
+
+        result_info: TensorInfo = self.get_result_tensor_info(node, builder, metadata)
+        debug_info: DebugInfo = self.get_debug_info(node)
+
+        builder.add_copy_op(
+            self_info.container(),
+            new_tensor,
+            result_info.container(),
+            result_info.sdfg_tensor_type(),
+            debug_info,
+        )
+
+
+register_module("aten.narrow_copy.default", NarrowCopyParser())
