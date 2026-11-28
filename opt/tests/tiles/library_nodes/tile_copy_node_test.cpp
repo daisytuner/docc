@@ -5,6 +5,9 @@
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
 #include "sdfg/codegen/language_extensions/c_language_extension.h"
+#include "sdfg/data_flow/library_nodes/stdlib/free.h"
+#include "sdfg/data_flow/library_nodes/stdlib/malloc.h"
+#include "sdfg/passes/dataflow/dead_data_elimination.h"
 #include "sdfg/serializer/json_serializer.h"
 #include "sdfg/targets/cuda/codegen/cuda_language_extension.h"
 #include "sdfg/targets/cuda/tiles/tile_copy_node.h"
@@ -832,5 +835,39 @@ TEST(TileCopyNodeTest, RocmAsyncCopyUsesLdsDmaOnlyWhenLaneContiguous) {
          }) {
         EXPECT_EQ(code.find("global_load_lds"), std::string::npos) << code;
         EXPECT_NE(code.find("reinterpret_cast<unsigned*>"), std::string::npos) << code;
+    }
+}
+
+TEST(TileCopyNodeTest, DeadDestinationRemovesTheCopy) {
+    // B = malloc(); copy L out into B; free(B): nothing reads B, so the copy, the allocation and the free go.
+    auto builder = make_builder();
+    types::Scalar elem(types::PrimitiveType::Float);
+    types::Pointer ptr(elem);
+    builder.add_container("B", ptr);
+    builder.add_container("L", ptr, true);
+    auto& root = builder.subject().root();
+
+    auto& allocation = builder.add_block(root);
+    auto& malloc_node = builder.add_library_node<stdlib::MallocNode>(allocation, DebugInfo(), symbolic::integer(16));
+    builder.add_computational_memlet(allocation, malloc_node, "_ret", builder.add_access(allocation, "B"), {}, ptr);
+
+    auto& copy = builder.add_block(root);
+    tiles::TiledCopy plan;
+    plan.src = tiles::Layout({symbolic::integer(4)}, {symbolic::integer(1)}, symbolic::integer(0));
+    plan.dst = tiles::Layout({symbolic::integer(4)}, {symbolic::integer(1)}, symbolic::integer(0));
+    plan.atom = tiles::CopyAtom::ScalarSync;
+    auto& node = builder.add_library_node<
+        tiles::TileCopyNode>(copy, DebugInfo(), ImplementationType_DUMMY, plan, tiles::CopyDirection::Out, 16);
+    builder.add_computational_memlet(copy, builder.add_access(copy, "B"), node, "_dst", {}, ptr);
+    builder.add_computational_memlet(copy, builder.add_access(copy, "L"), node, "_src", {}, ptr);
+
+    auto& release = builder.add_block(root);
+    auto& free_node = builder.add_library_node<stdlib::FreeNode>(release, DebugInfo());
+    builder.add_computational_memlet(release, builder.add_access(release, "B"), free_node, "_ptr", {}, ptr);
+
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    EXPECT_TRUE(passes::DeadDataElimination(false).run(builder, analysis_manager));
+    for (auto* block : {&allocation, &copy, &release}) {
+        EXPECT_TRUE(block->dataflow().library_nodes().empty());
     }
 }

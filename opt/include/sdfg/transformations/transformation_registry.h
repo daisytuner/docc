@@ -11,6 +11,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include <sdfg/code_motion/transformations/hoist_child.h>
+#include <sdfg/code_motion/transformations/move_child.h>
 #include <sdfg/einsum/einsum.h>
 #include <sdfg/fp_math/transformations/fuse_fma.h>
 #include <sdfg/fp_math/transformations/ozaki_contraction.h>
@@ -34,6 +36,7 @@
 #include <sdfg/targets/gpu/gpu_mma_interleave.h>
 #include <sdfg/tiles/transformations/local_storage.h>
 #include <sdfg/tiles/transformations/software_pipelining.h>
+#include <sdfg/tiles/transformations/tile_forwarding.h>
 #include <sdfg/tiles/transformations/tile_fusion.h>
 #include <sdfg/tiles/transformations/tile_streaming_copy.h>
 #include <sdfg/tiles/transformations/tile_vectorizer.h>
@@ -127,12 +130,18 @@ dispatch_transformation(const std::string& transformation_name, const nlohmann::
         return detail::invoke_for<loops::transformations::MultiLevelTiling>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "LoopDistribute") {
         return detail::invoke_for<reordering::transformations::LoopDistribute>(std::forward<Visitor>(visitor));
+    } else if (transformation_name == "MoveChild") {
+        return detail::invoke_for<code_motion::transformations::MoveChild>(std::forward<Visitor>(visitor));
+    } else if (transformation_name == "HoistChild") {
+        return detail::invoke_for<code_motion::transformations::HoistChild>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "LoopInterchange") {
         return detail::invoke_for<reordering::transformations::LoopInterchange>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "LocalStorage") {
         return detail::invoke_for<transformations::LocalStorage>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "SoftwarePipelining") {
         return detail::invoke_for<transformations::SoftwarePipelining>(std::forward<Visitor>(visitor));
+    } else if (transformation_name == "TileForwarding") {
+        return detail::invoke_for<transformations::TileForwarding>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "TileFusion") {
         return detail::invoke_for<transformations::TileFusion>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "TileVectorizer") {

@@ -30,6 +30,7 @@
 #include <sdfg/passes/dataflow/float_widening.h>
 #include <sdfg/passes/dataflow/local_buffer_reuse.h>
 #include <sdfg/passes/dataflow/tensor_to_pointer_conversion.h>
+#include <sdfg/passes/dataflow/view_copy_elimination.h>
 #include <sdfg/passes/dot_expansion_pass.h>
 #include <sdfg/passes/offloading/cuda_library_node_rewriter_pass.h>
 #include <sdfg/passes/offloading/device_buffer_reuse_pass.h>
@@ -226,6 +227,10 @@ void PyStructuredSDFG::expand(const docc::target::TargetOptions& options) {
     auto* target = docc_context_.get_target_handler(options.target);
     static const docc::target::TargetPrecision native;
     const auto& target_precision = target ? target->safe_get_precision() : native;
+
+    // Results that are views of intermediates are computed in place rather than copied.
+    sdfg::passes::ViewCopyElimination view_copy_elimination;
+    view_copy_elimination.run(builder_opt, analysis_manager);
 
     // Tensor layouts are lost on expansion, so record buffer sizes for offloading first
     sdfg::passes::TensorAllocationSizeInference tensor_allocation_size_inference;

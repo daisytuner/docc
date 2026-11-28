@@ -75,6 +75,15 @@ public:
     /// `Space`-to-`StorageType` switch in `LocalStorage`.
     virtual types::StorageType storage_type(Space space) const = 0;
 
+    /// Whether each iteration of a map scheduled @p sched has its own instance of the containers in @p storage, the
+    /// same in every map so scheduled: accesses to them in iterations of different numbers never touch the same
+    /// memory, and those in iterations of the same number do, as an AI core's local memory persists across the
+    /// programs it runs. False unless the target says so.
+    virtual bool
+    iteration_private(const structured_control_flow::ScheduleType& sched, const types::StorageType& storage) const {
+        return false;
+    }
+
     /// The SIMD lane / subgroup width, used only to keep a subgroup's cooperative
     /// stores bank-conflict-free (32 on NVIDIA, 64 on CDNA, 1 where there is no
     /// SIMD cooperation). Replaces `gpu::gpu_warp_size` in the padding heuristic.

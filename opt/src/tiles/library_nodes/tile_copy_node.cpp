@@ -169,13 +169,19 @@ std::string TileCopyNode::toStr() const {
 }
 
 data_flow::PointerAccessType TileCopyNode::pointer_access_type(int input_idx) const {
-    // The elements the copy accesses are the tile its plan lays out on each side. A swizzled buffer permutes them,
-    // and a register-staged phase's register array is indexed by copy step: those sides bound no elements.
+    // The copy writes `_dst` and reads `_src`: copying in, the buffer the plan's `dst` lays out from the global tile
+    // its `src` lays out, copying out the other way. A swizzled buffer permutes its elements, and a register-staged
+    // phase's register array is indexed by copy step: those sides bound no elements.
+    bool copy_in = direction_ == CopyDirection::In;
+    std::optional<math::tensor::TensorLayout> buffer;
+    if (plan_.dst_swizzle.is_identity()) {
+        buffer = plan_.dst;
+    }
     std::optional<math::tensor::TensorLayout> layout;
-    if (input_idx == 0 && phase_ != CopyPhase::LoadRegs && plan_.dst_swizzle.is_identity()) {
-        layout = plan_.dst;
+    if (input_idx == 0 && phase_ != CopyPhase::LoadRegs) {
+        layout = copy_in ? buffer : std::optional<math::tensor::TensorLayout>(plan_.src);
     } else if (input_idx == 1 && phase_ != CopyPhase::StoreRegs) {
-        layout = plan_.src;
+        layout = copy_in ? std::optional<math::tensor::TensorLayout>(plan_.src) : buffer;
     }
     if (input_idx == 0) { // _dst
         return data_flow::PointerAccessMeta::create_full_write_only(SymEngine::null, /*no_capture=*/true, layout);
@@ -184,6 +190,14 @@ data_flow::PointerAccessType TileCopyNode::pointer_access_type(int input_idx) co
         return data_flow::PointerAccessMeta::create_read_only(SymEngine::null, /*no_capture=*/true, layout);
     }
     return data_flow::LibraryNode::pointer_access_type(input_idx);
+}
+
+data_flow::EdgeRemoveOption TileCopyNode::
+    can_remove_in_edge(const data_flow::DataFlowGraph& graph, const data_flow::Memlet* memlet) const {
+    if (memlet->dst_conn() == "_dst") {
+        return data_flow::EdgeRemoveOption::RemoveNodeAfter;
+    }
+    return data_flow::EdgeRemoveOption::NotRemovable;
 }
 
 // ---- Serializer ----------------------------------------------------------
