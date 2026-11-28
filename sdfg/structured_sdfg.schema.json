@@ -1,0 +1,1101 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "https://daisytuner.com/schemas/structured_sdfg.json",
+    "title": "Structured SDFG",
+    "description": "JSON Schema for a Structured Stateful Dataflow multiGraph (SDFG)",
+    "type": "object",
+    "required": [
+        "name",
+        "type",
+        "element_counter",
+        "structures",
+        "containers",
+        "arguments",
+        "externals",
+        "metadata",
+        "root"
+    ],
+    "properties": {
+        "name": {
+            "type": "string",
+            "description": "The name of the SDFG function"
+        },
+        "type": {
+            "type": "string",
+            "description": "The function type (e.g., 'CPU', 'NV_GLOBAL')",
+            "examples": [
+                "CPU",
+                "NV_GLOBAL"
+            ]
+        },
+        "element_counter": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Counter for unique element IDs"
+        },
+        "return_type": {
+            "$ref": "#/$defs/type",
+            "description": "The return type of the SDFG function"
+        },
+        "structures": {
+            "type": "array",
+            "description": "Structure type definitions",
+            "items": {
+                "$ref": "#/$defs/structureDefinition"
+            }
+        },
+        "containers": {
+            "type": "object",
+            "description": "Map of container names to their type descriptors",
+            "additionalProperties": {
+                "$ref": "#/$defs/type"
+            }
+        },
+        "arguments": {
+            "type": "array",
+            "description": "List of argument names (order matters)",
+            "items": {
+                "type": "string"
+            }
+        },
+        "externals": {
+            "type": "array",
+            "description": "List of external symbol references",
+            "items": {
+                "$ref": "#/$defs/external"
+            }
+        },
+        "metadata": {
+            "type": "object",
+            "description": "Arbitrary metadata key-value pairs",
+            "additionalProperties": {
+                "type": "string"
+            }
+        },
+        "root": {
+            "$ref": "#/$defs/sequence",
+            "description": "The root sequence node of the SDFG"
+        }
+    },
+    "$defs": {
+        "external": {
+            "type": "object",
+            "required": [
+                "name",
+                "linkage_type"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Name of the external symbol"
+                },
+                "linkage_type": {
+                    "type": "integer",
+                    "enum": [
+                        0,
+                        1
+                    ],
+                    "description": "Linkage type: 0 = External, 1 = Internal"
+                }
+            }
+        },
+        "structureDefinition": {
+            "type": "object",
+            "required": [
+                "name",
+                "members",
+                "is_packed"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Name of the structure"
+                },
+                "members": {
+                    "type": "array",
+                    "description": "List of member types",
+                    "items": {
+                        "$ref": "#/$defs/type"
+                    }
+                },
+                "is_packed": {
+                    "type": "boolean",
+                    "description": "Whether the structure is packed (no padding)"
+                }
+            }
+        },
+        "type": {
+            "type": "object",
+            "required": [
+                "type"
+            ],
+            "oneOf": [
+                {
+                    "$ref": "#/$defs/scalarType"
+                },
+                {
+                    "$ref": "#/$defs/arrayType"
+                },
+                {
+                    "$ref": "#/$defs/pointerType"
+                },
+                {
+                    "$ref": "#/$defs/structureType"
+                },
+                {
+                    "$ref": "#/$defs/functionType"
+                },
+                {
+                    "$ref": "#/$defs/tensorType"
+                },
+                {
+                    "$ref": "#/$defs/referenceType"
+                }
+            ]
+        },
+        "scalarType": {
+            "type": "object",
+            "required": [
+                "type",
+                "primitive_type",
+                "storage_type",
+                "initializer",
+                "alignment"
+            ],
+            "properties": {
+                "type": {
+                    "const": "scalar"
+                },
+                "primitive_type": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 18,
+                    "description": "Primitive type enum: 0=Void, 1=Bool, 2=Int8, 3=Int16, 4=Int32, 5=Int64, 6=Int128, 7=UInt8, 8=UInt16, 9=UInt32, 10=UInt64, 11=UInt128, 12=Half, 13=BFloat, 14=Float, 15=Double, 16=X86_FP80, 17=FP128, 18=PPC_FP128"
+                },
+                "storage_type": {
+                    "$ref": "#/$defs/storageType"
+                },
+                "initializer": {
+                    "type": "string",
+                    "description": "Initialization expression"
+                },
+                "alignment": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Memory alignment in bytes"
+                }
+            }
+        },
+        "arrayType": {
+            "type": "object",
+            "required": [
+                "type",
+                "element_type",
+                "num_elements",
+                "storage_type",
+                "initializer",
+                "alignment"
+            ],
+            "properties": {
+                "type": {
+                    "const": "array"
+                },
+                "element_type": {
+                    "$ref": "#/$defs/type",
+                    "description": "Type of array elements"
+                },
+                "num_elements": {
+                    "type": "string",
+                    "description": "Symbolic expression for number of elements"
+                },
+                "storage_type": {
+                    "$ref": "#/$defs/storageType"
+                },
+                "initializer": {
+                    "type": "string",
+                    "description": "Initialization expression"
+                },
+                "alignment": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Memory alignment in bytes"
+                }
+            }
+        },
+        "pointerType": {
+            "type": "object",
+            "required": [
+                "type",
+                "storage_type",
+                "initializer",
+                "alignment"
+            ],
+            "properties": {
+                "type": {
+                    "const": "pointer"
+                },
+                "pointee_type": {
+                    "$ref": "#/$defs/type",
+                    "description": "Type being pointed to (optional for opaque pointers)"
+                },
+                "storage_type": {
+                    "$ref": "#/$defs/storageType"
+                },
+                "initializer": {
+                    "type": "string",
+                    "description": "Initialization expression"
+                },
+                "alignment": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Memory alignment in bytes"
+                }
+            }
+        },
+        "structureType": {
+            "type": "object",
+            "required": [
+                "type",
+                "name",
+                "storage_type",
+                "initializer",
+                "alignment"
+            ],
+            "properties": {
+                "type": {
+                    "const": "structure"
+                },
+                "name": {
+                    "type": "string",
+                    "description": "Name of the structure type"
+                },
+                "storage_type": {
+                    "$ref": "#/$defs/storageType"
+                },
+                "initializer": {
+                    "type": "string",
+                    "description": "Initialization expression"
+                },
+                "alignment": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Memory alignment in bytes"
+                }
+            }
+        },
+        "tensorType": {
+            "type": "object",
+            "description": "Multi-dimensional tensor with explicit shape, strides, and offset. Currently only consumed by tensor-aware library nodes (e.g. gemm, matmul, conv, batchnorm, transpose, reduce, elementwise ops); tensors are not valid as tasklet input/output types. The element type is restricted to a scalar.",
+            "required": [
+                "type",
+                "element_type",
+                "shape",
+                "strides",
+                "offset",
+                "storage_type",
+                "initializer",
+                "alignment"
+            ],
+            "properties": {
+                "type": {
+                    "const": "tensor"
+                },
+                "element_type": {
+                    "$ref": "#/$defs/scalarType",
+                    "description": "Tensor element type (must be a scalar)"
+                },
+                "shape": {
+                    "type": "array",
+                    "description": "Symbolic expressions for each tensor dimension",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "strides": {
+                    "type": "array",
+                    "description": "Symbolic expressions for the stride of each dimension (same length as shape)",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "offset": {
+                    "type": "string",
+                    "description": "Symbolic expression for the base offset"
+                },
+                "storage_type": {
+                    "$ref": "#/$defs/storageType"
+                },
+                "initializer": {
+                    "type": "string",
+                    "description": "Initialization expression"
+                },
+                "alignment": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Memory alignment in bytes"
+                }
+            }
+        },
+        "referenceType": {
+            "type": "object",
+            "description": "Codegen-internal reference type. Emitted by the code generator (sdfg::codegen::Reference); should not appear in hand-authored / source SDFG containers. Unlike other types it does not carry storage_type/initializer/alignment.",
+            "required": [
+                "type",
+                "reference_type"
+            ],
+            "properties": {
+                "type": {
+                    "const": "reference"
+                },
+                "reference_type": {
+                    "$ref": "#/$defs/type",
+                    "description": "Type being referenced"
+                }
+            }
+        },
+        "functionType": {
+            "type": "object",
+            "required": [
+                "type",
+                "return_type",
+                "params",
+                "is_var_arg",
+                "storage_type",
+                "initializer",
+                "alignment"
+            ],
+            "properties": {
+                "type": {
+                    "const": "function"
+                },
+                "return_type": {
+                    "$ref": "#/$defs/type",
+                    "description": "Function return type"
+                },
+                "params": {
+                    "type": "array",
+                    "description": "Function parameter types",
+                    "items": {
+                        "$ref": "#/$defs/type"
+                    }
+                },
+                "is_var_arg": {
+                    "type": "boolean",
+                    "description": "Whether the function accepts variable arguments"
+                },
+                "storage_type": {
+                    "$ref": "#/$defs/storageType"
+                },
+                "initializer": {
+                    "type": "string",
+                    "description": "Initialization expression"
+                },
+                "alignment": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Memory alignment in bytes"
+                }
+            }
+        },
+        "storageType": {
+            "type": "object",
+            "required": [
+                "value",
+                "allocation",
+                "deallocation"
+            ],
+            "properties": {
+                "value": {
+                    "type": "string",
+                    "description": "Storage location identifier (e.g., 'CPU_Stack', 'CPU_Heap', 'GPU_Global')"
+                },
+                "allocation": {
+                    "type": "integer",
+                    "enum": [
+                        0,
+                        1
+                    ],
+                    "description": "Allocation type: 0 = Unmanaged, 1 = Managed"
+                },
+                "deallocation": {
+                    "type": "integer",
+                    "enum": [
+                        0,
+                        1
+                    ],
+                    "description": "Deallocation type: 0 = Unmanaged, 1 = Managed"
+                },
+                "allocation_size": {
+                    "type": "string",
+                    "description": "Symbolic expression for allocation size"
+                },
+                "args": {
+                    "type": "array",
+                    "description": "Additional arguments (e.g., page_size)",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "debugInfo": {
+            "type": "object",
+            "required": [
+                "has"
+            ],
+            "properties": {
+                "has": {
+                    "type": "boolean",
+                    "description": "Whether debug info is present"
+                },
+                "filename": {
+                    "type": "string",
+                    "description": "Source filename"
+                },
+                "function": {
+                    "type": "string",
+                    "description": "Function name"
+                },
+                "start_line": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Start line number"
+                },
+                "start_column": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Start column number"
+                },
+                "end_line": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "End line number"
+                },
+                "end_column": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "End column number"
+                }
+            }
+        },
+        "scheduleType": {
+            "type": "object",
+            "required": [
+                "value",
+                "category",
+                "properties"
+            ],
+            "properties": {
+                "value": {
+                    "type": "string",
+                    "description": "Schedule type identifier (e.g., 'SEQUENTIAL', 'CPU_PARALLEL')"
+                },
+                "category": {
+                    "type": "integer",
+                    "enum": [
+                        0,
+                        1,
+                        2,
+                        3
+                    ],
+                    "description": "Schedule category: 0=Offloader, 1=Parallelizer, 2=Vectorizer, 3=None"
+                },
+                "properties": {
+                    "type": "object",
+                    "description": "Schedule-specific properties",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "controlFlowNode": {
+            "oneOf": [
+                {
+                    "$ref": "#/$defs/block"
+                },
+                {
+                    "$ref": "#/$defs/sequence"
+                },
+                {
+                    "$ref": "#/$defs/for"
+                },
+                {
+                    "$ref": "#/$defs/ifElse"
+                },
+                {
+                    "$ref": "#/$defs/while"
+                },
+                {
+                    "$ref": "#/$defs/map"
+                },
+                {
+                    "$ref": "#/$defs/return"
+                },
+                {
+                    "$ref": "#/$defs/break"
+                },
+                {
+                    "$ref": "#/$defs/continue"
+                }
+            ]
+        },
+        "sequence": {
+            "type": "object",
+            "required": [
+                "type",
+                "element_id",
+                "debug_info",
+                "children",
+                "transitions"
+            ],
+            "properties": {
+                "type": {
+                    "const": "sequence"
+                },
+                "element_id": {
+                    "type": "integer",
+                    "description": "Unique element identifier"
+                },
+                "debug_info": {
+                    "$ref": "#/$defs/debugInfo"
+                },
+                "children": {
+                    "type": "array",
+                    "description": "Child control flow nodes",
+                    "items": {
+                        "$ref": "#/$defs/controlFlowNode"
+                    }
+                },
+                "transitions": {
+                    "type": "array",
+                    "description": "Transitions between children (one per child)",
+                    "items": {
+                        "$ref": "#/$defs/transition"
+                    }
+                }
+            }
+        },
+        "transition": {
+            "type": "object",
+            "required": [
+                "type",
+                "element_id",
+                "debug_info",
+                "assignments"
+            ],
+            "properties": {
+                "type": {
+                    "const": "transition"
+                },
+                "element_id": {
+                    "type": "integer",
+                    "description": "Unique element identifier"
+                },
+                "debug_info": {
+                    "$ref": "#/$defs/debugInfo"
+                },
+                "assignments": {
+                    "type": "array",
+                    "description": "Symbol assignments for this transition",
+                    "items": {
+                        "$ref": "#/$defs/assignment"
+                    }
+                }
+            }
+        },
+        "assignment": {
+            "type": "object",
+            "required": [
+                "symbol",
+                "expression"
+            ],
+            "properties": {
+                "symbol": {
+                    "type": "string",
+                    "description": "Symbol name being assigned"
+                },
+                "expression": {
+                    "type": "string",
+                    "description": "Symbolic expression for the value"
+                }
+            }
+        },
+        "block": {
+            "type": "object",
+            "required": [
+                "type",
+                "element_id",
+                "debug_info",
+                "dataflow"
+            ],
+            "properties": {
+                "type": {
+                    "const": "block"
+                },
+                "element_id": {
+                    "type": "integer",
+                    "description": "Unique element identifier"
+                },
+                "debug_info": {
+                    "$ref": "#/$defs/debugInfo"
+                },
+                "dataflow": {
+                    "$ref": "#/$defs/dataflow",
+                    "description": "The dataflow graph for this block"
+                }
+            }
+        },
+        "for": {
+            "type": "object",
+            "required": [
+                "type",
+                "element_id",
+                "debug_info",
+                "indvar",
+                "init",
+                "condition",
+                "update",
+                "root"
+            ],
+            "properties": {
+                "type": {
+                    "const": "for"
+                },
+                "element_id": {
+                    "type": "integer",
+                    "description": "Unique element identifier"
+                },
+                "debug_info": {
+                    "$ref": "#/$defs/debugInfo"
+                },
+                "indvar": {
+                    "type": "string",
+                    "description": "Induction variable name"
+                },
+                "init": {
+                    "type": "string",
+                    "description": "Initial value expression"
+                },
+                "condition": {
+                    "type": "string",
+                    "description": "Loop condition expression (boolean)"
+                },
+                "update": {
+                    "type": "string",
+                    "description": "Update expression"
+                },
+                "root": {
+                    "$ref": "#/$defs/sequence",
+                    "description": "Loop body sequence"
+                }
+            }
+        },
+        "ifElse": {
+            "type": "object",
+            "required": [
+                "type",
+                "element_id",
+                "debug_info",
+                "branches"
+            ],
+            "properties": {
+                "type": {
+                    "const": "if_else"
+                },
+                "element_id": {
+                    "type": "integer",
+                    "description": "Unique element identifier"
+                },
+                "debug_info": {
+                    "$ref": "#/$defs/debugInfo"
+                },
+                "branches": {
+                    "type": "array",
+                    "description": "Conditional branches",
+                    "items": {
+                        "$ref": "#/$defs/branch"
+                    }
+                }
+            }
+        },
+        "branch": {
+            "type": "object",
+            "required": [
+                "condition",
+                "root"
+            ],
+            "properties": {
+                "condition": {
+                    "type": "string",
+                    "description": "Branch condition expression (boolean)"
+                },
+                "root": {
+                    "$ref": "#/$defs/sequence",
+                    "description": "Branch body sequence"
+                }
+            }
+        },
+        "while": {
+            "type": "object",
+            "required": [
+                "type",
+                "element_id",
+                "debug_info",
+                "root"
+            ],
+            "properties": {
+                "type": {
+                    "const": "while"
+                },
+                "element_id": {
+                    "type": "integer",
+                    "description": "Unique element identifier"
+                },
+                "debug_info": {
+                    "$ref": "#/$defs/debugInfo"
+                },
+                "root": {
+                    "$ref": "#/$defs/sequence",
+                    "description": "Loop body sequence"
+                }
+            }
+        },
+        "map": {
+            "type": "object",
+            "required": [
+                "type",
+                "element_id",
+                "debug_info",
+                "indvar",
+                "init",
+                "condition",
+                "update",
+                "schedule_type",
+                "root"
+            ],
+            "properties": {
+                "type": {
+                    "const": "map"
+                },
+                "element_id": {
+                    "type": "integer",
+                    "description": "Unique element identifier"
+                },
+                "debug_info": {
+                    "$ref": "#/$defs/debugInfo"
+                },
+                "indvar": {
+                    "type": "string",
+                    "description": "Induction variable name"
+                },
+                "init": {
+                    "type": "string",
+                    "description": "Initial value expression"
+                },
+                "condition": {
+                    "type": "string",
+                    "description": "Loop condition expression (boolean)"
+                },
+                "update": {
+                    "type": "string",
+                    "description": "Update expression"
+                },
+                "schedule_type": {
+                    "$ref": "#/$defs/scheduleType",
+                    "description": "Execution schedule type"
+                },
+                "root": {
+                    "$ref": "#/$defs/sequence",
+                    "description": "Loop body sequence"
+                }
+            }
+        },
+        "return": {
+            "type": "object",
+            "required": [
+                "type",
+                "element_id",
+                "debug_info",
+                "data"
+            ],
+            "properties": {
+                "type": {
+                    "const": "return"
+                },
+                "element_id": {
+                    "type": "integer",
+                    "description": "Unique element identifier"
+                },
+                "debug_info": {
+                    "$ref": "#/$defs/debugInfo"
+                },
+                "data": {
+                    "type": "string",
+                    "description": "Return value (container name or constant)"
+                },
+                "data_type": {
+                    "$ref": "#/$defs/type",
+                    "description": "Type of the returned constant value. Present only when `data` is a constant literal; omitted when `data` is a container name."
+                }
+            }
+        },
+        "break": {
+            "type": "object",
+            "required": [
+                "type",
+                "element_id",
+                "debug_info"
+            ],
+            "properties": {
+                "type": {
+                    "const": "break"
+                },
+                "element_id": {
+                    "type": "integer",
+                    "description": "Unique element identifier"
+                },
+                "debug_info": {
+                    "$ref": "#/$defs/debugInfo"
+                }
+            }
+        },
+        "continue": {
+            "type": "object",
+            "required": [
+                "type",
+                "element_id",
+                "debug_info"
+            ],
+            "properties": {
+                "type": {
+                    "const": "continue"
+                },
+                "element_id": {
+                    "type": "integer",
+                    "description": "Unique element identifier"
+                },
+                "debug_info": {
+                    "$ref": "#/$defs/debugInfo"
+                }
+            }
+        },
+        "dataflow": {
+            "type": "object",
+            "required": [
+                "type",
+                "nodes",
+                "edges"
+            ],
+            "properties": {
+                "type": {
+                    "const": "dataflow"
+                },
+                "nodes": {
+                    "type": "array",
+                    "description": "Dataflow graph nodes",
+                    "items": {
+                        "$ref": "#/$defs/dataflowNode"
+                    }
+                },
+                "edges": {
+                    "type": "array",
+                    "description": "Dataflow graph edges (memlets)",
+                    "items": {
+                        "$ref": "#/$defs/memlet"
+                    }
+                }
+            }
+        },
+        "dataflowNode": {
+            "oneOf": [
+                {
+                    "$ref": "#/$defs/tasklet"
+                },
+                {
+                    "$ref": "#/$defs/libraryNode"
+                },
+                {
+                    "$ref": "#/$defs/accessNode"
+                },
+                {
+                    "$ref": "#/$defs/constantNode"
+                }
+            ]
+        },
+        "tasklet": {
+            "type": "object",
+            "required": [
+                "type",
+                "element_id",
+                "debug_info",
+                "code",
+                "inputs",
+                "output"
+            ],
+            "properties": {
+                "type": {
+                    "const": "tasklet"
+                },
+                "element_id": {
+                    "type": "integer",
+                    "description": "Unique element identifier"
+                },
+                "debug_info": {
+                    "$ref": "#/$defs/debugInfo"
+                },
+                "code": {
+                    "type": "integer",
+                    "description": "Tasklet code/operation identifier"
+                },
+                "inputs": {
+                    "type": "array",
+                    "description": "Input connector names",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "output": {
+                    "type": "string",
+                    "description": "Output connector name"
+                }
+            }
+        },
+        "libraryNode": {
+            "type": "object",
+            "required": [
+                "type",
+                "element_id",
+                "debug_info",
+                "code",
+                "implementation_type"
+            ],
+            "properties": {
+                "type": {
+                    "const": "library_node"
+                },
+                "element_id": {
+                    "type": "integer",
+                    "description": "Unique element identifier"
+                },
+                "debug_info": {
+                    "$ref": "#/$defs/debugInfo"
+                },
+                "code": {
+                    "type": "string",
+                    "description": "Library node type identifier (e.g., 'alloca', 'malloc', 'gemm')"
+                },
+                "implementation_type": {
+                    "type": "string",
+                    "description": "Implementation type identifier"
+                }
+            },
+            "additionalProperties": true,
+            "description": "Library node with type-specific additional properties"
+        },
+        "accessNode": {
+            "type": "object",
+            "required": [
+                "type",
+                "element_id",
+                "debug_info",
+                "data"
+            ],
+            "properties": {
+                "type": {
+                    "const": "access_node"
+                },
+                "element_id": {
+                    "type": "integer",
+                    "description": "Unique element identifier"
+                },
+                "debug_info": {
+                    "$ref": "#/$defs/debugInfo"
+                },
+                "data": {
+                    "type": "string",
+                    "description": "Container name being accessed"
+                }
+            }
+        },
+        "constantNode": {
+            "type": "object",
+            "required": [
+                "type",
+                "element_id",
+                "debug_info",
+                "data",
+                "data_type"
+            ],
+            "properties": {
+                "type": {
+                    "const": "constant_node"
+                },
+                "element_id": {
+                    "type": "integer",
+                    "description": "Unique element identifier"
+                },
+                "debug_info": {
+                    "$ref": "#/$defs/debugInfo"
+                },
+                "data": {
+                    "type": "string",
+                    "description": "Constant value"
+                },
+                "data_type": {
+                    "$ref": "#/$defs/type",
+                    "description": "Type of the constant"
+                }
+            }
+        },
+        "memlet": {
+            "type": "object",
+            "required": [
+                "element_id",
+                "debug_info",
+                "src",
+                "dst",
+                "src_conn",
+                "dst_conn",
+                "subset",
+                "base_type"
+            ],
+            "properties": {
+                "element_id": {
+                    "type": "integer",
+                    "description": "Unique element identifier"
+                },
+                "debug_info": {
+                    "$ref": "#/$defs/debugInfo"
+                },
+                "src": {
+                    "type": "integer",
+                    "description": "Source node element_id"
+                },
+                "dst": {
+                    "type": "integer",
+                    "description": "Destination node element_id"
+                },
+                "src_conn": {
+                    "type": "string",
+                    "description": "Source connector name"
+                },
+                "dst_conn": {
+                    "type": "string",
+                    "description": "Destination connector name"
+                },
+                "subset": {
+                    "type": "array",
+                    "description": "Symbolic expressions for array subscripts",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "base_type": {
+                    "$ref": "#/$defs/type",
+                    "description": "Base type of the data being transferred"
+                }
+            }
+        }
+    }
+}
