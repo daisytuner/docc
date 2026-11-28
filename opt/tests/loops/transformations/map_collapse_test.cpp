@@ -348,6 +348,59 @@ TEST(MapCollapseTest, Apply_2D_CollapsedRange) {
     EXPECT_TRUE(symbolic::eq(collapsed->update(), symbolic::add(civ, symbolic::integer(1))));
 }
 
+TEST(MapCollapseTest, Apply_2D_StridedTileLoops) {
+    // The tile loops of a tiled nest, i in [0, 1024) by 64 and j in [0, 512) by 128, collapse into their 16 x 4 tiles:
+    //   i = 64 * (civ / 4)
+    //   j = 128 * (civ % 4)
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto& root = builder.subject().root();
+    types::Scalar sym_desc(types::PrimitiveType::UInt64);
+    builder.add_container("i", sym_desc);
+    builder.add_container("j", sym_desc);
+    auto i = symbolic::symbol("i");
+    auto j = symbolic::symbol("j");
+    auto& outer = builder.add_map(
+        root,
+        i,
+        symbolic::Lt(i, symbolic::integer(1024)),
+        symbolic::integer(0),
+        symbolic::add(i, symbolic::integer(64)),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+    auto& inner = builder.add_map(
+        outer.root(),
+        j,
+        symbolic::Lt(j, symbolic::integer(512)),
+        symbolic::integer(0),
+        symbolic::add(j, symbolic::integer(128)),
+        structured_control_flow::ScheduleType_Sequential::create()
+    );
+    builder.add_block(inner.root());
+
+    analysis::AnalysisManager am(builder.subject());
+    loops::transformations::MapCollapse t(outer, 2);
+    ASSERT_TRUE(t.can_be_applied(builder, am));
+    t.apply(builder, am);
+
+    auto* collapsed = t.collapsed_loop();
+    ASSERT_NE(collapsed, nullptr);
+    auto civ = collapsed->indvar();
+    EXPECT_TRUE(symbolic::eq(collapsed->condition(), symbolic::Lt(civ, symbolic::integer(64))));
+    const auto transition = dyn_cast<AssignmentBlock*>(&collapsed->root().at(0));
+    ASSERT_TRUE(transition);
+    auto& assignments = transition->assignments();
+    EXPECT_TRUE(
+        symbolic::
+            eq(symbolic::expand(assignments.at(i)),
+               symbolic::expand(symbolic::mul(symbolic::integer(64), symbolic::div(civ, symbolic::integer(4)))))
+    );
+    EXPECT_TRUE(
+        symbolic::
+            eq(symbolic::expand(assignments.at(j)),
+               symbolic::expand(symbolic::mul(symbolic::integer(128), symbolic::mod(civ, symbolic::integer(4)))))
+    );
+}
+
 TEST(MapCollapseTest, Apply_3D_IndvarTransitions) {
     // For a 3-level nest (i, j, k) over [0,N) x [0,M) x [0,P):
     //   i = civ / (M*P)
