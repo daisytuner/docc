@@ -4,6 +4,7 @@
 
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/data_flow/library_nodes/atomic_op_node.h"
 #include "sdfg/data_flow/library_nodes/math/cmath/cmath_node.h"
 #include "sdfg/data_flow/tasklet.h"
 #include "sdfg/symbolic/symbolic.h"
@@ -590,6 +591,39 @@ TEST(TileAnalysisTest, Summarize_MathNodeWritingAnElementIsNoAlias) {
     EXPECT_FALSE(summary.reads);
     EXPECT_TRUE(summary.writes);
     EXPECT_FALSE(summary.aliased);
+}
+
+TEST(TileAnalysisTest, Summarize_ScalarValueIntoLibraryNodeIsNoAlias) {
+    builder::StructuredSDFGBuilder builder("ta_scalar_value", FunctionType_CPU);
+
+    types::Scalar sym(types::PrimitiveType::UInt64);
+    types::Scalar elem(types::PrimitiveType::Float);
+    types::Pointer ptr(elem);
+    builder.add_container("i", sym);
+    builder.add_container("A", ptr, true);
+    builder.add_container("C", elem);
+
+    auto i = symbolic::symbol("i");
+    auto& loop = builder.add_for(
+        builder.subject().root(),
+        i,
+        symbolic::Lt(i, symbolic::integer(4)),
+        symbolic::integer(0),
+        symbolic::add(i, symbolic::integer(1))
+    );
+    // atomic A[i] += C: the node takes C's value, and describes no pointer it could keep.
+    auto& block = builder.add_block(loop.root());
+    auto& add = builder.add_library_node<data_flow::AtomicScalarOpNode>(
+        block,
+        DebugInfo(),
+        types::PrimitiveType::Float,
+        data_flow::AtomicOpType::Add,
+        data_flow::AtomicScalarOpCPUImpl::instance()
+    );
+    builder.add_computational_memlet(block, builder.add_access(block, "A"), add, "_dst", {i}, ptr);
+    builder.add_computational_memlet(block, builder.add_access(block, "C"), add, "_src", {}, elem);
+
+    EXPECT_FALSE(tiles::TileAnalysis::summarize(builder.subject(), loop, "C").aliased);
 }
 
 TEST(TileAnalysisTest, Summarize_Unused) {

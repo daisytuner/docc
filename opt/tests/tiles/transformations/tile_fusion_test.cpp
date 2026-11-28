@@ -15,6 +15,8 @@
 #include "sdfg/structured_control_flow/map.h"
 #include "sdfg/tiles/layout.h"
 #include "sdfg/tiles/library_nodes/tile_copy_node.h"
+#include "sdfg/tiles/tile_target.h"
+#include "sdfg/tiles/tile_target_registry.h"
 #include "sdfg/tiles/tiled_copy.h"
 #include "sdfg/types/array.h"
 #include "sdfg/types/scalar.h"
@@ -1532,4 +1534,156 @@ TEST(TileFusionTest, ShadowedCounterIsRejected) {
     analysis::AnalysisManager analysis_manager(builder.subject());
     transformations::TileFusion tile_fusion(*first, *second);
     EXPECT_FALSE(tile_fusion.can_be_applied(builder, analysis_manager));
+}
+
+TEST(TileFusionTest, TileCopyOutWritesTheGlobalTile) {
+    // Copy tile t of A out of the buffer L into B, then copy tile u of B in: a copy out writes the global tile its
+    // plan's `src` lays out, so both maps touch tile t of B in iteration t.
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
+    builder.add_container("N", sym_desc, true);
+    builder.add_container("t", sym_desc);
+    builder.add_container("u", sym_desc);
+    types::Scalar elem_desc(types::PrimitiveType::Float);
+    types::Pointer desc(elem_desc);
+    for (auto name : {"L", "B", "C"}) {
+        builder.add_container(name, desc, true);
+    }
+    auto copy =
+        [&](const std::string& tile, const std::string& src, const std::string& dst, tiles::CopyDirection direction) {
+            auto counter = symbolic::symbol(tile);
+            auto& map = builder.add_map(
+                builder.subject().root(),
+                counter,
+                symbolic::Lt(counter, symbolic::symbol("N")),
+                symbolic::zero(),
+                symbolic::add(counter, symbolic::integer(4)),
+                structured_control_flow::ScheduleType_Sequential::create()
+            );
+            auto& block = builder.add_block(map.root());
+            tiles::TiledCopy plan;
+            // The global tile starts at the counter, the buffer's at zero.
+            plan.src = tiles::Layout({symbolic::integer(4)}, {symbolic::integer(1)}, counter);
+            plan.dst = tiles::Layout({symbolic::integer(4)}, {symbolic::integer(1)}, symbolic::zero());
+            plan.atom = tiles::CopyAtom::ScalarSync;
+            auto& node = builder.add_library_node<
+                tiles::TileCopyNode>(block, DebugInfo(), data_flow::ImplementationType{"DUMMY"}, plan, direction, 16u);
+            builder.add_computational_memlet(block, builder.add_access(block, dst), node, "_dst", {}, desc);
+            builder.add_computational_memlet(block, builder.add_access(block, src), node, "_src", {}, desc);
+            return &map;
+        };
+    auto* first = copy("t", "L", "B", tiles::CopyDirection::Out);
+    auto* second = copy("u", "B", "C", tiles::CopyDirection::In);
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    transformations::TileFusion tile_fusion(*first, *second);
+    ASSERT_TRUE(tile_fusion.can_be_applied(builder, analysis_manager));
+    EXPECT_FALSE(tile_fusion.sequential());
+}
+
+namespace {
+
+const std::string ITERATION_PRIVATE_SCHEDULE = "TILE_FUSION_ITERATION_PRIVATE";
+const types::StorageType ITERATION_PRIVATE_STORAGE("TILE_FUSION_PRIVATE");
+
+/// Each iteration of a map scheduled ITERATION_PRIVATE_SCHEDULE has its own ITERATION_PRIVATE_STORAGE.
+class IterationPrivateTarget : public tiles::TileTarget {
+public:
+    std::optional<tiles::AxisSchedule> classify(const structured_control_flow::ScheduleType&) const override {
+        return std::nullopt;
+    }
+    tiles::Space space(tiles::Level) const override {
+        return tiles::Space::Global;
+    }
+    bool supports_cooperative_staging(const structured_control_flow::ScheduleType&) const override {
+        return false;
+    }
+    types::StorageType storage_type(tiles::Space) const override {
+        return types::StorageType::CPU_Heap();
+    }
+    unsigned lane_width() const override {
+        return 1;
+    }
+    data_flow::ImplementationType implementation_type() const override {
+        return data_flow::ImplementationType{"DUMMY"};
+    }
+    bool iteration_private(
+        const structured_control_flow::ScheduleType& sched, const types::StorageType& storage
+    ) const override {
+        return sched.value() == ITERATION_PRIVATE_SCHEDULE && storage == ITERATION_PRIVATE_STORAGE;
+    }
+};
+
+/// Two maps over 8 iterations under @p schedule: S[0:4] = A[4t:4t+4], then B[4u:4u+4] = S[0:4], with S a scratch buffer
+/// in @p storage.
+std::pair<structured_control_flow::Map*, structured_control_flow::Map*> scratch_maps(
+    builder::StructuredSDFGBuilder& builder,
+    const structured_control_flow::ScheduleType& schedule,
+    const types::StorageType& storage
+) {
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
+    for (auto name : {"t", "u", "p", "q"}) {
+        builder.add_container(name, sym_desc);
+    }
+    types::Scalar elem_desc(types::PrimitiveType::Float);
+    types::Pointer desc(elem_desc);
+    builder.add_container("A", desc, true);
+    builder.add_container("B", desc, true);
+    types::Array scratch(storage, 0, "", elem_desc, symbolic::integer(4));
+    builder.add_container("S", scratch);
+    auto map = [&](const std::string& tile, const std::string& point, bool fill) {
+        auto t = symbolic::symbol(tile);
+        auto p = symbolic::symbol(point);
+        auto& outer = builder.add_map(
+            builder.subject().root(),
+            t,
+            symbolic::Lt(t, symbolic::integer(8)),
+            symbolic::zero(),
+            symbolic::add(t, symbolic::one()),
+            schedule
+        );
+        auto& inner = builder.add_for(
+            outer.root(), p, symbolic::Lt(p, symbolic::integer(4)), symbolic::zero(), symbolic::add(p, symbolic::one())
+        );
+        auto& block = builder.add_block(inner.root());
+        auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+        auto global = symbolic::add(symbolic::mul(symbolic::integer(4), t), p);
+        if (fill) {
+            builder.add_computational_memlet(block, builder.add_access(block, "A"), tasklet, "_in", {global}, desc);
+            builder.add_computational_memlet(block, tasklet, "_out", builder.add_access(block, "S"), {p}, scratch);
+        } else {
+            builder.add_computational_memlet(block, builder.add_access(block, "S"), tasklet, "_in", {p}, scratch);
+            builder.add_computational_memlet(block, tasklet, "_out", builder.add_access(block, "B"), {global}, desc);
+        }
+        return &outer;
+    };
+    auto* first = map("t", "p", true);
+    auto* second = map("u", "q", false);
+    return {first, second};
+}
+
+} // namespace
+
+TEST(TileFusionTest, SharedScratchIsRejected) {
+    // Every iteration reuses S: the second map's first iteration reads what the first map's last wrote.
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto [first, second] =
+        scratch_maps(builder, structured_control_flow::ScheduleType_Sequential::create(), types::StorageType::CPU_Stack());
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    transformations::TileFusion tile_fusion(*first, *second);
+    EXPECT_FALSE(tile_fusion.can_be_applied(builder, analysis_manager));
+}
+
+TEST(TileFusionTest, IterationPrivateScratchFusesInParallel) {
+    // Each iteration has its own S, the same in both maps: the n-th iteration of the second reads what the n-th of
+    // the first wrote.
+    tiles::TileTargetRegistry::instance()
+        .register_target(ITERATION_PRIVATE_SCHEDULE, std::make_shared<IterationPrivateTarget>());
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    structured_control_flow::ScheduleType
+        schedule(ITERATION_PRIVATE_SCHEDULE, structured_control_flow::ScheduleTypeCategory::Offloader);
+    auto [first, second] = scratch_maps(builder, schedule, ITERATION_PRIVATE_STORAGE);
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    transformations::TileFusion tile_fusion(*first, *second);
+    ASSERT_TRUE(tile_fusion.can_be_applied(builder, analysis_manager));
+    EXPECT_FALSE(tile_fusion.sequential());
 }

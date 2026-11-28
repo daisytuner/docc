@@ -59,6 +59,14 @@ public:
     /// container's memory be reached outside the memlets a transformation rewrites.
     static AccessSummary
     summarize(const StructuredSDFG& sdfg, structured_control_flow::StructuredLoop& loop, const std::string& container);
+
+    /// Classify @p container's accesses within @p node, its headers and conditions included.
+    static AccessSummary
+    summarize(const StructuredSDFG& sdfg, structured_control_flow::ControlFlowNode& node, const std::string& container);
+
+    /// Classify the accesses of every container used within @p node in one walk.
+    static std::map<std::string, AccessSummary>
+    summarize(const StructuredSDFG& sdfg, structured_control_flow::ControlFlowNode& node);
 };
 
 /// True iff @p group is a real tile whose extents are all compile-time integer

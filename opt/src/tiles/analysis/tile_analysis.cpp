@@ -1,6 +1,7 @@
 #include "sdfg/tiles/analysis/tile_analysis.h"
 
 #include <functional>
+#include <map>
 #include <optional>
 #include <unordered_set>
 #include <utility>
@@ -27,32 +28,37 @@ TileAnalysis::TileAnalysis(StructuredSDFG& sdfg) : analysis::Analysis(sdfg) {
 
 namespace {
 
-/// Escape/overwrite/read/write policy for a single container, fed by the shared
-/// pointer analyzers.
+/// Escape/overwrite/read/write policy per container, or for one, fed by the shared pointer analyzers.
 struct ContainerAccessPolicy {
-    std::string container;
-    bool reads = false;
-    bool writes = false;
-    bool aliased = false; ///< escaped, overwritten, or captured
+    std::optional<std::string> only;
+    std::map<std::string, TileAnalysis::AccessSummary> summaries;
+
+    /// The summary of @p c, if tracked.
+    TileAnalysis::AccessSummary* of(const std::string& c) {
+        if (only && c != *only) {
+            return nullptr;
+        }
+        return &summaries[c];
+    }
 
     void on_escape(const std::string& c, const structured_control_flow::ControlFlowNode*, const Element*) {
-        if (c == container) {
-            aliased = true;
+        if (auto* summary = of(c)) {
+            summary->aliased = true;
         }
     }
     void on_overwrite(const std::string& c, const structured_control_flow::ControlFlowNode*, const Element*) {
-        if (c == container) {
-            aliased = true;
+        if (auto* summary = of(c)) {
+            summary->aliased = true;
         }
     }
     void on_read_via(const std::string& c, const structured_control_flow::ControlFlowNode*, const data_flow::Memlet*) {
-        if (c == container) {
-            reads = true;
+        if (auto* summary = of(c)) {
+            summary->reads = true;
         }
     }
     void on_write_via(const std::string& c, const structured_control_flow::ControlFlowNode*, const data_flow::Memlet*) {
-        if (c == container) {
-            writes = true;
+        if (auto* summary = of(c)) {
+            summary->writes = true;
         }
     }
 };
@@ -66,16 +72,24 @@ class ContainerAccessVisitor : public analysis::BaseUserVisitor,
                                public analysis::PointerOverwriteAnalyzer<ContainerAccessPolicy>,
                                public analysis::PointerUsedAnalyzer<ContainerAccessPolicy> {
     ContainerAccessPolicy& policy_;
+    const StructuredSDFG& sdfg_;
 
-    void capture_check(const data_flow::Memlet& edge, const data_flow::DataFlowNode& other) {
+    void capture_check(const std::string& c, const data_flow::Memlet& edge, const data_flow::DataFlowNode& other) {
         // An element read or written through a subset, as by a math node, does not hand over the pointer.
         if (edge.type() == data_flow::Computational && !edge.subset().empty()) {
+            return;
+        }
+        // A value, as a scalar a math node takes, is copied: only a pointer can be captured.
+        auto type = edge.result_type(sdfg_);
+        if (!type || type->type_id() != types::TypeID::Pointer) {
             return;
         }
         if (auto* lib = dynamic_cast<const data_flow::LibraryNode*>(&other)) {
             auto access = lib->pointer_access_type(edge);
             if (!access || !access->no_capture()) {
-                policy_.aliased = true;
+                if (auto* summary = policy_.of(c)) {
+                    summary->aliased = true;
+                }
             }
         }
     }
@@ -84,7 +98,7 @@ public:
     ContainerAccessVisitor(const StructuredSDFG& sdfg, ContainerAccessPolicy& policy)
         : analysis::PointerEscapeAnalyzer<ContainerAccessPolicy>(sdfg, policy),
           analysis::PointerOverwriteAnalyzer<ContainerAccessPolicy>(sdfg, policy),
-          analysis::PointerUsedAnalyzer<ContainerAccessPolicy>(sdfg, policy), policy_(policy) {
+          analysis::PointerUsedAnalyzer<ContainerAccessPolicy>(sdfg, policy), policy_(policy), sdfg_(sdfg) {
     }
 
     void use_as_src_node(
@@ -97,7 +111,7 @@ public:
         // read/write described by pointer_access_type, not an address leak. Classify
         // it from the node and skip the escape analysis (which flags the empty-subset
         // pass as a leak).
-        if (c == policy_.container) {
+        if (policy_.of(c)) {
             if (auto* lib = dynamic_cast<const data_flow::LibraryNode*>(&e.dst())) {
                 auto access = lib->pointer_access_type(e);
                 if (access && access->no_capture()) {
@@ -114,8 +128,8 @@ public:
         }
         analysis::PointerEscapeAnalyzer<ContainerAccessPolicy>::use_as_src_node(c, n, e, b);
         analysis::PointerUsedAnalyzer<ContainerAccessPolicy>::use_as_src_node(c, n, e, b);
-        if (c == policy_.container) {
-            capture_check(e, e.dst());
+        if (policy_.of(c)) {
+            capture_check(c, e, e.dst());
         }
     }
     void use_as_dst_node(
@@ -126,8 +140,8 @@ public:
     ) override {
         analysis::PointerOverwriteAnalyzer<ContainerAccessPolicy>::use_as_dst_node(c, n, e, b);
         analysis::PointerUsedAnalyzer<ContainerAccessPolicy>::use_as_dst_node(c, n, e, b);
-        if (c == policy_.container) {
-            capture_check(e, e.src());
+        if (policy_.of(c)) {
+            capture_check(c, e, e.src());
         }
     }
     void use_as_return_src(const std::string& c, const structured_control_flow::Return& r) override {
@@ -193,11 +207,26 @@ std::optional<tiles::Tile> build_tile(
 
 TileAnalysis::AccessSummary TileAnalysis::
     summarize(const StructuredSDFG& sdfg, StructuredLoop& loop, const std::string& container) {
-    ContainerAccessPolicy policy;
-    policy.container = container;
+    ContainerAccessPolicy policy{container, {}};
     ContainerAccessVisitor visitor(sdfg, policy);
     visitor.visit(loop.root()); // walks the loop body only
-    return AccessSummary{policy.reads, policy.writes, policy.aliased};
+    return policy.summaries[container];
+}
+
+TileAnalysis::AccessSummary TileAnalysis::
+    summarize(const StructuredSDFG& sdfg, ControlFlowNode& node, const std::string& container) {
+    ContainerAccessPolicy policy{container, {}};
+    ContainerAccessVisitor visitor(sdfg, policy);
+    visitor.dispatch(node);
+    return policy.summaries[container];
+}
+
+std::map<std::string, TileAnalysis::AccessSummary> TileAnalysis::
+    summarize(const StructuredSDFG& sdfg, ControlFlowNode& node) {
+    ContainerAccessPolicy policy{std::nullopt, {}};
+    ContainerAccessVisitor visitor(sdfg, policy);
+    visitor.dispatch(node);
+    return std::move(policy.summaries);
 }
 
 void TileAnalysis::run(analysis::AnalysisManager& analysis_manager) {

@@ -18,6 +18,7 @@ set(TEST_FILES
     tiles/buffer_layout_test.cpp
     tiles/library_nodes/pipeline_node_test.cpp
     tiles/library_nodes/tile_copy_node_test.cpp
+    tiles/transformations/tile_forwarding_test.cpp
     tiles/transformations/tile_fusion_test.cpp
     tiles/transformations/software_pipelining_test.cpp
     tiles/transformations/tile_streaming_copy_test.cpp
@@ -59,6 +60,8 @@ set(TEST_FILES
     loops/transformations/trivial_loop_elimination_test.cpp
     loops/transformations/unroll_transform_test.cpp
     loops/transformations/vectorize_transform_test.cpp
+    code_motion/transformations/hoist_child_test.cpp
+    code_motion/transformations/move_child_test.cpp
     parallelization/analysis/parallel_patterns_test.cpp
     parallelization/passes/auto_parallelization_test.cpp
     parallelization/transformations/loop_parallelization_test.cpp
