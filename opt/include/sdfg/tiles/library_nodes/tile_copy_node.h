@@ -162,6 +162,10 @@ public:
     /// analysis treat a container staged through this copy as an ordinary copy so a
     /// later transformation (e.g. a register-accumulator LocalStorage) still applies.
     data_flow::PointerAccessType pointer_access_type(int input_idx) const override;
+
+    /// Without the destination it writes, the copy has no effect and goes with it; it cannot do without its source.
+    data_flow::EdgeRemoveOption
+    can_remove_in_edge(const data_flow::DataFlowGraph& graph, const data_flow::Memlet* memlet) const override;
 };
 
 class TileCopyNodeSerializer : public serializer::LibraryNodeSerializer {

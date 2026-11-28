@@ -192,6 +192,14 @@ data_flow::PointerAccessType TileCopyNode::pointer_access_type(int input_idx) co
     return data_flow::LibraryNode::pointer_access_type(input_idx);
 }
 
+data_flow::EdgeRemoveOption TileCopyNode::
+    can_remove_in_edge(const data_flow::DataFlowGraph& graph, const data_flow::Memlet* memlet) const {
+    if (memlet->dst_conn() == "_dst") {
+        return data_flow::EdgeRemoveOption::RemoveNodeAfter;
+    }
+    return data_flow::EdgeRemoveOption::NotRemovable;
+}
+
 // ---- Serializer ----------------------------------------------------------
 
 nlohmann::json TileCopyNodeSerializer::serialize(const sdfg::data_flow::LibraryNode& library_node) {

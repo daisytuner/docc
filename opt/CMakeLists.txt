@@ -94,6 +94,7 @@ set(SOURCE_FILES
     src/tiles/library_nodes/tile_copy_node.cpp
     src/tiles/transformations/local_storage.cpp
     src/tiles/transformations/software_pipelining.cpp
+    src/tiles/transformations/tile_forwarding.cpp
     src/tiles/transformations/tile_fusion.cpp
     src/tiles/transformations/tile_guard_normalization.cpp
     src/tiles/transformations/tile_streaming_copy.cpp

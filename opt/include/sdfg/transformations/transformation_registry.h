@@ -36,6 +36,7 @@
 #include <sdfg/targets/gpu/gpu_mma_interleave.h>
 #include <sdfg/tiles/transformations/local_storage.h>
 #include <sdfg/tiles/transformations/software_pipelining.h>
+#include <sdfg/tiles/transformations/tile_forwarding.h>
 #include <sdfg/tiles/transformations/tile_fusion.h>
 #include <sdfg/tiles/transformations/tile_streaming_copy.h>
 #include <sdfg/tiles/transformations/tile_vectorizer.h>
@@ -139,6 +140,8 @@ dispatch_transformation(const std::string& transformation_name, const nlohmann::
         return detail::invoke_for<transformations::LocalStorage>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "SoftwarePipelining") {
         return detail::invoke_for<transformations::SoftwarePipelining>(std::forward<Visitor>(visitor));
+    } else if (transformation_name == "TileForwarding") {
+        return detail::invoke_for<transformations::TileForwarding>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "TileFusion") {
         return detail::invoke_for<transformations::TileFusion>(std::forward<Visitor>(visitor));
     } else if (transformation_name == "TileVectorizer") {

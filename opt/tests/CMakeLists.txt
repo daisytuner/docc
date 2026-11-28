@@ -18,6 +18,7 @@ set(TEST_FILES
     tiles/buffer_layout_test.cpp
     tiles/library_nodes/pipeline_node_test.cpp
     tiles/library_nodes/tile_copy_node_test.cpp
+    tiles/transformations/tile_forwarding_test.cpp
     tiles/transformations/tile_fusion_test.cpp
     tiles/transformations/software_pipelining_test.cpp
     tiles/transformations/tile_streaming_copy_test.cpp
