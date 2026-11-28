@@ -75,6 +75,20 @@ struct MemoryTile {
     std::pair<symbolic::Expression, symbolic::Expression> contiguous_range() const;
 };
 
+/// Which accesses of a library-node operand @ref library_node_operand_layout describes.
+enum class OperandAccess { Read, Write, Any };
+
+/**
+ * @brief The elements a library node accesses through the bare base pointer @p memlet hands it
+ *
+ * The layout its `pointer_access_type` reports for @p access (for `Any`, the read layout, else the write layout),
+ * else the operand's `Tensor` type's layout. The one definition of a library node's footprint, shared by the
+ * analyses and transformations that bound accesses.
+ * @param memlet An input memlet (AccessNode -> LibraryNode) with an empty subset
+ * @return None if @p memlet is no such operand or neither bounds the elements
+ */
+std::optional<MemoryLayout> library_node_operand_layout(const data_flow::Memlet& memlet, OperandAccess access);
+
 struct MemoryTileGroup {
     MemoryTile tile; // Bounding box for this group
     std::vector<const data_flow::Memlet*> memlets; // Memlets belonging to this group

@@ -158,40 +158,11 @@ std::optional<std::pair<data_flow::Subset, data_flow::Subset>> bound_accesses(
 }
 
 std::optional<MemoryTile> try_library_node_access(const data_flow::Memlet& memlet, symbolic::AssumptionsBounds& bounds) {
-    // A consumed operand is a bare base pointer: an empty-subset input memlet
-    // (AccessNode -> LibraryNode) whose connector selects the operand.
-    if (!memlet.subset().empty()) {
-        return std::nullopt;
-    }
-    const auto* access = dynamic_cast<const data_flow::AccessNode*>(&memlet.src());
-    const auto* lib = dynamic_cast<const data_flow::LibraryNode*>(&memlet.dst());
-    if (access == nullptr || lib == nullptr) {
-        return std::nullopt;
-    }
-
-    std::optional<MemoryLayout> layout;
-    auto meta = lib->pointer_access_type(memlet);
-    if (meta) {
-        // The consumed region is whichever direction the operand accesses; a
-        // structured operand reports it through a TensorLayoutPattern.
-        auto read = meta->access_read_pattern();
-        auto write = meta->access_write_pattern();
-        const auto* reported = (read && read->layout())     ? read->layout()
-                               : (write && write->layout()) ? write->layout()
-                                                            : nullptr;
-        if (reported) {
-            layout = *reported;
-        }
-    }
-    if (!layout) {
-        // Dense fallback: a Tensor-typed operand carries its own affine layout.
-        if (const auto* tensor = dynamic_cast<const types::Tensor*>(&memlet.base_type())) {
-            layout = MemoryLayout(tensor->shape(), tensor->strides(), tensor->offset());
-        }
-    }
+    auto layout = library_node_operand_layout(memlet, OperandAccess::Any);
     if (!layout || layout->shape().empty()) {
         return std::nullopt;
     }
+    const auto* access = static_cast<const data_flow::AccessNode*>(&memlet.src());
 
     const size_t dims = layout->shape().size();
 
@@ -284,6 +255,37 @@ void collect_descendant_guard_conditions(
     }
 }
 } // namespace
+
+std::optional<MemoryLayout> library_node_operand_layout(const data_flow::Memlet& memlet, OperandAccess access) {
+    // A consumed operand is a bare base pointer: an empty-subset input memlet
+    // (AccessNode -> LibraryNode) whose connector selects the operand.
+    if (!memlet.subset().empty()) {
+        return std::nullopt;
+    }
+    if (dynamic_cast<const data_flow::AccessNode*>(&memlet.src()) == nullptr) {
+        return std::nullopt;
+    }
+    const auto* lib = dynamic_cast<const data_flow::LibraryNode*>(&memlet.dst());
+    if (lib == nullptr) {
+        return std::nullopt;
+    }
+    if (auto meta = lib->pointer_access_type(memlet)) {
+        // A structured operand reports the region it accesses through a TensorLayoutPattern.
+        auto read = access != OperandAccess::Write ? meta->access_read_pattern() : nullptr;
+        auto write = access != OperandAccess::Read ? meta->access_write_pattern() : nullptr;
+        if (read && read->layout()) {
+            return *read->layout();
+        }
+        if (write && write->layout()) {
+            return *write->layout();
+        }
+    }
+    // Dense fallback: a Tensor-typed operand carries its own affine layout.
+    if (const auto* tensor = dynamic_cast<const types::Tensor*>(&memlet.base_type())) {
+        return MemoryLayout(tensor->shape(), tensor->strides(), tensor->offset());
+    }
+    return std::nullopt;
+}
 
 MemoryLayoutAnalysis::MemoryLayoutAnalysis(StructuredSDFG& sdfg) : Analysis(sdfg) {
 }

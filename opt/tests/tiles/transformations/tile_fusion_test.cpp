@@ -2,15 +2,20 @@
 
 #include <gtest/gtest.h>
 
+#include <functional>
 #include <set>
 
 #include "sdfg/analysis/analysis.h"
 #include "sdfg/builder/structured_sdfg_builder.h"
+#include "sdfg/data_flow/library_nodes/stdlib/memmove.h"
 #include "sdfg/loops/transformations/loop_tiling.h"
 #include "sdfg/passes/structured_control_flow/dead_cfg_elimination.h"
 #include "sdfg/passes/structured_control_flow/sequence_fusion.h"
 #include "sdfg/structured_control_flow/for.h"
 #include "sdfg/structured_control_flow/map.h"
+#include "sdfg/tiles/layout.h"
+#include "sdfg/tiles/library_nodes/tile_copy_node.h"
+#include "sdfg/tiles/tiled_copy.h"
 #include "sdfg/types/array.h"
 #include "sdfg/types/scalar.h"
 
@@ -269,7 +274,9 @@ TEST(TileFusionTest, NonConsecutiveMaps_ShouldFail) {
     types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
+    builder.add_container("i_tile", sym_desc);
     builder.add_container("j", sym_desc);
+    builder.add_container("j_tile", sym_desc);
     builder.add_container("k", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Double);
@@ -283,10 +290,10 @@ TEST(TileFusionTest, NonConsecutiveMaps_ShouldFail) {
     // Map 1
     auto& m1 = builder.add_map(
         root,
-        symbolic::symbol("i"),
-        symbolic::Lt(symbolic::symbol("i"), symbolic::symbol("N")),
+        symbolic::symbol("i_tile"),
+        symbolic::Lt(symbolic::symbol("i_tile"), symbolic::symbol("N")),
         symbolic::integer(0),
-        symbolic::add(symbolic::symbol("i"), symbolic::integer(32)),
+        symbolic::add(symbolic::symbol("i_tile"), symbolic::integer(32)),
         structured_control_flow::ScheduleType_Sequential::create()
     );
     {
@@ -328,10 +335,10 @@ TEST(TileFusionTest, NonConsecutiveMaps_ShouldFail) {
     // Map 2
     auto& m2 = builder.add_map(
         root,
-        symbolic::symbol("j"),
-        symbolic::Lt(symbolic::symbol("j"), symbolic::symbol("N")),
+        symbolic::symbol("j_tile"),
+        symbolic::Lt(symbolic::symbol("j_tile"), symbolic::symbol("N")),
         symbolic::integer(0),
-        symbolic::add(symbolic::symbol("j"), symbolic::integer(32)),
+        symbolic::add(symbolic::symbol("j_tile"), symbolic::integer(32)),
         structured_control_flow::ScheduleType_Sequential::create()
     );
     {
@@ -362,7 +369,9 @@ TEST(TileFusionTest, IncompatibleTileSizes_ShouldFail) {
     types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
+    builder.add_container("i_tile", sym_desc);
     builder.add_container("j", sym_desc);
+    builder.add_container("j_tile", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Double);
     types::Array desc_1d(elem_desc, symbolic::symbol("N"));
@@ -374,10 +383,10 @@ TEST(TileFusionTest, IncompatibleTileSizes_ShouldFail) {
     // Map 1 with tile size 32
     auto& m1 = builder.add_map(
         root,
-        symbolic::symbol("i"),
-        symbolic::Lt(symbolic::symbol("i"), symbolic::symbol("N")),
+        symbolic::symbol("i_tile"),
+        symbolic::Lt(symbolic::symbol("i_tile"), symbolic::symbol("N")),
         symbolic::integer(0),
-        symbolic::add(symbolic::symbol("i"), symbolic::integer(32)),
+        symbolic::add(symbolic::symbol("i_tile"), symbolic::integer(32)),
         structured_control_flow::ScheduleType_Sequential::create()
     );
     {
@@ -400,10 +409,10 @@ TEST(TileFusionTest, IncompatibleTileSizes_ShouldFail) {
     // Map 2 with tile size 64 (different!)
     auto& m2 = builder.add_map(
         root,
-        symbolic::symbol("j"),
-        symbolic::Lt(symbolic::symbol("j"), symbolic::symbol("N")),
+        symbolic::symbol("j_tile"),
+        symbolic::Lt(symbolic::symbol("j_tile"), symbolic::symbol("N")),
         symbolic::integer(0),
-        symbolic::add(symbolic::symbol("j"), symbolic::integer(64)),
+        symbolic::add(symbolic::symbol("j_tile"), symbolic::integer(64)),
         structured_control_flow::ScheduleType_Sequential::create()
     );
     {
@@ -428,13 +437,15 @@ TEST(TileFusionTest, IncompatibleTileSizes_ShouldFail) {
     EXPECT_FALSE(tile_fusion.can_be_applied(builder, analysis_manager));
 }
 
-TEST(TileFusionTest, NoSharedContainer_ShouldFail) {
+TEST(TileFusionTest, NoSharedContainer_FusesIndependentMaps) {
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
 
     types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
+    builder.add_container("i_tile", sym_desc);
     builder.add_container("j", sym_desc);
+    builder.add_container("j_tile", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Double);
     types::Array desc_1d(elem_desc, symbolic::symbol("N"));
@@ -448,10 +459,10 @@ TEST(TileFusionTest, NoSharedContainer_ShouldFail) {
     // Map 1: reads A, writes B
     auto& m1 = builder.add_map(
         root,
-        symbolic::symbol("i"),
-        symbolic::Lt(symbolic::symbol("i"), symbolic::symbol("N")),
+        symbolic::symbol("i_tile"),
+        symbolic::Lt(symbolic::symbol("i_tile"), symbolic::symbol("N")),
         symbolic::integer(0),
-        symbolic::add(symbolic::symbol("i"), symbolic::integer(32)),
+        symbolic::add(symbolic::symbol("i_tile"), symbolic::integer(32)),
         structured_control_flow::ScheduleType_Sequential::create()
     );
     {
@@ -474,10 +485,10 @@ TEST(TileFusionTest, NoSharedContainer_ShouldFail) {
     // Map 2: reads C, writes D — NO shared container with Map 1
     auto& m2 = builder.add_map(
         root,
-        symbolic::symbol("j"),
-        symbolic::Lt(symbolic::symbol("j"), symbolic::symbol("N")),
+        symbolic::symbol("j_tile"),
+        symbolic::Lt(symbolic::symbol("j_tile"), symbolic::symbol("N")),
         symbolic::integer(0),
-        symbolic::add(symbolic::symbol("j"), symbolic::integer(32)),
+        symbolic::add(symbolic::symbol("j_tile"), symbolic::integer(32)),
         structured_control_flow::ScheduleType_Sequential::create()
     );
     {
@@ -499,16 +510,20 @@ TEST(TileFusionTest, NoSharedContainer_ShouldFail) {
 
     analysis::AnalysisManager analysis_manager(builder.subject());
     transformations::TileFusion tile_fusion(m1, m2);
-    EXPECT_FALSE(tile_fusion.can_be_applied(builder, analysis_manager));
+    // No dependence connects the maps: each fused iteration runs both, which may still run in parallel.
+    EXPECT_TRUE(tile_fusion.can_be_applied(builder, analysis_manager));
+    EXPECT_FALSE(tile_fusion.sequential());
 }
 
-TEST(TileFusionTest, ConsumerAlsoWritesIntermediate_ShouldFail) {
+TEST(TileFusionTest, ConsumerAlsoWritesIntermediate_FusesElementwise) {
     builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
 
     types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
+    builder.add_container("i_tile", sym_desc);
     builder.add_container("j", sym_desc);
+    builder.add_container("j_tile", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Double);
     types::Array desc_1d(elem_desc, symbolic::symbol("N"));
@@ -520,18 +535,21 @@ TEST(TileFusionTest, ConsumerAlsoWritesIntermediate_ShouldFail) {
     // Map 1: reads A, writes B
     auto& m1 = builder.add_map(
         root,
-        symbolic::symbol("i"),
-        symbolic::Lt(symbolic::symbol("i"), symbolic::symbol("N")),
+        symbolic::symbol("i_tile"),
+        symbolic::Lt(symbolic::symbol("i_tile"), symbolic::symbol("N")),
         symbolic::integer(0),
-        symbolic::add(symbolic::symbol("i"), symbolic::integer(32)),
+        symbolic::add(symbolic::symbol("i_tile"), symbolic::integer(32)),
         structured_control_flow::ScheduleType_Sequential::create()
     );
     {
         auto& inner = builder.add_map(
             m1.root(),
             symbolic::symbol("i"),
-            symbolic::Lt(symbolic::symbol("i"), symbolic::symbol("N")),
-            symbolic::integer(0),
+            symbolic::And(
+                symbolic::Lt(symbolic::symbol("i"), symbolic::add(symbolic::symbol("i_tile"), symbolic::integer(32))),
+                symbolic::Lt(symbolic::symbol("i"), symbolic::symbol("N"))
+            ),
+            symbolic::symbol("i_tile"),
             symbolic::add(symbolic::symbol("i"), symbolic::integer(1)),
             structured_control_flow::ScheduleType_Sequential::create()
         );
@@ -546,18 +564,21 @@ TEST(TileFusionTest, ConsumerAlsoWritesIntermediate_ShouldFail) {
     // Map 2: reads B AND writes B (consumer also produces to intermediate)
     auto& m2 = builder.add_map(
         root,
-        symbolic::symbol("j"),
-        symbolic::Lt(symbolic::symbol("j"), symbolic::symbol("N")),
+        symbolic::symbol("j_tile"),
+        symbolic::Lt(symbolic::symbol("j_tile"), symbolic::symbol("N")),
         symbolic::integer(0),
-        symbolic::add(symbolic::symbol("j"), symbolic::integer(32)),
+        symbolic::add(symbolic::symbol("j_tile"), symbolic::integer(32)),
         structured_control_flow::ScheduleType_Sequential::create()
     );
     {
         auto& inner = builder.add_map(
             m2.root(),
             symbolic::symbol("j"),
-            symbolic::Lt(symbolic::symbol("j"), symbolic::symbol("N")),
-            symbolic::integer(0),
+            symbolic::And(
+                symbolic::Lt(symbolic::symbol("j"), symbolic::add(symbolic::symbol("j_tile"), symbolic::integer(32))),
+                symbolic::Lt(symbolic::symbol("j"), symbolic::symbol("N"))
+            ),
+            symbolic::symbol("j_tile"),
             symbolic::add(symbolic::symbol("j"), symbolic::integer(1)),
             structured_control_flow::ScheduleType_Sequential::create()
         );
@@ -571,7 +592,9 @@ TEST(TileFusionTest, ConsumerAlsoWritesIntermediate_ShouldFail) {
 
     analysis::AnalysisManager analysis_manager(builder.subject());
     transformations::TileFusion tile_fusion(m1, m2);
-    EXPECT_FALSE(tile_fusion.can_be_applied(builder, analysis_manager));
+    // The consumer reads and writes only the elements of B its own tile's producer wrote: no dependence crosses tiles.
+    EXPECT_TRUE(tile_fusion.can_be_applied(builder, analysis_manager));
+    EXPECT_FALSE(tile_fusion.sequential());
 }
 
 TEST(TileFusionTest, ZeroRadiusElementwise) {
@@ -582,7 +605,9 @@ TEST(TileFusionTest, ZeroRadiusElementwise) {
     types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
+    builder.add_container("i_tile", sym_desc);
     builder.add_container("j", sym_desc);
+    builder.add_container("j_tile", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Double);
     types::Array desc_1d(elem_desc, symbolic::symbol("N"));
@@ -594,10 +619,10 @@ TEST(TileFusionTest, ZeroRadiusElementwise) {
     // Map 1: B[i] = A[i] (elementwise, radius 0)
     auto& m1 = builder.add_map(
         root,
-        symbolic::symbol("i"),
-        symbolic::Lt(symbolic::symbol("i"), symbolic::symbol("N")),
+        symbolic::symbol("i_tile"),
+        symbolic::Lt(symbolic::symbol("i_tile"), symbolic::symbol("N")),
         symbolic::integer(0),
-        symbolic::add(symbolic::symbol("i"), symbolic::integer(32)),
+        symbolic::add(symbolic::symbol("i_tile"), symbolic::integer(32)),
         structured_control_flow::ScheduleType_Sequential::create()
     );
     {
@@ -622,10 +647,10 @@ TEST(TileFusionTest, ZeroRadiusElementwise) {
     // Map 2: A[j] = B[j] (elementwise, radius 0)
     auto& m2 = builder.add_map(
         root,
-        symbolic::symbol("j"),
-        symbolic::Lt(symbolic::symbol("j"), symbolic::symbol("N")),
+        symbolic::symbol("j_tile"),
+        symbolic::Lt(symbolic::symbol("j_tile"), symbolic::symbol("N")),
         symbolic::integer(0),
-        symbolic::add(symbolic::symbol("j"), symbolic::integer(32)),
+        symbolic::add(symbolic::symbol("j_tile"), symbolic::integer(32)),
         structured_control_flow::ScheduleType_Sequential::create()
     );
     {
@@ -654,10 +679,11 @@ TEST(TileFusionTest, ZeroRadiusElementwise) {
 
     tile_fusion.apply(builder, analysis_manager);
 
-    // Verify: single For tile loop with 2 inner Maps
+    // Verify: a single tile Map with 2 inner Maps; each tile only reads and writes its own elements, so tiles stay
+    // parallel.
     auto& new_root = builder.subject().root();
     ASSERT_EQ(new_root.size(), 1);
-    auto* fused_tile = dyn_cast<structured_control_flow::For*>(&new_root.at(0));
+    auto* fused_tile = dyn_cast<structured_control_flow::Map*>(&new_root.at(0));
     ASSERT_NE(fused_tile, nullptr);
     ASSERT_EQ(fused_tile->root().size(), 2);
 
@@ -881,7 +907,9 @@ TEST(TileFusionTest, NoCyclicDependency_NoBuffers) {
     types::Scalar sym_desc(types::PrimitiveType::Int64);
     builder.add_container("N", sym_desc, true);
     builder.add_container("i", sym_desc);
+    builder.add_container("i_tile", sym_desc);
     builder.add_container("j", sym_desc);
+    builder.add_container("j_tile", sym_desc);
 
     types::Scalar elem_desc(types::PrimitiveType::Double);
     builder.add_container("tmp1", elem_desc);
@@ -895,10 +923,10 @@ TEST(TileFusionTest, NoCyclicDependency_NoBuffers) {
     // K1: B[i] = A[i] + A[1+i] (stencil, radius=1)
     auto& m1 = builder.add_map(
         root,
-        symbolic::symbol("i"),
-        symbolic::Lt(symbolic::symbol("i"), symbolic::sub(symbolic::symbol("N"), symbolic::integer(1))),
+        symbolic::symbol("i_tile"),
+        symbolic::Lt(symbolic::symbol("i_tile"), symbolic::sub(symbolic::symbol("N"), symbolic::integer(1))),
         symbolic::integer(0),
-        symbolic::add(symbolic::symbol("i"), symbolic::integer(32)),
+        symbolic::add(symbolic::symbol("i_tile"), symbolic::integer(32)),
         structured_control_flow::ScheduleType_Sequential::create()
     );
     {
@@ -926,10 +954,10 @@ TEST(TileFusionTest, NoCyclicDependency_NoBuffers) {
     // K2: C[j] = B[j] + B[1+j] (stencil, radius=1)
     auto& m2 = builder.add_map(
         root,
-        symbolic::symbol("j"),
-        symbolic::Lt(symbolic::symbol("j"), symbolic::sub(symbolic::symbol("N"), symbolic::integer(1))),
+        symbolic::symbol("j_tile"),
+        symbolic::Lt(symbolic::symbol("j_tile"), symbolic::sub(symbolic::symbol("N"), symbolic::integer(1))),
         symbolic::integer(0),
-        symbolic::add(symbolic::symbol("j"), symbolic::integer(32)),
+        symbolic::add(symbolic::symbol("j_tile"), symbolic::integer(32)),
         structured_control_flow::ScheduleType_Sequential::create()
     );
     {
@@ -1027,3 +1055,481 @@ TEST(TileFusionTest, Jacobi1D_Serialization) {
 }
 
 } // namespace tile_fusion_test
+
+// =============================================================================
+// Legality from dependences
+// =============================================================================
+
+using namespace sdfg;
+
+namespace {
+
+/// Two tiled maps over N in tiles of 32: B[write(i)] = A[i], then C[j] = B[read(j)].
+std::pair<structured_control_flow::Map*, structured_control_flow::Map*> producer_consumer(
+    builder::StructuredSDFGBuilder& builder,
+    const std::function<symbolic::Expression(const symbolic::Symbol&)>& write,
+    const std::function<symbolic::Expression(const symbolic::Symbol&)>& read
+) {
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
+    for (auto name : {"t", "i", "u", "j"}) {
+        builder.add_container(name, sym_desc);
+    }
+    builder.add_container("N", sym_desc, true);
+    types::Scalar elem_desc(types::PrimitiveType::Double);
+    types::Pointer desc(elem_desc);
+    for (auto name : {"A", "B", "C"}) {
+        builder.add_container(name, desc, true);
+    }
+    auto N = symbolic::symbol("N");
+    auto tiled =
+        [&](const std::string& tile,
+            const std::string& point) -> std::pair<structured_control_flow::Map*, structured_control_flow::Map*> {
+        auto t = symbolic::symbol(tile);
+        auto p = symbolic::symbol(point);
+        auto& outer = builder.add_map(
+            builder.subject().root(),
+            t,
+            symbolic::Lt(t, N),
+            symbolic::zero(),
+            symbolic::add(t, symbolic::integer(32)),
+            structured_control_flow::ScheduleType_Sequential::create()
+        );
+        auto& inner = builder.add_map(
+            outer.root(),
+            p,
+            symbolic::And(symbolic::Lt(p, symbolic::add(t, symbolic::integer(32))), symbolic::Lt(p, N)),
+            t,
+            symbolic::add(p, symbolic::one()),
+            structured_control_flow::ScheduleType_Sequential::create()
+        );
+        return {&outer, &inner};
+    };
+    auto [first, first_inner] = tiled("t", "i");
+    {
+        auto& block = builder.add_block(first_inner->root());
+        auto& a = builder.add_access(block, "A");
+        auto& b = builder.add_access(block, "B");
+        auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(block, a, tasklet, "_in", {symbolic::symbol("i")}, desc);
+        builder.add_computational_memlet(block, tasklet, "_out", b, {write(symbolic::symbol("i"))}, desc);
+    }
+    auto [second, second_inner] = tiled("u", "j");
+    {
+        auto& block = builder.add_block(second_inner->root());
+        auto& b = builder.add_access(block, "B");
+        auto& c = builder.add_access(block, "C");
+        auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(block, b, tasklet, "_in", {read(symbolic::symbol("j"))}, desc);
+        builder.add_computational_memlet(block, tasklet, "_out", c, {symbolic::symbol("j")}, desc);
+    }
+    return {first, second};
+}
+
+} // namespace
+
+TEST(TileFusionTest, EarlierTilesProducingFuseSequentially) {
+    // B[i + 1] = A[i]; C[j] = B[j]: each tile reads what its own and the previous tile wrote.
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto [first, second] = producer_consumer(
+        builder,
+        [](auto& i) {
+            return symbolic::add(i, symbolic::one());
+        },
+        [](auto& j) {
+            return j;
+        }
+    );
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    transformations::TileFusion tile_fusion(*first, *second);
+    ASSERT_TRUE(tile_fusion.can_be_applied(builder, analysis_manager));
+    EXPECT_TRUE(tile_fusion.sequential());
+    EXPECT_EQ(tile_fusion.radius(), 0);
+    tile_fusion.apply(builder, analysis_manager);
+    ASSERT_EQ(builder.subject().root().size(), 1u);
+    EXPECT_NE(dyn_cast<structured_control_flow::For*>(&builder.subject().root().at(0)), nullptr);
+}
+
+TEST(TileFusionTest, LaterTilesProducingNeedAHalo) {
+    // B[i] = A[i]; C[j] = B[j + 1]: the last element of each tile reads what the next tile writes.
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto [first, second] = producer_consumer(
+        builder,
+        [](auto& i) {
+            return i;
+        },
+        [](auto& j) {
+            return symbolic::add(j, symbolic::one());
+        }
+    );
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    transformations::TileFusion tile_fusion(*first, *second);
+    ASSERT_TRUE(tile_fusion.can_be_applied(builder, analysis_manager));
+    EXPECT_TRUE(tile_fusion.sequential());
+    EXPECT_EQ(tile_fusion.radius(), 1);
+}
+
+TEST(TileFusionTest, UnboundedLaterTilesProducingIsRejected) {
+    // B[i] = A[i]; C[j] = B[N - 1 - j]: the first tile reads what the last writes.
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto [first, second] = producer_consumer(
+        builder,
+        [](auto& i) {
+            return i;
+        },
+        [](auto& j) {
+            return symbolic::sub(symbolic::sub(symbolic::symbol("N"), symbolic::one()), j);
+        }
+    );
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    transformations::TileFusion tile_fusion(*first, *second);
+    EXPECT_FALSE(tile_fusion.can_be_applied(builder, analysis_manager));
+}
+
+namespace {
+
+/// Two tile maps over N in tiles of 4, each copying one tile: B[t:t+4] = A[t:t+4], then C[u:u+4] = B[u+shift:...].
+std::pair<structured_control_flow::Map*, structured_control_flow::Map*>
+tile_copies(builder::StructuredSDFGBuilder& builder, int64_t shift) {
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
+    builder.add_container("N", sym_desc, true);
+    builder.add_container("t", sym_desc);
+    builder.add_container("u", sym_desc);
+    types::Scalar elem_desc(types::PrimitiveType::Float);
+    types::Pointer desc(elem_desc);
+    for (auto name : {"A", "B", "C"}) {
+        builder.add_container(name, desc, true);
+    }
+    auto copy = [&](const std::string& tile,
+                    const std::string& src,
+                    const std::string& dst,
+                    int64_t offset) -> structured_control_flow::Map* {
+        auto counter = symbolic::symbol(tile);
+        auto& map = builder.add_map(
+            builder.subject().root(),
+            counter,
+            symbolic::Lt(counter, symbolic::symbol("N")),
+            symbolic::zero(),
+            symbolic::add(counter, symbolic::integer(4)),
+            structured_control_flow::ScheduleType_Sequential::create()
+        );
+        auto& block = builder.add_block(map.root());
+        tiles::TiledCopy plan;
+        plan.src = tiles::
+            Layout({symbolic::integer(4)}, {symbolic::integer(1)}, symbolic::add(counter, symbolic::integer(offset)));
+        plan.dst = tiles::Layout({symbolic::integer(4)}, {symbolic::integer(1)}, counter);
+        plan.atom = tiles::CopyAtom::ScalarSync;
+        auto& node = builder.add_library_node<tiles::TileCopyNode>(
+            block, DebugInfo(), data_flow::ImplementationType{"DUMMY"}, plan, tiles::CopyDirection::In, 16u
+        );
+        builder.add_computational_memlet(block, builder.add_access(block, dst), node, "_dst", {}, desc);
+        builder.add_computational_memlet(block, builder.add_access(block, src), node, "_src", {}, desc);
+        return &map;
+    };
+    auto* first = copy("t", "A", "B", 0);
+    auto* second = copy("u", "B", "C", shift);
+    return {first, second};
+}
+
+} // namespace
+
+TEST(TileFusionTest, TileCopiesOfTheSameTileFuseInParallel) {
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto [first, second] = tile_copies(builder, 0);
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    transformations::TileFusion tile_fusion(*first, *second);
+    ASSERT_TRUE(tile_fusion.can_be_applied(builder, analysis_manager));
+    EXPECT_FALSE(tile_fusion.sequential());
+}
+
+TEST(TileFusionTest, TileCopyOfTheNextTileIsRejected) {
+    // The second copy reads the tile the next iteration's first copy writes.
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto [first, second] = tile_copies(builder, 4);
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    transformations::TileFusion tile_fusion(*first, *second);
+    EXPECT_FALSE(tile_fusion.can_be_applied(builder, analysis_manager));
+}
+
+TEST(TileFusionTest, TransposedReadIsRejected) {
+    // B[i][k] = A[i][k] over row tiles, then C[j][k] = B[k][j]: each row tile reads a column of every row tile.
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
+    for (auto name : {"t", "i", "k", "u", "j", "l"}) {
+        builder.add_container(name, sym_desc);
+    }
+    types::Scalar elem_desc(types::PrimitiveType::Double);
+    types::Array row(elem_desc, symbolic::integer(64));
+    types::Array matrix(row, symbolic::integer(64));
+    for (auto name : {"A", "B", "C"}) {
+        builder.add_container(name, matrix, true);
+    }
+    auto nest = [&](const std::string& tile, const std::string& point, const std::string& column, bool transposed) {
+        auto t = symbolic::symbol(tile);
+        auto p = symbolic::symbol(point);
+        auto c = symbolic::symbol(column);
+        auto sequential = structured_control_flow::ScheduleType_Sequential::create();
+        auto& outer = builder.add_map(
+            builder.subject().root(),
+            t,
+            symbolic::Lt(t, symbolic::integer(64)),
+            symbolic::zero(),
+            symbolic::add(t, symbolic::integer(8)),
+            sequential
+        );
+        auto& rows = builder.add_map(
+            outer.root(),
+            p,
+            symbolic::Lt(p, symbolic::add(t, symbolic::integer(8))),
+            t,
+            symbolic::add(p, symbolic::one()),
+            sequential
+        );
+        auto& columns = builder.add_map(
+            rows.root(),
+            c,
+            symbolic::Lt(c, symbolic::integer(64)),
+            symbolic::zero(),
+            symbolic::add(c, symbolic::one()),
+            sequential
+        );
+        auto& block = builder.add_block(columns.root());
+        auto& src = builder.add_access(block, transposed ? "B" : "A");
+        auto& dst = builder.add_access(block, transposed ? "C" : "B");
+        auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(
+            block, src, tasklet, "_in", transposed ? data_flow::Subset{c, p} : data_flow::Subset{p, c}, matrix
+        );
+        builder.add_computational_memlet(block, tasklet, "_out", dst, {p, c}, matrix);
+        return &outer;
+    };
+    auto* first = nest("t", "i", "k", false);
+    auto* second = nest("u", "j", "l", true);
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    transformations::TileFusion tile_fusion(*first, *second);
+    EXPECT_FALSE(tile_fusion.can_be_applied(builder, analysis_manager));
+}
+
+TEST(TileFusionTest, LibraryNodeWithoutAccessMetadataIsRejected) {
+    // B[i] = A[i]; C[j] = B[j], and the second map also memmoves C over A, which later tiles of the first map read.
+    // memmove reports no pointer access metadata: it may access and capture any element of both.
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto [first, second] = producer_consumer(
+        builder,
+        [](auto& i) {
+            return i;
+        },
+        [](auto& j) {
+            return j;
+        }
+    );
+    types::Scalar elem_desc(types::PrimitiveType::Double);
+    types::Pointer desc(elem_desc);
+    auto& block = builder.add_block(second->root());
+    auto& node = builder.add_library_node<stdlib::MemmoveNode>(block, DebugInfo(), symbolic::integer(256));
+    builder.add_computational_memlet(block, builder.add_access(block, "A"), node, "_dst", {}, desc);
+    builder.add_computational_memlet(block, builder.add_access(block, "C"), node, "_src", {}, desc);
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    transformations::TileFusion tile_fusion(*first, *second);
+    EXPECT_FALSE(tile_fusion.can_be_applied(builder, analysis_manager));
+}
+
+TEST(TileFusionTest, ReferenceIntoAContainerIsRejected) {
+    // B[i] = A[i]; C[j] = B[j], and the second map also reads the next tile's B through P = &B[0]: P[u + 32].
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto [first, second] = producer_consumer(
+        builder,
+        [](auto& i) {
+            return i;
+        },
+        [](auto& j) {
+            return j;
+        }
+    );
+    types::Scalar elem_desc(types::PrimitiveType::Double);
+    types::Pointer desc(elem_desc);
+    builder.add_container("P", desc);
+    auto& alias = builder.add_block(second->root());
+    builder.add_reference_memlet(
+        alias, builder.add_access(alias, "B"), builder.add_access(alias, "P"), {symbolic::zero()}, desc
+    );
+    auto& read = builder.add_block(second->root());
+    auto& tasklet = builder.add_tasklet(read, data_flow::TaskletCode::assign, "_out", {"_in"});
+    builder.add_computational_memlet(
+        read,
+        builder.add_access(read, "P"),
+        tasklet,
+        "_in",
+        {symbolic::add(symbolic::symbol("u"), symbolic::integer(32))},
+        desc
+    );
+    builder
+        .add_computational_memlet(read, tasklet, "_out", builder.add_access(read, "C"), {symbolic::symbol("u")}, desc);
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    transformations::TileFusion tile_fusion(*first, *second);
+    EXPECT_FALSE(tile_fusion.can_be_applied(builder, analysis_manager));
+}
+
+// =============================================================================
+// Aligning iterations by number
+// =============================================================================
+
+namespace {
+
+/// B[i] = A[i] over 256 elements in tiles of 32 counted by t, then C[x] = B[x] over the same tiles counted by u from
+/// @p init in steps of @p step: tile u's elements x = 32 * ((u - init) / step + shift) + p.
+std::pair<structured_control_flow::Map*, structured_control_flow::Map*>
+aligned_tiles(builder::StructuredSDFGBuilder& builder, int64_t init, int64_t step, int64_t shift = 0) {
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
+    for (auto name : {"t", "i", "u", "p"}) {
+        builder.add_container(name, sym_desc);
+    }
+    types::Scalar elem_desc(types::PrimitiveType::Double);
+    types::Pointer desc(elem_desc);
+    for (auto name : {"A", "B", "C"}) {
+        builder.add_container(name, desc, true);
+    }
+    auto sequential = structured_control_flow::ScheduleType_Sequential::create();
+    auto copy = [&](structured_control_flow::Sequence& body,
+                    const std::string& src,
+                    const std::string& dst,
+                    const symbolic::Expression& element) {
+        auto& block = builder.add_block(body);
+        auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(block, builder.add_access(block, src), tasklet, "_in", {element}, desc);
+        builder.add_computational_memlet(block, tasklet, "_out", builder.add_access(block, dst), {element}, desc);
+    };
+    auto t = symbolic::symbol("t");
+    auto i = symbolic::symbol("i");
+    auto& first = builder.add_map(
+        builder.subject().root(),
+        t,
+        symbolic::Lt(t, symbolic::integer(256)),
+        symbolic::zero(),
+        symbolic::add(t, symbolic::integer(32)),
+        sequential
+    );
+    auto& points = builder.add_map(
+        first.root(),
+        i,
+        symbolic::Lt(i, symbolic::add(t, symbolic::integer(32))),
+        t,
+        symbolic::add(i, symbolic::one()),
+        sequential
+    );
+    copy(points.root(), "A", "B", i);
+    auto u = symbolic::symbol("u");
+    auto p = symbolic::symbol("p");
+    auto& second = builder.add_map(
+        builder.subject().root(),
+        u,
+        symbolic::Lt(u, symbolic::integer(init + 8 * step)),
+        symbolic::integer(init),
+        symbolic::add(u, symbolic::integer(step)),
+        sequential
+    );
+    auto& lanes = builder.add_map(
+        second.root(),
+        p,
+        symbolic::Lt(p, symbolic::integer(32)),
+        symbolic::zero(),
+        symbolic::add(p, symbolic::one()),
+        sequential
+    );
+    // 32 * (u - init) / step, exact for the steps the tests use.
+    auto tile = symbolic::
+        add(symbolic::mul(symbolic::integer(32 / step), symbolic::sub(u, symbolic::integer(init))),
+            symbolic::integer(32 * shift));
+    copy(lanes.root(), "B", "C", symbolic::add(tile, p));
+    return {&first, &second};
+}
+
+} // namespace
+
+TEST(TileFusionTest, DifferentStepsAlignIterationsByNumber) {
+    // The second map counts the tiles 0, 1, ..., 7: its n-th iteration reads what the first's n-th wrote.
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto [first, second] = aligned_tiles(builder, 0, 1);
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    transformations::TileFusion tile_fusion(*first, *second);
+    ASSERT_TRUE(tile_fusion.can_be_applied(builder, analysis_manager));
+    EXPECT_FALSE(tile_fusion.sequential());
+    tile_fusion.apply(builder, analysis_manager);
+    ASSERT_EQ(builder.subject().root().size(), 1u);
+    auto* fused = dyn_cast<structured_control_flow::Map*>(&builder.subject().root().at(0));
+    ASSERT_NE(fused, nullptr);
+    EXPECT_TRUE(symbolic::eq(fused->init(), symbolic::zero()));
+    EXPECT_TRUE(symbolic::eq(fused->stride(), symbolic::one()));
+    EXPECT_TRUE(symbolic::eq(fused->num_iterations(), symbolic::integer(8)));
+    // The first body's tile starts at 32 k.
+    auto* points = dyn_cast<structured_control_flow::Map*>(&fused->root().at(0));
+    ASSERT_NE(points, nullptr);
+    EXPECT_TRUE(symbolic::eq(points->init(), symbolic::mul(symbolic::integer(32), fused->indvar())));
+}
+
+TEST(TileFusionTest, OffsetInitAlignsIterationsByNumber) {
+    // The second map counts the tiles from 32 in the first's steps: u = t + 32.
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto [first, second] = aligned_tiles(builder, 32, 32);
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    transformations::TileFusion tile_fusion(*first, *second);
+    ASSERT_TRUE(tile_fusion.can_be_applied(builder, analysis_manager));
+    EXPECT_FALSE(tile_fusion.sequential());
+    tile_fusion.apply(builder, analysis_manager);
+    ASSERT_EQ(builder.subject().root().size(), 1u);
+    auto* fused = dyn_cast<structured_control_flow::Map*>(&builder.subject().root().at(0));
+    ASSERT_NE(fused, nullptr);
+    EXPECT_TRUE(symbolic::eq(fused->init(), symbolic::zero()));
+    EXPECT_TRUE(symbolic::eq(fused->stride(), symbolic::integer(32)));
+}
+
+TEST(TileFusionTest, MisalignedIterationsAreRejected) {
+    // The second map's n-th iteration reads what the first's (n+1)-th writes: B[32 (u + 1) + p].
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    auto [first, second] = aligned_tiles(builder, 0, 1, 1);
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    transformations::TileFusion tile_fusion(*first, *second);
+    EXPECT_FALSE(tile_fusion.can_be_applied(builder, analysis_manager));
+}
+
+TEST(TileFusionTest, ShadowedCounterIsRejected) {
+    // The point loop of each map counts with its tile loop's name.
+    builder::StructuredSDFGBuilder builder("sdfg_test", FunctionType_CPU);
+    types::Scalar sym_desc(types::PrimitiveType::Int64);
+    builder.add_container("i", sym_desc);
+    builder.add_container("j", sym_desc);
+    types::Scalar elem_desc(types::PrimitiveType::Double);
+    types::Pointer desc(elem_desc);
+    for (auto name : {"A", "B", "C"}) {
+        builder.add_container(name, desc, true);
+    }
+    auto sequential = structured_control_flow::ScheduleType_Sequential::create();
+    auto nest = [&](const std::string& name, const std::string& src, const std::string& dst) {
+        auto c = symbolic::symbol(name);
+        auto& tiles = builder.add_map(
+            builder.subject().root(),
+            c,
+            symbolic::Lt(c, symbolic::integer(256)),
+            symbolic::zero(),
+            symbolic::add(c, symbolic::integer(32)),
+            sequential
+        );
+        auto& points = builder.add_map(
+            tiles.root(),
+            c,
+            symbolic::Lt(c, symbolic::add(c, symbolic::integer(32))),
+            c,
+            symbolic::add(c, symbolic::one()),
+            sequential
+        );
+        auto& block = builder.add_block(points.root());
+        auto& tasklet = builder.add_tasklet(block, data_flow::TaskletCode::assign, "_out", {"_in"});
+        builder.add_computational_memlet(block, builder.add_access(block, src), tasklet, "_in", {c}, desc);
+        builder.add_computational_memlet(block, tasklet, "_out", builder.add_access(block, dst), {c}, desc);
+        return &tiles;
+    };
+    auto* first = nest("i", "A", "B");
+    auto* second = nest("j", "B", "C");
+    analysis::AnalysisManager analysis_manager(builder.subject());
+    transformations::TileFusion tile_fusion(*first, *second);
+    EXPECT_FALSE(tile_fusion.can_be_applied(builder, analysis_manager));
+}
